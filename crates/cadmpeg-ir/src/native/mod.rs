@@ -13,8 +13,10 @@ use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Map, Value};
 
+pub mod bytes;
 mod canon;
 pub mod catalogue;
+mod compare;
 mod copy;
 mod replay;
 pub(crate) mod view;
@@ -507,6 +509,16 @@ impl NativeRecord {
             }),
         }
     }
+
+    /// Compare a typed serialization against this record without copying its payload.
+    /// Finite-number, distinct-key, depth and caller resource admission still apply.
+    pub fn matches_typed_for_decode<T: Serialize + ?Sized>(
+        &self,
+        ctx: &DecodeContext<'_>,
+        expected: &T,
+    ) -> Result<bool, NativeConvertError> {
+        compare::matches(ctx, self, expected)
+    }
 }
 
 #[derive(Serialize)]
@@ -903,11 +915,12 @@ impl Native {
     ) -> Result<(), cadmpeg_core::CodecError> {
         for namespace in self.0.values_mut() {
             for records in namespace.arenas.values_mut() {
+                let operation = "finalize native arena";
                 ctx.stable_sort_by(
                     records,
                     |left, right| left.id().cmp(right.id()),
                     |record| record.id().len(),
-                    "finalize native arena",
+                    operation,
                 )?;
             }
         }

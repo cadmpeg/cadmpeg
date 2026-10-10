@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Flat native fields projected from the complete creation-display row.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use super::{
     Deserialize, IndexRow, LinkedRow, RmCreationDisplayDataEncoding, RmCreationDisplayDataRelation,
     Serialize, TargetRow, CLASS_NAME,
@@ -13,26 +15,26 @@ enum RmCreationDisplayDataEncodingWire {
     Index {
         flag: u8,
         indices: [u32; 4],
-        raw_indices: [Vec<u8>; 4],
+        raw_indices: [NativeBytes<Vec<u8>>; 4],
         index_source_offsets: [u64; 4],
     },
     Linked {
         discriminator: crate::om::discriminators::LinkedIndexDiscriminator,
         target_index: u32,
-        raw_target_index: Vec<u8>,
+        raw_target_index: NativeBytes<Vec<u8>>,
         target_index_source_offset: u64,
         indices: [u32; 3],
-        raw_indices: [Vec<u8>; 3],
+        raw_indices: [NativeBytes<Vec<u8>>; 3],
         index_source_offsets: [u64; 3],
         flag: crate::om::discriminators::LinkedIndexFlag,
         mode: crate::om::discriminators::IndexRowMode,
     },
     Target {
         target_index: u32,
-        raw_target_index: Vec<u8>,
+        raw_target_index: NativeBytes<Vec<u8>>,
         target_index_source_offset: u64,
         indices: [u32; 3],
-        raw_indices: [Vec<u8>; 3],
+        raw_indices: [NativeBytes<Vec<u8>>; 3],
         index_source_offsets: [u64; 3],
         mode: crate::om::discriminators::IndexRowMode,
     },
@@ -53,7 +55,7 @@ pub(super) struct RmCreationDisplayDataRelationWire {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_raw_first_index"
     )]
-    raw_first_index: Option<Vec<u8>>,
+    raw_first_index: Option<NativeBytes<Vec<u8>>>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -85,7 +87,7 @@ impl From<RmCreationDisplayDataRelation> for RmCreationDisplayDataRelationWire {
                     Some(row.first_index().offset),
                     RmCreationDisplayDataEncodingWire::Index {
                         indices: row.indices().map(|index| index.atom.value()),
-                        raw_indices: row.indices().map(|index| index.atom.raw().to_vec()),
+                        raw_indices: row.indices().map(|index| index.atom.raw().to_vec().into()),
                         index_source_offsets: row.indices().map(|index| index.offset),
                         flag: u8::from(row.flag()),
                     },
@@ -101,10 +103,10 @@ impl From<RmCreationDisplayDataRelation> for RmCreationDisplayDataRelationWire {
                     RmCreationDisplayDataEncodingWire::Linked {
                         discriminator: row.discriminator(),
                         target_index: row.target_index().atom.value(),
-                        raw_target_index: row.target_index().atom.raw().to_vec(),
+                        raw_target_index: row.target_index().atom.raw().to_vec().into(),
                         target_index_source_offset: row.target_index().offset,
                         indices: row.indices().map(|index| index.atom.value()),
-                        raw_indices: row.indices().map(|index| index.atom.raw().to_vec()),
+                        raw_indices: row.indices().map(|index| index.atom.raw().to_vec().into()),
                         index_source_offsets: row.indices().map(|index| index.offset),
                         flag: row.flag(),
                         mode: row.mode(),
@@ -120,10 +122,10 @@ impl From<RmCreationDisplayDataRelation> for RmCreationDisplayDataRelationWire {
                     None,
                     RmCreationDisplayDataEncodingWire::Target {
                         target_index: row.target_index().atom.value(),
-                        raw_target_index: row.target_index().atom.raw().to_vec(),
+                        raw_target_index: row.target_index().atom.raw().to_vec().into(),
                         target_index_source_offset: row.target_index().offset,
                         indices: row.indices().map(|index| index.atom.value()),
-                        raw_indices: row.indices().map(|index| index.atom.raw().to_vec()),
+                        raw_indices: row.indices().map(|index| index.atom.raw().to_vec().into()),
                         index_source_offsets: row.indices().map(|index| index.offset),
                         mode: row.mode(),
                     },
@@ -134,7 +136,7 @@ impl From<RmCreationDisplayDataRelation> for RmCreationDisplayDataRelationWire {
             id: value.id,
             ordinal: value.ordinal,
             first_index,
-            raw_first_index,
+            raw_first_index: (raw_first_index).map(Into::into),
             first_index_source_offset,
             class_name: CLASS_NAME.to_owned(),
             class_definition: value.class_definition,
@@ -203,11 +205,11 @@ mod tests {
     fn creation_display_rejects_fields_inconsistent_with_its_row() {
         let wire = serde_json::json!({
             "id": "creation", "ordinal": 0,
-            "first_index": 1, "raw_first_index": [128, 1],
+            "first_index": 1, "raw_first_index": "8001",
             "first_index_source_offset": 8,
             "class_name": "UGS::RM_creation_display_data", "class_definition": "class",
             "encoding": { "kind": "index", "flag": 3,
-                "indices": [2, 3, 4, 5], "raw_indices": [[2], [3], [4], [5]],
+                "indices": [2, 3, 4, 5], "raw_indices": ["02","03","04","05"],
                 "index_source_offsets": [13, 14, 15, 16] },
             "source_entry": "entry", "source_offset": 5
         });
@@ -242,14 +244,14 @@ mod tests {
     #[test]
     fn creation_display_relations_keep_all_three_wire_forms() {
         let encodings = [
-            r#"{"kind":"index","flag":3,"indices":[2,3,4,5],"raw_indices":[[2],[3],[4],[5]],"index_source_offsets":[13,14,15,16]}"#,
-            r#"{"kind":"linked","discriminator":22,"target_index":2,"raw_target_index":[2],"target_index_source_offset":12,"indices":[3,4,5],"raw_indices":[[3],[4],[5]],"index_source_offsets":[17,18,19],"flag":3,"mode":4}"#,
-            r#"{"kind":"target","target_index":2,"raw_target_index":[2],"target_index_source_offset":10,"indices":[3,4,5],"raw_indices":[[3],[4],[5]],"index_source_offsets":[15,16,17],"mode":7}"#,
+            r#"{"kind":"index","flag":3,"indices":[2,3,4,5],"raw_indices":["02","03","04","05"],"index_source_offsets":[13,14,15,16]}"#,
+            r#"{"kind":"linked","discriminator":22,"target_index":2,"raw_target_index":"02","target_index_source_offset":12,"indices":[3,4,5],"raw_indices":["03","04","05"],"index_source_offsets":[17,18,19],"flag":3,"mode":4}"#,
+            r#"{"kind":"target","target_index":2,"raw_target_index":"02","target_index_source_offset":10,"indices":[3,4,5],"raw_indices":["03","04","05"],"index_source_offsets":[15,16,17],"mode":7}"#,
         ];
         for (ordinal, encoding) in encodings.into_iter().enumerate() {
             let first = match ordinal {
-                0 => r#","first_index":1,"raw_first_index":[128,1],"first_index_source_offset":8"#,
-                1 => r#","first_index":1,"raw_first_index":[128,1],"first_index_source_offset":7"#,
+                0 => r#","first_index":1,"raw_first_index":"8001","first_index_source_offset":8"#,
+                1 => r#","first_index":1,"raw_first_index":"8001","first_index_source_offset":7"#,
                 _ => "",
             };
             let json = format!(
@@ -258,7 +260,7 @@ mod tests {
             let relation: RmCreationDisplayDataRelation = serde_json::from_str(&json).unwrap();
             assert_eq!(serde_json::to_string(&relation).unwrap(), json);
             let mut wire: serde_json::Value = serde_json::from_str(&json).unwrap();
-            wire["encoding"]["raw_indices"][0] = serde_json::json!([255]);
+            wire["encoding"]["raw_indices"][0] = serde_json::json!("ff");
             let error = serde_json::from_value::<RmCreationDisplayDataRelation>(wire).unwrap_err();
             assert!(error.to_string().contains("raw_indices"), "{error}");
         }
@@ -267,7 +269,11 @@ mod tests {
 
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_first_index, u32, "first_index");
-cadmpeg_core::named_optional_field!(deserialize_raw_first_index, Vec<u8>, "raw_first_index");
+cadmpeg_core::named_optional_field!(
+    deserialize_raw_first_index,
+    cadmpeg_ir::native::bytes::NativeBytes<Vec<u8>>,
+    "raw_first_index"
+);
 cadmpeg_core::named_optional_field!(
     deserialize_first_index_source_offset,
     u64,

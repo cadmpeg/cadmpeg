@@ -102,14 +102,14 @@ fn entity_use_flag_range_follows_the_declared_dialect() {
 #[test]
 fn early_dialects_left_pad_right_justified_status_numbers() {
     for global_table in [GlobalTable::Legacy, GlobalTable::V4_0, GlobalTable::V5_0] {
-        let status = status(*b"     201", global_table).unwrap();
+        let status = status(*b"     201").unwrap();
         assert!(status.is_visible());
         assert_eq!(status.subordinate(), Some(Subordinate::Independent));
         assert_eq!(status.use_flag(global_table), Some(UseFlag::Definition));
         assert_eq!(status.hierarchy(), Some(Hierarchy::GlobalDefer));
     }
 
-    assert!(status(*b"     201", GlobalTable::V5Later).is_err());
+    assert!(status(*b"     201").is_ok());
 }
 
 #[test]
@@ -162,7 +162,7 @@ fn eight_digit_directory_status_supplies_four_two_digit_fields() {
 
 #[test]
 fn a_nonblank_space_in_the_status_number_quarantines_the_record() {
-    for status in ["     201", "0000 201", "0000020 "] {
+    for status in ["0000 201", "0000020 "] {
         let result = IgesCodec
             .decode(
                 &mut Cursor::new(owned_test_file(&[OwnedTestEntity {
@@ -245,7 +245,7 @@ fn decode_treats_subordinate_switch_three_as_physically_dependent() {
 #[test]
 fn residual_status_fields_preserve_numeric_wire_values() {
     for global_table in [GlobalTable::V4_0, GlobalTable::V5Later] {
-        let parsed = status(*b"99999999", global_table).unwrap();
+        let parsed = status(*b"99999999").unwrap();
         assert!(parsed.use_flag(global_table).is_none());
         assert!(!parsed.is_physically_dependent());
         assert!(!parsed.is_logically_dependent());
@@ -259,8 +259,8 @@ fn residual_status_fields_preserve_numeric_wire_values() {
             })
         );
     }
-    let early = status(*b"00000600", GlobalTable::V4_0).unwrap();
-    let later = status(*b"00000600", GlobalTable::V5Later).unwrap();
+    let early = status(*b"00000600").unwrap();
+    let later = status(*b"00000600").unwrap();
     assert_eq!(early, later);
     assert!(early.use_flag(GlobalTable::V4_0).is_none());
     assert_eq!(
@@ -271,4 +271,93 @@ fn residual_status_fields_preserve_numeric_wire_values() {
         serde_json::to_value(early).unwrap(),
         serde_json::to_value(later).unwrap()
     );
+}
+
+#[test]
+fn unreadable_directory_metadata_preserves_independent_point_geometry() {
+    let source = point_file();
+    let expected = IgesCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .unwrap();
+    for (card_index, column, field) in [
+        (0, 3, "line_font"),
+        (0, 4, "level"),
+        (0, 5, "view"),
+        (0, 7, "label_display"),
+        (1, 1, "line_weight"),
+        (1, 2, "color"),
+        (1, 8, "subscript"),
+    ] {
+        let mut changed = source.clone();
+        let starts = changed
+            .split_inclusive(|byte| *byte == b'\n')
+            .scan(0, |offset, line| {
+                let start = *offset;
+                *offset += line.len();
+                Some((start, line))
+            })
+            .filter(|(_, line)| line.get(72) == Some(&b'D'))
+            .map(|(offset, _)| offset)
+            .collect::<Vec<_>>();
+        let start = starts[card_index] + 8 * column;
+        changed[start..start + 8].copy_from_slice(b"     BAD");
+        let decoded = IgesCodec
+            .decode(&mut Cursor::new(&changed), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(
+            decoded
+                .ir()
+                .model
+                .points
+                .iter()
+                .map(|point| (&point.id, point.position()))
+                .collect::<Vec<_>>(),
+            expected
+                .ir()
+                .model
+                .points
+                .iter()
+                .map(|point| (&point.id, point.position()))
+                .collect::<Vec<_>>(),
+            "{field}"
+        );
+        assert_eq!(
+            decoded.ir().model.bodies,
+            expected.ir().model.bodies,
+            "{field}"
+        );
+        assert_eq!(
+            decoded.ir().native.namespace("iges").unwrap().arenas()["entities"][0].fields()[field],
+            serde_json::Value::Null,
+            "{field}"
+        );
+        assert!(decoded
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == IgesLossCode::DirectoryMetadataUnreadable.kind()));
+        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
+            .unwrap()
+            .is_ok());
+    }
+}
+
+#[test]
+fn late_directory_status_padding_preserves_required_use_codes_with_a_loss() {
+    let bytes = owned_test_file(&[OwnedTestEntity {
+        entity_type: 116,
+        form: 0,
+        label: "POINT".into(),
+        status: "       0",
+        parameters: "116,1,2,3,0;".into(),
+    }]);
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(result.ir().model.points.len(), 1);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::DirectoryMetadataNoncanonical.kind()));
 }

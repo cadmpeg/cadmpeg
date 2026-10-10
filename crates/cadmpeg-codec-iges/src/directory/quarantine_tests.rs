@@ -81,8 +81,8 @@ fn directory_quarantine_loss_refuses_message_limit() {
         .contains("the level field is not a decimal integer"));
 }
 
-/// Zero-based index of the level field inside the first Directory card.
-const LEVEL_FIELD: usize = 4;
+/// Zero-based index of the Parameter Data pointer in the first Directory card.
+const PARAMETER_FIELD: usize = 1;
 
 fn two_point_file() -> Vec<u8> {
     owned_test_file(&[
@@ -145,7 +145,7 @@ fn corrupt_field(bytes: &[u8], card_index: usize, field: usize, value: [u8; 8]) 
 
 #[test]
 fn a_non_integer_directory_field_quarantines_the_two_card_pair() {
-    let bytes = corrupt_field(&two_point_file(), 2, LEVEL_FIELD, *b"     abc");
+    let bytes = corrupt_field(&two_point_file(), 2, PARAMETER_FIELD, *b"     abc");
     let first_card = directory_card_offset(&bytes, 2);
     let expected_bytes = [
         &bytes[first_card..first_card + 80],
@@ -171,11 +171,8 @@ fn a_non_integer_directory_field_quarantines_the_two_card_pair() {
     assert_eq!(fields["cards"], 2);
     assert_eq!(fields["defect"], "field-not-an-integer");
     assert_eq!(
-        fields["bytes"].as_array().unwrap(),
-        &expected_bytes
-            .iter()
-            .map(|byte| serde_json::Value::from(*byte))
-            .collect::<Vec<_>>()
+        crate::test_support::native_bytes(&fields["bytes"]),
+        expected_bytes
     );
     assert_eq!(result.report().losses.len(), 1);
     assert_eq!(
@@ -210,8 +207,8 @@ fn a_non_integer_directory_field_quarantines_the_two_card_pair() {
 #[test]
 fn every_directory_defect_key_names_its_own_failure() {
     for (card_index, field, value, defect) in [
-        (2, LEVEL_FIELD, *b"     \xff\xfe\xfd", "field-not-ascii"),
-        (2, LEVEL_FIELD, *b"     abc", "field-not-an-integer"),
+        (2, PARAMETER_FIELD, *b"     \xff\xfe\xfd", "field-not-ascii"),
+        (2, PARAMETER_FIELD, *b"     abc", "field-not-an-integer"),
         (2, 8, *b"0000 201", "status-number-invalid"),
         (3, 0, *b"     110", "repeated-entity-type-mismatch"),
     ] {
@@ -278,7 +275,10 @@ fn an_unpaired_trailing_directory_card_is_quarantined_on_its_own() {
     let fields = quarantined[0].fields();
     assert_eq!(fields["cards"], 1);
     assert_eq!(fields["defect"], "unpaired-card");
-    assert_eq!(fields["bytes"].as_array().unwrap().len(), 80);
+    assert_eq!(
+        crate::test_support::native_bytes(&fields["bytes"]).len(),
+        80
+    );
     assert_eq!(
         code_count(result.report(), IgesLossCode::DirectoryRecordQuarantined),
         1
@@ -290,7 +290,7 @@ fn a_pointer_into_a_quarantined_record_does_not_resolve() {
     let mut bytes = two_point_file();
     let color_field = directory_card_offset(&bytes, 1) + 2 * 8;
     bytes[color_field..color_field + 8].copy_from_slice(b"      -3");
-    let bytes = corrupt_field(&bytes, 2, LEVEL_FIELD, *b"     abc");
+    let bytes = corrupt_field(&bytes, 2, PARAMETER_FIELD, *b"     abc");
 
     let result = decode(bytes.clone());
 
@@ -322,7 +322,7 @@ fn the_outbound_pointers_of_a_quarantined_record_are_not_analyzed() {
     let mut bytes = two_point_file();
     let color_field = directory_card_offset(&bytes, 3) + 2 * 8;
     bytes[color_field..color_field + 8].copy_from_slice(b"      -1");
-    let bytes = corrupt_field(&bytes, 2, LEVEL_FIELD, *b"     abc");
+    let bytes = corrupt_field(&bytes, 2, PARAMETER_FIELD, *b"     abc");
 
     let result = decode(bytes);
 
@@ -339,7 +339,7 @@ fn the_outbound_pointers_of_a_quarantined_record_are_not_analyzed() {
 
 #[test]
 fn a_quarantined_directory_record_refuses_a_strict_decode_and_survives_container_only() {
-    let bytes = corrupt_field(&two_point_file(), 2, LEVEL_FIELD, *b"     abc");
+    let bytes = corrupt_field(&two_point_file(), 2, PARAMETER_FIELD, *b"     abc");
 
     let container_only = IgesCodec
         .decode(

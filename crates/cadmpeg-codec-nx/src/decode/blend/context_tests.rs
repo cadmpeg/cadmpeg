@@ -28,6 +28,7 @@ fn spine_model(count: u32) -> (CadIr, CurveId) {
         .expect("clamped linear test spine");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
         source_object: None,

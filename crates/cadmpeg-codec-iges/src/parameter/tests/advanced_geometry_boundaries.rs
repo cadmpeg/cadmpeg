@@ -189,7 +189,7 @@ fn type402_form21_malformed_count_or_span_does_not_enable_generic_recovery() {
         vec![
             402.into(),
             1.into(),
-            TokenValue::String(b"1".to_vec()),
+            TokenValue::String(b"1".to_vec().into()),
             3.into(),
             4.into(),
             TokenValue::real(0.25),
@@ -354,9 +354,9 @@ fn type408_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recove
         7,
         vec![
             408.into(),
-            TokenValue::String(b"bad".to_vec()),
+            TokenValue::String(b"bad".to_vec().into()),
             TokenValue::real(2.0),
-            TokenValue::String(b"bad".to_vec()),
+            TokenValue::String(b"bad".to_vec().into()),
             1.into(),
             TokenValue::Omitted,
             1.into(),
@@ -500,7 +500,7 @@ fn type402_form19_malformed_count_or_span_does_not_enable_generic_recovery() {
         vec![
             402.into(),
             1.into(),
-            TokenValue::String(b"bad".to_vec()),
+            TokenValue::String(b"bad".to_vec().into()),
             TokenValue::real(0.5),
             0.into(),
             TokenValue::Omitted,
@@ -755,7 +755,7 @@ fn type402_form18_malformed_fields_do_not_enable_generic_recovery() {
         vec![
             TokenValue::Integer(402),
             TokenValue::Integer(2),
-            TokenValue::String(b"1".to_vec()),
+            TokenValue::String(b"1".to_vec().into()),
             TokenValue::Integer(0),
             TokenValue::Integer(0),
             TokenValue::Integer(0),
@@ -970,7 +970,7 @@ fn type402_form20_malformed_fields_do_not_enable_generic_recovery() {
         vec![
             TokenValue::Integer(402),
             TokenValue::Integer(1),
-            TokenValue::String(b"1".to_vec()),
+            TokenValue::String(b"1".to_vec().into()),
             TokenValue::Integer(0),
             TokenValue::Integer(0),
             TokenValue::Integer(0),

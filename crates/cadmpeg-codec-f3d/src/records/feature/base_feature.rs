@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Base features, the body references they carry and the results they state.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use crate::records::serde_column::SliceColumn;
 use crate::records::{identity::Located, mesh::DesignRelaxedGuidText};
 use serde::{Deserialize, Serialize};
@@ -77,7 +79,7 @@ pub(crate) enum DesignBaseFeatureConstruction {
         /// Byte offset of the shared metadata record.
         metadata_record_offset: u64,
         /// Variant-width source field following the metadata record.
-        metadata_field: Vec<u8>,
+        metadata_field: NativeBytes<Vec<u8>>,
     },
     /// Direct-modeling body-reference envelope used by the class-365/class-262 and
     /// class-377/class-259 forms.
@@ -228,9 +230,11 @@ impl Serialize for RepeatedReferenceFields<'_> {
             DesignBaseFeatureResults::WithoutRepeatedFields(_) => {
                 serializer.collect_seq(std::iter::empty::<[u8; 6]>())
             }
-            DesignBaseFeatureResults::WithRepeatedFields { first, rest } => {
-                serializer.collect_seq(std::iter::once(first.1).chain(rest.iter().map(|row| row.1)))
-            }
+            DesignBaseFeatureResults::WithRepeatedFields { first, rest } => serializer.collect_seq(
+                std::iter::once(first.1)
+                    .chain(rest.iter().map(|row| row.1))
+                    .map(NativeBytes::from),
+            ),
         }
     }
 }
@@ -243,17 +247,17 @@ impl Serialize for DesignBaseFeatureConstruction {
             ResultBodies {
                 body_entity_suffixes: ResultBodyColumn<'a, u64>,
                 body_entity_suffix_offsets: ResultBodyColumn<'a, u64>,
-                body_entity_fields: ResultBodyColumn<'a, [u8; 6]>,
+                body_entity_fields: ResultBodyColumn<'a, NativeBytes<[u8; 6]>>,
                 body_reference_records: ResultBodyColumn<'a, u32>,
                 body_reference_record_offsets: ResultBodyColumn<'a, u64>,
-                body_reference_fields: ResultBodyColumn<'a, [u8; 6]>,
+                body_reference_fields: ResultBodyColumn<'a, NativeBytes<[u8; 6]>>,
                 repeated_reference_fields: RepeatedReferenceFields<'a>,
                 metadata_record: u32,
                 metadata_record_offset: u64,
-                metadata_field: &'a Vec<u8>,
+                metadata_field: NativeBytes<&'a [u8]>,
                 result_records: ResultBodyColumn<'a, u32>,
                 result_record_offsets: ResultBodyColumn<'a, u64>,
-                result_fields: ResultBodyColumn<'a, [u8; 6]>,
+                result_fields: ResultBodyColumn<'a, NativeBytes<[u8; 6]>>,
             },
             BodyBasedOnFaces {
                 body_entity_suffixes: [u64; 1],
@@ -277,7 +281,8 @@ impl Serialize for DesignBaseFeatureConstruction {
                 mode_offset: Option<u64>,
                 body_entity_suffixes: SliceColumn<'a, DesignLegacyBaseFeatureBody, u64>,
                 body_entity_suffix_offsets: SliceColumn<'a, DesignLegacyBaseFeatureBody, u64>,
-                body_entity_fields: SliceColumn<'a, DesignLegacyBaseFeatureBody, [u8; 6]>,
+                body_entity_fields:
+                    SliceColumn<'a, DesignLegacyBaseFeatureBody, NativeBytes<[u8; 6]>>,
                 body_reference_records: SliceColumn<'a, DesignLegacyBaseFeatureBody, u32>,
                 body_reference_record_offsets: SliceColumn<'a, DesignLegacyBaseFeatureBody, u64>,
                 parameter_body_records: SliceColumn<'a, DesignLegacyBaseFeatureBody, u64>,
@@ -294,7 +299,8 @@ impl Serialize for DesignBaseFeatureConstruction {
             BodySnapshot {
                 body_entity_suffixes: SliceColumn<'a, DesignBaseFeatureEntry<u64>, u64>,
                 body_entity_suffix_offsets: SliceColumn<'a, DesignBaseFeatureEntry<u64>, u64>,
-                body_entity_fields: SliceColumn<'a, DesignBaseFeatureEntry<u64>, [u8; 6]>,
+                body_entity_fields:
+                    SliceColumn<'a, DesignBaseFeatureEntry<u64>, NativeBytes<[u8; 6]>>,
                 related_guids: &'a [DesignRelaxedGuidText; 3],
                 related_guid_offsets: [u64; 3],
                 linkage_record: u32,
@@ -320,7 +326,7 @@ impl Serialize for DesignBaseFeatureConstruction {
                 },
                 body_entity_fields: ResultBodyColumn {
                     bodies,
-                    value: |row| row.entity.field,
+                    value: |row| row.entity.field.into(),
                 },
                 body_reference_records: ResultBodyColumn {
                     bodies,
@@ -332,12 +338,12 @@ impl Serialize for DesignBaseFeatureConstruction {
                 },
                 body_reference_fields: ResultBodyColumn {
                     bodies,
-                    value: |row| row.reference.field,
+                    value: |row| row.reference.field.into(),
                 },
                 repeated_reference_fields: RepeatedReferenceFields(bodies),
                 metadata_record: *metadata_record,
                 metadata_record_offset: *metadata_record_offset,
-                metadata_field,
+                metadata_field: metadata_field.into(),
                 result_records: ResultBodyColumn {
                     bodies,
                     value: |row| row.result.value,
@@ -348,7 +354,7 @@ impl Serialize for DesignBaseFeatureConstruction {
                 },
                 result_fields: ResultBodyColumn {
                     bodies,
-                    value: |row| row.result.field,
+                    value: |row| row.result.field.into(),
                 },
             },
             Self::BodyBasedOnFaces {
@@ -403,7 +409,7 @@ impl Serialize for DesignBaseFeatureConstruction {
                         u64::from(row.entity.value)
                     }),
                     body_entity_suffix_offsets: SliceColumn::new(bodies, |row| row.entity.offset),
-                    body_entity_fields: SliceColumn::new(bodies, |row| row.entity.field),
+                    body_entity_fields: SliceColumn::new(bodies, |row| row.entity.field.into()),
                     body_reference_records: SliceColumn::new(bodies, |row| row.entity.value),
                     body_reference_record_offsets: SliceColumn::new(bodies, |row| {
                         row.entity.offset
@@ -435,7 +441,7 @@ impl Serialize for DesignBaseFeatureConstruction {
             } => BorrowedWire::BodySnapshot {
                 body_entity_suffixes: SliceColumn::new(bodies, |row| row.value),
                 body_entity_suffix_offsets: SliceColumn::new(bodies, |row| row.offset),
-                body_entity_fields: SliceColumn::new(bodies, |row| row.field),
+                body_entity_fields: SliceColumn::new(bodies, |row| row.field.into()),
                 related_guids,
                 related_guid_offsets: *related_guid_offsets,
                 linkage_record: *linkage_record,
@@ -511,27 +517,27 @@ enum DesignBaseFeatureConstructionWire {
         /// Byte offsets parallel to `body_entity_suffixes`.
         body_entity_suffix_offsets: Vec<u64>,
         /// Six-byte source fields parallel to `body_entity_suffixes`.
-        body_entity_fields: Vec<[u8; 6]>,
+        body_entity_fields: Vec<NativeBytes<[u8; 6]>>,
         /// Ordered passive body-reference records parallel to the body suffixes.
         body_reference_records: Vec<u32>,
         /// Byte offsets parallel to `body_reference_records`.
         body_reference_record_offsets: Vec<u64>,
         /// Six-byte source fields parallel to `body_reference_records`.
-        body_reference_fields: Vec<[u8; 6]>,
+        body_reference_fields: Vec<NativeBytes<[u8; 6]>>,
         /// Six-byte source fields in the repeated passive-reference run.
-        repeated_reference_fields: Vec<[u8; 6]>,
+        repeated_reference_fields: Vec<NativeBytes<[u8; 6]>>,
         /// Shared passive-reference metadata record.
         metadata_record: u32,
         /// Byte offset of `metadata_record`.
         metadata_record_offset: u64,
         /// Variant-width source field following `metadata_record`.
-        metadata_field: Vec<u8>,
+        metadata_field: NativeBytes<Vec<u8>>,
         /// Ordered result-body join records parallel to the body suffixes.
         result_records: Vec<u32>,
         /// Byte offsets parallel to `result_records`.
         result_record_offsets: Vec<u64>,
         /// Six-byte source fields parallel to `result_records`.
-        result_fields: Vec<[u8; 6]>,
+        result_fields: Vec<NativeBytes<[u8; 6]>>,
     },
     /// Direct-modeling body-reference envelope used by the class-365/class-262 and
     /// class-377/class-259 forms.
@@ -576,7 +582,7 @@ enum DesignBaseFeatureConstructionWire {
         /// Byte offsets parallel to `body_entity_suffixes`.
         body_entity_suffix_offsets: Vec<u64>,
         /// Six-byte source fields parallel to `body_entity_suffixes`.
-        body_entity_fields: Vec<[u8; 6]>,
+        body_entity_fields: Vec<NativeBytes<[u8; 6]>>,
         /// Body suffixes used by history-to-BREP resolution for this form.
         body_reference_records: Vec<u32>,
         /// Byte offsets parallel to `body_reference_records`.
@@ -609,7 +615,7 @@ enum DesignBaseFeatureConstructionWire {
         /// Byte offsets parallel to `body_entity_suffixes`.
         body_entity_suffix_offsets: Vec<u64>,
         /// Six-byte source fields parallel to `body_entity_suffixes`.
-        body_entity_fields: Vec<[u8; 6]>,
+        body_entity_fields: Vec<NativeBytes<[u8; 6]>>,
         /// Three LP-UTF-16 source GUIDs carried by the snapshot envelope.
         related_guids: [DesignRelaxedGuidText; 3],
         /// Byte offsets of the first code unit of each related GUID.
@@ -676,23 +682,27 @@ impl TryFrom<DesignBaseFeatureConstructionWire> for DesignBaseFeatureConstructio
                     entity: DesignBaseFeatureEntry {
                         value: body_entity_suffixes[index],
                         offset: body_entity_suffix_offsets[index],
-                        field: body_entity_fields[index],
+                        field: *body_entity_fields[index],
                     },
                     reference: DesignBaseFeatureEntry {
                         value: body_reference_records[index],
                         offset: body_reference_record_offsets[index],
-                        field: body_reference_fields[index],
+                        field: *body_reference_fields[index],
                     },
                     result: DesignBaseFeatureEntry {
                         value: result_records[index],
                         offset: result_record_offsets[index],
-                        field: result_fields[index],
+                        field: *result_fields[index],
                     },
                 });
                 let bodies = if repeated_reference_fields.is_empty() {
                     DesignBaseFeatureResults::WithoutRepeatedFields(bodies.collect())
                 } else {
-                    let mut repeated = bodies.zip(repeated_reference_fields);
+                    let mut repeated = bodies.zip(
+                        repeated_reference_fields
+                            .into_iter()
+                            .map(NativeBytes::into_inner),
+                    );
                     match repeated.next() {
                         Some(first) => DesignBaseFeatureResults::WithRepeatedFields {
                             first,
@@ -820,7 +830,7 @@ impl TryFrom<DesignBaseFeatureConstructionWire> for DesignBaseFeatureConstructio
                         entity: DesignBaseFeatureEntry {
                             value: body_reference_records[index],
                             offset: body_entity_suffix_offsets[index],
-                            field: body_entity_fields[index],
+                            field: *body_entity_fields[index],
                         },
                         parameter_body: Located {
                             value: parameter_body_records[index],
@@ -869,7 +879,7 @@ impl TryFrom<DesignBaseFeatureConstructionWire> for DesignBaseFeatureConstructio
                     .map(|((value, offset), field)| DesignBaseFeatureEntry {
                         value,
                         offset,
-                        field,
+                        field: *field,
                     })
                     .collect();
                 Self::BodySnapshot {
@@ -901,21 +911,30 @@ impl From<DesignBaseFeatureConstruction> for DesignBaseFeatureConstructionWire {
                 let body_entity_suffixes = bodies.iter().map(|body| body.entity.value).collect();
                 let body_entity_suffix_offsets =
                     bodies.iter().map(|body| body.entity.offset).collect();
-                let body_entity_fields = bodies.iter().map(|body| body.entity.field).collect();
+                let body_entity_fields = bodies
+                    .iter()
+                    .map(|body| NativeBytes::from(body.entity.field))
+                    .collect();
                 let body_reference_records =
                     bodies.iter().map(|body| body.reference.value).collect();
                 let body_reference_record_offsets =
                     bodies.iter().map(|body| body.reference.offset).collect();
-                let body_reference_fields =
-                    bodies.iter().map(|body| body.reference.field).collect();
+                let body_reference_fields = bodies
+                    .iter()
+                    .map(|body| NativeBytes::from(body.reference.field))
+                    .collect();
                 let result_records = bodies.iter().map(|body| body.result.value).collect();
                 let result_record_offsets = bodies.iter().map(|body| body.result.offset).collect();
-                let result_fields = bodies.iter().map(|body| body.result.field).collect();
+                let result_fields = bodies
+                    .iter()
+                    .map(|body| NativeBytes::from(body.result.field))
+                    .collect();
                 let repeated_reference_fields = match bodies {
                     DesignBaseFeatureResults::WithoutRepeatedFields(_) => Vec::new(),
                     DesignBaseFeatureResults::WithRepeatedFields { first, rest } => {
                         std::iter::once(first.1)
                             .chain(rest.into_iter().map(|(_, field)| field))
+                            .map(NativeBytes::from)
                             .collect()
                     }
                 };
@@ -973,7 +992,10 @@ impl From<DesignBaseFeatureConstruction> for DesignBaseFeatureConstructionWire {
                     .collect();
                 let body_entity_suffix_offsets =
                     bodies.iter().map(|body| body.entity.offset).collect();
-                let body_entity_fields = bodies.iter().map(|body| body.entity.field).collect();
+                let body_entity_fields = bodies
+                    .iter()
+                    .map(|body| NativeBytes::from(body.entity.field))
+                    .collect();
                 let body_reference_records = bodies.iter().map(|body| body.entity.value).collect();
                 let body_reference_record_offsets =
                     bodies.iter().map(|body| body.entity.offset).collect();
@@ -1036,7 +1058,7 @@ impl From<DesignBaseFeatureConstruction> for DesignBaseFeatureConstructionWire {
                 for body in bodies {
                     body_entity_suffixes.push(body.value);
                     body_entity_suffix_offsets.push(body.offset);
-                    body_entity_fields.push(body.field);
+                    body_entity_fields.push(body.field.into());
                 }
                 Self::BodySnapshot {
                     body_entity_suffixes,

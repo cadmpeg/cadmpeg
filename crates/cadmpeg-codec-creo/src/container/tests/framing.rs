@@ -33,6 +33,37 @@ fn detect_matches_ugc_magic_only() {
 }
 
 #[test]
+fn legacy_ugc_one_uses_the_null_header_and_complete_ascii_object() {
+    let bytes = b"#UGC:1 PART 1 0\nNULL\n#P_OBJECT 6\n\
+        @model_name 1 10\n0 1 widget\n#END_OF_P_OBJECT\n\
+        #Pro/ENGINEER Release 11.0\n#END_OF_UGC\n";
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&CreoCodec, bytes),
+        Confidence::High
+    );
+    let scan = container::scan_bytes_ok(bytes.as_slice());
+    let legacy = scan
+        .framing
+        .layout
+        .legacy_ascii()
+        .expect("complete ASCII frame");
+    assert_eq!(legacy.schema, "6");
+    assert_eq!(legacy.product_release.as_deref(), Some("11.0"));
+    assert_eq!(
+        scan.framing
+            .model_name
+            .as_ref()
+            .map(|name| name.name.as_str()),
+        Some("widget")
+    );
+    let decoded = CreoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("ASCII decode");
+    let decoded = EditableDecodeResult::from(decoded);
+    assert_eq!(decoded.ir().model.product_definitions.len(), 1);
+}
+
+#[test]
 fn scan_decodes_length_prefixed_native_model_name() {
     let data = b"#UGC:2 PART test \\\n#- CMNM 00bwidget.prt                                      \\\n#-END_OF_UGC_HEADER\n"
         .to_vec();

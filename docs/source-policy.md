@@ -8,6 +8,14 @@ Use repeatable `--crate NAME` arguments to restrict reported findings to named c
 
 ## Rules
 
+- Serialized codec byte payload fields use
+  `cadmpeg_ir::native::bytes::NativeBytes`. The `native_byte_array` rule rejects
+  byte slices, fixed byte arrays, and `Vec<u8>` in serde wire declarations,
+  including tuple variants and nested collections. Serde conversion types are
+  checked at their wire declaration. Internal parser storage is not a wire
+  field. Native payloads are hexadecimal strings, with two lowercase digits
+  per byte; byte payloads must not produce JSON number arrays.
+
 - Standard-width file reads use bounded `View` readers. Direct endian
   conversions require an explicit local exception.
 - Calls whose return type contains `EvaluationFailure` keep resource refusals.

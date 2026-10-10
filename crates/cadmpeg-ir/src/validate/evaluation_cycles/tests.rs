@@ -2,7 +2,7 @@
 
 use cadmpeg_core::CodecError;
 
-use super::admit_evaluation_cycles;
+use super::{admit_evaluation_cycles, CarrierConstructions};
 use crate::report::check::Check;
 use crate::test_support::evaluation_cycles::cyclic_model;
 use crate::validate::{admit, validate_neutral};
@@ -136,4 +136,102 @@ fn cycle_walk_keeps_byte_order_stops_at_first_cycle_and_releases_graph_storage()
             .unwrap(),
     );
     ctx.finish_session().unwrap();
+}
+
+#[test]
+fn cycle_admission_does_not_index_unrelated_arenas() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let mut ir = crate::examples::unit_cube().expect("cube fixture");
+    let point = ir.model.points[0].clone();
+    ir.model.points.extend(std::iter::repeat_n(point, 1_024));
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_work_units = 0;
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty input");
+    admit_evaluation_cycles(&ctx, &ir).expect("solved carriers have no cycle index slots");
+    ctx.finish_session().expect("unfused session");
+}
+
+#[test]
+fn cycle_admission_finds_cycles_with_unrelated_arenas_above_the_index_budget() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let (mut ir, curve, surface) = cyclic_model();
+    let cube = crate::examples::unit_cube().expect("cube fixture");
+    ir.model
+        .points
+        .extend(std::iter::repeat_n(cube.model.points[0].clone(), 1_024));
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 128;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty input");
+    assert!(
+        matches!(admit_evaluation_cycles(&ctx, &ir), Err(CodecError::Malformed(message))
+        if message == format!("malformed curve/surface reference cycle: {curve} -> {surface} -> {curve}"))
+    );
+    ctx.finish_session()
+        .expect("semantic refusal does not fuse resources");
+}
+
+#[test]
+fn cycle_associations_keep_the_general_index_duplicate_selection_rules() {
+    use crate::geometry::{
+        CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
+        ProceduralSurfaceDefinition, SurfaceGeometry,
+    };
+    use crate::ids::{ProceduralCurveId, ProceduralSurfaceId};
+    let (mut ir, curve, surface) = cyclic_model();
+    // Duplicate construction IDs select the first construction row.
+    ir.model.procedural_curves.push(ProceduralCurve::new(
+        ir.model.procedural_curves[0].id.clone(),
+        ProceduralCurveDefinition::Exact { cache: None },
+    ));
+    // Duplicate curve carriers select the first resolved construction.
+    let other_curve = ProceduralCurveId::mint("test:cycle:construction#other-curve").unwrap();
+    ir.model.procedural_curves.push(ProceduralCurve::new(
+        other_curve.clone(),
+        ProceduralCurveDefinition::Exact { cache: None },
+    ));
+    let mut carrier = ir.model.curves[0].clone();
+    carrier.geometry = CurveGeometry::Procedural {
+        construction: other_curve,
+        cache: None,
+    };
+    ir.model.curves.push(carrier);
+    // Duplicate surface carriers select the last resolved construction.
+    let other_surface = ProceduralSurfaceId::mint("test:cycle:construction#other-surface").unwrap();
+    ir.model.procedural_surfaces.push(ProceduralSurface::new(
+        other_surface.clone(),
+        ProceduralSurfaceDefinition::Replica {
+            source: surface.clone(),
+            transform: crate::transform::Transform::identity(),
+        },
+        None,
+    ));
+    let mut carrier = ir.model.surfaces[0].clone();
+    carrier.geometry = SurfaceGeometry::Procedural {
+        construction: other_surface,
+        cache: None,
+    };
+    ir.model.surfaces.push(carrier);
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let index = super::CycleIndex::build(&ctx, &ir).unwrap();
+    let general = crate::index::ModelIndex::new_model_only(&ir, crate::index::StandardIndex);
+    assert_eq!(
+        index.curve(&ctx, curve.as_str()).unwrap(),
+        general.curve(&ctx, curve.as_str()).unwrap()
+    );
+    assert_eq!(
+        index.surface(&ctx, surface.as_str()).unwrap(),
+        general.surface(&ctx, surface.as_str()).unwrap()
+    );
+    assert_eq!(
+        index.curve(&ctx, curve.as_str()).unwrap(),
+        Some(&ir.model.procedural_curves[0])
+    );
+    assert_eq!(
+        index.surface(&ctx, surface.as_str()).unwrap(),
+        Some(&ir.model.procedural_surfaces[1])
+    );
 }

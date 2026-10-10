@@ -43,7 +43,8 @@ fn semantic_writer_reclassifies_the_final_retained_envelope() {
         &records,
         &mut written,
     )
-    .expect("semantic write succeeds");
+    .expect("semantic write succeeds")
+    .dialect;
     let redecoded = SldprtCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .expect("written part decodes");

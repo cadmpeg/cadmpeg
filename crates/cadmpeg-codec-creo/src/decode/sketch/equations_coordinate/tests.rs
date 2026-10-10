@@ -27,7 +27,7 @@ fn solve_matrix_with_limit(
         })
         .collect::<Vec<_>>();
     with_collection_limit(limit, |ctx| {
-        super::uniquely_solved_linear_variables(ctx, &mut matrix, variable_count)
+        super::uniquely_solved_linear_variables(ctx, &mut matrix, variable_count, None)
     })
 }
 
@@ -342,62 +342,42 @@ fn unsigned_component_equation_terms_refuse_before_tree_clone() {
     );
 }
 
-fn unsigned_branch_with_collection_limit(limit: u64) -> cadmpeg_core::CodecError {
-    let equations = [SectionEquationFixture::point_difference(
-        1,
-        2,
-        SectionAxis::U,
-        1.0,
-    )];
-    with_collection_limit(limit, |ctx| {
-        super::solve_unsigned_dimension_coordinates(
-            ctx,
-            &equations,
-            &BTreeMap::new(),
-            &[(1, 2, SectionAxis::U, 1.0)],
-        )
-    })
-    .expect_err("the selected branch exceeds its collection allowance")
-}
-
-#[test]
-fn unsigned_branch_equation_rows_refuse_before_vector_reserve() {
-    let error = unsigned_branch_with_collection_limit(22);
+fn unsigned_allocation_refusal(operation: &'static str) {
+    let error = crate::test_support::last_refusal_at(
+        &[0],
+        ResourceDimension::CollectionItems,
+        operation,
+        unsigned_value_fixture,
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "creo section branch equation rows")
+        if limit.dimension == ResourceDimension::CollectionItems && limit.operation == operation)
     );
 }
 
 #[test]
-fn unsigned_branch_equation_terms_refuse_before_tree_clone() {
-    let error = unsigned_branch_with_collection_limit(24);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "creo section branch equation terms")
-    );
+fn unsigned_signed_columns_refuse_before_vector_growth() {
+    unsigned_allocation_refusal("creo section signed columns");
 }
 
 #[test]
-fn unsigned_signed_equation_rows_refuse_before_vector_growth() {
-    let error = unsigned_branch_with_collection_limit(25);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "creo section signed equation rows")
-    );
+fn unsigned_signed_column_indices_refuse_before_tree_insert() {
+    unsigned_allocation_refusal("creo section signed column indices");
+}
+
+#[test]
+fn unsigned_signed_matrix_rows_refuse_before_vector_growth() {
+    unsigned_allocation_refusal("creo section signed matrix rows");
+}
+
+#[test]
+fn unsigned_signed_right_hand_sides_refuse_before_vector_growth() {
+    unsigned_allocation_refusal("creo section signed right-hand sides");
 }
 
 #[test]
 fn unsigned_signed_equation_terms_refuse_before_tree_creation() {
-    let error = unsigned_branch_with_collection_limit(27);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "creo section signed equation terms")
-    );
+    unsigned_allocation_refusal("creo section signed equation terms");
 }
 
 #[test]
@@ -410,7 +390,9 @@ fn unsigned_signed_branch_charges_work_before_expansion() {
     )];
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
+    // Fill work for the two-variable adjacency, branch value and branch
+    // agreement rows (2 + 2 + 2) precedes the first branch charge.
+    policy.limits.max_work_units = 2 + 2 + 2;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("small input fits the policy");
     let error = super::solve_unsigned_dimension_coordinates(
@@ -443,11 +425,6 @@ fn unsigned_value_fixture(
     )
 }
 
-fn unsigned_value_with_limit(limit: u64) -> cadmpeg_core::CodecError {
-    with_collection_limit(limit, unsigned_value_fixture)
-        .expect_err("the selected unsigned value boundary exceeds the allowance")
-}
-
 #[test]
 fn unsigned_value_fixture_preserves_the_unique_distance_solution() {
     let solved = crate::decode::with_test_decode_ctx(unsigned_value_fixture)
@@ -456,53 +433,55 @@ fn unsigned_value_fixture_preserves_the_unique_distance_solution() {
 }
 
 #[test]
-fn unsigned_stored_coordinates_refuse_before_tree_clone() {
-    let error = unsigned_value_with_limit(79);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "creo section stored coordinate copies")
-    );
+fn unsigned_row_operations_refuse_before_vector_growth() {
+    unsigned_allocation_refusal("creo section row operations");
 }
 
 #[test]
-fn unsigned_branch_values_refuse_before_tree_insert() {
-    let error = unsigned_value_with_limit(80);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "creo section branch values")
-    );
+fn unsigned_branch_values_refuse_before_vector_growth() {
+    unsigned_allocation_refusal("creo section branch coordinate values");
 }
 
 #[test]
-fn unsigned_candidate_values_refuse_before_tree_insert() {
-    let error = unsigned_value_with_limit(81);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "creo section candidate values")
-    );
-}
-
-#[test]
-fn unsigned_candidate_solutions_refuse_before_vector_growth() {
-    let error = unsigned_value_with_limit(82);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "creo section candidate solutions")
-    );
+fn unsigned_branch_agreement_refuses_before_vector_growth() {
+    unsigned_allocation_refusal("creo section branch coordinate agreement");
 }
 
 #[test]
 fn unsigned_resolved_values_refuse_before_tree_insert() {
-    let error = unsigned_value_with_limit(136);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "creo section resolved values")
-    );
+    unsigned_allocation_refusal("creo section resolved values");
+}
+
+#[test]
+fn unsigned_distance_branches_reuse_the_coefficient_system_and_workspace() {
+    for fully_anchored in [false, true] {
+        let mut equations = vec![SectionEquationFixture::point_value(1, SectionAxis::U, 0.0)];
+        if fully_anchored {
+            equations.extend((2..=13).map(|point| {
+                SectionEquationFixture::point_value(point, SectionAxis::U, f64::from(point - 1))
+            }));
+        }
+        let distances = (1..=12)
+            .map(|point| (point, point + 1, SectionAxis::U, 1.0))
+            .collect::<Vec<_>>();
+        let stored = BTreeMap::from([((1, SectionAxis::U), 0.0)]);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 256 * 1024;
+        policy.limits.max_collection_items = 10_000;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("root");
+        let solved =
+            super::solve_unsigned_dimension_coordinates(&ctx, &equations, &stored, &distances)
+                .expect("4096 sign choices share one system");
+        let expected = if fully_anchored {
+            (2..=13)
+                .map(|point| ((point, SectionAxis::U), f64::from(point - 1)))
+                .collect()
+        } else {
+            BTreeMap::new()
+        };
+        assert_eq!(solved, expected);
+    }
 }
 
 #[test]

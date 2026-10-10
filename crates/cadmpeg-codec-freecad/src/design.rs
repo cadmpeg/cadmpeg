@@ -45,6 +45,8 @@ use cadmpeg_ir::{
 use crate::brep::ShapePayloadRecord;
 use crate::native::{malformed, EntryRecord, ObjectRecord, PropertyRecord};
 
+mod sketch_cache;
+
 const MAX_SKETCH_RECORDS: usize = 1_000_000;
 const EXTERNAL_GEO_AXIS_COUNT: usize = 2;
 const EXTERNAL_GEOMETRY_MISSING_FLAG: u64 = 1 << 3;
@@ -73,7 +75,8 @@ pub(crate) fn transfer(
     payloads: &[ShapePayloadRecord],
     entries: &[EntryRecord],
     program_version: Option<&str>,
-) -> Result<BTreeSet<String>, CodecError> {
+) -> Result<(BTreeSet<String>, Vec<cadmpeg_ir::report::loss::LossNote>), CodecError> {
+    let mut losses = Vec::new();
     let mut properties_by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
     for property in properties {
         if !properties_by_owner.contains_key(property.owner.as_str()) {
@@ -188,7 +191,7 @@ pub(crate) fn transfer(
             datum_definition(&object.type_name, &owned)
                 .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_sketch(&object.type_name) {
-            let decoded = parse_sketch(ctx, object, &owned)?;
+            let decoded = parse_sketch(ctx, object, &owned, &mut losses)?;
             let sketch = decoded.sketch;
             let sketch_id = sketch
                 .id
@@ -565,7 +568,7 @@ pub(crate) fn transfer(
             feature.dependencies.clear();
         }
     }
-    Ok(cycle_affected)
+    Ok((cycle_affected, losses))
 }
 
 fn body_membership_property<'a>(properties: &'a [&PropertyRecord]) -> Option<&'a PropertyRecord> {
@@ -1663,6 +1666,7 @@ fn parse_sketch(
     ctx: &DecodeContext<'_>,
     object: &ObjectRecord,
     properties: &[&PropertyRecord],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<SketchTransfer, CodecError> {
     let id = SketchId::mint(design_identity_text(
         ctx,
@@ -1741,135 +1745,30 @@ fn parse_sketch(
         }
     }
     if let Some(external_geometry) = property(properties, "ExternalGeo") {
-        if external_geometry.type_name != "Part::PropertyGeometryList" {
-            return Err(malformed_design(
-                ctx,
-                format_args!(
-                    "{} has runtime type {}, expected Part::PropertyGeometryList",
-                    external_geometry.id, external_geometry.type_name
-                ),
-            ));
-        }
-        let admitted_xml = ctx
-            .parse_xml(external_geometry.xml.text(), "FreeCAD XML tree")
-            .map_err(|error| {
-                let CodecError::Malformed(error) = error else {
-                    return error;
-                };
-                malformed_design(
-                    ctx,
-                    format_args!(
-                        "invalid external sketch geometry {}: {error}",
-                        external_geometry.id
-                    ),
-                )
-            })?;
-        let xml = admitted_xml.document();
-        let records =
-            direct_counted_records(ctx, xml, "GeometryList", "Geometry", &external_geometry.id)?;
-        validate_external_geo_prefix(ctx, &records, &external_geometry.id)?;
-        let references = property(properties, "ExternalGeometry");
-        if let Some(references) = references {
-            if references.type_name != "App::PropertyLinkSubList" {
-                return Err(malformed_design(
-                    ctx,
-                    format_args!(
-                        "{} has runtime type {}, expected App::PropertyLinkSubList",
-                        references.id, references.type_name
-                    ),
-                ));
-            }
-        }
-        let link_indices = external_link_indices(ctx, references)?;
-        for (external_index, node) in records
-            .into_iter()
-            .skip(EXTERNAL_GEO_AXIS_COUNT)
-            .enumerate()
-        {
-            let (cache_reference, missing) =
-                external_geometry_metadata(ctx, node, external_index + 3)?;
-            let reference_index = cache_reference
-                .as_deref()
-                .and_then(|cache_reference| link_indices.get(cache_reference).copied());
-            if let (Some(cache_reference), None) = (cache_reference.as_deref(), reference_index) {
-                if !missing {
-                    return Err(malformed_design(ctx, format_args!(
-                        "sketch ExternalGeo Geometry record {} reference {cache_reference} has no matching ExternalGeometry link",
-                        external_index + 3
-                    )));
-                }
-            }
-            if let Some(reference_index) = reference_index {
-                ctx.insert_btree_set(
-                    &mut matched_references,
-                    reference_index,
-                    "fcstd sketch matched references",
+        match sketch_cache::project(
+            ctx,
+            object,
+            &id,
+            external_geometry,
+            property(properties, "ExternalGeometry"),
+        ) {
+            Ok(cache) => {
+                ctx.reserve_vec(
+                    &mut entities,
+                    cache.entities.len(),
+                    "fcstd cached sketch entities",
                 )?;
+                entities.extend(cache.entities);
+                matched_references = cache.matched_references;
+                ctx.reserve_vec(losses, cache.losses.len(), "fcstd design losses")?;
+                losses.extend(cache.losses);
             }
-            let carrier = sketch_carrier(node);
-            if let (Some(kind), Some(carrier)) = (node.attribute("type"), carrier.as_ref()) {
-                validate_sketch_carrier(ctx, kind, carrier, external_index + 3)?;
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+            Err(error) => {
+                ctx.reserve_vec(losses, 1, "fcstd design losses")?;
+                losses.push(crate::loss::FreecadLossCode::SketchExternalCacheUnresolved.note(
+                    ctx.format_retained(format_args!("sketch {} external geometry cache was not projected: {error}; live geometry and links retained", object.name()), "fcstd design loss text")?));
             }
-            let native_kind = node
-                .attribute("type")
-                .or_else(|| carrier.map(|child| child.tag_name().name()))
-                .unwrap_or("unknown");
-            let native_kind =
-                ctx.copy_retained_text(native_kind, "fcstd external sketch geometry kind")?;
-            let attributes = sketch_attributes(ctx, carrier)?;
-            let geometry = match carrier
-                .map(|carrier| sketch_nurbs(ctx, &native_kind, carrier))
-                .transpose()?
-                .flatten()
-            {
-                Some(nurbs) => nurbs,
-                None => sketch_geometry(ctx, &native_kind, &attributes)?,
-            };
-            ctx.reserve_vec(&mut entities, 1, "fcstd sketch entities")?;
-            entities.push(
-                SketchEntity::new(
-                    SketchEntityId::mint(design_identity_text(
-                        ctx,
-                        "sketch-entity",
-                        object,
-                        format_args!(":external:{external_index}"),
-                        "fcstd sketch external geometry identity",
-                    )?)
-                    .map_err(CodecError::malformed)?,
-                    id.try_clone_for_decode(ctx, "fcstd sketch entity parent")?,
-                    geometry,
-                )
-                .with_construction(true)
-                .with_native_ref(Some(ctx.copy_retained_text(
-                    &external_geometry.id,
-                    "fcstd external geometry native reference",
-                )?))
-                .with_geometry_ref(
-                    references
-                        .map(|property| {
-                            ctx.copy_retained_text(
-                                &property.id,
-                                "fcstd external geometry reference property",
-                            )
-                        })
-                        .transpose()?,
-                )
-                .with_endpoint_refs(
-                    reference_index
-                        .and_then(|index| {
-                            references.and_then(|property| property.links().get(index))
-                        })
-                        .and_then(Option::as_ref)
-                        .map(|reference| {
-                            ctx.copy_retained_strings(
-                                reference.subelements(),
-                                "fcstd sketch external endpoint refs",
-                            )
-                        })
-                        .transpose()?
-                        .unwrap_or_default(),
-                ),
-            );
         }
     }
     if let Some(references) = property(properties, "ExternalGeometry") {

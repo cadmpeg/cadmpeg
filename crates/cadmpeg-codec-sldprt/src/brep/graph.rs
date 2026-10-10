@@ -2175,6 +2175,7 @@ fn decode_graph(
                         admit_brep_entity(ctx)?;
                         ctx.reserve_vec(&mut out.curves, 1, "collect unknown Parasolid curves")?;
                         out.curves.push(Curve {
+                            parameter_range: None,
                             id: id_curve(curve_attr),
                             source_object: None,
                             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
@@ -3239,21 +3240,14 @@ fn decode_graph(
         "index retained Parasolid entities",
     )?;
     let mut keep = |id: &str| {
-        let work = retained_ids
-            .len()
-            .checked_add(1)
-            .and_then(|count| {
-                id.len()
-                    .checked_add(1)
-                    .and_then(|bytes| count.checked_mul(bytes))
-            })
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "Parasolid annotation identity lookup",
-                    u64::MAX - 1,
-                    u64::MAX,
-                )
-            })?;
+        // Hash the queried identity; the index does not scan retained entities.
+        let work = id.len().checked_add(1).ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "Parasolid annotation identity lookup",
+                u64::MAX - 1,
+                u64::MAX,
+            )
+        })?;
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(work),
             "Parasolid annotation identity lookup",
@@ -7135,6 +7129,7 @@ fn synthesize_cylinder_seams(
         admit_brep_entity(ctx)?;
         ctx.reserve_vec(&mut out.curves, 1, "collect Parasolid cylinder seam curves")?;
         out.curves.push(Curve {
+            parameter_range: None,
             id: curve_id.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
             source_object: None,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -7395,6 +7390,7 @@ fn synthesize_sphere_seams(
             "collect repaired Parasolid sphere seam curves",
         )?;
         out.curves.push(Curve {
+            parameter_range: None,
             id: curve_id.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
             source_object: None,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate)),
@@ -7656,6 +7652,7 @@ fn synthesize_sphere_seams(
         admit_brep_entity(ctx)?;
         ctx.reserve_vec(&mut out.curves, 1, "collect Parasolid sphere seam curves")?;
         out.curves.push(Curve {
+            parameter_range: None,
             id: curve_id.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
             source_object: None,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate)),
@@ -7740,6 +7737,7 @@ fn emit_curve(
     admit_brep_entity(ctx)?;
     ctx.reserve_vec(&mut out.curves, 1, "collect Parasolid curves")?;
     out.curves.push(Curve {
+        parameter_range: None,
         id: id_curve(carrier.attr),
         source_object: None,
         geometry: carrier
@@ -9012,6 +9010,7 @@ mod tests {
         let spine = CurveId::mint("test:model:entity#spine").expect("identity grammar");
         let mut brep = super::Brep {
             curves: vec![Curve {
+                parameter_range: None,
                 id: spine.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                     cadmpeg_ir::geometry::analytic::LineCurve::try_new(
@@ -9598,6 +9597,7 @@ mod tests {
                 source_object: None,
             }],
             curves: vec![Curve {
+                parameter_range: None,
                 id: curve_id.clone(),
                 geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                     test_nurbs_curve(

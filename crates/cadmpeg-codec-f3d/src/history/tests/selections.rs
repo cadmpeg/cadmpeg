@@ -1042,7 +1042,7 @@ fn snapshot_ordinals_bind_the_sorted_revision_interval() {
                     name: "edge".into(),
                     entity_references: Vec::new(),
                 },
-                raw_bytes: vec![0x11],
+                raw_bytes: vec![0x11].into(),
             })
             .collect(),
         entity_versions: Vec::new(),
@@ -1108,7 +1108,7 @@ fn insert_only_history_uses_the_active_record_table_as_revisions() {
                     name: "End-of-ASM-History-Section".into(),
                     entity_references: Vec::new(),
                 },
-                raw_bytes: vec![0x11],
+                raw_bytes: vec![0x11].into(),
             }],
             entity_versions: Vec::new(),
             topology_cache: crate::history_records::AsmTopologyCache::Absent,
@@ -1180,7 +1180,7 @@ fn insert_only_history_rejects_gaps_and_updates() {
                 name: "End-of-ASM-History-Section".into(),
                 entity_references: Vec::new(),
             },
-            raw_bytes: vec![0x11],
+            raw_bytes: vec![0x11].into(),
         }],
         entity_versions: Vec::new(),
         topology_cache: crate::history_records::AsmTopologyCache::Absent,
@@ -1267,7 +1267,7 @@ fn materialized_record_table_normalizes_revision_references() {
                 name: "edge".into(),
                 entity_references: vec![2],
             },
-            raw_bytes: archived_bytes.clone(),
+            raw_bytes: archived_bytes.clone().into(),
         }],
         entity_versions: vec![
             AsmEntityVersion {
@@ -1374,7 +1374,7 @@ fn qualified_history_marker_remains_an_archived_record() {
                 name: "End-of-ASM-History-Section".into(),
                 entity_references: vec![2],
             },
-            raw_bytes: archived_bytes.clone(),
+            raw_bytes: archived_bytes.clone().into(),
         }],
         entity_versions: vec![
             AsmEntityVersion {
@@ -1485,7 +1485,7 @@ fn reverse_history_builds_complete_entity_version_maps() {
                 name: "edge".into(),
                 entity_references: Vec::new(),
             },
-            raw_bytes: vec![0x11],
+            raw_bytes: vec![0x11].into(),
         })
         .into();
 
@@ -1692,7 +1692,7 @@ fn grouped_face_reference_selects_one_changed_topology_face() {
         "next_byte_offset": 160
     }))
     .expect("grouped face operand");
-    operand.recipe_prefix_bytes = prefix;
+    *operand.recipe_prefix_bytes = prefix;
     operand.recipe_references = crate::test_support::with_decode_context(|ctx| {
         crate::design::decode::dimension_frames::decode_recipe_references_charged(
             ctx,

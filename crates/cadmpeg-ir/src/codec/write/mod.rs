@@ -22,8 +22,11 @@ use crate::source_fidelity::SourceFidelity;
 use cadmpeg_core::target::TargetCatalog;
 use cadmpeg_core::CodecError;
 
+mod coverage;
+mod loss;
 pub mod target;
 
+pub use coverage::{ArenaCoverage, ArenaDisposition, ArenaDispositions};
 use target::{DialectFree, TargetDomain, TargetRequest, TargetResolution};
 
 /// Implementation surface for one output format.
@@ -98,9 +101,11 @@ impl<E: EncoderBackend> Encoder for E {
             bytes,
             census,
             write_path,
-            losses,
+            coverage,
+            mut losses,
             notes,
         } = body;
+        losses.extend(coverage.omission_losses(&input.ir.model, E::FORMAT.as_str()));
         let write_path = write_path.into_report(input.fidelity.is_some());
         let report = match identity {
             None => ExportReport::cadir(census, write_path, losses, notes),
@@ -242,6 +247,9 @@ pub struct ExportBody {
     pub census: EntityCensus,
     /// How the payload was produced.
     pub write_path: WritePath,
+    /// Which model arenas the payload carries. The wrapper charges a loss for
+    /// every non-empty arena this coverage omits.
+    pub coverage: ArenaCoverage,
     /// Losses charged while planning.
     pub losses: Vec<LossNote>,
     /// Free-form notes.
@@ -251,7 +259,7 @@ pub struct ExportBody {
 impl ExportBody {
     /// A synthesized payload counted on IR arenas that consumes no fidelity.
     #[must_use]
-    pub fn synthesized(bytes: Vec<u8>, ir: &CadIr) -> Self {
+    pub fn synthesized(bytes: Vec<u8>, ir: &CadIr, coverage: ArenaCoverage) -> Self {
         Self {
             bytes,
             census: EntityCensus {
@@ -261,6 +269,7 @@ impl ExportBody {
             write_path: WritePath::Synthesized {
                 consumption: Consumption::NotConsumed,
             },
+            coverage,
             losses: Vec::new(),
             notes: Vec::new(),
         }
@@ -309,8 +318,13 @@ impl EncoderBackend for CadirEncoder {
             .into_bytes();
         bytes.push(b'\n');
         // CADIR is the neutral document itself: there is no container to
-        // replay or patch, so this encoder has one path and states it.
-        Ok(ExportBody::synthesized(bytes, input.ir))
+        // replay or patch, so this encoder has one path and states it. The
+        // serialization carries every arena.
+        Ok(ExportBody::synthesized(
+            bytes,
+            input.ir,
+            ArenaCoverage::Complete,
+        ))
     }
 }
 

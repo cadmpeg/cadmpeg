@@ -86,7 +86,7 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         record_index: 0,
         frame_length: 0,
         operands,
-        presentation_bytes: Vec::new(),
+        presentation_bytes: Vec::new().into(),
         presentation_byte_offset: 0,
         paired_class_tag: crate::records::references::DesignClassTag::try_from("281".to_owned())
             .unwrap(),

@@ -555,10 +555,15 @@ mod tests {
                 if limit.dimension == ResourceDimension::WorkUnits
                     && limit.operation == "ZIP end record search"
         ));
-        // Each inventory admits the end search, one end candidate, three
-        // headers, and dependency indexing at sixteen work units per ZIP byte.
+        // Two bounded end searches, directory metadata indexing, one end
+        // candidate, three central headers and three retained declarations.
         // Stored payloads need CRC work; instances scan pages and copy records.
-        let inventory_work = 17 * cadmpeg_core::decode::u64_from_index(zip.len()) + 4;
+        let central_start = cadmpeg_core::decode::View::u32_le_at(&zip, zip.len() - 6)
+            .expect("central directory offset");
+        let metadata_bytes =
+            cadmpeg_core::decode::u64_from_index(zip.len()) - u64::from(central_start);
+        let inventory_work =
+            2 * cadmpeg_core::decode::u64_from_index(zip.len()) + 16 * metadata_bytes + 7;
         let instance_work = cadmpeg_core::decode::u64_from_index(
             instance.len() + instance.len() - STREAM_HEADER_LEN
                 + RECORD_MARKER.len()

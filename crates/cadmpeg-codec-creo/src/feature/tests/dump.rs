@@ -327,7 +327,7 @@ fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
     assert_eq!(definitions[0].id(), "creo:featdefs:feature_definition#40");
     assert_eq!(definitions[0].fields()["definition_id"], 40);
     assert_eq!(
-        definitions[0].fields()["body"].as_array().unwrap().len(),
+        crate::test_support::native_bytes(&definitions[0].fields()["body"]).len(),
         definition_length
     );
     let sketches = &namespace.arenas()["sketches"];
@@ -359,11 +359,11 @@ fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
     assert_eq!(variables[0]["key"], 7);
     assert_eq!(variables[0]["value"], 1.0);
     assert_eq!(
-        variables[0]["value_body"].as_array().expect("value body"),
+        crate::test_support::native_bytes(&variables[0]["value_body"]).as_slice(),
         &[228]
     );
     assert_eq!(
-        variables[0]["guess_body"].as_array().expect("guess body"),
+        crate::test_support::native_bytes(&variables[0]["guess_body"]).as_slice(),
         &[15]
     );
     assert_eq!(variables[0]["guess_dimension_driven"], false);
@@ -374,11 +374,11 @@ fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
     assert_eq!(variables[0]["offset"], variable_offset);
     assert_eq!(variables[1]["value"], 3.0);
     assert_eq!(
-        variables[1]["value_body"].as_array().expect("value body"),
+        crate::test_support::native_bytes(&variables[1]["value_body"]).as_slice(),
         &[70, 8, 0, 0, 0, 0, 0, 0]
     );
     assert_eq!(
-        variables[1]["guess_body"].as_array().expect("guess body"),
+        crate::test_support::native_bytes(&variables[1]["guess_body"]).as_slice(),
         &[15]
     );
     assert_eq!(variables[1]["resolved_value"], 3.0);
@@ -788,17 +788,50 @@ fn decode_retains_bounded_unresolved_dimension_value_tokens() {
     let dimensions = sketch_fields["dimensions"]
         .as_array()
         .expect("native dimensions");
-    assert_eq!(dimensions[1]["unresolved_value_token"][0], 0);
-    assert_eq!(dimensions[1]["unresolved_value_token"][1], 4);
-    assert_eq!(dimensions[1]["unresolved_value_token"][2], 166);
-    assert_eq!(dimensions[1]["value_body"][0], 0);
-    assert_eq!(dimensions[1]["value_body"][1], 4);
-    assert_eq!(dimensions[1]["value_body"][2], 166);
-    assert_eq!(dimensions[1]["auxiliary_body"][0], 24);
-    assert_eq!(dimensions[2]["unresolved_value_token"][0], 1);
-    assert_eq!(dimensions[2]["unresolved_value_token"][1], 4);
-    assert_eq!(dimensions[2]["unresolved_value_token"][2], 254);
-    assert_eq!(dimensions[2]["unresolved_value_token"][3], 242);
+    assert_eq!(
+        crate::test_support::native_bytes(&dimensions[1]["unresolved_value_token"])[0],
+        0
+    );
+    assert_eq!(
+        crate::test_support::native_bytes(&dimensions[1]["unresolved_value_token"])[1],
+        4
+    );
+    assert_eq!(
+        crate::test_support::native_bytes(&dimensions[1]["unresolved_value_token"])[2],
+        166
+    );
+    assert_eq!(
+        crate::test_support::native_bytes(&dimensions[1]["value_body"])[0],
+        0
+    );
+    assert_eq!(
+        crate::test_support::native_bytes(&dimensions[1]["value_body"])[1],
+        4
+    );
+    assert_eq!(
+        crate::test_support::native_bytes(&dimensions[1]["value_body"])[2],
+        166
+    );
+    assert_eq!(
+        crate::test_support::native_bytes(&dimensions[1]["auxiliary_body"])[0],
+        24
+    );
+    assert_eq!(
+        crate::test_support::native_bytes(&dimensions[2]["unresolved_value_token"])[0],
+        1
+    );
+    assert_eq!(
+        crate::test_support::native_bytes(&dimensions[2]["unresolved_value_token"])[1],
+        4
+    );
+    assert_eq!(
+        crate::test_support::native_bytes(&dimensions[2]["unresolved_value_token"])[2],
+        254
+    );
+    assert_eq!(
+        crate::test_support::native_bytes(&dimensions[2]["unresolved_value_token"])[3],
+        242
+    );
     let coverage = result.report();
     assert_eq!(
         wire::coverage_count(
@@ -1097,9 +1130,12 @@ fn decode_promotes_unnamed_depdb_recipe_into_feature_history() {
     let rows = &result.ir().native.namespace("creo").unwrap().arenas()["depdb_recipe_rows"];
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].fields()["owner_feature_id"], 8053);
-    assert_eq!(rows[0].fields()["header"][0], 0);
     assert_eq!(
-        rows[0].fields()["body"].as_array().map(Vec::len),
+        crate::test_support::native_bytes(&rows[0].fields()["header"])[0],
+        0
+    );
+    assert_eq!(
+        Some(crate::test_support::native_bytes(&rows[0].fields()["body"]).len()),
         Some(scan.features.depdb_recipe_rows[0].body.len())
     );
     assert_eq!(feature.name, None);

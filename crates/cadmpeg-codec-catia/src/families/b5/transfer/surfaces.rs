@@ -852,6 +852,7 @@ pub(super) fn emit_surfaces(
                 )?;
                 admission.reserve_entity(&mut ir.model.curves, "catia_b5_emit_curves")?;
                 ir.model.curves.push(Curve {
+                    parameter_range: None,
                     id: directrix_id.try_clone_for_decode(
                         admission.context(),
                         "catia_b5_profile_curve_record_id",
@@ -1039,6 +1040,7 @@ fn emit_extrusion_procedure(
             )?;
             admission.reserve_entity(&mut ir.model.curves, "catia_b5_emit_curves")?;
             ir.model.curves.push(Curve {
+                parameter_range: None,
                 id: directrix_id.try_clone_for_decode(
                     admission.context(),
                     "catia_b5_extrusion_directrix_record_id",
@@ -1100,6 +1102,7 @@ fn emit_extrusion_procedure(
             )?;
             admission.reserve_entity(&mut ir.model.curves, "catia_b5_emit_curves")?;
             ir.model.curves.push(Curve {
+                parameter_range: None,
                 id: directrix_id.try_clone_for_decode(
                     admission.context(),
                     "catia_b5_extrusion_directrix_record_id",
@@ -1137,6 +1140,7 @@ fn emit_extrusion_procedure(
             )?;
             admission.reserve_entity(&mut ir.model.curves, "catia_b5_emit_curves")?;
             ir.model.curves.push(Curve {
+                parameter_range: None,
                 id: source_id.try_clone_for_decode(
                     admission.context(),
                     "catia_b5_extrusion_source_record_id",
@@ -1154,6 +1158,7 @@ fn emit_extrusion_procedure(
             )?;
             admission.reserve_entity(&mut ir.model.curves, "catia_b5_emit_curves")?;
             ir.model.curves.push(Curve {
+                parameter_range: None,
                 id: directrix_id.try_clone_for_decode(
                     admission.context(),
                     "catia_b5_extrusion_directrix_record_id",

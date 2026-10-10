@@ -19,18 +19,7 @@ pub(crate) fn patch_partition(
     retained_records: &[SourceRecord<'_>],
     scale: f64,
 ) -> Result<Option<(String, Vec<u8>)>, CodecError> {
-    let requires_native_carrier_patch = ir.model.surfaces.iter().any(|surface| {
-        matches!(
-            surface.geometry,
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
-        )
-    }) || ir.model.curves.iter().any(|curve| {
-        matches!(
-            curve.geometry,
-            CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
-        )
-    });
-    if !requires_native_carrier_patch {
+    if !crate::writer::requires_native_partition(ir) {
         return Ok(None);
     }
     let Some(source) = retained_records
@@ -119,6 +108,21 @@ pub(crate) fn patch_partition(
         &bodies,
         &cadmpeg_ir::stream_name!("native-patch-baseline"),
     )?;
+    let colors = crate::writer::face_colors(ir)?;
+    if native
+        .faces
+        .iter()
+        .any(|face| colors.get(&face.id).copied() != face.color)
+    {
+        return Err(CodecError::NotImplemented(
+            "SLDPRT native partition patch cannot write changed face colours".into(),
+        ));
+    }
+    if !same_pcurves(ir, &native) {
+        return Err(CodecError::NotImplemented(
+            "SLDPRT native partition patch cannot write changed pcurve geometry or metadata".into(),
+        ));
+    }
     if !same_graph(ir, &native) {
         return Ok(None);
     }
@@ -244,12 +248,30 @@ fn site_key(block: &crate::container::Block) -> String {
     key.trim_end_matches(['-', '/', '_']).to_string()
 }
 
-fn same_graph(ir: &CadIr, native: &crate::brep::graph::Brep) -> bool {
-    ir.model
-        .bodies
+fn same_pcurves(ir: &CadIr, native: &crate::brep::graph::Brep) -> bool {
+    let current = ir
+        .model
+        .pcurves
         .iter()
-        .map(|v| (&v.id, v.kind, &v.regions))
-        .eq(native.bodies.iter().map(|v| (&v.id, v.kind, &v.regions)))
+        .map(|pcurve| (&pcurve.id, pcurve))
+        .collect::<HashMap<_, _>>();
+    current.len() == ir.model.pcurves.len()
+        && current.len() == native.pcurves.len()
+        && native.pcurves.iter().all(|pcurve| {
+            current
+                .get(&pcurve.id)
+                .is_some_and(|current| *current == pcurve)
+        })
+}
+
+fn same_graph(ir: &CadIr, native: &crate::brep::graph::Brep) -> bool {
+    same_pcurves(ir, native)
+        && ir
+            .model
+            .bodies
+            .iter()
+            .map(|v| (&v.id, v.kind, &v.regions))
+            .eq(native.bodies.iter().map(|v| (&v.id, v.kind, &v.regions)))
         && ir
             .model
             .regions
@@ -260,17 +282,33 @@ fn same_graph(ir: &CadIr, native: &crate::brep::graph::Brep) -> bool {
             .model
             .shells
             .iter()
-            .map(|v| (&v.id, &v.region, v.faces()))
-            .eq(native.shells.iter().map(|v| (&v.id, &v.region, v.faces())))
+            .map(|v| {
+                (
+                    &v.id,
+                    &v.region,
+                    v.faces(),
+                    v.wire_edges(),
+                    v.free_vertices(),
+                )
+            })
+            .eq(native.shells.iter().map(|v| {
+                (
+                    &v.id,
+                    &v.region,
+                    v.faces(),
+                    v.wire_edges(),
+                    v.free_vertices(),
+                )
+            }))
         && ir
             .model
             .faces
             .iter()
-            .map(|v| (&v.id, &v.shell, &v.surface, v.sense, &v.loops))
+            .map(|v| (&v.id, &v.shell, &v.surface, v.sense, &v.loops, v.color))
             .eq(native
                 .faces
                 .iter()
-                .map(|v| (&v.id, &v.shell, &v.surface, v.sense, &v.loops)))
+                .map(|v| (&v.id, &v.shell, &v.surface, v.sense, &v.loops, v.color)))
         && ir
             .model
             .loops

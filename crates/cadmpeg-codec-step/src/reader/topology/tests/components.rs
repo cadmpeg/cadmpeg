@@ -138,3 +138,39 @@ fn connected_face_coedge_map_refuses_collection_limit() {
                 && limit.operation == "STEP connected-face coedge edges"
     ));
 }
+
+#[test]
+fn shared_vertex_components_use_spanning_links_and_preserve_partitions() {
+    let count = 100;
+    let faces = (0..count)
+        .map(|id| FaceId::try_from(format!("step:data:face#{id}")).expect("face id"))
+        .collect::<Vec<_>>();
+    for groups in [1, 10, 100] {
+        let loops = faces
+            .iter()
+            .enumerate()
+            .map(|(index, face)| Loop {
+                id: LoopId::try_from(format!("step:data:loop#{index}")).expect("loop id"),
+                face: face.clone(),
+                boundary: LoopBoundary::Vertex {
+                    vertex: VertexId::try_from(format!("step:data:vertex#{}", index % groups))
+                        .expect("vertex id"),
+                    pcurves: Vec::new(),
+                },
+            })
+            .collect::<Vec<_>>();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // Face scratch, indexes, group memberships, spanning links, and DFS
+        // outputs total eight entries per face for these disjoint groups.
+        policy.limits.max_collection_items = cadmpeg_core::decode::u64_from_index(count) * 8;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("context");
+        let actual =
+            super::super::connected_face_components(&faces, &loops, &[], &BTreeMap::new(), &ctx)
+                .expect("component storage grows with membership, not group pairs");
+        let expected = (0..groups)
+            .map(|group| (group..count).step_by(groups).collect::<Vec<_>>())
+            .collect::<Vec<_>>();
+        assert_eq!(actual, expected);
+    }
+}

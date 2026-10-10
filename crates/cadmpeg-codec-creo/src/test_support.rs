@@ -537,3 +537,10 @@ pub(crate) fn empty_container_scan() -> crate::container::ContainerScan<'static>
     scan.framing.data = Vec::new().into();
     scan
 }
+
+/// Decodes native payload strings for exact byte assertions.
+pub(crate) fn native_bytes(value: &serde_json::Value) -> Vec<u8> {
+    serde_json::from_value::<cadmpeg_ir::native::bytes::NativeBytes>(value.clone())
+        .expect("native hexadecimal byte string")
+        .into_inner()
+}

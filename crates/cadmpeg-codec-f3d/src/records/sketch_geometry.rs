@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Sketch text, points, curves, surfaces and NURBS poles.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use super::admission::RecordAdmission;
 use super::references::DesignClassTag;
 use super::serde_column::SliceColumn;
@@ -77,8 +79,7 @@ pub(crate) struct SketchText {
     /// and parameter references.
     pub(crate) layout: SketchTextLayout,
     /// Complete source record bytes for native replay and rewrite.
-    #[serde(with = "cadmpeg_ir::bytes")]
-    pub(crate) raw_bytes: Vec<u8>,
+    pub(crate) raw_bytes: NativeBytes<Vec<u8>>,
 }
 
 #[cfg(test)]
@@ -106,7 +107,7 @@ impl Clone for SketchText {
             height: self.height,
             color: self.color,
             layout: self.layout.clone(),
-            raw_bytes: self.raw_bytes.clone(),
+            raw_bytes: (self.raw_bytes.clone()),
         }
     }
 }
@@ -146,8 +147,7 @@ impl Serialize for SketchText {
             first_reference: Option<u32>,
             #[serde(skip_serializing_if = "Option::is_none")]
             second_reference: Option<u32>,
-            #[serde(serialize_with = "cadmpeg_ir::bytes::serialize")]
-            raw_bytes: &'a [u8],
+            raw_bytes: NativeBytes<&'a [u8]>,
         }
         let placement = self.placement();
         let alignment = self.alignment();
@@ -183,7 +183,7 @@ impl Serialize for SketchText {
                     second_reference, ..
                 } => second_reference,
             },
-            raw_bytes: &self.raw_bytes,
+            raw_bytes: (&self.raw_bytes).into(),
         }
         .serialize(serializer)
     }
@@ -307,8 +307,7 @@ struct SketchTextSerde {
         deserialize_with = "deserialize_second_reference"
     )]
     second_reference: Option<u32>,
-    #[serde(with = "cadmpeg_ir::bytes")]
-    raw_bytes: Vec<u8>,
+    raw_bytes: NativeBytes<Vec<u8>>,
 }
 
 impl TryFrom<SketchTextSerde> for SketchText {
@@ -377,7 +376,7 @@ impl TryFrom<SketchTextSerde> for SketchText {
                 .ok_or("sketch text height must be positive and finite")?,
             color: wire.color,
             layout,
-            raw_bytes: wire.raw_bytes,
+            raw_bytes: (wire.raw_bytes),
         })
     }
 }
@@ -424,7 +423,7 @@ impl From<SketchText> for SketchTextSerde {
             vertical_alignment: alignment.map(|value| value.vertical),
             first_reference,
             second_reference,
-            raw_bytes: text.raw_bytes,
+            raw_bytes: (text.raw_bytes),
         }
     }
 }
@@ -914,8 +913,8 @@ struct SketchPointCompanionWire {
 }
 
 // Serde requires `skip_serializing_if` predicates to borrow the field.
-fn sketch_point_flags_are_zero(flags: &[u8]) -> bool {
-    flags.iter().all(|flag| *flag == 0)
+fn sketch_point_flags_are_zero<T: AsRef<[u8]>>(flags: &T) -> bool {
+    flags.as_ref().iter().all(|flag| *flag == 0)
 }
 
 /// One point in a Fusion sketch coordinate system.
@@ -990,7 +989,7 @@ impl Serialize for SketchPoint {
             persistent_id: Option<u64>,
             paired_reference: u32,
             #[serde(skip_serializing_if = "sketch_point_flags_are_zero")]
-            flags: [u8; 8],
+            flags: NativeBytes<[u8; 8]>,
             coordinates: Point2,
             depth: f64,
             #[serde(skip_serializing_if = "Option::is_none")]
@@ -1032,7 +1031,7 @@ impl Serialize for SketchPoint {
             record_form,
             persistent_id: self.persistent_id(),
             paired_reference: self.paired_reference,
-            flags: self.flags(),
+            flags: (self.flags()).into(),
             coordinates: self.coordinates.get(),
             depth: self.depth(),
             closure: self.closure().map(SketchPointClosureSerde::from),
@@ -1231,7 +1230,7 @@ pub(super) struct SketchPointSerde {
     persistent_id: Option<u64>,
     paired_reference: u32,
     #[serde(default, skip_serializing_if = "sketch_point_flags_are_zero")]
-    flags: [u8; 8],
+    flags: NativeBytes<[u8; 8]>,
     coordinates: Point2,
     #[serde(default)]
     pub(super) depth: f64,
@@ -1432,7 +1431,7 @@ impl From<SketchPoint> for SketchPointSerde {
             record_form,
             persistent_id,
             paired_reference: point.paired_reference,
-            flags,
+            flags: (flags).into(),
             coordinates: point.coordinates.get(),
             depth,
             closure,
@@ -2650,7 +2649,7 @@ mod tests {
             "class_tag": "000", "class_version": 4, "byte_offset": 0,
             "text": "text", "font_family": "Arial", "font_weight": 400,
             "height": 10.0, "color": {"r": 0.0, "g": 0.0, "b": 0.0, "a": 1.0},
-            "raw_bytes": "AQID"
+            "raw_bytes": "010203"
         });
         if extended {
             wire["width_factor"] = json!(1.0);

@@ -224,6 +224,7 @@ fn append_oriented_wire_curve(
     )?;
     admission.reserve_entity(&mut ir.model.curves, "catia_zero_wire_curves")?;
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: curve_id,
         geometry,
         source_object: None,
@@ -1214,6 +1215,7 @@ pub(in crate::families) fn try_decode_zero_entity(
                     return Some(Err(error));
                 }
                 ir.model.curves.push(Curve {
+                    parameter_range: None,
                     id: admitted!(curve_id.try_clone_for_decode(ctx, "catia_zero_support_curve_record_id")),
                     geometry,
                     source_object: None,
@@ -1315,6 +1317,7 @@ pub(in crate::families) fn try_decode_zero_entity(
                 return Some(Err(error));
             }
             ir.model.curves.push(Curve {
+                parameter_range: None,
                 id: admitted!(curve_id.try_clone_for_decode(ctx, "catia_zero_parametric_curve_record_id")),
                 geometry: CurveGeometry::Procedural {
                     construction: admitted!(construction_id.try_clone_for_decode(ctx, "catia_zero_parametric_curve_construction_id")),
@@ -1650,6 +1653,7 @@ mod tests {
         let corner = Point3::new(1.0, 0.0, 0.0);
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: CurveId::mint("catia:test:nurbs#0".to_string()).expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
@@ -1666,6 +1670,7 @@ mod tests {
             source_object: None,
         });
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: CurveId::mint("catia:test:line#1".to_string()).expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(
@@ -1768,6 +1773,7 @@ mod tests {
         .enumerate()
         {
             ir.model.curves.push(Curve {
+                parameter_range: None,
                 id: CurveId::mint(format!("catia:test:curve#{index}")).expect("identity grammar"),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                     cadmpeg_ir::geometry::analytic::LineCurve::try_new(origin, direction)
@@ -1955,6 +1961,7 @@ mod tests {
         let chord = first.distance(corner);
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: CurveId::mint("catia:test:circle#0".to_string()).expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
@@ -1968,6 +1975,7 @@ mod tests {
             source_object: None,
         });
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: CurveId::mint("catia:test:line#1".to_string()).expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(
@@ -2100,6 +2108,7 @@ mod tests {
         );
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve_id.clone(),
             geometry: CurveGeometry::Procedural {
                 construction: construction_id.clone(),

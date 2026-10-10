@@ -9,6 +9,7 @@ use std::borrow::Cow;
 use std::fmt;
 use std::path::Path;
 
+use cadmpeg_core::decode::{ResourceDimension, ResourceFailure, ResourceLimit};
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::target::TargetRefusal;
 use cadmpeg_ir::codec::DecodeFailure;
@@ -20,8 +21,6 @@ use serde::Serialize;
 /// operationally.
 #[derive(Debug)]
 pub(crate) enum ApplicationError {
-    /// Original decode resource refusal, including detection and input acquisition.
-    Resource(cadmpeg_core::CodecError),
     /// A modeled conversion policy or capability refusal.
     Refusal(Box<ConversionRefusal>),
     /// Filesystem, I/O, malformed implementation, or artifact failure.
@@ -34,8 +33,19 @@ impl ApplicationError {
     pub(crate) fn refusal(&self) -> Option<&ConversionRefusal> {
         match self {
             Self::Refusal(refusal) => Some(refusal.as_ref()),
-            Self::Operational(_) | Self::Resource(_) => None,
+            Self::Operational(_) => None,
         }
+    }
+
+    /// Preserve resource evidence while assigning the stage that requested it.
+    #[must_use]
+    pub(crate) fn at_stage(mut self, stage: RefusalStage) -> Self {
+        if let Self::Refusal(ref mut refusal) = self {
+            if let ConversionRefusal::ResourceLimit { stage: current, .. } = refusal.as_mut() {
+                *current = stage;
+            }
+        }
+        self
     }
 
     /// Process exit status for this application result.
@@ -53,6 +63,11 @@ impl From<ConversionRefusal> for ApplicationError {
 
 impl From<anyhow::Error> for ApplicationError {
     fn from(error: anyhow::Error) -> Self {
+        if let Some(cadmpeg_core::CodecError::ResourceLimit(limit)) =
+            error.downcast_ref::<cadmpeg_core::CodecError>()
+        {
+            return cadmpeg_core::CodecError::ResourceLimit(*limit).into();
+        }
         Self::Operational(error)
     }
 }
@@ -78,9 +93,11 @@ impl From<serde_json::Error> for ApplicationError {
 impl From<cadmpeg_core::CodecError> for ApplicationError {
     fn from(error: cadmpeg_core::CodecError) -> Self {
         match error {
-            cadmpeg_core::CodecError::ResourceLimit(limit) => {
-                Self::Resource(cadmpeg_core::CodecError::ResourceLimit(limit))
+            cadmpeg_core::CodecError::ResourceLimit(limit) => ConversionRefusal::ResourceLimit {
+                limit,
+                stage: RefusalStage::Decode,
             }
+            .into(),
             error => Self::Operational(error.into()),
         }
     }
@@ -90,7 +107,6 @@ impl fmt::Display for ApplicationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Refusal(refusal) => fmt::Display::fmt(refusal.as_ref(), f),
-            Self::Resource(limit) => fmt::Display::fmt(limit, f),
             Self::Operational(error) if f.alternate() => write!(f, "{error:#}"),
             Self::Operational(error) => fmt::Display::fmt(error, f),
         }
@@ -112,23 +128,44 @@ impl ApplicationError {
         failure: DecodeFailure,
     ) -> Self {
         match failure {
-            DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
-                Self::Resource(cadmpeg_core::CodecError::ResourceLimit(limit))
-            }
-            DecodeFailure::Codec(cadmpeg_core::CodecError::Io(error)) => Self::Operational(
-                anyhow::Error::new(DecodeFailure::Codec(cadmpeg_core::CodecError::Io(error)))
-                    .context(format!("decoding {} as {format_id}", path.display())),
-            ),
-            DecodeFailure::Codec(cadmpeg_core::CodecError::UnsupportedDialect {
-                dialects,
-                message,
-            }) => ConversionRefusal::unsupported_dialect(dialects, message).into(),
             DecodeFailure::StrictRejected { rejection } => {
                 ConversionRefusal::StrictDecodeRejected { rejection }.into()
+            }
+            DecodeFailure::Codec(error) => {
+                Self::from_codec_failure(path, format_id, "decoding", error)
             }
             failure => ConversionRefusal::DecodeFailed {
                 message: format!(
                     "decode failed: decoding {} as {format_id}: {failure}",
+                    path.display()
+                ),
+            }
+            .into(),
+        }
+    }
+
+    /// Classifies a codec failure while retaining the operation's input context.
+    #[must_use]
+    pub(crate) fn from_codec_failure(
+        path: &Path,
+        format_id: cadmpeg_ir::codec::FormatId,
+        operation: &'static str,
+        error: cadmpeg_core::CodecError,
+    ) -> Self {
+        match error {
+            cadmpeg_core::CodecError::ResourceLimit(limit) => {
+                cadmpeg_core::CodecError::ResourceLimit(limit).into()
+            }
+            cadmpeg_core::CodecError::Io(error) => Self::Operational(
+                anyhow::Error::new(cadmpeg_core::CodecError::Io(error))
+                    .context(format!("{operation} {} as {format_id}", path.display())),
+            ),
+            cadmpeg_core::CodecError::UnsupportedDialect { dialects, message } => {
+                ConversionRefusal::unsupported_dialect(dialects, message).into()
+            }
+            error => ConversionRefusal::DecodeFailed {
+                message: format!(
+                    "decode failed: {operation} {} as {format_id}: {error}",
                     path.display()
                 ),
             }
@@ -140,6 +177,8 @@ impl ApplicationError {
 /// Stable refusal code written into command reports and used by tests.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RefusalCode {
+    /// A resource policy or allocator refused an operation.
+    ResourceLimit,
     /// Native input decoding failed with a classified codec error.
     DecodeFailed,
     /// The input was identified but its dialect has no decode grammar.
@@ -165,29 +204,26 @@ pub(crate) enum RefusalCode {
 impl RefusalCode {
     /// Stable workflow metadata shared by every refusal carrying this code.
     const fn disposition(self) -> RefusalDisposition {
-        let (stage, may_write_report, exit_code) = match self {
-            Self::DecodeFailed => (RefusalStage::Decode, true, 2),
+        let (stage, exit_code) = match self {
+            Self::ResourceLimit | Self::DecodeFailed => (RefusalStage::Decode, 2),
             Self::UnsupportedDialect | Self::StrictDecodeRejected | Self::DecodeLossRejected => {
-                (RefusalStage::Decode, true, 1)
+                (RefusalStage::Decode, 1)
             }
-            Self::CheckFailed => (RefusalStage::Check, true, 1),
-            Self::ExportLossRejected => (RefusalStage::Export, true, 1),
+            Self::CheckFailed => (RefusalStage::Check, 1),
+            Self::ExportLossRejected => (RefusalStage::Export, 1),
             Self::EmptyGeometry | Self::UnsupportedTarget | Self::UnsupportedOutputFormat => {
-                (RefusalStage::Plan, true, 1)
+                (RefusalStage::Plan, 1)
             }
-            Self::BinaryStdoutRejected => (RefusalStage::Plan, false, 2),
+            Self::BinaryStdoutRejected => (RefusalStage::Plan, 2),
         };
-        RefusalDisposition {
-            stage,
-            may_write_report,
-            exit_code,
-        }
+        RefusalDisposition { stage, exit_code }
     }
 }
 
 impl fmt::Display for RefusalCode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
+            Self::ResourceLimit => "resource_limit",
             Self::DecodeFailed => "decode_failed",
             Self::UnsupportedDialect => "unsupported_dialect",
             Self::StrictDecodeRejected => "strict_decode_rejected",
@@ -210,14 +246,14 @@ impl Serialize for RefusalCode {
 
 /// Workflow stage that produced the refusal (`refusal.stage` on the wire).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum RefusalStage {
+pub(crate) enum RefusalStage {
     /// Input resolved but conversion planning rejected the request.
     Plan,
-    /// Decode completed with losses that the policy rejects.
+    /// Input acquisition or decode refused.
     Decode,
-    /// The check found errors and `--allow-errors` was not set.
+    /// Validation refused.
     Check,
-    /// Export planning refused (loss policy or empty geometry).
+    /// Export loss policy or artifact emission refused.
     Export,
 }
 
@@ -253,6 +289,13 @@ pub(crate) enum CheckOperation {
 /// projected once by [`ConversionRefusal::evidence`].
 #[derive(Debug)]
 pub(crate) enum ConversionRefusal {
+    /// An operation exhausted a policy budget or failed to allocate.
+    ResourceLimit {
+        /// Original resource evidence from the operation that refused.
+        limit: ResourceLimit,
+        /// Workflow stage that made the resource request.
+        stage: RefusalStage,
+    },
     /// Native input decoding failed before a document could be produced.
     DecodeFailed {
         /// Human-readable message.
@@ -353,10 +396,51 @@ pub(crate) struct RefusalEvidence<'a> {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
 enum RefusalDetail<'a> {
+    /// The resource request and the budget that refused it.
+    Resource(ResourceReport),
     /// Every format layer identified before the codec refused.
     Dialects(&'a DialectLayers),
     /// The encoder's typed target refusal and catalog.
     Target(&'a TargetRefusal),
+}
+
+/// Resource evidence carried by a command refusal.
+#[derive(Debug, Serialize)]
+struct ResourceReport {
+    dimension: &'static str,
+    reason: &'static str,
+    limit: u64,
+    used: u64,
+    requested: u64,
+    operation: &'static str,
+}
+
+impl From<&ResourceLimit> for ResourceReport {
+    fn from(limit: &ResourceLimit) -> Self {
+        let dimension = match limit.dimension {
+            ResourceDimension::InputBytes => "input_bytes",
+            ResourceDimension::DecompressedBytes => "decompressed_bytes",
+            ResourceDimension::MaterializedBytes => "materialized_bytes",
+            ResourceDimension::RetainedBytes => "retained_bytes",
+            ResourceDimension::Entities => "entities",
+            ResourceDimension::CollectionItems => "collection_items",
+            ResourceDimension::RecursionDepth => "recursion_depth",
+            ResourceDimension::WorkUnits => "work_units",
+            ResourceDimension::Codec(name) => name,
+        };
+        let reason = match limit.reason {
+            ResourceFailure::BudgetExceeded => "budget_exceeded",
+            ResourceFailure::AllocationFailed => "allocation_failed",
+        };
+        Self {
+            dimension,
+            reason,
+            limit: limit.limit,
+            used: limit.used,
+            requested: limit.additional,
+            operation: limit.operation,
+        }
+    }
 }
 
 /// Reports a refusal retains from the stages that completed before it.
@@ -374,7 +458,6 @@ pub(crate) struct RefusalReports<'a> {
 #[derive(Debug, Clone, Copy)]
 struct RefusalDisposition {
     stage: RefusalStage,
-    may_write_report: bool,
     exit_code: u8,
 }
 
@@ -396,6 +479,16 @@ impl ConversionRefusal {
     #[must_use]
     pub(crate) fn evidence(&self) -> RefusalEvidence<'_> {
         match self {
+            Self::ResourceLimit { limit, .. } => RefusalEvidence {
+                code: RefusalCode::ResourceLimit,
+                message: Cow::Owned(format!(
+                    "{} during {}",
+                    cadmpeg_core::CodecError::ResourceLimit(*limit),
+                    limit.operation
+                )),
+                detail: Some(RefusalDetail::Resource(limit.into())),
+                reports: RefusalReports::default(),
+            },
             Self::DecodeFailed { message } => RefusalEvidence {
                 code: RefusalCode::DecodeFailed,
                 message: Cow::Borrowed(message),
@@ -544,27 +637,20 @@ impl ConversionRefusal {
     pub(crate) fn report(&self) -> RefusalReport<'_> {
         let evidence = self.evidence();
         RefusalReport {
-            stage: evidence.code.disposition().stage,
+            stage: match self {
+                Self::ResourceLimit { stage, .. } => *stage,
+                _ => evidence.code.disposition().stage,
+            },
             code: evidence.code,
             message: evidence.message,
             detail: evidence.detail,
         }
     }
 
-    /// Whether an explicitly requested `--report` may still be written.
-    ///
-    /// Every refusal except the binary-stdout guard may write a report. An
-    /// early target refusal writes its typed refusal without decode or check
-    /// reports; later refusals serialize every report they hold.
-    #[must_use]
-    pub(crate) fn may_write_report(&self) -> bool {
-        self.code().disposition().may_write_report
-    }
-
     /// Process exit status for this refusal.
     ///
-    /// Semantic model refusals exit 1. Decode failure and binary-stdout remain
-    /// exit 2 because they are operational failures.
+    /// Semantic model refusals exit 1. Resource, codec, and binary-stdout
+    /// failures exit 2.
     #[must_use]
     fn exit_code(&self) -> u8 {
         self.code().disposition().exit_code
@@ -648,7 +734,6 @@ mod tests {
         assert_eq!(refusal.code(), RefusalCode::UnsupportedTarget);
         assert_eq!(report_value(&refusal)["stage"], "plan");
         assert_eq!(refusal.exit_code(), 1);
-        assert!(refusal.may_write_report());
         assert_eq!(
             refusal.to_string(),
             "iges cannot write iges:9.9: not a target this encoder can synthesize; available targets: iges:5.3-fixed-ascii"
@@ -755,7 +840,6 @@ mod tests {
         assert_eq!(refusal.code(), RefusalCode::BinaryStdoutRejected);
         assert_eq!(report_value(&refusal)["stage"], "plan");
         assert_eq!(refusal.exit_code(), 2);
-        assert!(!refusal.may_write_report());
     }
 
     #[test]
@@ -766,7 +850,6 @@ mod tests {
         assert_eq!(refusal.code(), RefusalCode::DecodeFailed);
         assert_eq!(report_value(&refusal)["stage"], "decode");
         assert_eq!(refusal.exit_code(), 2);
-        assert!(refusal.may_write_report());
         let evidence = refusal.evidence();
         assert!(evidence.reports.decode.is_none());
         assert!(evidence.reports.check.is_none());
@@ -810,5 +893,90 @@ mod tests {
             "plan"
         );
         assert_eq!(refusal.exit_code(), 1);
+    }
+
+    #[test]
+    fn resource_refusals_preserve_each_dimension_reason_and_request() {
+        use cadmpeg_core::decode::{ResourceDimension, ResourceFailure, ResourceLimit};
+        let dimensions = [
+            (ResourceDimension::InputBytes, "input_bytes"),
+            (ResourceDimension::DecompressedBytes, "decompressed_bytes"),
+            (ResourceDimension::MaterializedBytes, "materialized_bytes"),
+            (ResourceDimension::RetainedBytes, "retained_bytes"),
+            (ResourceDimension::Entities, "entities"),
+            (ResourceDimension::CollectionItems, "collection_items"),
+            (ResourceDimension::RecursionDepth, "recursion_depth"),
+            (ResourceDimension::WorkUnits, "work_units"),
+            (
+                ResourceDimension::Codec("synthetic_constraint_work"),
+                "synthetic_constraint_work",
+            ),
+        ];
+        for (dimension, name) in dimensions {
+            for (reason, reason_name) in [
+                (ResourceFailure::BudgetExceeded, "budget_exceeded"),
+                (ResourceFailure::AllocationFailed, "allocation_failed"),
+            ] {
+                let limit = ResourceLimit {
+                    dimension,
+                    reason,
+                    limit: u64::MAX,
+                    used: u64::MAX - 1,
+                    additional: 2,
+                    operation: "synthetic resource request",
+                };
+                let error = classify(DecodeFailure::Codec(
+                    cadmpeg_core::CodecError::ResourceLimit(limit),
+                ));
+                let refusal = error.refusal().expect("resources are reportable refusals");
+                assert_eq!(error.exit_code(), 2);
+                assert_eq!(refusal.code(), RefusalCode::ResourceLimit);
+                let report = report_value(refusal);
+                assert_eq!(report["stage"], "decode");
+                assert_eq!(
+                    report["resource"],
+                    serde_json::json!({
+                        "dimension": name, "reason": reason_name, "limit": u64::MAX,
+                        "used": u64::MAX - 1, "requested": 2, "operation": limit.operation,
+                    })
+                );
+                assert!(error
+                    .to_string()
+                    .contains("during synthetic resource request"));
+            }
+        }
+    }
+
+    #[test]
+    fn contextual_resource_errors_retain_evidence_and_the_requesting_stage() {
+        use cadmpeg_core::decode::{ResourceDimension, ResourceLimit};
+        let limit = ResourceLimit::allocation_failed(
+            ResourceDimension::CollectionItems,
+            8,
+            4,
+            "synthetic allocation",
+        );
+        for (stage, label) in [
+            (super::RefusalStage::Check, "check"),
+            (super::RefusalStage::Plan, "plan"),
+            (super::RefusalStage::Export, "export"),
+        ] {
+            let error = anyhow::Error::new(cadmpeg_core::CodecError::ResourceLimit(limit))
+                .context("writing an artifact");
+            let error = ApplicationError::from(error).at_stage(stage);
+            assert_eq!(error.exit_code(), 2);
+            let report = report_value(
+                error
+                    .refusal()
+                    .expect("resource evidence survives anyhow context"),
+            );
+            assert_eq!(report["stage"], label);
+            assert_eq!(report["code"], "resource_limit");
+            assert_eq!(report["resource"]["reason"], "allocation_failed");
+            assert_eq!(report["resource"]["limit"], 8);
+            assert_eq!(report["resource"]["used"], 0);
+            assert_eq!(report["resource"]["requested"], 4);
+            assert_eq!(report["resource"]["operation"], "synthetic allocation");
+        }
     }
 }

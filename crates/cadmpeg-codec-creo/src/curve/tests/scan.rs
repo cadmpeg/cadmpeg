@@ -216,8 +216,14 @@ fn scan_discovers_curve_halfedge_topology() {
     assert_eq!(row.fields()["curve_id"], 7);
     assert_eq!(row.fields()["type_byte"], 8);
     assert_eq!(row.fields()["feature_id"], 4);
-    assert_eq!(row.fields()["directions"][0], 1);
-    assert_eq!(row.fields()["directions"][1], 0xf6);
+    assert_eq!(
+        crate::test_support::native_bytes(&row.fields()["directions"])[0],
+        1
+    );
+    assert_eq!(
+        crate::test_support::native_bytes(&row.fields()["directions"])[1],
+        0xf6
+    );
     assert_eq!(row.fields()["faces"][0], 10);
     assert_eq!(row.fields()["faces"][1], 11);
     assert_eq!(row.fields()["next_edges"][0], 7);
@@ -351,17 +357,23 @@ fn scan_bounds_curve_parameter_body_before_topology_suffix() {
     assert_eq!(record.fields()["curve_id"], 7);
     assert_eq!(record.fields()["type_byte"], 8);
     assert_eq!(
-        record.fields()["body"].as_array().unwrap().len(),
+        crate::test_support::native_bytes(&record.fields()["body"]).len(),
         parameters.body.len()
     );
     assert_eq!(record.fields()["scalar_values"][2], 3.0);
     assert_eq!(record.fields()["scalar_tokens"][2]["offset"], 5);
-    assert_eq!(record.fields()["scalar_tokens"][2]["raw"][0], 0x46);
+    assert_eq!(
+        crate::test_support::native_bytes(&record.fields()["scalar_tokens"][2]["raw"])[0],
+        0x46
+    );
     assert_eq!(record.fields()["skipped_references"][0], 256);
     assert_eq!(record.fields()["references"][0]["entity_id"], 256);
     assert_eq!(record.fields()["references"][0]["offset"], 2);
     assert_eq!(record.fields()["opaque_spans"][0]["offset"], 13);
-    assert_eq!(record.fields()["opaque_spans"][0]["raw"][0], 0xff);
+    assert_eq!(
+        crate::test_support::native_bytes(&record.fields()["opaque_spans"][0]["raw"])[0],
+        0xff
+    );
     assert_eq!(record.fields()["suffix"], "unique");
     assert!(record.fields().contains_key("suffix_candidate_count"));
     assert!(record.fields()["suffix_candidate_count"].is_null());
@@ -616,7 +628,10 @@ fn scan_decodes_fc_curve_world_coordinate_lane() {
     assert_eq!(records[0].fields()["values_mm"][1], -3.0);
     assert_eq!(records[0].fields()["tokens"][1]["offset"], 10);
     assert_eq!(records[0].fields()["tokens"][1]["length"], 8);
-    assert_eq!(records[0].fields()["opaque_spans"][1]["raw"][0], 0xff);
+    assert_eq!(
+        crate::test_support::native_bytes(&records[0].fields()["opaque_spans"][1]["raw"])[0],
+        0xff
+    );
 }
 
 #[test]

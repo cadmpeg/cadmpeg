@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `UFRx` document states and their owned child records.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::hash::digest::Sha256Digest;
 
@@ -733,7 +735,7 @@ pub(crate) struct EmbeddedReferenceRecord {
     library_name: String,
     state: u16,
     display_name: String,
-    state_values: [u8; 8],
+    state_values: NativeBytes<[u8; 8]>,
     record_len: NonZeroU64,
     record_sha256: Sha256Digest,
 }
@@ -774,7 +776,7 @@ pub(crate) struct EmbeddedReferenceRecordWire {
     pub(crate) library_name: String,
     pub(crate) state: u16,
     pub(crate) display_name: String,
-    pub(crate) state_values: [u8; 8],
+    pub(crate) state_values: NativeBytes<[u8; 8]>,
     pub(crate) record_len: u64,
     pub(crate) record_sha256: String,
 }
@@ -798,7 +800,7 @@ impl TryFrom<EmbeddedReferenceRecordWire> for EmbeddedReferenceRecord {
             library_name: wire.library_name,
             state: wire.state,
             display_name: wire.display_name,
-            state_values: wire.state_values,
+            state_values: (wire.state_values),
             record_len: NonZeroU64::new(wire.record_len).ok_or("record_len must not be zero")?,
             record_sha256: Sha256Digest::try_from(wire.record_sha256)
                 .map_err(|error| format!("record_sha256: {error}"))?,
@@ -918,20 +920,23 @@ impl UfrxRecord {
         namespace.set_arena(ctx, "ufrx_occurrences", self.occurrences())?;
         Ok(())
     }
-    pub(crate) fn read(namespace: &NativeNamespace) -> Result<Self, NativeConvertError> {
-        let [wire] = <[_; 1]>::try_from(namespace.arena_as::<UfrxRecordWire>("ufrx")?).map_err(
-            |records: Vec<_>| {
-                serde_json::Error::custom(format!(
-                    "Inventor native data has {} UFRxDoc state records",
-                    records.len()
-                ))
-            },
-        )?;
+    pub(crate) fn read(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        namespace: &NativeNamespace,
+    ) -> Result<Self, NativeConvertError> {
+        let [wire] =
+            <[_; 1]>::try_from(namespace.arena_as_for_decode::<UfrxRecordWire>(ctx, "ufrx")?)
+                .map_err(|records: Vec<_>| {
+                    serde_json::Error::custom(format!(
+                        "Inventor native data has {} UFRxDoc state records",
+                        records.len()
+                    ))
+                })?;
         wire.into_record(
-            namespace.arena_as("ufrx_model_states")?,
-            namespace.arena_as("external_references")?,
-            namespace.arena_as("embedded_references")?,
-            namespace.arena_as("ufrx_occurrences")?,
+            namespace.arena_as_for_decode(ctx, "ufrx_model_states")?,
+            namespace.arena_as_for_decode(ctx, "external_references")?,
+            namespace.arena_as_for_decode(ctx, "embedded_references")?,
+            namespace.arena_as_for_decode(ctx, "ufrx_occurrences")?,
         )
         .map_err(|detail| serde_json::Error::custom(detail).into())
     }
@@ -1008,7 +1013,7 @@ mod tests {
             "value_0": 0, "filetime": 0, "value_1": 0, "extended_value": null,
             "value_2": 0, "path": "", "library_id": 0,
             "library_name": "", "state": 0, "display_name": "",
-            "state_values": [0,0,0,0,0,0,0,0], "record_len": 1,
+            "state_values": "0000000000000000", "record_len": 1,
             "record_sha256": "a".repeat(64)
         });
         let record: EmbeddedReferenceRecord =
@@ -1178,7 +1183,7 @@ mod tests {
             "id": "embedded", "ordinal": 0, "value_0": 0, "filetime": 0,
             "value_1": 0, "extended_value": null, "value_2": 0, "path": "",
             "library_id": 0, "library_name": "", "state": 0, "display_name": "",
-            "state_values": [0,0,0,0,0,0,0,0], "record_len": 1,
+            "state_values": "0000000000000000", "record_len": 1,
             "record_sha256": "a".repeat(64)
         });
         let admitted: UfrxOccurrenceRecord =
@@ -1318,7 +1323,7 @@ mod tests {
             .install(&crate::native::test_ctx(), &mut namespace)
             .expect("valid test fixture");
         assert_eq!(
-            UfrxRecord::read(&namespace).expect("valid test fixture"),
+            UfrxRecord::read(&crate::native::test_ctx(), &namespace).expect("valid test fixture"),
             record
         );
         let mut wire = namespace
@@ -1329,7 +1334,7 @@ mod tests {
         namespace
             .set_arena(&crate::native::test_ctx(), "ufrx", &wire)
             .expect("valid test fixture");
-        assert!(UfrxRecord::read(&namespace)
+        assert!(UfrxRecord::read(&crate::native::test_ctx(), &namespace)
             .expect_err("invalid test fixture")
             .to_string()
             .contains("model_state_count"));
@@ -1339,7 +1344,7 @@ mod tests {
         namespace
             .set_arena(&crate::native::test_ctx(), "ufrx", &[absent])
             .expect("valid test fixture");
-        assert!(UfrxRecord::read(&namespace).is_err());
+        assert!(UfrxRecord::read(&crate::native::test_ctx(), &namespace).is_err());
     }
 
     #[test]
@@ -1368,7 +1373,8 @@ mod tests {
                 .install(&crate::native::test_ctx(), &mut namespace)
                 .expect("valid test fixture");
             assert_eq!(
-                UfrxRecord::read(&namespace).expect("valid test fixture"),
+                UfrxRecord::read(&crate::native::test_ctx(), &namespace)
+                    .expect("valid test fixture"),
                 record
             );
             let mut wire = namespace
@@ -1378,7 +1384,7 @@ mod tests {
             namespace
                 .set_arena(&crate::native::test_ctx(), "ufrx", &wire)
                 .expect("valid test fixture");
-            assert!(UfrxRecord::read(&namespace).is_err());
+            assert!(UfrxRecord::read(&crate::native::test_ctx(), &namespace).is_err());
         }
     }
 

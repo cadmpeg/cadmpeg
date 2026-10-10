@@ -151,9 +151,13 @@ pub(crate) fn validate_native(
             None,
         )]);
     }
-    let data = match NativeData::load(namespace) {
+    let data = match NativeData::load(ctx, namespace) {
         Ok(data) => data,
         Err(error) => {
+            let error = CodecError::from(error);
+            if matches!(error, CodecError::ResourceLimit(_)) {
+                return Err(error);
+            }
             return Ok(vec![finding(
                 Check::NativeLinks,
                 format!("Inventor native arenas are invalid: {error}"),
@@ -195,11 +199,14 @@ pub(crate) fn validate_native(
         ));
     }
     for issue in &data.property_issues {
-        findings.push(finding(
-            Check::NativeLinks,
-            format!("Inventor property set {:?}: {}", issue.path, issue.detail),
-            Some(issue.id.clone()),
-        ));
+        findings.push(Finding {
+            severity: Severity::Warning,
+            ..finding(
+                Check::NativeLinks,
+                format!("Inventor property set {:?}: {}", issue.path, issue.detail),
+                Some(issue.id.clone()),
+            )
+        });
     }
     Ok(findings)
 }
@@ -1429,62 +1436,70 @@ struct NativeData {
 
 impl NativeData {
     fn load(
+        ctx: &DecodeContext<'_>,
         namespace: &cadmpeg_ir::native::NativeNamespace,
     ) -> Result<Self, cadmpeg_ir::native::NativeConvertError> {
         Ok(Self {
-            storage_bands: namespace.arena_as("storage_bands")?,
-            databases: namespace.arena_as("databases")?,
-            database_issues: namespace.arena_as("database_issues")?,
-            registry: namespace.arena_as("segment_registry")?,
-            revisions: namespace.arena_as("revisions")?,
-            pairs: namespace.arena_as("segment_pairs")?,
-            metadata: namespace.arena_as("segment_meta")?,
-            meta_sections: namespace.arena_as("meta_sections")?,
-            meta_types: namespace.arena_as("meta_types")?,
-            metadata_issues: namespace.arena_as("segment_meta_issues")?,
-            bulk: namespace.arena_as("segment_bulk")?,
-            records: namespace.arena_as("rse_records")?,
-            bulk_issues: namespace.arena_as("segment_bulk_issues")?,
-            unpaired: namespace.arena_as("unpaired_segments")?,
-            structural_issues: namespace.arena_as("structural_issues")?,
-            property_sets: namespace.arena_as("property_sets")?,
-            property_sections: namespace.arena_as("property_sections")?,
-            properties: namespace.arena_as("properties")?,
-            property_issues: namespace.arena_as("property_set_issues")?,
-            protein: ProteinRecord::read(namespace)?,
-            protein_assets: namespace.arena_as("protein_assets")?,
-            protein_rejections: namespace.arena_as("protein_rejections")?,
-            ufrx: UfrxRecord::read(namespace)?,
-            assembly_occurrences: namespace.arena_as("assembly_occurrences")?,
-            assembly_placements: namespace.arena_as("assembly_placements")?,
-            assembly_record_issues: namespace.arena_as("assembly_record_issues")?,
-            pm_app_default_styles: namespace.arena_as("pm_app_default_styles")?,
-            pm_app_rendering_styles: namespace.arena_as("pm_app_rendering_styles")?,
-            pm_graphics_faces: namespace.arena_as("pm_graphics_faces")?,
-            pm_graphics_style_collections: namespace.arena_as("pm_graphics_style_collections")?,
+            storage_bands: namespace.arena_as_for_decode(ctx, "storage_bands")?,
+            databases: namespace.arena_as_for_decode(ctx, "databases")?,
+            database_issues: namespace.arena_as_for_decode(ctx, "database_issues")?,
+            registry: namespace.arena_as_for_decode(ctx, "segment_registry")?,
+            revisions: namespace.arena_as_for_decode(ctx, "revisions")?,
+            pairs: namespace.arena_as_for_decode(ctx, "segment_pairs")?,
+            metadata: namespace.arena_as_for_decode(ctx, "segment_meta")?,
+            meta_sections: namespace.arena_as_for_decode(ctx, "meta_sections")?,
+            meta_types: namespace.arena_as_for_decode(ctx, "meta_types")?,
+            metadata_issues: namespace.arena_as_for_decode(ctx, "segment_meta_issues")?,
+            bulk: namespace.arena_as_for_decode(ctx, "segment_bulk")?,
+            records: namespace.arena_as_for_decode(ctx, "rse_records")?,
+            bulk_issues: namespace.arena_as_for_decode(ctx, "segment_bulk_issues")?,
+            unpaired: namespace.arena_as_for_decode(ctx, "unpaired_segments")?,
+            structural_issues: namespace.arena_as_for_decode(ctx, "structural_issues")?,
+            property_sets: namespace.arena_as_for_decode(ctx, "property_sets")?,
+            property_sections: namespace.arena_as_for_decode(ctx, "property_sections")?,
+            properties: namespace.arena_as_for_decode(ctx, "properties")?,
+            property_issues: namespace.arena_as_for_decode(ctx, "property_set_issues")?,
+            protein: ProteinRecord::read(ctx, namespace)?,
+            protein_assets: namespace.arena_as_for_decode(ctx, "protein_assets")?,
+            protein_rejections: namespace.arena_as_for_decode(ctx, "protein_rejections")?,
+            ufrx: UfrxRecord::read(ctx, namespace)?,
+            assembly_occurrences: namespace.arena_as_for_decode(ctx, "assembly_occurrences")?,
+            assembly_placements: namespace.arena_as_for_decode(ctx, "assembly_placements")?,
+            assembly_record_issues: namespace.arena_as_for_decode(ctx, "assembly_record_issues")?,
+            pm_app_default_styles: namespace.arena_as_for_decode(ctx, "pm_app_default_styles")?,
+            pm_app_rendering_styles: namespace
+                .arena_as_for_decode(ctx, "pm_app_rendering_styles")?,
+            pm_graphics_faces: namespace.arena_as_for_decode(ctx, "pm_graphics_faces")?,
+            pm_graphics_style_collections: namespace
+                .arena_as_for_decode(ctx, "pm_graphics_style_collections")?,
             pm_graphics_primary_color_styles: namespace
-                .arena_as("pm_graphics_primary_color_styles")?,
-            face_native_keys: namespace.arena_as("face_native_keys")?,
-            presentation_record_issues: namespace.arena_as("presentation_record_issues")?,
-            pm_dc_parameters: namespace.arena_as("pm_dc_parameters")?,
-            pm_dc_expressions: namespace.arena_as("pm_dc_expressions")?,
-            pm_dc_units: namespace.arena_as("pm_dc_units")?,
-            design_record_issues: namespace.arena_as("design_record_issues")?,
-            pm_dc_sketches: namespace.arena_as("pm_dc_sketches")?,
-            pm_dc_sketch_entities: namespace.arena_as("pm_dc_sketch_entities")?,
-            pm_dc_sketch_constraints: namespace.arena_as("pm_dc_sketch_constraints")?,
-            pm_dc_transforms: namespace.arena_as("pm_dc_transforms")?,
-            pm_dc_directions: namespace.arena_as("pm_dc_directions")?,
-            sketch_record_issues: namespace.arena_as("sketch_record_issues")?,
-            pm_dc_features: namespace.arena_as("pm_dc_features")?,
-            pm_dc_pattern_features: namespace.arena_as("pm_dc_pattern_features")?,
-            pm_dc_feature_terminators: namespace.arena_as("pm_dc_feature_terminators")?,
-            pm_dc_feature_properties: namespace.arena_as("pm_dc_feature_properties")?,
-            pm_dc_feature_labels: namespace.arena_as("pm_dc_feature_labels")?,
-            pm_dc_entity_style_links: namespace.arena_as("pm_dc_entity_style_links")?,
-            feature_record_issues: namespace.arena_as("feature_record_issues")?,
+                .arena_as_for_decode(ctx, "pm_graphics_primary_color_styles")?,
+            face_native_keys: namespace.arena_as_for_decode(ctx, "face_native_keys")?,
+            presentation_record_issues: namespace
+                .arena_as_for_decode(ctx, "presentation_record_issues")?,
+            pm_dc_parameters: namespace.arena_as_for_decode(ctx, "pm_dc_parameters")?,
+            pm_dc_expressions: namespace.arena_as_for_decode(ctx, "pm_dc_expressions")?,
+            pm_dc_units: namespace.arena_as_for_decode(ctx, "pm_dc_units")?,
+            design_record_issues: namespace.arena_as_for_decode(ctx, "design_record_issues")?,
+            pm_dc_sketches: namespace.arena_as_for_decode(ctx, "pm_dc_sketches")?,
+            pm_dc_sketch_entities: namespace.arena_as_for_decode(ctx, "pm_dc_sketch_entities")?,
+            pm_dc_sketch_constraints: namespace
+                .arena_as_for_decode(ctx, "pm_dc_sketch_constraints")?,
+            pm_dc_transforms: namespace.arena_as_for_decode(ctx, "pm_dc_transforms")?,
+            pm_dc_directions: namespace.arena_as_for_decode(ctx, "pm_dc_directions")?,
+            sketch_record_issues: namespace.arena_as_for_decode(ctx, "sketch_record_issues")?,
+            pm_dc_features: namespace.arena_as_for_decode(ctx, "pm_dc_features")?,
+            pm_dc_pattern_features: namespace.arena_as_for_decode(ctx, "pm_dc_pattern_features")?,
+            pm_dc_feature_terminators: namespace
+                .arena_as_for_decode(ctx, "pm_dc_feature_terminators")?,
+            pm_dc_feature_properties: namespace
+                .arena_as_for_decode(ctx, "pm_dc_feature_properties")?,
+            pm_dc_feature_labels: namespace.arena_as_for_decode(ctx, "pm_dc_feature_labels")?,
+            pm_dc_entity_style_links: namespace
+                .arena_as_for_decode(ctx, "pm_dc_entity_style_links")?,
+            feature_record_issues: namespace.arena_as_for_decode(ctx, "feature_record_issues")?,
             active_carrier: ActiveCarrierRecord::read(namespace)?,
-            unknowns: namespace.arena_as("unknowns")?,
+            unknowns: namespace.arena_as_for_decode(ctx, "unknowns")?,
         })
     }
 }
@@ -1815,11 +1830,14 @@ fn validate_protein(data: &NativeData, findings: &mut Vec<Finding>) {
     );
     let record = &data.protein;
     if let ProteinRecord::Malformed { id, detail, .. } = record {
-        findings.push(finding(
-            Check::NativeLinks,
-            format!("Inventor Protein stream is malformed: {detail}"),
-            Some(id.clone()),
-        ));
+        findings.push(Finding {
+            severity: Severity::Warning,
+            ..finding(
+                Check::NativeLinks,
+                format!("Inventor Protein stream is malformed: {detail}"),
+                Some(id.clone()),
+            )
+        });
     }
 }
 
@@ -1947,11 +1965,14 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
     );
     let record = &data.ufrx;
     if let UfrxRecord::Malformed { id, detail, .. } = record {
-        findings.push(finding(
-            Check::NativeLinks,
-            format!("Inventor UFRxDoc stream is malformed: {detail}"),
-            Some(id.clone()),
-        ));
+        findings.push(Finding {
+            severity: Severity::Warning,
+            ..finding(
+                Check::NativeLinks,
+                format!("Inventor UFRxDoc stream is malformed: {detail}"),
+                Some(id.clone()),
+            )
+        });
     }
     let model_state_ordinals = data
         .ufrx

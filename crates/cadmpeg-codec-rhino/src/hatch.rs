@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bounded hatch payload decoding.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use crate::loss::Diagnostics;
 use std::ops::Range;
 
@@ -45,7 +47,7 @@ pub(crate) struct HatchLoop {
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 struct GradientColorStop {
-    color: [u8; 4],
+    color: NativeBytes<[u8; 4]>,
     position: FiniteReal,
 }
 
@@ -431,7 +433,10 @@ fn parse_gradient_userdata(
         })?;
         stop_reader.skip_remaining()?;
         reader.skip(stop.next_offset() - reader.position())?;
-        colors.push(GradientColorStop { color, position });
+        colors.push(GradientColorStop {
+            color: (color).into(),
+            position,
+        });
     }
     reader.skip_remaining()?;
     Ok(Gradient {

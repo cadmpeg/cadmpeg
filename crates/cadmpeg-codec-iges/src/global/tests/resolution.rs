@@ -375,3 +375,17 @@ fn a_malformed_generation_date_decodes_in_salvage_and_strict_modes() {
         1
     );
 }
+
+#[test]
+fn unusable_integer_width_has_named_loss_without_suppressing_geometry_context() {
+    for width in ["0", "-1", "4294967296"] {
+        let mut fields = valid_global_fields();
+        fields[6] = width.into();
+        let (parsed, losses) = resolve_global_fields(&fields);
+        assert!(parsed.length_context().is_some());
+        assert_eq!(
+            code_count(&losses, IgesLossCode::GlobalMetadataFieldUnusable),
+            1
+        );
+    }
+}

@@ -93,50 +93,35 @@
             "id": "catia:zero-entity:record#1",
             "logical_end": 28,
             "record_ordinal": 1,
-            "tag": [
-              16,
-              0
-            ]
+            "tag": "1000"
           },
           {
             "byte_offset": 28,
             "id": "catia:zero-entity:record#2",
             "logical_end": 40,
             "record_ordinal": 2,
-            "tag": [
-              16,
-              0
-            ]
+            "tag": "1000"
           },
           {
             "byte_offset": 40,
             "id": "catia:zero-entity:record#3",
             "logical_end": 52,
             "record_ordinal": 3,
-            "tag": [
-              16,
-              0
-            ]
+            "tag": "1000"
           },
           {
             "byte_offset": 52,
             "id": "catia:zero-entity:record#4",
             "logical_end": 64,
             "record_ordinal": 4,
-            "tag": [
-              16,
-              0
-            ]
+            "tag": "1000"
           },
           {
             "byte_offset": 64,
             "id": "catia:zero-entity:record#5",
             "logical_end": 76,
             "record_ordinal": 5,
-            "tag": [
-              16,
-              0
-            ]
+            "tag": "1000"
           }
         ],
         "zero_entity_support_runs": [],

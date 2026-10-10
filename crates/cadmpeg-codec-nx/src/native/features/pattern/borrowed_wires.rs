@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Borrowed pattern lane columns retain the existing flat JSON shape.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use super::{
     FeatureIdenticalInstanceOutputLane, FeaturePatternConstructionFixedLane,
     FeaturePatternCountedReferenceLane,
@@ -13,7 +15,7 @@ struct RawPatternIndex(crate::om::reference_index::PayloadIndexToken);
 
 impl Serialize for RawPatternIndex {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.0.raw().serialize(serializer)
+        NativeBytes::from(self.0.raw()).serialize(serializer)
     }
 }
 
@@ -68,11 +70,13 @@ impl Serialize for FeaturePatternConstructionFixedLane {
         )?;
         wire.serialize_entry(
             "markers",
-            &IterWire(self.lane.iter().map(|(_, atom, _)| atom.marker.byte())),
+            &NativeBytes::iter_wire(self.lane.iter().map(|(_, atom, _)| atom.marker.byte())),
         )?;
         wire.serialize_entry(
             "raw_values",
-            &IterWire(self.lane.iter().map(|(_, atom, _)| atom.scalar.raw())),
+            &IterWire(self.lane.iter().map(|(_, atom, _)| {
+                cadmpeg_ir::native::bytes::NativeBytes::from(atom.scalar.raw())
+            })),
         )?;
         wire.serialize_entry("payload_offset", &self.lane.offset())?;
         wire.serialize_entry(
@@ -95,7 +99,10 @@ impl Serialize for FeatureIdenticalInstanceOutputLane {
         wire.serialize_entry("operation_label", &self.operation_label)?;
         wire.serialize_entry("leading_schema_index", &self.leading_schema_index)?;
         wire.serialize_entry("count_schema_index", &self.count_schema_index.value())?;
-        wire.serialize_entry("row_schema_indices", &self.count_schema_index.row_indices())?;
+        wire.serialize_entry(
+            "row_schema_indices",
+            &NativeBytes::from(self.count_schema_index.row_indices()),
+        )?;
         wire.serialize_entry(
             "declared_count",
             &(usize::from(self.selectors.declared_count()) - 1),
@@ -115,7 +122,7 @@ impl Serialize for FeatureIdenticalInstanceOutputLane {
                 self.selectors
                     .as_slice()
                     .iter()
-                    .map(|token| token.atom.raw()),
+                    .map(|token| cadmpeg_ir::native::bytes::NativeBytes::from(token.atom.raw())),
             ),
         )?;
         wire.serialize_entry("source_offset", &self.source_offset)?;
@@ -156,7 +163,7 @@ mod tests {
             FeaturePatternConstructionFixedLane,
             super::super::FeaturePatternConstructionFixedLaneWire,
         >(
-            r#"{"id":"lane","operation_label":"operation","construction_payload":"payload","ordinal":0,"values":[0.25,0.5],"markers":[48,176],"raw_values":[[32,0,0,0,0,0,0],[64,0,0,0,0,0,0]],"payload_offset":0,"value_payload_offsets":[18,26],"source_offset":100,"value_source_offsets":[118,126]}"#,
+            r#"{"id":"lane","operation_label":"operation","construction_payload":"payload","ordinal":0,"values":[0.25,0.5],"markers":"30b0","raw_values":["20000000000000","40000000000000"],"payload_offset":0,"value_payload_offsets":[18,26],"source_offset":100,"value_source_offsets":[118,126]}"#,
         );
     }
 
@@ -166,7 +173,7 @@ mod tests {
             super::super::FeaturePatternTransformLane,
             super::super::FeaturePatternTransformLaneWire,
         >(
-            r#"{"id":"lane","operation_label":"operation","row_schema_index":3,"layout":"scalar_rows","declared_count":3,"encodings":["binary32","binary64"],"values":[2.5,4.0],"raw_values":[[80,32,0,0],[48,16,0,0,0,0,0,0]],"selectors":[7,8],"raw_selectors":[[7],[8]],"source_offset":100,"value_source_offsets":[110,120],"selector_source_offsets":[114,128]}"#,
+            r#"{"id":"lane","operation_label":"operation","row_schema_index":3,"layout":"scalar_rows","declared_count":3,"encodings":["binary32","binary64"],"values":[2.5,4.0],"raw_values":["50200000","3010000000000000"],"selectors":[7,8],"raw_selectors":["07","08"],"source_offset":100,"value_source_offsets":[110,120],"selector_source_offsets":[114,128]}"#,
         );
     }
 
@@ -176,7 +183,7 @@ mod tests {
             super::super::FeaturePatternTransformLane,
             super::super::FeaturePatternTransformLaneWire,
         >(
-            r#"{"id":"lane","operation_label":"operation","row_schema_index":3,"layout":"wide_rows","declared_count":2,"encodings":["binary64","binary64","binary64","binary64","exact_one"],"values":[2.5,4.0,5.0,6.0,1.0],"raw_values":[[48,4,0,0,0,0,0,0],[48,16,0,0,0,0,0,0],[48,20,0,0,0,0,0,0],[48,24,0,0,0,0,0,0],[1]],"selectors":[7],"raw_selectors":[[7]],"source_offset":100,"value_source_offsets":[110,118,126,134,142],"selector_source_offsets":[143]}"#,
+            r#"{"id":"lane","operation_label":"operation","row_schema_index":3,"layout":"wide_rows","declared_count":2,"encodings":["binary64","binary64","binary64","binary64","exact_one"],"values":[2.5,4.0,5.0,6.0,1.0],"raw_values":["3004000000000000","3010000000000000","3014000000000000","3018000000000000","01"],"selectors":[7],"raw_selectors":["07"],"source_offset":100,"value_source_offsets":[110,118,126,134,142],"selector_source_offsets":[143]}"#,
         );
     }
 
@@ -186,7 +193,7 @@ mod tests {
             super::super::FeatureMultiInstanceOutputLane,
             super::super::FeatureMultiInstanceOutputLaneWire,
         >(
-            r#"{"id":"lane","operation_label":"operation","declared_count":3,"selectors":[7,8],"raw_selectors":[[7],[8]],"ordinals":[2,2],"row_indices":[2,3],"instance_count":2,"trailing_object_indices":[9],"raw_trailing_object_indices":[[9]],"source_offset":100,"selector_source_offsets":[110,120],"trailing_object_index_source_offsets":[130]}"#,
+            r#"{"id":"lane","operation_label":"operation","declared_count":3,"selectors":[7,8],"raw_selectors":["07","08"],"ordinals":"0202","row_indices":[2,3],"instance_count":2,"trailing_object_indices":[9],"raw_trailing_object_indices":["09"],"source_offset":100,"selector_source_offsets":[110,120],"trailing_object_index_source_offsets":[130]}"#,
         );
     }
 
@@ -196,7 +203,7 @@ mod tests {
             FeatureIdenticalInstanceOutputLane,
             super::super::FeatureIdenticalInstanceOutputLaneWire,
         >(
-            r#"{"id":"lane","operation_label":"operation","leading_schema_index":4,"count_schema_index":5,"row_schema_indices":[6,7,8],"declared_count":3,"selectors":[7,8],"raw_selectors":[[7],[8]],"source_offset":100,"selector_source_offsets":[110,120]}"#,
+            r#"{"id":"lane","operation_label":"operation","leading_schema_index":4,"count_schema_index":5,"row_schema_indices":"060708","declared_count":3,"selectors":[7,8],"raw_selectors":["07","08"],"source_offset":100,"selector_source_offsets":[110,120]}"#,
         );
     }
 
@@ -206,7 +213,7 @@ mod tests {
             FeaturePatternCountedReferenceLane,
             super::super::FeaturePatternCountedReferenceLaneWire,
         >(
-            r#"{"id":"nx:feature:pattern-counted#0","operation_label":"pattern","declared_count":2,"object_indices":[1],"raw_object_indices":[[240,1]],"data_blocks":[null],"source_offset":18,"object_index_source_offsets":[20]}"#,
+            r#"{"id":"nx:feature:pattern-counted#0","operation_label":"pattern","declared_count":2,"object_indices":[1],"raw_object_indices":["f001"],"data_blocks":[null],"source_offset":18,"object_index_source_offsets":[20]}"#,
         );
     }
 }
@@ -221,7 +228,7 @@ struct RawPatternScalar<'a>(PatternScalarRef<'a>);
 
 impl Serialize for RawPatternScalar<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.0.raw().serialize(serializer)
+        NativeBytes::from(self.0.raw()).serialize(serializer)
     }
 }
 
@@ -328,7 +335,9 @@ impl Serialize for super::FeaturePatternTransformLane {
                 )?;
                 wire.serialize_entry(
                     "raw_selectors",
-                    &IterWire(rows.as_slice().iter().map(|row| row.selector.atom.raw())),
+                    &IterWire(rows.as_slice().iter().map(|row| {
+                        cadmpeg_ir::native::bytes::NativeBytes::from(row.selector.atom.raw())
+                    })),
                 )?;
             }
             super::PatternRows::Wide(rows) => {
@@ -338,7 +347,9 @@ impl Serialize for super::FeaturePatternTransformLane {
                 )?;
                 wire.serialize_entry(
                     "raw_selectors",
-                    &IterWire(rows.as_slice().iter().map(|row| row.selector.atom.raw())),
+                    &IterWire(rows.as_slice().iter().map(|row| {
+                        cadmpeg_ir::native::bytes::NativeBytes::from(row.selector.atom.raw())
+                    })),
                 )?;
             }
         }
@@ -375,11 +386,15 @@ impl Serialize for super::FeatureMultiInstanceOutputLane {
         )?;
         wire.serialize_entry(
             "raw_selectors",
-            &IterWire(selectors.iter().map(|token| token.atom.raw())),
+            &IterWire(
+                selectors
+                    .iter()
+                    .map(|token| cadmpeg_ir::native::bytes::NativeBytes::from(token.atom.raw())),
+            ),
         )?;
         wire.serialize_entry(
             "ordinals",
-            &IterWire((0..selectors.len()).map(|index| {
+            &NativeBytes::iter_wire((0..selectors.len()).map(|index| {
                 let value = selectors[index].atom.value();
                 selectors[..index]
                     .iter()
@@ -395,7 +410,11 @@ impl Serialize for super::FeatureMultiInstanceOutputLane {
         )?;
         wire.serialize_entry(
             "raw_trailing_object_indices",
-            &IterWire(references.iter().map(|token| token.token.raw())),
+            &IterWire(
+                references
+                    .iter()
+                    .map(|token| cadmpeg_ir::native::bytes::NativeBytes::from(token.token.raw())),
+            ),
         )?;
         wire.serialize_entry("source_offset", &self.source_offset)?;
         wire.serialize_entry(

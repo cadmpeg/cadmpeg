@@ -65,7 +65,7 @@ fn color_result(source: &[u8], retained_limit: u64) -> Result<Option<ColorResolu
                     .expect("scope"),
             ),
             active: &mut BTreeSet::new(),
-            cache: &mut BTreeMap::new(),
+            cache: &mut super::super::ColorCache::default(),
             losses: &mut Vec::new(),
             invalid_surface_sides: &mut BTreeSet::new(),
         },

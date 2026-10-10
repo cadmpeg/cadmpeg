@@ -2,6 +2,8 @@
 #![deny(clippy::disallowed_methods)]
 //! Fusion ASM construction-history record shapes.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use serde::{Deserialize, Serialize};
 
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -570,7 +572,7 @@ pub(crate) struct AsmHistoryRecord {
     pub(crate) revision_id: Option<i64>,
     pub(crate) byte_offset: u64,
     pub(crate) framing: AsmHistoryRecordFraming,
-    pub(crate) raw_bytes: Vec<u8>,
+    pub(crate) raw_bytes: NativeBytes<Vec<u8>>,
 }
 
 #[cfg(test)]
@@ -588,7 +590,7 @@ impl Clone for AsmHistoryRecord {
             revision_id: self.revision_id,
             byte_offset: self.byte_offset,
             framing: self.framing.clone(),
-            raw_bytes: self.raw_bytes.clone(),
+            raw_bytes: (self.raw_bytes.clone()),
         }
     }
 }
@@ -606,8 +608,7 @@ struct AsmHistoryRecordWireRef<'a> {
     framing_error: Option<&'a str>,
     #[serde(skip_serializing_if = "<[i64]>::is_empty")]
     entity_references: &'a [i64],
-    #[serde(with = "cadmpeg_ir::bytes")]
-    raw_bytes: &'a [u8],
+    raw_bytes: NativeBytes<&'a [u8]>,
 }
 
 impl Serialize for AsmHistoryRecord {
@@ -631,7 +632,7 @@ impl Serialize for AsmHistoryRecord {
             name,
             framing_error,
             entity_references,
-            raw_bytes: &self.raw_bytes,
+            raw_bytes: (&self.raw_bytes).into(),
         }
         .serialize(serializer)
     }
@@ -695,8 +696,7 @@ struct AsmHistoryRecordWire {
     /// Ordered `0x0c` entity-reference tokens in the history revision namespace.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     entity_references: Vec<i64>,
-    #[serde(with = "cadmpeg_ir::bytes")]
-    raw_bytes: Vec<u8>,
+    raw_bytes: NativeBytes<Vec<u8>>,
 }
 
 impl TryFrom<AsmHistoryRecordWire> for AsmHistoryRecord {
@@ -725,7 +725,7 @@ impl TryFrom<AsmHistoryRecordWire> for AsmHistoryRecord {
             revision_id: wire.revision_id,
             byte_offset: wire.byte_offset,
             framing,
-            raw_bytes: wire.raw_bytes,
+            raw_bytes: (wire.raw_bytes),
         })
     }
 }
@@ -752,7 +752,7 @@ impl From<AsmHistoryRecord> for AsmHistoryRecordWire {
             name,
             framing_error,
             entity_references,
-            raw_bytes: record.raw_bytes,
+            raw_bytes: (record.raw_bytes),
         }
     }
 }
@@ -964,7 +964,7 @@ mod tests {
                 revision_id: Some(7),
                 byte_offset: 12,
                 framing,
-                raw_bytes: b"history payload".to_vec(),
+                raw_bytes: (b"history payload".to_vec()).into(),
             };
             let old = AsmHistoryRecordWire::from(record.clone());
             assert_eq!(
@@ -988,7 +988,7 @@ mod tests {
                 name: "edge".into(),
                 entity_references: vec![7, -1],
             },
-            raw_bytes: vec![0xab; 4096],
+            raw_bytes: (vec![0xab; 4096]).into(),
         };
         let needed = serde_json::to_vec(&record).unwrap().len();
         let arena = DecodeArena::new();

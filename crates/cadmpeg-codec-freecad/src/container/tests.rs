@@ -13,6 +13,45 @@ use std::io::Cursor;
 use zip::write::SimpleFileOptions;
 
 #[test]
+fn unreadable_entry_payload_uses_checked_hex_with_metadata_item_storage() {
+    let data: Vec<u8> = (0..=255).cycle().take(256 * 1024).collect();
+    let record = super::UnreadableEntry {
+        id: "fcstd:native:unreadable_entry#Payload.bin".into(),
+        name: "Payload.bin".into(),
+        data_start: 0,
+        data_end: u64::try_from(data.len()).unwrap(),
+        stored_data: data.clone().into(),
+        error: "unsupported compression".into(),
+    };
+    collection_context(256, |ctx| {
+        let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+        namespace
+            .set_arena(ctx, "unreadable_entries", &[record])
+            .unwrap();
+        let wire = namespace
+            .arena_as::<serde_json::Value>("unreadable_entries")
+            .unwrap();
+        assert_eq!(
+            wire[0]["stored_data"].as_str().unwrap().len(),
+            data.len() * 2
+        );
+        let typed = namespace
+            .arena_as::<super::UnreadableEntry>("unreadable_entries")
+            .unwrap();
+        assert_eq!(typed[0].stored_data, data);
+        for payload in [
+            serde_json::json!("a"),
+            serde_json::json!("gg"),
+            serde_json::json!([0]),
+        ] {
+            let mut invalid = wire[0].clone();
+            invalid["stored_data"] = payload;
+            assert!(serde_json::from_value::<super::UnreadableEntry>(invalid).is_err());
+        }
+    });
+}
+
+#[test]
 fn unsafe_entry_name_diagnostic_refuses_at_matching_retained_limit() {
     let xml = b"<Document SchemaVersion=\"4\" FileVersion=\"1\"/>";
     let bytes = archive_entries(&[("../Document.xml", xml), ("Document.xml", xml)]);
@@ -27,7 +66,7 @@ fn unsafe_entry_name_diagnostic_refuses_at_matching_retained_limit() {
 fn document_root_error_refuses_at_retained_limit() {
     let bytes = b"<UnexpectedRoot SchemaVersion=\"4\"/>";
     crate::test_support::assert_retained_refusal_at(&[], "FCStd document root error", |ctx| {
-        super::parse_document(ctx, bytes, &mut Vec::new())
+        parse_document(ctx, bytes)
     });
 }
 
@@ -35,7 +74,7 @@ fn document_root_error_refuses_at_retained_limit() {
 fn document_parse_error_refuses_at_retained_limit() {
     let bytes = b"<Document>";
     crate::test_support::assert_retained_refusal_at(&[], "FCStd document parse error", |ctx| {
-        super::parse_document(ctx, bytes, &mut Vec::new())
+        parse_document(ctx, bytes)
     });
 }
 
@@ -93,7 +132,7 @@ fn collection_context<T>(limit: u64, f: impl FnOnce(&DecodeContext<'_>) -> T) ->
     f(&ctx)
 }
 
-fn with_scanned_document<T>(f: impl FnOnce(&mut super::Scan<'_>) -> T) -> T {
+fn with_scanned_document<T>(f: impl FnOnce(&mut super::Scan<'_, '_>) -> T) -> T {
     let document = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
     let bytes = archive(document);
     let arena = DecodeArena::new();
@@ -198,9 +237,68 @@ fn entry_referencing_property_refuses_at_collection_limit() {
             |ctx| {
                 assert!(matches!(super::entry_records(ctx, scan, &[property]),
                 Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                    if limit.operation == "FCStd entry referencing properties"));
+                    if limit.operation == "FCStd entry reference index"));
             },
         );
+    });
+}
+
+#[test]
+fn entry_reference_index_preserves_order_and_deduplicates_property_markers() {
+    with_scanned_document(|scan| {
+        let properties: Vec<_> = ["First", "Second"]
+            .into_iter()
+            .map(|name| crate::native::PropertyRecord {
+                id: format!("fcstd:native:property#{name}"),
+                owner: "fcstd:native:object#Owner".into(),
+                name: name.into(),
+                type_name: "App::PropertyFileIncluded".into(),
+                family: crate::native::PropertyFamily::File,
+                status: None,
+                body: crate::native::PropertyBody::Persisted {
+                    values: Vec::new(),
+                    links: Vec::new(),
+                    dynamic: None,
+                    side_entries: vec![
+                        scan.entries[0].name.clone(),
+                        "Missing.bin".into(),
+                        scan.entries[0].name.clone(),
+                    ],
+                },
+                order: 0,
+                xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0).unwrap(),
+            })
+            .collect();
+        let entries = super::entry_records(
+            &cadmpeg_test_support::service_decode_context(),
+            scan,
+            &properties,
+        )
+        .unwrap();
+        assert_eq!(
+            entries[0].referenced_by(),
+            [
+                "fcstd:native:property#First",
+                "fcstd:native:property#Second"
+            ]
+        );
+
+        for (properties, limit, operation) in [
+            (
+                properties.as_slice(),
+                1,
+                "FCStd entry reference index construction",
+            ),
+            (&[][..], 0, "FCStd entry reference index lookup"),
+        ] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_work_units = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            assert!(matches!(super::entry_records(&ctx, scan, properties),
+                Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+                    if refusal.dimension == ResourceDimension::WorkUnits && refusal.operation == operation));
+        }
     });
 }
 
@@ -302,7 +400,7 @@ fn gui_entry_reference_identity_refuses_at_retained_limit() {
 fn document_domain_set_refuses_on_collection_limit() {
     let document = b"<Document SchemaVersion=\"4\"><Objects><Object type=\"Part::Feature\"/></Objects></Document>";
     crate::test_support::assert_collection_refusal_at(&[], "FCStd document domains", |ctx| {
-        super::parse_document(ctx, document, &mut Vec::new())
+        parse_document(ctx, document)
     });
 }
 
@@ -841,7 +939,7 @@ fn producer_version_metadata_does_not_refuse_the_document() {
     for (attributes, expected) in [
         ("programVersion=\"1.0\"", Some("1.0")),
         ("ProgramVersion=\"1.0\" programVersion=\"1.0\"", Some("1.0")),
-        ("ProgramVersion=\"1.0\" programVersion=\"2.0\"", None),
+        ("ProgramVersion=\"1.0\" programVersion=\"2.0\"", Some("1.0")),
     ] {
         let xml = format!(
             "<Document SchemaVersion=\"4\" {attributes}><Objects Count=\"0\"/><ObjectData Count=\"0\"/></Document>"
@@ -858,6 +956,7 @@ fn producer_version_metadata_does_not_refuse_the_document() {
             == crate::loss::FreecadLossCode::ProgramVersionNoncanonical
                 .note("")
                 .code));
+        drop(scan);
         let decoded = FcstdCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
@@ -866,4 +965,114 @@ fn producer_version_metadata_does_not_refuse_the_document() {
                 .note("")
                 .code));
     }
+}
+
+#[test]
+fn invalid_file_version_preserves_independent_brep_geometry_and_declaration() {
+    use std::io::Read;
+    let original = crate::test_support::test_archive::GEOMETRY;
+    let expected = FcstdCodec
+        .decode(&mut Cursor::new(original), &DecodeOptions::default())
+        .unwrap();
+    assert!(!expected.ir().model.faces.is_empty());
+    let mut source = zip::ZipArchive::new(Cursor::new(original)).unwrap();
+    let mut entries = Vec::new();
+    for index in 0..source.len() {
+        let mut entry = source.by_index(index).unwrap();
+        let mut bytes = Vec::new();
+        entry.read_to_end(&mut bytes).unwrap();
+        entries.push((entry.name().to_owned(), bytes));
+    }
+    for version in ["bad", "-1", "", "184467440737095516160"] {
+        let modified = entries
+            .iter()
+            .map(|(name, bytes)| {
+                let bytes = if name == "Document.xml" {
+                    String::from_utf8(bytes.clone())
+                        .unwrap()
+                        .replace("FileVersion=\"1\"", &format!("FileVersion=\"{version}\""))
+                        .into_bytes()
+                } else {
+                    bytes.clone()
+                };
+                (name.clone(), bytes)
+            })
+            .collect::<Vec<_>>();
+        let borrowed = modified
+            .iter()
+            .map(|(name, bytes)| (name.as_str(), bytes.as_slice()))
+            .collect::<Vec<_>>();
+        let bytes = archive_entries(&borrowed);
+        let recovered = FcstdCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(recovered.ir().model, expected.ir().model);
+        assert!(recovered.report().losses.iter().any(|loss| loss.code
+            == crate::loss::FreecadLossCode::FileVersionUnverified
+                .note("")
+                .code));
+        assert_eq!(
+            recovered
+                .ir()
+                .source
+                .as_ref()
+                .unwrap()
+                .dialect()
+                .unwrap()
+                .declared()["file_version"],
+            version
+        );
+        crate::test_support::test_archive::assert_valid_document(recovered.ir());
+    }
+}
+
+#[test]
+fn equivalent_numeric_schema_declarations_select_the_same_persistence_grammar() {
+    use crate::test_support::test_archive::{
+        assert_valid_document, rewrite_entry, rewrite_schema_version, GEOMETRY,
+    };
+    let schema_two = rewrite_entry(GEOMETRY, "Document.xml", |data| {
+        let text = std::str::from_utf8(data).unwrap();
+        // Schema 2 has no Dependencies attribute and uses the Feature vocabulary.
+        let text = text
+            .replace("SchemaVersion=\"4\"", "SchemaVersion=\"2\"")
+            .replace("ObjectData", "FeatureData")
+            .replace("Objects", "Features")
+            .replace("<Object ", "<Feature ")
+            .replace("</Object>", "</Feature>")
+            .replace(" Dependencies=\"1\"", "");
+        let xml = roxmltree::Document::parse(&text).unwrap();
+        let mut ranges = xml
+            .descendants()
+            .filter(|node| node.has_tag_name("ObjectDeps"))
+            .map(|node| node.range())
+            .collect::<Vec<_>>();
+        ranges.sort_by_key(|range| range.start);
+        let mut text = text;
+        for range in ranges.into_iter().rev() {
+            text.replace_range(range, "");
+        }
+        text.into_bytes()
+    });
+    let expected = FcstdCodec
+        .decode(&mut Cursor::new(&schema_two), &DecodeOptions::default())
+        .unwrap();
+    assert!(!expected.ir().model.faces.is_empty());
+    for spelling in ["02", "+2", "0002"] {
+        let source = rewrite_schema_version(&schema_two, spelling);
+        let recovered = FcstdCodec
+            .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(recovered.ir().model, expected.ir().model);
+        assert_valid_document(recovered.ir());
+        assert!(crate::test_support::validate_native(recovered.ir()).is_empty());
+    }
+}
+
+fn parse_document(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<(crate::native::DocumentFacts, String), cadmpeg_core::CodecError> {
+    let xml = super::admit_document(ctx, bytes)?;
+    super::parse_document(ctx, xml.document(), &mut Vec::new())
 }

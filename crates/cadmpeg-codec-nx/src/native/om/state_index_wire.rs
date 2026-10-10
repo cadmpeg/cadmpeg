@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native operation-state index projections at the JSON boundary.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use super::{OmAuditTrailRow, OmOperationStateCounter};
 use crate::om::roll_forward::OperationStateGroupRow;
 use crate::om::state_index::StateIndexToken;
@@ -13,7 +15,7 @@ pub(super) struct OmAuditTrailRowWire {
     id: String,
     section_link: String,
     ordinal: u32,
-    raw_ordinal: Vec<u8>,
+    raw_ordinal: NativeBytes<Vec<u8>>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -23,7 +25,7 @@ pub(super) struct OmAuditTrailRowWire {
     timestamp: u32,
     #[serde(flatten)]
     value: crate::om::state_tagged_value::StateTaggedValue,
-    raw: Vec<u8>,
+    raw: NativeBytes<Vec<u8>>,
     source_entry: String,
     source_offset: u64,
     end_offset: u64,
@@ -34,13 +36,13 @@ struct OmAuditTrailRowRef<'a> {
     id: &'a str,
     section_link: &'a str,
     ordinal: u32,
-    raw_ordinal: &'a [u8],
+    raw_ordinal: NativeBytes<&'a [u8]>,
     #[serde(skip_serializing_if = "Option::is_none")]
     frame_selector: Option<u8>,
     timestamp: u32,
     #[serde(flatten)]
     value: crate::om::state_tagged_value::StateTaggedValue,
-    raw: &'a [u8],
+    raw: NativeBytes<&'a [u8]>,
     source_entry: &'a str,
     source_offset: u64,
     end_offset: u64,
@@ -54,11 +56,11 @@ impl Serialize for OmAuditTrailRow {
             id: &self.id,
             section_link: &self.section_link,
             ordinal: record.ordinal.value(),
-            raw_ordinal: record.ordinal.raw(),
+            raw_ordinal: (record.ordinal.raw()).into(),
             frame_selector: record.frame_selector,
             timestamp: record.timestamp,
             value: record.value,
-            raw: &raw[..len],
+            raw: (&raw[..len]).into(),
             source_entry: &self.source_entry,
             source_offset: self.source_offset,
             end_offset: self.end_offset(),
@@ -76,11 +78,11 @@ impl From<OmAuditTrailRow> for OmAuditTrailRowWire {
             id: value.id,
             section_link: value.section_link,
             ordinal: record.ordinal.value(),
-            raw_ordinal: record.ordinal.raw().to_vec(),
+            raw_ordinal: (record.ordinal.raw().to_vec()).into(),
             frame_selector: record.frame_selector,
             timestamp: record.timestamp,
             value: record.value,
-            raw: record.raw(),
+            raw: (record.raw()).into(),
             source_entry: value.source_entry,
             source_offset: value.source_offset,
             end_offset,
@@ -123,7 +125,7 @@ pub(super) struct OmOperationStateCounterWire {
     ordinal: u32,
     row_kind: crate::om::discriminators::OperationStateCounterKind,
     object_index: u32,
-    raw_object_index: Vec<u8>,
+    raw_object_index: NativeBytes<Vec<u8>>,
     introduced_state: u8,
     modified_state: u8,
     object_index_source_offset: u64,
@@ -138,7 +140,7 @@ struct OmOperationStateCounterRef<'a> {
     ordinal: u32,
     row_kind: crate::om::discriminators::OperationStateCounterKind,
     object_index: u32,
-    raw_object_index: &'a [u8],
+    raw_object_index: NativeBytes<&'a [u8]>,
     introduced_state: u8,
     modified_state: u8,
     object_index_source_offset: u64,
@@ -155,7 +157,7 @@ impl Serialize for OmOperationStateCounter {
             ordinal: self.ordinal,
             row_kind: self.frame.kind(),
             object_index: object.value(),
-            raw_object_index: object.raw(),
+            raw_object_index: (object.raw()).into(),
             introduced_state: self.frame.introduced(),
             modified_state: self.frame.modified(),
             object_index_source_offset: self.frame.object_offset(),
@@ -175,7 +177,7 @@ impl From<OmOperationStateCounter> for OmOperationStateCounterWire {
             ordinal: value.ordinal,
             row_kind: value.frame.kind(),
             object_index: value.frame.object().value(),
-            raw_object_index: value.frame.object().raw().to_vec(),
+            raw_object_index: (value.frame.object().raw().to_vec()).into(),
             introduced_state: value.frame.introduced(),
             modified_state: value.frame.modified(),
             object_index_source_offset: value.frame.object_offset(),
@@ -215,7 +217,7 @@ impl TryFrom<OmOperationStateCounterWire> for OmOperationStateCounter {
 struct OmOperationStateSlotWire {
     ordinal: u32,
     object_index: Option<u32>,
-    raw_object_index: Vec<u8>,
+    raw_object_index: NativeBytes<Vec<u8>>,
 }
 
 impl OmOperationStateSlotWire {
@@ -224,9 +226,10 @@ impl OmOperationStateSlotWire {
         Self {
             ordinal,
             object_index: value.map(StateIndexToken::value),
-            raw_object_index: value
+            raw_object_index: (value
                 .as_ref()
-                .map_or_else(|| vec![0xff], |index| index.raw().to_vec()),
+                .map_or_else(|| vec![0xff], |index| index.raw().to_vec()))
+            .into(),
         }
     }
 
@@ -248,7 +251,7 @@ impl OmOperationStateSlotWire {
 struct OmOperationStateSlotRef<'a> {
     ordinal: u32,
     object_index: Option<u32>,
-    raw_object_index: &'a [u8],
+    raw_object_index: NativeBytes<&'a [u8]>,
 }
 
 impl<'a> OmOperationStateSlotRef<'a> {
@@ -256,7 +259,7 @@ impl<'a> OmOperationStateSlotRef<'a> {
         Self {
             ordinal,
             object_index: value.copied().map(StateIndexToken::value),
-            raw_object_index: value.map_or(&[0xff], StateIndexToken::raw),
+            raw_object_index: (value.map_or(&[0xff_u8][..], StateIndexToken::raw)).into(),
         }
     }
 }
@@ -287,18 +290,18 @@ pub(super) enum OmRollForwardStateRowWire {
     List {
         ordinal: u32,
         object_index: u32,
-        raw_object_index: Vec<u8>,
+        raw_object_index: NativeBytes<Vec<u8>>,
         position: u32,
-        raw_position: Vec<u8>,
+        raw_position: NativeBytes<Vec<u8>>,
         source_offset: u64,
     },
     Pair {
         ordinal: u32,
         tag: crate::om::discriminators::OperationStatePairTag,
         first: u32,
-        raw_first: Vec<u8>,
+        raw_first: NativeBytes<Vec<u8>>,
         second: u32,
-        raw_second: Vec<u8>,
+        raw_second: NativeBytes<Vec<u8>>,
         source_offset: u64,
     },
 }
@@ -314,18 +317,18 @@ impl OmRollForwardStateRowWire {
             } => Self::List {
                 ordinal,
                 object_index: object_index.value(),
-                raw_object_index: object_index.raw().to_vec(),
+                raw_object_index: object_index.raw().to_vec().into(),
                 position: position.value(),
-                raw_position: position.raw().to_vec(),
+                raw_position: position.raw().to_vec().into(),
                 source_offset,
             },
             OperationStateGroupRow::Pair { tag, first, second } => Self::Pair {
                 ordinal,
                 tag,
                 first: first.value(),
-                raw_first: first.raw().to_vec(),
+                raw_first: first.raw().to_vec().into(),
                 second: second.value(),
-                raw_second: second.raw().to_vec(),
+                raw_second: second.raw().to_vec().into(),
                 source_offset,
             },
         }
@@ -418,7 +421,7 @@ mod tests {
 
     #[test]
     fn audit_borrowed_wire_preserves_owned_bytes() {
-        let json = r#"{"id":"nx:om:audit#0","section_link":"section","ordinal":2,"raw_ordinal":[2],"timestamp":0,"value_marker":160,"value":0,"raw_value":[160,0,0],"raw":[4,2,19,224,0,0,0,0,160,0,0],"source_entry":"om","source_offset":0,"end_offset":11}"#;
+        let json = r#"{"id":"nx:om:audit#0","section_link":"section","ordinal":2,"raw_ordinal":"02","timestamp":0,"value_marker":160,"value":0,"raw_value":"a00000","raw":"040213e000000000a00000","source_entry":"om","source_offset":0,"end_offset":11}"#;
         let record: OmAuditTrailRow = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_vec(&record).unwrap(), json.as_bytes());
         assert_eq!(
@@ -429,7 +432,7 @@ mod tests {
 
     #[test]
     fn audit_retained_limit_refuses_before_raw_frame_allocation() {
-        let json = r#"{"id":"nx:om:audit#0","section_link":"section","ordinal":2,"raw_ordinal":[2],"timestamp":0,"value_marker":160,"value":0,"raw_value":[160,0,0],"raw":[4,2,19,224,0,0,0,0,160,0,0],"source_entry":"om","source_offset":0,"end_offset":11}"#;
+        let json = r#"{"id":"nx:om:audit#0","section_link":"section","ordinal":2,"raw_ordinal":"02","timestamp":0,"value_marker":160,"value":0,"raw_value":"a00000","raw":"040213e000000000a00000","source_entry":"om","source_offset":0,"end_offset":11}"#;
         let record: OmAuditTrailRow = serde_json::from_str(json).unwrap();
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &record,
@@ -439,7 +442,7 @@ mod tests {
 
     #[test]
     fn counter_borrowed_wire_preserves_owned_bytes() {
-        let json = r#"{"id":"nx:om:counter#0","section_link":"section","ordinal":0,"row_kind":1,"object_index":0,"raw_object_index":[144,0,0],"introduced_state":1,"modified_state":2,"object_index_source_offset":102,"source_entry":"om","source_offset":100}"#;
+        let json = r#"{"id":"nx:om:counter#0","section_link":"section","ordinal":0,"row_kind":1,"object_index":0,"raw_object_index":"900000","introduced_state":1,"modified_state":2,"object_index_source_offset":102,"source_entry":"om","source_offset":100}"#;
         let record: OmOperationStateCounter = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_vec(&record).unwrap(), json.as_bytes());
         assert_eq!(
@@ -450,7 +453,7 @@ mod tests {
 
     #[test]
     fn counter_retained_limit_refuses_before_token_clone() {
-        let json = r#"{"id":"nx:om:counter#0","section_link":"section","ordinal":0,"row_kind":1,"object_index":0,"raw_object_index":[144,0,0],"introduced_state":1,"modified_state":2,"object_index_source_offset":102,"source_entry":"om","source_offset":100}"#;
+        let json = r#"{"id":"nx:om:counter#0","section_link":"section","ordinal":0,"row_kind":1,"object_index":0,"raw_object_index":"900000","introduced_state":1,"modified_state":2,"object_index_source_offset":102,"source_entry":"om","source_offset":100}"#;
         let record: OmOperationStateCounter = serde_json::from_str(json).unwrap();
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &record,
@@ -460,10 +463,10 @@ mod tests {
 
     #[test]
     fn audit_wire_rejects_raw_and_extent_disagreement() {
-        let json = r#"{"id":"audit","section_link":"section","ordinal":2,"raw_ordinal":[2],"timestamp":0,"value_marker":160,"value":0,"raw_value":[160,0,0],"raw":[4,2,19,224,0,0,0,0,160,0,0],"source_entry":"om","source_offset":0,"end_offset":11}"#;
+        let json = r#"{"id":"audit","section_link":"section","ordinal":2,"raw_ordinal":"02","timestamp":0,"value_marker":160,"value":0,"raw_value":"a00000","raw":"040213e000000000a00000","source_entry":"om","source_offset":0,"end_offset":11}"#;
         let wire: serde_json::Value = serde_json::from_str(json).unwrap();
         for (field, replacement) in [
-            ("raw", serde_json::json!([])),
+            ("raw", serde_json::json!("")),
             ("end_offset", serde_json::json!(12)),
             ("source_offset", serde_json::json!(u64::MAX)),
         ] {
@@ -483,7 +486,7 @@ mod tests {
 
     #[test]
     fn counter_rows_derive_index_position_and_bound_full_extent() {
-        let json = r#"{"id":"counter","section_link":"section","ordinal":0,"row_kind":1,"object_index":0,"raw_object_index":[144,0,0],"introduced_state":1,"modified_state":2,"object_index_source_offset":102,"source_entry":"om","source_offset":100}"#;
+        let json = r#"{"id":"counter","section_link":"section","ordinal":0,"row_kind":1,"object_index":0,"raw_object_index":"900000","introduced_state":1,"modified_state":2,"object_index_source_offset":102,"source_entry":"om","source_offset":100}"#;
         preserves_wire::<OmOperationStateCounter>(json);
         let wire: serde_json::Value = serde_json::from_str(json).unwrap();
         let mut mismatch = wire.clone();
@@ -508,48 +511,48 @@ mod tests {
     #[test]
     fn state_index_records_preserve_scalar_and_token_fields() {
         preserves_wire::<OmAuditTrailRow>(
-            r#"{"id":"audit","section_link":"section","ordinal":2,"raw_ordinal":[2],"timestamp":0,"value_marker":160,"value":0,"raw_value":[160,0,0],"raw":[4,2,19,224,0,0,0,0,160,0,0],"source_entry":"om","source_offset":0,"end_offset":11}"#,
+            r#"{"id":"audit","section_link":"section","ordinal":2,"raw_ordinal":"02","timestamp":0,"value_marker":160,"value":0,"raw_value":"a00000","raw":"040213e000000000a00000","source_entry":"om","source_offset":0,"end_offset":11}"#,
         );
         preserves_wire::<OmAuditTrailRow>(
-            r#"{"id":"audit","section_link":"section","ordinal":2,"raw_ordinal":[2],"frame_selector":7,"timestamp":0,"value_marker":160,"value":0,"raw_value":[160,0,0],"raw":[4,2,19,4,5,7,0,224,0,0,0,0,160,0,0],"source_entry":"om","source_offset":0,"end_offset":15}"#,
+            r#"{"id":"audit","section_link":"section","ordinal":2,"raw_ordinal":"02","frame_selector":7,"timestamp":0,"value_marker":160,"value":0,"raw_value":"a00000","raw":"04021304050700e000000000a00000","source_entry":"om","source_offset":0,"end_offset":15}"#,
         );
         preserves_wire::<crate::om::state_journal::JournalRow>(
-            r#"{"timestamp":0,"value_marker":160,"value":0,"raw_value":[160,0,0],"schema_id":1,"raw_schema_id":[128,1],"state_ordinal":2,"raw_state_ordinal":[241,0,2],"source_offset":0,"end_offset":14}"#,
+            r#"{"timestamp":0,"value_marker":160,"value":0,"raw_value":"a00000","schema_id":1,"raw_schema_id":"8001","state_ordinal":2,"raw_state_ordinal":"f10002","source_offset":0,"end_offset":14}"#,
         );
         preserves_wire::<OmOperationStateCounter>(
-            r#"{"id":"counter","section_link":"section","ordinal":0,"row_kind":1,"object_index":0,"raw_object_index":[0],"introduced_state":0,"modified_state":0,"object_index_source_offset":2,"source_entry":"om","source_offset":0}"#,
+            r#"{"id":"counter","section_link":"section","ordinal":0,"row_kind":1,"object_index":0,"raw_object_index":"00","introduced_state":0,"modified_state":0,"object_index_source_offset":2,"source_entry":"om","source_offset":0}"#,
         );
         preserves_wire::<OmOperationStateStatus>(
-            r#"{"id":"status","section_link":"section","ordinal":0,"status_code":65,"raw_status_code":[65],"object_index":1,"raw_object_index":[1],"payload":"Plain","source_entry":"om","source_offset":0,"end_offset":3}"#,
+            r#"{"id":"status","section_link":"section","ordinal":0,"status_code":65,"raw_status_code":"41","object_index":1,"raw_object_index":"01","payload":"Plain","source_entry":"om","source_offset":0,"end_offset":3}"#,
         );
         preserves_wire::<StateStatusPayload<String, Vec<u8>>>(
-            r#"{"Linked":{"link_code":75,"object_index":1,"raw_object_index":[1]}}"#,
+            r#"{"Linked":{"link_code":75,"object_index":1,"raw_object_index":"01"}}"#,
         );
         preserves_row_wire(
-            r#"{"List":{"ordinal":0,"object_index":0,"raw_object_index":[144,0,0],"position":1,"raw_position":[1],"source_offset":0}}"#,
+            r#"{"List":{"ordinal":0,"object_index":0,"raw_object_index":"900000","position":1,"raw_position":"01","source_offset":0}}"#,
         );
         preserves_row_wire(
-            r#"{"Pair":{"ordinal":0,"tag":79,"first":0,"raw_first":[0],"second":1,"raw_second":[1],"source_offset":0}}"#,
+            r#"{"Pair":{"ordinal":0,"tag":79,"first":0,"raw_first":"00","second":1,"raw_second":"01","source_offset":0}}"#,
         );
         preserves_slot_wire(
             0,
-            r#"{"ordinal":0,"object_index":null,"raw_object_index":[255]}"#,
+            r#"{"ordinal":0,"object_index":null,"raw_object_index":"ff"}"#,
         );
         preserves_slot_wire(
             1,
-            r#"{"ordinal":1,"object_index":255,"raw_object_index":[144,0,255]}"#,
+            r#"{"ordinal":1,"object_index":255,"raw_object_index":"9000ff"}"#,
         );
     }
 
     #[test]
     fn index_slots_reject_null_value_and_token_disagreement() {
         for json in [
-            r#"{"ordinal":0,"object_index":null,"raw_object_index":[]}"#,
-            r#"{"ordinal":0,"object_index":null,"raw_object_index":[0]}"#,
-            r#"{"ordinal":0,"object_index":0,"raw_object_index":[255]}"#,
-            r#"{"ordinal":0,"object_index":1,"raw_object_index":[0]}"#,
-            r#"{"ordinal":0,"object_index":0,"raw_object_index":[144,0]}"#,
-            r#"{"ordinal":0,"object_index":0,"raw_object_index":[0,0]}"#,
+            r#"{"ordinal":0,"object_index":null,"raw_object_index":""}"#,
+            r#"{"ordinal":0,"object_index":null,"raw_object_index":"00"}"#,
+            r#"{"ordinal":0,"object_index":0,"raw_object_index":"ff"}"#,
+            r#"{"ordinal":0,"object_index":1,"raw_object_index":"00"}"#,
+            r#"{"ordinal":0,"object_index":0,"raw_object_index":"9000"}"#,
+            r#"{"ordinal":0,"object_index":0,"raw_object_index":"0000"}"#,
         ] {
             assert!(serde_json::from_str::<OmOperationStateSlotWire>(json)
                 .unwrap()

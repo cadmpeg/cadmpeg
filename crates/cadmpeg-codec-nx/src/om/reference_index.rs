@@ -124,7 +124,7 @@ impl From<FeatureReferenceToken> for ReferenceIndexWire {
         TOKEN_INTO_WIRE_COUNT.with(|count| count.set(count.get() + 1));
         Self {
             object_index: token.value(),
-            raw_object_index: token.raw().to_vec(),
+            raw_object_index: (token.raw().to_vec()).into(),
         }
     }
 }
@@ -202,20 +202,20 @@ impl PayloadIndexToken {
 #[cfg_attr(test, derive(serde::Serialize))]
 struct ReferenceIndexWire {
     object_index: u32,
-    raw_object_index: Vec<u8>,
+    raw_object_index: NativeBytes<Vec<u8>>,
 }
 
 #[derive(serde::Serialize)]
 struct ReferenceIndexRef<'a> {
     object_index: u32,
-    raw_object_index: &'a [u8],
+    raw_object_index: NativeBytes<&'a [u8]>,
 }
 
 impl serde::Serialize for ReferenceIndexToken {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         ReferenceIndexRef {
             object_index: self.value(),
-            raw_object_index: self.raw(),
+            raw_object_index: (self.raw()).into(),
         }
         .serialize(serializer)
     }
@@ -225,7 +225,7 @@ impl serde::Serialize for FeatureReferenceToken {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         ReferenceIndexRef {
             object_index: self.value(),
-            raw_object_index: self.raw(),
+            raw_object_index: (self.raw()).into(),
         }
         .serialize(serializer)
     }
@@ -235,7 +235,7 @@ impl serde::Serialize for PayloadIndexToken {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         ReferenceIndexRef {
             object_index: self.value(),
-            raw_object_index: self.raw(),
+            raw_object_index: (self.raw()).into(),
         }
         .serialize(serializer)
     }
@@ -252,7 +252,7 @@ impl From<ReferenceIndexToken> for ReferenceIndexWire {
         TOKEN_INTO_WIRE_COUNT.with(|count| count.set(count.get() + 1));
         Self {
             object_index: token.value(),
-            raw_object_index: token.raw().to_vec(),
+            raw_object_index: (token.raw().to_vec()).into(),
         }
     }
 }
@@ -271,7 +271,7 @@ impl From<PayloadIndexToken> for ReferenceIndexWire {
         TOKEN_INTO_WIRE_COUNT.with(|count| count.set(count.get() + 1));
         Self {
             object_index: token.value(),
-            raw_object_index: token.raw().to_vec(),
+            raw_object_index: (token.raw().to_vec()).into(),
         }
     }
 }
@@ -282,6 +282,7 @@ impl TryFrom<ReferenceIndexWire> for PayloadIndexToken {
         Self::from_wire(wire.object_index, &wire.raw_object_index)
     }
 }
+use cadmpeg_ir::native::bytes::NativeBytes;
 
 #[cfg(test)]
 mod tests {

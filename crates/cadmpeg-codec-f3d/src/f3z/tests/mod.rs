@@ -14,3 +14,4 @@
 mod archive;
 mod fidelity;
 mod layers;
+mod recovery;

@@ -519,8 +519,13 @@ impl<'a> ParsedStreams<'a> {
         &self.unmatched_tombstone_counts
     }
 
-    /// Move the delta censuses into the native extractor after all semantic
-    /// residuals have been built. Each delta walk is owned by one decode.
+    /// Read the raw delta census before native extraction consumes it.
+    pub(crate) fn delta_census(&self, ordinal: usize) -> Option<&Census> {
+        self.streams.get(ordinal)?.delta_census.as_ref()
+    }
+
+    /// Move the delta censuses into the native extractor after semantic
+    /// residuals and source metadata have been built.
     pub(super) fn take_delta_censuses(
         &mut self,
         ctx: &DecodeContext<'_>,

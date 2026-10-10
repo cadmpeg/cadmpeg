@@ -1181,10 +1181,7 @@ impl CompoundState {
             "scan CFB mini FAT ownership",
         )?;
         for (sector, marker) in self.mini_fat.iter().enumerate() {
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(mini_used.len()),
-                "compare CFB mini FAT ownership",
-            )?;
+            ctx.charge_btree_lookup(mini_used.len(), "compare CFB mini FAT ownership")?;
             let sector = u32::try_from(sector)
                 .map_err(|_| CodecError::Malformed("CFB mini-sector id exceeds u32".into()))?;
             if !mini_used.contains(&sector) && *marker != FREE_SECTOR {
@@ -1196,10 +1193,7 @@ impl CompoundState {
             "scan CFB FAT ownership",
         )?;
         for (sector, marker) in self.fat.iter().take(self.sector_count).enumerate() {
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(used.len()),
-                "compare CFB FAT ownership",
-            )?;
+            ctx.charge_btree_lookup(used.len(), "compare CFB FAT ownership")?;
             let sector = u32::try_from(sector)
                 .map_err(|_| CodecError::Malformed("CFB sector id exceeds u32".into()))?;
             if !used.contains(&sector) && *marker != FREE_SECTOR {
@@ -1229,15 +1223,30 @@ impl CompoundPrefixProbe {
         ctx: &'ctx DecodeContext<'_>,
         prefix: View<'_>,
     ) -> Result<(Self, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+        Self::inspect_input(ctx, &mut ProbeInput::Borrowed(prefix.window()))
+    }
+
+    fn inspect_input<'ctx>(
+        ctx: &'ctx DecodeContext<'_>,
+        input: &mut ProbeInput<'_>,
+    ) -> Result<(Self, ScopedReservation<'ctx>), CodecError> {
         ctx.with_scoped_storage("CFB prefix probe", || {
-            let prefix = prefix.window();
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(prefix.len()),
-                "CFB probe input scan",
-            )?;
+            ctx.charge_work(8, "CFB probe signature")?;
+            let prefix = input.bytes();
             if prefix.get(..8) != Some(&MAGIC) {
                 return Ok(Self::NotCompound);
             }
+            // Acquire the complete fixed header before classifying a short input.
+            // A borrowed prefix keeps its existing incomplete-header semantics.
+            let header_prefix_len = match input {
+                ProbeInput::Borrowed(_) => 32,
+                ProbeInput::Reading { .. } => 512,
+            };
+            if !input.ensure(ctx, header_prefix_len)? {
+                return Ok(Self::Incomplete);
+            }
+            ctx.charge_work(24, "CFB probe header fields")?;
+            let prefix = input.bytes();
             let Some(major) = le_u16(prefix, 26) else {
                 return Ok(Self::Incomplete);
             };
@@ -1248,9 +1257,11 @@ impl CompoundPrefixProbe {
                 return Ok(Self::Malformed("invalid CFB sector layout".into()));
             };
             let sector_size = version.sector_size();
-            if prefix.len() < sector_size {
+            if !input.ensure(ctx, sector_size)? {
                 return Ok(Self::Incomplete);
             }
+            ctx.charge_work(480, "CFB probe header fields")?;
+            let prefix = input.bytes();
             if prefix.get(8..24) != Some(&[0; 16])
                 || le_u16(prefix, 24) != Some(0x003e)
                 || le_u16(prefix, 28) != Some(0xfffe)
@@ -1260,10 +1271,14 @@ impl CompoundPrefixProbe {
             {
                 return Ok(Self::Malformed("invalid CFB header".into()));
             }
-            if version == CompoundVersion::V4
-                && prefix[512..sector_size].iter().any(|byte| *byte != 0)
-            {
-                return Ok(Self::Malformed("CFB v4 header padding is not zero".into()));
+            if version == CompoundVersion::V4 {
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(sector_size - 512),
+                    "CFB probe header padding",
+                )?;
+                if prefix[512..sector_size].iter().any(|byte| *byte != 0) {
+                    return Ok(Self::Malformed("CFB v4 header padding is not zero".into()));
+                }
             }
             let Some(fat_count) = le_u32(prefix, 44).and_then(|v| usize::try_from(v).ok()) else {
                 return Ok(Self::Incomplete);
@@ -1286,7 +1301,6 @@ impl CompoundPrefixProbe {
             {
                 return Ok(Self::Malformed("invalid CFB header counts".into()));
             }
-            let available = (prefix.len() - sector_size) / sector_size;
             ctx.charge_collection_items(
                 cadmpeg_core::decode::u64_from_index(fat_count),
                 "probe CFB FAT sectors",
@@ -1323,9 +1337,9 @@ impl CompoundPrefixProbe {
                     cadmpeg_core::decode::u64_from_index(sector_size),
                     "CFB probe DIFAT step",
                 )?;
-                if cadmpeg_core::decode::index_from_u32(next_difat) >= available {
+                let Some(raw) = input.sector(ctx, sector_size, next_difat)? else {
                     return Ok(Self::Incomplete);
-                }
+                };
                 if !ctx.insert_scoped_btree_set(
                     &mut seen_difat_storage,
                     &mut seen_difat,
@@ -1335,9 +1349,6 @@ impl CompoundPrefixProbe {
                 )? {
                     return Ok(Self::Malformed("CFB DIFAT chain is cyclic".into()));
                 }
-                let Some(raw) = sector_slice(prefix, sector_size, available, next_difat) else {
-                    return Ok(Self::Incomplete);
-                };
                 let mut free_seen = false;
                 for index in 0..difat_entries {
                     let Some(id) = le_u32(raw, index * 4) else {
@@ -1379,14 +1390,10 @@ impl CompoundPrefixProbe {
             let mut fat = Vec::new();
             let mut loaded_fat_count = 0;
             for &id in &fat_sectors {
-                if cadmpeg_core::decode::index_from_u32(id) >= available {
+                let Some(raw) = input.sector(ctx, sector_size, id)? else {
                     break;
-                }
-                let Some(raw) = sector_slice(prefix, sector_size, available, id) else {
-                    return Ok(Self::Incomplete);
                 };
-                // `available` counts only complete sectors, and each admitted
-                // sector width is an exact multiple of four.
+                // Each acquired sector is complete and its width is a multiple of four.
                 ctx.reserve_vec(&mut fat, raw.len() / 4, "CFB probe FAT words")?;
                 ctx.charge_work(
                     cadmpeg_core::decode::u64_from_index(raw.len()),
@@ -1430,11 +1437,8 @@ impl CompoundPrefixProbe {
             let mut seen_directory = BTreeSet::new();
             let mut current = directory_start;
             loop {
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(fat.len()),
-                    "CFB probe directory step",
-                )?;
-                if cadmpeg_core::decode::index_from_u32(current) >= available {
+                ctx.charge_work(1, "CFB probe directory step")?;
+                if input.sector(ctx, sector_size, current)?.is_none() {
                     return Ok(Self::Incomplete);
                 }
                 let Some(&next) = fat.get(cadmpeg_core::decode::index_from_u32(current)) else {
@@ -1473,6 +1477,8 @@ impl CompoundPrefixProbe {
                 cadmpeg_core::decode::u64_from_index(directory_chain.len() * sector_size),
                 "CFB probe joined directory",
             )?;
+            let prefix = input.bytes();
+            let available = (prefix.len() - sector_size) / sector_size;
             let directory_bytes =
                 join_sectors(ctx, prefix, sector_size, available, directory_chain.iter())?;
             let directory = match parse_directory(ctx, &directory_bytes, version) {
@@ -1499,10 +1505,7 @@ impl CompoundPrefixProbe {
             let mut seen_storage = ctx.reserve_scoped(0, "CFB probe visits")?;
             let mut seen = BTreeSet::new();
             while let Some((id, parent)) = pending.pop() {
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(directory.len()),
-                    "CFB probe path step",
-                )?;
+                ctx.charge_work(1, "CFB probe path step")?;
                 if id == NO_STREAM {
                     continue;
                 }
@@ -1566,10 +1569,7 @@ impl CompoundPrefixProbe {
             )?;
             for (id, entry) in directory.iter().enumerate().skip(1) {
                 if matches!(entry, DirectorySlot::Live(_)) {
-                    ctx.charge_work(
-                        cadmpeg_core::decode::u64_from_index(seen.len()),
-                        "CFB probe reachability lookup",
-                    )?;
+                    ctx.charge_btree_lookup(seen.len(), "CFB probe reachability lookup")?;
                     if u32::try_from(id).ok().is_none_or(|id| !seen.contains(&id)) {
                         return Ok(Self::Malformed(
                             "CFB directory contains an unreachable live entry".into(),
@@ -1603,29 +1603,68 @@ pub fn read_detection_prefix(
         Err(_) => prefix_len,
     };
     let mut bytes = ctx.read_input_prefix(source, phase_one_len)?;
-    loop {
-        let (probe, storage) =
-            CompoundPrefixProbe::inspect_with_context(ctx, View::over_retained(&bytes))?;
-        let incomplete = matches!(probe, CompoundPrefixProbe::Incomplete);
-        drop((probe, storage));
-        if !incomplete {
-            return Ok(bytes);
+    let mut input = ProbeInput::Reading {
+        bytes: &mut bytes,
+        source,
+    };
+    let (probe, storage) = CompoundPrefixProbe::inspect_input(ctx, &mut input)?;
+    drop((probe, storage));
+    Ok(bytes)
+}
+
+/// One probe pass either borrows a fixed prefix or acquires required sectors.
+enum ProbeInput<'a> {
+    Borrowed(&'a [u8]),
+    Reading {
+        bytes: &'a mut Vec<u8>,
+        source: &'a mut dyn Read,
+    },
+}
+
+impl ProbeInput<'_> {
+    fn bytes(&self) -> &[u8] {
+        match self {
+            Self::Borrowed(bytes) => bytes,
+            Self::Reading { bytes, .. } => bytes,
         }
-        let used = cadmpeg_core::decode::u64_from_index(bytes.len());
-        if used >= max_bytes {
+    }
+
+    fn ensure(&mut self, ctx: &DecodeContext<'_>, length: usize) -> Result<bool, CodecError> {
+        if self.bytes().len() >= length {
+            return Ok(true);
+        }
+        let Self::Reading { bytes, source } = self else {
+            return Ok(false);
+        };
+        let max_bytes = ctx.policy().limits.max_input_bytes;
+        let target = usize::try_from(max_bytes).map_or(length, |max| length.min(max));
+        ctx.extend_input_prefix(*source, bytes, target)?;
+        if bytes.len() < length && cadmpeg_core::decode::u64_from_index(bytes.len()) == max_bytes {
             ctx.charge_work(1, "CFB detection end probe")?;
             if source.read(&mut [0_u8; 1])? != 0 {
                 return Err(ctx.refuse_input_limit(1, "CFB detection input"));
             }
-            return Ok(bytes);
         }
-        let remaining = usize::try_from(max_bytes - used)
-            .map_or(64 * 1024, |remaining| remaining.min(64 * 1024));
-        let previous = bytes.len();
-        ctx.extend_input_prefix(source, &mut bytes, previous + remaining)?;
-        if bytes.len() == previous {
-            return Ok(bytes);
+        Ok(bytes.len() >= length)
+    }
+
+    fn sector(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        sector_size: usize,
+        id: u32,
+    ) -> Result<Option<&[u8]>, CodecError> {
+        let start = cadmpeg_core::decode::index_from_u32(id)
+            .checked_add(1)
+            .and_then(|index| index.checked_mul(sector_size))
+            .ok_or_else(|| CodecError::Malformed("CFB sector offset overflow".into()))?;
+        let end = start
+            .checked_add(sector_size)
+            .ok_or_else(|| CodecError::Malformed("CFB sector offset overflow".into()))?;
+        if !self.ensure(ctx, end)? {
+            return Ok(None);
         }
+        Ok(self.bytes().get(start..end))
     }
 }
 
@@ -2411,6 +2450,125 @@ mod tests {
     }
 
     #[test]
+    fn detection_acquires_a_distant_directory_with_linear_work() {
+        let file = large_regular_fixture();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // Input read/copy work fits; rescanning growing 64 KiB prefixes does not.
+        policy.limits.max_work_units = 40_000_000;
+        let ctx = DecodeContext::new(&arena, &policy, false);
+        let mut source = std::io::Cursor::new(&file);
+        let prefix = read_detection_prefix(&ctx, &mut source, 128 * 1024)
+            .expect("one acquisition pass reaches the distant directory");
+        assert_eq!(prefix, file);
+        assert_eq!(
+            source.position(),
+            u64::try_from(file.len()).expect("fixture size")
+        );
+        let (evidence, storage) = CompoundPrefixProbe::inspect_with_context(
+            &ctx,
+            cadmpeg_core::decode::View::over_retained(&prefix),
+        )
+        .expect("structured fields fit the remaining work budget");
+        assert_eq!(evidence.paths(), Some(["Payload".to_owned()].as_slice()));
+        drop((evidence, storage));
+        ctx.finish_session()
+            .expect("probe releases all scoped storage");
+    }
+
+    #[test]
+    fn detection_acquires_a_short_header_before_classification() {
+        let mut file = MAGIC.to_vec();
+        file.extend(std::iter::repeat_n(0x5a, 128));
+        for prefix_len in [8, 16, 31, 32] {
+            let arena = DecodeArena::new();
+            let policy = DecodePolicy::service();
+            let ctx = DecodeContext::new(&arena, &policy, false);
+            let mut source = std::io::Cursor::new(&file);
+            let prefix = read_detection_prefix(&ctx, &mut source, prefix_len)
+                .expect("a short compound header is acquired through EOF");
+            assert_eq!(prefix, file);
+            assert_eq!(source.position(), 136);
+            ctx.finish_session().expect("probe releases scoped storage");
+        }
+    }
+
+    #[test]
+    fn prefix_probe_bills_structures_instead_of_uninspected_payload() {
+        let file = large_regular_fixture();
+        let mut policy = DecodePolicy::service();
+        // A complete 16 MiB prefix has less than 64 KiB of inspected structures.
+        policy.limits.max_work_units = 64 * 1024;
+        with_context(&file, &policy, |ctx| {
+            let (evidence, storage) = CompoundPrefixProbe::inspect_with_context(
+                ctx,
+                cadmpeg_core::decode::View::over_retained(&file),
+            )
+            .expect("only header, FAT and directory work is charged");
+            assert_eq!(evidence.paths(), Some(["Payload".to_owned()].as_slice()));
+            drop((evidence, storage));
+        });
+    }
+
+    #[test]
+    fn sector_ownership_admits_a_realistic_regular_stream() {
+        let file = large_regular_fixture();
+        let state = with_context(&file, &DecodePolicy::service(), |ctx| {
+            CompoundState::parse(ctx, &file).expect("allocation tables")
+        });
+        let entries = with_context(&[], &DecodePolicy::service(), |ctx| {
+            state.build_entries(ctx, 1).expect("stream directory")
+        });
+        let mut policy = DecodePolicy::service();
+        // The old FAT membership billing alone costs 4096 * 4096 units.
+        policy.limits.max_work_units = 1_000_000;
+        with_context(&[], &policy, |ctx| {
+            state
+                .validate_sector_ownership(ctx, &entries)
+                .expect("tree comparisons fit the ownership budget");
+        });
+        let mut overlapping = entries.clone();
+        overlapping.push(entries[0].clone());
+        let error = with_context(&[], &policy, |ctx| {
+            state.validate_sector_ownership(ctx, &overlapping)
+        })
+        .expect_err("duplicate stream still overlaps");
+        assert!(matches!(error, CodecError::Malformed(message)
+            if message == "CFB stream sector has duplicate ownership"));
+    }
+
+    #[test]
+    fn detection_sector_acquisition_keeps_the_input_limit_and_eof() {
+        use cadmpeg_core::decode::ResourceDimension;
+        let file = large_regular_fixture();
+        for exact_eof in [false, true] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_input_bytes = 128 * 1024;
+            let ctx = DecodeContext::new(&arena, &policy, false);
+            let source_bytes = if exact_eof {
+                &file[..128 * 1024]
+            } else {
+                &file[..]
+            };
+            let mut source = std::io::Cursor::new(source_bytes);
+            let result = read_detection_prefix(&ctx, &mut source, 128 * 1024);
+            if exact_eof {
+                assert_eq!(
+                    result.expect("EOF leaves incomplete evidence"),
+                    source_bytes
+                );
+                assert_eq!(source.position(), 128 * 1024);
+            } else {
+                assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+                    if limit.dimension == ResourceDimension::InputBytes
+                        && limit.operation == "CFB detection input"));
+                assert_eq!(source.position(), 128 * 1024 + 1);
+            }
+        }
+    }
+
+    #[test]
     fn detection_prefix_never_reads_past_its_byte_limit() {
         let mut source = CountingReader {
             inner: &[b'x'; 1024],
@@ -3089,6 +3247,77 @@ mod tests {
             limit.dimension,
             cadmpeg_core::decode::ResourceDimension::CollectionItems
         );
+    }
+
+    /// A 16 MiB v4 file with four FAT sectors and a directory at the end.
+    fn large_regular_fixture() -> Vec<u8> {
+        const WIDTH: usize = 4096;
+        const SECTORS: usize = 4096;
+        const FAT_COUNT: usize = 4;
+        const DIRECTORY: usize = SECTORS - 1;
+        let mut file = vec![0_u8; (SECTORS + 1) * WIDTH];
+        file[..8].copy_from_slice(&MAGIC);
+        put_u16(&mut file, 24, 0x003e);
+        put_u16(&mut file, 26, 4);
+        put_u16(&mut file, 28, 0xfffe);
+        put_u16(&mut file, 30, 12);
+        put_u16(&mut file, 32, 6);
+        put_u32(&mut file, 40, 1);
+        put_u32(&mut file, 44, u32::try_from(FAT_COUNT).expect("FAT count"));
+        put_u32(
+            &mut file,
+            48,
+            u32::try_from(DIRECTORY).expect("directory sector"),
+        );
+        put_u32(&mut file, 56, 4096);
+        put_u32(&mut file, 60, END_OF_CHAIN);
+        put_u32(&mut file, 68, END_OF_CHAIN);
+        for index in 0..109 {
+            put_u32(
+                &mut file,
+                76 + index * 4,
+                if index < FAT_COUNT {
+                    u32::try_from(index).expect("FAT id")
+                } else {
+                    FREE_SECTOR
+                },
+            );
+        }
+        for sector in 0..SECTORS {
+            let marker = if sector < FAT_COUNT {
+                FAT_SECTOR
+            } else if sector >= DIRECTORY - 1 {
+                END_OF_CHAIN
+            } else {
+                u32::try_from(sector + 1).expect("next sector")
+            };
+            put_u32(&mut file, WIDTH + sector * 4, marker);
+        }
+        let directory = sector_mut_with_size(&mut file, WIDTH, DIRECTORY);
+        initialize_empty_directory_entries(directory);
+        directory_entry(
+            directory,
+            0,
+            "Root Entry",
+            5,
+            NO_STREAM,
+            NO_STREAM,
+            1,
+            END_OF_CHAIN,
+            0,
+        );
+        directory_entry(
+            directory,
+            1,
+            "Payload",
+            2,
+            NO_STREAM,
+            NO_STREAM,
+            NO_STREAM,
+            u32::try_from(FAT_COUNT).expect("stream start"),
+            u64::try_from((DIRECTORY - FAT_COUNT) * WIDTH).expect("stream size"),
+        );
+        file
     }
 
     fn fixture() -> Vec<u8> {

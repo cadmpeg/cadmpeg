@@ -262,7 +262,7 @@ fn timeline_items_preserve_wire_and_reject_unequal_offsets() {
 
 #[test]
 fn annotation_return_members_preserve_wire_and_reject_unequal_offsets() {
-    let wire = r#"{"id":"annotation","governing_companion_record_index":2,"byte_offset":100,"class_tag":"256","record_index":3,"frame_length":120,"operands":[{"geometry_record_index":10,"geometry_reference_offset":125,"role":1,"role_offset":135},{"geometry_record_index":11,"geometry_reference_offset":140,"role":2,"role_offset":150}],"entity_genesis":0,"annotation_bytes":[],"annotation_byte_offset":211,"governing_owner_record_index":4,"governing_owner_reference_offset":212,"return_members":[10,11],"return_member_offsets":[227,238],"paired_class_tag":"259","paired_byte_offset":220,"owner_reference":5,"owner_reference_offset":240}"#;
+    let wire = r#"{"id":"annotation","governing_companion_record_index":2,"byte_offset":100,"class_tag":"256","record_index":3,"frame_length":120,"operands":[{"geometry_record_index":10,"geometry_reference_offset":125,"role":1,"role_offset":135},{"geometry_record_index":11,"geometry_reference_offset":140,"role":2,"role_offset":150}],"entity_genesis":0,"annotation_bytes":"","annotation_byte_offset":211,"governing_owner_record_index":4,"governing_owner_reference_offset":212,"return_members":[10,11],"return_member_offsets":[227,238],"paired_class_tag":"259","paired_byte_offset":220,"owner_reference":5,"owner_reference_offset":240}"#;
     let frame: crate::records::dimensions::DesignDimensionAnnotationFrame =
         serde_json::from_str(wire).expect("annotation return members");
     assert_eq!(
@@ -404,7 +404,7 @@ fn entity_header_runs_derive_counts_and_preserve_absent_reference_slots() {
 
 #[test]
 fn sketch_auxiliary_rows_preserve_absent_and_complete_offset_runs() {
-    let base = r#"{"id":"relation","record_index":1,"class_tag":"000","byte_offset":0,"state_offset":0,"owner_reference":1,"owner_entity_id":"owner","auxiliary_references":[],"auxiliary_reference_offsets":[],"members":[],"resolved_members":[],"member_offsets":[],"owner_reference_offset":0,"state":0,"constraint_kinds":["coincident"],"unknown_constraint_bits":0,"member_relation_ordinals":[],"entity_genesis":null,"pattern":null,"return_members":[],"resolved_return_members":[],"return_member_offsets":[],"raw_bytes":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}"#;
+    let base = r#"{"id":"relation","record_index":1,"class_tag":"000","byte_offset":0,"state_offset":0,"owner_reference":1,"owner_entity_id":"owner","auxiliary_references":[],"auxiliary_reference_offsets":[],"members":[],"resolved_members":[],"member_offsets":[],"owner_reference_offset":0,"state":0,"constraint_kinds":["coincident"],"unknown_constraint_bits":0,"member_relation_ordinals":[],"entity_genesis":null,"pattern":null,"return_members":[],"resolved_return_members":[],"return_member_offsets":[],"raw_bytes":"0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"}"#;
     for (values, offsets) in [
         (vec![], vec![]),
         (vec![2], vec![0]),
@@ -1322,7 +1322,7 @@ fn sketch_relation_definition_preserves_masks_and_rejects_mismatched_payloads() 
     for state in [0, 1, 0x11, 0x4000, 0x8000_0000, 0x20_0000_0000, 0x1000_0001] {
         assert_eq!(Definition::new(state, None).unwrap().state(), state);
     }
-    let wire = r#"{"id":"relation","record_index":1,"class_tag":"000","byte_offset":0,"state_offset":0,"owner_reference":1,"owner_entity_id":"owner","auxiliary_references":[],"auxiliary_reference_offsets":[],"rectangular_counted_reference_count":0,"members":[],"resolved_members":[],"member_offsets":[],"owner_reference_offset":0,"state":1099511627776,"constraint_kinds":["text_frame"],"unknown_constraint_bits":0,"member_relation_ordinals":[],"entity_genesis":null,"pattern":{"kind":"text_frame","text_reference":2},"return_members":[],"resolved_return_members":[],"return_member_offsets":[],"raw_bytes":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}"#;
+    let wire = r#"{"id":"relation","record_index":1,"class_tag":"000","byte_offset":0,"state_offset":0,"owner_reference":1,"owner_entity_id":"owner","auxiliary_references":[],"auxiliary_reference_offsets":[],"rectangular_counted_reference_count":0,"members":[],"resolved_members":[],"member_offsets":[],"owner_reference_offset":0,"state":1099511627776,"constraint_kinds":["text_frame"],"unknown_constraint_bits":0,"member_relation_ordinals":[],"entity_genesis":null,"pattern":{"kind":"text_frame","text_reference":2},"return_members":[],"resolved_return_members":[],"return_member_offsets":[],"raw_bytes":"0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"}"#;
     let relation: crate::records::sketch_relations::SketchRelation =
         serde_json::from_str(wire).unwrap();
     assert_eq!(serde_json::to_string(&relation).unwrap(), wire);
@@ -1583,7 +1583,7 @@ fn sketch_point_flags_preserve_numeric_wire_and_reject_non_boolean_values() {
                 let mut wire = base.clone();
                 let mut flags = [0; 8];
                 flags[lane] = value;
-                wire["flags"] = json!(flags);
+                wire["flags"] = json!(cadmpeg_ir::native::bytes::NativeBytes::from(flags));
                 let decoded = serde_json::from_value::<SketchPoint>(wire.clone());
                 if lane < count && value == 1 {
                     assert_eq!(

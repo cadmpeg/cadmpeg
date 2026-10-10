@@ -196,15 +196,18 @@ mod tests {
 
     #[test]
     fn stored_surface_helpers_preserve_actual_admission_refusal() {
+        // Degree 16 needs a heap basis; lower degrees evaluate inline.
+        let mut knots = vec![0.0; 17];
+        knots.extend(vec![1.0; 17]);
         let surface = NurbsSurface::from_lanes(
             &cadmpeg_test_support::service_decode_context(),
-            NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
-            NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
+            NurbsSurfaceAxis::new(16, knots.clone(), false),
+            NurbsSurfaceAxis::new(16, knots, false),
             NurbsSurfaceLanes::new(
-                (0..3)
+                (0..17)
                     .map(|u| {
-                        (0..3)
-                            .map(|v| Point3::new(f64::from(u) * 0.5, f64::from(v) * 0.5, 0.0))
+                        (0..17)
+                            .map(|v| Point3::new(f64::from(u) / 16.0, f64::from(v) / 16.0, 0.0))
                             .collect()
                     })
                     .collect(),
@@ -213,7 +216,7 @@ mod tests {
             false,
         )
         .expect("fixture admission")
-        .expect("quadratic plane");
+        .expect("degree-16 plane");
         for dimension in [
             ResourceDimension::MaterializedBytes,
             ResourceDimension::CollectionItems,

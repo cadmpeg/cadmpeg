@@ -443,6 +443,7 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
             None,
         ));
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,

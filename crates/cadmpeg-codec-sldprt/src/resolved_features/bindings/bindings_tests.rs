@@ -122,7 +122,7 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
     let mut lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: vec![0; 500],
+        native_payload: vec![0; 500].into(),
         classes: Vec::new(),
         names: vec![
             name("extrusion-name", 100, 10, "Cut-Extrude-Thin"),
@@ -204,14 +204,14 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         terminal_feature_ref: None,
         components: vec![FeatureInputComponentPathEntry {
             instance: None,
-            type_signature: signature,
+            type_signature: signature.into(),
             local_id: Some(7),
         }],
     };
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),
@@ -453,7 +453,7 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
     let mut lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: vec![0; 256],
+        native_payload: vec![0; 256].into(),
         classes: Vec::new(),
         names: vec![FeatureInputName {
             id: "pattern-name".into(),
@@ -474,18 +474,18 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
             parent: "lane".into(),
             ordinal: 0,
             offset: 150,
-            type_prefix: [0xc2, 0x83, 0xfb, 0x08],
+            type_prefix: [0xc2, 0x83, 0xfb, 0x08].into(),
             feature_source_id: 224_u32.try_into().unwrap(),
             local_identity: 2,
             components: vec![
                 FeatureInputComponentPathEntry {
                     instance: Some(0x8aaa),
-                    type_signature: signature(228, 1),
+                    type_signature: signature(228, 1).into(),
                     local_id: None,
                 },
                 FeatureInputComponentPathEntry {
                     instance: Some(0x89c9),
-                    type_signature: signature(224, 2),
+                    type_signature: signature(224, 2).into(),
                     local_id: Some(2),
                 },
             ],
@@ -615,7 +615,7 @@ fn circular_pattern_axis_binds_from_unique_temporary_axis() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: Vec::new(),
         names: vec![FeatureInputName {
             id: "pattern-name".into(),
@@ -716,7 +716,7 @@ fn indexed_curve_vertex_binding_follows_the_resolved_coordinate_roster() {
     let mut lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),
@@ -790,7 +790,7 @@ fn local_link_promotes_a_coordinate_bearing_curve_to_a_profile_vertex() {
     let mut lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),
@@ -896,7 +896,7 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
     let mut lane = FeatureInputLane {
         id: "sldprt:feature-input:config-objects#1".into(),
         configuration: Some("0".into()),
-        native_payload: vec![0; 700],
+        native_payload: vec![0; 700].into(),
         classes: vec![
             class(100, "moRelMgr_c"),
             class(200, "sg3DPlaneHandle"),

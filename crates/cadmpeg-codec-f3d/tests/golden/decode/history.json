@@ -337,7 +337,7 @@
             "index": 0,
             "name": "history_payload",
             "parent": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-delta-state#0000001716",
-            "raw_bytes": "DQ9oaXN0b3J5X3BheWxvYWQEJQAAAAAAAAAMJgcAAAAAAAAM//////////8R",
+            "raw_bytes": "0d0f686973746f72795f7061796c6f61640425000000000000000c26070000000000000cffffffffffffffff11",
             "revision_id": 1830
           }
         ],

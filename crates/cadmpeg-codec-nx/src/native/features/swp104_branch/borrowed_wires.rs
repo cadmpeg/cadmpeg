@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Borrowed SWP104 branch and reference serialization.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use super::FeatureSwp104LeadingBranch;
 use serde::ser::{SerializeMap, SerializeSeq};
 use serde::Serialize;
@@ -44,7 +46,7 @@ impl Serialize for FeatureSwp104LeadingBranch {
         wire.serialize_entry("scalars", &self.scalars.map(|scalar| scalar.value().get()))?;
         wire.serialize_entry(
             "raw_scalars",
-            &self.scalars.map(crate::om::scalar::ShiftedBinary64::raw),
+            &self.scalars.map(|scalar| NativeBytes::from(scalar.raw())),
         )?;
         wire.serialize_entry("leading_zero", &self.leading_zero)?;
         wire.serialize_entry("mode", &self.mode)?;
@@ -52,7 +54,7 @@ impl Serialize for FeatureSwp104LeadingBranch {
         if let Some(count) = self.state_lane.witnessed_count() {
             wire.serialize_entry("witnessed_count", &count)?;
         }
-        wire.serialize_entry("state_lane", self.state_lane.bytes())?;
+        wire.serialize_entry("state_lane", &NativeBytes::from(self.state_lane.bytes()))?;
         wire.serialize_entry("members", &MembersView(self))?;
         let terminal_offset = self.source_offset
             + self.members_offset()

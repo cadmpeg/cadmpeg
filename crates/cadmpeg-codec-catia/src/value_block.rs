@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Framed CATIA `7C0B` value blocks.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
@@ -31,7 +33,7 @@ impl ValueBlock {
 struct ValueBlockWire {
     pos: usize,
     declared_len: usize,
-    payload: Vec<u8>,
+    payload: NativeBytes<Vec<u8>>,
 }
 
 impl From<ValueBlock> for ValueBlockWire {
@@ -39,7 +41,7 @@ impl From<ValueBlock> for ValueBlockWire {
         Self {
             pos: block.pos,
             declared_len: block.declared_len(),
-            payload: block.payload,
+            payload: (block.payload).into(),
         }
     }
 }
@@ -50,7 +52,7 @@ impl TryFrom<ValueBlockWire> for ValueBlock {
     fn try_from(wire: ValueBlockWire) -> Result<Self, Self::Error> {
         let block = Self {
             pos: wire.pos,
-            payload: wire.payload,
+            payload: wire.payload.into_inner(),
         };
         if wire.declared_len != block.declared_len() {
             return Err("value block length disagrees with payload");
@@ -62,7 +64,7 @@ impl TryFrom<ValueBlockWire> for ValueBlock {
 /// One through eight inline bytes with a derived length code.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "InlineBytesWire")]
-pub(crate) struct InlineBytes(Vec<u8>);
+pub(crate) struct InlineBytes(NativeBytes);
 
 impl InlineBytes {
     /// Exact inline bytes.
@@ -84,22 +86,20 @@ impl TryFrom<Vec<u8>> for InlineBytes {
         if !(1..=8).contains(&bytes.len()) {
             return Err("bytes must contain one through eight inline bytes");
         }
-        Ok(Self(bytes))
+        Ok(Self(bytes.into()))
     }
 }
 
 #[derive(Serialize, Deserialize)]
 struct InlineBytesWire {
     code: u8,
-    #[serde(with = "cadmpeg_ir::bytes")]
-    bytes: Vec<u8>,
+    bytes: NativeBytes<Vec<u8>>,
 }
 
 #[derive(Serialize)]
 struct InlineBytesWireRef<'a> {
     code: u8,
-    #[serde(with = "cadmpeg_ir::bytes")]
-    bytes: &'a [u8],
+    bytes: NativeBytes<&'a [u8]>,
 }
 
 impl Serialize for InlineBytes {
@@ -109,7 +109,7 @@ impl Serialize for InlineBytes {
     {
         InlineBytesWireRef {
             code: self.code().map_err(serde::ser::Error::custom)?,
-            bytes: &self.0,
+            bytes: (&self.0).into(),
         }
         .serialize(serializer)
     }
@@ -120,14 +120,14 @@ impl From<InlineBytes> for InlineBytesWire {
     fn from(value: InlineBytes) -> Self {
         Self {
             code: value.code().expect("validated inline bytes"),
-            bytes: value.0,
+            bytes: (value.0),
         }
     }
 }
 impl TryFrom<InlineBytesWire> for InlineBytes {
     type Error = &'static str;
     fn try_from(wire: InlineBytesWire) -> Result<Self, Self::Error> {
-        let bytes = Self::try_from(wire.bytes)?;
+        let bytes = Self::try_from(wire.bytes.into_inner())?;
         if wire.code != bytes.code()? {
             return Err("code disagrees with inline bytes length");
         }
@@ -182,8 +182,7 @@ pub(crate) enum ValueField {
     /// `E5 <length:u32le> <bytes[length]>` length-framed byte string.
     ByteString {
         /// Exact stored bytes.
-        #[serde(with = "cadmpeg_ir::bytes")]
-        bytes: Vec<u8>,
+        bytes: NativeBytes<Vec<u8>>,
         /// Byte offset within the value payload.
         offset: usize,
     },
@@ -218,11 +217,16 @@ pub(crate) fn copy_fields_charged(
     for field in fields {
         let copy = match field {
             ValueField::Inline { bytes, offset } => ValueField::Inline {
-                bytes: InlineBytes(ctx.copy_slice(&bytes.0, "catia_native_value_inline_bytes")?),
+                bytes: InlineBytes(
+                    ctx.copy_slice(&bytes.0, "catia_native_value_inline_bytes")?
+                        .into(),
+                ),
                 offset: *offset,
             },
             ValueField::ByteString { bytes, offset } => ValueField::ByteString {
-                bytes: ctx.copy_slice(bytes, "catia_native_value_field_bytes")?,
+                bytes: ctx
+                    .copy_slice(bytes, "catia_native_value_field_bytes")?
+                    .into(),
                 offset: *offset,
             },
             other => other.clone(),
@@ -343,12 +347,15 @@ pub(crate) fn copy_field_charged(
         ValueField::Separator { offset } => ValueField::Separator { offset: *offset },
         ValueField::Inline { bytes, offset } => ValueField::Inline {
             bytes: InlineBytes(
-                ctx.copy_slice(bytes.as_slice(), "catia_value_selection_inline_bytes")?,
+                ctx.copy_slice(bytes.as_slice(), "catia_value_selection_inline_bytes")?
+                    .into(),
             ),
             offset: *offset,
         },
         ValueField::ByteString { bytes, offset } => ValueField::ByteString {
-            bytes: ctx.copy_slice(bytes, "catia_value_selection_string_bytes")?,
+            bytes: ctx
+                .copy_slice(bytes, "catia_value_selection_string_bytes")?
+                .into(),
             offset: *offset,
         },
         ValueField::Atom {
@@ -416,7 +423,7 @@ fn tokenize_with<E>(
             let end = at + 3 + len;
             if end <= payload.len() {
                 push(ValueField::Inline {
-                    bytes: InlineBytes(copy(&payload[at + 3..end])?),
+                    bytes: InlineBytes(copy(&payload[at + 3..end])?.into()),
                     offset,
                 })?;
                 at = end;
@@ -436,7 +443,7 @@ fn tokenize_with<E>(
             let end = len.and_then(|len| at.checked_add(5)?.checked_add(len));
             if let Some(end) = end.filter(|end| *end <= payload.len()) {
                 push(ValueField::ByteString {
-                    bytes: copy(&payload[at + 5..end])?,
+                    bytes: copy(&payload[at + 5..end])?.into(),
                     offset,
                 })?;
                 at = end;

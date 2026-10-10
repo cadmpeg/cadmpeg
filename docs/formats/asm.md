@@ -268,7 +268,7 @@ An untrimmed closed analytic face stores `-1` in `chunk[4]` (first_loop) and own
 
 The `{+35,+44,+53}` triad is next/prev/partner. `+72` is the owner loop. **Partner symmetry** is a manifold invariant: every coedge's partner's partner is itself, and every shell edge is shared by exactly two mutually-referencing coedges of opposite sense.
 
-`tcoedge` inherits this complete base field sequence. `chunk[11]` and `chunk[12]` are its native start and end parameters. Releases below 215 have no fixed extension fields. Releases from 215 through 219 store a nullable reference in `chunk[13]`. Modern releases store a nullable reference in `chunk[13]` and a LONG selector in `chunk[14]`. Selector zero is followed by LONG zero and terminates the record. Selector one inlines an `intcurve`: `chunk[15]` is its sense Boolean and `chunk[16]` opens one balanced subtype containing a 3D NURBS coedge-use curve. False evaluates the serialized spline forward; true evaluates it with parameter negation as `C(-t)`. The reversed form's outer interval, and its optional trailing interval when present, are the negated endpoint-swapped serialized-curve range. The fields after the matching outer `SUBTYPE_CLOSE` are either `FALSE, FALSE, LONG 0`, denoting no trailing interval, or `TRUE, f64 start, TRUE, f64 end, LONG 0`, denoting an explicit trailing interval. The explicit trailing interval overrides `chunk[11..=12]` for the neutral coedge use curve; the two-false form leaves that use curve on the outer tolerant interval. A cache-local selector-one extension has a null leading reference and owns its embedded curve. Native generation writes that curve inside one balanced subtype. The subtype has no serialized token count; nested subtype scopes do not terminate it, and its matching close delimiter bounds the curve payload. These extension fields do not change the offsets or meanings of the base topology links.
+`tcoedge` inherits this complete base field sequence. `chunk[11]` and `chunk[12]` are its native start and end parameters. Releases below 215 have no fixed extension fields. Releases from 215 through 219 store a nullable reference in `chunk[13]`. Modern releases store a nullable reference in `chunk[13]` and a LONG selector in `chunk[14]`. Selector zero is followed by LONG zero and terminates the record. Selector one inlines an `intcurve`: `chunk[15]` is its sense Boolean and `chunk[16]` opens one balanced subtype containing a 3D NURBS coedge-use curve. False evaluates the serialized spline forward; true evaluates it with parameter negation as `C(-t)`. The reversed form's outer interval, and its optional trailing interval when present, are the negated endpoint-swapped serialized-curve range. The fields after the matching outer `SUBTYPE_CLOSE` are either `FALSE, FALSE, LONG 0`, denoting no trailing interval, or `TRUE, f64 start, TRUE, f64 end, LONG 0`, denoting an explicit trailing interval. The explicit trailing interval overrides `chunk[11..=12]` for the neutral coedge use curve; the two-false form leaves that use curve on the outer tolerant interval. A cache-local selector-one extension has a null leading reference and owns its embedded curve. Native generation writes that curve inside one balanced subtype. The subtype has no serialized token count; nested subtype scopes do not terminate it, and its matching close delimiter bounds the curve payload. These extension fields do not change the offsets or meanings of the base topology links. The native tolerant and trailing intervals store finite directed endpoints. Endpoint order does not change the coedge topology links.
 
 **Edge (98 B):**
 
@@ -281,7 +281,7 @@ The `{+35,+44,+53}` triad is next/prev/partner. `+72` is the owner loop. **Partn
 
 `+52` is end_vertex and `+79` is curve, not the other way round. `owner_coedge` is a nullable back-reference selecting one use of the edge; it is retained independently of the radial-ring topology, validated against the selected coedge's edge, and written in both retained and source-less output. `t_start`/`t_end` are stored parameters on the edge's own parameterization: the referenced curve itself when the sense byte is forward (`0x0b`), its reverse `E(t) = C(−t)` when reversed (`0x0a`). A full-circle edge has identical start/end vertex with `t_start = -π`, `t_end = +π`; the shared vertex lies at the `t_start` angle from the major axis, so a full period's phase is significant, not a free normalization. The continuity text is descriptive metadata, **not** a curve-type discriminator.
 
-When the curve reference is null, the edge has no attributed 3D carrier. Its serialized endpoint doubles remain finite optional `Edge.param_range` values, but no canonical carrier-domain ordering is applied to them.
+When the curve reference is null, the edge has no attributed 3D carrier. Its serialized endpoint doubles remain finite. No canonical carrier-domain ordering applies to those endpoints.
 
 A closed cylindrical band may use two loops, each containing one self-linked coedge on a full-circle edge. The two circular edges retain their distinct repeated vertices and full-period parameter phases. No seam edge or seam coedge occurs in this native topology.
 
@@ -537,6 +537,8 @@ An explicit pcurve reference belongs to a free-form B-spline face. Analytic plan
 
 Surface block grammar: name (`nubs`|`nurbs`), degree_u, degree_v, u/v periodicity + singularity enums, unique-knot counts, (knot, multiplicity) pairs for each direction, then the control grid (3D for `nubs`, 4D homogeneous for `nurbs`). Control grids are **row-major with v in the outer loop, u in the inner loop.**
 
+Each unique-knot count is followed by exactly that many knot/multiplicity pairs. Each pair is one `DOUBLE` and one `LONG`, with the integer width selected by the stream. The complete pair fields bound the count within the record.
+
 **Pole-count rule:** the block stores endpoint multiplicities as `degree` (not `degree+1`). With stored multiplicities: `n_poles = sum(stored_mults) − (degree − 1)`. With expanded (clamped) multiplicities: `n_poles = sum(expanded_mults) − (degree + 1)`. Both expressions produce the same pole count.
 
 Native ASM NURBS control grids are the per-face cache. `surface_fit_tolerance == 0.0` indicates fidelity to the procedural surface, rather than identity with a primitive.
@@ -549,7 +551,7 @@ Legacy intcurve subtype names select the same layouts as their modern names: `bl
 
 Legacy spline-surface subtype names select the same layouts as their modern names. This includes `cylsur`→`cyl_spl_sur`, `lawsur`→`law_spl_sur`, `subsur`→`sub_spl_sur`, `skinsur`→`skin_spl_sur`, `netsur`→`net_spl_sur`, `sweepsur`→`sweep_spl_sur`, `sweep_sur`→`sweep_spl_sur` (the spelling stored by revision-gated records), `sclclftsur`→`scaled_cloft_spl_sur`, `varblendsplsur`→`var_blend_spl_sur`, `srfsrfblndsur`→`srf_srf_v_bl_spl_sur`, `crvcrvblndsur`→`crv_crv_v_bl_spl_sur`, `crvsrfblndsur`→`crv_srf_v_bl_spl_sur`, and `sfcvfreeblndsur`→`sfcv_free_bl_spl_sur`. Native generation uses the modern spelling.
 
-`var_blend_spl_sur`, `srf_srf_v_bl_spl_sur`, `crv_crv_v_bl_spl_sur`, `crv_srf_v_bl_spl_sur`, and `sfcv_free_bl_spl_sur` share one payload grammar. The subtype name selects the native variable-blend behavior class and is retained independently of the common construction fields.
+`var_blend_spl_sur`, `srf_srf_v_bl_spl_sur`, `crv_crv_v_bl_spl_sur`, `crv_srf_v_bl_spl_sur`, and `sfcv_free_bl_spl_sur` share one payload grammar. The subtype name selects the native variable-blend behavior class and is retained independently of the common construction fields. The approximation-current marker has the same meaning in a top-level surface, an inline support, and a subtype-table alias. A zero marker makes the stored cache stale in each location. The parent cache is the solved surface block in its revision tail. An inline support surface owns its own solved block.
 
 An `intcurve` or `spline` record carries a record-level sense boolean immediately before its subtype scope (`0x0a` reversed, `0x0b` forward). A reversed record's geometry is the reverse of its subtype definition: a reversed intcurve parameterizes as the negation of its cache (`C(t) = cache(−t)`; the owning edge's `t_start`/`t_end` are on the reversed parameterization), and a reversed spline surface's normal is the reverse of the cache normal (the face's sense field composes on the reversed surface).
 
@@ -656,19 +658,19 @@ A `.sat` or `.smt` stream carries the same entity model as a binary stream in a 
 
 ### 7.1 Header lines
 
-Three header lines precede the records.
+Save formats 200 and later store three header lines before the records. Save formats below 200 store only the first line; their records begin on the second line, and the stream declares no product strings, length unit, or tolerances.
 
 The first line holds exactly four binary header words as ASCII integers in the binary order: the save-format version, the record-count word (`0` when unwritten), the entity-count word, and the flags word. The words keep their binary semantics (§1): the entity-count word is the RecordTable index of the first referenced record, flag bit 0 marks a history partition, and flag bits 1 to 7 hold the revision. Trailing spaces after the flags word are padding.
 
 The second line holds exactly three UTF-8 product strings — product family, product version, and save date — as counted strings. A counted string in a header line is a decimal byte count, one whitespace separator byte, and that many UTF-8 bytes; header lines do not use the record encoding's `@` prefix. Only whitespace can follow the third string.
 
-The third line holds exactly three kernel doubles in the binary order: `scale`, `resabs`, and `resnor`. The `resabs` and `resnor` tolerances are finite nonnegative error bounds. A negative value, infinity, or NaN makes the stream malformed.
+The third line holds exactly three kernel doubles in the binary order: `scale`, `resabs`, and `resnor`. The `resabs` and `resnor` tolerances are finite nonnegative error bounds.
 
-**Unit rule.** In the text encoding, `scale` is a finite positive number and is the stream's length unit in millimetres per unit. Zero, a negative number, infinity, or NaN makes the stream malformed. A model-space length equals its stored value multiplied by `scale` millimetres. This differs from the binary encoding, whose lengths are centimetres and whose `scale` word is not a coordinate multiplier (§4). Dimensionless values — unit vectors, ratios, angles, knots, parameters, and pcurve coordinates — do not take the unit.
+**Unit rule.** In the text encoding, a finite positive `scale` is the stream's length unit in millimetres per unit. The value `-1` declares the unit unset. A model-space length equals its stored value multiplied by `scale` millimetres. A stream with no units line or an unset unit declares no length unit. This differs from the binary encoding, whose lengths are centimetres and whose `scale` word is not a coordinate multiplier (§4). Dimensionless values — unit vectors, ratios, angles, knots, parameters, and pcurve coordinates — do not take the unit.
 
 ### 7.2 Record grammar
 
-Each record is a record name, its fields, and the terminator field `#`. Record names, bare fields, and counted strings are valid UTF-8. Whitespace — spaces, tabs, and newlines — separates fields, and a record continues across lines until its terminator. The record name is the `-`-joined chain the binary name tokens assemble (§2.2).
+Each record is a record name, its fields, and the terminator field `#`. Record names, bare fields, and counted strings are valid UTF-8. Whitespace — spaces, tabs, and newlines — separates fields, and a record continues across lines until its terminator. Outside counted string payloads, `#`, `{`, and `}` delimit tokens without a whitespace separator. Delimiters within a counted payload are data. The record name is the `-`-joined chain the binary name tokens assemble (§2.2).
 
 Field forms:
 
@@ -679,14 +681,57 @@ Field forms:
 - A boolean is a word. A sense slot writes `forward` for `FALSE` and `reversed` for `TRUE`. A face sides slot writes `single` for `FALSE` and `double` for `TRUE`. A surface v-sense slot writes `forward_v` for `FALSE` and `reverse_v` for `TRUE`. A plain logical slot writes `F` for `FALSE` and `T` for `TRUE`. An optional range bound (§6.3) writes `I` for the absent bound (`FALSE`, no value follows) and `F` for the present bound (`TRUE`, one value follows). The word `F` therefore takes its meaning from the slot class.
 - An enumeration (`ENUM_VALUE`) is a word from the slot's vocabulary. Closure slots write `open` (0), `closed` (1), and `periodic` (2). Singularity slots write `none` (0). Approximation-cache form slots write the `law_spl_sur` selector names: `full` (0), `summary` (1), `none` (2), `historical` (3), and `optimal` (4). Curve extension slots write `UNEXTENDED` (0).
 
+A stream saved with sequence numbers writes the field `-N` before each record name, where `N` is the record's index. The sequence number does not change record indexing (§7.3).
+
 The `$` and `@` prefixes are reserved for references and counted strings. A field that starts with either prefix is malformed when its decimal operand is absent, invalid, or outside the supported integer range.
 
 ### 7.3 Record indexing and stream end
 
 Record indices count records in file order from zero, starting at the first record after the header lines. A stream that begins with an `asmheader` record gives it index 0; a save-format 700 stream stores no `asmheader` record and gives index 0 to its first entity record. `$N` references index this table directly.
 
-The stream ends with a terminator line that identifies the serialization branch: `End-of-ASM-data` on the ASM branch and `End-of-ACIS-data` on the ACIS branch. Only whitespace can follow this terminator. Save-format 700 streams use the ACIS terminator and the legacy subtype spellings (§6.6); later save formats use the ASM terminator and the modern spellings.
+The stream ends with a terminator line that identifies the serialization branch: `End-of-ASM-data` on the ASM branch and `End-of-ACIS-data` on the ACIS branch. An independently headed stream can follow this terminator. The save format also selects the branch: a save-format major version of 100 or more (save format 10000 or more) is on the ASM branch, and lower save formats are on the ACIS branch. Save-format 700 streams use the ACIS terminator and the legacy subtype spellings (§6.6); later save formats use the ASM terminator and the modern spellings.
+
+A text file can concatenate independently headed streams. Each header starts a new zero-based entity table and subtype-definition table. Entity and subtype references are local to that stream. Each stream uses its own save format and length unit. A new complete four-word header at a record boundary starts the next stream even when the preceding terminator is absent. Descriptive lines without record delimiters can separate a completed declared record table from the next header.
 
 ### 7.4 Save-format 700 record layouts
 
 A save-format 700 stream stores three topology records with fewer fields than the layouts of §5.2. The `vertex` record stores no endpoint-index integer: the owning edge is followed directly by the point reference. The `tvertex` record stores the vertex fields, then one model-space tolerance and no trailing integer. The `coedge` and `tcoedge` records store no reserved integer between the owner loop and the pcurve reference; the tolerant parameters follow the pcurve reference directly. The other §5.2 records keep their field sequences.
+
+### 7.5 Save formats 102 through 600
+
+An entity starts with its attribute-head reference. It has no entity-id integer or pattern reference. A transform has this same one-reference prefix. References are bare signed integers before save format 103 and `$`-prefixed integers from 103 onward. The record-table index supplies identity in both forms.
+
+After the prefix, topology fields are:
+
+| Record | Fields in order |
+|---|---|
+| `body` | first lump, first wire, transform |
+| `lump` | next lump, first shell, body |
+| `shell` | next shell, first subshell, first face, first wire, lump |
+| `face` | next face, first loop, shell, reserved reference, surface, sense, sides, conditional containment |
+| `loop` | next loop, first coedge, face |
+| `wire` | next wire, first coedge, owner, isolated vertex, side |
+| `coedge` | next coedge, previous coedge, partner, edge, sense, loop, pcurve |
+| `vertex` | owning edge, point |
+| `tvertex` | owning edge, point, tolerance |
+| `point` | position |
+
+The shell wire field is absent before 107. The face sides and containment fields are absent before 105; those faces are single-sided. Numeric sense `0` is forward and `1` is reversed. Face and edge senses are numeric before 200. Coedge senses are numeric before 202; legacy records can retain this numeric representation in later save formats. Face sides, surface V senses, transform classifications, and subtype enumerations use numeric values before 200. The logical values are `0` for false and `1` for true. Named words have the same meanings as their binary tokens.
+
+An edge stores start vertex, end vertex, owner coedge, curve, and sense through save format 400. Save format 500 inserts a real parameter after each endpoint reference. Save format 500 permits continuity after the sense; save format 600 requires it. An absent parameter supplies no interval. Continuity is a length-prefixed string or a bare word. Before save format 700, the byte count has no `@` prefix. A zero count represents an empty string; a nonzero continuity count must equal the following word's byte length.
+
+A `tedge` stores the edge fields in the same order, then a model-space tolerance. Early layouts store no serializer-revision integer. A `tcoedge` stores the coedge fields, then its two native parameter endpoints. The pcurve reference directly follows the loop reference; no reserved integer separates those fields.
+
+Curve subset intervals and surface U/V intervals are absent before 106. From 106 onward, they use the bound grammar of §7.2. Cone records store the base ellipse, its subset interval, sine, cosine, reversal, and surface intervals. Before 400, the cone has no explicit U scale; its scale is the magnitude of the base ellipse major-axis vector. Before 103, the cone reversal field is absent and denotes forward.
+
+Before 103, a plane stores its origin and normal without a chart reference vector or V sense. A sphere stores its center and radius without chart axes or V sense. From 103 onward, these records carry the chart fields of §6.3. The physical plane and sphere do not depend on a choice of chart axes.
+
+The `exactcur`, `surfintcur`, and `exactsur` subtype layouts can start with a `nubs` or `nurbs` solved block. The cache-form word `full` can precede that block. The curve or surface block uses the knot and control-grid grammar of §6.5 and is followed by a model-space fit tolerance. In a surface block, one of the words `u`, `v`, or `both` can follow the two degree fields and precede the closure words. Construction context follows the tolerance and ends at the matching subtype close. The solved block belongs to this subtype; blocks in nested support scopes belong to those supports.
+
+The [ACIS save-file reference](https://paulbourke.net/dataformats/sat/sat.pdf) defines the reference, bound, coedge-sense, and cone-scale version gates.
+
+### 7.6 Later ACIS text extensions
+
+The ACIS branch from save format 1100 stores an additional integer between the entity-id integer and the pattern reference. Shared topology and geometry fields follow this four-field prefix. Class-specific fields can follow the shared fields. A face can carry extra logicals, position values, and an integer after its sidedness fields. These fields do not shift the preceding surface, owner, loop, or sense fields.
+
+Sun attachment transport headers can precede a SAT stream. Each header line starts with `X-Sun-` and contains a colon. A blank line ends the transport header block. The SAT header and record offsets follow that block.

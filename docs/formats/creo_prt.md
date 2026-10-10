@@ -10,6 +10,8 @@ Record offsets, field widths, and endianness are also maintained as a machine-ch
 
 A PSB file begins with an ASCII UGC header. The legacy persistence generation
 uses an ASCII `P_OBJECT` body, either monolithic or followed by named sections.
+The `#UGC:1` form has one header line followed by `NULL\n` and the
+`#P_OBJECT <schema>\n` line. It has no `#-END_OF_UGC_HEADER` marker.
 Later generations use a table of contents followed by named binary sections.
 
 ```text
@@ -589,6 +591,8 @@ and do not by themselves materialize a surface row or a face.
 count-prefixed compact-integer array is typed as such only when exactly the
 declared number of compact integers consumes the entire bounded field body;
 trailing bytes make the field opaque.
+Parent-feature array identifiers also accept `c0..df XX YY`, equal to
+`((head-c0)<<16)|(XX<<8)|YY`.
 `parent_feats` may append the exact trailer
 `f7 <class-id> <entity-id> [e1 [f6 f6]]` after its declared compact-integer
 array. Both trailer identifiers use the canonical entity-reference grammar and

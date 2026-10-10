@@ -792,6 +792,8 @@ pub(crate) fn project_relation_point_geometry(
             ctx.insert_hash_map(&mut markers_by_id, marker.id(), marker, operation)?;
             marker_roster.push(marker);
         }
+        let marker_roster =
+            super::endpoints::coordinate_rosters::CoordinateRosters::new(ctx, marker_roster)?;
         for marker in &lane.sketch_entities {
             let marker_offset = usize::try_from(marker.offset()).ok();
             let undetailed_arc_line = marker.kind() == SketchInputKind::Arc
@@ -1118,6 +1120,8 @@ pub(crate) fn project_relation_solved_line_geometry(
             "collect SLDPRT solved-line marker roster",
         )?;
         marker_roster.extend(lane.sketch_entities.iter());
+        let marker_roster =
+            super::endpoints::coordinate_rosters::CoordinateRosters::new(ctx, marker_roster)?;
         for relation in &lane.relation_instances {
             let [first_operand, second_operand] = relation.operands.as_slice() else {
                 continue;
@@ -4145,7 +4149,7 @@ mod relation_geometry_tests {
         let lane = FeatureInputLane {
             id: "lane#test".into(),
             configuration: None,
-            native_payload: Vec::new(),
+            native_payload: Vec::new().into(),
             classes: Vec::new(),
             names: Vec::new(),
             scalars: vec![
@@ -4381,7 +4385,7 @@ mod relation_geometry_tests {
         let lane = FeatureInputLane {
             id: LANE.into(),
             configuration: None,
-            native_payload: Vec::new(),
+            native_payload: Vec::new().into(),
             classes: Vec::new(),
             names: Vec::new(),
             scalars: vec![FeatureInputScalar {
@@ -4742,7 +4746,7 @@ mod relation_geometry_tests {
         let lane = FeatureInputLane {
             id: LANE.into(),
             configuration: None,
-            native_payload: payload,
+            native_payload: payload.into(),
             classes: Vec::new(),
             names: Vec::new(),
             scalars: vec![scalar],

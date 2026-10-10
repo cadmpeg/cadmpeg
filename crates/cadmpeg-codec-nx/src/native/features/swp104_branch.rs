@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Leading SWP104 frame with positions derived from its serialized fields.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use crate::om::{
     branch_items::BranchItems, reference_index::PayloadIndexToken, scalar::ShiftedBinary64,
     swp104_state::Swp104StateLane, Swp104PayloadLeadingBranch,
@@ -119,7 +121,7 @@ struct FeatureSwp104LeadingBranchWire {
     operation_label: String,
     discriminator: NonZeroU8,
     scalars: [f64; 4],
-    raw_scalars: [[u8; 8]; 4],
+    raw_scalars: [NativeBytes<[u8; 8]>; 4],
     leading_zero: bool,
     mode: NonZeroU8,
     declared_count: u8,
@@ -129,7 +131,7 @@ struct FeatureSwp104LeadingBranchWire {
         deserialize_with = "deserialize_witnessed_count"
     )]
     witnessed_count: Option<u8>,
-    state_lane: Vec<u8>,
+    state_lane: NativeBytes<Vec<u8>>,
     members: BranchItems<ReferenceWire>,
     terminal: ReferenceWire,
     byte_len: u64,
@@ -164,12 +166,12 @@ impl From<FeatureSwp104LeadingBranch> for FeatureSwp104LeadingBranchWire {
             operation_label: value.operation_label,
             discriminator: value.discriminator,
             scalars: value.scalars.map(|scalar| scalar.value().get()),
-            raw_scalars: value.scalars.map(ShiftedBinary64::raw),
+            raw_scalars: (value.scalars.map(ShiftedBinary64::raw)).map(Into::into),
             leading_zero: value.leading_zero,
             mode: value.mode,
             declared_count: members.declared_count(),
             witnessed_count: value.state_lane.witnessed_count(),
-            state_lane: value.state_lane.bytes().to_vec(),
+            state_lane: (value.state_lane.bytes().to_vec()).into(),
             members,
             terminal,
             byte_len,
@@ -185,10 +187,11 @@ impl TryFrom<FeatureSwp104LeadingBranchWire> for FeatureSwp104LeadingBranch {
             return Err("declared_count must equal members length plus one".to_owned());
         }
         let [a, b, c, d] = std::array::from_fn::<_, 4, _>(|i| {
-            ShiftedBinary64::from_wire(wire.scalars[i], wire.raw_scalars[i])
+            ShiftedBinary64::from_wire(wire.scalars[i], *wire.raw_scalars[i])
         });
         let scalars = [a?, b?, c?, d?];
-        let state_lane = Swp104StateLane::from_parts(wire.witnessed_count, wire.state_lane)?;
+        let state_lane =
+            Swp104StateLane::from_parts(wire.witnessed_count, wire.state_lane.into_inner())?;
         let mut at = wire
             .source_offset
             .checked_add(40 + u64::from(wire.leading_zero))
@@ -321,7 +324,7 @@ mod tests {
                         branch
                     );
                     let mut invalid = wire;
-                    invalid["members"][0]["raw_object_index"] = serde_json::json!([1]);
+                    invalid["members"][0]["raw_object_index"] = serde_json::json!("01");
                     assert!(serde_json::from_value::<FeatureSwp104LeadingBranch>(invalid).is_err());
                     assert!(from_source_for_test(
                         "branch".to_owned(),

@@ -20,10 +20,8 @@ fn knot_span_refuses_oversized_degree_and_count_without_overflow() {
 }
 
 #[test]
-fn low_degree_second_derivative_basis_borrows_zeros() {
+fn low_degree_second_derivative_basis_keeps_zeros_inline() {
     crate::eval::test_support::with_policy(cadmpeg_core::decode::DecodePolicy::service(), |ctx| {
-        use std::borrow::Cow;
-
         let constant = crate::eval::basis::bspline_basis_second_derivative(
             &crate::eval::decode::Scratch::new(ctx),
             &[],
@@ -40,71 +38,102 @@ fn low_degree_second_derivative_basis_borrows_zeros() {
             0.0,
         )
         .expect("degree-one second derivative");
-        assert!(matches!(constant, Cow::Borrowed(_)));
-        assert!(matches!(linear, Cow::Borrowed(_)));
-        assert_eq!(constant.as_ref(), &[0.0]);
-        assert_eq!(linear.as_ref(), &[0.0, 0.0]);
+        assert!(matches!(
+            constant,
+            crate::eval::decode::SupportValues::Inline { .. }
+        ));
+        assert!(matches!(
+            linear,
+            crate::eval::decode::SupportValues::Inline { .. }
+        ));
+        assert_eq!(&*constant, &[0.0]);
+        assert_eq!(&*linear, &[0.0, 0.0]);
     });
 }
 
 #[test]
-fn admitted_scaled_derivatives_refuse_each_collection() {
-    crate::eval::test_support::with_policy(cadmpeg_core::decode::DecodePolicy::service(), |ctx| {
-        for (degree, cap, operation) in [
-            (0, 0, "IR scaled B-spline first basis"),
-            (0, 1, "IR scaled B-spline second basis"),
-            (1, 1, "IR scaled B-spline derivative basis"),
-            (1, 3, "IR scaled B-spline second basis"),
-            (2, 2, "IR scaled B-spline derivative basis"),
-            (2, 4, "IR scaled B-spline derivative basis"),
-            (2, 7, "IR scaled B-spline derivative basis"),
-        ] {
+fn repeated_inline_basis_and_derivatives_do_not_admit_collections() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    with_policy(policy, |ctx| {
+        for degree in [0, 1, 2, 3, 4, 7, 15] {
             let mut knots = vec![0.0; degree + 1];
             knots.extend(vec![1.0; degree + 1]);
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            let result = with_policy(policy, |ctx| {
+            for _ in 0..100 {
                 let scratch = crate::eval::decode::Scratch::new(ctx);
-                let result = crate::eval::basis::bspline_basis_scaled_derivatives(
+                let basis = super::bspline_basis(&scratch, &knots, degree, degree, 0.5).unwrap();
+                let first =
+                    super::bspline_basis_derivative(&scratch, &knots, degree, degree, 0.5).unwrap();
+                let second =
+                    super::bspline_basis_second_derivative(&scratch, &knots, degree, degree, 0.5)
+                        .unwrap();
+                let scaled = super::bspline_basis_scaled_derivatives(
                     &scratch,
                     &knots,
                     degree,
                     degree,
                     0.5,
                     crate::scalar::PositiveReal::ONE,
-                );
-                scratch.finish(result).map_err(CodecError::from)
-            });
-            assert!(
-                matches!(result, Err(CodecError::ResourceLimit(resource)) if resource.operation == operation)
-            );
-            let result = with_policy(DecodePolicy::service(), |ctx| {
-                let scratch = crate::eval::decode::Scratch::new(ctx);
-                let result = crate::eval::basis::bspline_basis_scaled_derivatives(
-                    &scratch,
-                    &knots,
-                    degree,
-                    degree,
-                    0.5,
-                    crate::scalar::PositiveReal::ONE,
-                );
-                scratch.finish(result).map_err(CodecError::from)
-            })
-            .expect("service");
-            assert_eq!(
-                result,
-                crate::eval::basis::bspline_basis_scaled_derivatives(
-                    &crate::eval::decode::Scratch::new(ctx),
-                    &knots,
-                    degree,
-                    degree,
-                    0.5,
-                    crate::scalar::PositiveReal::ONE
                 )
-            );
-            assert!(result.is_some());
+                .unwrap();
+                assert!((basis.iter().sum::<f64>() - 1.0).abs() < f64::EPSILON * 64.0);
+                assert!(first.iter().sum::<f64>().abs() < f64::EPSILON * 512.0);
+                assert!(second.iter().sum::<f64>().abs() < f64::EPSILON * 4096.0);
+                assert_eq!(&*scaled.first, &*first);
+                assert_eq!(&*scaled.second, &*second);
+                scratch.finish(()).unwrap();
+            }
         }
+        assert!(
+            ctx.charge_work_limit(u64::MAX, "measure basis work")
+                .unwrap_err()
+                .used
+                > 0
+        );
     });
+}
+
+#[test]
+fn basis_above_inline_support_keeps_collection_admission() {
+    let degree = crate::eval::decode::INLINE_SUPPORT;
+    let mut knots = vec![0.0; degree + 1];
+    knots.extend(vec![1.0; degree + 1]);
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let result = with_policy(policy, |ctx| {
+        let scratch = crate::eval::decode::Scratch::new(ctx);
+        let result = super::bspline_basis(&scratch, &knots, degree, degree, 0.5);
+        scratch.finish(result).map_err(CodecError::from)
+    });
+    assert!(matches!(result, Err(CodecError::ResourceLimit(resource))
+        if resource.operation == "IR B-spline basis"));
+}
+
+#[test]
+fn inline_quartic_basis_keeps_fill_and_recurrence_work() {
+    let knots = [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0];
+    // Five initialization visits, one seed, 1 + 2 + 3 + 4 recurrence visits,
+    // and four writes that advance the support window.
+    for cap in [19, 20] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let result = with_policy(policy, |ctx| {
+            let scratch = crate::eval::decode::Scratch::new(ctx);
+            let basis = super::bspline_basis(&scratch, &knots, 4, 4, 0.5);
+            scratch.finish(basis).map_err(CodecError::from)
+        });
+        if cap == 19 {
+            assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+                if limit.operation == "IR B-spline basis work"));
+        } else {
+            assert_eq!(
+                &*result.unwrap().unwrap(),
+                &[1.0 / 16.0, 0.25, 0.375, 0.25, 1.0 / 16.0]
+            );
+        }
+    }
 }
 
 #[test]
@@ -305,4 +334,32 @@ fn basis_leaf_boundaries_preserve_original_fused_refusal() {
     assert!(
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
     );
+}
+
+#[test]
+fn cubic_and_quartic_bases_use_fixed_storage() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    with_policy(policy, |ctx| {
+        let scratch = crate::eval::decode::Scratch::new(ctx);
+        let cubic_knots = [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0];
+        let cubic = super::bspline_basis(&scratch, &cubic_knots, 3, 3, 0.5).unwrap();
+        assert!(matches!(
+            cubic,
+            crate::eval::decode::SupportValues::Inline { .. }
+        ));
+        assert_eq!(&*cubic, &[0.125, 0.375, 0.375, 0.125]);
+        assert_eq!(
+            &*super::bspline_basis_derivative(&scratch, &cubic_knots, 3, 3, 0.5).unwrap(),
+            &[-0.75, -0.75, 0.75, 0.75]
+        );
+        assert_eq!(
+            &*super::bspline_basis_second_derivative(&scratch, &cubic_knots, 3, 3, 0.5).unwrap(),
+            &[3.0, -3.0, -3.0, 3.0]
+        );
+        let higher_knots = [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0];
+        let quartic = super::bspline_basis(&scratch, &higher_knots, 4, 4, 0.5).unwrap();
+        assert_eq!(&*quartic, &[0.0625, 0.25, 0.375, 0.25, 0.0625]);
+        assert!(scratch.refused().is_none());
+    });
 }

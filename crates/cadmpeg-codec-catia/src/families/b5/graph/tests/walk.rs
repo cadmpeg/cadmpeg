@@ -97,34 +97,60 @@ fn retained_object_frames_refuse_the_caller_collection_limit() {
 }
 
 #[test]
-fn object_population_copy_refuses_the_caller_retained_limit() {
+fn contiguous_object_population_borrows_source_bytes() {
     let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
-    let mut cap = 0;
-    let mut reached = false;
-    for _ in 0..128 {
-        match crate::test_support::with_retained_limit(cap, |ctx| {
-            object_stream_populations(ctx, &bytes)
-        }) {
-            Err(cadmpeg_core::CodecError::ResourceLimit(error))
-                if error.operation == "catia_b5_topology_run_bytes" =>
-            {
-                reached = true;
-                break;
-            }
-            Err(cadmpeg_core::CodecError::ResourceLimit(error)) => {
-                cap = error
-                    .used
-                    .checked_add(error.additional)
-                    .expect("bounded fixture");
-            }
-            other => panic!("topology copy not reached: {other:?}"),
-        }
-    }
-    assert!(reached, "topology copy limit was not reached");
     let populations =
         crate::test_support::with_service_context(|ctx| object_stream_populations(ctx, &bytes))
-            .expect("service retained budget");
-    assert_eq!(populations, vec![bytes]);
+            .expect("service population admission");
+    assert_eq!(populations.len(), 1);
+    assert!(matches!(populations[0], std::borrow::Cow::Borrowed(_)));
+    assert_eq!(populations[0].as_ptr(), bytes.as_ptr());
+    assert_eq!(&*populations[0], bytes);
+}
+
+#[test]
+fn attached_population_bytes_use_retained_storage_without_collection_items() {
+    let original = crate::test_support::test_b5::b5_closed_triangle_stream();
+    let isolated = object_stream_frames(&original)
+        .find(|frame| is_referenced_geometry_class(frame.family, frame.class))
+        .expect("referenced geometry frame");
+    let mut bytes = original.clone();
+    bytes.drain(isolated.start..isolated.end);
+    bytes.push(0xff);
+    bytes.extend_from_slice(&original[isolated.start..isolated.end]);
+    let populations = crate::test_support::with_collection_limit(256, |ctx| {
+        object_stream_populations(ctx, &bytes)
+    })
+    .expect("frame inventories consume slots; copied bytes do not");
+    assert_eq!(populations.len(), 1);
+    assert!(matches!(populations[0], std::borrow::Cow::Owned(_)));
+    let expected = original[..isolated.start]
+        .iter()
+        .chain(&original[isolated.end..])
+        .chain(&original[isolated.start..isolated.end])
+        .copied()
+        .collect::<Vec<_>>();
+    assert_eq!(&*populations[0], expected);
+    let refused =
+        crate::test_support::with_retained_refusal(&bytes, "catia_b5_topology_run_bytes", |ctx| {
+            object_stream_populations(ctx, &bytes)
+        });
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_b5_topology_run_bytes")
+    );
+}
+
+#[test]
+fn opaque_object_payload_bytes_do_not_consume_collection_items() {
+    let mut bytes = Vec::new();
+    crate::test_support::test_b5::append_b5_record(&mut bytes, 0x5f, 7, &[0; 200]);
+    let populations = crate::test_support::with_collection_limit(64, |ctx| {
+        object_stream_populations(ctx, &bytes)
+    })
+    .expect("large payload requires byte storage, not thousands of slots");
+    assert_eq!(populations.len(), 1);
+    assert_eq!(&*populations[0], bytes);
 }
 
 #[test]
@@ -880,10 +906,8 @@ fn b5_record_payload_and_dependency_closure_refuse_caller_limits() {
     for (limit, operation) in [
         (0, "catia_b5_existing_dependency_ids"),
         (1, "catia_b5_pending_dependency_ids"),
-        (2, "catia_b5_record_payload"),
-        (3, "catia_b5_found_dependency_records"),
-        (4, "catia_b5_admitted_dependency_ids"),
-        (5, "catia_b5_admitted_dependency_records"),
+        (2, "catia_b5_admitted_dependency_ids"),
+        (3, "catia_b5_admitted_dependency_records"),
     ] {
         let limited = crate::test_support::with_collection_limit(limit, |ctx| {
             admit_dependency_records(ctx, &bytes, &mut vec![record.clone()], &candidates, None)
@@ -937,8 +961,8 @@ fn targeted_geometry_record_candidates_refuse_each_collection_limit() {
         if error.operation == "catia_b5_record_payload")
     );
     for (limit, operation) in [
-        (2, "catia_b5_targeted_geometry_candidates"),
-        (3, "catia_b5_targeted_geometry_records"),
+        (0, "catia_b5_targeted_geometry_candidates"),
+        (1, "catia_b5_targeted_geometry_records"),
     ] {
         let limited = crate::test_support::with_collection_limit(limit, |ctx| {
             targeted_geometry_graph_from_frames(
@@ -1783,3 +1807,103 @@ fn a8_class21_strict_knot_refusal_stays_in_the_outer_result() {
 }
 
 mod topology_walk;
+
+#[test]
+fn populations_share_the_logical_stream_run_index() {
+    let triangle = crate::test_support::test_b5::b5_closed_triangle_stream();
+    let mut bytes = vec![0; 1_048_576];
+    for _ in 0..16 {
+        bytes.extend_from_slice(&triangle);
+        bytes.extend_from_slice(&[0; 16]);
+    }
+    let populations = crate::test_support::with_work_limit(4_000_000, |ctx| {
+        object_stream_populations(ctx, &bytes)
+    })
+    .expect("one stream scan and bounded per-run scans fit the allowance");
+    assert_eq!(populations.len(), 16);
+    assert!(populations.iter().all(|population| *population == triangle));
+}
+
+#[test]
+fn indexed_duplicate_records_reuse_source_payloads() {
+    let mut bytes = Vec::new();
+    let payload = vec![0x00; 128];
+    for _ in 0..16 {
+        crate::test_support::test_b5::append_b5_record(&mut bytes, 0x5f, 7, &payload);
+    }
+    let frames = object_stream_frames(&bytes).collect::<Vec<_>>();
+    let records = crate::test_support::with_collection_limit(200, |ctx| {
+        crate::families::b5::graph::indexed_topology_records_and_dependency_candidates(
+            ctx, &bytes, &frames, None,
+        )
+    })
+    .expect("one payload and frame-index entries fit")
+    .expect("complete indexed records")
+    .0;
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].payload, payload);
+}
+
+#[test]
+fn frame_workspace_releases_storage_between_parsing_phases() {
+    let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
+    crate::test_support::with_retained_limit(0, |ctx| {
+        for _ in 0..128 {
+            let (frames, storage) = ctx
+                .with_scoped_storage("test frame phase", || {
+                    collect_object_stream_frames(ctx, &bytes)
+                })
+                .expect("frame index storage is temporary");
+            assert!(!frames.is_empty());
+            drop((frames, storage));
+        }
+    });
+    let refused = crate::test_support::with_materialized_limit(0, |ctx| {
+        ctx.with_scoped_storage("test frame phase", || {
+            collect_object_stream_frames(ctx, &bytes)
+        })
+        .map(|(frames, _)| frames.len())
+    });
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_b5_object_frames")
+    );
+}
+
+#[test]
+fn dependency_closure_admits_each_identity_once_through_back_references() {
+    use crate::test_support::test_b5::{append_b5_record, b5_object_ref};
+    const COUNT: u32 = 64;
+    let mut bytes = Vec::new();
+    for id in 1..=COUNT {
+        let next = if id == COUNT { 1 } else { id + 1 };
+        let mut payload = vec![0x82];
+        payload.extend_from_slice(&b5_object_ref(0));
+        payload.extend_from_slice(&b5_object_ref(next));
+        append_b5_record(&mut bytes, 0x18, id, &payload);
+    }
+    let candidates = object_stream_frames(&bytes)
+        .map(|frame| (frame.object_id, Some(frame)))
+        .collect::<HashMap<_, _>>();
+    let mut payload = vec![0x81];
+    payload.extend_from_slice(&b5_object_ref(1));
+    let root = B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x5f,
+        object_id: 0,
+        payload,
+    };
+    // One existing identity, and one pending identity, admitted identity and output row per dependency.
+    let records = crate::test_support::with_collection_limit(1 + u64::from(COUNT) * 3, |ctx| {
+        admit_dependency_records(ctx, &bytes, &mut vec![root.clone()], &candidates, None)
+    })
+    .expect("back references do not re-admit completed identities");
+    assert_eq!(
+        records
+            .iter()
+            .map(|record| record.object_id)
+            .collect::<Vec<_>>(),
+        (0..=COUNT).collect::<Vec<_>>()
+    );
+}

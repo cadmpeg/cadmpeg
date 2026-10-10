@@ -134,12 +134,7 @@
           {
             "archive_index": 0,
             "clipping_planes_enabled": null,
-            "color": [
-              0,
-              0,
-              0,
-              0
-            ],
+            "color": "00000000",
             "display_material_uuid": null,
             "expanded": null,
             "id": "rhino:presentation:layer#284434a6-8100-1c94-6093-9b8d5a958003",
@@ -170,23 +165,13 @@
             "clipping_plane_label_style": 0,
             "clipping_plane_uuids": [],
             "clipping_proof": false,
-            "color": [
-              0,
-              0,
-              0,
-              0
-            ],
+            "color": "00000000",
             "color_source": 0,
             "decoration": 0,
             "display_materials": [],
             "display_order": 0,
             "group_indexes": [],
-            "hatch_background": [
-              0,
-              0,
-              0,
-              0
-            ],
+            "hatch_background": "00000000",
             "hatch_boundary_visible": false,
             "hatch_pattern_index": -1,
             "id": "rhino:presentation:object#d000213c-3fed-dfd4-5d93-120ab2084742",
@@ -201,12 +186,7 @@
             "material_source": 0,
             "name": "",
             "object_mode": 0,
-            "plot_color": [
-              0,
-              0,
-              0,
-              0
-            ],
+            "plot_color": "00000000",
             "plot_color_source": 0,
             "plot_weight_mm": 0.0,
             "plot_weight_source": 0,

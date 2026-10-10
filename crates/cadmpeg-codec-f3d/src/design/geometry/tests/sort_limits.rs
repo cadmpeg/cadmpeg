@@ -9,6 +9,7 @@ const EPS_CIRCLE: f64 = 1.0e-6;
 #[test]
 fn circle_angle_ordering_refuses_sort_scratch_limit() {
     let points: Vec<_> = (0..21)
+        .rev()
         .map(|index| {
             let angle = f64::from(index) * std::f64::consts::TAU / 21.0;
             Point2::new(angle.cos(), angle.sin())

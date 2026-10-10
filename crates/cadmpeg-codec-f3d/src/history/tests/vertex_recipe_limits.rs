@@ -57,7 +57,12 @@ fn select(
     policy.limits.max_collection_items = max_items;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    super::super::vertex_recipe_candidate(&ctx, &recipe, &topology)
+    super::super::vertex_recipe_candidate(
+        &ctx,
+        &recipe,
+        &topology,
+        &mut crate::history::topology_cache::TopologyQueryCache::default(),
+    )
 }
 
 fn bind_input_states(

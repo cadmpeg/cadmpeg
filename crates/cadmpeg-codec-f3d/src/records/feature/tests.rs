@@ -332,7 +332,7 @@ fn legacy_base_feature_form_owns_its_compact_mode() {
             (
                 "[201]",
                 "[22]",
-                "[[0,0,0,0,0,0]]",
+                "[\"000000000000\"]",
                 "[201]",
                 "[22]",
                 "[301]",
@@ -344,7 +344,7 @@ fn legacy_base_feature_form_owns_its_compact_mode() {
             (
                 "[401,402]",
                 "[22,36]",
-                "[[0,0,0,0,0,0],[0,0,0,0,0,0]]",
+                "[\"000000000000\",\"000000000000\"]",
                 "[401,402]",
                 "[22,36]",
                 "[301,302]",
@@ -461,8 +461,11 @@ fn snapshot_body_rows_preserve_wire_and_reject_unequal_arrays() {
             for fields in 0..=2 {
                 let values_wire = ["[]", "[101]", "[101,202]"][values];
                 let offsets_wire = ["[]", "[22]", "[22,37]"][offsets];
-                let fields_wire =
-                    ["[]", "[[1,2,3,4,5,6]]", "[[1,2,3,4,5,6],[6,5,4,3,2,1]]"][fields];
+                let fields_wire = [
+                    "[]",
+                    "[\"010203040506\"]",
+                    "[\"010203040506\",\"060504030201\"]",
+                ][fields];
                 let wire = format!(
                     r#"{{"body_entity_suffixes":{values_wire},"body_entity_suffix_offsets":{offsets_wire},"body_entity_fields":{fields_wire},"related_guids":["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb","cccccccc-cccc-4ccc-8ccc-cccccccccccc"],"related_guid_offsets":[66,142,275],"linkage_record":301,"linkage_record_offset":234,"auxiliary_record":401,"auxiliary_record_offset":253}}"#
                 );
@@ -538,10 +541,14 @@ fn base_feature_result_rows_preserve_complete_and_unrepeated_runs() {
         let reference_offsets = ["[]", "[52]", "[52,67]"][count];
         let results = ["[]", "[301]", "[301,302]"][count];
         let result_offsets = ["[]", "[82]", "[82,93]"][count];
-        let fields = ["[]", "[[0,0,1,0,0,0]]", "[[0,0,1,0,0,0],[0,0,1,0,0,0]]"][count];
+        let fields = [
+            "[]",
+            "[\"000001000000\"]",
+            "[\"000001000000\",\"000001000000\"]",
+        ][count];
         for repeated in ["[]", fields] {
             let wire = format!(
-                r#"{{"body_entity_suffixes":{suffixes},"body_entity_suffix_offsets":{suffix_offsets},"body_entity_fields":{fields},"body_reference_records":{references},"body_reference_record_offsets":{reference_offsets},"body_reference_fields":{fields},"repeated_reference_fields":{repeated},"metadata_record":401,"metadata_record_offset":110,"metadata_field":[0,0],"result_records":{results},"result_record_offsets":{result_offsets},"result_fields":{fields}}}"#
+                r#"{{"body_entity_suffixes":{suffixes},"body_entity_suffix_offsets":{suffix_offsets},"body_entity_fields":{fields},"body_reference_records":{references},"body_reference_record_offsets":{reference_offsets},"body_reference_fields":{fields},"repeated_reference_fields":{repeated},"metadata_record":401,"metadata_record_offset":110,"metadata_field":"0000","result_records":{results},"result_record_offsets":{result_offsets},"result_fields":{fields}}}"#
             );
             let construction: crate::records::feature::base_feature::DesignBaseFeatureConstruction =
                 serde_json::from_str(&wire).expect("aligned result rows");
@@ -565,7 +572,7 @@ fn base_feature_result_rows_preserve_complete_and_unrepeated_runs() {
                 let array = invalid[field].as_array_mut().expect("result array");
                 if count == 0 {
                     array.push(if field.ends_with("fields") {
-                        serde_json::json!([0, 0, 0, 0, 0, 0])
+                        serde_json::json!("000000000000")
                     } else {
                         serde_json::json!(1)
                     });
@@ -581,7 +588,10 @@ fn base_feature_result_rows_preserve_complete_and_unrepeated_runs() {
                 );
             }
             let mut invalid = value;
-            invalid["repeated_reference_fields"] = serde_json::json!(vec![[0; 6]; count + 1]);
+            invalid["repeated_reference_fields"] = serde_json::json!(vec![
+                    cadmpeg_ir::native::bytes::NativeBytes::from([0; 6]);
+                    count + 1
+                ]);
             let error = serde_json::from_value::<
                 crate::records::feature::base_feature::DesignBaseFeatureConstruction,
             >(invalid)
@@ -1563,7 +1573,7 @@ fn vertex_recipe_resolution_preserves_wire_and_rejects_partial_pairs() {
         "paired_byte_offset": 20, "paired_class_tag": "261",
         "recipe_record_index": 5, "recipe_record_byte_offset": 30,
         "recipe_id": "vertex", "recipe_prefix_offset": 41,
-        "recipe_prefix_bytes": "AP8=", "recipe_references": [],
+        "recipe_prefix_bytes": "00ff", "recipe_references": [],
         "recipe_program_offset": 43, "recipe_program": [0],
         "next_record_index": 7, "next_byte_offset": 50
     });

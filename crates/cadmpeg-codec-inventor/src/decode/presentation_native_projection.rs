@@ -251,7 +251,7 @@ pub(super) fn project(
                 segment_version_major: style.segment_version_major,
                 header_value: style.header_value,
                 controls: style.controls,
-                color_header: style.color_header,
+                color_header: style.color_header.into(),
                 colors: style.colors,
                 color_tail: style.color_tail,
                 state: style.state,

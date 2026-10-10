@@ -3,11 +3,11 @@
 
 use super::composite::{bounded_nurbs_for_curve_with_tolerance, CompositeIndex};
 use super::geometry::{
-    linear_nurbs_parameters, planar_polyline_has_self_intersection, planar_polylines_intersect,
-    plane_coordinates, source_object, BoundaryEndpoint, BoundaryVertexDerivation,
-    BoundaryVertexSourceEndpoint, DeclaredInterval, ProjectionOutcome,
+    curve_is_line, linear_nurbs_parameters, planar_polyline_has_self_intersection,
+    planar_polylines_intersect, plane_coordinates, source_object, BoundaryEndpoint,
+    BoundaryVertexDerivation, BoundaryVertexSourceEndpoint, DeclaredInterval, ProjectionOutcome,
 };
-use super::{affine_parameter_map, line_directrix, pointer};
+use super::{affine_parameter_map, pointer};
 use crate::directory::{DirectoryEntry, UseFlag};
 use crate::global::{ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
@@ -24,7 +24,7 @@ use cadmpeg_ir::geometry::{
     ProceduralSurface, ProceduralSurfaceDefinition, RecordBounds, SolvedCurveGeometry,
     SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
-use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId, VertexId};
+use cadmpeg_ir::ids::{CurveId, SurfaceId, VertexId};
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::topology::{
@@ -358,36 +358,49 @@ enum ProceduralSourceParameterMap {
 }
 
 fn procedural_source_parameter_map(
-    ir: &CadIr,
+    index: &ModelIndex<'_>,
     support: &PcurveSupport<'_>,
-) -> ProceduralSourceParameterMap {
-    let procedural = ir.model.procedural_surfaces.iter().find(|procedural| {
-        ir.model.procedural_surface_owner(&procedural.id) == Some(support.surface_id)
-    });
-    if let Some(procedural) = procedural.filter(|procedural| {
+    ctx: &DecodeContext<'_>,
+) -> Result<ProceduralSourceParameterMap, CodecError> {
+    let procedural = index.procedural_surface_for_surface(support.surface_id.as_str(), ctx)?;
+    let procedural = match procedural.filter(|procedural| {
         matches!(
             procedural.definition(),
             ProceduralSurfaceDefinition::Extrusion(_) | ProceduralSurfaceDefinition::Revolution(_)
         )
     }) {
-        return procedural_pcurve_parameter_map(ir, &procedural.id).map_or(
+        Some(procedural) => Some(procedural),
+        None => match support.geometry {
+            SurfaceGeometry::Procedural { construction, .. } => {
+                index.procedural_surfaces(construction.as_str(), ctx)?
+            }
+            SurfaceGeometry::Solved(_) => return Ok(ProceduralSourceParameterMap::NotApplicable),
+        },
+    };
+    let Some(procedural) = procedural else {
+        return Ok(ProceduralSourceParameterMap::Unavailable);
+    };
+    let directrix = match procedural.definition() {
+        ProceduralSurfaceDefinition::Extrusion(definition) => definition.directrix(),
+        ProceduralSurfaceDefinition::Revolution(definition) => definition.directrix(),
+        _ => return Ok(ProceduralSourceParameterMap::Unavailable),
+    };
+    let directrix_is_line = index
+        .curves(directrix.as_str(), ctx)?
+        .is_some_and(curve_is_line);
+    Ok(
+        procedural_pcurve_parameter_map(procedural, directrix_is_line).map_or(
             ProceduralSourceParameterMap::Unavailable,
             ProceduralSourceParameterMap::Mapped,
-        );
-    }
-    match support.geometry {
-        SurfaceGeometry::Procedural { construction, .. } => {
-            procedural_pcurve_parameter_map(ir, construction).map_or(
-                ProceduralSourceParameterMap::Unavailable,
-                ProceduralSourceParameterMap::Mapped,
-            )
-        }
-        SurfaceGeometry::Solved(_) => ProceduralSourceParameterMap::NotApplicable,
-    }
+        ),
+    )
 }
 
-fn pcurve_parameter_map(ir: &CadIr, support: &PcurveSupport<'_>) -> Option<(f64, f64, f64, f64)> {
-    match procedural_source_parameter_map(ir, support) {
+fn pcurve_parameter_map(
+    source_map: ProceduralSourceParameterMap,
+    support: &PcurveSupport<'_>,
+) -> Option<(f64, f64, f64, f64)> {
+    match source_map {
         ProceduralSourceParameterMap::Mapped(parameter_map) => {
             source_parameter_map_to_neutral(parameter_map, support.factor)
         }
@@ -453,7 +466,7 @@ fn source_parameter_point_to_neutral(
 }
 
 pub(super) fn pcurve_geometry(
-    ir: &CadIr,
+    index: &ModelIndex<'_>,
     sequence: u32,
     support: &PcurveSupport<'_>,
     tolerance: Option<f64>,
@@ -461,18 +474,25 @@ pub(super) fn pcurve_geometry(
     composite_index: Option<&CompositeIndex>,
 ) -> Result<Option<(PcurveGeometry, [f64; 2])>, super::composite::CompositeCurveError> {
     let curve_id = crate::ids::curve_admitted(&crate::ids::Stem::directory(sequence), ctx)?;
-    let Some((nurbs, range)) =
-        bounded_nurbs_for_curve_with_tolerance(ir, &curve_id, tolerance, ctx, composite_index)?
+    let Some((nurbs, range)) = bounded_nurbs_for_curve_with_tolerance(
+        index.ir(),
+        &curve_id,
+        tolerance,
+        ctx,
+        composite_index,
+    )?
     else {
         return Ok(None);
     };
-    let source_parameter_map = match procedural_source_parameter_map(ir, support) {
+    let source_map = procedural_source_parameter_map(index, support, ctx)?;
+    let source_parameter_map = match source_map {
         ProceduralSourceParameterMap::Mapped(parameter_map) => Some(parameter_map),
         ProceduralSourceParameterMap::NotApplicable | ProceduralSourceParameterMap::Unavailable => {
             None
         }
     };
-    let Some((u_factor, u_offset, v_factor, v_offset)) = pcurve_parameter_map(ir, support) else {
+    let Some((u_factor, u_offset, v_factor, v_offset)) = pcurve_parameter_map(source_map, support)
+    else {
         return Ok(None);
     };
     let map_point = |point: FinitePoint3| -> Result<FinitePoint2, NurbsError> {
@@ -528,14 +548,9 @@ pub(super) fn pcurve_geometry(
 }
 
 fn procedural_pcurve_parameter_map(
-    ir: &CadIr,
-    construction: &ProceduralSurfaceId,
+    procedural: &ProceduralSurface,
+    directrix_is_line: bool,
 ) -> Option<(f64, f64, f64, f64)> {
-    let procedural = ir
-        .model
-        .procedural_surfaces
-        .iter()
-        .find(|procedural| procedural.id == *construction)?;
     let Some([Some(carrier_start), Some(carrier_end), _, _]) =
         procedural.record_bounds().map(RecordBounds::get)
     else {
@@ -549,10 +564,9 @@ fn procedural_pcurve_parameter_map(
     let mut v_map = (1.0, 0.0);
     match procedural.definition() {
         ProceduralSurfaceDefinition::Extrusion(definition_payload) => {
-            let directrix = definition_payload.directrix();
             let parameter_interval = definition_payload.parameter_interval();
             {
-                if line_directrix(ir, directrix) {
+                if directrix_is_line {
                     u_map = affine_parameter_map([0.0, 1.0], carrier_interval)?;
                 } else if let Some(parameter_interval) = parameter_interval {
                     u_map = affine_parameter_map(parameter_interval.get(), carrier_interval)?;
@@ -560,7 +574,6 @@ fn procedural_pcurve_parameter_map(
             }
         }
         ProceduralSurfaceDefinition::Revolution(definition_payload) => {
-            let directrix = definition_payload.directrix();
             let angular_interval = definition_payload.angular_interval().endpoints();
             let angular_parameter_interval = definition_payload
                 .angular_parameter_interval()
@@ -570,7 +583,7 @@ fn procedural_pcurve_parameter_map(
                 .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints);
             let transposed = definition_payload.transposed();
             {
-                let directrix_map = if line_directrix(ir, directrix) {
+                let directrix_map = if directrix_is_line {
                     affine_parameter_map([0.0, 1.0], carrier_interval)?
                 } else if let Some(parameter_interval) = parameter_interval {
                     affine_parameter_map(parameter_interval, carrier_interval)?
@@ -847,7 +860,7 @@ fn parameter_interval_reaches_bounds(
 }
 
 fn source_curve_control_polygon_within_bounds(
-    ir: &CadIr,
+    index: &ModelIndex<'_>,
     curve_id: &CurveId,
     support: &PcurveSupport<'_>,
     bounds: Option<[Option<DeclaredInterval>; 4]>,
@@ -861,11 +874,13 @@ fn source_curve_control_polygon_within_bounds(
     let Some(bounds) = bounds else {
         return Ok(true);
     };
-    let Some((u_factor, u_offset, v_factor, v_offset)) = pcurve_parameter_map(ir, support) else {
+    let source_map = procedural_source_parameter_map(index, support, ctx)?;
+    let Some((u_factor, u_offset, v_factor, v_offset)) = pcurve_parameter_map(source_map, support)
+    else {
         return Ok(false);
     };
     let Some(controls) = source_curve_control_intervals(
-        ir,
+        index.ir(),
         curve_id,
         tables,
         precision,
@@ -1365,41 +1380,75 @@ fn insert_homogeneous_pcurve_knot(
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<()>, CodecError> {
     let count = controls.len();
-    let Some(span) = knots
-        .windows(2)
-        .position(|pair| pair[0] <= knot && knot < pair[1])
-    else {
+    // The caller has admitted finite, ordered knots. Each partition search
+    // needs at most the bit length of the knot count plus one comparison.
+    let search_work = 2 * u64::from(usize::BITS - knots.len().leading_zeros()) + 2;
+    ctx.charge_work(search_work, "iges pcurve insertion knot searches")?;
+    let upper = knots.partition_point(|candidate| *candidate <= knot);
+    if upper == 0 || upper == knots.len() {
         return Ok(None);
-    };
-    let multiplicity = knots.iter().filter(|candidate| **candidate == knot).count();
+    }
+    let span = upper - 1;
+    let multiplicity = upper - knots.partition_point(|candidate| *candidate < knot);
     if multiplicity >= degree {
         return Ok(Some(()));
     }
-    let Some((left_end, tail_start, inserted_count)) = span
-        .checked_sub(degree)
-        .zip(span.checked_sub(multiplicity))
-        .zip(count.checked_add(1))
-        .map(|((left_end, tail_start), count)| (left_end, tail_start, count))
+    let Some((left_end, tail_start)) = span.checked_sub(degree).zip(span.checked_sub(multiplicity))
     else {
         return Ok(None);
     };
-    let mut inserted = ctx.collection_vec(inserted_count, "iges pcurve inserted controls")?;
-    inserted.extend(std::iter::repeat_with(|| [0.0; 4]).take(inserted_count));
-    inserted[..=left_end].copy_from_slice(&controls[..=left_end]);
-    inserted[tail_start + 1..].copy_from_slice(&controls[tail_start..]);
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(tail_start - left_end)
+            .checked_mul(32)
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "iges pcurve insertion interpolation",
+                    u64::MAX - 1,
+                    u64::MAX,
+                )
+            })?,
+        "iges pcurve insertion interpolation",
+    )?;
     for index in left_end + 1..=tail_start {
         let denominator = knots[index + degree] - knots[index];
         if !denominator.is_finite() || denominator <= 0.0 {
             return Ok(None);
         }
+    }
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(count - tail_start)
+            .checked_mul(32)
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "iges pcurve insertion control shift",
+                    u64::MAX - 1,
+                    u64::MAX,
+                )
+            })?,
+        "iges pcurve insertion control shift",
+    )?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(knots.len() - upper)
+            .checked_mul(8)
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("iges pcurve insertion knot shift", u64::MAX - 1, u64::MAX)
+            })?,
+        "iges pcurve insertion knot shift",
+    )?;
+    ctx.reserve_vec(controls, 1, "iges pcurve inserted controls")?;
+    ctx.reserve_vec(knots, 1, "iges pcurve inserted knots")?;
+    controls.push([0.0; 4]);
+    controls.copy_within(tail_start..count, tail_start + 1);
+    // Descending interpolation keeps both source controls unchanged until
+    // their final use. The shifted tail keeps the last source control too.
+    for index in (left_end + 1..=tail_start).rev() {
+        let denominator = knots[index + degree] - knots[index];
         let alpha = (knot - knots[index]) / denominator;
-        inserted[index] = std::array::from_fn(|axis| {
+        controls[index] = std::array::from_fn(|axis| {
             alpha * controls[index][axis] + (1.0 - alpha) * controls[index - 1][axis]
         });
     }
-    ctx.reserve_vec(knots, 1, "iges pcurve inserted knots")?;
     knots.insert(span + 1, knot);
-    *controls = inserted;
     Ok(Some(()))
 }
 
@@ -1454,13 +1503,15 @@ fn homogeneous_pcurve_spans(
         "iges pcurve internal knots sort",
     )?;
     internal.dedup();
+    let span_count = internal.len() + 1;
     for knot in internal {
-        while copied_knots
-            .iter()
-            .filter(|candidate| **candidate == knot)
-            .count()
-            < degree
-        {
+        ctx.charge_work(
+            2 * u64::from(usize::BITS - knots.len().leading_zeros()) + 2,
+            "iges pcurve internal knot multiplicity searches",
+        )?;
+        let multiplicity = knots.partition_point(|candidate| *candidate <= knot)
+            - knots.partition_point(|candidate| *candidate < knot);
+        for _ in multiplicity..degree {
             if insert_homogeneous_pcurve_knot(degree, &mut copied_knots, &mut controls, knot, ctx)?
                 .is_none()
             {
@@ -1468,7 +1519,7 @@ fn homogeneous_pcurve_spans(
             }
         }
     }
-    let mut spans = ctx.collection_vec(controls.len(), "iges pcurve span descriptors")?;
+    let mut spans = ctx.collection_vec(span_count, "iges pcurve span descriptors")?;
     for span in degree..controls.len() {
         let Some((start, end)) = copied_knots
             .get(span)
@@ -2083,7 +2134,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 142 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2095,7 +2146,7 @@ pub(super) fn project(
             .integer(5)
             .filter(|value| matches!(value, 0..=3) && matches!(record.integer(1), Some(0..=3)))
         else {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2107,7 +2158,7 @@ pub(super) fn project(
             continue;
         };
         let Some(surface) = pointer(record, 2) else {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2126,7 +2177,7 @@ pub(super) fn project(
             .integer(3)
             .is_none_or(|value| value != 0 && pcurve.is_none())
         {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2135,7 +2186,7 @@ pub(super) fn project(
             continue;
         }
         let Some(model_curve) = pointer(record, 4) else {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2148,7 +2199,7 @@ pub(super) fn project(
                 entry.status.use_flag(global.global_table()) != Some(UseFlag::Parametric)
             })
         }) {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2187,7 +2238,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 141 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2196,7 +2247,7 @@ pub(super) fn project(
             continue;
         };
         let Some(boundary_type) = record.integer(1).filter(|value| matches!(value, 0 | 1)) else {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2205,7 +2256,7 @@ pub(super) fn project(
             continue;
         };
         let Some(preference) = record.integer(2).filter(|value| matches!(value, 0..=3)) else {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2214,7 +2265,7 @@ pub(super) fn project(
             continue;
         };
         let Some(surface) = pointer(record, 3) else {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2223,7 +2274,7 @@ pub(super) fn project(
             continue;
         };
         let Some(segment_count) = record.count(4).filter(|count| *count > 0) else {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2236,7 +2287,7 @@ pub(super) fn project(
         let mut valid = true;
         for _ in 0..segment_count {
             let Some(model_curve) = pointer(record, index) else {
-                super::push_entity_loss(
+                super::push_geometry_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2249,7 +2300,7 @@ pub(super) fn project(
                 Some(1) => Sense::Forward,
                 Some(2) => Sense::Reversed,
                 _ => {
-                    super::push_entity_loss(
+                    super::push_geometry_loss(
                         ctx,
                         &mut losses,
                         entry,
@@ -2260,7 +2311,7 @@ pub(super) fn project(
                 }
             };
             let Some(pcurve_count) = record.count(index + 2) else {
-                super::push_entity_loss(
+                super::push_geometry_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2272,7 +2323,7 @@ pub(super) fn project(
             if (boundary_type == 0 && pcurve_count != 0)
                 || (boundary_type == 1 && pcurve_count == 0)
             {
-                super::push_entity_loss(ctx, &mut losses, entry, format_args!("{}", "boundary pcurve collection cardinality disagrees with its representation type"))?;
+                super::push_geometry_loss(ctx, &mut losses, entry, format_args!("{}", "boundary pcurve collection cardinality disagrees with its representation type"))?;
                 valid = false;
                 break;
             }
@@ -2285,7 +2336,7 @@ pub(super) fn project(
                 if entries.get(&pcurve).is_none_or(|entry| {
                     entry.status.use_flag(global.global_table()) != Some(UseFlag::Parametric)
                 }) {
-                    super::push_entity_loss(
+                    super::push_geometry_loss(
                         ctx,
                         &mut losses,
                         entry,
@@ -2297,7 +2348,7 @@ pub(super) fn project(
                 pcurves.push(pcurve);
             }
             if pcurves.len() != pcurve_count {
-                super::push_entity_loss(
+                super::push_geometry_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2335,7 +2386,7 @@ pub(super) fn project(
         let factor = global.length_factor_mm();
         let carrier_agreement_tolerance = global.minimum_resolution_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2356,7 +2407,7 @@ pub(super) fn project(
             mut valid,
         ) = if surface_kind == BoundarySurfaceKind::Trimmed {
             let Some(surface) = pointer(record, 1) else {
-                super::push_entity_loss(
+                super::push_geometry_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2369,7 +2420,7 @@ pub(super) fn project(
                 1 => Some(true),
                 _ => None,
             }) else {
-                super::push_entity_loss(
+                super::push_geometry_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2378,7 +2429,7 @@ pub(super) fn project(
                 continue;
             };
             let Some(inner_count) = record.count(3) else {
-                super::push_entity_loss(
+                super::push_geometry_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2398,7 +2449,7 @@ pub(super) fn project(
             let mut explicit_outer_sequence = None;
             if has_explicit_outer {
                 let Some(outer) = pointer(record, 4) else {
-                    super::push_entity_loss(
+                    super::push_geometry_loss(
                         ctx,
                         &mut losses,
                         entry,
@@ -2410,7 +2461,7 @@ pub(super) fn project(
                     .get(&outer)
                     .is_none_or(|target| target.entity_type != 142 || target.form != 0)
                 {
-                    super::push_entity_loss(ctx, &mut losses, entry, format_args!("{}", "trimmed-surface outer-boundary pointer does not target a Type 142 Form 0 entity"))?;
+                    super::push_geometry_loss(ctx, &mut losses, entry, format_args!("{}", "trimmed-surface outer-boundary pointer does not target a Type 142 Form 0 entity"))?;
                     continue;
                 }
                 sequences.push(outer);
@@ -2419,13 +2470,13 @@ pub(super) fn project(
                 record.value(4),
                 None | Some(TokenValue::Omitted | TokenValue::Integer(0))
             ) {
-                super::push_entity_loss(ctx, &mut losses, entry, format_args!("{}", "trimmed-surface parameter-domain outer-boundary pointer is neither zero nor omitted"))?;
+                super::push_geometry_loss(ctx, &mut losses, entry, format_args!("{}", "trimmed-surface parameter-domain outer-boundary pointer is neither zero nor omitted"))?;
                 continue;
             }
             let mut valid = true;
             for index in 0..inner_count {
                 let Some(sequence) = pointer(record, 5 + index) else {
-                    super::push_entity_loss(
+                    super::push_geometry_loss(
                         ctx,
                         &mut losses,
                         entry,
@@ -2438,7 +2489,7 @@ pub(super) fn project(
                     .get(&sequence)
                     .is_none_or(|target| target.entity_type != 142 || target.form != 0)
                 {
-                    super::push_entity_loss(ctx, &mut losses, entry, format_args!("{}", "trimmed-surface inner-boundary pointer does not target a Type 142 Form 0 entity"))?;
+                    super::push_geometry_loss(ctx, &mut losses, entry, format_args!("{}", "trimmed-surface inner-boundary pointer does not target a Type 142 Form 0 entity"))?;
                     valid = false;
                     break;
                 }
@@ -2454,7 +2505,7 @@ pub(super) fn project(
         } else {
             let Some(representation) = record.integer(1).filter(|value| matches!(value, 0 | 1))
             else {
-                super::push_entity_loss(
+                super::push_geometry_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2463,7 +2514,7 @@ pub(super) fn project(
                 continue;
             };
             let Some(surface) = pointer(record, 2) else {
-                super::push_entity_loss(
+                super::push_geometry_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2472,7 +2523,7 @@ pub(super) fn project(
                 continue;
             };
             let Some(count) = record.count(3).filter(|count| *count > 0) else {
-                super::push_entity_loss(
+                super::push_geometry_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2484,7 +2535,7 @@ pub(super) fn project(
             let mut valid = true;
             for index in 0..count {
                 let Some(sequence) = pointer(record, 4 + index) else {
-                    super::push_entity_loss(
+                    super::push_geometry_loss(
                         ctx,
                         &mut losses,
                         entry,
@@ -2497,7 +2548,7 @@ pub(super) fn project(
                     .get(&sequence)
                     .is_none_or(|target| target.entity_type != 141 || target.form != 0)
                 {
-                    super::push_entity_loss(ctx, &mut losses, entry, format_args!("{}", "bounded-surface boundary pointer does not target a Type 141 Form 0 entity"))?;
+                    super::push_geometry_loss(ctx, &mut losses, entry, format_args!("{}", "bounded-surface boundary pointer does not target a Type 141 Form 0 entity"))?;
                     valid = false;
                     break;
                 }
@@ -2515,7 +2566,7 @@ pub(super) fn project(
                 }) {
                     sequences.push(sequence);
                 } else {
-                    super::push_entity_loss(
+                    super::push_geometry_loss(
                         ctx,
                         &mut losses,
                         entry,
@@ -2558,7 +2609,7 @@ pub(super) fn project(
             })
             .transpose()?
         else {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2596,7 +2647,7 @@ pub(super) fn project(
         let mut face_tolerance = 0.0_f64;
         for (boundary_index, sequence) in boundary_sequences.iter().copied().enumerate() {
             let Some(boundary) = boundaries.get(&sequence) else {
-                super::push_entity_loss(
+                super::push_geometry_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2606,7 +2657,7 @@ pub(super) fn project(
                 break;
             };
             if boundary.surface != surface_sequence {
-                super::push_entity_loss(
+                super::push_geometry_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2626,7 +2677,7 @@ pub(super) fn project(
                     ctx,
                 )?;
                 let Some(candidates) = edges_by_curve.get(&model_curve_id) else {
-                    super::push_entity_loss(
+                    super::push_geometry_loss(
                         ctx,
                         &mut losses,
                         entry,
@@ -2649,7 +2700,7 @@ pub(super) fn project(
                         CodecError::Malformed("IGES trimming composite index is absent".into())
                     })?;
                     match pcurve_geometry(
-                        ir,
+                        &carrier_index,
                         *sequence,
                         &PcurveSupport {
                             surface_id: &surface_id,
@@ -2678,7 +2729,7 @@ pub(super) fn project(
                 }
                 if let Some(error) = pcurve_refusal {
                     let error = error.non_resource()?;
-                    super::push_entity_loss(
+                    super::push_geometry_loss(
                         ctx,
                         &mut losses,
                         entry,
@@ -2690,7 +2741,7 @@ pub(super) fn project(
                 let mut pcurves = match pcurves {
                     Some(pcurves) => pcurves,
                     None if segment.parameter_curves_authoritative => {
-                        super::push_entity_loss(
+                        super::push_geometry_loss(
                             ctx,
                             &mut losses,
                             entry,
@@ -2710,7 +2761,7 @@ pub(super) fn project(
                         periodic_parameters,
                         ctx,
                     )? && !source_curve_control_polygon_within_bounds(
-                        ir,
+                        &carrier_index,
                         &crate::ids::curve_admitted(&crate::ids::Stem::directory(*sequence), ctx)?,
                         &PcurveSupport {
                             surface_id: &surface_id,
@@ -2755,7 +2806,7 @@ pub(super) fn project(
                 ) {
                     Ok(selected) => selected,
                     Err(BoundaryEdgeSelectionError::MissingEndpoints) => {
-                        super::push_entity_loss(
+                        super::push_geometry_loss(
                             ctx,
                             &mut losses,
                             entry,
@@ -2765,7 +2816,7 @@ pub(super) fn project(
                         break;
                     }
                     Err(BoundaryEdgeSelectionError::InvalidRange) => {
-                        super::push_entity_loss(
+                        super::push_geometry_loss(
                             ctx,
                             &mut losses,
                             entry,
@@ -2778,7 +2829,7 @@ pub(super) fn project(
                         break;
                     }
                     Err(BoundaryEdgeSelectionError::Ambiguous) => {
-                        super::push_entity_loss(
+                        super::push_geometry_loss(
                             ctx,
                             &mut losses,
                             entry,
@@ -2791,7 +2842,7 @@ pub(super) fn project(
                         break;
                     }
                     Err(BoundaryEdgeSelectionError::PcurveDisagreement) => {
-                        super::push_entity_loss(
+                        super::push_geometry_loss(
                             ctx,
                             &mut losses,
                             entry,
@@ -2853,7 +2904,7 @@ pub(super) fn project(
                 let (next_start, _) = traversal(&items[(index + 1) % items.len()]);
                 !close(end.get(), next_start.get(), sewing_tolerance)
             }) {
-                super::push_entity_loss(
+                super::push_geometry_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2904,7 +2955,7 @@ pub(super) fn project(
             let Some(checked_sewing_tolerance) =
                 cadmpeg_ir::scalar::PositiveReal::new(sewing_tolerance)
             else {
-                super::push_entity_loss(
+                super::push_geometry_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2932,7 +2983,7 @@ pub(super) fn project(
                 Err(BoundaryVertexCreationError::Cluster(
                     BoundaryVertexClusterError::NonTransitive,
                 )) => {
-                    super::push_entity_loss(
+                    super::push_geometry_loss(
                         ctx,
                         &mut losses,
                         entry,
@@ -2967,7 +3018,12 @@ pub(super) fn project(
                 ) {
                     Ok(carrier) => carrier,
                     Err(error) => {
-                        super::push_entity_loss(ctx, &mut losses, entry, format_args!("{error}"))?;
+                        super::push_geometry_loss(
+                            ctx,
+                            &mut losses,
+                            entry,
+                            format_args!("{error}"),
+                        )?;
                         valid = false;
                         break;
                     }
@@ -2985,7 +3041,7 @@ pub(super) fn project(
                     .iter()
                     .any(|(_, range)| cadmpeg_ir::units::FiniteVector::new(*range).is_none())
                 {
-                    super::push_entity_loss(
+                    super::push_geometry_loss(
                         ctx,
                         &mut losses,
                         entry,
@@ -3053,7 +3109,7 @@ pub(super) fn project(
             let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(ctx, coedge_ids, Vec::new())
                 .map_err(cadmpeg_core::CodecError::from)?
             else {
-                super::push_entity_loss(
+                super::push_geometry_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -3099,7 +3155,7 @@ pub(super) fn project(
             None => None,
         };
         if linear_relationship == Some(false) {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3127,7 +3183,7 @@ pub(super) fn project(
                 source_object: Some(match source_object(entry, ctx) {
                     Ok(source) => source,
                     Err(error) => {
-                        super::push_entity_loss(
+                        super::push_geometry_loss(
                             ctx,
                             &mut losses,
                             entry,
@@ -3143,7 +3199,7 @@ pub(super) fn project(
             {
                 Ok(record_bounds) => record_bounds,
                 Err(error) => {
-                    super::push_entity_loss(ctx, &mut losses, entry, format_args!("{error}"))?;
+                    super::push_geometry_loss(ctx, &mut losses, entry, format_args!("{error}"))?;
                     continue;
                 }
             };
@@ -3174,7 +3230,7 @@ pub(super) fn project(
         };
         let checked_face_tolerance = if face_tolerance > 0.0 {
             let Some(value) = cadmpeg_ir::scalar::PositiveReal::new(face_tolerance) else {
-                super::push_entity_loss(
+                super::push_geometry_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -3253,7 +3309,7 @@ pub(super) fn project(
     let mut commit_session = CommitSession::new(ir, ctx, None)?;
     for (entry, candidate, derivations) in staged {
         if commit_session.commit_model(candidate)?.is_err() {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,

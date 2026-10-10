@@ -851,7 +851,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
             ]),
             metadata_record: 602,
             metadata_record_offset: 0,
-            metadata_field: vec![0, 0],
+            metadata_field: vec![0, 0].into(),
         });
     }
 

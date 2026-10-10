@@ -54,6 +54,7 @@ fn curve_surface_model(
     ir.model
         .curves
         .extend(ids.iter().zip(curves).map(|(id, geometry)| Curve {
+            parameter_range: None,
             id: id.clone(),
             geometry,
             source_object: None,
@@ -210,11 +211,13 @@ fn procedural_curve_model(
     ir.model
         .curves
         .extend(ids.iter().zip(curves).map(|(id, geometry)| Curve {
+            parameter_range: None,
             id: id.clone(),
             geometry,
             source_object: None,
         }));
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: owner.clone(),
         geometry: CurveGeometry::Procedural {
             construction: construction.clone(),

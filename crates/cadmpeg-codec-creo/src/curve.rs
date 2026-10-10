@@ -675,7 +675,7 @@ pub(crate) struct FcCurveCoordinateToken {
     /// Decoded model length in millimeters.
     pub(crate) value_mm: f64,
     /// Exact source bytes occupied by the token.
-    pub(crate) raw: Vec<u8>,
+    pub(crate) raw: cadmpeg_ir::native::bytes::NativeBytes<Vec<u8>>,
     /// Token offset relative to the complete curve parameter body.
     pub(crate) offset: usize,
 }
@@ -696,7 +696,7 @@ impl serde::Serialize for FcCurveCoordinateToken {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FcCurveOpaqueSpan {
     /// Exact source bytes in the span.
-    raw: Vec<u8>,
+    raw: cadmpeg_ir::native::bytes::NativeBytes<Vec<u8>>,
     /// Span offset relative to the complete curve parameter body.
     offset: usize,
 }
@@ -8731,8 +8731,11 @@ pub(crate) fn fc_coordinates(
                     ctx.reserve_vec(&mut tokens, 1, "creo fc coordinate tokens")?;
                     tokens.push(FcCurveCoordinateToken {
                         value_mm: value,
-                        raw: ctx
-                            .copy_retained(&lane[cursor..next], "creo fc coordinate token bytes")?,
+                        raw: (ctx.copy_retained(
+                            &lane[cursor..next],
+                            "creo fc coordinate token bytes",
+                        )?)
+                        .into(),
                         offset: cursor + 2,
                     });
                     cursor = next;
@@ -8748,10 +8751,11 @@ pub(crate) fn fc_coordinates(
                 if unclaimed < token.offset {
                     ctx.reserve_vec(&mut opaque_spans, 1, "creo fc opaque spans")?;
                     opaque_spans.push(FcCurveOpaqueSpan {
-                        raw: ctx.copy_retained(
+                        raw: (ctx.copy_retained(
                             &record.body[unclaimed..token.offset],
                             "creo fc opaque span bytes",
-                        )?,
+                        )?)
+                        .into(),
                         offset: unclaimed,
                     });
                 }
@@ -8760,8 +8764,9 @@ pub(crate) fn fc_coordinates(
             if unclaimed < record.body.len() {
                 ctx.reserve_vec(&mut opaque_spans, 1, "creo fc opaque spans")?;
                 opaque_spans.push(FcCurveOpaqueSpan {
-                    raw: ctx
-                        .copy_retained(&record.body[unclaimed..], "creo fc opaque span bytes")?,
+                    raw: (ctx
+                        .copy_retained(&record.body[unclaimed..], "creo fc opaque span bytes")?)
+                    .into(),
                     offset: unclaimed,
                 });
             }

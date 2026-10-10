@@ -119,10 +119,7 @@
             "id": "catia:zero-entity:record#1",
             "logical_end": 166,
             "record_ordinal": 1,
-            "tag": [
-              40,
-              138
-            ]
+            "tag": "288a"
           }
         ],
         "zero_entity_support_runs": [],

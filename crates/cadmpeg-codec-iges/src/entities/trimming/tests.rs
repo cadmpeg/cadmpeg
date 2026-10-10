@@ -841,9 +841,10 @@ fn boundary_vertex_clustering_refuses_pairwise_work_before_comparisons() {
     .map(|point| cadmpeg_ir::features::FinitePoint3::new(point).unwrap());
     for (cap, operation, used) in [
         (2, "iges boundary clustering comparisons", 0),
-        // Three initial pair comparisons, six initialization steps, ten union
-        // root steps and seven membership root steps precede this proof.
-        (28, "iges boundary cluster transitivity comparisons", 26),
+        // Three initial pair comparisons, six initialization steps, three size
+        // fill steps, ten union root steps and seven membership root steps
+        // precede this proof.
+        (31, "iges boundary cluster transitivity comparisons", 29),
     ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -916,6 +917,7 @@ fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
         source_object: None,
     });
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::analytic::LineCurve::try_new(
@@ -1464,7 +1466,7 @@ fn decode_rejects_a_linear_type_144_inner_boundary_outside_the_outer() {
         .iter()
         .any(|face| face.id.as_str() == "iges:model:face#D15"));
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::EntityNotProjected.kind()
+        loss.code == IgesLossCode::GeometryNotProjected.kind()
             && loss
                 .message
                 .contains("trimmed-surface boundary loops are not simple")
@@ -1492,7 +1494,7 @@ fn decode_rejects_a_trimmed_surface_pointer_to_a_non_type_142_entity() {
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+        .any(|loss| loss.code == IgesLossCode::GeometryNotProjected.kind()));
 }
 
 #[test]
@@ -1530,7 +1532,7 @@ fn decode_rejects_a_bounded_surface_pointer_to_a_non_type_141_entity() {
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+        .any(|loss| loss.code == IgesLossCode::GeometryNotProjected.kind()));
 }
 
 #[test]
@@ -1549,7 +1551,7 @@ fn decode_does_not_blame_a_boundary_for_its_owning_surface_failure() {
     );
     assert_eq!(
         result.report().losses[0].code,
-        IgesLossCode::EntityNotProjected.kind()
+        IgesLossCode::GeometryNotProjected.kind()
     );
     // D13 is the Type 144 owner, the seventh entity in the fixture. Pinning
     // the provenance tag is what separates this test from the bug it guards
@@ -1958,4 +1960,7 @@ fn boundary_clustering_root_walk_refuses_before_traversal() {
     });
 }
 
+mod parameter_mapping;
 mod work_admission;
+
+mod pcurve_admission;

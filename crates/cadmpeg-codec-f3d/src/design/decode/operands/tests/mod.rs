@@ -7,6 +7,7 @@
 )]
 
 mod construction;
+mod construction_budget;
 mod edge_index;
 mod face_sources;
 mod header_index;

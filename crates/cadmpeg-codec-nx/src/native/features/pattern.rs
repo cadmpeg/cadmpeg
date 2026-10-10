@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Pattern construction records and extraction.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use crate::om::branch_items::BranchItems;
 use crate::om::counted_pattern_references::CountedPatternReferences;
 use crate::om::pattern_references::{PatternPayloadReferenceLayout, PatternReferences};
@@ -91,7 +93,7 @@ struct FeaturePatternCountedReferenceLaneWire {
     /// Ordered serialized object indices.
     object_indices: Vec<u32>,
     /// Exact variable-width object-index tokens in lane order.
-    raw_object_indices: Vec<Vec<u8>>,
+    raw_object_indices: Vec<NativeBytes<Vec<u8>>>,
     /// Independently resolved offset-store blocks; unresolved entries are `None`.
     data_blocks: Vec<Option<String>>,
     /// Absolute source offset of the opening `01, count` field.
@@ -117,6 +119,7 @@ impl From<FeaturePatternCountedReferenceLane> for FeaturePatternCountedReference
                 .references
                 .iter()
                 .map(|(_, token, _)| token.raw().to_vec())
+                .map(Into::into)
                 .collect(),
             data_blocks: value
                 .references
@@ -229,9 +232,9 @@ struct FeaturePatternConstructionFixedLaneWire {
     /// Ordered dimensionless Q1.55 values.
     values: Vec<f64>,
     /// Exact atom markers in value order.
-    markers: Vec<u8>,
+    markers: NativeBytes<Vec<u8>>,
     /// Exact seven-byte two's-complement payloads.
-    raw_values: Vec<[u8; 7]>,
+    raw_values: Vec<NativeBytes<[u8; 7]>>,
     /// Payload-relative offset of the fixed discriminator.
     payload_offset: u64,
     /// Payload-relative offsets of the atom markers.
@@ -255,15 +258,17 @@ impl From<FeaturePatternConstructionFixedLane> for FeaturePatternConstructionFix
                 .iter()
                 .map(|(_, atom, _)| atom.scalar.value())
                 .collect(),
-            markers: record
+            markers: (record
                 .lane
                 .iter()
                 .map(|(_, atom, _)| atom.marker.byte())
-                .collect(),
+                .collect::<Vec<_>>())
+            .into(),
             raw_values: record
                 .lane
                 .iter()
                 .map(|(_, atom, _)| atom.scalar.raw())
+                .map(Into::into)
                 .collect(),
             payload_offset: record.lane.offset(),
             value_payload_offsets: record.lane.iter().map(|(offset, _, _)| offset).collect(),
@@ -296,7 +301,7 @@ impl TryFrom<FeaturePatternConstructionFixedLaneWire> for FeaturePatternConstruc
                 Ok((
                     Q155Atom {
                         marker: Q155Marker::read(marker).ok_or("markers must contain 48 or 176")?,
-                        scalar: Q155::from_wire(value, raw)?,
+                        scalar: Q155::from_wire(value, *raw)?,
                     },
                     source,
                 ))
@@ -364,11 +369,11 @@ struct FeaturePatternTransformLaneWire {
     /// Ordered finite row scalars.
     values: Vec<f64>,
     /// Exact scalar encodings in row order.
-    raw_values: Vec<Vec<u8>>,
+    raw_values: Vec<NativeBytes<Vec<u8>>>,
     /// Ordered non-null compact selectors.
     selectors: Vec<u32>,
     /// Exact compact-index selector tokens in row order.
-    raw_selectors: Vec<Vec<u8>>,
+    raw_selectors: Vec<NativeBytes<Vec<u8>>>,
     /// Absolute source offset of the opening `01, count` field.
     source_offset: u64,
     /// Absolute source offsets of the scalar encodings.
@@ -388,13 +393,13 @@ impl FeaturePatternTransformLaneWire {
     ) {
         self.encodings.push(encoding);
         self.values.push(value);
-        self.raw_values.push(raw.to_vec());
+        self.raw_values.push(raw.to_vec().into());
         self.value_source_offsets.push(source_offset);
     }
 
     fn push_selector(&mut self, selector: crate::om::compact::LocatedCompactIndex<u64>) {
         self.selectors.push(selector.atom.value());
-        self.raw_selectors.push(selector.atom.raw().to_vec());
+        self.raw_selectors.push(selector.atom.raw().to_vec().into());
         self.selector_source_offsets.push(selector.offset);
     }
 }
@@ -560,7 +565,7 @@ impl TryFrom<FeaturePatternTransformLaneWire> for FeaturePatternTransformLane {
                 |(((encoding, value), raw), source_offset)| PatternScalarWire {
                     encoding,
                     value,
-                    raw,
+                    raw: raw.into_inner(),
                     source_offset,
                 },
             )
@@ -649,9 +654,9 @@ struct FeatureMultiInstanceOutputLaneWire {
     /// Ordered non-null compact selectors.
     selectors: Vec<u32>,
     /// Exact compact-index selector tokens in row order.
-    raw_selectors: Vec<Vec<u8>>,
+    raw_selectors: Vec<NativeBytes<Vec<u8>>>,
     /// Ordered serialized instance ordinals.
-    ordinals: Vec<u8>,
+    ordinals: NativeBytes<Vec<u8>>,
     /// Ordered serialized row indices.
     row_indices: Vec<usize>,
     /// Count including the implicit seed instance.
@@ -660,7 +665,7 @@ struct FeatureMultiInstanceOutputLaneWire {
     /// Ordered non-null trailing object indices.
     trailing_object_indices: Vec<u32>,
     /// Exact trailing object-index tokens in row order.
-    raw_trailing_object_indices: Vec<Vec<u8>>,
+    raw_trailing_object_indices: Vec<NativeBytes<Vec<u8>>>,
     /// Absolute source offset of the opening `25 01, count` field.
     source_offset: u64,
     /// Absolute source offsets of the selector tokens.
@@ -689,8 +694,9 @@ impl From<FeatureMultiInstanceOutputLane> for FeatureMultiInstanceOutputLaneWire
                 .selectors()
                 .iter()
                 .map(|token| token.atom.raw().to_vec())
+                .map(Into::into)
                 .collect(),
-            ordinals: lane.outputs.ordinals().collect(),
+            ordinals: (lane.outputs.ordinals().collect::<Vec<_>>()).into(),
             row_indices: (2..lane.outputs.selectors().len() + 2).collect(),
             selector_source_offsets: lane
                 .outputs
@@ -709,6 +715,7 @@ impl From<FeatureMultiInstanceOutputLane> for FeatureMultiInstanceOutputLaneWire
                 .references()
                 .iter()
                 .map(|token| token.token.raw().to_vec())
+                .map(Into::into)
                 .collect(),
             trailing_object_index_source_offsets: lane
                 .outputs
@@ -824,14 +831,14 @@ struct FeatureIdenticalInstanceOutputLaneWire {
     /// Schema index framing the serialized count.
     count_schema_index: u8,
     /// Three consecutive schema indices framing every selector row.
-    row_schema_indices: [u8; 3],
+    row_schema_indices: NativeBytes<[u8; 3]>,
     /// Count including the implicit owner row.
     #[serde(deserialize_with = "deserialize_reference_lane_count")]
     declared_count: usize,
     /// Ordered non-null compact selectors.
     selectors: Vec<u32>,
     /// Exact compact-index selector tokens in row order.
-    raw_selectors: Vec<Vec<u8>>,
+    raw_selectors: Vec<NativeBytes<Vec<u8>>>,
     /// Absolute source offset of the leading schema index.
     source_offset: u64,
     /// Absolute source offsets of the selector tokens.
@@ -846,7 +853,7 @@ impl From<FeatureIdenticalInstanceOutputLane> for FeatureIdenticalInstanceOutput
             operation_label: lane.operation_label,
             leading_schema_index: lane.leading_schema_index,
             count_schema_index: lane.count_schema_index.value(),
-            row_schema_indices: lane.count_schema_index.row_indices(),
+            row_schema_indices: (lane.count_schema_index.row_indices()).into(),
             declared_count: usize::from(lane.selectors.declared_count()) - 1,
             source_offset: lane.source_offset,
             selectors: lane
@@ -860,6 +867,7 @@ impl From<FeatureIdenticalInstanceOutputLane> for FeatureIdenticalInstanceOutput
                 .as_slice()
                 .iter()
                 .map(|token| token.atom.raw().to_vec())
+                .map(Into::into)
                 .collect(),
             selector_source_offsets: lane
                 .selectors

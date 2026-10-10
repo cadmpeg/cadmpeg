@@ -39,29 +39,20 @@ pub(crate) fn matches_native(
         |record| record.id.len(),
         "FreeCAD application records sort",
     )?;
-    let mut actual = namespace.arena_iter_as_for_decode::<serde_json::Value>(ctx, "applications");
+    let mut actual = namespace.arenas().get("applications").into_iter().flatten();
     for record in expected {
-        let (actual, _actual_storage) = ctx
-            .with_scoped_storage("FreeCAD actual application record", || {
-                actual.next().transpose()
-            })?;
-        let Some(actual) = actual else {
+        let Some(actual) = actual.next() else {
             return Ok(false);
         };
-        if actual != serde_json::to_value(record)? {
+        if !actual.matches_typed_for_decode(ctx, &record)? {
             return Ok(false);
         }
     }
-    let (tail, _tail_storage) = ctx
-        .with_scoped_storage("FreeCAD actual application tail", || {
-            actual.next().transpose()
-        })?;
-    Ok(tail.is_none())
+    Ok(actual.next().is_none())
 }
 
-// These are serialization views, not independent preservation records. Payload bytes
-// borrow their authoritative entry; absent object data remains an Option until this
-// legacy wire boundary emits its empty-data and zero-offset representation.
+// Census records refer to authoritative bytes through identities, ranges and digests.
+// Absent object data uses zero offsets and the empty-byte digest.
 #[derive(Serialize)]
 struct ApplicationRecordWire<'a> {
     id: String,
@@ -77,7 +68,6 @@ struct ApplicationRecordWire<'a> {
     byte_end: u64,
     byte_len: u64,
     sha256: String,
-    data: &'a [u8],
     property_records: Vec<ApplicationPropertyWire<'a>>,
 }
 
@@ -94,7 +84,6 @@ struct ApplicationPropertyWire<'a> {
     byte_end: u64,
     byte_len: u64,
     sha256: String,
-    data: &'a [u8],
     payloads: Vec<ApplicationPayloadWire<'a>>,
     inert: bool,
 }
@@ -105,7 +94,6 @@ struct ApplicationPayloadWire<'a> {
     name: &'a str,
     byte_len: u64,
     sha256: &'a str,
-    data: &'a [u8],
 }
 
 fn wire_records<'a>(
@@ -117,22 +105,42 @@ fn wire_records<'a>(
     let mut by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
     for property in properties {
         let owner = property.owner.as_str();
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(owner.len()).max(1),
+            "FreeCAD application owner hashing",
+        )?;
         if !by_owner.contains_key(owner) {
             ctx.reserve_map(&mut by_owner, 1, "FreeCAD application owner lookup")?;
         }
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(owner.len()).max(1),
+            "FreeCAD application owner hashing",
+        )?;
         let owned = by_owner.entry(owner).or_default();
         ctx.reserve_vec(owned, 1, "FreeCAD application owner properties")?;
         owned.push(property);
     }
     let mut entry_index = HashMap::new();
     for entry in entries {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(entry.name().len()).max(1),
+            "FreeCAD application entry hashing",
+        )?;
         if !entry_index.contains_key(entry.name()) {
             ctx.reserve_map(&mut entry_index, 1, "FreeCAD application entry lookup")?;
         }
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(entry.name().len()).max(1),
+            "FreeCAD application entry hashing",
+        )?;
         entry_index.insert(entry.name(), entry);
     }
     let mut records = ctx.collection_vec(objects.len(), "FreeCAD application records")?;
     for object in objects {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(object.id().as_str().len()).max(1),
+            "FreeCAD application owner lookup",
+        )?;
         let mut owned = by_owner.remove(object.id().as_str()).unwrap_or_default();
         ctx.stable_sort_by(
             &mut owned,
@@ -164,20 +172,28 @@ fn wire_records<'a>(
             ctx.collection_vec(owned.len(), "FreeCAD application property records")?;
         for property in owned {
             let data = property.xml.text().as_bytes();
-            let payload_count = property
-                .side_entries()
-                .iter()
-                .filter(|name| entry_index.contains_key(name.as_str()))
-                .count();
+            let mut payload_count = 0;
+            for name in property.side_entries() {
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(name.len()).max(1),
+                    "FreeCAD application payload lookup",
+                )?;
+                if entry_index.contains_key(name.as_str()) {
+                    payload_count += 1;
+                }
+            }
             let mut payloads = ctx.collection_vec(payload_count, "FreeCAD application payloads")?;
             for name in property.side_entries() {
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(name.len()).max(1),
+                    "FreeCAD application payload lookup",
+                )?;
                 if let Some(entry) = entry_index.get(name.as_str()) {
                     payloads.push(ApplicationPayloadWire {
                         entry: entry.id(),
                         name: entry.name(),
                         byte_len: entry.byte_len(),
                         sha256: entry.sha256(),
-                        data: entry.data(),
                     });
                 }
             }
@@ -203,7 +219,6 @@ fn wire_records<'a>(
                 byte_end: property.xml.end(),
                 byte_len: cadmpeg_core::decode::u64_from_index(data.len()),
                 sha256: cadmpeg_ir::hash::sha256_hex(data),
-                data,
                 payloads,
                 inert: is_inert(property),
             });
@@ -236,7 +251,6 @@ fn wire_records<'a>(
                 .map_or(0, crate::native::RetainedXml::end),
             byte_len: cadmpeg_core::decode::u64_from_index(data.len()),
             sha256: cadmpeg_ir::hash::sha256_hex(data),
-            data,
             property_records,
         });
     }

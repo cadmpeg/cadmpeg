@@ -8,9 +8,10 @@ use crate::records::{
     FeatureInputLane, FeatureInputName, FeatureInputOperand, FeatureInputOperandKind,
     FeatureInputScalar,
 };
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
+use std::collections::HashMap;
 
 use crate::layout::feature_input_operand_cell12 as operand_cell;
 use crate::records::ObjectId;
@@ -232,6 +233,71 @@ pub(super) fn operand_kind(tag: [u8; 2]) -> Option<FeatureInputOperandKind> {
         bytes => Some(FeatureInputOperandKind::Native(
             View::u16_le_at(&bytes, 0)?.try_into().ok()?,
         )),
+    }
+}
+
+/// Unique source and display-name lookups for repeated feature ownership queries.
+pub(super) struct FeatureObjectNames<'a> {
+    by_source: HashMap<u32, Option<&'a FeatureInputName>>,
+    by_value: HashMap<&'a str, Option<&'a FeatureInputName>>,
+}
+
+impl<'a> FeatureObjectNames<'a> {
+    pub(super) fn new<'ctx>(
+        ctx: &'ctx DecodeContext<'_>,
+        names: &'a [FeatureInputName],
+        operation: &'static str,
+    ) -> Result<(Self, ScopedReservation<'ctx>), CodecError> {
+        ctx.with_scoped_storage(operation, || {
+            let mut by_source = HashMap::new();
+            let mut by_value = HashMap::<&str, Option<&FeatureInputName>>::new();
+            for name in names {
+                if let Some(source) = name.object_id.and_then(ObjectId::value) {
+                    ctx.charge_work(4, operation)?;
+                    if by_source.len() == by_source.capacity() && !by_source.contains_key(&source) {
+                        ctx.charge_work(u64_from_index(by_source.len()), operation)?;
+                    }
+                    ctx.admit_hash_map_entry(&mut by_source, &source, operation)?;
+                    by_source
+                        .entry(source)
+                        .and_modify(|value| *value = None)
+                        .or_insert(Some(name));
+                }
+                let value = name.value.as_str();
+                ctx.charge_work(u64_from_index(value.len()) + 1, operation)?;
+                if by_value.len() == by_value.capacity() && !by_value.contains_key(value) {
+                    for key in by_value.keys() {
+                        ctx.charge_work(u64_from_index(key.len()), operation)?;
+                    }
+                }
+                ctx.admit_hash_map_entry(&mut by_value, &value, operation)?;
+                by_value
+                    .entry(value)
+                    .and_modify(|value| *value = None)
+                    .or_insert(Some(name));
+            }
+            Ok(Self {
+                by_source,
+                by_value,
+            })
+        })
+    }
+
+    pub(super) fn get(
+        &self,
+        ctx: &DecodeContext<'_>,
+        source: Option<u32>,
+        name: &str,
+        operation: &'static str,
+    ) -> Result<Option<&'a FeatureInputName>, CodecError> {
+        if let Some(source) = source {
+            ctx.charge_work(1, operation)?;
+            if let Some(found) = self.by_source.get(&source) {
+                return Ok(*found);
+            }
+        }
+        ctx.charge_work(u64_from_index(name.len()) + 1, operation)?;
+        Ok(self.by_value.get(name).copied().flatten())
     }
 }
 

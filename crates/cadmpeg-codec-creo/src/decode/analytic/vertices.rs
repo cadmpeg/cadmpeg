@@ -1151,6 +1151,7 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.model.curves.extend([
             Curve {
+                parameter_range: None,
                 id: id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                     cadmpeg_ir::geometry::analytic::LineCurve::try_new(
@@ -1162,6 +1163,7 @@ mod tests {
                 source_object: None,
             },
             Curve {
+                parameter_range: None,
                 id: id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                     cadmpeg_ir::geometry::analytic::LineCurve::try_new(

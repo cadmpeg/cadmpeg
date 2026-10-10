@@ -102,7 +102,7 @@ fn compressed_jt_fixture() -> (Vec<u8>, super::super::DisplayJtSegment) {
         id: "nx:jt:segment#0".into(),
         document: "nx:jt:document#0".into(),
         toc_entry: "nx:jt:toc-entry#0".into(),
-        segment_id: [0; 16],
+        segment_id: [0; 16].into(),
         segment_type: 7,
         segment_byte_len: u32::try_from(data.len()).unwrap(),
         payload_sha256: Sha256Digest::digest(&data[24..]),

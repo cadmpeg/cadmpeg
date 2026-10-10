@@ -1616,5 +1616,108 @@ fn f() { let ctx: Option<&DecodeContext<'_>> = None; }
         self.assertEqual(self.findings("optional_decode_context"), [])
 
 
+
+class NativeByteFields(TempSourceCase):
+    def test_rejects_owned_borrowed_fixed_and_nested_payloads(self) -> None:
+        self.write("crates/cadmpeg-codec-example/src/native.rs", """
+#[derive(Serialize, Deserialize)]
+struct Record<'a> {
+    owned: Vec<u8>,
+    borrowed: &'a [u8],
+    fixed: [u8; 4],
+    nested: Vec<Option<Vec<u8>>>,
+}
+#[derive(Serialize)]
+enum Value { Bytes(Vec<u8>), Named { bytes: [u8; 2] } }
+#[derive(Deserialize)]
+struct Tuple(Vec<u8>);
+""")
+        self.assertEqual(len(self.findings("native_byte_array")), 7)
+
+    def test_manual_serialization_is_checked(self) -> None:
+        self.write("crates/cadmpeg-codec-example/src/native.rs", """
+struct Manual { bytes: Vec<u8> }
+impl serde::Serialize for Manual {}
+struct Borrowed<'a>(&'a [u8]);
+impl Serialize for Borrowed<'_> {}
+struct Safe(NativeBytes<Vec<u8>>);
+impl Serialize for Safe {}
+""")
+        self.assertEqual(len(self.findings("native_byte_array")), 2)
+
+    def test_shared_storage_and_non_wire_storage_are_allowed(self) -> None:
+        self.write("crates/cadmpeg-codec-example/src/native.rs", """
+#[derive(Serialize, Deserialize)]
+struct Record<'a> {
+    owned: NativeBytes<Vec<u8>>,
+    borrowed: NativeBytes<&'a [u8]>,
+    nested: Vec<Option<NativeBytes<Vec<u8>>>>,
+    fixed: NativeBytes<[u8; 4]>,
+    numbers: Vec<u32>,
+    text: String,
+}
+struct Parser { bytes: Vec<u8> }
+#[derive(Serialize, Deserialize)]
+#[serde(try_from = "Wire", into = "Wire")]
+struct Checked { bytes: Vec<u8> }
+#[derive(Serialize, Deserialize)]
+struct Wire { bytes: NativeBytes<Vec<u8>> }
+#[cfg(test)]
+mod tests { #[derive(Serialize)] struct Fixture { bytes: Vec<u8> } }
+""")
+        self.assertEqual(self.findings("native_byte_array"), [])
+
+    def test_deserialize_mirror_does_not_hide_direct_serialization(self) -> None:
+        self.write("crates/cadmpeg-codec-example/src/native.rs", """
+#[derive(Serialize, Deserialize)]
+#[serde(try_from = "Wire")]
+struct Checked { bytes: Vec<u8> }
+""")
+        self.assertEqual(len(self.findings("native_byte_array")), 1)
+
+    def test_ignores_strings_comments_and_other_crates(self) -> None:
+        self.write("crates/cadmpeg-codec-example/src/native.rs", """
+// #[derive(Serialize)] struct Comment { bytes: Vec<u8> }
+const TEXT: &str = "[u8] Vec<u8>";
+#[derive(Serialize)]
+struct Record { bytes: NativeBytes<Vec<u8>> }
+""")
+        self.write("crates/cadmpeg-ir/src/other.rs", """
+#[derive(Serialize)]
+struct Other { bytes: Vec<u8> }
+""")
+        self.assertEqual(self.findings("native_byte_array"), [])
+
+    def test_raw_byte_conversion_targets_are_wire_shapes(self) -> None:
+        path = self.write("crates/cadmpeg-codec-nx/src/native.rs", '''
+#[derive(Serialize, Deserialize)]
+#[serde(try_from = "[u8; 2]", into = "[u8; 2]")]
+enum Suffix { First, Second }
+#[derive(Deserialize)]
+#[serde(try_from = "Vec<u8>")]
+enum Terminator { First, Second }
+#[derive(Serialize, Deserialize)]
+#[serde(try_from = "NativeBytes<[u8; 2]>", into = "NativeBytes<[u8; 2]>")]
+enum HexSuffix { First, Second }
+''')
+        findings = policy.scan_native_byte_fields({path: path.read_text()})
+        self.assertEqual([item.rule for item in findings], ["native_byte_array"] * 2)
+        self.assertIn("Suffix", findings[0].message)
+        self.assertIn("Terminator", findings[1].message)
+
+    def test_conversion_attributes_do_not_hide_manual_serde_fields(self) -> None:
+        path = self.write("crates/cadmpeg-codec-step/src/native.rs", """
+#[derive(Deserialize)]
+#[serde(try_from = "Wire", into = "Wire")]
+struct Manual { raw: Vec<u8> }
+impl Serialize for Manual {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        self.raw.serialize(s)
+    }
+}
+""")
+        findings = policy.scan_native_byte_fields({path: path.read_text()})
+        self.assertEqual([item.rule for item in findings], ["native_byte_array"])
+
 if __name__ == "__main__":
     unittest.main()

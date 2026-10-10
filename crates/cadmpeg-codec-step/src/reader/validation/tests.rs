@@ -30,7 +30,7 @@ fn validation_resource_refuses(
     let (setup_ctx, _) = DecodeContext::from_root_bytes(source, &setup_arena, &setup_policy)
         .expect("root fits setup policy");
     let mut setup_ir = cadmpeg_ir::document::CadIr::empty();
-    let geometry = crate::reader::geometry::decode(&exchange, &mut setup_ir, &setup_ctx)
+    let (geometry, _) = crate::reader::geometry::decode(&exchange, &mut setup_ir, &setup_ctx)
         .expect("geometry setup decodes");
     let refused = {
         let error =
@@ -140,7 +140,7 @@ fn validation_limit_result(
     let (geometry_ctx, _) =
         DecodeContext::from_root_bytes(VALIDATION_LIMIT_SOURCE, &arena, &geometry_policy)
             .expect("root fits geometry policy");
-    let geometry = crate::reader::geometry::decode(&exchange, &mut ir, &geometry_ctx)?;
+    let (geometry, _) = crate::reader::geometry::decode(&exchange, &mut ir, &geometry_ctx)?;
     let (ctx, _) = DecodeContext::from_root_bytes(VALIDATION_LIMIT_SOURCE, &arena, &policy)
         .expect("root fits selected policy");
     super::decode(&exchange, &geometry.value, &mut ir, &ctx)?;

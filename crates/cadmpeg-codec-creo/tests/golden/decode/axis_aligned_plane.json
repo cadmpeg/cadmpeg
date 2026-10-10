@@ -102,24 +102,7 @@
         ],
         "plane_envelopes": [
           {
-            "body": [
-              15,
-              15,
-              15,
-              15,
-              67,
-              240,
-              0,
-              67,
-              240,
-              0,
-              228,
-              228,
-              47,
-              0,
-              0,
-              228
-            ],
+            "body": "0f0f0f0f43f00043f000e4e42f0000e4",
             "corner_coordinate_equal": [
               false,
               false,
@@ -154,42 +137,16 @@
             "offset": 122,
             "row_offset": 116,
             "scalar_tokens": [
-              [
-                15
-              ],
-              [
-                15
-              ],
-              [
-                15
-              ],
-              [
-                15
-              ],
-              [
-                67,
-                240,
-                0
-              ],
-              [
-                67,
-                240,
-                0
-              ],
-              [
-                228
-              ],
-              [
-                228
-              ],
-              [
-                47,
-                0,
-                0
-              ],
-              [
-                228
-              ]
+              "0f",
+              "0f",
+              "0f",
+              "0f",
+              "43f000",
+              "43f000",
+              "e4",
+              "e4",
+              "2f0000",
+              "e4"
             ],
             "source_section": "VisibGeom",
             "surface_id": 7
@@ -197,27 +154,7 @@
         ],
         "plane_local_systems": [
           {
-            "body": [
-              15,
-              228,
-              15,
-              228,
-              15,
-              15,
-              15,
-              15,
-              15,
-              70,
-              8,
-              0,
-              0,
-              0,
-              0,
-              0,
-              0,
-              15,
-              228
-            ],
+            "body": "0fe40fe40f0f0f0f0f46080000000000000fe4",
             "classification": "simple",
             "id": "creo:surface:plane_local_system#139:7",
             "normal": [
@@ -257,24 +194,7 @@
         ],
         "surface_parameters": [
           {
-            "body": [
-              15,
-              15,
-              15,
-              15,
-              67,
-              240,
-              0,
-              67,
-              240,
-              0,
-              228,
-              228,
-              47,
-              0,
-              0,
-              228
-            ],
+            "body": "0f0f0f0f43f00043f000e4e42f0000e4",
             "body_offset": 122,
             "boundary": "compound_close",
             "cone_half_angle_override": null,
@@ -293,87 +213,61 @@
                   {
                     "length": 1,
                     "offset": 0,
-                    "raw": [
-                      15
-                    ],
+                    "raw": "0f",
                     "value": 0.0
                   },
                   {
                     "length": 1,
                     "offset": 1,
-                    "raw": [
-                      15
-                    ],
+                    "raw": "0f",
                     "value": 0.0
                   },
                   {
                     "length": 1,
                     "offset": 2,
-                    "raw": [
-                      15
-                    ],
+                    "raw": "0f",
                     "value": 0.0
                   },
                   {
                     "length": 1,
                     "offset": 3,
-                    "raw": [
-                      15
-                    ],
+                    "raw": "0f",
                     "value": 0.0
                   },
                   {
                     "length": 3,
                     "offset": 4,
-                    "raw": [
-                      67,
-                      240,
-                      0
-                    ],
+                    "raw": "43f000",
                     "value": -1.0
                   },
                   {
                     "length": 3,
                     "offset": 7,
-                    "raw": [
-                      67,
-                      240,
-                      0
-                    ],
+                    "raw": "43f000",
                     "value": -1.0
                   },
                   {
                     "length": 1,
                     "offset": 10,
-                    "raw": [
-                      228
-                    ],
+                    "raw": "e4",
                     "value": 1.0
                   },
                   {
                     "length": 1,
                     "offset": 11,
-                    "raw": [
-                      228
-                    ],
+                    "raw": "e4",
                     "value": 1.0
                   },
                   {
                     "length": 3,
                     "offset": 12,
-                    "raw": [
-                      47,
-                      0,
-                      0
-                    ],
+                    "raw": "2f0000",
                     "value": 2.0
                   },
                   {
                     "length": 1,
                     "offset": 15,
-                    "raw": [
-                      228
-                    ],
+                    "raw": "e4",
                     "value": 1.0
                   }
                 ]
@@ -383,87 +277,61 @@
               {
                 "length": 1,
                 "offset": 0,
-                "raw": [
-                  15
-                ],
+                "raw": "0f",
                 "value": 0.0
               },
               {
                 "length": 1,
                 "offset": 1,
-                "raw": [
-                  15
-                ],
+                "raw": "0f",
                 "value": 0.0
               },
               {
                 "length": 1,
                 "offset": 2,
-                "raw": [
-                  15
-                ],
+                "raw": "0f",
                 "value": 0.0
               },
               {
                 "length": 1,
                 "offset": 3,
-                "raw": [
-                  15
-                ],
+                "raw": "0f",
                 "value": 0.0
               },
               {
                 "length": 3,
                 "offset": 4,
-                "raw": [
-                  67,
-                  240,
-                  0
-                ],
+                "raw": "43f000",
                 "value": -1.0
               },
               {
                 "length": 3,
                 "offset": 7,
-                "raw": [
-                  67,
-                  240,
-                  0
-                ],
+                "raw": "43f000",
                 "value": -1.0
               },
               {
                 "length": 1,
                 "offset": 10,
-                "raw": [
-                  228
-                ],
+                "raw": "e4",
                 "value": 1.0
               },
               {
                 "length": 1,
                 "offset": 11,
-                "raw": [
-                  228
-                ],
+                "raw": "e4",
                 "value": 1.0
               },
               {
                 "length": 3,
                 "offset": 12,
-                "raw": [
-                  47,
-                  0,
-                  0
-                ],
+                "raw": "2f0000",
                 "value": 2.0
               },
               {
                 "length": 1,
                 "offset": 15,
-                "raw": [
-                  228
-                ],
+                "raw": "e4",
                 "value": 1.0
               }
             ],
@@ -479,87 +347,61 @@
                 {
                   "length": 1,
                   "offset": 0,
-                  "raw": [
-                    15
-                  ],
+                  "raw": "0f",
                   "value": 0.0
                 },
                 {
                   "length": 1,
                   "offset": 1,
-                  "raw": [
-                    15
-                  ],
+                  "raw": "0f",
                   "value": 0.0
                 },
                 {
                   "length": 1,
                   "offset": 2,
-                  "raw": [
-                    15
-                  ],
+                  "raw": "0f",
                   "value": 0.0
                 },
                 {
                   "length": 1,
                   "offset": 3,
-                  "raw": [
-                    15
-                  ],
+                  "raw": "0f",
                   "value": 0.0
                 },
                 {
                   "length": 3,
                   "offset": 4,
-                  "raw": [
-                    67,
-                    240,
-                    0
-                  ],
+                  "raw": "43f000",
                   "value": -1.0
                 },
                 {
                   "length": 3,
                   "offset": 7,
-                  "raw": [
-                    67,
-                    240,
-                    0
-                  ],
+                  "raw": "43f000",
                   "value": -1.0
                 },
                 {
                   "length": 1,
                   "offset": 10,
-                  "raw": [
-                    228
-                  ],
+                  "raw": "e4",
                   "value": 1.0
                 },
                 {
                   "length": 1,
                   "offset": 11,
-                  "raw": [
-                    228
-                  ],
+                  "raw": "e4",
                   "value": 1.0
                 },
                 {
                   "length": 3,
                   "offset": 12,
-                  "raw": [
-                    47,
-                    0,
-                    0
-                  ],
+                  "raw": "2f0000",
                   "value": 2.0
                 },
                 {
                   "length": 1,
                   "offset": 15,
-                  "raw": [
-                    228
-                  ],
+                  "raw": "e4",
                   "value": 1.0
                 }
               ]

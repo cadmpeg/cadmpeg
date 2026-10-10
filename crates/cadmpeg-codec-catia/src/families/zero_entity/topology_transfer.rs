@@ -1740,6 +1740,7 @@ mod tests {
                     .expect("test endpoints")
                     .map(FinitePoint3::get);
                 ir.model.curves.push(Curve {
+                    parameter_range: None,
                     id: curve_ids[&support.record_ordinal].clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                         cadmpeg_ir::geometry::analytic::LineCurve::try_new(
@@ -1901,6 +1902,7 @@ mod tests {
                     ))
                 };
                 ir.model.curves.push(Curve {
+                    parameter_range: None,
                     id: curve_ids[&support.record_ordinal].clone(),
                     geometry,
                     source_object: None,

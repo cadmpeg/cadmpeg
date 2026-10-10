@@ -825,7 +825,10 @@ fn extrude_profile_hierarchy_refuses_work_limit() {
 
     let (scope, groups) = extrude_root_fixture();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_work_units = 386;
+    // The two profile groups already have increasing scope ordinals. Their
+    // stable sort charges two items and one comparison, with no permutation;
+    // the first one-unit hierarchy visit then exceeds the limit.
+    policy.limits.max_work_units = 2 + 1;
     let arena = DecodeArena::new();
 
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();

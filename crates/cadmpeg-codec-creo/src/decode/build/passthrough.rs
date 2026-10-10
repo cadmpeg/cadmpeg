@@ -18,7 +18,7 @@ use super::super::native::annotate;
 use super::super::native::emit_arena;
 use cadmpeg_ir::unknown::UnknownRecord;
 
-/// Retain every PSB geometry and thumbnail section as an unknown record.
+/// Retain PSB geometry, thumbnail payloads, and every failed expansion.
 ///
 /// A section whose declared extent runs past the scanned buffer is a refusal
 /// naming the section, its declared end, and the buffer length. The declared
@@ -31,7 +31,13 @@ pub(super) fn preserve_passthrough_sections(
 ) -> Result<Vec<UnknownRecord>, CodecError> {
     let mut unknowns = Vec::new();
     for section in scan.framing.sections.iter().filter(|section| {
-        section.role() == SectionRole::PsbGeometry || section.role() == SectionRole::Thumbnail
+        section.role() == SectionRole::PsbGeometry
+            || section.role() == SectionRole::Thumbnail
+            || scan
+                .framing
+                .expansion_losses
+                .iter()
+                .any(|loss| loss.section_offset == section.offset())
     }) {
         let Some(section_bytes) = container::section_region(&scan.framing.data, section) else {
             return Err(CodecError::malformed(ctx.format_retained(
@@ -53,7 +59,19 @@ pub(super) fn preserve_passthrough_sections(
         let raw_is_compressed = section_bytes
             .get(payload_start..)
             .is_some_and(|payload| payload.starts_with(container::UNIX_COMPRESS_MAGIC));
-        let (bytes, offset, tag, exactness) = if section.role() == SectionRole::Thumbnail {
+        let expansion_failed = scan
+            .framing
+            .expansion_losses
+            .iter()
+            .any(|loss| loss.section_offset == section.offset());
+        let (bytes, offset, tag, exactness) = if expansion_failed {
+            (
+                section_bytes,
+                section.offset(),
+                "unexpanded_compressed_section",
+                Exactness::Unknown,
+            )
+        } else if section.role() == SectionRole::Thumbnail {
             if raw_is_compressed {
                 let Some(expanded) = container::expanded_section_for(scan, section) else {
                     continue;
@@ -95,8 +113,13 @@ pub(super) fn preserve_passthrough_sections(
                 Exactness::Unknown,
             )
         };
-        let namespace = crate::identity::section_namespace(section.name())
-            .ok_or_else(|| CodecError::malformed("invalid Creo passthrough section namespace"))?;
+        let namespace = if expansion_failed {
+            cadmpeg_ir::identity_namespace!("creo", "compressed", "section")
+        } else {
+            crate::identity::section_namespace(section.name()).ok_or_else(|| {
+                CodecError::malformed("invalid Creo passthrough section namespace")
+            })?
+        };
         let id = crate::identity::compose_checked::<UnknownId>(
             ctx,
             &namespace,

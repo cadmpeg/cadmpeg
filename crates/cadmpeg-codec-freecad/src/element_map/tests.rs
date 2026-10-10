@@ -2,8 +2,8 @@
 //! Element-map recovery unit tests.
 
 use super::{
-    node_text_bytes, owning_property, parse, parse_element_map, parse_legacy_string_ids,
-    parse_mapped_name, parse_string_table, validate_string_hasher_framing,
+    node_text_bytes, parse_element_map, parse_legacy_string_ids, parse_mapped_name,
+    parse_string_table, validate_string_hasher_framing,
 };
 use crate::native::{EntryRecord, PropertyRecord};
 use crate::test_support::test_archive::{
@@ -60,8 +60,10 @@ fn legacy_side_entry_name_refuses_at_matching_retained_limit() {
             super::parse_legacy_element_map(
                 ctx,
                 xml.root_element(),
-                1,
+                Some(1),
                 &std::collections::HashMap::default(),
+                "test-property",
+                &mut Vec::new(),
             )
         },
     );
@@ -100,7 +102,7 @@ fn string_table_record_refuses_on_collection_limit() {
     crate::test_support::assert_collection_refusal_at(
         document,
         "FreeCAD string table records",
-        |ctx| parse(ctx, document, 1, &[], &[]),
+        |ctx| parse(ctx, document, Some(1), &[], &[], &mut Vec::new()),
     );
 }
 
@@ -171,7 +173,16 @@ fn test_parse(
     ),
     CodecError,
 > {
-    in_decode_context(|ctx| parse(ctx, document, file_version, properties, entries))
+    in_decode_context(|ctx| {
+        parse(
+            ctx,
+            document,
+            Some(file_version),
+            properties,
+            entries,
+            &mut Vec::new(),
+        )
+    })
 }
 
 fn test_parse_string_table(
@@ -275,7 +286,7 @@ fn accepts_legacy_document_string_hasher_carrier() {
     )
     .expect("legacy string table carrier");
     assert_eq!(tables.as_slice().len(), 1);
-    assert_eq!(tables.as_slice()[0].entries()[0].payload, "legacy");
+    assert_eq!(tables.as_slice()[0].entries().unwrap()[0].payload, "legacy");
     assert!(maps.is_empty());
 }
 
@@ -360,7 +371,7 @@ fn admits_legacy_direct_element_carrier() {
     let (_, maps) = test_parse(br#"<Document FileVersion="1"/>"#, 1, &[property], &[])
         .expect("legacy direct element map");
     assert_eq!(maps.len(), 1);
-    assert_eq!(maps[0].declared_count, 3);
+    assert_eq!(maps[0].declared_count, Some(3));
     assert_eq!(maps[0].source_entry, None);
     assert_eq!(maps[0].maps[0].groups[0].indexed_name, "Edge");
     assert_eq!(
@@ -374,6 +385,57 @@ fn admits_legacy_direct_element_carrier() {
 }
 
 #[test]
+fn unverified_file_version_withholds_only_nonempty_inline_legacy_maps() {
+    let inline = test_property(
+        "Part::PropertyPartShape",
+        r#"<Property><Part ElementMap="1.0"/><ElementMap count="1"><Element key="FaceStable" value="Face1"/></ElementMap></Property>"#,
+    );
+    let side = test_property(
+        "Part::PropertyPartShape",
+        r#"<Property><Part ElementMap="1.0"/><ElementMap file="Shape.Map.txt"/></Property>"#,
+    );
+    let empty = test_property(
+        "Part::PropertyPartShape",
+        r#"<Property><Part ElementMap="1.0"/><ElementMap count="0"/></Property>"#,
+    );
+    for (property, entries, count, loss_count) in [
+        (inline, Vec::new(), 0, 1),
+        (
+            side,
+            vec![legacy_entry("Shape.Map.txt", b"1\nFace1 FaceStable 0\n")],
+            1,
+            0,
+        ),
+        (empty, Vec::new(), 0, 0),
+    ] {
+        in_decode_context(|ctx| {
+            let mut losses = Vec::new();
+            let (_, maps) = parse(
+                ctx,
+                b"<Document/>",
+                None,
+                &[property],
+                &entries,
+                &mut losses,
+            )
+            .unwrap();
+            assert_eq!(maps.len(), count);
+            assert_eq!(losses.len(), loss_count);
+            if let Some(loss) = losses.first() {
+                assert_eq!(
+                    loss.code,
+                    crate::loss::FreecadLossCode::ElementMapVersionUnresolved
+                        .note("")
+                        .code
+                );
+            }
+            Ok::<(), CodecError>(())
+        })
+        .unwrap();
+    }
+}
+
+#[test]
 fn element_map_identity_refuses_at_retained_limit() {
     let property = test_property(
         "Part::PropertyPartShape",
@@ -382,7 +444,16 @@ fn element_map_identity_refuses_at_retained_limit() {
     crate::test_support::assert_retained_refusal_at(
         b"<Document/>",
         "FreeCAD native child identity",
-        |ctx| parse(ctx, b"<Document/>", 1, std::slice::from_ref(&property), &[]),
+        |ctx| {
+            parse(
+                ctx,
+                b"<Document/>",
+                Some(1),
+                std::slice::from_ref(&property),
+                &[],
+                &mut Vec::new(),
+            )
+        },
     );
 }
 
@@ -397,7 +468,7 @@ Edge1 EdgeStable 1 7
     );
     let (_, maps) = test_parse(br#"<Document FileVersion="2"/>"#, 2, &[property], &[])
         .expect("legacy inline element map");
-    assert_eq!(maps[0].declared_count, 2);
+    assert_eq!(maps[0].declared_count, Some(2));
     let edge = &maps[0].maps[0].groups[0].names[1][0];
     assert_eq!(edge.resolved.as_deref(), Some("EdgeStable"));
     assert_eq!(edge.string_ids, [7]);
@@ -417,7 +488,7 @@ fn admits_legacy_side_entry_record_stream() {
         &[legacy_entry("Shape.Map.txt", data)],
     )
     .expect("legacy side-entry record stream");
-    assert_eq!(maps[0].declared_count, 2);
+    assert_eq!(maps[0].declared_count, Some(2));
     assert_eq!(maps[0].source_entry.as_deref(), Some("Shape.Map.txt"));
     assert_eq!(maps[0].maps[0].groups[0].indexed_name, "Edge");
     assert_eq!(maps[0].maps[0].groups[0].names[1][0].string_ids, [7]);
@@ -445,7 +516,7 @@ EndMap\n";
         &[legacy_entry("Shape.Map.txt", data)],
     )
     .expect("legacy v1 side-entry map");
-    assert_eq!(maps[0].declared_count, 3);
+    assert_eq!(maps[0].declared_count, Some(3));
     assert_eq!(maps[0].maps[0].groups[0].children.len(), 1);
 }
 
@@ -484,7 +555,23 @@ fn rejects_legacy_element_count_and_side_entry_errors() {
         r#"<Property><Part/><ElementMap count="2"><Element key="Face" value="Face1"/></ElementMap></Property>"#,
     );
     assert!(matches!(
-        test_parse(br#"<Document FileVersion="1"/>"#, 1, &[direct], &[]),
+        in_decode_context(|ctx| {
+            let xml = roxmltree::Document::parse(direct.xml.text()).unwrap();
+            let marker = xml
+                .root_element()
+                .children()
+                .find(|node| node.has_tag_name("ElementMap"))
+                .unwrap();
+            super::parse_legacy_element_map(
+                ctx,
+                marker,
+                Some(1),
+                &std::collections::HashMap::new(),
+                &direct.id,
+                &mut Vec::new(),
+            )
+            .map(|_| ())
+        }),
         Err(cadmpeg_core::CodecError::Malformed(_))
     ));
 
@@ -493,7 +580,23 @@ fn rejects_legacy_element_count_and_side_entry_errors() {
         r#"<Property><Part/><ElementMap file="Missing.Map.txt"/></Property>"#,
     );
     assert!(matches!(
-        test_parse(br#"<Document FileVersion="1"/>"#, 1, &[missing], &[]),
+        in_decode_context(|ctx| {
+            let xml = roxmltree::Document::parse(missing.xml.text()).unwrap();
+            let marker = xml
+                .root_element()
+                .children()
+                .find(|node| node.has_tag_name("ElementMap"))
+                .unwrap();
+            super::parse_legacy_element_map(
+                ctx,
+                marker,
+                Some(1),
+                &std::collections::HashMap::new(),
+                &missing.id,
+                &mut Vec::new(),
+            )
+            .map(|_| ())
+        }),
         Err(cadmpeg_core::CodecError::Malformed(_))
     ));
 
@@ -502,7 +605,23 @@ fn rejects_legacy_element_count_and_side_entry_errors() {
         r#"<Property><Part/><ElementMap count="1">Face1 FaceStable 0 trailing</ElementMap></Property>"#,
     );
     assert!(matches!(
-        test_parse(br#"<Document FileVersion="2"/>"#, 2, &[trailing], &[]),
+        in_decode_context(|ctx| {
+            let xml = roxmltree::Document::parse(trailing.xml.text()).unwrap();
+            let marker = xml
+                .root_element()
+                .children()
+                .find(|node| node.has_tag_name("ElementMap"))
+                .unwrap();
+            super::parse_legacy_element_map(
+                ctx,
+                marker,
+                Some(2),
+                &std::collections::HashMap::new(),
+                &trailing.id,
+                &mut Vec::new(),
+            )
+            .map(|_| ())
+        }),
         Err(cadmpeg_core::CodecError::Malformed(_))
     ));
 }
@@ -622,7 +741,7 @@ Co 1001000 +2 0 *
         .arena_as::<crate::native::StringTableRecord>("string_tables")
         .expect("required invariant");
     assert_eq!(tables.len(), 1);
-    assert_eq!(tables[0].entries()[0].string_id, 10);
+    assert_eq!(tables[0].entries().unwrap()[0].string_id, 10);
     let maps = namespace
         .arena_as::<crate::native::element_map::ElementMapRecord>("element_maps")
         .expect("required invariant");
@@ -688,32 +807,35 @@ Co 1001000 +2 0 *
 }
 
 #[test]
-fn rejects_interleaved_new_string_hasher_payload() {
+fn retains_interleaved_new_string_hasher_payload_source_only() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
 <ObjectData Count="1"><Object name="Shape"><Properties Count="1">
 <Property name="Shape" type="Part::PropertyPartShape"><Part file=""/>
 <StringHasher new="1" count="0"/><Interleaved/><StringHasher2 count="0"/>
 </Property></Properties></Object></ObjectData></Document>"#;
-    let error = FcstdCodec
+    let recovered = FcstdCodec
         .decode(
             &mut Cursor::new(archive(document)),
             &DecodeOptions::default(),
         )
-        .expect_err("interleaved string table must fail");
+        .expect("independent shape carrier survives");
 
-    assert!(matches!(
-        error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
-    ));
+    assert!(recovered
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "element-map.metadata-unresolved"));
+    assert!(crate::test_support::validate_native(recovered.ir()).is_empty());
 }
 
 #[test]
-fn rejects_interleaved_new_string_hasher_payload_when_parsed_directly() {
+fn retains_interleaved_new_string_hasher_payload_source_only_when_parsed_directly() {
     let document = br#"<Document><StringHasher new="1" count="0"/><Interleaved/><StringHasher2 count="0"/></Document>"#;
-    let error = test_parse(document, 0, &[], &[]).expect_err("interleaved string table must fail");
-
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    let (tables, maps) =
+        test_parse(document, 0, &[], &[]).expect("naming carrier remains source-only");
+    assert_eq!(tables.as_slice()[0].entries(), None);
+    assert!(maps.is_empty());
 }
 
 #[test]
@@ -723,7 +845,10 @@ fn rejects_ambiguous_shape_carriers() {
         "<Property><Part/><Part/></Property>",
     );
     assert!(matches!(
-        test_parse(b"<Document/>", 0, &[duplicate_part], &[]),
+        in_decode_context(|ctx| {
+            let xml = roxmltree::Document::parse(duplicate_part.xml.text()).unwrap();
+            super::direct_element_map(ctx, xml.root_element()).map(|_| ())
+        }),
         Err(cadmpeg_core::CodecError::Malformed(_))
     ));
 
@@ -732,7 +857,10 @@ fn rejects_ambiguous_shape_carriers() {
         "<Property><Part/><ElementMap2/><ElementMap2/></Property>",
     );
     assert!(matches!(
-        test_parse(b"<Document/>", 0, &[duplicate_map], &[]),
+        in_decode_context(|ctx| {
+            let xml = roxmltree::Document::parse(duplicate_map.xml.text()).unwrap();
+            super::direct_element_map(ctx, xml.root_element()).map(|_| ())
+        }),
         Err(cadmpeg_core::CodecError::Malformed(_))
     ));
 }
@@ -744,7 +872,10 @@ fn rejects_nested_element_map_successor() {
         r#"<Property><Part ElementMap="1.0"/><ElementMap new="1" count="1"><Element key="compat" value="compat"/></ElementMap><Wrapper><ElementMap2/></Wrapper></Property>"#,
     );
     assert!(matches!(
-        test_parse(b"<Document/>", 0, &[nested_map], &[]),
+        in_decode_context(|ctx| {
+            let xml = roxmltree::Document::parse(nested_map.xml.text()).unwrap();
+            super::direct_element_map(ctx, xml.root_element()).map(|_| ())
+        }),
         Err(cadmpeg_core::CodecError::Malformed(_))
     ));
 }
@@ -756,7 +887,10 @@ fn rejects_non_adjacent_element_map_successor() {
         r#"<Property><Part ElementMap="1.0"/><ElementMap new="1" count="1"><Element key="compat" value="compat"/></ElementMap><Wrapper/><ElementMap2/></Property>"#,
     );
     assert!(matches!(
-        test_parse(b"<Document/>", 0, &[non_adjacent_map], &[]),
+        in_decode_context(|ctx| {
+            let xml = roxmltree::Document::parse(non_adjacent_map.xml.text()).unwrap();
+            super::direct_element_map(ctx, xml.root_element()).map(|_| ())
+        }),
         Err(cadmpeg_core::CodecError::Malformed(_))
     ));
 }
@@ -768,7 +902,10 @@ fn rejects_element_map_without_compatibility_marker() {
         r#"<Property><Part ElementMap="1.0"/><ElementMap2/></Property>"#,
     );
     assert!(matches!(
-        test_parse(b"<Document/>", 0, &[unmarked_map], &[]),
+        in_decode_context(|ctx| {
+            let xml = roxmltree::Document::parse(unmarked_map.xml.text()).unwrap();
+            super::direct_element_map(ctx, xml.root_element()).map(|_| ())
+        }),
         Err(cadmpeg_core::CodecError::Malformed(_))
     ));
 }
@@ -786,10 +923,65 @@ fn ignores_non_shape_runtime_names() {
 }
 
 #[test]
+fn string_table_ownership_follows_source_ranges_in_any_property_order() {
+    let text = r#"<Document>
+<Property name="First" type="Part::PropertyPartShape"><Part/><StringHasher count="0"/></Property>
+<Property name="Second" type="Part::PropertyPartShape"><Part/><StringHasher count="0"/></Property>
+<StringHasher count="0"/>
+</Document>"#;
+    let xml = roxmltree::Document::parse(text).unwrap();
+    let mut properties = xml
+        .root_element()
+        .children()
+        .filter(|node| node.has_tag_name("Property"))
+        .map(|node| {
+            let mut property = test_property("Part::PropertyPartShape", &text[node.range()]);
+            property.id = format!("fcstd:test:property#{}", node.attribute("name").unwrap());
+            property.xml = crate::native::RetainedXml::from_text(
+                text[node.range()].to_owned(),
+                u64::try_from(node.range().start).unwrap(),
+            )
+            .unwrap();
+            property
+        })
+        .collect::<Vec<_>>();
+    properties.reverse();
+    let (tables, _) = test_parse(text.as_bytes(), 0, &properties, &[]).unwrap();
+    assert_eq!(
+        tables
+            .as_slice()
+            .iter()
+            .map(|table| table.owner_property.as_deref())
+            .collect::<Vec<_>>(),
+        [
+            Some("fcstd:test:property#First"),
+            Some("fcstd:test:property#Second"),
+            None
+        ]
+    );
+}
+
+#[test]
+fn ownership_distinguishes_enclosing_ended_and_future_property_ranges() {
+    let text = b"<Document><StringHasher count=\"0\"/></Document>";
+    let mut enclosing = test_property("App::PropertyString", "<Property/>");
+    enclosing.xml = crate::native::RetainedXml::from_text(" ".repeat(1000), 0).unwrap();
+    let mut ended = test_property("App::PropertyString", "<Property/>");
+    ended.id = "fcstd:test:property#Ended".into();
+    ended.xml = crate::native::RetainedXml::from_text(" ".repeat(5), 5).unwrap();
+    let mut future = test_property("App::PropertyString", "<Property/>");
+    future.id = "fcstd:test:property#Future".into();
+    future.xml = crate::native::RetainedXml::from_text(" ".repeat(20), 200).unwrap();
+    let (tables, _) = test_parse(text, 0, &[future, ended, enclosing], &[]).unwrap();
+    assert_eq!(
+        tables.as_slice()[0].owner_property.as_deref(),
+        Some("fcstd:test:property#Shape")
+    );
+}
+
+#[test]
 fn rejects_ambiguous_string_table_property_ownership() {
-    let xml = roxmltree::Document::parse("<Document><StringHasher count=\"0\"/></Document>")
-        .expect("test XML");
-    let node = xml.root_element().first_element_child().expect("hasher");
+    let xml = b"<Document><StringHasher count=\"0\"/></Document>";
     let mut first = test_property("App::PropertyString", "<Property/>");
     first.xml = crate::native::RetainedXml::from_text(" ".repeat(1000), 0).unwrap();
     let mut second = test_property("App::PropertyString", "<Property/>");
@@ -797,13 +989,13 @@ fn rejects_ambiguous_string_table_property_ownership() {
     second.xml = crate::native::RetainedXml::from_text(" ".repeat(1000), 0).unwrap();
 
     assert!(matches!(
-        in_decode_context(|ctx| owning_property(ctx, node, &[first, second])),
+        in_decode_context(|ctx| parse(ctx, xml, Some(0), &[first, second], &[], &mut Vec::new())),
         Err(cadmpeg_core::CodecError::Malformed(_))
     ));
 }
 
 #[test]
-fn child_map_reference_is_rejected_by_complete_source_admission() {
+fn unreadable_child_map_reference_keeps_independent_geometry() {
     let mut source = zip::ZipArchive::new(Cursor::new(GEOMETRY)).expect("geometry archive");
     let mut entries = Vec::new();
     let mut changed = false;
@@ -837,6 +1029,53 @@ fn child_map_reference_is_rejected_by_complete_source_admission() {
         &mut Cursor::new(archive_entries(&references)),
         &DecodeOptions::default(),
     );
-    let error = result.expect_err("current source route rejects the mutated child-map index");
-    assert!(error.to_string().contains("mapIndex"), "{error}");
+    let recovered = result.expect("independent BRep geometry survives invalid naming map");
+    assert_eq!(recovered.ir().model.faces.len(), 48);
+    assert!(recovered
+        .report()
+        .losses
+        .iter()
+        .any(
+            |loss| loss.code.local_code() == "element-map.metadata-unresolved"
+                && loss.message.contains("mapIndex")
+        ));
+    assert!(crate::test_support::validate_native(recovered.ir()).is_empty());
+}
+
+mod metadata_recovery;
+
+fn parse(
+    ctx: &DecodeContext<'_>,
+    document: &[u8],
+    file_version: Option<usize>,
+    properties: &[PropertyRecord],
+    entries: &[EntryRecord],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<
+    (
+        crate::native::StringTables,
+        Vec<crate::native::element_map::ElementMapRecord>,
+    ),
+    CodecError,
+> {
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(document.len()),
+        "validate FreeCAD XML UTF-8",
+    )?;
+    let text = std::str::from_utf8(document)
+        .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))?;
+    let admitted_xml = ctx.parse_xml(text, "FreeCAD XML tree").map_err(|error| {
+        let CodecError::Malformed(error) = error else {
+            return error;
+        };
+        super::element_map_malformed(ctx, format_args!("invalid Document.xml: {error}"))
+    })?;
+    super::parse(
+        ctx,
+        admitted_xml.document(),
+        file_version,
+        properties,
+        entries,
+        losses,
+    )
 }

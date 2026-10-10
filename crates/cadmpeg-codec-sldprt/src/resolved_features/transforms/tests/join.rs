@@ -105,7 +105,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload,
+        native_payload: native_payload.into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),
@@ -821,7 +821,7 @@ fn line_handle_interior_points_identify_profile_entities() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload,
+        native_payload: native_payload.into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),
@@ -1041,7 +1041,7 @@ fn symmetry_invariant_marker_identifies_profile_entity() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload,
+        native_payload: native_payload.into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),

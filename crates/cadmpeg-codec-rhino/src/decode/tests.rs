@@ -232,6 +232,7 @@ fn candidate_validation_propagates_entity_limit() {
                     cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                         .expect("finite point"),
                     Some(SourceObjectAssociation {
+                        geometry_role: None,
                         format: cadmpeg_ir::CodecFormat::Rhino,
                         object_id: cadmpeg_core::text::NonBlankString::new("point-limited")
                             .expect("nonblank source id"),
@@ -1200,6 +1201,7 @@ fn cap_extrusion(caps: [bool; 2]) -> crate::extrusion::DecodedExtrusion {
 
 fn test_association() -> SourceObjectAssociation {
     SourceObjectAssociation {
+        geometry_role: None,
         format: cadmpeg_ir::CodecFormat::Rhino,
         object_id: cadmpeg_core::text::NonBlankString::new("extrusion".to_string())
             .expect("nonempty source identity"),
@@ -1385,6 +1387,7 @@ fn successful_candidate_keeps_preceding_arena_order_for_instance_checkpoints() {
                 cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                     .expect("a finite position is a point"),
                 Some(SourceObjectAssociation {
+                    geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Rhino,
                     object_id: cadmpeg_core::text::NonBlankString::new(format!("point-{key}"))
                         .unwrap(),
@@ -1507,6 +1510,7 @@ fn extrusion_caps_build_outer_and_hole_loops_with_opposite_face_senses() {
                     .try_into()
                     .expect("valid identity");
                 ir.model.curves.push(Curve {
+                    parameter_range: None,
                     id: id.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                         boundary.start_nurbs.clone(),

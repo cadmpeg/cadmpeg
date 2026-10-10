@@ -86,6 +86,7 @@
           "id": "rhino:object:curve#record-000000-offset-177.c3-0",
           "source_object": {
             "format": "rhino",
+            "geometry_role": "support",
             "object_id": "00000000-0000-0000-0000-000000000000",
             "visible": true
           }
@@ -120,6 +121,7 @@
           "id": "rhino:object:curve#record-000000-offset-177.c3-1",
           "source_object": {
             "format": "rhino",
+            "geometry_role": "support",
             "object_id": "00000000-0000-0000-0000-000000000000",
             "visible": true
           }
@@ -154,6 +156,7 @@
           "id": "rhino:object:curve#record-000000-offset-177.c3-2",
           "source_object": {
             "format": "rhino",
+            "geometry_role": "support",
             "object_id": "00000000-0000-0000-0000-000000000000",
             "visible": true
           }
@@ -447,6 +450,7 @@
           "id": "rhino:object:surface#record-000000-offset-177.slot-0",
           "source_object": {
             "format": "rhino",
+            "geometry_role": "support",
             "object_id": "00000000-0000-0000-0000-000000000000",
             "visible": true
           }

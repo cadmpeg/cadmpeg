@@ -218,6 +218,7 @@ pub(super) fn sketch_brep(
                     .colon(use_index),
             );
             ir.model.curves.push(Curve {
+                parameter_range: None,
                 id: curve_id.clone(),
                 geometry: generated.curve,
                 source_object: None,

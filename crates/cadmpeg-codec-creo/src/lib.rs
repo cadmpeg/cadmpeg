@@ -6,9 +6,9 @@
 //! exposes parser probes. Context-taking probes propagate errors and discard
 //! successful parser values; primitive probes return `()`. [`CreoCodec`]
 //! implements [`cadmpeg_ir::codec::Codec`]:
-//! it detects the `#UGC:2` PSB signature, inspects named sections, and decodes
-//! the geometry, topology, sketches, and design records supported for that
-//! layout.
+//! it detects the `#UGC:1` and `#UGC:2` UGC signatures, inspects named sections,
+//! and decodes the geometry, topology, sketches, and design records supported
+//! for that layout.
 //!
 //! <!-- generated: capability creo -->
 //! Support: L1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#creo-parametric-prt)).
@@ -39,7 +39,7 @@
 //!
 //! # Format model
 //!
-//! A PSB file begins with the `#UGC:2` ASCII signature and an ASCII header.
+//! A PSB file begins with a `#UGC:1` or `#UGC:2` ASCII signature and header.
 //! Legacy persistence uses a `P_OBJECT` body with optional named sections;
 //! later persistence uses a table of contents and named binary sections.
 //! Detection uses the signature because Siemens NX also uses `.prt`.
@@ -114,8 +114,8 @@ impl CodecBackend for CreoCodec {
             cadmpeg_core::decode::u64_from_index(prefix.len()),
             "detect input",
         )?;
-        // The `#UGC:2` ASCII magic is unique to the Creo/Pro-E PSB container and
-        // distinguishes it from a Siemens NX `.prt` sharing the extension.
+        // UGC signatures identify the Creo/Pro-E PSB container and
+        // distinguish it from a Siemens NX `.prt` sharing the extension.
         if container::looks_like_creo(prefix) {
             Ok(Confidence::High)
         } else {

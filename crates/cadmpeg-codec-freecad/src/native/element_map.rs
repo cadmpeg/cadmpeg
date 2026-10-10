@@ -23,7 +23,7 @@ pub(crate) struct ElementMapRecord {
     pub(crate) map_id: u64,
     /// Optional XML element-map count retained as metadata; it does not frame
     /// or have to equal the native map stream.
-    pub(crate) declared_count: usize,
+    pub(crate) declared_count: Option<usize>,
     /// Ordered postfix dictionary.
     pub(crate) postfixes: Vec<String>,
     /// Ordered child-map records; the last record is the owning shape map.

@@ -136,6 +136,7 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
                     .expect("identity grammar");
                 if !model.edges.iter().any(|edge| edge.id == edge_id) {
                     model.curves.push(Curve {
+                        parameter_range: None,
                         id: curve_id.clone(),
                         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                             cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
@@ -462,6 +463,7 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder_and_refuses_al
                     .expect("identity grammar");
                 if !model.edges.iter().any(|edge| edge.id == edge_id) {
                     model.curves.push(Curve {
+                        parameter_range: None,
                         id: curve_id.clone(),
                         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                             cadmpeg_ir::geometry::analytic::CircleCurve::try_new(

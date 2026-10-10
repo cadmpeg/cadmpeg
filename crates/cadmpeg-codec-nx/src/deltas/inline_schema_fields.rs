@@ -7,6 +7,7 @@ use super::type101_state::Type101State;
 use super::type38_state::Type38State;
 use super::type70_state::Type70State;
 use crate::framing::xmt_reference::NonNullXmt;
+use cadmpeg_ir::native::bytes::NativeBytes;
 use cadmpeg_ir::units::FiniteVector;
 use serde::{Deserialize, Serialize};
 
@@ -84,6 +85,7 @@ pub(crate) enum InlineBodyStateFields {
 #[cfg(test)]
 mod tests {
     use super::InlineSchemaFields;
+
     use cadmpeg_ir::units::FiniteVector;
 
     #[test]
@@ -99,8 +101,8 @@ mod tests {
 
 /// Nonempty opaque revision state.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(try_from = "Vec<u8>")]
-pub(crate) struct BodyStateBytes(Vec<u8>);
+#[serde(try_from = "NativeBytes")]
+pub(crate) struct BodyStateBytes(NativeBytes);
 
 impl Serialize for BodyStateBytes {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -114,9 +116,16 @@ impl TryFrom<Vec<u8>> for BodyStateBytes {
         if bytes.is_empty() {
             return Err("state_bytes: require a nonempty revision state");
         }
-        Ok(Self(bytes))
+        Ok(Self(bytes.into()))
     }
 }
+impl TryFrom<NativeBytes> for BodyStateBytes {
+    type Error = &'static str;
+    fn try_from(bytes: NativeBytes) -> Result<Self, Self::Error> {
+        Self::try_from(bytes.into_inner())
+    }
+}
+
 #[cfg(test)]
 std::thread_local! {
     static BODY_STATE_INTO_WIRE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
@@ -126,7 +135,7 @@ std::thread_local! {
 impl From<BodyStateBytes> for Vec<u8> {
     fn from(bytes: BodyStateBytes) -> Self {
         BODY_STATE_INTO_WIRE_COUNT.with(|count| count.set(count.get() + 1));
-        bytes.0
+        bytes.0.into_inner()
     }
 }
 
@@ -137,7 +146,7 @@ mod body_state_tests {
     fn body_wire_rejects_null_compact_references_and_empty_revisions() {
         for json in [
             r#"{"form":"compact","reference":9}"#,
-            r#"{"form":"revision","node_id":7,"references":[8,1,2,3,4,5,6,7],"state_bytes":[170,187]}"#,
+            r#"{"form":"revision","node_id":7,"references":[8,1,2,3,4,5,6,7],"state_bytes":"aabb"}"#,
         ] {
             let state: InlineBodyStateFields = serde_json::from_str(json).unwrap();
             assert_eq!(serde_json::to_string(&state).unwrap(), json);
@@ -149,7 +158,7 @@ mod body_state_tests {
             .is_err());
         }
         let error = serde_json::from_str::<InlineBodyStateFields>(
-            r#"{"form":"revision","node_id":7,"references":[8,1,2,3,4,5,6,7],"state_bytes":[]}"#,
+            r#"{"form":"revision","node_id":7,"references":[8,1,2,3,4,5,6,7],"state_bytes":""}"#,
         )
         .unwrap_err();
         assert!(error.to_string().contains("state_bytes"));
@@ -165,7 +174,10 @@ mod body_state_tests {
         let state_bytes = BodyStateBytes::try_from(vec![170, 187]).unwrap();
         assert_eq!(
             serde_json::to_vec(&state_bytes).unwrap(),
-            serde_json::to_vec(&Vec::<u8>::from(state_bytes.clone())).unwrap()
+            serde_json::to_vec(&super::NativeBytes::from(Vec::<u8>::from(
+                state_bytes.clone()
+            )))
+            .unwrap()
         );
         let record = Record {
             id: "nx:deltas:body-state#0",
@@ -174,7 +186,7 @@ mod body_state_tests {
         BODY_STATE_INTO_WIRE_COUNT.with(|count| count.set(0));
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &record,
-            serde_json::json!({"id": "nx:deltas:body-state#0", "state_bytes": [170, 187]}),
+            serde_json::json!({"id": "nx:deltas:body-state#0", "state_bytes": "aabb"}),
         );
         BODY_STATE_INTO_WIRE_COUNT.with(|count| assert_eq!(count.get(), 0));
     }

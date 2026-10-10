@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed `PmDc` feature records and feature-list terminators.
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::FeatureResultTopologyId;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -234,17 +235,17 @@ pub(crate) struct PmDcLinkedHeader {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "String")]
-pub(crate) struct ClassId([u8; 16]);
+pub(crate) struct ClassId(NativeBytes<[u8; 16]>);
 
 impl std::fmt::Display for ClassId {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        cadmpeg_ir::hash::LowerHex(&self.0).fmt(formatter)
+        self.0.fmt(formatter)
     }
 }
 
 impl Serialize for ClassId {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_str(self)
+        self.0.serialize(serializer)
     }
 }
 
@@ -267,13 +268,13 @@ impl TryFrom<String> for ClassId {
             };
             *byte = digit(digits[0]) * 16 + digit(digits[1]);
         }
-        Ok(Self(bytes))
+        Ok(Self(bytes.into()))
     }
 }
 
 impl From<ClassId> for String {
     fn from(value: ClassId) -> Self {
-        type_id_string(value.0)
+        type_id_string(value.0.into_inner())
     }
 }
 
@@ -284,7 +285,7 @@ pub(crate) struct PmDcFeatureLabelPayload {
     pub(crate) header: PmDcLinkedHeader,
     index: u32,
     pub(crate) participants: PmDcReferenceList,
-    name: NonBlankString,
+    name: String,
     class_id: ClassId,
 }
 
@@ -330,7 +331,7 @@ impl TryFrom<PmDcFeatureLabelPayloadWire> for PmDcFeatureLabelPayload {
             header: wire.header,
             index: wire.index,
             participants: wire.participants,
-            name: NonBlankString::new(wire.name).ok_or("name must not be empty")?,
+            name: wire.name,
             class_id: ClassId::try_from(wire.class_id)?,
         })
     }
@@ -350,6 +351,10 @@ impl From<PmDcFeatureLabelPayload> for PmDcFeatureLabelPayloadWire {
 }
 
 impl PmDcFeatureLabelPayload {
+    pub(crate) fn name(&self) -> Option<&str> {
+        (!self.name.trim().is_empty()).then_some(self.name.as_str())
+    }
+
     pub(crate) fn class_id(&self) -> ClassId {
         self.class_id
     }
@@ -1006,18 +1011,18 @@ fn parse_label(
     .map_err(CodecError::malformed)
 }
 
-const EXTRUSION_CLASS_ID: ClassId = ClassId([
+const EXTRUSION_CLASS_ID: ClassId = ClassId(NativeBytes::new([
     0x31, 0x11, 0xa9, 0x0c, 0xd0, 0x11, 0x8b, 0x83, 0x00, 0x08, 0x19, 0xb0, 0x05, 0x24, 0xdc, 0x09,
-]);
-const FILLET_CLASS_ID: ClassId = ClassId([
+]));
+const FILLET_CLASS_ID: ClassId = ClassId(NativeBytes::new([
     0xdc, 0x15, 0xf7, 0xf1, 0xd1, 0x11, 0x42, 0x05, 0x00, 0x08, 0x30, 0xb0, 0x05, 0x24, 0xdc, 0x09,
-]);
-const CHAMFER_CLASS_ID: ClassId = ClassId([
+]));
+const CHAMFER_CLASS_ID: ClassId = ClassId(NativeBytes::new([
     0x3f, 0x71, 0x00, 0xf9, 0xd2, 0x11, 0x8b, 0x6f, 0x60, 0x00, 0xf0, 0xa8, 0x9d, 0xcc, 0xef, 0xb0,
-]);
-const HOLE_CLASS_ID: ClassId = ClassId([
+]));
+const HOLE_CLASS_ID: ClassId = ClassId(NativeBytes::new([
     0x1a, 0x7d, 0x75, 0x1f, 0xd2, 0x11, 0x9c, 0x54, 0xa0, 0x00, 0x20, 0x80, 0x36, 0x03, 0xc8, 0xc9,
-]);
+]));
 
 #[derive(Clone, Copy)]
 pub(crate) enum FeatureFamily {
@@ -1495,7 +1500,7 @@ fn project_extrusion(
     let feature = Feature {
         id: feature_id,
         ordinal: u64::from(label.index),
-        name: Some(label.name.as_str().to_owned()),
+        name: label.name().map(str::to_owned),
         suppressed: None,
         dependencies: DistinctMembers::default(),
         source_properties,
@@ -1654,7 +1659,7 @@ fn project_fillet(
         Feature {
             id: feature_id,
             ordinal: u64::from(label.index),
-            name: Some(label.name.as_str().to_owned()),
+            name: label.name().map(str::to_owned),
             suppressed: None,
             dependencies: DistinctMembers::default(),
             source_properties,
@@ -1720,7 +1725,7 @@ fn project_chamfer(
         Feature {
             id: feature_id,
             ordinal: u64::from(label.index),
-            name: Some(label.name.as_str().to_owned()),
+            name: label.name().map(str::to_owned),
             suppressed: None,
             dependencies: DistinctMembers::default(),
             source_properties,
@@ -1853,7 +1858,7 @@ fn project_hole(
         Feature {
             id: feature_id,
             ordinal: u64::from(label.index),
-            name: Some(label.name.as_str().to_owned()),
+            name: label.name().map(str::to_owned),
             suppressed: None,
             dependencies: DistinctMembers::default(),
             source_properties: BTreeMap::new(),
@@ -2674,7 +2679,7 @@ mod tests {
     }
 
     #[test]
-    fn located_label_admission_rejects_empty_name_and_wrong_class_width() {
+    fn located_label_retains_empty_name_and_rejects_wrong_class_width() {
         let label = test_label(0, 1, EXTRUSION_CLASS_ID, &[]);
         let valid = serde_json::to_value(&label).expect("valid label fixture");
         let admitted: PmDcFeatureLabel =
@@ -2683,11 +2688,7 @@ mod tests {
             serde_json::to_value(admitted).expect("valid label fixture"),
             valid
         );
-        for (field, value) in [
-            ("name", String::new()),
-            ("class_id", "a".repeat(31)),
-            ("class_id", "a".repeat(33)),
-        ] {
+        for (field, value) in [("class_id", "a".repeat(31)), ("class_id", "a".repeat(33))] {
             let mut wire = valid.clone();
             wire[field] = serde_json::json!(value);
             assert!(serde_json::from_value::<PmDcFeatureLabel>(wire)
@@ -2695,6 +2696,12 @@ mod tests {
                 .to_string()
                 .contains(field));
         }
+        let mut unnamed = valid.clone();
+        unnamed["name"] = serde_json::json!("");
+        let label: PmDcFeatureLabel =
+            serde_json::from_value(unnamed.clone()).expect("optional label");
+        assert!(label.name().is_none());
+        assert_eq!(serde_json::to_value(label).expect("label JSON"), unnamed);
         let mut wire = valid;
         wire["class_id"] = serde_json::json!("z".repeat(32));
         assert!(serde_json::from_value::<PmDcFeatureLabel>(wire).is_err());
@@ -3914,7 +3921,10 @@ mod tests {
         });
         assert_eq!(parsed.name, "Extrude1");
         assert_eq!(parsed.participants.references().len(), 1);
-        assert_eq!(parsed.class_id, ClassId([0xab; 16]));
+        assert_eq!(
+            parsed.class_id,
+            ClassId(cadmpeg_ir::native::bytes::NativeBytes::new([0xab; 16]))
+        );
     }
 
     #[test]
@@ -3934,7 +3944,7 @@ mod tests {
             id: &'static str,
             value: &'a ClassId,
         }
-        let class_id = ClassId([0xab; 16]);
+        let class_id = ClassId(cadmpeg_ir::native::bytes::NativeBytes::new([0xab; 16]));
         let owned = String::from(class_id);
         assert_eq!(
             serde_json::to_vec(&class_id).expect("borrowed class id"),

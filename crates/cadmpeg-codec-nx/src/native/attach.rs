@@ -5680,11 +5680,14 @@ fn attach_feature_operations(
                 append_feature_result_topology(
                     ctx,
                     ir,
-                    result_topology_id(ctx, key, Some(write.ordinal))?,
-                    &id,
-                    bodies,
-                    result_members,
-                    native_ref,
+                    PendingFeatureResult {
+                        result_id: result_topology_id(ctx, key, Some(write.ordinal))?,
+                        output_of: &id,
+                        bodies,
+                        members: result_members,
+                        native_ref,
+                    },
+                    losses,
                 )?;
             }
         } else if !deletes_body {
@@ -5705,11 +5708,14 @@ fn attach_feature_operations(
                 append_feature_result_topology(
                     ctx,
                     ir,
-                    result_topology_id(ctx, key, None)?,
-                    &id,
-                    bodies,
-                    FeatureResultGroupMembers::default(),
-                    native_ref,
+                    PendingFeatureResult {
+                        result_id: result_topology_id(ctx, key, None)?,
+                        output_of: &id,
+                        bodies,
+                        members: FeatureResultGroupMembers::default(),
+                        native_ref,
+                    },
+                    losses,
                 )?;
             }
         }
@@ -5833,15 +5839,28 @@ fn result_topology_id(
         .ok_or_else(|| CodecError::malformed("NX operation label key is not identity key text"))
 }
 
-fn append_feature_result_topology(
-    ctx: &DecodeContext<'_>,
-    ir: &mut CadIr,
+/// A native result claim held until its member lists pass admission.
+struct PendingFeatureResult<'feature> {
     result_id: FeatureResultTopologyId,
-    output_of: &FeatureId,
+    output_of: &'feature FeatureId,
     bodies: Vec<cadmpeg_core::text::NonBlankString>,
     members: FeatureResultGroupMembers,
     native_ref: String,
+}
+
+fn append_feature_result_topology(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    pending: PendingFeatureResult<'_>,
+    losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
+    let PendingFeatureResult {
+        result_id,
+        output_of,
+        bodies,
+        members,
+        native_ref,
+    } = pending;
     let members = cadmpeg_ir::features::FeatureResultMembers::new(
         bodies,
         members.faces,
@@ -5849,8 +5868,23 @@ fn append_feature_result_topology(
         members.vertices,
         ctx,
         "NX result topology member validation",
-    )?
-    .map_err(|error| CodecError::Malformed(error.to_string()))?;
+    )?;
+    let members = match members {
+        Ok(members) => members,
+        Err(error) => {
+            let message = ctx.format_retained(
+                format_args!("Feature result {result_id} has unusable member claims: {error}; native result {native_ref} is retained"),
+                "NX unusable feature result diagnostic",
+            )?;
+            crate::loss::charge_loss_code(ctx, NxLossCode::FeatureOutputLineageIncomplete)?;
+            ctx.push_vec(
+                losses,
+                NxLossCode::FeatureOutputLineageIncomplete.note(message),
+                "NX unusable feature result losses",
+            )?;
+            return Ok(());
+        }
+    };
     ctx.reserve_vec_limit(
         &mut ir.model.feature_result_topologies,
         1,
@@ -7183,23 +7217,7 @@ impl<'a> ParasolidAttributeNameIndex<'a> {
         topology_reference: &crate::native::parasolid::ParasolidTopologyAttributeListReference,
         value_use: &str,
     ) -> Result<Option<String>, CodecError> {
-        let lookup_work = self
-            .fields_by_value_use
-            .len()
-            .checked_add(self.classes_by_entity.len())
-            .and_then(|count| count.checked_add(self.definitions_by_id.len()))
-            .and_then(|count| count.checked_add(self.field_names_by_definition.len()))
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "NX Parasolid attribute field name lookup",
-                    0,
-                    cadmpeg_core::decode::u64_from_index(self.fields_by_value_use.len()),
-                )
-            })?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(lookup_work),
-            "NX Parasolid attribute field name lookup",
-        )?;
+        admit_attribute_name_lookup(ctx, self.fields_by_value_use.len(), value_use.len())?;
         let Some(field_use) = self
             .fields_by_value_use
             .get(value_use)
@@ -7207,6 +7225,16 @@ impl<'a> ParasolidAttributeNameIndex<'a> {
         else {
             return Ok(None);
         };
+        admit_attribute_name_lookup(
+            ctx,
+            self.classes_by_entity.len(),
+            topology_reference.id.len(),
+        )?;
+        admit_attribute_name_lookup(
+            ctx,
+            self.classes_by_entity.len(),
+            field_use.entity_51_record.len(),
+        )?;
         let Some(class_use) = self
             .classes_by_entity
             .get(&(
@@ -7222,6 +7250,11 @@ impl<'a> ParasolidAttributeNameIndex<'a> {
         {
             return Ok(None);
         }
+        admit_attribute_name_lookup(
+            ctx,
+            self.definitions_by_id.len(),
+            class_use.attribute_definition.len(),
+        )?;
         let Some(definition) = self
             .definitions_by_id
             .get(class_use.attribute_definition.as_str())
@@ -7233,48 +7266,51 @@ impl<'a> ParasolidAttributeNameIndex<'a> {
         let field_name = match (definition.name.as_str(), field_use.position.field_ordinal()) {
             ("SDL/TYSA_DENSITY", 0) => std::borrow::Cow::Borrowed("density"),
             ("SDL/TYSA_DENSITY", 1) => std::borrow::Cow::Borrowed("units"),
-            _ if self
-                .field_names_by_definition
-                .get(definition.id.as_str())
-                .and_then(Option::as_ref)
-                .is_some() =>
-            {
-                let Some(name) = self
+            _ => {
+                admit_attribute_name_lookup(
+                    ctx,
+                    self.field_names_by_definition.len(),
+                    definition.id.len(),
+                )?;
+                if let Some(names) = self
                     .field_names_by_definition
                     .get(definition.id.as_str())
                     .and_then(Option::as_ref)
-                    .and_then(|names| {
-                        names.fields.get(cadmpeg_core::decode::index_from_u32(
+                {
+                    let Some(name) = names
+                        .fields
+                        .get(cadmpeg_core::decode::index_from_u32(
                             field_use.position.field_ordinal(),
                         ))
-                    })
-                    .map(|field| field.name.as_str())
-                else {
-                    return Ok(None);
-                };
-                std::borrow::Cow::Borrowed(name)
-            }
-            _ => {
-                const BOUND: usize = 64;
+                        .map(|field| field.name.as_str())
+                    else {
+                        return Ok(None);
+                    };
+                    std::borrow::Cow::Borrowed(name)
+                } else {
+                    const BOUND: usize = 64;
 
-                let mut name = String::new();
-                field_reservation.with_storage(|| {
-                    ctx.try_reserve_retained_text(
+                    let mut name = String::new();
+                    field_reservation.with_storage(|| {
+                        ctx.try_reserve_retained_text(
+                            &mut name,
+                            BOUND,
+                            "allocate NX Parasolid field name component",
+                        )
+                    })?;
+                    std::fmt::Write::write_fmt(
                         &mut name,
-                        BOUND,
-                        "allocate NX Parasolid field name component",
+                        format_args!(
+                            "field_{}.parasolid_type_{}",
+                            field_use.position.field_ordinal(),
+                            field_use.value_kind.field_code().code()
+                        ),
                     )
-                })?;
-                std::fmt::Write::write_fmt(
-                    &mut name,
-                    format_args!(
-                        "field_{}.parasolid_type_{}",
-                        field_use.position.field_ordinal(),
-                        field_use.value_kind.field_code().code()
-                    ),
-                )
-                .map_err(|_| CodecError::malformed("NX Parasolid field name formatting failed"))?;
-                std::borrow::Cow::Owned(name)
+                    .map_err(|_| {
+                        CodecError::malformed("NX Parasolid field name formatting failed")
+                    })?;
+                    std::borrow::Cow::Owned(name)
+                }
             }
         };
         let name_len = definition
@@ -7296,6 +7332,26 @@ impl<'a> ParasolidAttributeNameIndex<'a> {
         name.push_str(&field_name);
         Ok(Some(name))
     }
+}
+
+fn admit_attribute_name_lookup(
+    ctx: &DecodeContext<'_>,
+    entries: usize,
+    key_bytes: usize,
+) -> Result<(), CodecError> {
+    // Twelve comparisons per binary level bound eleven-key B-tree nodes.
+    let comparisons = 12 * u64::from(usize::BITS - entries.leading_zeros()) + 1;
+    let work = cadmpeg_core::decode::u64_from_index(key_bytes)
+        .checked_add(1)
+        .and_then(|bytes| comparisons.checked_mul(bytes))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "NX Parasolid attribute field name lookup",
+                u64::MAX - 1,
+                u64::MAX,
+            )
+        })?;
+    ctx.charge_work(work, "NX Parasolid attribute field name lookup")
 }
 
 fn topology_attribute_name(

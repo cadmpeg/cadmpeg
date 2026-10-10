@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Datum-plane common headers and atomic construction references.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use super::{
     charged_unique_offset_data_block, feature_input_blocks, format_feature_history_id,
     visit_feature_history_operation_records, DatumPlaneBlockLane,
@@ -213,13 +215,13 @@ struct HeaderWire {
     descriptor_indices: Vec<u32>,
     /// Exact compact descriptor-index tokens in branch order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    raw_descriptor_indices: Vec<Vec<u8>>,
+    raw_descriptor_indices: Vec<NativeBytes<Vec<u8>>>,
     /// Ordered canonical object indices carried by the selected branch.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     object_indices: Vec<u32>,
     /// Exact canonical object-index tokens in branch order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    raw_object_indices: Vec<Vec<u8>>,
+    raw_object_indices: Vec<NativeBytes<Vec<u8>>>,
     /// Atomically resolved same-store descriptor blocks.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     descriptor_data_blocks: Vec<String>,
@@ -269,7 +271,7 @@ impl Serialize for ColumnList<'_> {
         for column in self.columns.iter().flatten() {
             match self.field {
                 ColumnField::Value => items.serialize_element(&column.value)?,
-                ColumnField::Raw => items.serialize_element(column.raw)?,
+                ColumnField::Raw => items.serialize_element(&NativeBytes::from(column.raw))?,
                 ColumnField::Block => {
                     if let Some(block) = column.block {
                         items.serialize_element(block)?;
@@ -423,7 +425,7 @@ impl Serialize for FeatureDatumPlaneHeader {
 
 fn wire_tokens<T>(
     indices: Vec<u32>,
-    raw: Vec<Vec<u8>>,
+    raw: Vec<cadmpeg_ir::native::bytes::NativeBytes>,
     offsets: &[u64],
     field: &str,
     read: impl Fn(u32, &[u8]) -> Result<T, &'static str>,
@@ -704,8 +706,8 @@ mod tests {
             "id": "nx:feature-history:datum-plane-header#1",
             "operation_label": "operation", "control": 1,
             "declared_count": 2, "branch_tag": 27,
-            "descriptor_indices": [3], "raw_descriptor_indices": [[3]],
-            "object_indices": [4], "raw_object_indices": [[240,4]],
+            "descriptor_indices": [3], "raw_descriptor_indices": ["03"],
+            "object_indices": [4], "raw_object_indices": ["f004"],
             "descriptor_data_blocks": ["descriptor"],
             "object_data_blocks": ["object"],
             "descriptor_source_offsets": [20], "object_source_offsets": [22],
@@ -720,9 +722,9 @@ mod tests {
         for json in [
             r#"{"id":"header","operation_label":"operation","control":1,"declared_count":2,"branch_tag":255,"source_offset":10}"#,
             r#"{"id":"header","operation_label":"operation","control":1,"declared_count":2,"branch_tag":27,"source_offset":10}"#,
-            r#"{"id":"header","operation_label":"operation","control":1,"declared_count":2,"branch_tag":27,"descriptor_indices":[3],"raw_descriptor_indices":[[3]],"object_indices":[4],"raw_object_indices":[[240,4]],"descriptor_data_blocks":["descriptor"],"object_data_blocks":["object"],"descriptor_source_offsets":[20],"object_source_offsets":[22],"source_offset":10}"#,
-            r#"{"id":"header","operation_label":"operation","control":1,"declared_count":3,"branch_tag":41,"object_indices":[3,4],"raw_object_indices":[[240,3],[240,4]],"object_data_blocks":["first","second"],"object_source_offsets":[20,27],"source_offset":10}"#,
-            r#"{"id":"header","operation_label":"operation","control":1,"declared_count":3,"branch_tag":40,"descriptor_indices":[3],"raw_descriptor_indices":[[3]],"object_indices":[4],"raw_object_indices":[[240,4]],"descriptor_source_offsets":[20],"object_source_offsets":[25],"source_offset":10}"#,
+            r#"{"id":"header","operation_label":"operation","control":1,"declared_count":2,"branch_tag":27,"descriptor_indices":[3],"raw_descriptor_indices":["03"],"object_indices":[4],"raw_object_indices":["f004"],"descriptor_data_blocks":["descriptor"],"object_data_blocks":["object"],"descriptor_source_offsets":[20],"object_source_offsets":[22],"source_offset":10}"#,
+            r#"{"id":"header","operation_label":"operation","control":1,"declared_count":3,"branch_tag":41,"object_indices":[3,4],"raw_object_indices":["f003","f004"],"object_data_blocks":["first","second"],"object_source_offsets":[20,27],"source_offset":10}"#,
+            r#"{"id":"header","operation_label":"operation","control":1,"declared_count":3,"branch_tag":40,"descriptor_indices":[3],"raw_descriptor_indices":["03"],"object_indices":[4],"raw_object_indices":["f004"],"descriptor_source_offsets":[20],"object_source_offsets":[25],"source_offset":10}"#,
         ] {
             let header: FeatureDatumPlaneHeader = serde_json::from_str(json).unwrap();
             assert_eq!(serde_json::to_string(&header).unwrap(), json);
@@ -731,7 +733,7 @@ mod tests {
 
     #[test]
     fn wire_requires_complete_branch_tokens_and_atomic_resolution() {
-        let json = r#"{"id":"header","operation_label":"operation","control":1,"declared_count":2,"branch_tag":27,"descriptor_indices":[3],"raw_descriptor_indices":[[3]],"object_indices":[4],"raw_object_indices":[[240,4]],"descriptor_data_blocks":["descriptor"],"object_data_blocks":["object"],"descriptor_source_offsets":[20],"object_source_offsets":[22],"source_offset":10}"#;
+        let json = r#"{"id":"header","operation_label":"operation","control":1,"declared_count":2,"branch_tag":27,"descriptor_indices":[3],"raw_descriptor_indices":["03"],"object_indices":[4],"raw_object_indices":["f004"],"descriptor_data_blocks":["descriptor"],"object_data_blocks":["object"],"descriptor_source_offsets":[20],"object_source_offsets":[22],"source_offset":10}"#;
         for column in [
             "descriptor_indices",
             "raw_descriptor_indices",
@@ -755,7 +757,7 @@ mod tests {
     }
     #[test]
     fn branch_tokens_preserve_distinct_descriptor_and_object_grammars() {
-        let json = r#"{"id":"header","operation_label":"operation","control":1,"declared_count":2,"branch_tag":27,"descriptor_indices":[4096],"raw_descriptor_indices":[[144,0]],"object_indices":[256],"raw_object_indices":[[241,1,0]],"descriptor_data_blocks":["descriptor"],"object_data_blocks":["object"],"descriptor_source_offsets":[20],"object_source_offsets":[23],"source_offset":10}"#;
+        let json = r#"{"id":"header","operation_label":"operation","control":1,"declared_count":2,"branch_tag":27,"descriptor_indices":[4096],"raw_descriptor_indices":["9000"],"object_indices":[256],"raw_object_indices":["f10100"],"descriptor_data_blocks":["descriptor"],"object_data_blocks":["object"],"descriptor_source_offsets":[20],"object_source_offsets":[23],"source_offset":10}"#;
         let header: FeatureDatumPlaneHeader = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_string(&header).unwrap(), json);
         assert_eq!(
@@ -783,7 +785,7 @@ mod tests {
             ("raw_object_indices", vec![240, 1]),
         ] {
             let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
-            wire[column][0] = serde_json::json!(raw);
+            wire[column][0] = serde_json::json!(cadmpeg_ir::native::bytes::NativeBytes::from(raw));
             let error = serde_json::from_value::<FeatureDatumPlaneHeader>(wire).unwrap_err();
             let field = if column == "raw_descriptor_indices" {
                 "descriptor_indices"
@@ -797,8 +799,8 @@ mod tests {
     #[test]
     fn wire_derives_positions_and_rejects_independent_location_changes() {
         for json in [
-            r#"{"id":"header","operation_label":"operation","control":255,"declared_count":2,"branch_tag":35,"descriptor_indices":[0],"raw_descriptor_indices":[[0]],"object_indices":[256],"raw_object_indices":[[241,1,0]],"descriptor_data_blocks":[""],"object_data_blocks":["object"],"descriptor_source_offsets":[110],"object_source_offsets":[112],"source_offset":100}"#,
-            r#"{"id":"header","operation_label":"operation","control":255,"declared_count":2,"branch_tag":41,"object_indices":[0,256],"raw_object_indices":[[240,0],[241,1,0]],"object_source_offsets":[110,123],"source_offset":100}"#,
+            r#"{"id":"header","operation_label":"operation","control":255,"declared_count":2,"branch_tag":35,"descriptor_indices":[0],"raw_descriptor_indices":["00"],"object_indices":[256],"raw_object_indices":["f10100"],"descriptor_data_blocks":[""],"object_data_blocks":["object"],"descriptor_source_offsets":[110],"object_source_offsets":[112],"source_offset":100}"#,
+            r#"{"id":"header","operation_label":"operation","control":255,"declared_count":2,"branch_tag":41,"object_indices":[0,256],"raw_object_indices":["f000","f10100"],"object_source_offsets":[110,123],"source_offset":100}"#,
         ] {
             let header: FeatureDatumPlaneHeader = serde_json::from_str(json).unwrap();
             assert_eq!(serde_json::to_string(&header).unwrap(), json);

@@ -372,6 +372,10 @@ pub(super) fn read_knots(
     degree: i64,
     int_width: RefWidth,
 ) -> Option<(Vec<f64>, usize, KnotLayout)> {
+    let pair_bytes = 9 + 1 + int_width.bytes();
+    if n > b.len().checked_sub(*pos)? / pair_bytes {
+        return None;
+    }
     let mut knots = Vec::new();
     let mut mults = Vec::new();
     let mut value_offsets = Vec::new();

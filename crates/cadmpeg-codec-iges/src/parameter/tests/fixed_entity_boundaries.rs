@@ -88,7 +88,7 @@ fn type124_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
                 1.into(),
                 0.into(),
                 1.into(),
-                TokenValue::String(b"bad".to_vec()),
+                TokenValue::String(b"bad".to_vec().into()),
                 2.into(),
                 0.into(),
                 0.into(),
@@ -322,7 +322,7 @@ fn type118_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
                 118.into(),
                 3.into(),
                 7.into(),
-                TokenValue::String(b"bad".to_vec()),
+                TokenValue::String(b"bad".to_vec().into()),
                 0.into(),
                 1.into(),
                 5.into(),
@@ -472,7 +472,7 @@ fn type120_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
             3.into(),
             7.into(),
             0.into(),
-            TokenValue::String(b"bad".to_vec()),
+            TokenValue::String(b"bad".to_vec().into()),
             1.into(),
             5.into(),
             1.into(),
@@ -615,7 +615,7 @@ fn type122_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
             3.into(),
             0.into(),
             1.into(),
-            TokenValue::String(b"bad".to_vec()),
+            TokenValue::String(b"bad".to_vec().into()),
             1.into(),
             5.into(),
             1.into(),
@@ -770,7 +770,7 @@ fn type182_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
             7.into(),
             1.into(),
             2.into(),
-            TokenValue::String(b"bad".to_vec()),
+            TokenValue::String(b"bad".to_vec().into()),
             1.into(),
             9.into(),
             1.into(),
@@ -926,7 +926,10 @@ fn type186_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
         (113, &property),
         (115, &source),
     ]);
-    for wrong_field in [TokenValue::String(b"bad".to_vec()), TokenValue::real(2.5)] {
+    for wrong_field in [
+        TokenValue::String(b"bad".to_vec().into()),
+        TokenValue::real(2.5),
+    ] {
         let wrong = token_parameter_record(
             115,
             vec![
@@ -1379,7 +1382,7 @@ fn type_brep_malformed_count_or_nested_span_does_not_enable_generic_recovery() {
             vec![
                 510.into(),
                 5.into(),
-                TokenValue::String(b"bad".to_vec()),
+                TokenValue::String(b"bad".to_vec().into()),
                 1.into(),
                 1.into(),
                 1.into(),

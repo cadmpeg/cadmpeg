@@ -2,8 +2,9 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 use super::{find_color, style_application_order, ColorResolution, StyleDomain};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
+mod cache_storage;
 mod collection_limits;
 mod string_limits;
 mod surface_styles;
@@ -66,7 +67,7 @@ ENDSEC;END-ISO-10303-21;",
                         .expect("scope"),
                 ),
                 active: &mut BTreeSet::new(),
-                cache: &mut BTreeMap::new(),
+                cache: &mut super::ColorCache::default(),
                 losses: &mut Vec::new(),
                 invalid_surface_sides: &mut BTreeSet::new(),
             },

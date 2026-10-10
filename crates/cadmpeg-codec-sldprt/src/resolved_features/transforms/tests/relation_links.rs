@@ -831,7 +831,7 @@ fn driving_point_distances_resolve_omitted_solver_points() {
         let lane = FeatureInputLane {
             id: "lane".into(),
             configuration: None,
-            native_payload: Vec::new(),
+            native_payload: Vec::new().into(),
             classes: Vec::new(),
             names: Vec::new(),
             scalars: vec![
@@ -896,7 +896,7 @@ fn ambiguous_driving_point_distance_does_not_assign_solver_points() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: vec![FeatureInputScalar {

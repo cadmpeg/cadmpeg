@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Four nullable feature references in operation-header order.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use super::reference_index::FeatureReferenceToken;
 
 /// Position in the four-reference operation header.
@@ -109,24 +111,25 @@ impl HeaderReferences {
 #[cfg_attr(test, derive(serde::Serialize))]
 struct HeaderReferencesWire {
     object_indices: [Option<u32>; 4],
-    raw_object_indices: [Vec<u8>; 4],
+    raw_object_indices: [NativeBytes<Vec<u8>>; 4],
 }
 
 #[derive(serde::Serialize)]
 struct HeaderReferencesRef<'a> {
     object_indices: [Option<u32>; 4],
-    raw_object_indices: [&'a [u8]; 4],
+    raw_object_indices: [NativeBytes<&'a [u8]>; 4],
 }
 
 impl serde::Serialize for HeaderReferences {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         HeaderReferencesRef {
             object_indices: self.values(),
-            raw_object_indices: self.0.each_ref().map(|token| {
+            raw_object_indices: (self.0.each_ref().map(|token| {
                 token
                     .as_ref()
                     .map_or(&[0xff][..], FeatureReferenceToken::raw)
-            }),
+            }))
+            .map(Into::into),
         }
         .serialize(serializer)
     }
@@ -143,9 +146,10 @@ impl From<HeaderReferences> for HeaderReferencesWire {
         HEADER_INTO_WIRE_COUNT.with(|count| count.set(count.get() + 1));
         Self {
             object_indices: value.values(),
-            raw_object_indices: value
+            raw_object_indices: (value
                 .0
-                .map(|token| token.map_or_else(|| vec![0xff], |token| token.raw().to_vec())),
+                .map(|token| token.map_or_else(|| vec![0xff], |token| token.raw().to_vec())))
+            .map(Into::into),
         }
     }
 }
@@ -156,7 +160,7 @@ impl TryFrom<HeaderReferencesWire> for HeaderReferences {
     fn try_from(wire: HeaderReferencesWire) -> Result<Self, Self::Error> {
         Self::from_wire(
             wire.object_indices,
-            wire.raw_object_indices.each_ref().map(Vec::as_slice),
+            wire.raw_object_indices.each_ref().map(|raw| raw.as_slice()),
         )
     }
 }

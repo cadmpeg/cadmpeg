@@ -119,8 +119,8 @@ pub(crate) struct LegacyGeometryScan {
 
 type ObjectIdIndex<'a> = BTreeMap<String, &'a ObjectRecord>;
 type ChildIndex<'a> = BTreeMap<usize, Vec<&'a ObjectRecord>>;
-type IntegerFieldIndex<'a> = BTreeMap<(usize, &'a str), Vec<&'a legacy::IntegerRecord>>;
-type RealFieldIndex<'a> = BTreeMap<(usize, &'a str), Vec<&'a RealRecord>>;
+type IntegerFieldIndex<'a> = BTreeMap<(usize, &'a str), Option<&'a legacy::IntegerRecord>>;
+type RealFieldIndex<'a> = BTreeMap<(usize, &'a str), Option<&'a RealRecord>>;
 
 /// Decode the surface portions of one legacy persistence object graph.
 pub(crate) fn scan(
@@ -130,9 +130,50 @@ pub(crate) fn scan(
     let object_ids = object_id_index(ctx, &persistence.objects)?;
     let children = child_index(ctx, &persistence.objects)?;
     let mut integer_fields = BTreeMap::new();
-    value_index(ctx, &persistence.integer_values.rows, &mut integer_fields)?;
+    value_index(
+        ctx,
+        persistence.integer_values.rows.iter().filter(|record| {
+            matches!(
+                record.name.as_str(),
+                "geom_type"
+                    | "feat_id"
+                    | "geom_id"
+                    | "boundary_type"
+                    | "orient"
+                    | "next_geom_ptr"
+                    | "crv_id"
+                    | "type"
+                    | "crv_pnt_dir"
+                    | "crv_hdr_geom_ptr[0]"
+                    | "crv_hdr_geom_ptr[1]"
+                    | "next_crv_hdr_ptr[0]"
+                    | "next_crv_hdr_ptr[1]"
+            )
+        }),
+        &mut integer_fields,
+    )?;
     let mut real_fields = BTreeMap::new();
-    value_index(ctx, &persistence.real_values.rows, &mut real_fields)?;
+    value_index(
+        ctx,
+        persistence.real_values.rows.iter().filter(|record| {
+            matches!(
+                record.name.as_str(),
+                "crv_pnt_arr"
+                    | "local_sys"
+                    | "radius"
+                    | "half_angle"
+                    | "radius1"
+                    | "radius2"
+                    | "i_points"
+                    | "u_params"
+                    | "v_params"
+                    | "u_tangts"
+                    | "v_tangts"
+                    | "uv_deriv"
+            )
+        }),
+        &mut real_fields,
+    )?;
     let index = LegacyGeometryIndex {
         objects: &persistence.objects,
         object_ids: &object_ids,
@@ -778,7 +819,9 @@ fn object_id_index<'a>(
     objects: &'a [ObjectRecord],
 ) -> Result<ObjectIdIndex<'a>, CodecError> {
     let mut index = BTreeMap::new();
-    for object in objects {
+    for object in objects.iter().filter(|object| {
+        object.parent.is_some() && matches!(object.name.as_str(), "srf_array" | "crv_array")
+    }) {
         let id =
             legacy::checked_object_node_id(ctx, object.offset, "creo legacy object index IDs")?;
         ctx.insert_btree_map(&mut index, id, object, "creo legacy object index nodes")?;
@@ -791,7 +834,10 @@ fn child_index<'a>(
     objects: &'a [ObjectRecord],
 ) -> Result<ChildIndex<'a>, CodecError> {
     let mut index = BTreeMap::new();
-    for object in objects {
+    for object in objects
+        .iter()
+        .filter(|object| object.name.starts_with("srf_prim_ptr("))
+    {
         if let Some(parent) = object.parent {
             ctx.admit_btree_entry(&index, &parent, "creo legacy child index nodes")?;
             match index.entry(parent) {
@@ -817,8 +863,7 @@ fn integer_record<'a>(
     parent: usize,
     name: &str,
 ) -> Option<&'a legacy::IntegerRecord> {
-    let matches = records.get(&(parent, name))?;
-    (matches.len() == 1).then_some(matches[0])
+    records.get(&(parent, name)).copied().flatten()
 }
 
 fn integer_field(records: &IntegerFieldIndex<'_>, parent: usize, name: &str) -> Option<i32> {
@@ -853,8 +898,7 @@ fn real_record<'a>(
     parent: usize,
     name: &str,
 ) -> Option<&'a RealRecord> {
-    let matches = records.get(&(parent, name))?;
-    (matches.len() == 1).then_some(matches[0])
+    records.get(&(parent, name)).copied().flatten()
 }
 
 fn real_scalar(records: &RealFieldIndex<'_>, parent: usize, name: &str) -> Option<f64> {
@@ -1864,13 +1908,6 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
     }
 
     #[test]
-    fn legacy_value_index_rows_refuse_before_vec_growth() {
-        let persistence = cylinder_persistence(false);
-        assert_eq!(scan(&persistence).rows.len(), 1);
-        assert_collection_refusal(&persistence, "creo legacy value index rows");
-    }
-
-    #[test]
     fn legacy_child_index_rows_refuse_before_vec_growth() {
         let persistence = cylinder_persistence(false);
         assert_eq!(scan(&persistence).rows.len(), 1);
@@ -1910,5 +1947,35 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         let persistence = topology_persistence();
         assert_eq!(scan(&persistence).topology_rows.len(), 2);
         assert_collection_refusal(&persistence, "creo legacy topology rows");
+    }
+    #[test]
+    fn geometry_indexes_only_fields_read_by_its_joins() {
+        let mut persistence = cylinder_persistence(false);
+        let expected = scan(&persistence);
+        let mut unrelated = persistence.integer_values.rows[0].clone();
+        unrelated.name = "unrelated_field".into();
+        persistence
+            .integer_values
+            .rows
+            .extend(std::iter::repeat_n(unrelated, 1000));
+        let actual = scan_with_collection_limit(&persistence, 1000)
+            .expect("irrelevant fields need no geometry index entries");
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn geometry_does_not_index_unrelated_object_graphs() {
+        let mut persistence = cylinder_persistence(false);
+        let expected = scan(&persistence);
+        let mut unrelated = persistence.objects[0].clone();
+        unrelated.name = "View".into();
+        unrelated.parent = Some(9000);
+        for offset in 10_000..11_000 {
+            unrelated.offset = offset;
+            persistence.objects.push(unrelated.clone());
+        }
+        let actual = scan_with_collection_limit(&persistence, 1000)
+            .expect("unrelated object graphs need no geometry indices");
+        assert_eq!(actual, expected);
     }
 }

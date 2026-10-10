@@ -928,19 +928,21 @@ fn golden_fixtures_match_builders() {
 /// Every key the wire-shape cut deleted is now refused where it used to sit.
 ///
 /// The skin construction is exercised on the document route through the
-/// checked-in `skin_surface` decode golden; the other three sites are refused
+/// synthetic `skin_surface` fixture; the other three sites are refused
 /// by the type that owns them.
 #[test]
 fn the_deleted_wire_keys_are_refused_at_the_level_they_were_deleted_from() {
     use cadmpeg_ir::features::FeatureDefinition;
     use cadmpeg_ir::geometry::VectorOffsetRoles;
 
-    let golden =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden/decode/skin_surface.json");
-    let whole: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(&golden).expect("the skin golden")).expect("json");
-    let document = whole["ir"].clone();
-    serde_json::from_value::<CadIr>(document.clone()).expect("the skin golden is a document");
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_skin_spl_sur_smbh(0, false))),
+            &DecodeOptions::default(),
+        )
+        .expect("skin construction fixture");
+    let document = serde_json::to_value(decoded.ir()).expect("skin document JSON");
+    serde_json::from_value::<CadIr>(document.clone()).expect("the fixture is a document");
 
     let mut with_inner_count = document;
     let mut touched = 0usize;
@@ -1008,13 +1010,16 @@ fn the_deleted_wire_keys_are_refused_at_the_level_they_were_deleted_from() {
 /// a second time.
 #[test]
 fn a_revision_cached_surface_refuses_a_record_level_cache_fit_tolerance() {
-    let golden = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/golden/decode/rolling_ball_blend_surface.json");
-    let whole: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(&golden).expect("the rolling-ball golden"))
-            .expect("json");
-    let document = whole["ir"].clone();
-    serde_json::from_value::<CadIr>(document.clone()).expect("the golden is a document");
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_full_rolling_ball_smbh(
+                "rb_blend_spl_sur",
+            ))),
+            &DecodeOptions::default(),
+        )
+        .expect("rolling-ball construction fixture");
+    let document = serde_json::to_value(decoded.ir()).expect("rolling-ball document JSON");
+    serde_json::from_value::<CadIr>(document.clone()).expect("the fixture is a document");
 
     let mut restated = document;
     let mut touched = 0usize;

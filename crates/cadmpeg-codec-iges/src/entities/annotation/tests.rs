@@ -195,16 +195,32 @@ fn decode_preserves_general_note_text_runs_and_new_note_control_codes() {
         annotations[0].fields()["strings"].as_array().unwrap().len(),
         2
     );
-    assert_eq!(annotations[0].fields()["strings"][0]["text"][0], 65);
+    assert_eq!(
+        u64::from(
+            crate::test_support::native_bytes(&annotations[0].fields()["strings"][0]["text"])[0]
+        ),
+        65
+    );
     assert_eq!(annotations[0].fields()["strings"][1]["mirror"], 1);
     assert_eq!(annotations[0].fields()["strings"][1]["vertical"], 1);
     assert_eq!(annotations[1].fields()["kind"], "new_general_note");
     assert_eq!(annotations[1].fields()["justification"], 2);
     assert_eq!(
-        annotations[1].fields()["strings"][0]["control_codes"][0],
+        u64::from(
+            crate::test_support::native_bytes(
+                &annotations[1].fields()["strings"][0]["control_codes"]
+            )[0]
+        ),
         84
     );
-    assert_eq!(annotations[1].fields()["strings"][0]["text"]["text"][3], 33);
+    assert_eq!(
+        u64::from(
+            crate::test_support::native_bytes(
+                &annotations[1].fields()["strings"][0]["text"]["text"]
+            )[3]
+        ),
+        33
+    );
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -268,7 +284,9 @@ fn decode_accepts_and_retains_v5_0_kanji_general_note() {
         .unwrap();
     let annotations = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"];
     assert_eq!(
-        annotations[0].fields()["strings"][0]["text"],
+        serde_json::json!(crate::test_support::native_bytes(
+            &annotations[0].fields()["strings"][0]["text"]
+        )),
         serde_json::json!([51, 52, 52, 49, 51, 66, 55, 65])
     );
     assert!(
@@ -302,8 +320,8 @@ fn decode_rejects_malformed_v5_0_kanji_general_note_text() {
         );
         let annotations = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"];
         assert_eq!(
-            annotations[0].fields()["strings"][0]["text"],
-            serde_json::json!(text.as_bytes())
+            crate::test_support::native_bytes(&annotations[0].fields()["strings"][0]["text"]),
+            text.as_bytes()
         );
     }
 }
@@ -691,6 +709,7 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
         let mut ir = CadIr::empty();
         for (sequence, z) in [(1, 0.0), (3, 0.0)] {
             ir.model.curves.push(Curve {
+                parameter_range: None,
                 id: CurveId::mint(format!("iges:model:curve#D{sequence}"))
                     .expect("identity grammar"),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
@@ -746,19 +765,20 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
             entity_type,
             parameter_start: 0,
             structure: 0,
-            line_font: 0,
-            level: 0,
-            view: 0,
+            line_font: Some(0),
+            level: Some(0),
+            view: Some(0),
             transform: 0,
-            label_display: 0,
+            label_display: Some(0),
+            status_padding_recovered: false,
             status: SourceStatus::from_codes([0, 0, 0, 0]),
-            line_weight: 0,
-            color: 0,
+            line_weight: Some(0),
+            color: Some(0),
             parameter_line_count: 1,
             form: 0,
             reserved: [[b' '; 8]; 2],
             label: [b' '; 8],
-            subscript: 0,
+            subscript: Some(0),
         };
         let boundary = entry(1, 100);
         let island = entry(3, 100);
@@ -860,6 +880,7 @@ fn sectioned_area_form1_allows_a_null_boundary_and_requires_an_island() {
         let mut ir = CadIr::empty();
         for sequence in [1, 3] {
             ir.model.curves.push(Curve {
+                parameter_range: None,
                 id: CurveId::mint(format!("iges:model:curve#D{sequence}"))
                     .expect("identity grammar"),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
@@ -880,19 +901,20 @@ fn sectioned_area_form1_allows_a_null_boundary_and_requires_an_island() {
             entity_type,
             parameter_start: 0,
             structure: 0,
-            line_font: 0,
-            level: 0,
-            view: 0,
+            line_font: Some(0),
+            level: Some(0),
+            view: Some(0),
             transform: 0,
-            label_display: 0,
+            label_display: Some(0),
+            status_padding_recovered: false,
             status: SourceStatus::from_codes([0, 0, 0, 0]),
-            line_weight: 0,
-            color: 0,
+            line_weight: Some(0),
+            color: Some(0),
             parameter_line_count: 1,
             form: 0,
             reserved: [[b' '; 8]; 2],
             label: [b' '; 8],
-            subscript: 0,
+            subscript: Some(0),
         };
         let island = entry(3, 100);
         let entries = BTreeMap::from([(3, &island)]);
@@ -1011,19 +1033,20 @@ fn leader_entry(form: i64) -> DirectoryEntry {
         entity_type: 214,
         parameter_start: 0,
         structure: 0,
-        line_font: 0,
-        level: 0,
-        view: 0,
+        line_font: Some(0),
+        level: Some(0),
+        view: Some(0),
         transform: 0,
-        label_display: 0,
+        label_display: Some(0),
+        status_padding_recovered: false,
         status: SourceStatus::from_codes([0, 0, 1, 0]),
-        line_weight: 0,
-        color: 0,
+        line_weight: Some(0),
+        color: Some(0),
         parameter_line_count: 1,
         form,
         reserved: [[b' '; 8]; 2],
         label: [b' '; 8],
-        subscript: 0,
+        subscript: Some(0),
     }
 }
 

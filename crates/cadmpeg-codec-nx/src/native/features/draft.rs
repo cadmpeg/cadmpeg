@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Draft construction records and extraction.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use super::joined_payload::JoinedPayload;
 use super::payload_content::FeaturePayloadBlock;
 use super::payload_content::FeaturePayloadContent;
@@ -92,7 +94,7 @@ struct FeatureDraftConstructionIndexLaneWire {
     /// Non-null compact indices in serialized order.
     indices: Vec<u32>,
     /// Exact compact-index tokens in serialized order.
-    raw_indices: Vec<Vec<u8>>,
+    raw_indices: Vec<NativeBytes<Vec<u8>>>,
     /// Same-store native blocks when the complete lane and graph select one store.
     #[serde(
         default,
@@ -143,6 +145,7 @@ impl From<FeatureDraftConstructionIndexLane> for FeatureDraftConstructionIndexLa
             raw_indices: tokens
                 .iter()
                 .map(|token| token.atom.raw().to_vec())
+                .map(Into::into)
                 .collect(),
             data_blocks,
             source_offsets: tokens.iter().map(|token| token.offset).collect(),
@@ -262,9 +265,9 @@ struct FeatureDraftConstructionFixedLaneWire {
     /// Ordered dimensionless Q1.55 values.
     values: Vec<f64>,
     /// Exact atom markers in value order.
-    markers: Vec<u8>,
+    markers: NativeBytes<Vec<u8>>,
     /// Exact seven-byte two's-complement payloads.
-    raw_values: Vec<[u8; 7]>,
+    raw_values: Vec<NativeBytes<[u8; 7]>>,
     /// Payload-relative offset of the fixed discriminator.
     payload_offset: u64,
     /// Payload-relative offsets of the atom markers.
@@ -288,15 +291,17 @@ impl From<FeatureDraftConstructionFixedLane> for FeatureDraftConstructionFixedLa
                 .iter()
                 .map(|(_, atom, _)| atom.scalar.value())
                 .collect(),
-            markers: record
+            markers: (record
                 .lane
                 .iter()
                 .map(|(_, atom, _)| atom.marker.byte())
-                .collect(),
+                .collect::<Vec<_>>())
+            .into(),
             raw_values: record
                 .lane
                 .iter()
                 .map(|(_, atom, _)| atom.scalar.raw())
+                .map(Into::into)
                 .collect(),
             payload_offset: record.lane.offset(),
             value_payload_offsets: record.lane.iter().map(|(offset, _, _)| offset).collect(),
@@ -329,7 +334,7 @@ impl TryFrom<FeatureDraftConstructionFixedLaneWire> for FeatureDraftConstruction
                 Ok((
                     Q155Atom {
                         marker: Q155Marker::read(marker).ok_or("markers must contain 48 or 176")?,
-                        scalar: Q155::from_wire(value, raw)?,
+                        scalar: Q155::from_wire(value, *raw)?,
                     },
                     source,
                 ))
@@ -387,13 +392,13 @@ struct FeatureDraftConstructionBinary32LaneWire {
     /// Zero-based lane order in the reconstructed payload.
     ordinal: u32,
     /// Exact discriminator selecting the lane form.
-    discriminator: [u8; 18],
+    discriminator: NativeBytes<[u8; 18]>,
     /// Exact `03` or `04` branch byte.
     branch: u8,
     /// Ordered finite shifted-IEEE binary32 values.
     values: Vec<f64>,
     /// Exact four-byte shifted encodings.
-    raw_values: Vec<[u8; 4]>,
+    raw_values: Vec<NativeBytes<[u8; 4]>>,
     /// Payload-relative offset of the discriminator.
     payload_offset: u64,
     /// Payload-relative offsets of the scalar encodings.
@@ -412,7 +417,7 @@ impl From<FeatureDraftConstructionBinary32Lane> for FeatureDraftConstructionBina
             operation_label: record.operation_label,
             graph_payload: record.graph_payload,
             ordinal: record.ordinal,
-            discriminator: record.lane.form().discriminator(),
+            discriminator: (record.lane.form().discriminator()).into(),
             branch: u8::from(record.lane.form()),
             values: record
                 .lane
@@ -423,6 +428,7 @@ impl From<FeatureDraftConstructionBinary32Lane> for FeatureDraftConstructionBina
                 .lane
                 .iter()
                 .map(|(_, scalar, _)| scalar.raw())
+                .map(Into::into)
                 .collect(),
             payload_offset: record.lane.offset(),
             value_payload_offsets: record.lane.iter().map(|(offset, _, _)| offset).collect(),
@@ -454,7 +460,7 @@ impl TryFrom<FeatureDraftConstructionBinary32LaneWire> for FeatureDraftConstruct
             .into_iter()
             .zip(wire.raw_values)
             .zip(wire.value_source_offsets)
-            .map(|((value, raw), source)| Ok((ShiftedBinary32::from_wire(value, raw)?, source)))
+            .map(|((value, raw), source)| Ok((ShiftedBinary32::from_wire(value, *raw)?, source)))
             .collect::<Result<Vec<_>, String>>()?;
         let lane = FramedScalarRun::new(
             branch,
@@ -529,7 +535,7 @@ struct FeatureDraftConstructionIdentityFrameWire {
     /// Zero-based frame order in the reconstructed payload.
     ordinal: u32,
     /// Exact bytes from the opening marker through the identity introducer.
-    prefix: Vec<u8>,
+    prefix: NativeBytes<Vec<u8>>,
     /// Typed frame form selected by the exact prefix.
     form: DraftIdentityForm,
     /// Nonempty lowercase hexadecimal identity.
@@ -553,7 +559,7 @@ impl From<FeatureDraftConstructionIdentityFrame> for FeatureDraftConstructionIde
             operation_label: value.operation_label,
             draft_construction_payload: value.draft_construction_payload,
             ordinal: value.ordinal,
-            prefix: value.frame.prefix(),
+            prefix: (value.frame.prefix()).into(),
             form: value.frame.form(),
             identity: value.frame.identity().to_owned(),
             payload_offset: value.frame.offset(),
@@ -613,9 +619,9 @@ struct FeatureDraftConstructionTerminalLaneWire {
     /// Two non-null compact indices in serialized order.
     indices: [u32; 2],
     /// Exact two-byte compact-index tokens in serialized order.
-    raw_indices: [[u8; 2]; 2],
+    raw_indices: [NativeBytes<[u8; 2]>; 2],
     /// Exact uninterpreted bytes preceding the terminal zero.
-    tail: [u8; 3],
+    tail: NativeBytes<[u8; 3]>,
     /// Absolute source offsets of the compact-index tokens.
     index_source_offsets: [u64; 2],
     /// Absolute source offset of the first compact-index token.
@@ -629,8 +635,8 @@ impl From<FeatureDraftConstructionTerminalLane> for FeatureDraftConstructionTerm
             id: lane.id,
             operation_label: lane.operation_label,
             indices: lane.lane.indices().map(|token| token.atom.value()),
-            raw_indices: lane.lane.indices().map(|token| *token.atom.raw()),
-            tail: lane.lane.tail(),
+            raw_indices: (lane.lane.indices().map(|token| *token.atom.raw())).map(Into::into),
+            tail: (lane.lane.tail()).into(),
             index_source_offsets: lane.lane.indices().map(|token| token.offset),
             source_offset: lane.lane.offset(),
         }
@@ -642,12 +648,12 @@ impl TryFrom<FeatureDraftConstructionTerminalLaneWire> for FeatureDraftConstruct
 
     fn try_from(wire: FeatureDraftConstructionTerminalLaneWire) -> Result<Self, Self::Error> {
         let [first, second] = [0, 1].map(|slot| {
-            ExtendedCompactIndex::from_wire(wire.indices[slot], wire.raw_indices[slot])
+            ExtendedCompactIndex::from_wire(wire.indices[slot], *wire.raw_indices[slot])
                 .map_err(|error| format!("indices[{slot}]: {error}"))
         });
         let lane = crate::om::draft_terminal::DraftTerminalLane::<u64>::new(
             [first?, second?],
-            wire.tail,
+            *wire.tail,
             wire.source_offset,
         )
         .ok_or("source_offset overflows the terminal frame")?;

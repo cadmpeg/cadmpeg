@@ -222,3 +222,53 @@ fn a_field_walk_cannot_swallow_a_callback_resource_refusal() {
     assert!(matches!(error, CodecError::ResourceLimit(limit) if limit == original));
     assert_eq!(calls.get(), 1);
 }
+
+#[derive(Clone, Serialize)]
+struct NativeLink {
+    id: PointId,
+    label: String,
+    native_ref: Option<String>,
+    geometry_ref: Option<String>,
+    endpoint_refs: Vec<String>,
+}
+rewrite_record!(NativeLink, []; {id, label, native_ref, geometry_ref, endpoint_refs});
+
+#[test]
+fn full_fidelity_reference_rewrites_without_rewriting_identical_display_text() {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let source = NativeLink {
+        id: id("owner"),
+        label: "test:native:record#1".into(),
+        native_ref: Some("test:native:record#1".into()),
+        geometry_ref: Some("test:native:curve#1".into()),
+        endpoint_refs: vec!["test:native:point#1".into()],
+    };
+    let rewritten = identities(&ctx, "native link scope", source.clone(), |source| {
+        Ok(source.replace("test:", "scoped:"))
+    })
+    .unwrap();
+    assert_eq!(rewritten.label, "test:native:record#1");
+    assert_eq!(
+        rewritten.native_ref.as_deref(),
+        Some("scoped:native:record#1")
+    );
+    assert_eq!(
+        rewritten.geometry_ref.as_deref(),
+        Some("scoped:native:curve#1")
+    );
+    assert_eq!(rewritten.endpoint_refs, ["scoped:native:point#1"]);
+    let mut wire = serde_json::to_value(source).unwrap();
+    let mut map = IdentityMap::new(&ctx, "native wire link scope", |source: &str| {
+        Ok(source.replace("test:", "scoped:"))
+    })
+    .unwrap();
+    NativeLink::rewrite_native_value(&ctx, &mut wire, &mut map).unwrap();
+    map.finish(&ctx).unwrap();
+    assert_eq!(wire["native_ref"], "scoped:native:record#1");
+    assert_eq!(wire["label"], "test:native:record#1");
+    assert_eq!(wire["geometry_ref"], "scoped:native:curve#1");
+    assert_eq!(
+        wire["endpoint_refs"],
+        serde_json::json!(["scoped:native:point#1"])
+    );
+}

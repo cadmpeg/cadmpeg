@@ -2,6 +2,8 @@
 //! Record shadow-layer structs and their `ContainerScan` mappers, moved
 //! verbatim from `decode.rs`.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 
@@ -87,7 +89,7 @@ pub(super) struct CreoFeatureDefinitionRecord<'a> {
     definition_id: u32,
     owner_feature_id: Option<u32>,
     pub(super) source_section: &'a str,
-    body: &'a [u8],
+    body: NativeBytes<&'a [u8]>,
     parameter_frames: Vec<CreoFeatureParameterFrame<'a>>,
     outlines: Vec<CreoFeatureOutline<'a>>,
     pub(super) offset: usize,
@@ -111,7 +113,7 @@ pub(super) struct CreoFeatureReferenceNameRecord {
     pub(super) id: String,
     owner_feature_id: u32,
     name: String,
-    name_bytes: Vec<u8>,
+    name_bytes: NativeBytes<Vec<u8>>,
     own_reference_id: u32,
     reference_type: u32,
     pub(super) offset: usize,
@@ -236,7 +238,7 @@ fn serialize_loop_history_fields<S: serde::Serializer>(
     entry: &crate::feature::rows::FeatureLoopHistoryEntry,
     serializer: S,
 ) -> Result<S::Ok, S::Error> {
-    serializer.collect_seq(entry.fields())
+    serializer.collect_seq(entry.fields().map(NativeBytes::from))
 }
 
 fn serialize_loop_history_boundary<S: serde::Serializer>(
@@ -323,7 +325,7 @@ pub(super) struct CreoFeatureChoiceRecord<'a> {
     owner_feature_id: u32,
     label: &'a str,
     type_byte: Option<u8>,
-    payload: &'a [u8],
+    payload: NativeBytes<&'a [u8]>,
     payload_offset: usize,
     pub(super) offset: usize,
     pub(super) source_section: &'a str,
@@ -333,10 +335,10 @@ pub(super) struct CreoFeatureChoiceRecord<'a> {
 pub(super) struct CreoFeatureRowRecord<'a> {
     pub(super) id: String,
     owner_feature_id: u32,
-    header: [u8; 2],
+    header: NativeBytes<[u8; 2]>,
     root_schema_class: Option<u32>,
     stream_offset: usize,
-    body: &'a [u8],
+    body: NativeBytes<&'a [u8]>,
     body_offset: usize,
     pub(super) offset: usize,
     pub(super) source_section: &'a str,
@@ -404,7 +406,7 @@ pub(super) struct CreoLoopArrayRecord<'a> {
     attributes: u8,
     direction: u32,
     next_lo_ptr: u32,
-    body: &'a [u8],
+    body: cadmpeg_ir::native::bytes::NativeBytes<&'a [u8]>,
     pub(super) offset: usize,
     body_offset: usize,
     pub(super) source_section: &'a str,
@@ -535,7 +537,7 @@ pub(super) struct CreoReferenceConicRecord<'a> {
     parameter_interval: [Option<f64>; 2],
     coefficients: [f64; 2],
     local_system: Option<[f64; 12]>,
-    body: &'a [u8],
+    body: NativeBytes<&'a [u8]>,
     pub(super) offset: usize,
 }
 
@@ -636,7 +638,7 @@ pub(super) fn reference_conic_records<'a>(
             ],
             coefficients: [conic.coefficient_1.get(), conic.coefficient_2.get()],
             local_system: conic.local_system.map(cadmpeg_ir::units::FiniteVector::get),
-            body: &conic.body,
+            body: (&conic.body).into(),
             offset: conic.offset,
         });
     }
@@ -724,7 +726,7 @@ pub(super) struct CreoFcCurveCoordinateRecord<'a> {
     pub(super) id: String,
     curve_id: u32,
     subtype: u8,
-    body: &'a [u8],
+    body: NativeBytes<&'a [u8]>,
     values_mm: &'a [f64],
     tokens: &'a [FcCurveCoordinateToken],
     opaque_spans: &'a [FcCurveOpaqueSpan],
@@ -766,7 +768,7 @@ pub(super) struct CreoCurvePrototypeRecord<'a> {
 pub(super) struct CreoPlaneLocalSystemRecord<'a> {
     id: String,
     surface_id: u32,
-    body: &'a [u8],
+    body: NativeBytes<&'a [u8]>,
     slots: &'a [Option<f64>],
     origin: Option<[f64; 3]>,
     u_axis: Option<[f64; 3]>,
@@ -781,10 +783,10 @@ pub(super) struct CreoPlaneLocalSystemRecord<'a> {
 pub(super) struct CreoPlaneEnvelopeRecord<'a> {
     id: String,
     surface_id: u32,
-    body: &'a [u8],
+    body: NativeBytes<&'a [u8]>,
     envelope: CreoPlaneEnvelope,
     corner_coordinate_equal: [Option<bool>; 3],
-    scalar_tokens: &'a [Vec<u8>],
+    scalar_tokens: &'a [NativeBytes<Vec<u8>>],
     row_offset: usize,
     offset: usize,
     source_section: &'a str,
@@ -1276,7 +1278,7 @@ pub(super) fn feature_choice_records<'a>(
             owner_feature_id: choice.feature_id,
             label: &choice.label,
             type_byte: choice.type_byte,
-            payload: &choice.payload,
+            payload: (&choice.payload).into(),
             payload_offset: choice.payload_offset,
             offset: choice.offset,
             source_section: source_section_ref(scan, choice.offset),
@@ -1299,10 +1301,10 @@ pub(super) fn feature_row_records<'a>(
         records.push(CreoFeatureRowRecord {
             id,
             owner_feature_id: row.feature_id,
-            header: row.body.header(),
+            header: (row.body.header()).into(),
             root_schema_class: row.root_schema_class.map(SchemaClass::code),
             stream_offset: row.stream_offset,
-            body: &row.body,
+            body: (&(*row.body)).into(),
             body_offset: row.body_offset,
             offset: row.offset,
             source_section: source_section_ref(scan, row.offset),
@@ -1325,10 +1327,10 @@ pub(super) fn depdb_recipe_row_records<'a>(
         records.push(CreoFeatureRowRecord {
             id,
             owner_feature_id: row.feature_id,
-            header: [0; 2],
+            header: ([0; 2]).into(),
             root_schema_class: row.root_schema_class.map(SchemaClass::code),
             stream_offset: row.stream_offset,
-            body: &row.body,
+            body: (&(*row.body)).into(),
             body_offset: row.body_offset,
             offset: row.offset,
             source_section: source_section_ref(scan, row.offset),
@@ -1536,7 +1538,7 @@ mod feature_projection_limit_tests {
         assert_eq!(geometry["entry_ids"], serde_json::json!([4, 5]));
         assert_eq!(
             history["field_bytes"],
-            serde_json::json!([[1], [2], [3], [4]])
+            serde_json::json!(["01", "02", "03", "04"])
         );
     }
 }
@@ -1581,12 +1583,12 @@ pub(super) fn feature_choice_field_records<'a>(
                 } => CreoFeatureFieldValue::ScalarArray {
                     dimensions: *dimensions,
                     count: *count,
-                    body,
+                    body: body.into(),
                     decoded_values: decoded_values.as_deref(),
                 },
-                crate::feature::rows::FeatureFieldValue::Raw(bytes) => {
-                    CreoFeatureFieldValue::Raw { bytes }
-                }
+                crate::feature::rows::FeatureFieldValue::Raw(bytes) => CreoFeatureFieldValue::Raw {
+                    bytes: bytes.into(),
+                },
             },
             offset: field.offset,
             source_section: source_section_ref(scan, field.offset),
@@ -1690,8 +1692,8 @@ mod feature_choice_field_record_tests {
                 {"kind":"compact_int","value":7},
                 {"kind":"compact_int_array","values":[7,8]},
                 {"kind":"entity_reference","entity_id":9,"terminated":true},
-                {"kind":"scalar_array","dimensions":1,"count":2,"body":[249,2],"decoded_values":[1.0,2.0]},
-                {"kind":"raw","bytes":[227]}
+                {"kind":"scalar_array","dimensions":1,"count":2,"body":"f902","decoded_values":[1.0,2.0]},
+                {"kind":"raw","bytes":"e3"}
             ])
         );
     }
@@ -1819,7 +1821,7 @@ pub(super) fn loop_array_record_records<'a>(
             attributes: record.attributes,
             direction: record.direction,
             next_lo_ptr: record.next_lo_ptr,
-            body: &record.body,
+            body: (&record.body).into(),
             offset: record.offset,
             body_offset: record.body_offset,
             source_section: source_section_ref(scan, record.offset),
@@ -2067,7 +2069,10 @@ mod topology_projection_limit_tests {
             loop_value["half_edges"],
             serde_json::json!([{"curve_id":8,"side":0}])
         );
-        assert_eq!(row_value["body"], serde_json::json!([0xe3]));
+        assert_eq!(
+            crate::test_support::native_bytes(&row_value["body"]),
+            [0xe3]
+        );
         assert_eq!(row_value["end"], serde_json::json!(23));
     }
 }
@@ -2087,7 +2092,7 @@ pub(super) fn fc_curve_coordinate_records<'a>(
             id,
             curve_id: record.curve_id,
             subtype: record.subtype,
-            body: &record.body,
+            body: (&record.body).into(),
             values_mm: &record.values_mm,
             tokens: &record.tokens,
             opaque_spans: &record.opaque_spans,
@@ -2190,7 +2195,7 @@ pub(super) fn plane_local_system_records<'a>(
         records.push(CreoPlaneLocalSystemRecord {
             id,
             surface_id: record.surface_id,
-            body: &record.body,
+            body: (&record.body).into(),
             slots: &record.slots,
             origin: frame.origin,
             u_axis: frame.u_axis(),
@@ -2223,7 +2228,7 @@ pub(super) fn plane_envelope_records<'a>(
         records.push(CreoPlaneEnvelopeRecord {
             id,
             surface_id: record.surface_id,
-            body: &record.body,
+            body: (&record.body).into(),
             envelope: match &record.envelope {
                 crate::surface::PlaneEnvelope::Standard {
                     bounds_2d,
@@ -2474,7 +2479,7 @@ mod curve_plane_projection_limit_tests {
                 corners_3d: [[None; 3]; 2],
             },
             corner_coordinate_equal: [None; 3],
-            scalar_tokens: vec![vec![0xf9]],
+            scalar_tokens: vec![vec![0xf9].into()],
             row_offset: 13,
             offset: 17,
         });
@@ -2656,9 +2661,9 @@ mod curve_plane_projection_limit_tests {
         .expect("record is admitted");
         let fc = serde_json::to_value(&fc[0]).expect("record serializes");
         let plane = serde_json::to_value(&plane[0]).expect("record serializes");
-        assert_eq!(fc["body"], serde_json::json!([0xfc, 1]));
+        assert_eq!(crate::test_support::native_bytes(&fc["body"]), [0xfc, 1]);
         assert_eq!(fc["values_mm"], serde_json::json!([2.0]));
-        assert_eq!(plane["scalar_tokens"], serde_json::json!([[0xf9]]));
+        assert_eq!(plane["scalar_tokens"], serde_json::json!(["f9"]));
     }
 }
 
@@ -2669,7 +2674,7 @@ pub(super) struct CreoSurfaceParameterRecord<'a> {
     surface_type_byte: u8,
     surface_family: &'static str,
     boundary: &'static str,
-    body: &'a [u8],
+    body: NativeBytes<&'a [u8]>,
     slots: &'a [SurfaceParameterScalar],
     opaque_spans: &'a [SurfaceParameterOpaqueSpan],
     scalar_frames: &'a [SurfaceParameterScalarFrame],
@@ -2715,7 +2720,7 @@ pub(super) struct CreoSurfaceContourRecord<'a> {
     trv: u8,
     parameter_envelope: [Option<f64>; 4],
     separator_reference: Option<u32>,
-    body: &'a [u8],
+    body: NativeBytes<&'a [u8]>,
     pub(super) offset: usize,
     envelope_offset: usize,
     surface_row_offset: usize,
@@ -2737,7 +2742,7 @@ pub(super) struct CreoSurfaceNamedParameterRecord<'a> {
     pub(super) name: &'a str,
     #[serde(flatten, serialize_with = "serialize_surface_named_value")]
     pub(super) value: &'a crate::surface::SurfaceNamedValue,
-    pub(super) body: &'a [u8],
+    pub(super) body: NativeBytes<&'a [u8]>,
     pub(super) offset: usize,
     pub(super) value_offset: usize,
 }
@@ -2776,18 +2781,22 @@ impl Serialize for ScalarValues<'_> {
 
 enum ScalarTokens<'a> {
     Empty,
-    Present(&'a [Vec<u8>]),
+    Present(&'a [NativeBytes]),
     Missing(usize),
 }
 
 impl Serialize for ScalarTokens<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match self {
-            Self::Empty => serializer.collect_seq(std::iter::empty::<&[u8]>()),
-            Self::Present(tokens) => serializer.collect_seq(tokens.iter()),
+            Self::Empty => serializer.collect_seq(std::iter::empty::<NativeBytes<&[u8]>>()),
+            Self::Present(tokens) => serializer.collect_seq(
+                tokens
+                    .iter()
+                    .map(|token| NativeBytes::from(token.as_slice())),
+            ),
             Self::Missing(count) => {
                 let empty: &[u8] = &[];
-                serializer.collect_seq(std::iter::repeat_n(empty, *count))
+                serializer.collect_seq(std::iter::repeat_n(NativeBytes::from(empty), *count))
             }
         }
     }
@@ -2885,7 +2894,7 @@ fn serialize_surface_named_value<S: serde::Serializer>(
     map.serialize_entry("scalar_count", &count)?;
     map.serialize_entry("scalar_values", &scalars)?;
     map.serialize_entry("scalar_tokens", &tokens)?;
-    map.serialize_entry("opaque", &opaque)?;
+    map.serialize_entry("opaque", &NativeBytes::from(opaque))?;
     map.end()
 }
 
@@ -2894,7 +2903,7 @@ pub(super) struct CreoCurveParameterRecord<'a> {
     pub(super) id: String,
     curve_id: u32,
     type_byte: u8,
-    body: &'a [u8],
+    body: NativeBytes<&'a [u8]>,
     #[serde(serialize_with = "serialize_curve_scalar_values")]
     scalar_values: &'a [crate::curve::CurveParameterScalar],
     #[serde(serialize_with = "serialize_curve_scalar_tokens")]
@@ -2920,7 +2929,7 @@ pub(super) struct CreoCurveTopologyRowRecord<'a> {
     curve_id: u32,
     type_byte: u8,
     feature_id: u32,
-    directions: [u8; 2],
+    directions: NativeBytes<[u8; 2]>,
     faces: [u32; 2],
     next_edges: [u32; 2],
     pub(super) offset: usize,
@@ -2933,9 +2942,9 @@ pub(super) struct CreoCrossSectionCurveRowRecord<'a> {
     curve_id: u32,
     type_byte: u8,
     feature_id: u32,
-    directions: [u8; 2],
+    directions: NativeBytes<[u8; 2]>,
     suffix: crate::curve::DepdbCurveSuffix,
-    body: &'a [u8],
+    body: NativeBytes<&'a [u8]>,
     #[serde(serialize_with = "serialize_curve_scalar_values")]
     scalar_values: &'a [crate::curve::CurveParameterScalar],
     #[serde(serialize_with = "serialize_curve_scalar_tokens")]
@@ -2951,17 +2960,17 @@ pub(super) struct CreoCrossSectionCurveRowRecord<'a> {
 #[derive(Serialize)]
 pub(super) struct CreoTabulatedCylinderCurveReplayRecord<'a> {
     pub(super) id: String,
-    body: &'a [u8],
+    body: NativeBytes<&'a [u8]>,
     surface_id: u32,
     curve_id: u32,
     curve_type: u8,
     flip: u8,
     tangent_condition: u8,
     degree: u8,
-    parameter_body: &'a [u8],
+    parameter_body: NativeBytes<&'a [u8]>,
     control_point_ids: [u32; 4],
     successor_reference: u32,
-    control_point_bodies: &'a [Vec<u8>; 4],
+    control_point_bodies: &'a [NativeBytes<Vec<u8>>; 4],
     control_points: [Option<[f64; 2]>; 4],
     terminal_reference: u32,
     pub(super) offset: usize,
@@ -2983,7 +2992,7 @@ impl Serialize for CurveScalarToken<'_> {
         use serde::ser::SerializeStruct;
         let mut record = serializer.serialize_struct("CreoCurveParameterScalar", 4)?;
         record.serialize_field("value", &self.0.value)?;
-        record.serialize_field("raw", &self.0.raw)?;
+        record.serialize_field("raw", &NativeBytes::from(self.0.raw.as_slice()))?;
         record.serialize_field("offset", &self.0.offset)?;
         record.serialize_field("length", &self.0.raw.len())?;
         record.end()
@@ -3030,7 +3039,7 @@ impl Serialize for CurveOpaqueSpan<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
         let mut record = serializer.serialize_struct("CreoCurveParameterOpaqueSpan", 3)?;
-        record.serialize_field("raw", &self.0.raw)?;
+        record.serialize_field("raw", &NativeBytes::from(self.0.raw.as_slice()))?;
         record.serialize_field("offset", &self.0.offset)?;
         record.serialize_field("length", &self.0.raw.len())?;
         record.end()
@@ -3110,7 +3119,7 @@ pub(super) fn surface_prototype_records<'a>(
             parameters.push(CreoSurfaceNamedParameterRecord {
                 name: &parameter.name,
                 value: &parameter.value,
-                body: &parameter.body,
+                body: (&parameter.body).into(),
                 offset: parameter.offset,
                 value_offset: parameter.value_offset,
             });
@@ -3152,7 +3161,7 @@ pub(super) fn surface_contour_records<'a>(
             trv: record.trv,
             parameter_envelope: record.parameter_envelope,
             separator_reference: record.separator_reference,
-            body: &record.body,
+            body: (&record.body).into(),
             offset: record.offset,
             envelope_offset: record.envelope_offset,
             surface_row_offset: record.surface_row_offset,
@@ -3354,9 +3363,12 @@ mod surface_projection_limit_tests {
         assert_eq!(values[3]["compact_values"], serde_json::json!([7, 8]));
         assert_eq!(values[4]["scalar_values"], serde_json::json!([null, null]));
         assert_eq!(values[4]["scalar_tokens"], serde_json::json!([]));
-        assert_eq!(values[5]["scalar_tokens"], serde_json::json!([[], []]));
+        assert_eq!(values[5]["scalar_tokens"], serde_json::json!(["", ""]));
         assert_eq!(values[6]["scalar_values"], serde_json::json!([1.0, 2.0]));
-        assert_eq!(values[7]["opaque"], serde_json::json!([0xe3]));
+        assert_eq!(
+            crate::test_support::native_bytes(&values[7]["opaque"]),
+            [0xe3]
+        );
     }
 }
 
@@ -3426,7 +3438,7 @@ pub(super) fn curve_parameter_records<'a>(
             id,
             curve_id: record.curve_id,
             type_byte: record.type_byte,
-            body: &record.body,
+            body: (&record.body).into(),
             scalar_values: &record.scalar_tokens,
             scalar_tokens: &record.scalar_tokens,
             skipped_references: &record.references,
@@ -3472,9 +3484,9 @@ pub(super) fn cross_section_curve_row_records<'a>(
             curve_id: row.id,
             type_byte: row.type_byte,
             feature_id: row.feature_id,
-            directions: row.directions,
+            directions: (row.directions).into(),
             suffix: row.suffix,
-            body: &row.body,
+            body: (&row.body).into(),
             scalar_values: &row.scalar_tokens,
             scalar_tokens: &row.scalar_tokens,
             references: &row.references,
@@ -3516,7 +3528,7 @@ pub(super) fn curve_topology_row_records<'a>(
             curve_id: row.id,
             type_byte: row.type_byte,
             feature_id: row.feature_id,
-            directions: row.directions,
+            directions: (row.directions).into(),
             faces: row.stored_face_ids(),
             next_edges: row.next_edges,
             offset: row.offset,
@@ -3546,14 +3558,14 @@ pub(super) fn tabulated_cylinder_curve_replay_records<'a>(
         )?;
         records.push(CreoTabulatedCylinderCurveReplayRecord {
             id,
-            body: &record.body,
+            body: (&record.body).into(),
             surface_id: record.surface_id,
             curve_id: record.curve_id,
             curve_type: record.curve_type,
             flip: record.flip,
             tangent_condition: record.tangent_condition,
             degree: record.degree,
-            parameter_body: &record.parameter_body,
+            parameter_body: (&record.parameter_body).into(),
             control_point_ids: record.control_point_ids,
             successor_reference: record.successor_reference,
             control_point_bodies: &record.control_point_bodies,
@@ -3642,7 +3654,7 @@ mod curve_projection_limit_tests {
                 parameter_body: vec![0xf9],
                 control_point_ids: [1, 2, 3, 4],
                 successor_reference: 0,
-                control_point_bodies: std::array::from_fn(|_| vec![0xe3]),
+                control_point_bodies: std::array::from_fn(|_| vec![0xe3].into()),
                 control_points: [None; 4],
                 terminal_reference: 0,
                 offset: 23,
@@ -3728,7 +3740,7 @@ mod curve_projection_limit_tests {
         assert_eq!(parameter["scalar_values"], serde_json::json!([2.0]));
         assert_eq!(
             parameter["scalar_tokens"],
-            serde_json::json!([{"value":2.0,"raw":[249,0],"offset":1,"length":2}])
+            serde_json::json!([{"value":2.0,"raw":"f900","offset":1,"length":2}])
         );
         assert_eq!(parameter["skipped_references"], serde_json::json!([9]));
         assert_eq!(
@@ -3737,11 +3749,11 @@ mod curve_projection_limit_tests {
         );
         assert_eq!(
             parameter["opaque_spans"],
-            serde_json::json!([{"raw":[227],"offset":5,"length":1}])
+            serde_json::json!([{"raw":"e3","offset":5,"length":1}])
         );
         assert_eq!(
             replay["control_point_bodies"],
-            serde_json::json!([[227], [227], [227], [227]])
+            serde_json::json!(["e3", "e3", "e3", "e3"])
         );
     }
 }
@@ -3776,7 +3788,7 @@ pub(super) fn surface_parameter_records<'a>(
             surface_type_byte: row.kind.canonical_type_byte(),
             surface_family,
             boundary,
-            body: &record.body,
+            body: (&record.body).into(),
             slots: &record.scalar_tokens,
             opaque_spans: &record.opaque_spans,
             scalar_frames: &record.scalar_frames,
@@ -3784,7 +3796,7 @@ pub(super) fn surface_parameter_records<'a>(
             tabulated_cylinder_frame: record.tabulated_cylinder_frame().map(|frame| {
                 CreoTabulatedCylinderFrame {
                     values: frame.values().get(),
-                    prefixes: frame.prefixes(),
+                    prefixes: frame.prefixes().into(),
                 }
             }),
             positional_cylinder_frame: record.positional_cylinder_frame().map(|frame| {
@@ -3885,7 +3897,7 @@ mod surface_parameter_projection_limit_tests {
         });
         let token = SurfaceParameterScalar {
             value: Some(1.0),
-            raw: vec![0xf9, 0],
+            raw: vec![0xf9, 0].into(),
             offset: 0,
         };
         scan.surfaces.parameters.push(SurfaceParameterRecord {
@@ -3893,7 +3905,7 @@ mod surface_parameter_projection_limit_tests {
             body: vec![0xf9, 0],
             scalar_tokens: vec![token.clone()],
             opaque_spans: vec![SurfaceParameterOpaqueSpan {
-                raw: vec![0xe3],
+                raw: vec![0xe3].into(),
                 offset: 2,
             }],
             scalar_frames: vec![SurfaceParameterScalarFrame {
@@ -3975,14 +3987,14 @@ mod surface_parameter_projection_limit_tests {
         )
         .expect("parameter record is admitted");
         let value = serde_json::to_value(&records[0]).expect("record serializes");
-        assert_eq!(value["body"], serde_json::json!([249, 0]));
+        assert_eq!(crate::test_support::native_bytes(&value["body"]), [249, 0]);
         assert_eq!(
             value["slots"],
-            serde_json::json!([{"value":1.0,"raw":[249,0],"offset":0,"length":2}])
+            serde_json::json!([{"value":1.0,"raw":"f900","offset":0,"length":2}])
         );
         assert_eq!(
             value["opaque_spans"],
-            serde_json::json!([{"raw":[227],"offset":2,"length":1}])
+            serde_json::json!([{"raw":"e3","offset":2,"length":1}])
         );
     }
 }
@@ -4025,7 +4037,7 @@ pub(super) fn feature_operation_state_records<'a>(
                 .stored_name_bytes()
                 .map(|bytes| ctx.copy_retained_lossy_utf8(bytes, "creo native feature state name"))
                 .transpose()?,
-            stored_name_bytes: state.name.stored_name_bytes(),
+            stored_name_bytes: state.name.stored_name_bytes().map(NativeBytes::from),
             identifier_keyword: state.name.identifier_keyword(),
             stored_name_prefix: state
                 .name
@@ -4088,7 +4100,7 @@ pub(super) fn feature_reference_name_records(
             id,
             owner_feature_id: record.feature_id,
             name,
-            name_bytes,
+            name_bytes: (name_bytes).into(),
             own_reference_id: record.own_reference_id,
             reference_type: record.reference_type,
             offset: record.offset,
@@ -4301,7 +4313,7 @@ pub(super) fn curve_expression_records<'a>(
                 CreoCurveExpressionLocalSystem {
                     dimensions: frame.dimensions,
                     count: frame.count,
-                    body: &frame.body,
+                    body: (&frame.body).into(),
                     explicit_slots: frame
                         .explicit_slots
                         .map(cadmpeg_ir::units::FiniteVector::get),
@@ -4439,7 +4451,10 @@ mod curve_expression_projection_limit_tests {
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let records = curve_expression_records(&ctx, &scan).expect("expression is admitted");
         let value = serde_json::to_value(&records[0]).expect("record serializes");
-        assert_eq!(value["local_system"]["body"], serde_json::json!([249]));
+        assert_eq!(
+            crate::test_support::native_bytes(&value["local_system"]["body"]),
+            [249]
+        );
         assert_eq!(value["lines"][0]["text"], "p=2");
         assert_eq!(value["assignments"][0]["target"]["kind"], "parameter");
         assert_eq!(
@@ -4529,15 +4544,19 @@ pub(super) fn sketch_records<'a>(
                             variable_type: row.variable_type.code(),
                             key: row.key,
                             value: row.value,
-                            value_body: ctx.copy_retained(
-                                &row.value_body,
-                                "creo native sketch variable value body",
-                            )?,
+                            value_body: ctx
+                                .copy_retained(
+                                    &row.value_body,
+                                    "creo native sketch variable value body",
+                                )?
+                                .into(),
                             guess: row.guess,
-                            guess_body: ctx.copy_retained(
-                                &row.guess_body,
-                                "creo native sketch variable guess body",
-                            )?,
+                            guess_body: ctx
+                                .copy_retained(
+                                    &row.guess_body,
+                                    "creo native sketch variable guess body",
+                                )?
+                                .into(),
                             known: row.known,
                             homogeneity: row.homogeneity,
                             uvar_id: row.uvar_id,
@@ -4572,9 +4591,9 @@ pub(super) fn sketch_records<'a>(
                         function_id: equation.function_id,
                         explicit_argument_count: equation.explicit_argument_count,
                         arguments: equation.arguments,
-                        arguments_body: equation.arguments_body,
-                        auxiliary_body: equation.auxiliary_body,
-                        body: equation.body,
+                        arguments_body: equation.arguments_body.into(),
+                        auxiliary_body: equation.auxiliary_body.into(),
+                        body: equation.body.into(),
                         offset: definition.body_position(equation.offset)?.source()?.get(),
                     })
                 }),
@@ -4601,7 +4620,8 @@ pub(super) fn sketch_records<'a>(
                         radius_dimension_id: segment.radius_ref,
                         secondary_radius_dimension_id: segment.radius2_ref,
                         body: ctx
-                            .copy_retained(&segment.body, "creo native sketch segment body")?,
+                            .copy_retained(&segment.body, "creo native sketch segment body")?
+                            .into(),
                         offset: segment.offset,
                     })
                 }),
@@ -4706,10 +4726,9 @@ pub(super) fn sketch_records<'a>(
                         vertical_horizontal_constraint: segment.vertical_horizontal,
                         radius_dimension_id: segment.radius_ref,
                         secondary_radius_dimension_id: segment.radius2_ref,
-                        body: ctx.copy_retained(
-                            &segment.body,
-                            "creo native sketch opaque segment body",
-                        )?,
+                        body: ctx
+                            .copy_retained(&segment.body, "creo native sketch opaque segment body")?
+                            .into(),
                         offset: segment.offset,
                     })
                 }),
@@ -4779,7 +4798,7 @@ pub(super) fn sketch_records<'a>(
                                 references: &line.references,
                                 attributes: &line.attributes,
                                 endpoints: line.endpoints,
-                                body: &line.body,
+                                body: (&line.body).into(),
                                 offset: line.offset,
                             }
                         }
@@ -4790,7 +4809,7 @@ pub(super) fn sketch_records<'a>(
                                 radius: arc.radius,
                                 endpoints: arc.endpoints,
                                 parameters: arc.parameters,
-                                body: &arc.body,
+                                body: (&arc.body).into(),
                                 offset: arc.offset,
                             }
                         }
@@ -4799,7 +4818,7 @@ pub(super) fn sketch_records<'a>(
                                 entity_id: circle.entity_id,
                                 center: circle.center,
                                 radius: circle.radius,
-                                body: &circle.body,
+                                body: (&circle.body).into(),
                                 offset: circle.offset,
                             }
                         }
@@ -4812,7 +4831,7 @@ pub(super) fn sketch_records<'a>(
                                 local_system: conic
                                     .local_system
                                     .map(cadmpeg_ir::units::FiniteVector::get),
-                                body: &conic.body,
+                                body: (&conic.body).into(),
                                 offset: conic.offset,
                             }
                         }
@@ -4821,7 +4840,8 @@ pub(super) fn sketch_records<'a>(
                                 entity_id: spline.entity_id,
                                 declared_point_count: spline.declared_point_count,
                                 interpolation_points: &spline.interpolation_points,
-                                interpolation_points_body: &spline.interpolation_points_body,
+                                interpolation_points_body: (&spline.interpolation_points_body)
+                                    .into(),
                                 endpoint_tangents: crate::decode::native_records::SplineTangents(
                                     spline.endpoint_tangents.as_ref(),
                                 ),
@@ -4834,7 +4854,7 @@ pub(super) fn sketch_records<'a>(
                         crate::feature::definitions::FeatureSavedEntity::Dummy(dummy) => {
                             CreoSketchSavedEntity::Dummy {
                                 entity_id: dummy.entity_id,
-                                body: &dummy.body,
+                                body: (&dummy.body).into(),
                                 offset: dummy.offset,
                             }
                         }
@@ -4862,10 +4882,12 @@ pub(super) fn sketch_records<'a>(
                                 crate::feature::definitions::DimensionValue::Undefined
                             }
                         },
-                        value_body: ctx.copy_retained(
-                            &dimension.value_body,
-                            "creo native sketch dimension value body",
-                        )?,
+                        value_body: ctx
+                            .copy_retained(
+                                &dimension.value_body,
+                                "creo native sketch dimension value body",
+                            )?
+                            .into(),
                         unit: match dimension.unit() {
                             crate::feature::definitions::DimensionUnit::Radians => "radians",
                             crate::feature::definitions::DimensionUnit::Millimeters => {
@@ -4877,10 +4899,12 @@ pub(super) fn sketch_records<'a>(
                         },
                         direction_byte: dimension.direction_byte,
                         auxiliary_value: dimension.auxiliary_value,
-                        auxiliary_body: ctx.copy_retained(
-                            &dimension.auxiliary_body,
-                            "creo native sketch dimension auxiliary body",
-                        )?,
+                        auxiliary_body: ctx
+                            .copy_retained(
+                                &dimension.auxiliary_body,
+                                "creo native sketch dimension auxiliary body",
+                            )?
+                            .into(),
                         references: dimension
                             .references
                             .as_ref()
@@ -4915,16 +4939,19 @@ pub(super) fn sketch_records<'a>(
                     Ok::<_, CodecError>(CreoSketchRelation {
                         relation_id: relation.relation_id,
                         used: relation.used,
-                        operands: ctx.copy_retained(
-                            &relation.operands,
-                            "creo native sketch relation operands",
-                        )?,
+                        operands: ctx
+                            .copy_retained(
+                                &relation.operands,
+                                "creo native sketch relation operands",
+                            )?
+                            .into(),
                         operand_vectors: relation.operand_vectors,
                         sign: relation.sign,
                         dimension_id: relation.dimension_id,
                         relation_type: relation.relation_type,
                         body: ctx
-                            .copy_retained(&relation.body, "creo native sketch relation body")?,
+                            .copy_retained(&relation.body, "creo native sketch relation body")?
+                            .into(),
                         offset: relation.offset,
                     })
                 }),
@@ -5168,8 +5195,8 @@ mod sketch_projection_limit_tests {
         let records = sketch_records(&ctx, &scan).expect("service profile admits one variable");
         let value = serde_json::to_value(&records[0]).expect("record serializes");
         assert_eq!(
-            value["variables"][0]["value_body"],
-            serde_json::json!([249])
+            crate::test_support::native_bytes(&value["variables"][0]["value_body"]),
+            [249]
         );
 
         let arena = DecodeArena::new();
@@ -5259,7 +5286,7 @@ pub(super) fn feature_definition_records<'a>(
                         "transform"
                     }
                 },
-                body: &frame.body,
+                body: (&frame.body).into(),
                 decoded_values: frame
                     .decoded_values
                     .map(cadmpeg_ir::units::FiniteVector::get),
@@ -5286,7 +5313,7 @@ pub(super) fn feature_definition_records<'a>(
             definition_id: definition.identity.id(),
             owner_feature_id: definition.identity.owner_feature_id(),
             source_section: source_section_ref(scan, definition.offset),
-            body: &definition.body,
+            body: (&definition.body).into(),
             parameter_frames,
             outlines,
             offset: definition.offset,
@@ -5398,10 +5425,10 @@ mod feature_definition_projection_limit_tests {
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let records = feature_definition_records(&ctx, &scan).expect("definition is admitted");
         let value = serde_json::to_value(&records[0]).expect("record serializes");
-        assert_eq!(value["body"], serde_json::json!([227]));
+        assert_eq!(crate::test_support::native_bytes(&value["body"]), [227]);
         assert_eq!(
-            value["parameter_frames"][0]["body"],
-            serde_json::json!([249])
+            crate::test_support::native_bytes(&value["parameter_frames"][0]["body"]),
+            [249]
         );
         assert_eq!(
             value["outlines"][0]["local_values"],
@@ -5409,7 +5436,7 @@ mod feature_definition_projection_limit_tests {
         );
         assert_eq!(
             value["outlines"][0]["local_value_bodies"],
-            serde_json::json!([[249], [], [], [], [], []])
+            serde_json::json!(["f9", "", "", "", "", ""])
         );
     }
 }
@@ -5916,8 +5943,8 @@ mod tests {
         assert_eq!(records[0]["id"], "creo:mdlstatus:feature_state#40:0");
         assert_eq!(records[0]["stored_name"], "A\u{fffd}");
         assert_eq!(
-            records[0]["stored_name_bytes"],
-            serde_json::json!([65, 255])
+            crate::test_support::native_bytes(&records[0]["stored_name_bytes"]),
+            [65, 255]
         );
         assert_eq!(records[0]["stored_name_prefix"], "~");
         assert_eq!(records[0]["identifier_keyword"], "id");
@@ -5991,7 +6018,7 @@ mod tests {
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].owner_feature_id, 2);
         assert_eq!(records[0].header, [0, 0]);
-        assert_eq!(records[0].body, &payload[3..]);
+        assert_eq!(records[0].body, (&payload[3..]));
     }
     mod projection_admission;
 }

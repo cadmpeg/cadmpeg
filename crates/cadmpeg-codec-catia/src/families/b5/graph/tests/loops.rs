@@ -263,8 +263,8 @@ fn targeted_surface_records_and_resolution_refuse_caller_limits() {
     .expect("service budget");
     let object_ids = HashSet::from([9]);
     for (limit, operation) in [
-        (1, "catia_b5_targeted_surface_records"),
-        (2, "catia_b5_targeted_surface_visited"),
+        (0, "catia_b5_targeted_surface_records"),
+        (1, "catia_b5_targeted_surface_visited"),
     ] {
         let limited = crate::test_support::with_collection_limit(limit, |ctx| {
             super::super::targeted_surfaces_from_frames(

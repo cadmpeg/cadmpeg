@@ -92,7 +92,7 @@ fn fixed_envelope_entity_forms_have_registered_primary_boundaries() {
         sequence,
         vec![
             322_i64.into(),
-            TokenValue::String(b"ATTR".to_vec()),
+            TokenValue::String(b"ATTR".to_vec().into()),
             1_i64.into(),
             1_i64.into(),
             10_i64.into(),
@@ -264,12 +264,12 @@ fn parameter_card_count_includes_comment_card_payload() {
     let entity = &result.ir().native.namespace("iges").unwrap().arenas()["entities"][0];
     let fields = entity.fields();
     assert_eq!(fields["parameter_line_count"], 2);
-    let retained_comment = fields["comment"].as_array().unwrap();
+    let retained_comment = crate::test_support::native_bytes(&fields["comment"]);
     assert_eq!(retained_comment.len(), 128 - "116,1,2,3,0;".len());
     let prefix = retained_comment
         .iter()
         .take(comment.len())
-        .map(|value| value.as_u64().unwrap().try_into().unwrap())
+        .copied()
         .collect::<Vec<u8>>();
     assert_eq!(prefix, comment.as_bytes());
 }

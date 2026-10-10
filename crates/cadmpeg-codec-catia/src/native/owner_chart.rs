@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native owner-chart carriers, bridge references, and alias bindings.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use cadmpeg_core::text::NonBlankString;
 
 use cadmpeg_ir::scalar::PositiveLength;
@@ -317,7 +319,7 @@ enum CatiaOwnerChartBridgeWire {
         /// Pcurves on the supporting surfaces.
         support_pcurves: [CatiaOwnerChartBridgeReference; 2],
         /// Six construction controls in storage order.
-        controls: [u8; 6],
+        controls: NativeBytes<[u8; 6]>,
         /// Positive construction radius.
         construction_radius: f64,
     },
@@ -328,9 +330,9 @@ enum CatiaOwnerChartBridgeWire {
         /// Counted allocation references in storage order.
         references: [CatiaOwnerChartBridgeReference; 8],
         /// Four controls before the zero lane.
-        controls: [u8; 4],
+        controls: NativeBytes<[u8; 4]>,
         /// Two terminal controls after the zero lane.
-        terminal_controls: [u8; 2],
+        terminal_controls: NativeBytes<[u8; 2]>,
     },
 }
 
@@ -368,7 +370,8 @@ impl CatiaOwnerChartBridgeWire {
                     middle_controls[1].as_byte(),
                     terminal_control.as_byte(),
                     0x05,
-                ],
+                ]
+                .into(),
                 construction_radius: construction_radius.get(),
             },
             CatiaOwnerChartBridge::Extended {
@@ -377,8 +380,8 @@ impl CatiaOwnerChartBridgeWire {
             } => Self::Extended {
                 byte_offset,
                 references,
-                controls: [carrier.selector(), 0x09, 0x05, 0x05],
-                terminal_controls: [0x01, 0x05],
+                controls: [carrier.selector(), 0x09, 0x05, 0x05].into(),
+                terminal_controls: [0x01, 0x05].into(),
             },
         }
     }
@@ -483,14 +486,14 @@ enum CatiaOwnerChartBridgeWireRef<'a> {
         carrier_surface: &'a CatiaOwnerChartBridgeReference,
         support_surfaces: &'a [CatiaOwnerChartBridgeReference; 2],
         support_pcurves: &'a [CatiaOwnerChartBridgeReference; 2],
-        controls: [u8; 6],
+        controls: NativeBytes<[u8; 6]>,
         construction_radius: f64,
     },
     Extended {
         byte_offset: u64,
         references: &'a [CatiaOwnerChartBridgeReference; 8],
-        controls: [u8; 4],
-        terminal_controls: [u8; 2],
+        controls: NativeBytes<[u8; 4]>,
+        terminal_controls: NativeBytes<[u8; 2]>,
     },
 }
 
@@ -529,7 +532,8 @@ impl Serialize for CatiaOwnerChartRelation {
                     middle_controls[1].as_byte(),
                     terminal_control.as_byte(),
                     0x05,
-                ],
+                ]
+                .into(),
                 construction_radius: construction_radius.get(),
             },
             CatiaOwnerChartBridge::Extended {
@@ -538,8 +542,8 @@ impl Serialize for CatiaOwnerChartRelation {
             } => CatiaOwnerChartBridgeWireRef::Extended {
                 byte_offset: *byte_offset,
                 references,
-                controls: [self.carrier.selector(), 0x09, 0x05, 0x05],
-                terminal_controls: [0x01, 0x05],
+                controls: [self.carrier.selector(), 0x09, 0x05, 0x05].into(),
+                terminal_controls: [0x01, 0x05].into(),
             },
         };
         CatiaOwnerChartRelationWireRef {
@@ -734,10 +738,12 @@ mod tests {
                 serde_json::from_value(wire.clone()).expect("valid bridge controls");
             assert_eq!(&decoded, relation);
             for field in ["controls", "terminal_controls"] {
-                if let Some(controls) = wire["bridge"][field].as_array() {
-                    for index in 0..controls.len() {
+                if let Some(controls) = wire["bridge"][field].as_str() {
+                    for index in 0..controls.len() / 2 {
                         let mut invalid = wire.clone();
-                        invalid["bridge"][field][index] = json!(0);
+                        let mut bytes = controls.to_owned();
+                        bytes.replace_range(index * 2..index * 2 + 2, "00");
+                        invalid["bridge"][field] = json!(bytes);
                         assert!(serde_json::from_value::<CatiaOwnerChartRelation>(invalid).is_err());
                     }
                 }
@@ -784,8 +790,13 @@ mod tests {
         for first in [0x03, 0x05] {
             for second in [0x03, 0x05] {
                 let mut wire = original.clone();
-                wire["bridge"]["controls"][2] = json!(first);
-                wire["bridge"]["controls"][3] = json!(second);
+                let mut controls = wire["bridge"]["controls"]
+                    .as_str()
+                    .expect("bridge control bytes")
+                    .to_owned();
+                controls.replace_range(4..6, &format!("{first:02x}"));
+                controls.replace_range(6..8, &format!("{second:02x}"));
+                wire["bridge"]["controls"] = json!(controls);
                 let decoded: CatiaOwnerChartRelation =
                     serde_json::from_value(wire.clone()).expect("independent middle controls");
                 assert_eq!(

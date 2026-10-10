@@ -131,6 +131,7 @@ struct RawGlobal {
     record_delimiter: u8,
     values: Vec<Value>,
     field_count: usize,
+    unreadable_suffix: Option<(usize, CodecError)>,
 }
 
 /// The effective specification family selected by Global field 23.
@@ -586,13 +587,17 @@ fn hollerith(bytes: &[u8], start: usize) -> Result<Option<(&[u8], usize)>, Codec
 }
 
 fn first_delimiter(bytes: &[u8]) -> Result<(u8, usize), CodecError> {
-    if bytes.first() == Some(&b',') {
-        return Ok((b',', 1));
+    let start = bytes
+        .iter()
+        .position(|byte| *byte != b' ')
+        .unwrap_or(bytes.len());
+    if bytes.get(start) == Some(&b',') {
+        return Ok((b',', start + 1));
     }
-    let Some((payload, cursor)) = hollerith(bytes, 0)? else {
+    let Some((payload, cursor)) = hollerith(bytes, start)? else {
         return Err(malformed("parameter delimiter is not a Hollerith string"));
     };
-    if source_span_crosses_card(0, cursor - payload.len()) {
+    if source_span_crosses_card(start, cursor - payload.len()) {
         return Err(malformed(
             "parameter delimiter is not a valid one-card Hollerith string",
         ));
@@ -713,6 +718,15 @@ fn parse_raw(scan: &CardScan, ctx: &DecodeContext<'_>) -> Result<RawGlobal, Code
     if bytes.is_empty() {
         return Err(malformed("section is missing"));
     }
+    if bytes.iter().copied().filter(|byte| *byte != b' ').eq(*b";") {
+        return Ok(RawGlobal {
+            parameter_delimiter: b',',
+            record_delimiter: b';',
+            values: ctx.alloc_filled(26, Value::Omitted, "iges_global_fields")?,
+            field_count: 1,
+            unreadable_suffix: None,
+        });
+    }
     let (parameter_delimiter, mut cursor) = first_delimiter(&bytes)?;
     let (record_value, next, _) =
         delimited_value(&bytes, cursor, parameter_delimiter, None, true, ctx)?;
@@ -745,16 +759,28 @@ fn parse_raw(scan: &CardScan, ctx: &DecodeContext<'_>) -> Result<RawGlobal, Code
         Value::String(ctx.copy_retained(&[record_delimiter], "iges_global_value")?)
     };
     let mut field_count = 2_usize;
+    let mut unreadable_suffix = None;
     loop {
         let retain = field_count < values.len();
-        let (value, next, ended) = delimited_value(
+        let framed = delimited_value(
             &bytes,
             cursor,
             parameter_delimiter,
             Some(record_delimiter),
             retain,
             ctx,
-        )?;
+        );
+        let (value, next, ended) = match framed {
+            Ok(value) => value,
+            // Every field after the version declaration is descriptive. The
+            // Global cards bound their suffix independently of Directory and
+            // Parameter cards; no later field boundary needs to be guessed.
+            Err(error @ CodecError::Malformed(_)) if field_count > FIELD_VERSION_FLAG => {
+                unreadable_suffix = Some((cursor, error));
+                break;
+            }
+            Err(error) => return Err(error),
+        };
         if retain {
             values[field_count] = value;
         }
@@ -771,6 +797,7 @@ fn parse_raw(scan: &CardScan, ctx: &DecodeContext<'_>) -> Result<RawGlobal, Code
         record_delimiter,
         values,
         field_count,
+        unreadable_suffix,
     })
 }
 
@@ -1437,12 +1464,29 @@ fn resolve(
         record_delimiter,
         values,
         field_count,
+        unreadable_suffix,
     } = raw;
     let mut resolution = Resolution {
         ctx,
         values,
         losses: Vec::new(),
     };
+    if field_count < 2 {
+        let message = ctx.format_retained(
+            format_args!("IGES Global record ends before the delimiter declarations; all fields are omitted and the decoder uses the default comma and semicolon grammar"),
+            "iges global framing loss message",
+        )?;
+        let note = admitted_global_loss(ctx, IgesLossCode::GlobalNoncanonicalFraming, message)?;
+        ctx.push_vec(&mut resolution.losses, note, "iges global loss notes")?;
+    }
+    if let Some((offset, error)) = unreadable_suffix {
+        let message = ctx.format_retained(
+            format_args!("IGES Global field {} ({}) at Global byte {offset} has an unreadable suffix: {error}; preceding interpretation fields retained, remaining metadata left source-only", field_count + 1, field_name(field_count)),
+            "iges global framing loss message",
+        )?;
+        let note = admitted_global_loss(ctx, IgesLossCode::GlobalNoncanonicalFraming, message)?;
+        ctx.push_vec(&mut resolution.losses, note, "iges global loss notes")?;
+    }
 
     let declaration = match resolution.supplied_integer(FIELD_VERSION_FLAG) {
         Supplied::Absent => VersionDeclaration::Exact(VersionFlag::V2_0),
@@ -1474,8 +1518,10 @@ fn resolve(
     resolution.charge_metadata_string(FIELD_NATIVE_SYSTEM, global_table)?;
     resolution.charge_metadata_string(FIELD_PREPROCESSOR_VERSION, global_table)?;
     let integer_bits = resolution
-        .metadata_integer_value(FIELD_INTEGER_BITS, global_table, |_| true)?
-        .and_then(|value| u32::try_from(value).ok().filter(|value| *value > 0));
+        .metadata_integer_value(FIELD_INTEGER_BITS, global_table, |value| {
+            value > 0 && u32::try_from(value).is_ok()
+        })?
+        .and_then(|value| u32::try_from(value).ok());
     let single_magnitude =
         resolution.metadata_integer_value(FIELD_SINGLE_MAGNITUDE, global_table, |_| true)?;
     let single_significance = resolution.significance(FIELD_SINGLE_SIGNIFICANCE)?.value();

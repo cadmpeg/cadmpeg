@@ -13,7 +13,7 @@ use cadmpeg_registry::Format;
 
 use crate::application::artifact_store::FileDestination;
 use crate::application::document::LoadedDocument;
-#[cfg(any(feature = "iges", feature = "step"))]
+#[cfg(any(feature = "iges", feature = "rhino", feature = "step"))]
 use crate::application::refusal::ConversionRefusal;
 
 #[cfg(any(feature = "iges", feature = "rhino", feature = "step"))]
@@ -90,7 +90,7 @@ fn prepared(
     let validation =
         cadmpeg_ir::validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     PreparedConversion {
-        document: LoadedDocument::neutral(ir),
+        document: LoadedDocument::neutral(ir, 0),
         validation,
         encoder,
         selection: TargetSelection::new(format, None),
@@ -194,6 +194,58 @@ fn step_export_losses_remain_on_the_plan_without_rejection() {
             .any(|loss| loss.message.contains("source-native record(s)")),
         "{:?}",
         planned.plan.report().losses
+    );
+}
+
+/// A Rhino write omits product structure it cannot represent. The wrapper
+/// charges that omission as an export loss, so the shared gate refuses it.
+#[cfg(feature = "rhino")]
+#[test]
+fn rhino_omitted_product_structure_is_rejected_by_the_shared_plan_gate() {
+    let mut ir = CadIr::empty();
+    ir.model.points.push(cadmpeg_ir::topology::Point::new(
+        cadmpeg_ir::ids::PointId::mint("cadir:model:point#pin").expect("identity grammar"),
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0))
+            .expect("finite position"),
+        None,
+    ));
+    ir.model
+        .product_definitions
+        .push(cadmpeg_ir::products::ProductDefinition {
+            id: "cadir:model:product#group"
+                .try_into()
+                .expect("valid identity"),
+            kind: cadmpeg_ir::products::ProductDefinitionKind::Group,
+            source_name: Some("Group".into()),
+            label: None,
+            description: None,
+            part_number: None,
+            bom_properties: std::collections::BTreeMap::new(),
+            bodies: Vec::new(),
+            native_ref: None,
+        });
+    let conversion = prepared(
+        ir,
+        Format::Rhino,
+        Box::new(cadmpeg_codec_rhino::RhinoCodec),
+        LossPolicy::RejectExport,
+    );
+    let Err(error) = conversion.plan() else {
+        panic!("the omitted product definition must refuse");
+    };
+    let refusal = error
+        .refusal()
+        .expect("the shared gate returns a typed refusal");
+    let ConversionRefusal::ExportLossRejected { export_report, .. } = refusal else {
+        panic!("{refusal:?}");
+    };
+    assert!(
+        export_report
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("model arena `product_definitions`")),
+        "{:?}",
+        export_report.losses
     );
 }
 

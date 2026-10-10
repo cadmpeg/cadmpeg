@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed records from the saved toggle-information stream.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use serde::ser::SerializeSeq;
 use serde::{Deserialize, Serialize};
 
@@ -112,7 +114,7 @@ struct SavedToggleEntryRef<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     stable_identity: Option<&'a str>,
     state: SavedToggleState,
-    raw_byte_len: [u8; 2],
+    raw_byte_len: NativeBytes<[u8; 2]>,
     source_offset: u64,
     value_source_offset: u64,
 }
@@ -125,7 +127,7 @@ impl Serialize for SavedToggleEntry {
             toggle_id: &self.toggle_id,
             stable_identity: self.stable_identity.as_deref(),
             state: self.state,
-            raw_byte_len: self.state.byte_len().to_le_bytes(),
+            raw_byte_len: (self.state.byte_len().to_le_bytes()).into(),
             source_offset: self.source_offset,
             value_source_offset: self.source_offset + 2,
         }
@@ -146,7 +148,7 @@ struct SavedToggleEntryWire {
     )]
     stable_identity: Option<String>,
     state: SavedToggleState,
-    raw_byte_len: [u8; 2],
+    raw_byte_len: NativeBytes<[u8; 2]>,
     source_offset: u64,
     value_source_offset: u64,
 }
@@ -187,7 +189,7 @@ impl From<SavedToggleEntry> for SavedToggleEntryWire {
             toggle_id: value.toggle_id,
             stable_identity: value.stable_identity,
             state: value.state,
-            raw_byte_len,
+            raw_byte_len: (raw_byte_len).into(),
             source_offset: value.source_offset,
             value_source_offset,
         }
@@ -201,7 +203,7 @@ pub(super) struct SavedToggleStream {
     /// Number of ordered saved-toggle members.
     entry_count: u32,
     /// Exact four-byte terminal word.
-    trailer: [u8; 4],
+    trailer: NativeBytes<[u8; 4]>,
     /// Absolute file offset of the version byte.
     pub(super) source_offset: u64,
     /// Absolute file offset of the terminal word.
@@ -212,9 +214,9 @@ pub(super) struct SavedToggleStream {
 struct SavedToggleStreamRef {
     id: &'static str,
     version: u8,
-    raw_count: [u8; 4],
+    raw_count: NativeBytes<[u8; 4]>,
     entries: EntryIds,
-    trailer: [u8; 4],
+    trailer: NativeBytes<[u8; 4]>,
     source_offset: u64,
     trailer_source_offset: u64,
 }
@@ -224,9 +226,9 @@ impl Serialize for SavedToggleStream {
         SavedToggleStreamRef {
             id: Self::id(),
             version: 1,
-            raw_count: self.entry_count.to_le_bytes(),
+            raw_count: (self.entry_count.to_le_bytes()).into(),
             entries: EntryIds(self.entry_count),
-            trailer: self.trailer,
+            trailer: (self.trailer),
             source_offset: self.source_offset,
             trailer_source_offset: self.trailer_source_offset,
         }
@@ -246,9 +248,9 @@ impl SavedToggleStream {
 struct SavedToggleStreamWire {
     id: String,
     version: u8,
-    raw_count: [u8; 4],
+    raw_count: NativeBytes<[u8; 4]>,
     entries: Vec<String>,
-    trailer: [u8; 4],
+    trailer: NativeBytes<[u8; 4]>,
     source_offset: u64,
     trailer_source_offset: u64,
 }
@@ -276,7 +278,7 @@ impl TryFrom<SavedToggleStreamWire> for SavedToggleStream {
         }
         Ok(Self {
             entry_count: count,
-            trailer: wire.trailer,
+            trailer: (wire.trailer),
             source_offset: wire.source_offset,
             trailer_source_offset: wire.trailer_source_offset,
         })
@@ -292,11 +294,11 @@ impl From<SavedToggleStream> for SavedToggleStreamWire {
         Self {
             id,
             version,
-            raw_count,
+            raw_count: (raw_count).into(),
             entries: (0..value.entry_count)
                 .map(|ordinal| format!("nx:saved-toggle:entry#{ordinal}"))
                 .collect(),
-            trailer: value.trailer,
+            trailer: (value.trailer),
             source_offset: value.source_offset,
             trailer_source_offset: value.trailer_source_offset,
         }
@@ -500,7 +502,7 @@ fn parse_saved_toggle_stream(
     Ok(Some(ParsedToggleStream {
         stream: SavedToggleStream {
             entry_count,
-            trailer,
+            trailer: (trailer).into(),
             source_offset,
             trailer_source_offset,
         },
@@ -627,9 +629,9 @@ mod tests {
     #[test]
     fn saved_toggle_stream_rejects_noncanonical_entry_sequences() {
         let wire = serde_json::json!({
-            "id": "nx:saved-toggle:stream#0", "version": 1, "raw_count": [2, 0, 0, 0],
+            "id": "nx:saved-toggle:stream#0", "version": 1, "raw_count": "02000000",
             "entries": ["nx:saved-toggle:entry#0", "nx:saved-toggle:entry#1"],
-            "trailer": [0, 0, 0, 0], "source_offset": 0, "trailer_source_offset": 79
+            "trailer": "00000000", "source_offset": 0, "trailer_source_offset": 79
         });
         let stream: super::SavedToggleStream = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(serde_json::to_value(stream).unwrap(), wire);
@@ -677,7 +679,7 @@ mod tests {
         for (field, invalid) in [
             ("id", serde_json::json!("other")),
             ("id", serde_json::json!("nx:saved-toggle:entry#00")),
-            ("raw_byte_len", serde_json::json!([35, 0])),
+            ("raw_byte_len", serde_json::json!("2300")),
             ("value_source_offset", serde_json::json!(108)),
         ] {
             let mut wire = entry_wire.clone();
@@ -692,7 +694,7 @@ mod tests {
         for (field, invalid) in [
             ("id", serde_json::json!("other")),
             ("version", serde_json::json!(2)),
-            ("raw_count", serde_json::json!([2, 0, 0, 0])),
+            ("raw_count", serde_json::json!("02000000")),
         ] {
             let mut wire = stream_wire.clone();
             wire[field] = invalid;

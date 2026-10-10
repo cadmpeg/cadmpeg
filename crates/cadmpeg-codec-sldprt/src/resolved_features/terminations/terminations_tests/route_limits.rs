@@ -47,7 +47,7 @@ fn extrusion_termination_error(
     let lane = FeatureInputLane {
         id: "lane#7".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: Vec::new(),
         names: vec![
             FeatureInputName {
@@ -192,7 +192,7 @@ fn legacy_face_fixture() -> (Vec<FeatureHistory>, FeatureInputLane) {
     let lane = FeatureInputLane {
         id: "lane#7".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: Vec::new(),
         names: vec![FeatureInputName {
             id: "extrusion-name".into(),
@@ -274,4 +274,84 @@ fn compact_surface_selections_refuses_legacy_path_nesting_limit() {
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RecursionDepth)
     );
+}
+
+#[test]
+fn extrusion_delimiters_do_not_bill_unvisited_successors() {
+    let mut payload = vec![0; 64 * 128];
+    let mut features = Vec::new();
+    let mut names = Vec::new();
+    for index in 0u32..64 {
+        let source = index + 1;
+        let offset = usize::try_from(index).unwrap() * 128;
+        let anchor = offset + 10;
+        payload[anchor..anchor + 2].copy_from_slice(&[0x20, 0x86]);
+        payload[anchor + 4..anchor + 8].copy_from_slice(&1u32.to_le_bytes());
+        payload[anchor + 18..anchor + 22].copy_from_slice(&1u32.to_le_bytes());
+        payload[anchor + 30..anchor + 34].copy_from_slice(&[1, 0, 0, 1]);
+        payload[anchor + 92] = 1;
+        let name = format!("E{index}");
+        features.push(Feature {
+            id: format!("synthetic:extrusion#{index}"),
+            parent: "history".into(),
+            xml_tag: "Feature".into(),
+            tree_parent: None,
+            source_id: Some(FeatureSource::try_from(source.to_string().as_str()).unwrap()),
+            ordinal: source,
+            name: name.clone(),
+            kind: "Feature".into(),
+            input_class: Some("moICE_c".into()),
+            suppressed: false,
+            parameters: BTreeMap::new(),
+            dimension_properties: BTreeMap::new(),
+            properties: BTreeMap::new(),
+            text: None,
+            content: Vec::new(),
+        });
+        names.push(FeatureInputName {
+            id: format!("name#{index}"),
+            parent: "lane".into(),
+            ordinal: index,
+            offset: u64::try_from(offset).unwrap(),
+            object_id: ObjectId::from_value(source),
+            value: name,
+        });
+    }
+    let mut histories = [FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features,
+    }];
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: payload.into(),
+        classes: Vec::new(),
+        names,
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 2_000_000;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    enrich_history_extrusion_terminations(&ctx, &mut histories, &[lane]).unwrap();
+    for feature in &histories[0].features {
+        assert_eq!(
+            feature.properties.get("EndCondition").map(String::as_str),
+            Some("ThroughAll")
+        );
+    }
+    assert!(ctx.resource_refusal().is_none());
 }

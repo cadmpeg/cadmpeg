@@ -15,6 +15,7 @@ use super::pcurves::{
 use super::{offset_store_control_counts, Scan};
 use crate::decode::ids::IdScope;
 use crate::framing::node_kind::NodeKind;
+use crate::native::substrate::ParsedStreams;
 use crate::parasolid::{Stream, StreamKind};
 use crate::topology::{FaceLoopError, FaceLoopFailure, Graph, Node};
 use cadmpeg_core::bytes::assemble_u32_be;
@@ -88,6 +89,10 @@ pub(super) fn emit_topology(
     topology_budgets: &TopologyBudgets<'_>,
     topology_losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<EndpointWitnesses, CodecError> {
+    // This scope appends carriers and preserves their identity and construction links.
+    let mut procedural_admission =
+        cadmpeg_ir::document::procedural::ProceduralAdmission::new(ctx, &ir.model)?;
+
     let &TopologyBudgets {
         exact_transfer: exact_transfer_budget,
         completion_transfer: completion_transfer_budget,
@@ -548,6 +553,7 @@ pub(super) fn emit_topology(
                 annotations.derived(ctx, carrier.as_str(), "geometry")?;
                 ctx.reserve_vec(&mut ir.model.curves, 1, "nx parametric edge curves")?;
                 ir.model.curves.push(Curve {
+                    parameter_range: None,
                     id: carrier.try_clone_for_decode(ctx, "nx parametric edge carrier")?,
                     geometry: CurveGeometry::Procedural {
                         construction: construction
@@ -557,8 +563,8 @@ pub(super) fn emit_topology(
                     source_object: None,
                 });
 
-                let _attached = ir.model.add_procedural_curve(
-                    ctx,
+                let _attached = procedural_admission.add_curve(
+                    &mut ir.model,
                     &carrier.try_clone_for_decode(ctx, "nx parametric construction owner")?,
                     ProceduralCurve::new(
                         construction,
@@ -797,7 +803,10 @@ pub(super) fn emit_topology(
         });
         if !ring_resolves {
             ctx.reserve_vec(topology_losses, 1, "nx topology losses")?;
-            super::charge_loss_code(ctx, crate::loss::NxLossCode::TopologyLoopRingUnresolved)?;
+            crate::loss::charge_loss_code(
+                ctx,
+                crate::loss::NxLossCode::TopologyLoopRingUnresolved,
+            )?;
             topology_losses.push(crate::loss::NxLossCode::TopologyLoopRingUnresolved.note(
                 ctx.format_retained(format_args!(
                         "parasolid#{stream_index} LOOP {loop_xmt} of {face_ref} states no resolvable coedge ring: loop {id} is omitted from its face"
@@ -1216,7 +1225,10 @@ pub(super) fn emit_topology(
             };
             let Some(ring) = ring else {
                 ctx.reserve_vec(topology_losses, 1, "nx topology losses")?;
-                super::charge_loss_code(ctx, crate::loss::NxLossCode::TopologyLoopRingUnresolved)?;
+                crate::loss::charge_loss_code(
+                    ctx,
+                    crate::loss::NxLossCode::TopologyLoopRingUnresolved,
+                )?;
                 topology_losses.push(crate::loss::NxLossCode::TopologyLoopRingUnresolved.note(
                     ctx.format_retained(format_args!(
                             "parasolid#{stream_index} LOOP {loop_xmt} of {face} states no resolvable coedge ring: loop {id} is omitted from its face"
@@ -1243,7 +1255,10 @@ pub(super) fn emit_topology(
     for pending in pending_faces {
         if let Some(failure) = face_loop_failures.remove(&pending.xmt) {
             ctx.reserve_vec(topology_losses, 1, "nx topology losses")?;
-            super::charge_loss_code(ctx, crate::loss::NxLossCode::TopologyFaceLoopUnresolved)?;
+            crate::loss::charge_loss_code(
+                ctx,
+                crate::loss::NxLossCode::TopologyFaceLoopUnresolved,
+            )?;
             topology_losses.push(crate::loss::NxLossCode::TopologyFaceLoopUnresolved.note(
                 ctx.format_retained(format_args!(
                         "parasolid#{stream_index} FACE {} has an unresolved boundary: {failure}; face is emitted without loops",
@@ -1423,6 +1438,7 @@ pub(super) fn retain_unresolved_topology_carriers(
         annotations.exactness(ctx, id.as_str(), Exactness::Unknown)?;
         ctx.reserve_vec(&mut ir.model.curves, 1, "nx unresolved curves")?;
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: id.try_clone_for_decode(ctx, "nx unresolved curve identity")?,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                 record: Some(unknown.try_clone_for_decode(ctx, "nx unresolved curve record")?),
@@ -1879,6 +1895,7 @@ pub(super) fn source_meta(
     ctx: &DecodeContext<'_>,
     scan: &Scan,
     dialects: &DialectLayers,
+    parsed: Option<&ParsedStreams<'_>>,
 ) -> Result<SourceMeta, cadmpeg_core::CodecError> {
     let mut attributes = BTreeMap::new();
     insert_source_attribute(
@@ -2047,13 +2064,21 @@ pub(super) fn source_meta(
         preview_count += 1;
     }
     insert_source_attribute(ctx, &mut attributes, "jpeg_preview_count", preview_count)?;
-    for (index, stream) in scan
+    for (index, (ordinal, stream)) in scan
         .streams
         .iter()
-        .filter(|stream| stream.kind() == StreamKind::Deltas)
+        .enumerate()
+        .filter(|(_, stream)| stream.kind() == StreamKind::Deltas)
         .enumerate()
     {
-        let census = crate::deltas::census::walk(ctx, &stream.inflated)?;
+        let uncached;
+        let census = if let Some(census) = parsed.and_then(|parsed| parsed.delta_census(ordinal)) {
+            ctx.charge_work(1, "read NX cached deltas census")?;
+            census
+        } else {
+            uncached = crate::deltas::census::walk(ctx, &stream.inflated)?;
+            &uncached
+        };
         if census.transmit_header.is_some() {
             insert_source_attribute(
                 ctx,
@@ -2299,6 +2324,61 @@ mod tests {
     }
 
     #[test]
+    fn source_meta_reuses_the_prepared_delta_census() {
+        let mut scan = empty_source_scan();
+        scan.streams.push(Stream {
+            file_offset: 0,
+            consumed: 0,
+            inflated: Vec::new(),
+            body: crate::parasolid::StreamBody::Preview,
+        });
+        scan.streams.push(Stream {
+            file_offset: 0,
+            consumed: 0,
+            inflated: vec![0xaa; 50_000],
+            body: crate::parasolid::StreamBody::Parasolid {
+                subtype: crate::parasolid::ParasolidSubtype::Deltas,
+                schema: None,
+            },
+        });
+        crate::test_support::with_decode_context(|service_ctx| {
+            let (dialects, _) = crate::dialect::classify_layers(service_ctx, &scan)
+                .expect("dialects")
+                .into_report_parts();
+            let parsed = crate::native::substrate::ParsedStreams::parse(service_ctx, &scan)
+                .expect("prepared delta census");
+            let expected =
+                source_meta(service_ctx, &scan, &dialects, None).expect("uncached source metadata");
+            crate::test_support::with_decode_context_over(
+                &[],
+                |policy| policy.limits.max_work_units = 40_000,
+                |ctx| {
+                    assert!(matches!(
+                        source_meta(ctx, &scan, &dialects, None),
+                        Err(CodecError::ResourceLimit(limit))
+                            if limit.dimension == ResourceDimension::WorkUnits
+                    ));
+                },
+            );
+            crate::test_support::with_decode_context_over(
+                &[],
+                |policy| policy.limits.max_work_units = 40_000,
+                |ctx| {
+                    // The unknown record tags require one walk step per byte.
+                    // This budget can build metadata but cannot repeat that walk.
+                    let actual = source_meta(ctx, &scan, &dialects, Some(&parsed))
+                        .expect("source metadata reads the existing census");
+                    assert_eq!(
+                        serde_json::to_value(actual).expect("source metadata"),
+                        serde_json::to_value(expected).expect("source metadata")
+                    );
+                    assert!(ctx.resource_refusal().is_none());
+                },
+            );
+        });
+    }
+
+    #[test]
     fn source_meta_refuses_first_attribute_node_at_collection_limit() {
         let scan = empty_source_scan();
         let (dialects, _) = crate::test_support::with_decode_context(|ctx| {
@@ -2314,7 +2394,7 @@ mod tests {
             },
             |ctx| {
                 assert!(matches!(
-                    source_meta(ctx, &scan, &dialects),
+                    source_meta(ctx, &scan, &dialects, None),
                     Err(CodecError::ResourceLimit(limit))
                         if limit.dimension == ResourceDimension::CollectionItems
                             && limit.operation == "nx source attributes"
@@ -2339,7 +2419,7 @@ mod tests {
             },
             |ctx| {
                 assert!(matches!(
-                    source_meta(ctx, &scan, &dialects),
+                    source_meta(ctx, &scan, &dialects, None),
                     Err(CodecError::ResourceLimit(limit))
                         if limit.dimension == ResourceDimension::RetainedBytes
                             && limit.operation == "nx source attribute text"
@@ -2361,7 +2441,7 @@ mod tests {
             &[],
             |_| {},
             |service_ctx| {
-                let expected = source_meta(service_ctx, &scan, &dialects).unwrap();
+                let expected = source_meta(service_ctx, &scan, &dialects, None).unwrap();
                 assert_eq!(expected.attributes["file_size"], "0");
 
                 crate::test_support::with_decode_context_over(
@@ -2373,7 +2453,7 @@ mod tests {
                     },
                     |limited_ctx| {
                         assert!(matches!(
-                            source_meta(limited_ctx, &scan, &dialects),
+                            source_meta(limited_ctx, &scan, &dialects, None),
                             Err(CodecError::ResourceLimit(limit))
                                 if limit.dimension == ResourceDimension::CollectionItems
                                     && limit.operation == "named entry map nodes"

@@ -2,6 +2,8 @@
 //! `SolidWorks` parametric construction-history records.
 #![deny(clippy::disallowed_methods)]
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use crate::brep::feature_source::FeatureSourceId;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::scalar::FiniteReal;
@@ -477,8 +479,7 @@ pub(crate) struct FeatureInputLane {
     pub(crate) configuration: Option<String>,
     /// Complete native feature-input byte stream, retained undecoded for
     /// parametric replay and native rewrite.
-    #[serde(with = "cadmpeg_ir::bytes")]
-    pub(crate) native_payload: Vec<u8>,
+    pub(crate) native_payload: NativeBytes<Vec<u8>>,
     /// Class declarations used by object instances in this lane.
     #[serde(default)]
     pub(crate) classes: Vec<FeatureInputClass>,
@@ -526,7 +527,7 @@ impl Clone for FeatureInputLane {
         Self {
             id: self.id.clone(),
             configuration: self.configuration.clone(),
-            native_payload: self.native_payload.clone(),
+            native_payload: (self.native_payload.clone()),
             classes: self.classes.clone(),
             names: self.names.clone(),
             scalars: self.scalars.clone(),
@@ -557,8 +558,7 @@ pub(crate) struct FeatureInputLaneWire {
     configuration: Option<String>,
     /// Complete native feature-input byte stream, retained undecoded for
     /// parametric replay and native rewrite.
-    #[serde(with = "cadmpeg_ir::bytes")]
-    native_payload: Vec<u8>,
+    native_payload: NativeBytes<Vec<u8>>,
     /// Class declarations used by object instances in this lane.
     #[serde(default)]
     classes: Vec<FeatureInputClass>,
@@ -616,7 +616,7 @@ impl FeatureInputLaneWire {
         Ok(FeatureInputLane {
             id: self.id,
             configuration: self.configuration,
-            native_payload: self.native_payload,
+            native_payload: (self.native_payload),
             classes: self.classes,
             names: self.names,
             scalars: self.scalars,
@@ -648,7 +648,7 @@ impl TryFrom<FeatureInputLaneWire> for FeatureInputLane {
         Ok(Self {
             id: wire.id,
             configuration: wire.configuration,
-            native_payload: wire.native_payload,
+            native_payload: (wire.native_payload),
             classes: wire.classes,
             names: wire.names,
             scalars: wire.scalars,
@@ -834,7 +834,7 @@ pub(crate) struct FeatureInputGeneratedSurfaceIdentity {
     /// Byte offset of the first component type signature.
     pub(crate) offset: u64,
     /// Four-byte serialized surface identity type family.
-    pub(crate) type_prefix: [u8; 4],
+    pub(crate) type_prefix: NativeBytes<[u8; 4]>,
     /// Source identifier of the feature that produced the terminal surface.
     pub(crate) feature_source_id: crate::brep::feature_source::FeatureSourceId,
     /// Opaque feature-local identity of the terminal surface.
@@ -855,7 +855,7 @@ pub(crate) struct FeatureInputComponentPathEntry {
     )]
     pub(crate) instance: Option<u16>,
     /// Twelve-byte serialized component type identity.
-    pub(crate) type_signature: [u8; 12],
+    pub(crate) type_signature: NativeBytes<[u8; 12]>,
     /// Feature-local identifier carried by terminal selection nodes.
     #[serde(
         default,
@@ -2490,7 +2490,7 @@ mod tests {
         let lane = FeatureInputLane {
             id: "lane".into(),
             configuration: None,
-            native_payload: payload,
+            native_payload: (payload).into(),
             classes: Vec::new(),
             names: Vec::new(),
             scalars: Vec::new(),
@@ -2570,7 +2570,7 @@ mod tests {
         let lane = FeatureInputLane {
             id: "lane".into(),
             configuration: None,
-            native_payload: payload,
+            native_payload: (payload).into(),
             classes: Vec::new(),
             names: Vec::new(),
             scalars: Vec::new(),

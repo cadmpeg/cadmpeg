@@ -307,99 +307,55 @@ fn face_components_refuse_component_vector() {
     assert_component_collection_refusal(20, "creo face components");
 }
 
+// One orphan edge admits one item at each of these ten storage boundaries.
 #[test]
 fn vertex_orbits_refuse_half_edge_lookup_node() {
     assert_orbit_collection_refusal(0, "creo vertex-orbit half-edge lookup nodes");
 }
 
 #[test]
-fn vertex_orbits_refuse_adjacency_node() {
-    assert_orbit_collection_refusal(1, "creo vertex adjacency nodes");
+fn vertex_orbits_refuse_predecessor_slots() {
+    assert_orbit_collection_refusal(1, "creo vertex predecessor slots");
 }
 
 #[test]
-fn vertex_orbits_refuse_pending_seed() {
-    assert_orbit_collection_refusal(2, "creo vertex orbit pending edges");
+fn vertex_orbits_refuse_component_parents() {
+    assert_orbit_collection_refusal(2, "creo vertex component parents");
 }
 
 #[test]
-fn vertex_orbits_refuse_visited_node() {
-    assert_orbit_collection_refusal(3, "creo visited vertex-orbit edges");
+fn vertex_orbits_refuse_component_sizes() {
+    assert_orbit_collection_refusal(3, "creo vertex component sizes");
 }
 
 #[test]
-fn vertex_orbits_refuse_member_node() {
-    assert_orbit_collection_refusal(4, "creo vertex orbit member nodes");
+fn vertex_orbits_refuse_component_groups() {
+    assert_orbit_collection_refusal(4, "creo vertex component groups");
+}
+
+#[test]
+fn vertex_orbits_refuse_component_rows() {
+    assert_orbit_collection_refusal(5, "creo vertex component rows");
 }
 
 #[test]
 fn vertex_orbits_refuse_half_edge_vector() {
-    assert_orbit_collection_refusal(5, "creo vertex orbit half-edges");
+    assert_orbit_collection_refusal(6, "creo vertex orbit half-edges");
 }
 
 #[test]
 fn vertex_orbits_refuse_vertex_vector() {
-    assert_orbit_collection_refusal(6, "creo topological vertices");
+    assert_orbit_collection_refusal(7, "creo topological vertices");
 }
 
 #[test]
-fn vertex_orbits_refuse_start_vertex_lookup_node() {
-    assert_orbit_collection_refusal(7, "creo start-vertex lookup nodes");
+fn vertex_orbits_refuse_start_vertex_slots() {
+    assert_orbit_collection_refusal(8, "creo start-vertex slots");
 }
 
 #[test]
 fn vertex_orbits_refuse_incidence_vector() {
-    assert_orbit_collection_refusal(8, "creo half-edge vertex incidence");
-}
-
-#[test]
-fn vertex_orbits_refuse_predecessor_group_node() {
-    let mut edge = orphan_edge();
-    edge.next = Some(edge.id);
-    let error = orbit_with_collection_limit(&[edge], 1)
-        .expect_err("one successor needs a predecessor node");
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo predecessor group nodes"));
-}
-
-#[test]
-fn vertex_orbits_refuse_predecessor_group_member() {
-    let mut edge = orphan_edge();
-    edge.next = Some(edge.id);
-    let error = orbit_with_collection_limit(&[edge], 2)
-        .expect_err("one successor needs a predecessor member");
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo predecessor group members"));
-}
-
-#[test]
-fn vertex_orbits_refuse_adjacency_links() {
-    let mut first = orphan_edge();
-    first.next = Some(HalfEdgeId {
-        curve_id: 2,
-        side: crate::topology::Side::Zero,
-    });
-    let second = HalfEdge {
-        id: HalfEdgeId {
-            curve_id: 1,
-            side: crate::topology::Side::One,
-        },
-        ..orphan_edge()
-    };
-    let third = HalfEdge {
-        id: HalfEdgeId {
-            curve_id: 2,
-            side: crate::topology::Side::Zero,
-        },
-        ..orphan_edge()
-    };
-    let error = orbit_with_collection_limit(&[first, second, third], 8)
-        .expect_err("linked predecessor needs an adjacency edge");
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo vertex adjacency links"));
+    assert_orbit_collection_refusal(9, "creo half-edge vertex incidence");
 }
 
 #[test]
@@ -565,6 +521,50 @@ fn vertex_orbits_close_predecessor_relations_in_both_directions() {
                 side: crate::topology::Side::Zero,
             },
         ]));
+}
+
+#[test]
+fn vertex_orbits_do_not_join_ambiguous_predecessors() {
+    let first = orphan_edge();
+    let second = HalfEdge {
+        id: HalfEdgeId {
+            side: crate::topology::Side::One,
+            ..first.id
+        },
+        ..orphan_edge()
+    };
+    let target = HalfEdge {
+        id: HalfEdgeId {
+            curve_id: 2,
+            ..first.id
+        },
+        ..orphan_edge()
+    };
+    let linked_first = HalfEdge {
+        next: Some(target.id),
+        ..first.clone()
+    };
+    let linked_second = HalfEdge {
+        next: Some(target.id),
+        ..second.clone()
+    };
+    for edges in [
+        vec![linked_first.clone(), linked_second, target.clone()],
+        vec![
+            linked_first.clone(),
+            linked_first,
+            second.clone(),
+            target.clone(),
+        ],
+    ] {
+        let orbits = crate::decode::with_test_decode_ctx(|ctx| vertex_orbits(ctx, &edges))
+            .expect("ambiguous predecessor graph");
+        assert_eq!(orbits.vertices.len(), 3);
+        for (vertex, expected) in orbits.vertices.iter().zip([first.id, second.id, target.id]) {
+            assert_eq!(vertex.half_edges(), [expected]);
+        }
+        assert_eq!(orbits.incidence.len(), edges.len());
+    }
 }
 
 #[test]

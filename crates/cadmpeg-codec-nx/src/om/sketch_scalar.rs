@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Sketch scalars with the implicit `30` marker and one-quarter scale.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use super::scalar::ShiftedBinary32;
 use serde::{Deserialize, Serialize};
 
@@ -49,9 +51,9 @@ struct MixedWire {
     #[serde(rename = "binary32_value")]
     binary32: f64,
     #[serde(rename = "fixed_raw_value")]
-    raw_fixed: [u8; 7],
+    raw_fixed: cadmpeg_ir::native::bytes::NativeBytes<[u8; 7]>,
     #[serde(rename = "binary32_raw_value")]
-    raw_binary32: [u8; 4],
+    raw_binary32: NativeBytes<[u8; 4]>,
 }
 
 impl From<SketchMixedScalars> for MixedWire {
@@ -59,8 +61,8 @@ impl From<SketchMixedScalars> for MixedWire {
         Self {
             fixed: scalars.fixed.value(),
             binary32: scalars.binary32.value().get(),
-            raw_fixed: scalars.fixed.raw(),
-            raw_binary32: scalars.binary32.raw(),
+            raw_fixed: (scalars.fixed.raw()).into(),
+            raw_binary32: (scalars.binary32.raw()).into(),
         }
     }
 }
@@ -70,9 +72,9 @@ impl TryFrom<MixedWire> for SketchMixedScalars {
 
     fn try_from(wire: MixedWire) -> Result<Self, Self::Error> {
         Ok(Self {
-            fixed: SketchScaledAtom::from_wire(wire.fixed, wire.raw_fixed)
+            fixed: SketchScaledAtom::from_wire(wire.fixed, *wire.raw_fixed)
                 .map_err(|error| format!("fixed_value/fixed_raw_value: {error}"))?,
-            binary32: ShiftedBinary32::from_wire(wire.binary32, wire.raw_binary32)
+            binary32: ShiftedBinary32::from_wire(wire.binary32, *wire.raw_binary32)
                 .map_err(|error| format!("binary32_value/binary32_raw_value: {error}"))?,
         })
     }
@@ -85,7 +87,7 @@ pub(crate) mod pair_wire {
     #[derive(Serialize, Deserialize)]
     struct Wire {
         values: [f64; 2],
-        raw_values: [[u8; 7]; 2],
+        raw_values: [cadmpeg_ir::native::bytes::NativeBytes<[u8; 7]>; 2],
     }
 
     pub(crate) fn serialize<S: Serializer>(
@@ -94,7 +96,7 @@ pub(crate) mod pair_wire {
     ) -> Result<S::Ok, S::Error> {
         Wire {
             values: values.map(SketchScaledAtom::value),
-            raw_values: values.map(SketchScaledAtom::raw),
+            raw_values: (values.map(SketchScaledAtom::raw)).map(Into::into),
         }
         .serialize(serializer)
     }
@@ -104,7 +106,7 @@ pub(crate) mod pair_wire {
     ) -> Result<[SketchScaledAtom; 2], D::Error> {
         let wire = Wire::deserialize(deserializer)?;
         let [a, b] = std::array::from_fn(|i| {
-            SketchScaledAtom::from_wire(wire.values[i], wire.raw_values[i])
+            SketchScaledAtom::from_wire(wire.values[i], *wire.raw_values[i])
         });
         Ok([
             a.map_err(serde::de::Error::custom)?,

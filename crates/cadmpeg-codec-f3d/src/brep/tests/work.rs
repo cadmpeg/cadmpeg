@@ -1,43 +1,24 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
-use serde_value::Value;
-
 #[test]
-fn brep_value_walks_preserve_work_refusals() {
-    for operation in [
-        "walk F3D BREP owned IDs",
-        "identity rewrite scalar",
-        "walk F3D BREP references",
-    ] {
+fn typed_graph_walks_preserve_work_refusals() {
+    for qualification in [true, false] {
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_work_units = 1;
         crate::test_support::with_decode_policy(&policy, |ctx| {
-            let value = Value::Seq(vec![Value::U32(1), Value::U32(2)]);
-            let error = match operation {
-                "walk F3D BREP owned IDs" => {
-                    super::super::graph_ops::collect_owned_ids(ctx, &value, &mut Vec::new())
-                }
-                "identity rewrite scalar" => {
-                    let mut map = IdentityMap::new(ctx, operation, |source: &str| {
-                        ctx.copy_retained_text(source, operation)
-                    })
-                    .unwrap();
-                    vec![1_u32, 2_u32]
-                        .rewrite_identities(ctx, &mut map)
-                        .map(|_| ())
-                }
-                _ => super::super::graph_ops::collect_brep_references(
-                    ctx,
-                    &value,
-                    &[],
-                    &mut Vec::new(),
-                ),
+            let mut graph = super::one_body_brep();
+            let error = if qualification {
+                graph.qualify_ids(ctx, crate::ids::ID_FORMAT, "source")
+            } else {
+                graph.retain_body_keys(ctx, &std::collections::HashSet::new())
             }
             .unwrap_err();
             let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-                panic!("walk must refuse");
+                panic!("typed walk must refuse")
             };
-            assert_eq!(limit.operation, operation);
+            assert_eq!(
+                limit.dimension,
+                cadmpeg_core::decode::ResourceDimension::WorkUnits
+            );
             assert_eq!(Some(limit), ctx.resource_refusal());
         });
     }

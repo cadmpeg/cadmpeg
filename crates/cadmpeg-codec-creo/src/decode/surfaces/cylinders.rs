@@ -141,6 +141,7 @@ pub(in super::super) fn transfer_active_datum_cylinders(
                     cylinder_surface,
                 )),
                 source_object: Some(SourceObjectAssociation {
+                    geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
                         format_args!("ActDatums:{}", datum.id),
@@ -276,6 +277,7 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
                     cylinder_surface,
                 )),
                 source_object: Some(SourceObjectAssociation {
+                    geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
                         format_args!("AllFeatur:{}:{}", feature_id, row.id),
@@ -368,6 +370,7 @@ pub(in super::super) fn transfer_rowless_round_cylinders(
                     cylinder_surface,
                 )),
                 source_object: Some(SourceObjectAssociation {
+                    geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
                         format_args!("AllFeatur:{rowless_id}"),
@@ -454,6 +457,7 @@ pub(in super::super) fn transfer_hole_cylinders(
                     id,
                     geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(geometry)),
                     source_object: Some(SourceObjectAssociation {
+                        geometry_role: None,
                         format: cadmpeg_ir::CodecFormat::Creo,
                         object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
                             format_args!("VisibGeom:{cylinder_id}"),
@@ -608,6 +612,7 @@ pub(in super::super) fn transfer_split_outline_cylinders(
                     id,
                     geometry: geometry.try_clone_for_decode(ctx, "creo split cylinder geometry")?,
                     source_object: Some(SourceObjectAssociation {
+                        geometry_role: None,
                         format: cadmpeg_ir::CodecFormat::Creo,
                         object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
                             format_args!("VisibGeom:{cylinder_id}"),
@@ -1388,6 +1393,7 @@ pub(in super::super) fn transfer_positional_cylinders(
                     cylinder_surface,
                 )),
                 source_object: Some(SourceObjectAssociation {
+                    geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
                         format_args!("VisibGeom:{}", record.surface_id),
@@ -1637,6 +1643,7 @@ pub(in super::super) fn transfer_positional_cones(
                 id,
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)),
                 source_object: Some(SourceObjectAssociation {
+                    geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
                         format_args!("VisibGeom:{}", record.surface_id),
@@ -1724,6 +1731,7 @@ pub(in super::super) fn transfer_circular_sweep_cylinders(
                         sweep.geometry,
                     )),
                     source_object: Some(SourceObjectAssociation {
+                        geometry_role: None,
                         format: cadmpeg_ir::CodecFormat::Creo,
                         object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
                             format_args!("VisibGeom:{cylinder_id}"),
@@ -1801,6 +1809,7 @@ pub(in super::super) fn transfer_cross_section_planes(
                 id,
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
                 source_object: Some(SourceObjectAssociation {
+                    geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
                         format_args!("Xsections:{}", frame.surface_id),
@@ -1853,6 +1862,7 @@ pub(in super::super) fn transfer_cross_section_planes(
                 id,
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
                 source_object: Some(SourceObjectAssociation {
+                    geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
                         format_args!("Xsections:{}", plane.surface_id),

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Edge-identity operands, edge operands and the resolved axis they carry.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use super::edge_recipe::DesignEdgeRecipeSelectorContext;
 use super::edge_recipe::DesignEdgeRecipeStructure;
 use super::edge_recipe::DesignSurfacePatchRecipeStructure;
@@ -455,8 +457,7 @@ pub(crate) struct DesignEdgeOperand {
     /// Native construction-recipe arena id.
     pub(crate) recipe_id: String,
     /// Complete recipe-specific prefix before the length-prefixed family name.
-    #[serde(with = "cadmpeg_ir::bytes")]
-    pub(crate) recipe_prefix_bytes: Vec<u8>,
+    pub(crate) recipe_prefix_bytes: NativeBytes<Vec<u8>>,
     /// Persistent Design selector/reference entries decoded from the prefix.
     pub(crate) recipe_references: Vec<DesignRecipeReference>,
     /// Byte offset of the first i32 after the framed recipe-family name.
@@ -586,8 +587,7 @@ impl Serialize for DesignEdgeOperand {
             recipe_record_byte_offset: u64,
             recipe_id: &'a str,
             recipe_prefix_offset: u64,
-            #[serde(serialize_with = "cadmpeg_ir::bytes::serialize")]
-            recipe_prefix_bytes: &'a [u8],
+            recipe_prefix_bytes: NativeBytes<&'a [u8]>,
             recipe_references: &'a Vec<DesignRecipeReference>,
             recipe_program_offset: u64,
             recipe_program: &'a Vec<i32>,
@@ -653,7 +653,7 @@ impl Serialize for DesignEdgeOperand {
             recipe_record_byte_offset: self.recipe_record_byte_offset,
             recipe_id: &self.recipe_id,
             recipe_prefix_offset: self.recipe_prefix_offset(),
-            recipe_prefix_bytes: &self.recipe_prefix_bytes,
+            recipe_prefix_bytes: (&self.recipe_prefix_bytes).into(),
             recipe_references: &self.recipe_references,
             recipe_program_offset: self.recipe_program_offset,
             recipe_program: &self.recipe_program,
@@ -720,7 +720,7 @@ impl DesignEdgeOperand {
             paired_class_tag: draft.paired_class_tag,
             recipe_record_byte_offset: draft.recipe_record_byte_offset,
             recipe_id: draft.recipe_id,
-            recipe_prefix_bytes: draft.recipe_prefix_bytes,
+            recipe_prefix_bytes: (draft.recipe_prefix_bytes),
             recipe_references: draft.recipe_references,
             recipe_program_offset: draft.recipe_program_offset,
             recipe_program: draft.recipe_program,
@@ -777,7 +777,7 @@ impl DesignEdgeOperand {
             recipe_record_byte_offset: self.recipe_record_byte_offset,
             recipe_id: self.recipe_id,
             recipe_prefix_offset,
-            recipe_prefix_bytes: self.recipe_prefix_bytes,
+            recipe_prefix_bytes: (self.recipe_prefix_bytes),
             recipe_references: self.recipe_references,
             recipe_program_offset: self.recipe_program_offset,
             recipe_program: self.recipe_program,
@@ -857,8 +857,7 @@ pub(crate) struct DesignEdgeOperandDraft {
     /// Byte offset of the recipe-specific prefix after the indexed header.
     pub(crate) recipe_prefix_offset: u64,
     /// Complete recipe-specific prefix before the length-prefixed family name.
-    #[serde(with = "cadmpeg_ir::bytes")]
-    pub(crate) recipe_prefix_bytes: Vec<u8>,
+    pub(crate) recipe_prefix_bytes: NativeBytes<Vec<u8>>,
     /// Persistent Design selector/reference entries decoded from the prefix.
     pub(crate) recipe_references: Vec<DesignRecipeReference>,
     /// Byte offset of the first i32 after the framed recipe-family name.
@@ -999,7 +998,7 @@ impl From<DesignEdgeOperand> for DesignEdgeOperandDraft {
             recipe_record_byte_offset: value.recipe_record_byte_offset,
             recipe_id: value.recipe_id,
             recipe_prefix_offset: value.recipe_prefix_offset,
-            recipe_prefix_bytes: value.recipe_prefix_bytes,
+            recipe_prefix_bytes: (value.recipe_prefix_bytes),
             recipe_references: value.recipe_references,
             recipe_program_offset: value.recipe_program_offset,
             recipe_program: value.recipe_program,

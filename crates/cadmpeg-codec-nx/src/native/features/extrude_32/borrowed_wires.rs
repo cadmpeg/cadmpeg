@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Borrowed serialization of the structured EXTRUDE branch.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use super::FeatureExtrudePayload32Branch;
 use crate::iter_wire::IterWire;
 use crate::om::compact::RawCompactIndex;
@@ -11,7 +13,7 @@ struct RawFeatureToken(crate::om::reference_index::FeatureReferenceToken);
 
 impl Serialize for RawFeatureToken {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.0.raw().serialize(serializer)
+        cadmpeg_ir::native::bytes::NativeBytes::from(self.0.raw()).serialize(serializer)
     }
 }
 
@@ -23,7 +25,7 @@ impl Serialize for FeatureExtrudePayload32Branch {
         wire.serialize_entry("operation_label", &self.operation_label)?;
         wire.serialize_entry("body_object_index", &frame.terminal().value())?;
         wire.serialize_entry("scalar", &frame.scalar().value().get())?;
-        wire.serialize_entry("raw_scalar", &frame.scalar().raw())?;
+        wire.serialize_entry("raw_scalar", &NativeBytes::from(frame.scalar().raw()))?;
         wire.serialize_entry(
             "atoms_be",
             &IterWire(frame.atoms().map(|(token, _, _)| token.raw())),
@@ -106,7 +108,7 @@ mod tests {
 
     #[test]
     fn extrude_32_branch_borrowed_bytes_and_limit() {
-        let json = r#"{"id":"nx:feature:extrude32#0","operation_label":"operation","body_object_index":42,"scalar":1.0,"raw_scalar":[47,240,0,0,0,0,0,0],"atoms_be":[1031799040],"atom_source_offsets":[33],"atom_indices":[1],"atom_data_blocks":["block#1"],"first_indices":[2],"raw_first_indices":[[2]],"first_index_source_offsets":[39],"first_data_blocks":[null],"second_indices":[3],"raw_second_indices":[[3]],"second_index_source_offsets":[42],"second_data_blocks":["block#3"],"terminal_object_index":42,"raw_terminal_object_index":[42],"terminal_source_offset":45,"source_offset":20}"#;
+        let json = r#"{"id":"nx:feature:extrude32#0","operation_label":"operation","body_object_index":42,"scalar":1.0,"raw_scalar":"2ff0000000000000","atoms_be":[1031799040],"atom_source_offsets":[33],"atom_indices":[1],"atom_data_blocks":["block#1"],"first_indices":[2],"raw_first_indices":["02"],"first_index_source_offsets":[39],"first_data_blocks":[null],"second_indices":[3],"raw_second_indices":["03"],"second_index_source_offsets":[42],"second_data_blocks":["block#3"],"terminal_object_index":42,"raw_terminal_object_index":"2a","terminal_source_offset":45,"source_offset":20}"#;
         let record: FeatureExtrudePayload32Branch = serde_json::from_str(json).unwrap();
         let borrowed = serde_json::to_vec(&record).unwrap();
         let owned = serde_json::to_vec(&super::super::FeatureExtrudePayload32BranchWire::from(

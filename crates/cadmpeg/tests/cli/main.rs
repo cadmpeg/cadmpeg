@@ -14,3 +14,4 @@ mod inspect;
 mod refusals;
 mod registry;
 mod reports;
+mod resource_refusals;

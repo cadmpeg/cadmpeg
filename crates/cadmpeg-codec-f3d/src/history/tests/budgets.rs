@@ -167,7 +167,7 @@ fn one_archived_state() -> crate::history_records::AsmHistory {
             name: "edge".into(),
             entity_references: Vec::new(),
         },
-        raw_bytes: vec![0x11],
+        raw_bytes: vec![0x11].into(),
     });
     history
 }
@@ -189,7 +189,7 @@ fn one_insert_only_state() -> crate::history_records::AsmHistory {
             name: "End-of-ASM-data".into(),
             entity_references: Vec::new(),
         },
-        raw_bytes: vec![0x11],
+        raw_bytes: vec![0x11].into(),
     });
     history.states[0].bulletin_boards.push(AsmBulletinBoard {
         id: "board".into(),

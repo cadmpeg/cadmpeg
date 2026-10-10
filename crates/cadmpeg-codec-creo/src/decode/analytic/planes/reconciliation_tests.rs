@@ -567,6 +567,7 @@ fn unique_native_conic_loop_places_its_plane_surface() {
     ));
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: CurveId::mint("creo:visibgeom:curve#11".to_string()).expect("identity grammar"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
             cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
@@ -670,6 +671,7 @@ fn unique_nurbs_line_loop_places_its_plane_surface() {
         (12, Point3::new(0.0, 2.0, 4.0), Vector3::new(0.0, 1.0, 0.0)),
     ] {
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: CurveId::mint(format!("creo:visibgeom:curve#{id}")).expect("identity grammar"),
             geometry: nurbs_curve(
                 1,

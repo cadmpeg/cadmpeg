@@ -419,29 +419,24 @@ fn one_document_warning_counts_every_admitted_pcurve_relation() {
 }
 
 /// The document counts an admitted relation only when the body that holds it
-/// reaches the document. The witness adds a second face with two
-/// `FACE_OUTER_BOUND` loops to the shell of the two-admission fixture. The
-/// first face admits both relations, then the second face rejects the whole
-/// topology root, so the discarded relations report nothing.
+/// reaches the document. The witness adds the edge loop as a second shell
+/// member of the two-admission fixture. The first face admits both relations,
+/// then the non-face member rejects the whole topology root, so the discarded
+/// relations report nothing.
 #[test]
 fn a_discarded_topology_root_counts_no_admitted_relation() {
     let source = String::from_utf8(include_bytes!("data/tp12_two_admissions.p21").to_vec())
         .expect("fixture is UTF-8")
-        .replace(
-            "#55=OPEN_SHELL('',(#54));",
-            "#58=FACE_OUTER_BOUND('',#52,.T.);\n#59=FACE_OUTER_BOUND('',#52,.T.);\n#60=ADVANCED_FACE('',(#58,#59),#11,.T.);\n#55=OPEN_SHELL('',(#54,#60));",
-        );
+        .replace("#55=OPEN_SHELL('',(#54));", "#55=OPEN_SHELL('',(#54,#52));");
     let decoded = crate::StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode discarded-root witness");
 
-    assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code == StepLossCode::FaceMultipleOuterBounds.kind() && loss.message.contains("#60")
-    }));
-    assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code == StepLossCode::TopologyRootRejected.kind()
-            && loss.message.contains("face with multiple outer bounds")
-    }));
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code == StepLossCode::TopologyRootRejected.kind() }));
     assert!(decoded.ir().model.coedges.is_empty());
     assert!(!decoded
         .report()

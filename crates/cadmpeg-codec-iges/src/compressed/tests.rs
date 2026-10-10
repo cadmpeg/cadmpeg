@@ -100,18 +100,32 @@ fn compressed_line_index_refuses_collection_limit_before_growth() {
 }
 
 #[test]
-fn compressed_global_workspace_refuses_materialized_limit_before_copy() {
-    let source = compressed_points_file();
-    let global_cards = source_lines(&source)
-        .iter()
-        .filter(|line| line.get(72) == Some(&b'G'))
-        .count();
+fn compressed_delimiter_prefix_does_not_allocate_global_stream_scratch() {
+    let mut card = [b' '; 80];
+    card[..8].copy_from_slice(b"1H,,1H;,");
+    let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = u64::try_from(global_cards * 2 * 72 - 1).unwrap();
-    let error = normalize_with_policy(&source, &policy).unwrap_err();
-    assert!(
-        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "iges_compressed_global_digits")
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&card, &arena, &policy).unwrap();
+    assert_eq!(
+        super::compressed_delimiters(&[&card], &ctx).unwrap(),
+        (b',', b';')
     );
+}
+
+#[test]
+fn compressed_optional_global_suffix_recovers_the_same_points_as_fixed_ascii() {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,9999Hbad;";
+    let compressed = compressed_points_file_with_global(global);
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(compressed), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir().model.points.len(), 2);
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::GlobalNoncanonicalFraming.kind()));
 }
 
 #[test]
@@ -628,6 +642,6 @@ fn compressed_reserved_fields_use_fixed_directory_right_justification() {
     let native = result.ir().native.namespace("iges").unwrap();
     assert_eq!(
         native.arenas()["entities"][0].fields()["reserved"],
-        serde_json::json!([b"    LEFT", b"   RIGHT"])
+        serde_json::json!(["202020204c454654", "2020205249474854"])
     );
 }

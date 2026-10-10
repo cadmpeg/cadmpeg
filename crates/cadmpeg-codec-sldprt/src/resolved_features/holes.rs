@@ -1,14 +1,12 @@
 //! Hole construction, bore topology and hole axis projection.
 
-use super::compact_reference_planes::{
-    compact_profile_component_plane_frame, CompactReferencePlaneIndex,
-};
+use super::compact_reference_planes::CompactReferencePlaneIndex;
 use super::curves::{lane_sketch_plane_frames, SketchPlaneFrame, SketchPlaneUAxisSource};
 use super::grid::{quantize, GridCoordinate};
 use super::helix::fit_helix_polyline;
 use super::reference_geometry::{explicit_reference_plane_frame, reference_plane_frame_key};
 use super::relation_loci::same_dimension_length;
-use super::scalars::feature_object_name;
+use super::scalars::{feature_object_name, FeatureObjectNames};
 use super::transforms::sketch_frame_marker_transform;
 use super::{is_class_token, CLASS_MARKER};
 use crate::classification::{classify, FeatureClass};
@@ -473,39 +471,38 @@ fn hole_profile_from_position_source<'a>(
                 if hole_position_sketch_source(feature, lane) != Some(source) {
                     continue;
                 }
-                ctx.charge_work(u64_from_index(lane.names.len()), OPERATION)?;
-                let Some(position_offset) =
-                    feature_object_name(position, lane).map(|name| name.offset)
+                let (names, _storage) = FeatureObjectNames::new(ctx, &lane.names, OPERATION)?;
+                let Some(position_offset) = names
+                    .get(ctx, position.source_value(), &position.name, OPERATION)?
+                    .map(|name| name.offset)
                 else {
                     return Ok(None);
                 };
-                let scan_work =
-                    u64_from_index(history.features.len())
-                        .checked_mul(u64_from_index(lane.names.len()).checked_add(1).ok_or_else(
-                            || ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX),
-                        )?)
-                        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-                ctx.charge_work(scan_work, OPERATION)?;
-                let Some(minimum_offset) = history
-                    .features
-                    .iter()
-                    .filter_map(|candidate| {
-                        let offset = feature_object_name(candidate, lane)?.offset;
-                        (offset > position_offset).then_some(offset)
-                    })
-                    .min()
-                else {
+                let mut minimum = None;
+                let mut successor = None;
+                let mut ambiguous = false;
+                for candidate in &history.features {
+                    let Some(offset) = names
+                        .get(ctx, candidate.source_value(), &candidate.name, OPERATION)?
+                        .map(|name| name.offset)
+                    else {
+                        continue;
+                    };
+                    if offset <= position_offset {
+                        continue;
+                    }
+                    if minimum.is_none_or(|minimum| offset < minimum) {
+                        minimum = Some(offset);
+                        successor = Some(candidate);
+                        ambiguous = false;
+                    } else if minimum == Some(offset) {
+                        ambiguous = true;
+                    }
+                }
+                let Some(successor) = successor else {
                     return Ok(None);
                 };
-                ctx.charge_work(scan_work, OPERATION)?;
-                let mut successors = history.features.iter().filter(|candidate| {
-                    feature_object_name(candidate, lane)
-                        .is_some_and(|name| name.offset == minimum_offset)
-                });
-                let Some(successor) = successors.next() else {
-                    return Ok(None);
-                };
-                if successors.next().is_some()
+                if ambiguous
                     || classify(successor) != Some(FeatureClass::Sketch)
                     || !crate::history::project::solid::is_hole_profile_construction(
                         ctx, successor,
@@ -2082,17 +2079,21 @@ fn hole_position_feature<'a>(
         }
         let mut matches = false;
         for lane in lanes {
-            ctx.charge_work(
-                u64_from_index(lane.names.len())
-                    .checked_add(1)
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-                OPERATION,
-            )?;
-            if candidate.source_value().or_else(|| {
+            ctx.charge_work(1, OPERATION)?;
+            let candidate_source = if let Some(source) = candidate.source_value() {
+                Some(source)
+            } else {
+                for name in &lane.names {
+                    let work = u64_from_index(name.value.len())
+                        .checked_add(u64_from_index(candidate.name.len()))
+                        .and_then(|work| work.checked_add(1))
+                        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                    ctx.charge_work(work, OPERATION)?;
+                }
                 feature_object_name(candidate, lane)
                     .and_then(|name| name.object_id.and_then(ObjectId::value))
-            }) == Some(source)
-            {
+            };
+            if candidate_source == Some(source) {
                 matches = true;
                 break;
             }
@@ -5124,18 +5125,10 @@ pub(super) fn feature_input_sketch_frame(
     start: usize,
     end: usize,
 ) -> Result<Option<(Point3, Vector3, Vector3)>, CodecError> {
-    const OPERATION: &str = "resolve SLDPRT feature input sketch frame";
-    // The bound covers index scans, two component windows and fixed-width overlap probes.
-    const WORK_PER_BYTE: u64 = 1024;
-    let work = u64_from_index(payload.len())
-        .checked_mul(WORK_PER_BYTE)
-        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(work, OPERATION)?;
-
     let reference = plane_index
-        .profile_source(context_start, start, end)
+        .profile_source(ctx, context_start, start, end)?
         .and_then(|source| plane_frames.get(&source).copied());
-    let component = compact_profile_component_plane_frame(payload, context_start, start, end);
+    let component = plane_index.profile_component_frame(ctx, context_start, start, end)?;
     let explicit = || -> Result<Option<(Point3, Vector3, Vector3)>, CodecError> {
         let Some(object) = payload.get(start..end) else {
             return Ok(None);

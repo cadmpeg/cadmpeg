@@ -7,7 +7,7 @@ use super::axes::model_feature_ids;
 use super::dependencies::{surface_merge_quilt_ids, surface_merge_quilt_state_offset};
 use super::outputs::CommaList;
 use super::round::unique_positive_length;
-use super::selections::feature_result_edge_ids;
+use super::selections::feature_result_edge_ids_by_feature;
 use crate::container::ContainerScan;
 use crate::decode::analytic::equations::PlaneEquation;
 use crate::vecmath::dot;
@@ -581,7 +581,7 @@ pub(in super::super) fn feature_result_topology(
     ctx: &DecodeContext<'_>,
     tables: &[crate::feature::entity::FeatureEntityTable],
     surface_rows: &[crate::surface::SurfaceRow],
-    curve_rows: &[crate::curve::CurveTopologyRow],
+    edge_ids: &[u32],
     feature_id: u32,
 ) -> Result<Option<FeatureResultTopology>, CodecError> {
     let mut faces = Vec::new();
@@ -598,7 +598,7 @@ pub(in super::super) fn feature_result_topology(
         faces.push(id);
     }
     let mut edges = Vec::new();
-    for curve_id in feature_result_edge_ids(ctx, curve_rows, feature_id)?.unwrap_or_default() {
+    for curve_id in edge_ids {
         let text = ctx.format_retained(
             format_args!("curve#{curve_id}"),
             "creo feature result edge local IDs",
@@ -680,6 +680,7 @@ pub(in super::super) fn emit_feature_result_topologies(
     scan: &ContainerScan,
     ir: &mut CadIr,
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    let result_edges = feature_result_edge_ids_by_feature(ctx, &scan.curves.topology_rows)?;
     let mut emitted = 0;
     for feature in &ir.model.features {
         let Some(feature_id) = feature
@@ -694,7 +695,7 @@ pub(in super::super) fn emit_feature_result_topologies(
             ctx,
             &scan.features.entity_tables,
             &scan.surfaces.rows,
-            &scan.curves.topology_rows,
+            result_edges.get(&feature_id).map_or(&[], Vec::as_slice),
             feature_id,
         )?
         else {

@@ -34,6 +34,7 @@ pub(crate) fn serialize_history_after_refusal(
     );
     let records = crate::source_records(ir, fidelity)?;
     crate::writer::write_semantic_with_records(ir, &fidelity.annotations, &records, writer)
+        .map(|output| output.dialect)
 }
 
 pub(crate) fn make_source_image_unavailable(fidelity: &mut SourceFidelity) {

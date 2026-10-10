@@ -302,6 +302,14 @@ projection.
 
 **Need.** A reader must know the marking to separate the solved records from history records; without it, a history-bearing text stream would read history records as model records.
 
+### TE-03. Direction word after the degrees of a legacy surface block
+
+**Question.** What does the word `u`, `v`, or `both` after the two degree fields of a save-format 102–600 surface block select?
+
+**Known.** `asm.md` §7.5 "The `exactcur`" gives its position: after the two degree fields and before the closure words. The word is optional. The decoder keeps it as a text token and does not change the control grid for it.
+
+**Need.** If the word selects a rational or periodic direction, the decoder must apply it to the grid to give the exact surface.
+
 ## 5. Law formulas
 
 ### LF-01. Value of `SIGN` at zero

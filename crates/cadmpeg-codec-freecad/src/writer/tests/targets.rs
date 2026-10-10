@@ -463,3 +463,49 @@ fn every_preserved_write_re_decodes_as_the_dialect_the_report_named() {
         );
     }
 }
+
+/// The writer patches retained native records only, so a neutral edit has no
+/// serializer. It is refused rather than written as the unedited source.
+#[test]
+fn a_neutral_edit_is_refused_and_the_unedited_document_still_writes() {
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(CORE_DESIGN_PRODUCT),
+            &DecodeOptions::default(),
+        )
+        .expect("decode source");
+    let mut control = Vec::new();
+    inherit(decoded.ir())
+        .expect("an unedited document is preserved")
+        .write_to(&mut control)
+        .expect("write control");
+    assert_eq!(
+        entry_payloads(&control),
+        entry_payloads(CORE_DESIGN_PRODUCT)
+    );
+
+    let mut edited = decoded.ir().clone();
+    let body = edited
+        .model
+        .bodies
+        .first_mut()
+        .expect("the fixture decodes a body");
+    body.name = Some(format!(
+        "{} renamed",
+        body.name.as_deref().unwrap_or("body")
+    ));
+    let Err(CodecError::NotImplemented(message)) = inherit(&edited) else {
+        panic!("a neutral edit must be refused");
+    };
+    assert!(
+        message.contains("neutral or uncarried native edits"),
+        "{message}"
+    );
+
+    let mut rewritten = Vec::new();
+    inherit(decoded.ir())
+        .expect("the unedited document is still preserved")
+        .write_to(&mut rewritten)
+        .expect("write unedited");
+    assert_eq!(rewritten, control);
+}

@@ -128,7 +128,6 @@ fn tspline_admission_errors_reach_the_surface_error_channel() {
                 if message == "T-spline subtransform is unresolved"));
         }
         for invalid in [
-            record(revision, [1.0, 0.0, 0.0, 1.0], inline("program"), 0.25),
             record(revision, ranges, inline(""), 0.25),
             record(revision, ranges, inline("program"), f64::INFINITY),
         ] {
@@ -136,6 +135,100 @@ fn tspline_admission_errors_reach_the_surface_error_channel() {
                 emit(&invalid),
                 Err(cadmpeg_core::CodecError::Malformed(_))
             ));
+        }
+    }
+}
+
+#[test]
+fn decreasing_tspline_ranges_keep_face_and_native_construction() {
+    for revision in [false, true] {
+        for ranges in [[1.0, 0.0, 0.0, 1.0], [0.0, 1.0, 1.0, 0.0]] {
+            let mut spline = record(revision, ranges, inline("program"), 0.25);
+            spline.index = 1;
+            spline.len = 6;
+            let face = Record {
+                index: 0,
+                name: "face".into(),
+                tokens: vec![
+                    Token::Ref(-1),
+                    Token::Long(-1),
+                    Token::Ref(-1),
+                    Token::Ref(-1),
+                    Token::Ref(-1),
+                    Token::Ref(2),
+                    Token::Ref(-1),
+                    Token::Ref(1),
+                ]
+                .into(),
+                offset: 0,
+                len: 0,
+            };
+            let container = |index, name: &str, refs: &[i64]| Record {
+                index,
+                name: name.into(),
+                tokens: refs
+                    .iter()
+                    .copied()
+                    .map(Token::Ref)
+                    .collect::<Vec<_>>()
+                    .into(),
+                offset: 0,
+                len: 0,
+            };
+            let records = [
+                face,
+                spline,
+                container(2, "shell", &[-1, -1, -1, -1, -1, 0, -1, 3]),
+                container(3, "region", &[-1, -1, -1, -1, 2, 4]),
+                container(4, "body", &[-1, -1, -1, 3]),
+            ];
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                b"native",
+                &arena,
+                &cadmpeg_core::decode::DecodePolicy::service(),
+            )
+            .unwrap();
+            let out = crate::brep::decode_with_header(
+                &ctx,
+                &records,
+                b"native",
+                None,
+                "synthetic",
+                crate::asm_format!("f3d"),
+                crate::brep::DecodePurpose::Model,
+            )
+            .expect("unrepresentable range omits only the construction");
+            assert_eq!(out.bodies.len(), 1);
+            assert_eq!(out.regions.len(), 1);
+            assert_eq!(out.shells.len(), 1);
+            assert_eq!(out.faces.len(), 1);
+            assert_eq!(out.surfaces.len(), 1);
+            assert_eq!(out.unknowns.len(), 1);
+            assert_eq!(out.unknowns[0].data().unwrap(), b"native");
+            if revision {
+                assert!(matches!(
+                    out.surfaces[0].geometry,
+                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
+                ));
+                assert_eq!(out.stats.unknown_surface_faces(), 1);
+            } else {
+                assert!(matches!(
+                    out.surfaces[0].geometry,
+                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
+                ));
+                assert_eq!(out.procedural_surfaces.len(), 1);
+                assert_eq!(
+                    out.stats
+                        .other_record_kinds
+                        .get("cached-procedural-surface-untyped"),
+                    Some(&1)
+                );
+                assert!(matches!(
+                    out.procedural_surfaces[0].1.definition(),
+                    cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Unknown { .. }
+                ));
+            }
         }
     }
 }

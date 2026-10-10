@@ -14,6 +14,7 @@ use serde_value::Value;
 
 enum AnnotatedEntity<'ctx, 'ir> {
     Projected(crate::schema::structural::Projection<'ctx>),
+    Product(&'ir crate::native::NativeRecord),
     Source(&'ir crate::unknown::UnknownRecord),
 }
 
@@ -22,9 +23,8 @@ macro_rules! define_model_entity_projection {
         fn model_entity_projection<'ctx, 'ir>(
             ctx: &'ctx DecodeContext<'_>,
             ir: &'ir CadIr,
-            wanted: &BorrowedIdentities<'_, '_>,
-            entities: &mut Vec<(&'ir str, AnnotatedEntity<'ctx, 'ir>)>,
-            storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+            wanted: &BorrowedIdentities<'_, '_, bool>,
+            add: &mut dyn FnMut(&'ir str, AnnotatedEntity<'ctx, 'ir>) -> Result<(), CodecError>,
         ) -> Result<(), CodecError> {
             $(for entity in &ir.model.$field {
                 let id = crate::schema::EntitySchema::identity(entity);
@@ -34,11 +34,7 @@ macro_rules! define_model_entity_projection {
                         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                         Err(_) => continue,
                     };
-                    if let Some(position) = entity_position(ctx, entities, id)? {
-                        entities[position].1 = AnnotatedEntity::Projected(value);
-                    } else {
-                        storage.with_storage(|| ctx.push_vec(entities, (id, AnnotatedEntity::Projected(value)), "annotated entity slots"))?;
-                    }
+                    add(id, AnnotatedEntity::Projected(value))?;
                 }
             })*
             Ok(())
@@ -47,24 +43,6 @@ macro_rules! define_model_entity_projection {
 }
 crate::document::arena_registry!(define_model_entity_projection);
 
-fn entity_position(
-    ctx: &DecodeContext<'_>,
-    entities: &[(&str, AnnotatedEntity<'_, '_>)],
-    id: &str,
-) -> Result<Option<usize>, CodecError> {
-    for (position, (candidate, _)) in entities.iter().enumerate() {
-        ctx.charge_work(1, "annotated entity lookup")?;
-        ctx.charge_work(
-            u64_from_index(id.len()),
-            "annotated entity identity comparison",
-        )?;
-        if *candidate == id {
-            return Ok(Some(position));
-        }
-    }
-    Ok(None)
-}
-
 pub(super) fn check_annotations(
     ctx: &DecodeContext<'_>,
     view: NativeView<'_>,
@@ -72,50 +50,48 @@ pub(super) fn check_annotations(
     all_ids: &BorrowedIdentities<'_, '_>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
-    let wanted = BorrowedIdentities::build(ctx, |add| {
+    let mut wanted = BorrowedIdentities::build(ctx, |add| {
         for (id, note) in annotations.exactness() {
             ctx.charge_work(1, "annotated entity selection")?;
             if !note.fields().is_empty() {
-                add(id, ())?;
+                add(id, false)?;
             }
         }
         Ok(())
     })?;
-    let mut storage = ctx.reserve_scoped(0, "annotated entity storage")?;
-    let mut entities = Vec::new();
-    model_entity_projection(ctx, view.ir, &wanted, &mut entities, &mut storage)?;
-    view.visit(
-        |work| ctx.charge_work(u64_from_index(work), "annotated native arena scan"),
-        |_, _, records| {
-            for record in records.records() {
-                if !wanted.contains(ctx, record.id())?
-                    || entity_position(ctx, &entities, record.id())?.is_some()
-                {
-                    continue;
+    let mut storage = ctx.reserve_scoped(0, "annotated entity values")?;
+    let mut values = Vec::new();
+    let entities = BorrowedIdentities::build(ctx, |add_identity| {
+        // Sort small identity slots rather than moving projected payloads.
+        let mut add = |id, value| {
+            let position = values.len();
+            storage.with_storage(|| ctx.push_vec(&mut values, value, "annotated entity values"))?;
+            add_identity(id, position)
+        };
+        view.visit(
+            |work| ctx.charge_work(u64_from_index(work), "annotated native arena scan"),
+            |_, _, records| {
+                for record in records.records() {
+                    let Some(seen) = wanted.get_mut(ctx, record.id())? else {
+                        continue;
+                    };
+                    if *seen {
+                        continue;
+                    }
+                    *seen = true;
+                    let value = match record {
+                        NativeEntity::Product(product) => AnnotatedEntity::Product(product),
+                        NativeEntity::Source(source) => AnnotatedEntity::Source(source),
+                    };
+                    add(record.id(), value)?;
                 }
-                let value = match record {
-                    NativeEntity::Product(product) => match crate::schema::structural::project(
-                        ctx,
-                        product,
-                        "annotated native entity projection",
-                    ) {
-                        Ok(value) => AnnotatedEntity::Projected(value),
-                        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-                        Err(_) => continue,
-                    },
-                    NativeEntity::Source(source) => AnnotatedEntity::Source(source),
-                };
-                storage.with_storage(|| {
-                    ctx.push_vec(
-                        &mut entities,
-                        (record.id(), value),
-                        "annotated entity slots",
-                    )
-                })?;
-            }
-            Ok(())
-        },
-    )?;
+                Ok(())
+            },
+        )?;
+        // Model entities take precedence over native records with the same id.
+        // The identity index keeps the last inserted matching value.
+        model_entity_projection(ctx, view.ir, &wanted, &mut add)
+    })?;
     for id in annotations.provenance.keys() {
         if !all_ids.contains(ctx, id)? {
             super::record_finding(
@@ -143,7 +119,7 @@ pub(super) fn check_annotations(
         if note.fields().is_empty() {
             continue;
         }
-        let Some(position) = entity_position(ctx, &entities, id)? else {
+        let Some(position) = entities.get(ctx, id)? else {
             super::record_finding(
                 ctx,
                 findings,
@@ -156,10 +132,14 @@ pub(super) fn check_annotations(
             )?;
             continue;
         };
+        let entity = &values[*position];
         for path in note.fields().keys() {
-            let resolves = match &entities[position].1 {
+            let resolves = match entity {
                 AnnotatedEntity::Projected(value) => {
                     field_path_resolves(ctx, value, path.as_str())?
+                }
+                AnnotatedEntity::Product(product) => {
+                    native_field_path_resolves(ctx, product, path.as_str())?
                 }
                 AnnotatedEntity::Source(source) => {
                     ctx.charge_work(
@@ -182,6 +162,74 @@ pub(super) fn check_annotations(
         }
     }
     Ok(())
+}
+
+fn native_field_path_resolves(
+    ctx: &DecodeContext<'_>,
+    record: &crate::native::NativeRecord,
+    path: &str,
+) -> Result<bool, CodecError> {
+    ctx.charge_work(
+        u64_from_index(path.len()),
+        "annotation native field path scan",
+    )?;
+    let mut components = path.split('.');
+    let Some(first) = components.next() else {
+        return Ok(false);
+    };
+    if first == "id" {
+        return Ok(components.next().is_none());
+    }
+    let mut value = None;
+    for (key, field) in record.fields() {
+        ctx.charge_work(1, "annotation native field map scan")?;
+        ctx.charge_work(
+            u64_from_index(first.len()),
+            "annotation native field comparison",
+        )?;
+        if key == first {
+            value = Some(field);
+            break;
+        }
+    }
+    let Some(mut value) = value else {
+        return Ok(false);
+    };
+    for component in components {
+        ctx.charge_work(1, "annotation native field path node")?;
+        value = match value {
+            serde_json::Value::Object(object) => {
+                let mut next = None;
+                for (key, child) in object {
+                    ctx.charge_work(1, "annotation native field map scan")?;
+                    ctx.charge_work(
+                        u64_from_index(component.len()),
+                        "annotation native field comparison",
+                    )?;
+                    if key == component {
+                        next = Some(child);
+                        break;
+                    }
+                }
+                let Some(child) = next else {
+                    return Ok(false);
+                };
+                child
+            }
+            serde_json::Value::Array(array) => {
+                let Some(child) = component
+                    .parse::<usize>()
+                    .ok()
+                    .and_then(|index| array.get(index))
+                else {
+                    return Ok(false);
+                };
+                child
+            }
+            _ => return Ok(false),
+        };
+    }
+    Ok(true)
 }
 
 fn source_field_path_resolves(record: &crate::unknown::UnknownRecord, path: &str) -> bool {

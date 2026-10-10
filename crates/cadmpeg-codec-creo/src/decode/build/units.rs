@@ -1623,6 +1623,7 @@ mod tests {
                     ctx,
                     &mut ir,
                     cadmpeg_ir::geometry::Curve {
+                        parameter_range: None,
                         id: curve_id,
                         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                         source_object: None,
@@ -1806,6 +1807,7 @@ mod tests {
                 ctx,
                 &mut ir,
                 cadmpeg_ir::geometry::Curve {
+                    parameter_range: None,
                     id: curve_id.clone(),
                     geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(
                         SolvedCurveGeometry::Unknown { record: None },

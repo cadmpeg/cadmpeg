@@ -7,12 +7,15 @@
 //!
 //! [`Encoder::plan`]: cadmpeg_ir::codec::write::Encoder::plan
 
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    target::ResolvedWrite, Consumption, EncodeInput, ExportBody, PatchConsumption, WritePath,
+    target::ResolvedWrite, ArenaCoverage, Consumption, EncodeInput, ExportBody, PatchConsumption,
+    WritePath,
 };
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE;
 
 use super::write;
 use crate::native::DocumentFacts;
@@ -91,12 +94,84 @@ pub(crate) fn plan(
     resolved: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
     let resolution = resolve(input.ir, resolved)?;
+    admit_unedited(input.ir)?;
     finish(&resolution)
+}
+
+/// Native `fcstd` arenas this writer handles itself: property values patch
+/// `Document.xml`, entry payloads are repacked, and the writer refuses its own
+/// unsupported object, extension and unreadable-entry edits.
+const CARRIED_NATIVE_ARENAS: &[&str] = &[
+    "entries",
+    "extensions",
+    "objects",
+    "properties",
+    "unreadable_entries",
+];
+
+/// The `document_local_sha256` an `FCStd` write compares.
+///
+/// Covers every neutral arena, the source metadata, and every native record
+/// except [`CARRIED_NATIVE_ARENAS`]. Outside those arenas the writer reads only
+/// the source dialect and the `document` record, to select and name the
+/// retained graph, so a change to anything this digest covers does not reach
+/// the output.
+pub(crate) fn document_local_sha256(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    // FCStd retains no whole-file source image, so no unknown record is
+    // excluded as one.
+    cadmpeg_ir::hash::document_local_sha256_without_carried(
+        ctx,
+        ir,
+        ir.source.as_ref(),
+        "fcstd",
+        "",
+        CARRIED_NATIVE_ARENAS,
+        operation,
+    )
+}
+
+/// Refuse a document edited since decode outside [`CARRIED_NATIVE_ARENAS`].
+///
+/// The writer patches retained records and regenerates no `Document.xml`, so
+/// a neutral edit has no serializer here and would otherwise be dropped.
+fn admit_unedited(ir: &CadIr) -> Result<(), CodecError> {
+    let Some(expected) = ir
+        .source
+        .as_ref()
+        .and_then(|source| source.attributes.get(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE))
+    else {
+        return Err(CodecError::NotImplemented(format!(
+            "FCStd source carries no `{DOCUMENT_LOCAL_DIGEST_ATTRIBUTE}` baseline, so neutral \
+             edits cannot be excluded and source-less graph regeneration is required"
+        )));
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )?;
+    let current = document_local_sha256(&ctx, ir, "FCStd write edit digest")?;
+    ctx.finish_session()?;
+    if current != *expected {
+        return Err(CodecError::NotImplemented(
+            "neutral or uncarried native edits since decode require source-less FCStd graph \
+             regeneration"
+                .into(),
+        ));
+    }
+    Ok(())
 }
 
 /// Write the resolved export. The sealed encoder stamps the target identity
 /// and the fidelity resolution; this writer patches the retained document and
-/// consumes no sidecar.
+/// consumes no sidecar. [`admit_unedited`] has proved that nothing outside the
+/// carried native arenas changed since decode, so the retained graph carries
+/// every model arena.
 fn finish(resolution: &Resolution<'_>) -> Result<ExportBody, CodecError> {
     let mut bytes = Vec::new();
     let outcome = write(&mut bytes, resolution)?;
@@ -106,6 +181,7 @@ fn finish(resolution: &Resolution<'_>) -> Result<ExportBody, CodecError> {
         write_path: WritePath::Patched {
             consumption: PatchConsumption::Independent(Consumption::NotConsumed),
         },
+        coverage: ArenaCoverage::Complete,
         losses: Vec::new(),
         notes: outcome.notes,
     })

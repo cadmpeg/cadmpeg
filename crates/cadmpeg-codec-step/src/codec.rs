@@ -99,7 +99,10 @@ impl CodecBackend for StepCodec {
         root: cadmpeg_core::decode::View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         let bytes = root.window();
-        if archive::has_zip_magic(bytes) {
+        if archive::has_zip_magic(bytes)
+            || (!starts_with_step_magic(bytes)
+                && cadmpeg_container::ArchiveSnapshot::has_footer(ctx, bytes)?)
+        {
             return inspect_zip(ctx, root);
         }
         let inspected = inspect_exchange(self, ctx, root)?;
@@ -118,7 +121,10 @@ impl CodecBackend for StepCodec {
         root: cadmpeg_core::decode::View<'_>,
     ) -> Result<Decoded, CodecError> {
         let bytes = root.window();
-        if archive::has_zip_magic(bytes) {
+        if archive::has_zip_magic(bytes)
+            || (!starts_with_step_magic(bytes)
+                && cadmpeg_container::ArchiveSnapshot::has_footer(ctx, bytes)?)
+        {
             return decode_zip(ctx, root);
         }
         refuse_alternate_encoding(bytes)?;
@@ -258,23 +264,42 @@ fn inspect_parsed_exchange(
             "step_inspect_entries",
         )?;
     }
-    for (index, section) in exchange.data().iter().enumerate() {
-        let mut counts = BTreeMap::<&str, usize>::new();
-        for id in &section.records {
-            if !opaque_offsets.contains(&exchange.records()[id].span.start) {
-                continue;
-            }
-            for partial in &exchange.records()[id].partials {
-                let name = partial.name.as_str();
-                ctx.admit_btree_entry(&counts, &name, "step_inspect_unknown_counts")?;
-                match counts.entry(name) {
-                    Entry::Occupied(mut entry) => *entry.get_mut() += 1,
-                    Entry::Vacant(entry) => {
-                        entry.insert(1);
-                    }
+    let mut section_counts = ctx.alloc_filled(
+        exchange.data().len(),
+        (0_usize, BTreeMap::<&str, usize>::new()),
+        "step_inspect_data_counts",
+    )?;
+    let section_lookup_work = u64::from(
+        exchange
+            .data()
+            .len()
+            .checked_ilog2()
+            .map_or(0, |bits| bits + 1),
+    );
+    for record in exchange.records().values() {
+        ctx.charge_work(section_lookup_work, "step_inspect_data_owner")?;
+        let index = exchange
+            .data()
+            .partition_point(|section| section.span.end <= record.span.start);
+        let (entity_count, counts) = section_counts
+            .get_mut(index)
+            .ok_or_else(|| CodecError::malformed("STEP instance has no DATA section"))?;
+        *entity_count += 1;
+        if !opaque_offsets.contains(&record.span.start) {
+            continue;
+        }
+        for partial in &record.partials {
+            let name = partial.name.as_str();
+            ctx.admit_btree_entry(counts, &name, "step_inspect_unknown_counts")?;
+            match counts.entry(name) {
+                Entry::Occupied(mut entry) => *entry.get_mut() += 1,
+                Entry::Vacant(entry) => {
+                    entry.insert(1);
                 }
             }
         }
+    }
+    for (index, (entity_count, counts)) in section_counts.into_iter().enumerate() {
         let unknown = ctx.join_display_retained(
             counts
                 .iter()
@@ -288,7 +313,7 @@ fn inspect_parsed_exchange(
             &mut attributes,
             "entity_count",
             ctx.format_retained(
-                format_args!("{}", section.records.len()),
+                format_args!("{entity_count}"),
                 "step_inspect_attribute_count",
             )?,
         )?;
@@ -396,6 +421,27 @@ fn inspect_parsed_exchange(
 }
 
 fn starts_with_step_magic(bytes: &[u8]) -> bool {
+    starts_with_exchange_magic(bytes, b"ISO-10303-21;", false)
+        || draft_exchange_offset(bytes).is_some()
+}
+
+pub(crate) fn draft_exchange_offset(bytes: &[u8]) -> Option<usize> {
+    if starts_with_exchange_magic(bytes, b"STEP;", true) {
+        return Some(0);
+    }
+    // A leading identifier ends at a comment delimiter. A complete comment
+    // followed by the draft magic supplies a known exchange boundary.
+    let prefix_end = bytes
+        .iter()
+        .take_while(|byte| byte.is_ascii_alphanumeric() || **byte == b'_')
+        .count();
+    (bytes.first().is_some_and(u8::is_ascii_alphabetic)
+        && matches!(bytes.get(prefix_end..prefix_end + 2), Some(b"/*" | b"!*"))
+        && starts_with_exchange_magic(&bytes[prefix_end..], b"STEP;", true))
+    .then_some(prefix_end)
+}
+
+fn starts_with_exchange_magic(bytes: &[u8], magic: &[u8], draft: bool) -> bool {
     let mut at = 0;
     loop {
         while bytes
@@ -404,9 +450,10 @@ fn starts_with_step_magic(bytes: &[u8]) -> bool {
         {
             at += 1;
         }
-        if bytes.get(at..at + 2) == Some(b"/*") {
+        if bytes.get(at..at + 2) == Some(b"/*") || (draft && bytes.get(at..at + 2) == Some(b"!*")) {
+            let close = if bytes[at] == b'/' { b"*/" } else { b"*!" };
             at += 2;
-            let Some(relative_end) = bytes[at..].windows(2).position(|window| window == b"*/")
+            let Some(relative_end) = bytes[at..].windows(2).position(|window| window == close)
             else {
                 return false;
             };
@@ -422,7 +469,7 @@ fn starts_with_step_magic(bytes: &[u8]) -> bool {
         }
         break;
     }
-    for &expected_byte in b"ISO-10303-21;" {
+    for &expected_byte in magic {
         while bytes.get(at).is_some_and(u8::is_ascii_control) {
             at += 1;
         }
@@ -493,7 +540,12 @@ fn inspect_zip(
         std::mem::take(&mut inspected.notes),
         "step_codec_notes",
     )?;
-    let losses = std::mem::take(&mut inspected.losses);
+    let mut losses = std::mem::take(&mut inspected.losses);
+    ctx.extend_vec(
+        &mut losses,
+        archive::recovery::losses(ctx, &archive)?,
+        "STEP ZIP combined losses",
+    )?;
     ctx.extend_vec(&mut notes, resource_notes, "step_codec_notes")?;
     // ZIP packaging is a container fact, not an identity axis: the
     // `ISO-10303.p21` root carries the FILE_SCHEMA that classifies the
@@ -539,6 +591,12 @@ fn decode_zip(
         "step_codec_container_note",
     )?;
     ctx.extend_vec(&mut decoded.body.notes, resource_notes, "step_codec_notes")?;
+    ctx.extend_vec(
+        &mut decoded.body.losses,
+        archive::recovery::losses(ctx, &archive)?,
+        "STEP ZIP combined losses",
+    )?;
+    archive::recovery::retain(ctx, &archive, root, &mut decoded)?;
     Ok(decoded)
 }
 
@@ -1027,5 +1085,29 @@ mod tests {
             .notes
             .iter()
             .any(|note| note.contains("complex partial records are not alphabetical")));
+    }
+    #[test]
+    fn inspection_counts_data_populations_by_source_extent() {
+        let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;3');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA('first',('AP242'));#90=FIRST_ITEM();#3=SECOND_ITEM(#90);ENDSEC;DATA('second',('AP242'));#1=THIRD_ITEM();ENDSEC;END-ISO-10303-21;";
+        let summary = StepCodec::default()
+            .inspect(&mut Cursor::new(source), &InspectOptions::default())
+            .expect("named DATA sections retain their own populations");
+        let first = summary
+            .entries
+            .iter()
+            .find(|entry| entry.name == "DATA[0]")
+            .expect("first population");
+        let second = summary
+            .entries
+            .iter()
+            .find(|entry| entry.name == "DATA[1]")
+            .expect("second population");
+        assert_eq!(first.attributes["entity_count"], "2");
+        assert_eq!(
+            first.attributes["unknown_entities"],
+            "FIRST_ITEM:1,SECOND_ITEM:1"
+        );
+        assert_eq!(second.attributes["entity_count"], "1");
+        assert_eq!(second.attributes["unknown_entities"], "THIRD_ITEM:1");
     }
 }

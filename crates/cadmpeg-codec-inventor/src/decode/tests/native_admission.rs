@@ -1447,7 +1447,7 @@ fn native_rse_projection_refuses_entity_limit_at_record_creation() {
 }
 
 #[test]
-fn native_validation_propagates_collection_refusal_from_assembly_projection() {
+fn native_validation_propagates_collection_refusal_from_arena_loading() {
     let bytes = fixture_with_ufrx(&external_references_stream());
     let decoded = InventorCodec
         .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
@@ -1461,7 +1461,7 @@ fn native_validation_propagates_collection_refusal_from_assembly_projection() {
         InventorCodec.validate_native(&ctx, decoded.ir()),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "index Inventor external references"
+                && limit.operation == "load typed native record"
     ));
 
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
@@ -1486,7 +1486,8 @@ fn empty_external_identity_does_not_fail_file_decode() {
         .native
         .namespace("inventor")
         .expect("native namespace");
-    let ufrx = UfrxRecord::read(namespace).expect("admitted UFRx arenas agree");
+    let ufrx = UfrxRecord::read(&crate::native::test_ctx(), namespace)
+        .expect("admitted UFRx arenas agree");
     assert_eq!(ufrx.external_references().len(), 1);
     assert_eq!(ufrx.external_references()[0].ordinal(), 1);
     assert_eq!(ufrx.external_references()[0].reference_id, 8);
@@ -1501,7 +1502,8 @@ fn rejected_model_state_does_not_fail_decode() {
         .native
         .namespace("inventor")
         .expect("native namespace");
-    let ufrx = UfrxRecord::read(namespace).expect("admitted UFRx arenas agree");
+    let ufrx = UfrxRecord::read(&crate::native::test_ctx(), namespace)
+        .expect("admitted UFRx arenas agree");
     assert!(ufrx.model_states().is_empty());
     assert_eq!(ufrx.external_references().len(), 1);
 }
@@ -1523,7 +1525,7 @@ fn rejected_representation_does_not_fail_decode() {
         .namespace("inventor")
         .expect("native namespace");
     assert!(matches!(
-        UfrxRecord::read(namespace).expect("admitted UFRx arenas agree"),
+        UfrxRecord::read(&crate::native::test_ctx(), namespace).expect("admitted UFRx arenas agree"),
         UfrxRecord::ParsedPrefix(payload) if payload.representation.is_none()
     ));
 }
@@ -1539,7 +1541,8 @@ fn rejected_embedded_reference_does_not_fail_decode() {
         .native
         .namespace("inventor")
         .expect("native namespace");
-    let ufrx = UfrxRecord::read(namespace).expect("admitted UFRx arenas agree");
+    let ufrx = UfrxRecord::read(&crate::native::test_ctx(), namespace)
+        .expect("admitted UFRx arenas agree");
     assert!(ufrx.embedded_references().is_empty());
     assert_eq!(ufrx.external_references().len(), 1);
 }
@@ -1553,7 +1556,8 @@ fn rejected_occurrence_does_not_fail_decode() {
         .native
         .namespace("inventor")
         .expect("native namespace");
-    let ufrx = UfrxRecord::read(namespace).expect("admitted UFRx arenas agree");
+    let ufrx = UfrxRecord::read(&crate::native::test_ctx(), namespace)
+        .expect("admitted UFRx arenas agree");
     assert!(ufrx.occurrences().is_empty());
     assert_eq!(ufrx.external_references().len(), 1);
 }
@@ -1880,4 +1884,39 @@ fn protein_admission_keeps_later_assets_and_rejections() {
     assert_eq!(issues.len(), 2);
     assert_eq!(issues[1].scope, "rejection");
     assert!(issues[1].detail.contains("entry_name"));
+}
+
+#[test]
+fn malformed_optional_ufrx_is_a_warning_without_weakening_required_links() {
+    let bytes = fixture_with_ufrx(b"unreadable optional table");
+    let decoded = InventorCodec
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .expect("bounded optional table");
+    let ctx = crate::native::test_ctx();
+    let findings = InventorCodec
+        .validate_native(&ctx, decoded.ir())
+        .expect("validation");
+    let finding = findings
+        .iter()
+        .find(|finding| finding.message.contains("UFRxDoc stream is malformed"))
+        .expect("table diagnostic");
+    assert_eq!(finding.severity, cadmpeg_ir::report::Severity::Warning);
+    let mut broken = decoded.ir().clone();
+    broken
+        .native
+        .namespace_mut("inventor")
+        .arenas_mut()
+        .remove("segment_pairs");
+    let findings = InventorCodec
+        .validate_native(&ctx, &broken)
+        .expect("required arena validation");
+    assert!(findings.iter().any(
+        |finding| finding.severity == cadmpeg_ir::report::Severity::Error
+            && finding.message.contains("missing arenas")
+    ));
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == InventorLossCode::UfrxTableMalformed.kind()));
 }

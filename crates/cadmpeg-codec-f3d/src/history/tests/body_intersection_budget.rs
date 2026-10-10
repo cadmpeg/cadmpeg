@@ -42,7 +42,7 @@ fn historical_body_closure_refuses_collection_limit() {
 
 #[test]
 fn affected_topology_bodies_refuse_collection_limit() {
-    let error = intersection_error(2);
+    let error = intersection_error(4);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D affected topology bodies")
@@ -202,4 +202,88 @@ fn historical_edge_vertices_refuse_collection_limit() {
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D historical shell vertices")
     );
+}
+
+#[test]
+fn repeated_coedge_incidence_visits_each_edge_and_vertex_once() {
+    use crate::history_records::{AsmHistoricalCoedge, AsmHistoricalRelation};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use std::collections::BTreeSet;
+
+    let mut topology = wire_topology(false);
+    topology.shell_wire_edges[0].member_refs.clear();
+    topology.shell_faces[0].member_refs.push(4);
+    topology.face_loops.push(AsmHistoricalRelation {
+        owner_ref: 4,
+        member_refs: vec![5],
+    });
+    topology
+        .face_surfaces
+        .push(crate::history_records::AsmHistoricalCarrierBinding {
+            entity: 4,
+            carrier: 6,
+        });
+    topology.loop_coedges.push(AsmHistoricalRelation {
+        owner_ref: 5,
+        member_refs: (100..200).collect(),
+    });
+    for coedge in 100..200 {
+        topology.coedge_topology.push(AsmHistoricalCoedge {
+            coedge,
+            owner_loop: 5,
+            edge: 7,
+            next: if coedge == 199 { 100 } else { coedge + 1 },
+            previous: if coedge == 100 { 199 } else { coedge - 1 },
+            radial_next: coedge,
+        });
+    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 240;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let bodies = super::super::bodies_intersecting(&ctx, &topology, &BTreeSet::from([29]))
+        .unwrap()
+        .unwrap();
+    assert_eq!(bodies, BTreeSet::from([1]));
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn repeated_body_queries_reuse_incidence_and_validate_each_snapshot() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use std::collections::BTreeSet;
+    let topology = simple_topology();
+    let incomplete = crate::history_records::AsmHistoricalTopology {
+        bodies: vec![1],
+        ..Default::default()
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // One relation, one closure member, one cached closure, one cache entry,
+    // twenty returned body members, and one attempted closure member plus
+    // one cache entry for the incomplete snapshot.
+    policy.limits.max_collection_items = 26;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut cache = super::super::HistoricalBodyClosureCache::default();
+    for _ in 0..20 {
+        assert_eq!(
+            cache
+                .intersecting(&ctx, &topology, &BTreeSet::from([1]))
+                .unwrap(),
+            Some(BTreeSet::from([1]))
+        );
+        assert_eq!(
+            cache
+                .intersecting(&ctx, &topology, &BTreeSet::from([2]))
+                .unwrap(),
+            Some(BTreeSet::new())
+        );
+        assert_eq!(
+            cache
+                .intersecting(&ctx, &incomplete, &BTreeSet::from([1]))
+                .unwrap(),
+            None
+        );
+    }
+    ctx.finish_session().unwrap();
 }

@@ -490,7 +490,7 @@ fn extrusion_termination_stops_before_the_following_profile_object() {
     let lane = FeatureInputLane {
         id: "lane#7".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: Vec::new(),
         names: vec![
             FeatureInputName {
@@ -586,7 +586,7 @@ fn extrusion_termination_includes_cosmetic_children_before_the_end_spec() {
     let lane = FeatureInputLane {
         id: "lane#7".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: Vec::new(),
         names: vec![
             FeatureInputName {
@@ -730,7 +730,7 @@ fn extrusion_termination_admits_retained_dimension_with_an_existing_depth() {
     };
 
     assert_eq!(
-        resolve(payload(true)),
+        resolve(payload(true).into()),
         (Some(String::from("ThroughAll")), Some(String::from("5mm")))
     );
 
@@ -751,11 +751,14 @@ fn extrusion_termination_admits_retained_dimension_with_an_existing_depth() {
     through_next.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0x80, 0xbf]);
     through_next.resize(anchor + 200, 0);
     assert_eq!(
-        resolve(through_next),
+        resolve(through_next.into()),
         (Some(String::from("ThroughNext")), Some(String::from("5mm")))
     );
 
-    assert_eq!(resolve(payload(false)), (None, Some(String::from("5mm"))));
+    assert_eq!(
+        resolve(payload(false).into()),
+        (None, Some(String::from("5mm")))
+    );
 }
 
 #[test]
@@ -1651,7 +1654,7 @@ fn enrich_combine_uses_outermost_body_paths() {
     let lanes = [FeatureInputLane {
         id: "lane#35".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: Vec::new(),
         names: vec![FeatureInputName {
             id: "combine-name".into(),
@@ -1754,7 +1757,7 @@ fn sweep_path_error(policy: cadmpeg_core::decode::DecodePolicy) -> cadmpeg_core:
     let lanes = [FeatureInputLane {
         id: "lane#35".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: vec![crate::records::FeatureInputClass {
             id: "general-curve".into(),
             parent: "lane#35".into(),
@@ -1876,7 +1879,7 @@ fn combine_selection_error(policy: cadmpeg_core::decode::DecodePolicy) -> cadmpe
     let lanes = [FeatureInputLane {
         id: "lane#35".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: Vec::new(),
         names: vec![FeatureInputName {
             id: "combine-name".into(),

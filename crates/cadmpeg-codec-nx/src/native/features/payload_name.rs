@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact name records shared by sketch and block construction payloads.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use crate::om::compact::{CompactIndexAtom, CompactIndexTarget};
 use crate::om::name_field::NameField;
 use serde::{Deserialize, Serialize};
@@ -32,7 +34,7 @@ struct FeaturePayloadNameRef<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     type_code: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    raw_type_code: Option<&'a [u8]>,
+    raw_type_code: Option<NativeBytes<&'a [u8]>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     type_code_payload_offset: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -52,7 +54,7 @@ impl Serialize for FeaturePayloadName {
             construction_payload: &self.construction_payload,
             ordinal: self.ordinal,
             type_code: code.as_ref().map(|code| code.atom.value()),
-            raw_type_code: code.as_ref().map(|code| code.atom.raw()),
+            raw_type_code: (code.as_ref().map(|code| code.atom.raw())).map(Into::into),
             type_code_payload_offset: code.as_ref().map(|code| code.offset),
             type_code_source_offset: code.and_then(|code| *code.target),
             payload_leading: code.is_none(),
@@ -81,7 +83,7 @@ struct FeaturePayloadNameWire {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_raw_type_code"
     )]
-    raw_type_code: Option<Vec<u8>>,
+    raw_type_code: Option<NativeBytes<Vec<u8>>>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -110,7 +112,7 @@ impl From<FeaturePayloadName> for FeaturePayloadNameWire {
             construction_payload: value.construction_payload,
             ordinal: value.ordinal,
             type_code: code.as_ref().map(|code| code.atom.value()),
-            raw_type_code: code.as_ref().map(|code| code.atom.raw().to_vec()),
+            raw_type_code: (code.as_ref().map(|code| code.atom.raw().to_vec())).map(Into::into),
             type_code_payload_offset: code.as_ref().map(|code| code.offset),
             type_code_source_offset: code.and_then(|code| *code.target),
             payload_leading: value.frame.code().is_none(),
@@ -171,7 +173,7 @@ mod tests {
         for (value, raw) in [(0, vec![0]), (131, vec![128, 131]), (1, vec![128, 1])] {
             let wire = serde_json::json!({
                 "id": "name", "operation_label": "operation", "construction_payload": "payload",
-                "ordinal": 0, "type_code": value, "raw_type_code": raw,
+                "ordinal": 0, "type_code": value, "raw_type_code": cadmpeg_ir::native::bytes::NativeBytes::from(raw),
                 "type_code_payload_offset": 11, "payload_leading": false,
                 "value": "Point1", "payload_offset": 10, "source_offset": 100,
             });
@@ -183,7 +185,8 @@ mod tests {
             );
             for invalid_raw in [vec![], vec![255], vec![128], vec![0, 0], vec![127]] {
                 let mut invalid = wire.clone();
-                invalid["raw_type_code"] = serde_json::json!(invalid_raw);
+                invalid["raw_type_code"] =
+                    serde_json::json!(cadmpeg_ir::native::bytes::NativeBytes::from(invalid_raw));
                 let name = serde_json::from_value::<FeaturePayloadName>(invalid).unwrap_err();
                 assert!(name.to_string().contains("type_code/raw_type_code"));
             }
@@ -194,7 +197,7 @@ mod tests {
     fn payload_name_wire_enforces_frame_positions_and_leading_form() {
         for json in [
             r#"{"id":"name","operation_label":"operation","construction_payload":"payload","ordinal":0,"payload_leading":true,"value":"Point1","payload_offset":0,"source_offset":100}"#,
-            r#"{"id":"name","operation_label":"operation","construction_payload":"payload","ordinal":0,"type_code":131,"raw_type_code":[128,131],"type_code_payload_offset":11,"type_code_source_offset":20,"payload_leading":false,"value":"Point1","payload_offset":10,"source_offset":100}"#,
+            r#"{"id":"name","operation_label":"operation","construction_payload":"payload","ordinal":0,"type_code":131,"raw_type_code":"8083","type_code_payload_offset":11,"type_code_source_offset":20,"payload_leading":false,"value":"Point1","payload_offset":10,"source_offset":100}"#,
         ] {
             let name: FeaturePayloadName = serde_json::from_str(json).unwrap();
             assert_eq!(serde_json::to_string(&name).unwrap(), json);
@@ -215,7 +218,7 @@ mod tests {
         }
         let overflowing = serde_json::json!({
             "id": "name", "operation_label": "operation", "construction_payload": "payload",
-            "ordinal": 0, "type_code": 1, "raw_type_code": [1],
+            "ordinal": 0, "type_code": 1, "raw_type_code": "01",
             "type_code_payload_offset": u64::MAX, "payload_leading": false,
             "value": "A", "payload_offset": u64::MAX - 1, "source_offset": 100,
         });
@@ -228,7 +231,7 @@ mod tests {
         let wire = serde_json::json!({
             "id": "nx:feature:payload-name#0",
             "operation_label": "operation", "construction_payload": "payload",
-            "ordinal": 0, "type_code": 131, "raw_type_code": [128, 131],
+            "ordinal": 0, "type_code": 131, "raw_type_code": "8083",
             "type_code_payload_offset": 11, "type_code_source_offset": 20,
             "payload_leading": false, "value": "Point1",
             "payload_offset": 10, "source_offset": 100
@@ -240,7 +243,11 @@ mod tests {
 
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_type_code, u32, "type_code");
-cadmpeg_core::named_optional_field!(deserialize_raw_type_code, Vec<u8>, "raw_type_code");
+cadmpeg_core::named_optional_field!(
+    deserialize_raw_type_code,
+    cadmpeg_ir::native::bytes::NativeBytes<Vec<u8>>,
+    "raw_type_code"
+);
 cadmpeg_core::named_optional_field!(
     deserialize_type_code_payload_offset,
     u64,

@@ -40,7 +40,7 @@ fn mesh_orientation_options_refuse_collection_limit_before_declining() {
         panic!("orientation allocation must refuse the limit");
     };
     assert_eq!(error.dimension, ResourceDimension::CollectionItems);
-    assert_eq!(error.operation, "catia_orientation_direction_union");
+    assert_eq!(error.operation, "catia_orientation_plan_rows");
 }
 
 #[test]
@@ -69,7 +69,7 @@ fn quotient_edge_domains_refuse_materialized_limit_before_declining() {
 }
 
 #[test]
-fn fixed_mesh_directions_refuse_collection_limit_before_declining() {
+fn fixed_mesh_directions_refuse_scoped_limit_before_declining() {
     let assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![vec![MeshBoundaryEdgeCandidate {
             edge: 0,
@@ -92,7 +92,7 @@ fn fixed_mesh_directions_refuse_collection_limit_before_declining() {
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
     let (limited_ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("fixture fits the input limit");
     let Err(CodecError::ResourceLimit(error)) =
@@ -100,7 +100,7 @@ fn fixed_mesh_directions_refuse_collection_limit_before_declining() {
     else {
         panic!("fixed direction allocation must refuse the limit");
     };
-    assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(error.dimension, ResourceDimension::MaterializedBytes);
     assert_eq!(error.operation, "catia_quotient_clone_union");
 }
 

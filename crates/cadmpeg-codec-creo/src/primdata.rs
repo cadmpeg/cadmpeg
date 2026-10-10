@@ -548,14 +548,28 @@ mod tests {
     #[test]
     fn primitive_scalar_ordering_refuses_work_and_index_scratch_before_sorting() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        let bytes: Vec<_> = (0..21).flat_map(|_| named("p1", &[], 0)).collect();
+        let bytes: Vec<_> = (0..21)
+            .flat_map(|index| named(if index % 2 == 0 { "p2" } else { "p1" }, &[], 0))
+            .collect();
         let scratch = u64::try_from(21 * 2 * std::mem::size_of::<usize>()).expect("scratch bytes");
+        let record_bytes =
+            u64::try_from(std::mem::size_of::<PrimitiveScalarArray>()).expect("record bytes");
+        let index_bytes = u64::try_from(std::mem::size_of::<usize>()).expect("index bytes");
         let work = 5 * u64::try_from(bytes.len()).expect("scan work")
+            // Item admission for the stable sort.
             + 21
-            + 21 * u64::try_from(std::mem::size_of::<PrimitiveScalarArray>())
-                .expect("record bytes")
-                * 6
-                * 8;
+            // Ten one-unit comparisons reach the boundary between the
+            // discovered p1 and p2 runs, where offsets are out of order.
+            + 10
+            // The two index arrays are charged once, then each of the five
+            // merge passes (run widths 1, 2, 4, 8, 16) charges twice their size.
+            + scratch
+            + 5 * 2 * scratch
+            // One-unit merge comparisons per pass: 10, 10, 14, 14 and 20.
+            + (10 + 10 + 14 + 14 + 20)
+            // The permutation moves each record through four copies and each
+            // index through eight.
+            + 21 * (4 * record_bytes + 8 * index_bytes);
         let run = |materialized, work_limit| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();

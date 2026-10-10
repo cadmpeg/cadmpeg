@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native class-0x5b/0x5c frames and their byte-string wire projection.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use cadmpeg_core::decode::u64_from_index;
 
 use crate::wire::records::{ConsolidatedFrameFlag, ConsolidatedFrameWidth, ConsolidatedRawFrame};
@@ -70,8 +72,7 @@ struct Class5b5cWire {
     flag: ConsolidatedFrameFlag,
     class: CatiaClass5b5c,
     header_token: u32,
-    #[serde(with = "cadmpeg_ir::bytes")]
-    payload: Vec<u8>,
+    payload: NativeBytes<Vec<u8>>,
 }
 
 #[derive(Serialize)]
@@ -85,8 +86,7 @@ struct Class5b5cWireRef<'a> {
     flag: ConsolidatedFrameFlag,
     class: CatiaClass5b5c,
     header_token: u32,
-    #[serde(with = "cadmpeg_ir::bytes")]
-    payload: &'a [u8],
+    payload: NativeBytes<&'a [u8]>,
 }
 
 impl Serialize for CatiaConsolidatedClass5b5cRecord {
@@ -104,7 +104,7 @@ impl Serialize for CatiaConsolidatedClass5b5cRecord {
             flag: self.frame.flag,
             class: self.class,
             header_token: self.frame.header_token(),
-            payload: &self.frame.payload,
+            payload: (&self.frame.payload).into(),
         }
         .serialize(serializer)
     }
@@ -123,7 +123,7 @@ impl From<CatiaConsolidatedClass5b5cRecord> for Class5b5cWire {
             flag: record.frame.flag,
             class: record.class,
             header_token: record.frame.header_token(),
-            payload: record.frame.payload,
+            payload: (record.frame.payload),
         }
     }
 }
@@ -138,7 +138,7 @@ impl TryFrom<Class5b5cWire> for CatiaConsolidatedClass5b5cRecord {
                 wire.width,
                 wire.flag,
                 wire.header_token,
-                wire.payload,
+                wire.payload.into_inner(),
             )?,
             source_index: wire.source_index,
             source_offset: wire.source_offset,
@@ -217,7 +217,7 @@ mod tests {
         let mut wire = serde_json::to_value(&record).expect("serialize raw frame");
         assert_eq!(wire["byte_offset"], serde_json::json!(42));
         assert_eq!(wire["byte_len"], serde_json::json!(9));
-        assert_eq!(wire["payload"], serde_json::json!("AAAA"));
+        assert_eq!(wire["payload"], serde_json::json!("000000"));
         assert_eq!(
             serde_json::from_value::<CatiaConsolidatedClass5b5cRecord>(wire.clone())
                 .expect("load raw frame"),

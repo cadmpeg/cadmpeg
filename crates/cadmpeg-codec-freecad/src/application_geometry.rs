@@ -149,6 +149,7 @@ fn association(
     property: &PropertyRecord,
 ) -> Result<SourceObjectAssociation, CodecError> {
     Ok(SourceObjectAssociation {
+        geometry_role: None,
         format: cadmpeg_ir::CodecFormat::Fcstd,
         object_id: cadmpeg_core::text::NonBlankString::new(
             ctx.copy_retained_text(&property.owner, "FreeCAD geometry object identity")?,

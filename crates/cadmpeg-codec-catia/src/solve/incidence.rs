@@ -4424,6 +4424,7 @@ fn component_incidence_faces_viable(
     point_count: usize,
 ) -> Result<bool, CodecError> {
     for &face in faces {
+        let mut temporary = ctx.reserve_scoped(0, "catia component incidence face workspace")?;
         if domains.is_none() {
             let mut degrees = HashMap::<usize, u8>::new();
             for &edge in &face_edges[face] {
@@ -4434,11 +4435,13 @@ fn component_incidence_faces_viable(
                     if point >= point_count {
                         return Ok(false);
                     }
-                    ctx.admit_hash_map_entry(
-                        &mut degrees,
-                        &point,
-                        "catia component incidence degree points",
-                    )?;
+                    temporary.with_storage(|| {
+                        ctx.admit_hash_map_entry(
+                            &mut degrees,
+                            &point,
+                            "catia component incidence degree points",
+                        )
+                    })?;
                     let degree = degrees.entry(point).or_default();
                     let Some(next) = degree.checked_add(1) else {
                         return Ok(false);
@@ -4458,18 +4461,23 @@ fn component_incidence_faces_viable(
             }
             continue;
         }
-        let mut points = ctx.alloc_filled(
-            assignment.len(),
-            [0; 2],
-            "catia component incidence edge points",
-        )?;
+        let mut points = temporary.with_storage(|| {
+            ctx.alloc_filled(
+                assignment.len(),
+                [0; 2],
+                "catia component incidence edge points",
+            )
+        })?;
         for &edge in &face_edges[face] {
             let Some(pair) = assignment[edge] else {
                 return Ok(false);
             };
             points[edge] = pair;
         }
-        if incidence_cycles(ctx, &face_edges[face], &points)?.is_none() {
+        if temporary
+            .with_storage(|| incidence_cycles(ctx, &face_edges[face], &points))?
+            .is_none()
+        {
             return Ok(false);
         }
         let Some(domain) = domains.and_then(|domains| domains.get(face)) else {
@@ -4479,28 +4487,31 @@ fn component_incidence_faces_viable(
         let viable = match domain {
             MeshFaceBoundaryDomain::Ordered(assignments) => {
                 assignments.iter().any(|boundary_assignment| {
-                    mesh_assignment_endpoint_cycles_viable_where(
-                        ctx,
-                        boundary_assignment,
-                        choices,
-                        None,
-                        |edge, pair| {
-                            assignment[edge]
-                                .is_none_or(|selected| same_unordered_pair(selected, pair))
-                        },
-                    )
-                    .map_or_else(
-                        |error| {
-                            refusal = Some(error);
-                            true
-                        },
-                        |result| result.unwrap_or(true),
-                    )
+                    temporary
+                        .with_storage(|| {
+                            mesh_assignment_endpoint_cycles_viable_where(
+                                ctx,
+                                boundary_assignment,
+                                choices,
+                                None,
+                                |edge, pair| {
+                                    assignment[edge]
+                                        .is_none_or(|selected| same_unordered_pair(selected, pair))
+                                },
+                            )
+                        })
+                        .map_or_else(
+                            |error| {
+                                refusal = Some(error);
+                                true
+                            },
+                            |result| result.unwrap_or(true),
+                        )
                 })
             }
-            MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => {
-                incidence_cycles(ctx, edges, &points)?.is_some_and(|cycles| cycles.len() == 1)
-            }
+            MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => temporary
+                .with_storage(|| incidence_cycles(ctx, edges, &points))?
+                .is_some_and(|cycles| cycles.len() == 1),
             MeshFaceBoundaryDomain::DeferredValidation(domain) => {
                 deferred_boundary_closes(ctx, domain, &points)?
             }
@@ -4941,13 +4952,17 @@ where
         } = inputs;
 
         let mut component_storage = ctx.reserve_scoped(0, "CATIA component incidence workspace")?;
-        let mut active = ctx.alloc_filled(choices.len(), false, "catia incidence active edges")?;
+        let mut active = component_storage.with_storage(|| {
+            ctx.alloc_filled(choices.len(), false, "catia incidence active edges")
+        })?;
         let mut constraints = HashSet::<(usize, usize)>::new();
-        let mut point_support_edges = ctx.alloc_filled(
-            face_edges.len(),
-            HashMap::<usize, Vec<usize>>::new(),
-            "catia incidence point support edges",
-        )?;
+        let mut point_support_edges = component_storage.with_storage(|| {
+            ctx.alloc_filled(
+                face_edges.len(),
+                HashMap::<usize, Vec<usize>>::new(),
+                "catia incidence point support edges",
+            )
+        })?;
         let mut component_faces = HashSet::new();
         for &edge in component {
             active[edge] = true;
@@ -5063,13 +5078,9 @@ where
             }
             explicit_point_supports.push(supports);
         }
-        let face_configuration_domains = prepare_face_configuration_domains(
-            ctx,
-            mesh_assignments,
-            choices,
-            assignment,
-            &active,
-        )?;
+        let face_configuration_domains = component_storage.with_storage(|| {
+            prepare_face_configuration_domains(ctx, mesh_assignments, choices, assignment, &active)
+        })?;
         let filter = |solution: &[MeshEndpointPair]| -> Result<bool, CodecError> {
             let (mut completed, _filter_storage) =
                 ctx.copy_temporary_slice(assignment, "catia_incidence_filter_assignment")?;

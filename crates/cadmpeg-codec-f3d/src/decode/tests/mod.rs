@@ -6,6 +6,7 @@ mod codec;
 mod completeness;
 mod container;
 mod curves;
+mod header_recovery;
 mod pcurves;
 mod procedural;
 mod procedural_blends;

@@ -213,7 +213,7 @@ impl DisplayJtGraph {
                     "segment_id disagrees with toc_entry",
                 ));
             }
-            if segment.segment_type != cadmpeg_core::bytes::assemble_u32_be(entry.attributes) {
+            if segment.segment_type != cadmpeg_core::bytes::assemble_u32_be(*entry.attributes) {
                 return Err(invalid(
                     ctx,
                     &segment.id,

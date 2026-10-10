@@ -45,6 +45,10 @@ macro_rules! loss_codes {
 }
 
 loss_codes! {
+    /// A Directory presentation or naming field remains source-only.
+    DirectoryMetadataUnreadable => "directory.metadata-unreadable",
+    /// A readable display field violates a source rule without changing geometry.
+    DirectoryMetadataNoncanonical => "directory.metadata-noncanonical",
     /// Product-occurrence root inference was suppressed by a malformed member list.
     OccurrenceRootInferenceBlocked => "occurrence.root-inference-blocked",
     /// Product-occurrence expansion omitted an instance or member with malformed placement data.
@@ -55,6 +59,12 @@ loss_codes! {
     EntityOutsideEnvelope => "entity.outside-envelope",
     /// An entity was not projected; the instance message names the reason.
     EntityNotProjected => "entity.not-projected",
+    /// A recognized geometric entity could not retain its required geometry.
+    GeometryNotProjected => "geometry.not-projected",
+    /// A framed Parameter Data literal is retained without an interpreted value.
+    ParameterLiteralUnusable => "parameter.literal-unusable",
+    /// Redundant spline claims disagreed with the serialized carrier mathematics.
+    SplineClaimRecovered => "geometry.spline-claim-recovered",
     /// A NURBS coordinate or parameter transformation produced a non-finite value.
     NurbsTransformNonFinite => "geometry.nurbs-transform-non-finite",
     /// A boundary pcurve leaves the finite parameter domain of its support surface.
@@ -81,6 +91,8 @@ loss_codes! {
     BodyNameAmbiguous => "presentation.body-name-ambiguous",
     /// The Global line-weight scale is unavailable, so no entity has a width.
     LineWeightScaleUnavailable => "presentation.line-weight-scale-unavailable",
+    /// An unusable Type 118 developability assertion did not change its rails.
+    RuledDevelopabilityRecovered => "geometry.ruled-developability-recovered",
     /// A Type 118 developability flag was not transferred to neutral geometry.
     RuledDevelopabilityNotTransferred => "geometry.ruled-developability-not-transferred",
     /// Type 112 or Type 114 header semantics were not transferred to neutral geometry.
@@ -109,6 +121,12 @@ loss_codes! {
     PassthroughRecordOmitted => "writer.passthrough-omitted",
     /// The emitted Global minimum resolution exceeds the neutral declaration.
     WriterMinimumResolutionAdjusted => "writer.minimum-resolution-adjusted",
+    /// An unowned dependent edge was withheld.
+    WriterSupportEdgeNotRepresented => "writer.support-edge-not-represented",
+    /// Free-geometry points or vertices have no topology output.
+    WriterFreeGeometryOmitted => "writer.free-geometry-omitted",
+    /// Unowned support geometry was withheld to avoid standalone transfer.
+    WriterSupportGeometryNotRepresented => "writer.support-geometry-not-represented",
     /// A body name cannot be encoded as a Type 406 Form 15 name.
     WriterBodyNameNotRepresented => "writer.body-name-not-represented",
     /// A body has no owning Directory Entry for its color.
@@ -133,6 +151,9 @@ impl IgesLossCode {
             | Self::EntityRetainedUnprojected
             | Self::EntityOutsideEnvelope
             | Self::EntityNotProjected
+            | Self::GeometryNotProjected
+            | Self::ParameterLiteralUnusable
+            | Self::SplineClaimRecovered
             | Self::NurbsTransformNonFinite
             | Self::BoundaryPcurveOutsideSupportDomain
             | Self::PointerUnresolved
@@ -146,17 +167,23 @@ impl IgesLossCode {
             | Self::DrawingPropertyAmbiguous
             | Self::BodyNameAmbiguous
             | Self::LineWeightScaleUnavailable
+            | Self::RuledDevelopabilityRecovered
             | Self::RuledDevelopabilityNotTransferred
             | Self::SplineHeaderNotTransferred
             | Self::CompositeCarrierDegraded
             | Self::GlobalMetadataFieldUnusable
             | Self::GlobalSemanticContextSubstituted
             | Self::GlobalNumericSyntaxRecovered
+            | Self::DirectoryMetadataUnreadable
+            | Self::DirectoryMetadataNoncanonical
             | Self::GlobalNoncanonicalFraming
             | Self::SourceDialectUnverified
             | Self::SourceDialectDisplaced
             | Self::PassthroughRecordOmitted
             | Self::WriterMinimumResolutionAdjusted
+            | Self::WriterSupportGeometryNotRepresented
+            | Self::WriterSupportEdgeNotRepresented
+            | Self::WriterFreeGeometryOmitted
             | Self::WriterBodyNameNotRepresented
             | Self::WriterBodyColorNotRepresented
             | Self::WriterBodyOpacityNotRepresented
@@ -167,6 +194,7 @@ impl IgesLossCode {
     /// The shared cross-codec category this loss reports under.
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
+            Self::WriterSupportEdgeNotRepresented => LossTaxonomy::TopologyNotTransferred,
             Self::OccurrenceRootInferenceBlocked | Self::OccurrencePlacementMalformed => {
                 LossTaxonomy::DecodeDiagnostic
             }
@@ -186,14 +214,22 @@ impl IgesLossCode {
             | Self::GlobalMetadataFieldUnusable => LossTaxonomy::MetadataNotTransferred,
             Self::CompositeCarrierDegraded
             | Self::GlobalLengthUnitUnresolved
-            | Self::NurbsTransformNonFinite => LossTaxonomy::GeometryNotTransferred,
-            Self::GlobalSemanticContextSubstituted
+            | Self::NurbsTransformNonFinite
+            | Self::GeometryNotProjected
+            | Self::WriterSupportGeometryNotRepresented
+            | Self::WriterFreeGeometryOmitted => LossTaxonomy::GeometryNotTransferred,
+            Self::SplineClaimRecovered
+            | Self::RuledDevelopabilityRecovered
+            | Self::GlobalSemanticContextSubstituted
             | Self::GlobalNumericSyntaxRecovered
+            | Self::DirectoryMetadataUnreadable
+            | Self::DirectoryMetadataNoncanonical
             | Self::GlobalNoncanonicalFraming
             | Self::ParameterCountOverdeclared
             | Self::AttributeTableCountUnstatable
             | Self::DirectoryRecordQuarantined
             | Self::ParameterDataQuarantined
+            | Self::ParameterLiteralUnusable
             | Self::CardFramingRecovered => LossTaxonomy::NoncanonicalSourceSyntax,
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
             Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
@@ -248,11 +284,16 @@ mod tests {
         assert_eq!(
             codes,
             [
+                "directory.metadata-unreadable",
+                "directory.metadata-noncanonical",
                 "occurrence.root-inference-blocked",
                 "occurrence.placement-malformed",
                 "entity.retained-unprojected",
                 "entity.outside-envelope",
                 "entity.not-projected",
+                "geometry.not-projected",
+                "parameter.literal-unusable",
+                "geometry.spline-claim-recovered",
                 "geometry.nurbs-transform-non-finite",
                 "topology.boundary-pcurve-outside-support-domain",
                 "graph.pointer-unresolved",
@@ -266,6 +307,7 @@ mod tests {
                 "presentation.drawing-property-ambiguous",
                 "presentation.body-name-ambiguous",
                 "presentation.line-weight-scale-unavailable",
+                "geometry.ruled-developability-recovered",
                 "geometry.ruled-developability-not-transferred",
                 "geometry.spline-header-not-transferred",
                 "curve.composite-carrier-degraded",
@@ -280,6 +322,9 @@ mod tests {
                 "geometry.procedural-reduced",
                 "writer.passthrough-omitted",
                 "writer.minimum-resolution-adjusted",
+                "writer.support-edge-not-represented",
+                "writer.free-geometry-omitted",
+                "writer.support-geometry-not-represented",
                 "writer.body-name-not-represented",
                 "writer.body-color-not-represented",
                 "writer.body-opacity-not-represented",

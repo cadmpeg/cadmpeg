@@ -44,8 +44,8 @@ An FCStd document is identified by ZIP framing plus a root `Document.xml` entry 
 element and version attributes identify the persistence document. A ZIP signature alone is not an
 FCStd identity marker.
 
-Entry names are unique, relative paths. Absolute paths, parent traversal, encrypted entries, and
-names whose normalized form aliases another entry are invalid. Logical entry size, total expanded
+Entry names are unique, relative paths. Absolute paths, parent traversal, and
+names whose normalized form aliases another entry are invalid. Encryption and unsupported compression prevent a member from supplying an interpreted payload, without changing its bounded stored extent. Logical entry size, total expanded
 size, entry count, nesting depth, and expansion ratio are bounded before allocation or
 decompression.
 
@@ -86,7 +86,7 @@ order is object order.
 In schemas 3 and 4, `Objects.Count` equals the number of `Object` declarations. Each declaration
 has a unique `name` and a `type`. `ObjectData.Count` equals the number of `Object` value records.
 Each value record has a unique `name`. Declaration and value-record name sets are equal.
-Declaration order is object order.
+Declaration order is object order. Redundant declaration, value-record, dependency, extension, property, and transient counts do not delimit XML elements. Element boundaries and unique names own their populations.
 
 The presence of the `Objects` section's `Dependencies` attribute enables dependency records. An
 enabled section contains exactly `Objects.Count` `ObjectDeps` elements before the object
@@ -98,10 +98,17 @@ dependency graph to be acyclic.
 
 ## 3. Version dispatch
 
-`SchemaVersion` alone selects the object envelope. `ProgramVersion` is metadata. An absent
-`FileVersion` has value zero. `FileVersion` does not select the object or property-container
+`SchemaVersion` alone selects the object envelope. `ProgramVersion` selects legacy
+transparency conversion and feature-value migrations, including chamfer direction
+and hole-cut enumeration. An absent `FileVersion` has value zero.
+`FileVersion` does not select the object or property-container
 envelope. It selects versioned side-entry details such as string tables and complex geometry.
 Property runtime type and value tag select a property-value grammar.
+
+The decoder retains an unparseable `FileVersion` without numeric interpretation.
+Nonempty version-dependent inline legacy element maps remain source-only; independently
+framed B-rep and side-entry data still decode. Canonical version attributes control
+interpretation when a lowercase alias conflicts, with a diagnostic for the conflict.
 
 Document properties and object properties use the same `Properties` container in schemas 2, 3,
 and 4. The document root has at most one direct `Properties` container; duplicate root
@@ -110,6 +117,8 @@ containers are invalid. `Properties.Count` equals the number of `Property` recor
 Property names are unique across both record kinds within one container. A property family is
 selected by an exact registered runtime type. An unregistered runtime type does not select a family
 from a substring of its name.
+A missing unrelated file attachment does not supply admitted side-entry data. Required shape payloads must remain readable. A malformed link-property payload has source-only XML and no admitted values or links; no empty link or replacement scalar is inferred.
+
 A `Property` contains its runtime-type-specific value XML. A `_Property` has no persisted value.
 Status and dynamic-property metadata are optional record attributes. Property container dispatch
 does not depend on `SchemaVersion`, `FileVersion`, or `ProgramVersion`.

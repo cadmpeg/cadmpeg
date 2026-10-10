@@ -492,14 +492,28 @@ fn candidates(entry: &DirectoryEntry) -> impl Iterator<Item = Candidate> {
     [
         (entry.structure < 0)
             .then(|| negative_candidate(ReferenceKind::Structure, entry.structure)),
-        (entry.line_font < 0).then(|| negative_candidate(ReferenceKind::LineFont, entry.line_font)),
-        (entry.level < 0).then(|| negative_candidate(ReferenceKind::Level, entry.level)),
-        (entry.view != 0).then(|| positive_candidate(ReferenceKind::View, entry.view)),
+        entry
+            .line_font
+            .filter(|value| *value < 0)
+            .map(|value| negative_candidate(ReferenceKind::LineFont, value)),
+        entry
+            .level
+            .filter(|value| *value < 0)
+            .map(|value| negative_candidate(ReferenceKind::Level, value)),
+        entry
+            .view
+            .filter(|value| *value != 0)
+            .map(|value| positive_candidate(ReferenceKind::View, value)),
         (entry.transform != 0)
             .then(|| positive_candidate(ReferenceKind::Transform, entry.transform)),
-        (entry.label_display != 0)
-            .then(|| positive_candidate(ReferenceKind::LabelDisplay, entry.label_display)),
-        (entry.color < 0).then(|| negative_candidate(ReferenceKind::Color, entry.color)),
+        entry
+            .label_display
+            .filter(|value| *value != 0)
+            .map(|value| positive_candidate(ReferenceKind::LabelDisplay, value)),
+        entry
+            .color
+            .filter(|value| *value < 0)
+            .map(|value| negative_candidate(ReferenceKind::Color, value)),
     ]
     .into_iter()
     .flatten()

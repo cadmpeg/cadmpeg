@@ -226,6 +226,21 @@ pub(super) fn take_knot_table(
     n: usize,
     degree: i64,
 ) -> Option<Result<(Vec<f64>, usize), cadmpeg_core::CodecError>> {
+    // Each typed pair comes from a complete double and integer field. The
+    // retained token boundary provides enough fields for at least n pairs.
+    if n > cur.rest().len() / 2 {
+        return None;
+    }
+    let Some(work) = cadmpeg_core::decode::u64_from_index(n).checked_mul(3) else {
+        return Some(Err(ctx.refuse_codec_limit(
+            "ASM unique knot work",
+            u64::MAX,
+            u64::MAX,
+        )));
+    };
+    if let Err(error) = ctx.charge_work(work, "read ASM unique knot pairs") {
+        return Some(Err(error));
+    }
     let mut scratch = match ctx.reserve_scoped(0, "ASM knot expansion inputs") {
         Ok(scratch) => scratch,
         Err(error) => return Some(Err(error)),
@@ -245,6 +260,12 @@ pub(super) fn take_knot_table(
         mults.push(cur.take_long()?);
     }
     let expansion = checked_knot_layout(&mults, degree)?;
+    if let Err(error) = ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(expansion.expanded_len()),
+        "expand ASM knots",
+    ) {
+        return Some(Err(error));
+    }
     let mut expanded = match ctx.collection_vec(expansion.expanded_len(), "ASM expanded knots") {
         Ok(expanded) => expanded,
         Err(error) => return Some(Err(error)),

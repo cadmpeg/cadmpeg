@@ -227,6 +227,7 @@ fn add_edge(
     ctx.reserve_vec(&mut ir.model.curves, 1, "iges spline neutral curve slots")?;
     ctx.charge_entities(1, "iges_geometry_splines")?;
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: curve.try_clone_for_decode(ctx, "iges splines identity copy")?,
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
         source_object: Some(match source_object(entry, ctx) {
@@ -285,7 +286,7 @@ pub(super) fn project(
     {
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -293,35 +294,20 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let (Some(curve_type), Some(continuity), Some(dimensions)) =
-            (record.integer(1), record.integer(2), record.integer(3))
-        else {
-            super::push_entity_loss(
-                ctx,
-                &mut losses,
-                entry,
-                format_args!("{}", "spline header fields are not integers"),
-            )?;
-            continue;
-        };
-        if !(1..=6).contains(&curve_type)
-            || !(0..=2).contains(&continuity)
-            || !matches!(dimensions, 2 | 3)
-        {
-            super::push_entity_loss(
-                ctx,
-                &mut losses,
-                entry,
-                format_args!("{}", "spline header enum is out of range"),
-            )?;
-            continue;
-        }
+        let curve_type = record.integer(1);
+        let declared_continuity = record.integer(2).filter(|value| (0..=2).contains(value));
+        let declared_dimensions = record.integer(3).filter(|value| matches!(value, 2 | 3));
+        let mut claim_inconsistent = curve_type.is_none_or(|value| !(1..=6).contains(&value))
+            || declared_continuity.is_none()
+            || declared_dimensions.is_none();
+        let continuity = declared_continuity.unwrap_or(0);
+        let dimensions = declared_dimensions.unwrap_or(3);
         let Some(raw_segment_count) = record.integer(4) else {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
-                format_args!("{}", "spline segment count is invalid"),
+                format_args!("{}", "spline header segment count is invalid"),
             )?;
             continue;
         };
@@ -339,7 +325,7 @@ pub(super) fn project(
             .ok()
             .filter(|count| *count > 0)
         else {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -348,7 +334,7 @@ pub(super) fn project(
             continue;
         };
         let Some(breakpoint_count) = segment_count.checked_add(1) else {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -361,7 +347,7 @@ pub(super) fn project(
             "iges spline curve breakpoints",
         )?
         else {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -373,7 +359,7 @@ pub(super) fn project(
             .windows(2)
             .any(|pair| pair[0].get() >= pair[1].get())
         {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -383,7 +369,7 @@ pub(super) fn project(
         }
         let coefficient_start = 6 + segment_count;
         let Some(coefficient_count) = segment_count.checked_mul(12) else {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -397,7 +383,7 @@ pub(super) fn project(
             "iges spline curve coefficients",
         )?
         else {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -417,7 +403,7 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+                super::push_geometry_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
                 continue;
             }
         };
@@ -486,8 +472,7 @@ pub(super) fn project(
                     .contains(0.0)
                 })
             {
-                continuous = false;
-                break;
+                claim_inconsistent = true;
             }
             let coordinate = |offset: usize| {
                 let a = values[offset];
@@ -534,37 +519,24 @@ pub(super) fn project(
                 })
             });
             if continuity >= 1 && segment > 0 {
-                // GE-03: IGES §4.14 defines slope and curvature continuity but
-                // gives no numeric receiver tolerance. Interval overlap is the
-                // CADIR admission decision for the declared real values.
                 let start_derivative = starts.map(|component| component[1]);
-                let Some(start_tangent) = interval_unit_tangent(start_derivative) else {
-                    continuous = false;
-                    break;
-                };
-                let Some(previous_tangent) = previous_terminal_tangent else {
-                    continuous = false;
-                    break;
-                };
-                if !intervals_overlap(previous_tangent, start_tangent) {
-                    continuous = false;
-                    break;
+                let start_tangent = interval_unit_tangent(start_derivative);
+                if start_tangent
+                    .zip(previous_terminal_tangent)
+                    .is_none_or(|(start, previous)| !intervals_overlap(previous, start))
+                {
+                    claim_inconsistent = true;
                 }
                 if continuity >= 2 {
-                    let start_second_derivative = starts.map(|component| component[2].scale(2.0));
-                    let Some(start_curvature) =
-                        interval_curvature(start_derivative, start_second_derivative)
-                    else {
-                        continuous = false;
-                        break;
-                    };
-                    let Some(previous_curvature) = previous_terminal_curvature else {
-                        continuous = false;
-                        break;
-                    };
-                    if !intervals_overlap(previous_curvature, start_curvature) {
-                        continuous = false;
-                        break;
+                    let start_curvature = interval_curvature(
+                        start_derivative,
+                        starts.map(|component| component[2].scale(2.0)),
+                    );
+                    if start_curvature
+                        .zip(previous_terminal_curvature)
+                        .is_none_or(|(start, previous)| !intervals_overlap(previous, start))
+                    {
+                        claim_inconsistent = true;
                     }
                 }
             }
@@ -572,17 +544,15 @@ pub(super) fn project(
                 let terminal_derivative = intervals.map(|component| component[1]);
                 previous_terminal_tangent = interval_unit_tangent(terminal_derivative);
                 if previous_terminal_tangent.is_none() {
-                    continuous = false;
-                    break;
+                    claim_inconsistent = true;
                 }
                 if continuity >= 2 {
-                    let terminal_second_derivative =
-                        intervals.map(|component| component[2].scale(2.0));
-                    previous_terminal_curvature =
-                        interval_curvature(terminal_derivative, terminal_second_derivative);
+                    previous_terminal_curvature = interval_curvature(
+                        terminal_derivative,
+                        intervals.map(|component| component[2].scale(2.0)),
+                    );
                     if previous_terminal_curvature.is_none() {
-                        continuous = false;
-                        break;
+                        claim_inconsistent = true;
                     }
                 }
             }
@@ -608,34 +578,23 @@ pub(super) fn project(
             previous_terminal_point = Some(end_point);
         }
         if !continuous {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
                 format_args!(
                     "{}",
-                    "spline segments violate declared continuity, planarity, or non-degeneracy"
+                    "spline segments are positionally discontinuous, degenerate, or non-finite"
                 ),
             )?;
             continue;
         }
         let tail_start = coefficient_start + coefficient_count;
-        let Some(tail) = ctx.collect_options(
+        let tail = ctx.collect_options(
             (tail_start..tail_start + 12)
                 .map(|index| record.number(index).and_then(FiniteReal::new)),
             "iges spline curve terminal derivatives",
-        )?
-        else {
-            super::push_entity_loss(
-                ctx,
-                &mut losses,
-                entry,
-                format_args!("{}", "terminal derivative block is missing"),
-            )?;
-            continue;
-        };
-        // GE-03: §4.14 calls this block redundant. CADIR keeps the
-        // coefficient-defined carrier when a present block disagrees.
+        )?;
         let last_values: [f64; 12] =
             std::array::from_fn(|index| coefficients[coefficients.len() - 12 + index].get());
         let last_segment_start = coefficient_start + (segment_count - 1) * 12;
@@ -660,29 +619,25 @@ pub(super) fn project(
                 precision,
             )
         });
-        if tail.iter().enumerate().any(|(offset, actual)| {
-            !declared_interval(record, tail_start + offset, actual.get(), precision)
-                .overlaps(expected_tail[offset / 4][offset % 4])
-        }) {
-            super::push_entity_loss(
-                ctx,
-                &mut losses,
-                entry,
-                format_args!(
-                    "{}",
-                    "terminal derivative block disagrees with the last polynomial"
-                ),
-            )?;
-        }
+        let tail_defect = match tail {
+            None => Some("terminal derivative block is missing or unreadable"),
+            Some(tail)
+                if tail.iter().enumerate().any(|(offset, actual)| {
+                    !declared_interval(record, tail_start + offset, actual.get(), precision)
+                        .overlaps(expected_tail[offset / 4][offset % 4])
+                }) =>
+            {
+                Some("terminal derivative block disagrees with the last polynomial")
+            }
+            Some(_) => None,
+        };
         let mut knots = ctx.collection_vec(segment_count * 3 + 5, "iges spline curve knots")?;
-        knots.extend([breakpoints[0]; 4]);
+        knots.extend([breakpoints[0].get(); 4]);
         for breakpoint in &breakpoints[1..segment_count] {
-            knots.extend([*breakpoint; 3]);
+            knots.extend([breakpoint.get(); 3]);
         }
-        knots.extend([breakpoints[segment_count]; 4]);
-        let mut raw_knots = ctx.collection_vec(knots.len(), "iges spline curve admitted knots")?;
-        raw_knots.extend(knots.into_iter().map(FiniteReal::get));
-        let construction = match KnotVector::new(ctx, raw_knots)? {
+        knots.extend([breakpoints[segment_count].get(); 4]);
+        let construction = match KnotVector::new(ctx, knots)? {
             Err(error) => Err(error),
             Ok(knots) => {
                 NurbsCurve::from_checked_lanes(ctx, 3, knots, control_points, None, false)?
@@ -691,7 +646,7 @@ pub(super) fn project(
         let nurbs = match construction {
             Ok(nurbs) => nurbs,
             Err(error) => {
-                super::push_entity_loss(
+                super::push_geometry_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -709,7 +664,7 @@ pub(super) fn project(
             ctx,
         )?
         else {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -719,6 +674,23 @@ pub(super) fn project(
         };
         ctx.reserve_vec(&mut wire_edges, 1, "iges spline wire edge slots")?;
         wire_edges.push(edge);
+        for reason in [
+            claim_inconsistent.then_some(
+                "spline type, continuity, or dimensionality claim is unusable or inconsistent",
+            ),
+            tail_defect,
+        ]
+        .into_iter()
+        .flatten()
+        {
+            super::push_attributed_loss(
+                ctx,
+                &mut losses,
+                entry,
+                IgesLossCode::SplineClaimRecovered,
+                format_args!("{reason}; retained the coefficient-defined curve"),
+            )?;
+        }
         super::push_attributed_loss(ctx, &mut losses, entry, IgesLossCode::SplineHeaderNotTransferred,
             format_args!("Type 112 curve type, continuity, and dimensionality are retained only in native parameters"))?;
         ctx.insert_btree_set(
@@ -734,7 +706,7 @@ pub(super) fn project(
     {
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -743,7 +715,7 @@ pub(super) fn project(
             continue;
         };
         let (Some(curve_type), Some(patch_type)) = (record.integer(1), record.integer(2)) else {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -752,7 +724,7 @@ pub(super) fn project(
             continue;
         };
         if !(1..=6).contains(&curve_type) || !matches!(patch_type, 0 | 1) {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -762,7 +734,7 @@ pub(super) fn project(
         }
         let dimensions = [record.integer(3), record.integer(4)];
         let [Some(raw_u_segments), Some(raw_v_segments)] = dimensions else {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -806,7 +778,7 @@ pub(super) fn project(
         let [Some(u_segments), Some(v_segments)] = [raw_u_segments, raw_v_segments]
             .map(|value| usize::try_from(value).ok().filter(|count| *count > 0))
         else {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -822,7 +794,7 @@ pub(super) fn project(
                 .checked_mul(3)
                 .and_then(|value| value.checked_add(1)),
         ) else {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -845,7 +817,7 @@ pub(super) fn project(
             ));
         }
         let Some(u_breakpoint_count) = u_segments.checked_add(1) else {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -854,7 +826,7 @@ pub(super) fn project(
             continue;
         };
         let Some(v_breakpoint_count) = v_segments.checked_add(1) else {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -867,7 +839,7 @@ pub(super) fn project(
             "iges spline surface u breakpoints",
         )?
         else {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -882,7 +854,7 @@ pub(super) fn project(
             "iges spline surface v breakpoints",
         )?
         else {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -897,7 +869,7 @@ pub(super) fn project(
                 .windows(2)
                 .any(|pair| pair[0].get() >= pair[1].get())
         {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -917,13 +889,13 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+                super::push_geometry_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
                 continue;
             }
         };
         let coefficient_start = v_breakpoint_start + v_breakpoint_count;
         let Some(block_columns) = v_segments.checked_add(1) else {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -935,7 +907,7 @@ pub(super) fn project(
             .checked_add(1)
             .and_then(|rows| rows.checked_mul(block_columns))
         else {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -947,7 +919,7 @@ pub(super) fn project(
             .checked_mul(48)
             .and_then(|count| coefficient_start.checked_add(count))
         else {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -955,15 +927,7 @@ pub(super) fn project(
             )?;
             continue;
         };
-        if record.parameter_end() < required_parameter_count {
-            super::push_entity_loss(
-                ctx,
-                &mut losses,
-                entry,
-                format_args!("{}", "spline-surface placeholder grid is truncated"),
-            )?;
-            continue;
-        }
+        let placeholders_truncated = record.parameter_end() < required_parameter_count;
         let mut grid = ctx.alloc_filled(pole_count, None, "iges spline surface control grid")?;
         let mut valid = true;
         'patches: for u_patch in 0..u_segments {
@@ -982,18 +946,20 @@ pub(super) fn project(
                     valid = false;
                     break 'patches;
                 };
-                let Some(values) = ctx.collect_options(
-                    (block_start..block_start + 48)
-                        .map(|index| record.number(index).and_then(FiniteReal::new)),
-                    "iges spline surface patch coefficients",
-                )?
-                else {
-                    valid = false;
-                    break 'patches;
-                };
+                let mut values = [0.0; 48];
+                for (offset, value) in values.iter_mut().enumerate() {
+                    ctx.charge_work(1, "iges spline surface patch coefficients")?;
+                    let Some(coefficient) = record
+                        .number(block_start + offset)
+                        .and_then(FiniteReal::new)
+                    else {
+                        valid = false;
+                        break 'patches;
+                    };
+                    *value = coefficient.get();
+                }
                 let u_width = u_breakpoints[u_patch + 1].get() - u_breakpoints[u_patch].get();
                 let v_width = v_breakpoints[v_patch + 1].get() - v_breakpoints[v_patch].get();
-                let values: [f64; 48] = std::array::from_fn(|index| values[index].get());
                 let coordinates = [
                     patch_bezier(&values[0..16], u_width, v_width),
                     patch_bezier(&values[16..32], u_width, v_width),
@@ -1024,7 +990,7 @@ pub(super) fn project(
             }
         }
         if !valid {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1035,31 +1001,20 @@ pub(super) fn project(
             )?;
             continue;
         }
-        let Some(control_points) =
-            ctx.collect_options(grid, "iges spline surface completed controls")?
-        else {
-            super::push_entity_loss(
-                ctx,
-                &mut losses,
-                entry,
-                format_args!("{}", "spline-surface patch grid is incomplete"),
-            )?;
-            continue;
-        };
         let mut u_knots = ctx.collection_vec(u_segments * 3 + 5, "iges spline surface u knots")?;
-        u_knots.extend([u_breakpoints[0]; 4]);
+        u_knots.extend([u_breakpoints[0].get(); 4]);
         for breakpoint in &u_breakpoints[1..u_segments] {
-            u_knots.extend([*breakpoint; 3]);
+            u_knots.extend([breakpoint.get(); 3]);
         }
-        u_knots.extend([u_breakpoints[u_segments]; 4]);
+        u_knots.extend([u_breakpoints[u_segments].get(); 4]);
         let mut v_knots = ctx.collection_vec(v_segments * 3 + 5, "iges spline surface v knots")?;
-        v_knots.extend([v_breakpoints[0]; 4]);
+        v_knots.extend([v_breakpoints[0].get(); 4]);
         for breakpoint in &v_breakpoints[1..v_segments] {
-            v_knots.extend([*breakpoint; 3]);
+            v_knots.extend([breakpoint.get(); 3]);
         }
-        v_knots.extend([v_breakpoints[v_segments]; 4]);
+        v_knots.extend([v_breakpoints[v_segments].get(); 4]);
         let (Ok(_u_count), Ok(_v_count)) = (u32::try_from(u_count), u32::try_from(v_count)) else {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1068,21 +1023,30 @@ pub(super) fn project(
             continue;
         };
         let mut rows = ctx.collection_vec(u_count, "iges spline surface pole rows")?;
-        for points in control_points.chunks(v_count) {
+        'rows: for points in grid.chunks(v_count) {
             let mut row =
                 ctx.collection_vec(points.len(), "iges spline surface pole row controls")?;
-            row.extend_from_slice(points);
+            for point in points {
+                let Some(point) = point else {
+                    valid = false;
+                    break 'rows;
+                };
+                row.push(*point);
+            }
             rows.push(row);
         }
-        let mut raw_u_knots =
-            ctx.collection_vec(u_knots.len(), "iges spline surface admitted u knots")?;
-        raw_u_knots.extend(u_knots.into_iter().map(FiniteReal::get));
-        let mut raw_v_knots =
-            ctx.collection_vec(v_knots.len(), "iges spline surface admitted v knots")?;
-        raw_v_knots.extend(v_knots.into_iter().map(FiniteReal::get));
-        let construction = match KnotVector::new(ctx, raw_u_knots)? {
+        if !valid {
+            super::push_geometry_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "spline-surface patch grid is incomplete"),
+            )?;
+            continue;
+        }
+        let construction = match KnotVector::new(ctx, u_knots)? {
             Err(error) => Err(error),
-            Ok(u_knots) => match KnotVector::new(ctx, raw_v_knots)? {
+            Ok(u_knots) => match KnotVector::new(ctx, v_knots)? {
                 Err(error) => Err(error),
                 Ok(v_knots) => NurbsSurface::from_checked_lanes(
                     ctx,
@@ -1096,7 +1060,7 @@ pub(super) fn project(
         let nurbs = match construction {
             Ok(nurbs) => nurbs,
             Err(error) => {
-                super::push_entity_loss(
+                super::push_geometry_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -1123,6 +1087,10 @@ pub(super) fn project(
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
             source_object: Some(source_object(entry, ctx)?),
         });
+        if placeholders_truncated {
+            super::push_attributed_loss(ctx, &mut losses, entry, IgesLossCode::SplineClaimRecovered,
+                format_args!("unused trailing spline-surface placeholders are missing; retained the coefficient-defined patches"))?;
+        }
         super::push_attributed_loss(
             ctx,
             &mut losses,

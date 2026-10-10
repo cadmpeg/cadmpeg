@@ -581,6 +581,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         ctx,
                         ir,
                         Curve {
+                            parameter_range: None,
                             id: copy_id!(curve_id),
                             geometry: curve,
                             source_object: None,
@@ -638,6 +639,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     ctx,
                     ir,
                     Curve {
+                        parameter_range: None,
                         id: copy_id!(curve_id),
                         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                             cadmpeg_ir::geometry::analytic::LineCurve::try_new(

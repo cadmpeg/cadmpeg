@@ -782,7 +782,7 @@ fn consolidated_edge_use_run_accepts_compact_successor_layout() {
 }
 
 #[test]
-fn consolidated_edge_use_indexes_clones_and_definitions_refuse_collection_limits() {
+fn consolidated_edge_use_rows_and_references_refuse_collection_limits() {
     use std::collections::HashSet;
 
     let mut bytes = vec![0xb2, 0x03, 0x24, 0x04, 0x05, 0x81, 0x05, 0x0f, 0x87];
@@ -798,11 +798,8 @@ fn consolidated_edge_use_indexes_clones_and_definitions_refuse_collection_limits
         }
     }
     for operation in [
-        "catia_edge_use_metadata_index",
-        "catia_edge_use_node_index",
-        "catia_edge_use_preceding_definition_payload",
-        "catia_b2_use_clone_payload",
-        "catia_b2_use_clone_references",
+        "catia_b2_uses",
+        "catia_b2_use_references",
         "catia_edge_use_runs",
     ] {
         assert!(refused.contains(operation), "{operation} did not refuse");
@@ -810,7 +807,7 @@ fn consolidated_edge_use_indexes_clones_and_definitions_refuse_collection_limits
 }
 
 #[test]
-fn consolidated_successor_definition_refuses_collection_limit() {
+fn consolidated_successor_definition_refuses_retained_limit() {
     let bytes = [
         0xb2, 0x03, 0x5e, 0x06, 0x05, 0x03, 0x09, 0x0f, 0x07, 0x0b, 0x21, 0xb2, 0x03, 0x24, 0x04,
         0x05, 0x81, 0x29, 0x0f, 0x87, 0xb2, 0x03, 0x06, 0x04, 0x05, 0x82, 0x05, 0x2d, 0x88, 0xb2,
@@ -819,7 +816,7 @@ fn consolidated_successor_definition_refuses_collection_limit() {
     let records = crate::wire::records::consolidated_records(&bytes);
     let mut found = false;
     for limit in 0..128 {
-        let result = crate::test_support::with_collection_limit(limit, |ctx| {
+        let result = crate::test_support::with_retained_limit(limit, |ctx| {
             super::consolidated_edge_use_runs_from_records(ctx, &bytes, &records)
         });
         if matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(error))
@@ -1633,4 +1630,26 @@ fn unsegmented_scalar_deserialization_rejects_arity_outside_its_grammar() {
             );
         }
     }
+}
+
+#[test]
+fn edge_use_resolution_does_not_index_unrelated_nodes() {
+    let node = [
+        0xb2, 0x03, 0x5e, 0x06, 0x05, 0x03, 0x09, 0x0f, 0x07, 0x0b, 0x21,
+    ];
+    let bytes = node.repeat(1024);
+    let records = crate::wire::records::consolidated_records(&bytes);
+    assert_eq!(records.len(), 1024);
+    let runs = crate::test_support::with_collection_limit(0, |ctx| {
+        super::consolidated_edge_use_runs_from_records(ctx, &bytes, &records)
+    })
+    .expect("unmatched node windows need no index or payload copies");
+    assert!(runs.is_empty());
+    let refused = crate::test_support::with_work_limit(0, |ctx| {
+        super::consolidated_edge_use_runs_from_records(ctx, &bytes, &records)
+    });
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_edge_use_window_scan")
+    );
 }

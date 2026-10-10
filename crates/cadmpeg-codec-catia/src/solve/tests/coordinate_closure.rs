@@ -1593,7 +1593,7 @@ fn mesh_endpoint_pair_support_does_not_treat_budget_exhaustion_as_a_contradictio
 }
 
 #[test]
-fn mesh_endpoint_pair_support_refuses_before_incident_faces_and_snapshot() {
+fn mesh_endpoint_pair_support_refuses_before_incident_faces_and_decisions() {
     use cadmpeg_core::CodecError;
     use std::collections::BTreeSet;
 
@@ -1649,9 +1649,9 @@ fn mesh_endpoint_pair_support_refuses_before_incident_faces_and_snapshot() {
     }
     assert!(completed, "fixture must fit the final cap");
     for operation in [
+        "catia_prune_incident_rows",
         "catia_prune_incident_faces",
-        "catia_prune_snapshot_rows",
-        "catia_prune_snapshot_pairs",
+        "catia_prune_pair_decisions",
     ] {
         assert!(refusals.contains(operation), "no refusal at {operation}");
     }

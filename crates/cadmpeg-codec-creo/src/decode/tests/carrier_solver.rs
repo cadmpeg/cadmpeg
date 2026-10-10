@@ -700,7 +700,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
                 }));
     let held_token = crate::curve::FcCurveCoordinateToken {
         value_mm: 1.0,
-        raw: vec![0x2d, 0, 0, 0, 0, 0, 0, 0],
+        raw: vec![0x2d, 0, 0, 0, 0, 0, 0, 0].into(),
         offset: 3,
     };
     let held_coordinates = crate::curve::FcCurveCoordinates {

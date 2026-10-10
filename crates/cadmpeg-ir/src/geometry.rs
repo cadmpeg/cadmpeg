@@ -825,6 +825,14 @@ pub struct Curve {
     pub id: CurveId,
     /// Curve shape.
     pub geometry: CurveGeometry,
+    /// Finite source interval of the carrier, independent of topology trims.
+    /// The underlying mathematical curve can still be used outside this interval.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_carrier_parameter_range"
+    )]
+    pub parameter_range: Option<crate::topology::IncreasingParameterInterval>,
     /// Native source-object identity and effective display metadata.
     #[serde(
         default,
@@ -8508,6 +8516,11 @@ impl TSplineSurfaceConstruction {
 }
 
 // Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(
+    deserialize_carrier_parameter_range,
+    crate::topology::IncreasingParameterInterval,
+    "parameter_range"
+);
 cadmpeg_core::named_optional_field!(deserialize_tertiary, bool, "tertiary");
 cadmpeg_core::named_optional_field!(deserialize_cache, LegacyCache, "cache");
 cadmpeg_core::named_optional_field!(deserialize_record, UnknownId, "record");

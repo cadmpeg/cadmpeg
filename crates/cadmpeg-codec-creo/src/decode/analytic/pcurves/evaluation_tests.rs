@@ -17,17 +17,31 @@ use std::num::NonZeroU32;
 const ENDPOINTS: [[f64; 2]; 2] = [[0.0, 0.0], [1.0, 0.0]];
 const POINTS: [[f64; 3]; 2] = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]];
 
+/// Highest degree whose basis is evaluated in inline storage is 15; this
+/// degree needs a heap basis of `BASIS_SLOTS` admitted collection items per axis.
+const DEGREE: u32 = 16;
+const BASIS_SLOTS: u64 = 17;
+
 fn plane() -> SurfaceGeometry {
+    let poles = DEGREE + 1;
+    let mut knots = vec![0.0; 17];
+    knots.extend(vec![1.0; 17]);
     SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::from_lanes(
             &cadmpeg_test_support::service_decode_context(),
-            NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
-            NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
+            NurbsSurfaceAxis::new(DEGREE, knots.clone(), false),
+            NurbsSurfaceAxis::new(DEGREE, knots, false),
             NurbsSurfaceLanes::new(
-                (0..3)
+                (0..poles)
                     .map(|u| {
-                        (0..3)
-                            .map(|v| Point3::new(f64::from(u) * 0.5, f64::from(v) * 0.5, 0.0))
+                        (0..poles)
+                            .map(|v| {
+                                Point3::new(
+                                    f64::from(u) / f64::from(DEGREE),
+                                    f64::from(v) / f64::from(DEGREE),
+                                    0.0,
+                                )
+                            })
                             .collect()
                     })
                     .collect(),
@@ -36,7 +50,7 @@ fn plane() -> SurfaceGeometry {
             false,
         )
         .expect("fixture constructor admission")
-        .expect("bilinear plane"),
+        .expect("degree-16 plane"),
     ))
 }
 
@@ -156,7 +170,10 @@ fn pcurve_path_mapping_propagates_evaluator_refusal() {
 
 #[test]
 fn native_midpoint_propagates_endpoint_and_midpoint_evaluator_refusals() {
-    for cap in [2, 8, 14] {
+    // The endpoint and midpoint evaluations each admit one basis per axis. A
+    // cap refuses the first basis after 0, 2 or 4 complete bases.
+    for complete_bases in [0, 2, 4] {
+        let cap = (complete_bases + 1) * BASIS_SLOTS - 1;
         context_test(
             |ctx| {
                 basis_refusal(&super::native_pcurve_midpoint(

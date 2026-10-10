@@ -432,6 +432,69 @@ fn binary_kernel_resabs_is_converted_from_centimetres() {
 }
 
 #[test]
+fn binary_kernel_metadata_recovery_preserves_geometry_and_valid_tolerance_peers() {
+    let original = acis_sphere_kernel_stream(21_800);
+    let decode = |kernel: &[u8]| {
+        let bytes = primary_envelope_fixture_with_kernel(EnvelopeDeclarations::default(), kernel);
+        InventorCodec
+            .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+            .expect("independent kernel geometry survives unreadable metadata")
+    };
+    let expected = decode(&original);
+    assert_eq!(expected.ir().model.faces.len(), 1);
+    let mut cursor = 31; // ACIS BinaryFile fixed words; docs/layouts/asm.toml.
+    let mut positions = Vec::new();
+    for _ in 0..3 {
+        positions.push(cursor + 2);
+        cursor += 2 + usize::from(original[cursor + 1]);
+    }
+    for position in positions {
+        let mut bytes = original.clone();
+        bytes[position] = 0xff;
+        let recovered = decode(&bytes);
+        assert_eq!(recovered.ir().model, expected.ir().model);
+        assert_eq!(recovered.ir().tolerances, expected.ir().tolerances);
+        assert!(recovered
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == InventorLossCode::KernelHeaderMetadataUnresolved.kind()));
+        assert!(validation_findings(recovered.ir()).is_empty());
+    }
+    for (offset, values) in [
+        (
+            cursor + 10,
+            &[f64::NAN, f64::INFINITY, -1.0, 0.0, f64::MAX][..],
+        ),
+        (cursor + 19, &[f64::NAN, f64::INFINITY, -1.0, 0.0][..]),
+    ] {
+        for value in values {
+            let mut bytes = original.clone();
+            bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+            let recovered = decode(&bytes);
+            assert_eq!(recovered.ir().model, expected.ir().model);
+            if offset == cursor + 10 {
+                assert_eq!(
+                    recovered.ir().tolerances.angular,
+                    expected.ir().tolerances.angular
+                );
+            } else {
+                assert_eq!(
+                    recovered.ir().tolerances.linear,
+                    expected.ir().tolerances.linear
+                );
+            }
+            assert!(recovered
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code == InventorLossCode::KernelHeaderToleranceUnresolved.kind()));
+            assert!(validation_findings(recovered.ir()).is_empty());
+        }
+    }
+}
+
+#[test]
 fn an_unverified_acis_carrier_is_read_and_marked() {
     // The band is not a gate: the carrier is framed and decoded, the kernel
     // layer says which grammar was substituted, and the recovery is charged.

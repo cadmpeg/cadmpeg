@@ -228,7 +228,7 @@ pub(crate) fn bind_pattern_inputs(
                     )?;
                     let native = (|| {
                         for component in components.iter().rev() {
-                            let source = View::u32_le_at(&component.type_signature, 4)?;
+                            let source = View::u32_le_at(component.type_signature.as_ref(), 4)?;
                             let mut matches = history_features
                                 .iter()
                                 .filter(|candidate| candidate.source_value() == Some(source));
@@ -340,13 +340,13 @@ pub(crate) fn bind_pattern_inputs(
                             })
                             .filter(|identity| {
                                 identity.components.first().is_some_and(|component| {
-                                    View::u32_le_at(&component.type_signature, 4)
+                                    View::u32_le_at(component.type_signature.as_ref(), 4)
                                         == Some(pattern_source)
                                 })
                             })
                             .filter(|identity| {
                                 identity.components.last().is_some_and(|component| {
-                                    View::u32_le_at(&component.type_signature, 4)
+                                    View::u32_le_at(component.type_signature.as_ref(), 4)
                                         == Some(identity.feature_source_id.value())
                                         && component.local_id == Some(identity.local_identity)
                                 })
@@ -1098,7 +1098,7 @@ pub(crate) fn bind_mirror_surface_planes(
                         let Some(component) = selection.components.last() else {
                             continue;
                         };
-                        let Some(source) = View::u32_le_at(&component.type_signature, 4)
+                        let Some(source) = View::u32_le_at(component.type_signature.as_ref(), 4)
                             .and_then(|source| FeatureSourceId::try_from(source).ok())
                         else {
                             continue;
@@ -2119,6 +2119,7 @@ fn bind_resolved_curve_vertices(
             markers_by_id.insert(marker.id(), marker);
         }
         let markers = collect_binding_vec(ctx, lane.sketch_entities.iter())?;
+        let markers = super::endpoints::coordinate_rosters::CoordinateRosters::new(ctx, markers)?;
         let mut selected = HashSet::new();
         for curve in markers.iter().copied().filter(|curve| {
             index_from_u64(curve.offset()).is_some_and(|offset| {
@@ -2157,6 +2158,7 @@ fn bind_resolved_curve_vertices(
             markers_by_id.insert(marker.id(), marker);
         }
         let markers = collect_binding_vec(ctx, lane.sketch_entities.iter())?;
+        let markers = super::endpoints::coordinate_rosters::CoordinateRosters::new(ctx, markers)?;
         let mut resolved_curves = HashSet::new();
         let mut resolved_endpoints = HashSet::new();
         for curve in markers.iter().copied().filter(|marker| {

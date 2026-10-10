@@ -46,18 +46,51 @@ fn geometric_endpoint_indexes_preserve_original_refusals() {
 
 #[test]
 fn geometric_pcurve_indexes_preserve_original_refusals() {
-    refuses(
-        &super::untrimmed_surface_curve(),
-        super::super::check_pcurve_surface_consistency,
-    );
+    refuses(&super::untrimmed_surface_curve(), |ctx, ir, findings| {
+        let index = crate::index::ModelIndex::new_model_only(ir, ctx)?;
+        super::super::check_pcurve_surface_consistency(ctx, &index, findings)
+    });
 }
 
 #[test]
 fn geometric_procedural_indexes_preserve_original_refusals() {
     refuses(
         &super::mapped_surface_curve([1.0, 0.0]),
-        super::super::check_procedural_support_consistency,
+        |ctx, ir, findings| {
+            let index = crate::index::ModelIndex::new_model_only(ir, ctx)?;
+            super::super::check_procedural_support_consistency(ctx, &index, findings)
+        },
     );
+}
+
+#[test]
+fn geometric_checks_reuse_the_prepared_index_without_copying_native_identities() {
+    let mut ir = CadIr::empty();
+    ir.native.namespace_mut("test").arenas_mut().insert(
+        "records".into(),
+        (0..1_000)
+            .map(|ordinal| {
+                crate::NativeRecord::new(
+                    crate::ids::Identity::new(format!("test:native:record#{ordinal}")).unwrap(),
+                    serde_json::Map::new(),
+                )
+                .unwrap()
+            })
+            .collect(),
+    );
+    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_work_units = 1_000;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut findings = Vec::new();
+    super::super::check_pcurve_surface_consistency(&ctx, &index, &mut findings).unwrap();
+    super::super::check_procedural_support_consistency(&ctx, &index, &mut findings).unwrap();
+    assert!(findings.is_empty());
+    ctx.finish_session().unwrap();
 }
 
 #[test]

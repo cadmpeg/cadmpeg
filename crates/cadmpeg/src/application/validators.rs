@@ -5,27 +5,48 @@
 //! Unlike the codec registry, this is an application concern: it belongs to
 //! `cadmpeg check`, not to the four questions an embedder asks of a file.
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::validate::{
+    validate_neutral_for_decode, validate_neutral_with_source_fidelity_for_decode,
+};
 use cadmpeg_ir::{
     report::check::{Finding, ValidationReport},
-    validate_neutral, validate_neutral_with_source_fidelity, CadIr, SourceFidelity,
+    CadIr,
 };
 use cadmpeg_registry::InputCatalog;
 
-pub(crate) fn validate_ir(
-    ctx: &DecodeContext<'_>,
+use super::document::LoadedDocument;
+use super::refusal::{ApplicationError, RefusalStage};
+
+/// Validate a loaded document under one session and retain check-stage refusals.
+pub(crate) fn validate_loaded(
     inputs: &InputCatalog,
-    ir: &CadIr,
-    source_fidelity: Option<&SourceFidelity>,
-    losses: Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<ValidationReport, CodecError> {
-    let mut report = match source_fidelity {
-        Some(source_fidelity) => validate_neutral_with_source_fidelity(ir, source_fidelity, losses),
-        None => validate_neutral(ir, losses),
-    }?;
-    report.findings.extend(validate_native(ctx, inputs, ir)?);
-    Ok(report)
+    document: &LoadedDocument,
+    policy: &DecodePolicy,
+) -> Result<ValidationReport, ApplicationError> {
+    let arena = DecodeArena::new();
+    let result = (|| {
+        let ctx = DecodeContext::for_loaded_input(&arena, policy, document.input_bytes)?;
+        let losses = document
+            .decode_report()
+            .map_or_else(Vec::new, |report| report.losses.clone());
+        let mut report = match document.fidelity() {
+            Some(fidelity) => validate_neutral_with_source_fidelity_for_decode(
+                &ctx,
+                &document.ir,
+                fidelity,
+                losses,
+            ),
+            None => validate_neutral_for_decode(&ctx, &document.ir, losses),
+        }?;
+        report
+            .findings
+            .extend(validate_native(&ctx, inputs, &document.ir)?);
+        ctx.finish_session()?;
+        Ok::<_, CodecError>(report)
+    })();
+    result.map_err(|error| ApplicationError::from(error).at_stage(RefusalStage::Check))
 }
 
 /// Runs every registered codec's native validator over the namespace it owns.
@@ -64,6 +85,25 @@ mod tests {
     fn a_document_with_no_native_namespace_has_no_native_findings() {
         let inputs = InputCatalog::with_builtins();
         assert!(findings(&inputs, &CadIr::empty()).is_empty());
+    }
+
+    #[test]
+    fn validation_resource_refusal_names_the_check_stage() {
+        let document = super::LoadedDocument::neutral(CadIr::empty(), 5);
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_input_bytes = 4;
+        let error = super::validate_loaded(&InputCatalog::with_builtins(), &document, &policy)
+            .expect_err("validation must admit the loaded input length");
+        assert_eq!(error.exit_code(), 2);
+        let report =
+            serde_json::to_value(error.refusal().expect("typed resource refusal").report())
+                .expect("serialize resource evidence");
+        assert_eq!(report["stage"], "check");
+        assert_eq!(report["resource"]["dimension"], "input_bytes");
+        assert_eq!(report["resource"]["operation"], "admit loaded input length");
+        assert_eq!(report["resource"]["limit"], 4);
+        assert_eq!(report["resource"]["used"], 0);
+        assert_eq!(report["resource"]["requested"], 5);
     }
 
     #[test]

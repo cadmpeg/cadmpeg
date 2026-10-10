@@ -414,6 +414,7 @@ fn tolerance_allows_a_bounded_carrier_join_within_resolution() {
         let mut ir = CadIr::empty();
         ir.model.curves.extend([
             Curve {
+                parameter_range: None,
                 id: first_id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(test_nurbs(
                     1,
@@ -424,6 +425,7 @@ fn tolerance_allows_a_bounded_carrier_join_within_resolution() {
                 source_object: None,
             },
             Curve {
+                parameter_range: None,
                 id: second_id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(test_nurbs(
                     1,
@@ -434,6 +436,7 @@ fn tolerance_allows_a_bounded_carrier_join_within_resolution() {
                 source_object: None,
             },
             Curve {
+                parameter_range: None,
                 id: composite_id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
                     segments: cadmpeg_ir::geometry::CompositeCurveSegments::try_from(vec![
@@ -864,7 +867,7 @@ fn decode_projects_a_composite_curve_with_an_inconsistent_parametric_spline_chil
             .report()
             .losses
             .iter()
-            .filter(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
+            .filter(|loss| loss.code == IgesLossCode::SplineClaimRecovered.kind())
             .count(),
         1
     );

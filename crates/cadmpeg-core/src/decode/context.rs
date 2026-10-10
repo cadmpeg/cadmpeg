@@ -44,6 +44,21 @@ impl<'a> DecodeContext<'a> {
         }
     }
 
+    /// Starts post-decode processing with the measured byte length of an already
+    /// loaded input. This admits the input-proportional allowances without
+    /// keeping another copy of the source bytes. Format-declared counts must
+    /// not be used as the input length.
+    pub fn for_loaded_input(
+        arena: &'a DecodeArena,
+        policy: &DecodePolicy,
+        input_bytes: u64,
+    ) -> Result<Self, CodecError> {
+        let ctx = Self::new(arena, policy, false);
+        ctx.budget
+            .charge_input(input_bytes, "admit loaded input length")?;
+        Ok(ctx)
+    }
+
     /// Reads the root input under `max_input_bytes`, copies it into the arena,
     /// registers the root space, establishes input-proportional allowances,
     /// and returns the context and root view.
@@ -191,6 +206,19 @@ impl<'a> DecodeContext<'a> {
         self.budget.reserve_scoped(bytes, operation)
     }
 
+    /// Admits a temporary byte allocation and holds its reservation until released.
+    pub fn try_materialized<T>(
+        &self,
+        bytes: u64,
+        operation: &'static str,
+        allocate: impl FnOnce() -> Result<T, std::collections::TryReserveError>,
+    ) -> Result<(ScopedReservation<'_>, T), CodecError> {
+        let reservation = self.reserve_scoped(bytes, operation)?;
+        let value =
+            allocate().map_err(|_| self.budget.scoped_allocation_failed(bytes, operation))?;
+        Ok((reservation, value))
+    }
+
     /// Reserves temporary bytes and returns the typed resource refusal.
     pub fn reserve_scoped_limit(
         &self,
@@ -303,6 +331,7 @@ impl<'a> DecodeContext<'a> {
         value: &[u8],
         operation: &'static str,
     ) -> Result<String, CodecError> {
+        self.charge_work(u64_from_index(value.len()), operation)?;
         let mut remaining = value;
         let mut length = 0usize;
         loop {
@@ -326,6 +355,8 @@ impl<'a> DecodeContext<'a> {
             }
         }
         let mut text = String::new();
+        self.charge_work(u64_from_index(value.len()), operation)?;
+        self.charge_work(u64_from_index(length), operation)?;
         self.try_reserve_retained_text(&mut text, length, operation)?;
         let mut remaining = value;
         loop {
@@ -336,6 +367,7 @@ impl<'a> DecodeContext<'a> {
                 }
                 Err(error) => {
                     let valid_len = error.valid_up_to();
+                    self.charge_work(u64_from_index(valid_len), operation)?;
                     text.push_str(
                         std::str::from_utf8(&remaining[..valid_len])
                             .map_err(|_| CodecError::malformed("valid UTF-8 prefix changed"))?,
@@ -351,8 +383,8 @@ impl<'a> DecodeContext<'a> {
         Ok(text)
     }
 
-    /// Allocates `count` copies of `value` after charging collection items and
-    /// reserving without panicking on allocator refusal.
+    /// Allocates `count` copies of `value` after charging slots, backing bytes
+    /// and fill work, with fallible storage admission.
     ///
     /// Prefer this over `vec![value; parsed_count]` for attacker-influenced sizes.
     pub fn alloc_filled<T: Clone>(
@@ -361,8 +393,30 @@ impl<'a> DecodeContext<'a> {
         value: T,
         operation: &'static str,
     ) -> Result<Vec<T>, CodecError> {
+        self.charge_work(u64_from_index(count), operation)?;
+        let mut values = self.collection_vec(count, operation)?;
+        values.resize(count, value);
+        Ok(values)
+    }
+
+    /// Allocates `count` copies of `value` whose backing bytes the caller has
+    /// already admitted, as retained or scoped storage, under its own operation.
+    ///
+    /// Charges collection items and fill work only, so the bytes are admitted
+    /// exactly once. The caller must have admitted `count * size_of::<T>()`
+    /// bytes before this call.
+    pub fn alloc_filled_admitted<T: Clone>(
+        &self,
+        count: usize,
+        value: T,
+        operation: &'static str,
+    ) -> Result<Vec<T>, CodecError> {
+        self.charge_work(u64_from_index(count), operation)?;
         self.charge_collection_items(u64_from_index(count), operation)?;
-        let mut values = Self::admitted_vec(count, operation)?;
+        let mut values = Vec::new();
+        values
+            .try_reserve_exact(count)
+            .map_err(|_| self.collection_allocation_failed(count, operation))?;
         values.resize(count, value);
         Ok(values)
     }
@@ -461,7 +515,7 @@ impl<'a> DecodeContext<'a> {
 
     /// Sort admitted values stably using fallible index scratch.
     ///
-    /// `key_bytes` states the external bytes a comparison can read from each value.
+    /// `key_bytes` states the key bytes a comparison can read from each value.
     /// Equal values retain input order. Values move in place without cloning children.
     pub fn stable_sort_by<T>(
         &self,
@@ -472,58 +526,108 @@ impl<'a> DecodeContext<'a> {
     ) -> Result<(), CodecError> {
         let count = super::u64_from_index(values.len());
         self.charge_work(count, operation)?;
-        let bytes = values
-            .iter()
-            .try_fold(0u64, |bytes, value| {
-                bytes.checked_add(super::u64_from_index(key_bytes(value)))
-            })
-            .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-        let levels = u64::from(u64::BITS - count.leading_zeros()) + 1;
-        let work = count
-            .checked_mul(super::u64_from_index(std::mem::size_of::<T>()))
-            .and_then(|storage| storage.checked_add(bytes.checked_mul(2)?))
-            .and_then(|work| work.checked_mul(levels))
-            .and_then(|work| work.checked_mul(8))
-            .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-        self.charge_work(work, operation)?;
-        // Small runs use adjacent swaps, so their stable order needs no scratch.
-        if values.len() <= 20 {
-            for end in 1..values.len() {
-                let mut position = end;
-                while position > 0 && compare(&values[position], &values[position - 1]).is_lt() {
-                    values.swap(position, position - 1);
-                    position -= 1;
-                }
+        let mut compared = |left: usize, right: usize| {
+            let work = super::u64_from_index(key_bytes(&values[left]))
+                .checked_add(super::u64_from_index(key_bytes(&values[right])))
+                .and_then(|work| work.checked_add(1))
+                .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+            self.charge_work(work, operation)?;
+            Ok::<_, CodecError>(compare(&values[left], &values[right]))
+        };
+        let mut ordered = true;
+        for index in 1..values.len() {
+            if compared(index - 1, index)?.is_gt() {
+                ordered = false;
+                break;
             }
+        }
+        if ordered {
             return Ok(());
         }
+        let index_bytes = super::u64_from_index(std::mem::size_of::<usize>());
         let scratch_bytes = count
-            .checked_mul(super::u64_from_index(std::mem::size_of::<usize>()))
+            .checked_mul(index_bytes)
             .and_then(|bytes| bytes.checked_mul(2))
             .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-        self.charge_collection_items(
-            count
-                .checked_mul(2)
-                .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?,
-            operation,
-        )?;
-        let _scratch = self.reserve_scoped(scratch_bytes, operation)?;
-        let mut order = Vec::new();
-        order.try_reserve_exact(values.len()).map_err(|_| {
-            self.budget
-                .scoped_allocation_failed(scratch_bytes, operation)
-        })?;
-        order.extend(0..values.len());
-        let mut destinations = Vec::new();
-        destinations.try_reserve_exact(values.len()).map_err(|_| {
-            self.budget
-                .scoped_allocation_failed(scratch_bytes, operation)
-        })?;
-        destinations.resize(values.len(), 0usize);
-        order.sort_unstable_by(|&left, &right| {
-            compare(&values[left], &values[right]).then_with(|| left.cmp(&right))
-        });
-        for (destination, source) in order.into_iter().enumerate() {
+        self.charge_work(scratch_bytes, operation)?;
+        let mut order_vec = Vec::new();
+        let mut destinations_vec = Vec::new();
+        let _scratch = if values.len() > super::sort::INLINE_SORT_LIMIT {
+            self.charge_collection_items(
+                count
+                    .checked_mul(2)
+                    .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?,
+                operation,
+            )?;
+            let reservation = self.reserve_scoped(scratch_bytes, operation)?;
+            order_vec.try_reserve_exact(values.len()).map_err(|_| {
+                self.budget
+                    .scoped_allocation_failed(scratch_bytes, operation)
+            })?;
+            destinations_vec
+                .try_reserve_exact(values.len())
+                .map_err(|_| {
+                    self.budget
+                        .scoped_allocation_failed(scratch_bytes, operation)
+                })?;
+            order_vec.extend(0..values.len());
+            destinations_vec.resize(values.len(), 0usize);
+            Some(reservation)
+        } else {
+            None
+        };
+        let mut inline_order = [0usize; super::sort::INLINE_SORT_LIMIT];
+        let mut inline_destinations = [0usize; super::sort::INLINE_SORT_LIMIT];
+        let (mut order, mut destinations) = if values.len() > super::sort::INLINE_SORT_LIMIT {
+            (order_vec.as_mut_slice(), destinations_vec.as_mut_slice())
+        } else {
+            for (index, slot) in inline_order[..values.len()].iter_mut().enumerate() {
+                *slot = index;
+            }
+            (
+                &mut inline_order[..values.len()],
+                &mut inline_destinations[..values.len()],
+            )
+        };
+        // Merge index runs fallibly. No record moves before all work is admitted.
+        let mut width = 1usize;
+        while width < values.len() {
+            // Each output index is read and written; comparisons read two more.
+            self.charge_work(
+                scratch_bytes
+                    .checked_mul(2)
+                    .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
+                operation,
+            )?;
+            let mut start = 0;
+            while start < values.len() {
+                let middle = start + width.min(values.len() - start);
+                let end = middle + width.min(values.len() - middle);
+                let (mut left, mut right) = (start, middle);
+                for destination in &mut destinations[start..end] {
+                    if left < middle
+                        && (right == end || !compared(order[left], order[right])?.is_gt())
+                    {
+                        *destination = order[left];
+                        left += 1;
+                    } else {
+                        *destination = order[right];
+                        right += 1;
+                    }
+                }
+                start = end;
+            }
+            std::mem::swap(&mut order, &mut destinations);
+            width += width.min(values.len() - width);
+        }
+        // The inverse permutation and at most N-1 swaps have linear move work.
+        let permutation = super::u64_from_index(std::mem::size_of::<T>())
+            .checked_mul(4)
+            .and_then(|bytes| bytes.checked_add(index_bytes.checked_mul(8)?))
+            .and_then(|bytes| count.checked_mul(bytes))
+            .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+        self.charge_work(permutation, operation)?;
+        for (destination, &source) in order.iter().enumerate() {
             destinations[source] = destination;
         }
         for index in 0..values.len() {
@@ -650,6 +754,7 @@ impl<'a> DecodeContext<'a> {
                 "cannot concatenate an empty view list".into(),
             ));
         }
+        self.charge_work(u64_from_index(inputs.len()), "concat_views")?;
         let total = inputs.iter().try_fold(0usize, |total, view| {
             total.checked_add(view.window().len()).ok_or_else(|| {
                 self.budget.refuse(
@@ -662,6 +767,7 @@ impl<'a> DecodeContext<'a> {
                 )
             })
         })?;
+        self.charge_work(u64_from_index(total), "concat_views")?;
         let reservation = self.reserve_scoped(u64_from_index(total), "concat_views")?;
         let mut buffer = Vec::new();
         buffer.try_reserve_exact(total).map_err(|_| {
@@ -887,6 +993,65 @@ mod tests {
     use super::{u64_from_index, ByteRange, DecodeArena, DecodeContext, DecodePolicy};
     use crate::decode::{ResourceDimension, ResourceFailure};
     use std::io::{self, Cursor, Read, Seek, SeekFrom};
+
+    #[test]
+    fn temporary_byte_storage_uses_its_byte_budget_and_releases_it() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 32;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let (reservation, bytes) = ctx
+            .try_materialized(32, "test bytes", || {
+                let mut bytes = Vec::<u8>::new();
+                bytes.try_reserve_exact(32)?;
+                Ok(bytes)
+            })
+            .expect("byte allowance");
+        assert_eq!(bytes.capacity(), 32);
+        drop(reservation);
+        let (reservation, ()) = ctx
+            .try_materialized(32, "test bytes", || Ok(()))
+            .expect("released allowance");
+        assert!(
+            matches!(ctx.try_materialized(1, "test bytes", || Ok(())), Err(crate::CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::MaterializedBytes)
+        );
+        drop(reservation);
+    }
+
+    #[test]
+    fn loaded_input_processing_preserves_proportional_and_absolute_limits() {
+        let input_bytes = 1024;
+        let allowance = crate::decode::policy::MATERIALIZED_BASE
+            + input_bytes * crate::decode::policy::MATERIALIZED_PER_INPUT_BYTE;
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        let ctx = DecodeContext::for_loaded_input(&arena, &policy, input_bytes)
+            .expect("admitted input length");
+        drop(
+            ctx.reserve_scoped(allowance, "loaded input allowance")
+                .expect("input-proportional allowance"),
+        );
+        assert!(
+            matches!(ctx.reserve_scoped(allowance + 1, "loaded input allowance"),
+            Err(crate::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::MaterializedBytes && limit.limit == allowance)
+        );
+
+        policy.limits.max_materialized_bytes = 32;
+        let ctx = DecodeContext::for_loaded_input(&arena, &policy, input_bytes)
+            .expect("admitted input length");
+        assert!(matches!(ctx.reserve_scoped(33, "absolute limit"),
+            Err(crate::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::MaterializedBytes && limit.limit == 32));
+
+        policy.limits.max_input_bytes = input_bytes - 1;
+        assert!(
+            matches!(DecodeContext::for_loaded_input(&arena, &policy, input_bytes),
+            Err(crate::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::InputBytes && limit.additional == input_bytes)
+        );
+    }
 
     #[test]
     fn zero_collection_limit_refuses_second_empty_finalization() {

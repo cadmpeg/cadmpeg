@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Sketch constraints, relations and patterns.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use cadmpeg_core::decode::u64_from_index;
 
 use super::{
@@ -501,7 +503,7 @@ pub(crate) struct SketchRelation {
     /// Second reference run in semantic member order.
     return_members: SketchRelationReturnMembers,
     /// Complete variable-width source record for native replay/write.
-    raw_bytes: Vec<u8>,
+    raw_bytes: NativeBytes<Vec<u8>>,
 }
 
 #[cfg(test)]
@@ -569,8 +571,7 @@ impl Serialize for SketchRelation {
             resolved_return_members:
                 FilteredColumn<'a, SketchRelationReturnMember, &'a SketchRelationOperand>,
             return_member_offsets: SliceColumn<'a, SketchRelationReturnMember, u32>,
-            #[serde(serialize_with = "cadmpeg_ir::bytes::serialize")]
-            raw_bytes: &'a [u8],
+            raw_bytes: NativeBytes<&'a [u8]>,
         }
         let auxiliary = self.auxiliary_references.located_rows().ok_or_else(|| {
             serde::ser::Error::custom("sketch relation auxiliary_references must be located")
@@ -614,7 +615,7 @@ impl Serialize for SketchRelation {
                 value: |row| row.reference.resolved(),
             },
             return_member_offsets: SliceColumn::new(returns, |row| row.offset),
-            raw_bytes: &self.raw_bytes,
+            raw_bytes: (&self.raw_bytes).into(),
         }
         .serialize(serializer)
     }
@@ -719,7 +720,7 @@ impl SketchRelation {
             definition: draft.definition,
             entity_genesis: draft.entity_genesis,
             return_members: draft.return_members,
-            raw_bytes: draft.raw_bytes,
+            raw_bytes: (draft.raw_bytes).into(),
         })
     }
 
@@ -740,7 +741,7 @@ impl SketchRelation {
             definition: self.definition,
             entity_genesis: self.entity_genesis,
             return_members: self.return_members,
-            raw_bytes: self.raw_bytes,
+            raw_bytes: self.raw_bytes.into_inner(),
         }
     }
 
@@ -1030,8 +1031,7 @@ pub(crate) struct SketchRelationSerde {
     resolved_return_members: Vec<SketchRelationOperand>,
     #[serde(default)]
     return_member_offsets: Vec<u32>,
-    #[serde(with = "cadmpeg_ir::bytes")]
-    raw_bytes: Vec<u8>,
+    raw_bytes: NativeBytes<Vec<u8>>,
 }
 
 impl TryFrom<SketchRelationSerde> for SketchRelation {
@@ -1122,7 +1122,7 @@ impl SketchRelation {
                 wire.return_member_offsets,
                 wire.resolved_return_members,
             )?,
-            raw_bytes: wire.raw_bytes,
+            raw_bytes: wire.raw_bytes.into_inner(),
         })
         .map_err(Into::into)
     }
@@ -1190,7 +1190,7 @@ impl From<SketchRelation> for SketchRelationSerde {
                 .iter()
                 .map(|member| member.offset)
                 .collect(),
-            raw_bytes: relation.raw_bytes,
+            raw_bytes: (relation.raw_bytes),
         }
     }
 }

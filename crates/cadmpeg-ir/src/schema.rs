@@ -253,7 +253,7 @@ impl EntitySchema for crate::topology::Point {
     }
 }
 impl_entity_schema!(crate::geometry::Surface, Surface, id; id, geometry, source_object);
-impl_entity_schema!(crate::geometry::Curve, Curve, id; id, geometry, source_object);
+impl_entity_schema!(crate::geometry::Curve, Curve, id; id, geometry, parameter_range, source_object);
 impl_entity_schema!(crate::subd::SubdSurface, SubdSurface, id; id, scheme, cage, source_object);
 impl_entity_schema!(crate::geometry::pcurve::Pcurve, Pcurve, id; id, geometry, metadata);
 impl EntitySchema for crate::geometry::ProceduralSurface {

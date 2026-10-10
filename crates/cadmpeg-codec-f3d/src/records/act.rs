@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! ACT registry records: tables, channels, entities and the root component and layout.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use cadmpeg_core::decode::u64_from_index;
 
 use serde::{Deserialize, Serialize};
@@ -275,7 +277,7 @@ struct ActEntityWireRef<'a> {
     channels: ChannelValues<'a>,
     channel_guid_offsets: ChannelOffsets<'a>,
     #[serde(skip_serializing_if = "<[u8]>::is_empty")]
-    channel_class_tail: &'a [u8],
+    channel_class_tail: NativeBytes<&'a [u8]>,
     #[serde(skip_serializing_if = "Option::is_none")]
     channel_class_tail_offset: Option<u64>,
 }
@@ -298,7 +300,7 @@ impl Serialize for ActEntity {
             channel_class_tag: Some(self.channel_class_tag()),
             channels: ChannelValues(&self.channel_group.channels),
             channel_guid_offsets: ChannelOffsets(&self.channel_group.channels),
-            channel_class_tail,
+            channel_class_tail: (channel_class_tail).into(),
             channel_class_tail_offset,
         }
         .serialize(serializer)
@@ -428,7 +430,7 @@ struct ActEntitySerde {
     #[serde(default)]
     channel_guid_offsets: BTreeMap<String, u64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    channel_class_tail: Vec<u8>,
+    channel_class_tail: NativeBytes<Vec<u8>>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -506,7 +508,7 @@ impl TryFrom<ActEntitySerde> for ActEntity {
                     .collect::<Result<_, String>>()?,
                 match (wire.channel_class_tail, wire.channel_class_tail_offset) {
                     (bytes, None) if bytes.is_empty() => None,
-                    (bytes, Some(offset)) => Some(ActClassTail::new(bytes, offset)?),
+                    (bytes, Some(offset)) => Some(ActClassTail::new(bytes.into_inner(), offset)?),
                     _ => return Err("channel_class_tail requires channel_class_tail_offset".into()),
                 },
             )?),
@@ -563,7 +565,7 @@ impl From<ActEntity> for ActEntitySerde {
             channel_class_tag,
             channels,
             channel_guid_offsets,
-            channel_class_tail,
+            channel_class_tail: (channel_class_tail).into(),
             channel_class_tail_offset,
         }
     }

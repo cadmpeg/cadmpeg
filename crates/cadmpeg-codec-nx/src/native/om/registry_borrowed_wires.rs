@@ -35,14 +35,20 @@ impl Serialize for ClassDefinition {
         }
         if let Some(layout) = &layout {
             if !layout.prefix.is_empty() {
-                wire.serialize_entry("layout_prefix", layout.prefix)?;
+                wire.serialize_entry(
+                    "layout_prefix",
+                    &cadmpeg_ir::native::bytes::NativeBytes::from(layout.prefix),
+                )?;
             }
         }
         if let Some(fingerprint) = registry
             .map(|value| value.schema_fingerprint)
             .or_else(|| layout.as_ref().map(|value| value.fingerprint))
         {
-            wire.serialize_entry("schema_fingerprint", &fingerprint)?;
+            wire.serialize_entry(
+                "schema_fingerprint",
+                &cadmpeg_ir::native::bytes::NativeBytes::from(fingerprint),
+            )?;
         }
         if let Some(layout) = &layout {
             wire.serialize_entry("layout_terminal", &layout.terminal)?;
@@ -76,9 +82,15 @@ impl Serialize for FieldDefinition {
         }
         if let Some(layout) = &layout {
             if !layout.prefix.is_empty() {
-                wire.serialize_entry("layout_prefix", layout.prefix)?;
+                wire.serialize_entry(
+                    "layout_prefix",
+                    &cadmpeg_ir::native::bytes::NativeBytes::from(layout.prefix),
+                )?;
             }
-            wire.serialize_entry("schema_fingerprint", &layout.fingerprint)?;
+            wire.serialize_entry(
+                "schema_fingerprint",
+                &cadmpeg_ir::native::bytes::NativeBytes::from(layout.fingerprint),
+            )?;
             wire.serialize_entry("layout_terminal", &layout.terminal)?;
         }
         wire.serialize_entry("section_offset", &self.section_offset)?;
@@ -107,7 +119,7 @@ mod tests {
                 name: "UGS::FEATURE_RECORD".to_owned(),
                 ordinal: 0,
                 trailing_code: 0x38,
-                registry_suffix: suffix,
+                registry_suffix: suffix.into(),
                 section_offset: 0,
                 source_entry: "entry".to_owned(),
                 source_offset: 1,
@@ -134,7 +146,7 @@ mod tests {
                 name: "m_target".to_owned(),
                 ordinal: 0,
                 trailing_code: 0x81,
-                registry_suffix: suffix,
+                registry_suffix: suffix.into(),
                 section_offset: 0,
                 source_entry: "entry".to_owned(),
                 source_offset: 1,

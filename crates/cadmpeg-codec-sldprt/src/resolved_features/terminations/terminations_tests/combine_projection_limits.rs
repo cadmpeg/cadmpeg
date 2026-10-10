@@ -58,7 +58,7 @@ fn combine_projection_error(policy: DecodePolicy) -> cadmpeg_core::CodecError {
     let lane = FeatureInputLane {
         id: "lane#7".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),

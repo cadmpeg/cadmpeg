@@ -54,6 +54,9 @@ pub(crate) struct SummaryArgs {
     /// Resource-limit profile applied during inspection.
     #[arg(long, value_enum, default_value_t = LimitProfile::Desktop)]
     pub(crate) limits: LimitProfile,
+    /// Override the profile's maximum number of physical input bytes.
+    #[arg(long)]
+    pub(crate) max_input_bytes: Option<u64>,
     /// Treat the input as this native format.
     #[arg(long, visible_alias = "from", value_parser = crate::input_format::native_input_parser())]
     pub(crate) input_format: Option<&'static cadmpeg_registry::NativeDescriptor>,
@@ -408,6 +411,9 @@ pub(crate) struct ContainerArgs {
     /// Resource-limit profile applied while reading the central directory.
     #[arg(long, value_enum, default_value_t = LimitProfile::Desktop)]
     limits: LimitProfile,
+    /// Override the profile's maximum number of physical input bytes.
+    #[arg(long)]
+    max_input_bytes: Option<u64>,
 }
 
 /// Arguments for `cadmpeg inspect extract`.
@@ -494,16 +500,42 @@ pub(crate) fn run(command: ByteCommand) -> Result<ExitCode> {
     let tool = match command {
         ByteCommand::Tool(tool) | ByteCommand::Bytes { tool } => tool,
     };
-    match tool {
-        ByteTool::Hex(args) => hex(&args).map(|()| ExitCode::SUCCESS),
-        ByteTool::Read(args) => read(&args).map(|()| ExitCode::SUCCESS),
-        ByteTool::Find(args) => find(&args).map(|()| ExitCode::SUCCESS),
-        ByteTool::Strings(args) => strings(&args).map(|()| ExitCode::SUCCESS),
-        ByteTool::Struct(args) => structure(&args).map(|()| ExitCode::SUCCESS),
-        ByteTool::Container(args) => container_list(&args).map(|()| ExitCode::SUCCESS),
-        ByteTool::Extract(args) => extract_entry(&args).map(|()| ExitCode::SUCCESS),
-        ByteTool::Cmp(args) => cmp_files(&args),
-    }
+    let json_subcommand = match &tool {
+        ByteTool::Find(args) if args.json => Some("find"),
+        ByteTool::Container(args) if args.json => Some("container"),
+        _ => None,
+    };
+    let result = match &tool {
+        ByteTool::Hex(args) => hex(args).map(|()| ExitCode::SUCCESS),
+        ByteTool::Read(args) => read(args).map(|()| ExitCode::SUCCESS),
+        ByteTool::Find(args) => find(args).map(|()| ExitCode::SUCCESS),
+        ByteTool::Strings(args) => strings(args).map(|()| ExitCode::SUCCESS),
+        ByteTool::Struct(args) => structure(args).map(|()| ExitCode::SUCCESS),
+        ByteTool::Container(args) => container_list(args).map(|()| ExitCode::SUCCESS),
+        ByteTool::Extract(args) => extract_entry(args).map(|()| ExitCode::SUCCESS),
+        ByteTool::Cmp(args) => cmp_files(args),
+    };
+    result.inspect_err(|error| {
+        let Some(subcommand) = json_subcommand else {
+            return;
+        };
+        let Some(cadmpeg_core::CodecError::ResourceLimit(limit)) =
+            error.downcast_ref::<cadmpeg_core::CodecError>()
+        else {
+            return;
+        };
+        let refusal = crate::application::refusal::ConversionRefusal::ResourceLimit {
+            limit: *limit,
+            stage: crate::application::refusal::RefusalStage::Decode,
+        };
+        let payload = crate::commands::reporting::Payload::Refused(
+            serde_json::json!({ "subcommand": subcommand }), &refusal,
+        );
+        match crate::commands::reporting::payload_report_json("inspect", payload) {
+            Ok(report) => println!("{report}"),
+            Err(error) => eprintln!("warning: could not serialize inspect refusal report: {error:#}; preserving the original refusal"),
+        }
+    })
 }
 
 /// Returns the file length in bytes.
@@ -723,8 +755,19 @@ fn structure(args: &StructArgs) -> Result<()> {
 
 fn container_list(args: &ContainerArgs) -> Result<()> {
     let file_path = args.file.path();
-    let bytes = read_whole(file_path)?;
-    let listing = container::list(&bytes, args.limits.limits()).with_context(|| {
+    let limits = args.limits.limits(args.max_input_bytes);
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy {
+        limits,
+        ..DecodePolicy::default()
+    };
+    let ctx = DecodeContext::new(&arena, &policy, false);
+    let mut file =
+        File::open(file_path).with_context(|| format!("reading {}", file_path.display()))?;
+    let mut bytes = Vec::new();
+    ctx.complete_input(&mut file, &mut bytes)?;
+    ctx.finish_session()?;
+    let listing = container::list(&bytes, limits).with_context(|| {
         format!(
             "cannot list {} as a ZIP or CFB container; `cadmpeg inspect {}` reads \
              the other container families through their codec",
@@ -742,7 +785,7 @@ fn container_list(args: &ContainerArgs) -> Result<()> {
 
 fn extract_entry(args: &ExtractArgs) -> Result<()> {
     let bytes = read_whole(&args.file)?;
-    let payload = container::extract(&bytes, args.limits.limits(), &args.member)
+    let payload = container::extract(&bytes, args.limits.limits(None), &args.member)
         .with_context(|| format!("extracting from {}", args.file.display()))?;
     match &args.output {
         ExtractDestination::Stdout => write_payload_to_stdout(&payload),

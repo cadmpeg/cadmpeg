@@ -23,7 +23,7 @@ impl CloneCharged for FeatureInputLane {
         Ok(Self {
             id: self.id.clone_charged(ctx, operation)?,
             configuration: self.configuration.clone_charged(ctx, operation)?,
-            native_payload: ctx.copy_retained(&self.native_payload, operation)?,
+            native_payload: ctx.copy_retained(&self.native_payload, operation)?.into(),
             classes: self.classes.clone_charged(ctx, operation)?,
             names: self.names.clone_charged(ctx, operation)?,
             scalars: self.scalars.clone_charged(ctx, operation)?,

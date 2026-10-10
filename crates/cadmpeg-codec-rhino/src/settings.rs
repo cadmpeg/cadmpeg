@@ -2646,7 +2646,19 @@ pub(crate) fn parse_metadata(
     let mut property_workspace = ctx.reserve_scoped(0, "Rhino property singleton workspace")?;
     let mut setting_workspace = ctx.reserve_scoped(0, "Rhino setting singleton workspace")?;
     let mut opaque_records = Vec::new();
-    for table in tables {
+    // Properties establish the writer encoding before layers are read. Only
+    // the first outer properties/settings tables own document metadata.
+    let properties = tables
+        .iter()
+        .find(|table| table.typecode & !0x0000_8000 == PROPERTIES);
+    let settings = tables
+        .iter()
+        .find(|table| table.typecode & !0x0000_8000 == SETTINGS);
+    for table in properties.into_iter().chain(settings).chain(
+        tables
+            .iter()
+            .filter(|table| !matches!(table.typecode & !0x0000_8000, PROPERTIES | SETTINGS)),
+    ) {
         let table_type = table.typecode & !0x0000_8000;
         for record in &table.records {
             let singleton = match table_type {

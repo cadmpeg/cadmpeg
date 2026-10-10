@@ -20,7 +20,7 @@ use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use crate::container::{self, Container, EntryContent};
-use crate::loss::NxLossCode;
+use crate::loss::{charge_loss_code, NxLossCode};
 use crate::native::TypedNative;
 use crate::parasolid::{self, Stream, StreamKind};
 
@@ -31,6 +31,7 @@ pub(crate) mod feature_completeness;
 mod geometry_work;
 pub(crate) mod ids;
 pub(crate) mod jpeg;
+mod nurbs_fit;
 mod offset;
 pub(crate) mod pcurves;
 pub(crate) mod report;
@@ -198,17 +199,6 @@ fn report_untransferred_streams(
     Ok(())
 }
 
-fn charge_loss_code(ctx: &DecodeContext<'_>, code: NxLossCode) -> Result<(), CodecError> {
-    let bytes = "nx"
-        .len()
-        .checked_add(code.code().len())
-        .ok_or_else(|| ctx.refuse_codec_limit("nx loss code text", 0, u64::MAX))?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(bytes),
-        "nx loss code text",
-    )
-}
-
 pub(super) fn offset_store_control_counts(
     ctx: &DecodeContext<'_>,
     container: &Container,
@@ -288,7 +278,7 @@ fn build_metadata_ir(
         .filter(|stream| stream.kind().is_parasolid())
         .count();
     let mut unknowns = ctx.collection_vec(unknown_count, "nx metadata unknown streams")?;
-    let mut ir = CadIr::decoded(source_meta(ctx, scan, dialects)?);
+    let mut ir = CadIr::decoded(source_meta(ctx, scan, dialects, None)?);
     let mut annotations = AnnotationBuilder::new();
     let mut losses = Vec::new();
     let source_stream = StreamHandle::new(

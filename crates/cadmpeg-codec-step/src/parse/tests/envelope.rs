@@ -56,6 +56,18 @@ fn parser_enforces_the_part21_header_contract() {
     ];
 
     for (source, message) in cases {
+        if source.contains("'AP242','ap242'") || source.contains("'AP242','AP24\\X\\32'") {
+            let (parsed, diagnostics) = crate::test_support::with_service_context(
+                source.as_bytes(),
+                crate::parse::parse_inner,
+            )
+            .expect("duplicate identifiers preserve one usable schema");
+            assert_eq!(parsed.schema_identifiers().count(), 1);
+            assert!(diagnostics
+                .iter()
+                .any(|item| item.message.contains("duplicate excluded")));
+            continue;
+        }
         let error =
             crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
                 .expect_err("invalid header");
@@ -186,7 +198,7 @@ fn parser_validates_header_string_bounds_timestamps_and_schema_identifiers() {
 }
 
 #[test]
-fn parser_rejects_noncanonical_or_invalid_schema_identifiers() {
+fn parser_selects_usable_schema_identifiers() {
     let cases = [
         ("' AP242 ','AP242'", "'AP242'", "trimmed duplicate"),
         ("'9AP242'", "'9AP242'", "leading digit"),
@@ -215,15 +227,12 @@ fn parser_rejects_noncanonical_or_invalid_schema_identifiers() {
             Err(error) => assert!(
                 error
                     .to_string()
-                    .contains("FILE_SCHEMA has invalid or duplicate schema identifiers"),
+                    .contains("FILE_SCHEMA has no usable schema identifiers"),
                 "{description}: unexpected error: {error}"
             ),
         }
     }
-    assert!(
-        admitted.is_empty(),
-        "admitted invalid identifiers: {admitted:?}"
-    );
+    assert_eq!(admitted, ["trimmed duplicate"]);
 }
 
 #[test]
@@ -427,6 +436,17 @@ fn parser_enforces_legacy_implementation_level_restrictions() {
     ];
 
     for (source, message) in cases {
+        if message.contains("forbids ANCHOR and REFERENCE") {
+            let (_, diagnostics) = crate::test_support::with_service_context(
+                source.as_bytes(),
+                crate::parse::parse_inner,
+            )
+            .expect("readable sections use the reported recovery grammar");
+            assert!(diagnostics
+                .iter()
+                .any(|item| item.message.contains(message)));
+            continue;
+        }
         let error =
             crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
                 .expect_err("invalid level");
@@ -504,6 +524,17 @@ fn parser_enforces_edition_three_conformance_classes() {
     ];
 
     for (source, message) in cases {
+        if message.contains("forbids ANCHOR and REFERENCE") {
+            let (_, diagnostics) = crate::test_support::with_service_context(
+                source.as_bytes(),
+                crate::parse::parse_inner,
+            )
+            .expect("readable sections use the reported recovery grammar");
+            assert!(diagnostics
+                .iter()
+                .any(|item| item.message.contains(message)));
+            continue;
+        }
         let error =
             crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
                 .expect_err("invalid conformance class");
@@ -531,7 +562,15 @@ fn parser_validates_optional_header_entities_and_data_section_targets() {
     let (exchange, _) =
         crate::test_support::with_service_context(source, crate::parse::parse_inner)
             .expect("valid optional header entities");
-    assert_eq!(exchange.data()[0].records, vec![1]);
+    assert_eq!(
+        exchange
+            .records()
+            .iter()
+            .filter(|(_, record)| exchange.data()[0].span.contains(&record.span.start))
+            .map(|(&id, _)| id)
+            .collect::<Vec<_>>(),
+        vec![1]
+    );
     assert_eq!(exchange.header()[7].name, "!VENDOR");
 
     let invalid = [

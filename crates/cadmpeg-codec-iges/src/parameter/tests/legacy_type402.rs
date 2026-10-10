@@ -124,7 +124,7 @@ fn type430_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recove
         9,
         vec![
             430.into(),
-            TokenValue::String(b"BAD".to_vec()),
+            TokenValue::String(b"BAD".to_vec().into()),
             1.into(),
             1.into(),
             1.into(),
@@ -199,7 +199,7 @@ fn legacy_type402_primary_boundaries_follow_their_counted_classes() {
                 0.into(),
                 0.into(),
                 0.into(),
-                TokenValue::String(b"NET".to_vec()),
+                TokenValue::String(b"NET".to_vec().into()),
             ],
             6,
         ),

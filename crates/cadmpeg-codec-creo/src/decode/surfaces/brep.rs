@@ -2371,6 +2371,7 @@ pub(in super::super) fn transfer_native_brep(
             Exactness::Derived,
         )?;
         let source_object = SourceObjectAssociation {
+            geometry_role: None,
             format: cadmpeg_ir::CodecFormat::Creo,
             object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
                 format_args!("topology:vertex#{vertex_id}"),
@@ -2592,11 +2593,13 @@ pub(in super::super) fn transfer_native_brep(
                 ctx,
                 ir,
                 Curve {
+                    parameter_range: None,
                     id: curve,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                         record: geometry_section_record(ctx, scan, offset)?,
                     }),
                     source_object: Some(SourceObjectAssociation {
+                        geometry_role: None,
                         format: cadmpeg_ir::CodecFormat::Creo,
                         object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
                             format_args!("VisibGeom:{curve_id}"),
@@ -2832,6 +2835,7 @@ pub(in super::super) fn transfer_native_brep(
                             record: geometry_section_record(ctx, scan, face_offset)?,
                         }),
                         source_object: Some(SourceObjectAssociation {
+                            geometry_role: None,
                             format: cadmpeg_ir::CodecFormat::Creo,
                             object_id: cadmpeg_core::text::NonBlankString::new(
                                 ctx.format_retained(
@@ -3215,6 +3219,7 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                     cylinder_surface,
                 )),
                 source_object: Some(SourceObjectAssociation {
+                    geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: crate::identity::source_object_id_checked(
                         ctx,
@@ -3288,9 +3293,11 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                 ctx,
                 ir,
                 Curve {
+                    parameter_range: None,
                     id,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)),
                     source_object: Some(SourceObjectAssociation {
+                        geometry_role: None,
                         format: cadmpeg_ir::CodecFormat::Creo,
                         object_id: crate::identity::source_object_id_checked(
                             ctx,

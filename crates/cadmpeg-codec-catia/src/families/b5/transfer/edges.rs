@@ -435,6 +435,7 @@ pub(super) fn emit_edges(
             curve_id.try_clone_for_decode(admission.context(), "catia_b5_model_edge_curve_id")?;
         admission.reserve_entity(&mut ir.model.curves, "catia_b5_emit_curves")?;
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: model_curve_id,
             geometry,
             source_object: Some(cgm_source(admission.context(), "edge", edge_id)?),

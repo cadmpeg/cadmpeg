@@ -1178,7 +1178,6 @@ mod allocation_tests {
             "catia_trim_fan_lengths",
             "catia_trim_reversed",
             "catia_trim_solution_records",
-            "catia_trim_clone_handles",
             "catia_trim_solutions",
         ] {
             assert!(operations.contains(operation), "no refusal at {operation}");
@@ -1839,7 +1838,11 @@ fn parse_trim_chain_with_length_encoding(
 
 #[derive(Debug, Clone, PartialEq)]
 enum TrimLengthLane {
-    Decoded(Vec<usize>),
+    Encoded {
+        start: usize,
+        count: usize,
+        wide_u16be: bool,
+    },
     PackedTwoStrip,
 }
 
@@ -1868,11 +1871,60 @@ pub(super) fn parse_trim_record_layout(
     } else {
         None
     };
+    let equivalent = match (&compact, &wide_u16be) {
+        (Some(compact), Some(wide)) => {
+            let mut normalized = wide.clone();
+            normalized.lane = compact.lane.clone();
+            if *compact == normalized {
+                match (&compact.lane, &wide.lane) {
+                    (TrimLengthLane::PackedTwoStrip, TrimLengthLane::PackedTwoStrip) => true,
+                    (
+                        TrimLengthLane::Encoded {
+                            start: left,
+                            count: left_count,
+                            wide_u16be: left_wide,
+                        },
+                        TrimLengthLane::Encoded {
+                            start: right,
+                            count: right_count,
+                            wide_u16be: right_wide,
+                        },
+                    ) => {
+                        let (mut left, mut right) = (*left, *right);
+                        let mut same = left_count == right_count;
+                        for _ in 0..*left_count {
+                            if !same {
+                                break;
+                            }
+                            ctx.charge_work(1, "catia_trim_layout_compare")?;
+                            same = read_trim_length(bytes, &mut left, *left_wide)
+                                == read_trim_length(bytes, &mut right, *right_wide);
+                        }
+                        same
+                    }
+                    _ => false,
+                }
+            } else {
+                false
+            }
+        }
+        _ => false,
+    };
     Ok(match (compact, wide_u16be) {
-        (Some(compact), Some(wide)) if compact == wide => Some(compact),
+        (Some(compact), Some(_)) if equivalent => Some(compact),
         (Some(layout), None) | (None, Some(layout)) => Some(layout),
         (None, None) | (Some(_), Some(_)) => None,
     })
+}
+
+fn read_trim_length(bytes: &[u8], position: &mut usize, wide_u16be: bool) -> Option<usize> {
+    if wide_u16be {
+        let value = View::u16_be_at(bytes, *position)?;
+        *position += 2;
+        Some(usize::from(value))
+    } else {
+        parse_count(bytes, position)
+    }
 }
 
 fn parse_trim_record_layout_with_length_encoding(
@@ -1949,41 +2001,40 @@ fn parse_trim_record_layout_with_length_encoding(
         {
             return None;
         }
-        let lane = if packed_two_strip_lengths {
-            TrimLengthLane::PackedTwoStrip
-        } else {
-            let mut lengths = Vec::new();
-            if let Err(error) = ctx.reserve_vec(
-                &mut lengths,
-                primitive_count,
-                "catia_trim_primitive_lengths",
-            ) {
-                return Some(Err(error));
-            }
+        let lengths_start = position;
+        if !packed_two_strip_lengths {
+            let mut expected_handles = 3usize.checked_mul(a)?;
             for _ in 0..primitive_count {
-                let length = if wide_u16be {
-                    let value = View::u16_be_at(bytes, position)?;
-                    position += 2;
-                    usize::from(value)
-                } else {
-                    parse_count(bytes, &mut position)?
-                };
-                lengths.push(length);
+                if let Err(error) = ctx.charge_work(1, "catia_trim_length_scan") {
+                    return Some(Err(error));
+                }
+                let length = read_trim_length(bytes, &mut position, wide_u16be)?;
+                expected_handles = expected_handles.checked_add(length)?;
             }
-            if 3usize.checked_mul(a)?.checked_add(lengths.iter().sum())? != handle_count {
+            if expected_handles != handle_count {
                 return None;
             }
-            TrimLengthLane::Decoded(lengths)
-        };
+        }
         let handle_offset = position;
-        let byte_count = match &lane {
-            TrimLengthLane::PackedTwoStrip => {
-                2usize.checked_add(handle_count.checked_mul(width)?)?
-            }
-            TrimLengthLane::Decoded(_) => handle_count.checked_mul(width)?,
+        let byte_count = if packed_two_strip_lengths {
+            2usize.checked_add(handle_count.checked_mul(width)?)?
+        } else {
+            handle_count.checked_mul(width)?
         };
         let end = handle_offset.checked_add(byte_count)?;
         bytes.get(handle_offset..end)?;
+        // Marker candidates become packet layouts only after both the partition
+        // and the complete handle lane close. Reject false headers without
+        // allocating their declared primitive count.
+        let lane = if packed_two_strip_lengths {
+            TrimLengthLane::PackedTwoStrip
+        } else {
+            TrimLengthLane::Encoded {
+                start: lengths_start,
+                count: primitive_count,
+                wide_u16be,
+            }
+        };
         Some(Ok(TrimRecordLayout {
             kind,
             independent_count: a,
@@ -2033,7 +2084,27 @@ fn parse_trim_record_with_length_encoding(
     (|| -> Option<Result<TrimRecord, CodecError>> {
         let mut position = layout.handle_offset;
         let lengths = match layout.lane {
-            TrimLengthLane::Decoded(lengths) => lengths,
+            TrimLengthLane::Encoded {
+                start,
+                count,
+                wide_u16be,
+            } => {
+                let mut length_position = start;
+                let mut lengths = Vec::new();
+                if let Err(error) =
+                    ctx.reserve_vec(&mut lengths, count, "catia_trim_primitive_lengths")
+                {
+                    return Some(Err(error));
+                }
+                for _ in 0..count {
+                    if let Err(error) = ctx.charge_work(1, "catia_trim_length_copy") {
+                        return Some(Err(error));
+                    }
+                    let length = read_trim_length(bytes, &mut length_position, wide_u16be)?;
+                    lengths.push(length);
+                }
+                lengths
+            }
             TrimLengthLane::PackedTwoStrip => {
                 let packed = bytes.get(position..position + 2)?;
                 position += 2;
@@ -2072,13 +2143,16 @@ fn parse_trim_record_with_length_encoding(
             Ok(lengths) => lengths,
             Err(error) => return Some(Err(error)),
         };
-        let packet = TrimPacket::try_from((
+        let packet = match TrimPacket::from_lanes(
+            ctx,
             layout.independent_count,
             strip_lengths,
             fan_lengths,
             handles,
-        ))
-        .ok()?;
+        ) {
+            Ok(packet) => packet?,
+            Err(error) => return Some(Err(error)),
+        };
         Some(Ok(TrimRecord {
             packet,
             frame_vector: layout.frame_vector,
@@ -2092,6 +2166,7 @@ pub(crate) fn boundary_cycles(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     triangles: &[[u32; 3]],
 ) -> Result<Option<Vec<Vec<u32>>>, cadmpeg_core::CodecError> {
+    let mut workspace = ctx.reserve_scoped(0, "catia_boundary_workspace")?;
     let mut edge_directions = HashMap::<(u32, u32), u8>::new();
     for &[a, b, c] in triangles {
         for (start, end) in [(a, b), (b, c), (c, a)] {
@@ -2109,12 +2184,14 @@ pub(crate) fn boundary_cycles(
                 }
                 *directions |= direction;
             } else {
-                ctx.insert_hash_map(
-                    &mut edge_directions,
-                    edge,
-                    direction,
-                    "catia_boundary_edge_directions",
-                )?;
+                workspace.with_storage(|| {
+                    ctx.insert_hash_map(
+                        &mut edge_directions,
+                        edge,
+                        direction,
+                        "catia_boundary_edge_directions",
+                    )
+                })?;
             }
         }
     }
@@ -2130,7 +2207,9 @@ pub(crate) fn boundary_cycles(
             if successors.contains_key(&start) {
                 return Ok(None);
             }
-            ctx.insert_hash_map(&mut successors, start, end, "catia_boundary_successors")?;
+            workspace.with_storage(|| {
+                ctx.insert_hash_map(&mut successors, start, end, "catia_boundary_successors")
+            })?;
         }
     }
     let mut seen = HashSet::new();
@@ -2141,13 +2220,15 @@ pub(crate) fn boundary_cycles(
         }
         let mut cycle = Vec::new();
         ctx.push_vec(&mut cycle, start, "catia_boundary_cycle_handles")?;
-        ctx.insert_hash_set(&mut seen, start, "catia_boundary_seen")?;
+        workspace.with_storage(|| ctx.insert_hash_set(&mut seen, start, "catia_boundary_seen"))?;
         let Some(&mut_current) = successors.get(&start) else {
             return Ok(None);
         };
         let mut current = mut_current;
         while current != start {
-            if !ctx.insert_hash_set(&mut seen, current, "catia_boundary_seen")? {
+            if !workspace
+                .with_storage(|| ctx.insert_hash_set(&mut seen, current, "catia_boundary_seen"))?
+            {
                 return Ok(None);
             }
             ctx.push_vec(&mut cycle, current, "catia_boundary_cycle_handles")?;
@@ -2364,6 +2445,25 @@ mod tests {
     }
 
     #[test]
+    fn boundary_maps_use_scoped_bytes_and_cycles_keep_retained_bytes() {
+        let triangles = [[0, 1, 2], [0, 2, 3]];
+        let output_bytes = 4 * size_of::<u32>() + 4 * size_of::<Vec<u32>>();
+        let cycles = crate::test_support::with_retained_limit(
+            cadmpeg_core::decode::u64_from_index(output_bytes),
+            |ctx| boundary_cycles(ctx, &triangles),
+        )
+        .expect("only the returned cycles retain bytes")
+        .expect("square boundary");
+        assert_eq!(cycles, vec![vec![0, 1, 2, 3]]);
+        let refused =
+            crate::test_support::with_materialized_limit(0, |ctx| boundary_cycles(ctx, &triangles));
+        assert!(
+            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_boundary_edge_directions")
+        );
+    }
+
+    #[test]
     fn boundary_cycles_cancel_opposite_triangle_edges() {
         let triangles = [[0, 1, 2], [0, 2, 3]];
         assert_eq!(
@@ -2415,5 +2515,61 @@ mod tests {
         ] {
             assert!(operations.contains(operation), "no refusal at {operation}");
         }
+    }
+}
+
+#[cfg(test)]
+mod trim_admission_tests {
+    use super::{parse_trim_record_layout, parse_trim_record_layout_with_length_encoding};
+
+    #[test]
+    fn false_trim_partition_does_not_allocate_declared_lengths() {
+        let mut bytes = vec![0x01, 0x43, 0, 64, 0xff, 1, 0, 0, 0];
+        bytes.extend_from_slice(&[0; 64]);
+        crate::test_support::with_collection_limit(0, |ctx| {
+            assert!(
+                parse_trim_record_layout_with_length_encoding(ctx, &bytes, 0, 2, false)
+                    .expect("invalid partition needs no collection")
+                    .is_none()
+            );
+        });
+    }
+
+    #[test]
+    fn truncated_trim_handles_do_not_allocate_lengths() {
+        let bytes = [0x01, 0x43, 0, 1, 0xff, 3, 0, 0, 0, 3, 0, 1];
+        crate::test_support::with_collection_limit(0, |ctx| {
+            assert!(
+                parse_trim_record_layout_with_length_encoding(ctx, &bytes, 0, 2, false)
+                    .expect("truncated handle lane needs no collection")
+                    .is_none()
+            );
+        });
+    }
+
+    #[test]
+    fn false_trim_partition_still_charges_the_scan() {
+        let bytes = [0x01, 0x43, 0, 1, 0xff, 1, 0, 0, 0, 0];
+        crate::test_support::with_work_limit(0, |ctx| {
+            let cadmpeg_core::CodecError::ResourceLimit(limit) =
+                parse_trim_record_layout_with_length_encoding(ctx, &bytes, 0, 2, false)
+                    .expect_err("candidate length read requires work")
+            else {
+                panic!("resource refusal");
+            };
+            assert_eq!(limit.operation, "catia_trim_length_scan");
+        });
+    }
+
+    #[test]
+    fn complete_trim_layout_keeps_lengths_in_the_source_lane() {
+        let bytes = [0x01, 0x43, 0x00, 0x01, 0xff, 3, 0, 0, 0, 3, 0, 1, 2];
+        let layout = crate::test_support::with_collection_limit(0, |ctx| {
+            parse_trim_record_layout(ctx, &bytes, 0, 1)
+        })
+        .expect("layout scanning allocates no primitive lanes")
+        .expect("complete partition");
+        assert_eq!(layout.handle_count, 3);
+        assert_eq!(layout.end, bytes.len());
     }
 }

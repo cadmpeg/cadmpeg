@@ -131,6 +131,12 @@ pub(super) fn keep_faces_and_carriers(
         if r.head() != "face" {
             continue;
         }
+        // A standalone face cannot supply the shell required by the neutral
+        // topology. Do not reach its children or carriers through an owner
+        // that the emit pass must omit.
+        if r.ref_at(5).is_none() {
+            continue;
+        }
         let Some(surf_ref) = r.ref_at(7) else {
             count_kind(
                 ctx,
@@ -236,6 +242,11 @@ pub(super) fn keep_faces_and_carriers(
                         cached_unknown_procedural_surfaces,
                         surf_ref,
                         "ASM topology cached_unknown_procedural_surfaces",
+                    )?;
+                    count_kind(
+                        ctx,
+                        &mut out.stats.other_record_kinds,
+                        "cached-procedural-surface-untyped",
                     )?;
                 }
                 out.stats.nurbs_surfaces += 1;
@@ -1222,10 +1233,27 @@ fn face_chain_from(
     Ok(out)
 }
 
+/// Whether `index` names a record with one of `heads` whose owner slot refers
+/// back to `parent`. Emission writes exactly these records, so a parent lists
+/// only children that exist in the output.
+fn owned_child<'a>(
+    by_index: &HashMap<i64, &'a Record>,
+    index: i64,
+    heads: &[&str],
+    owner_slot: usize,
+    parent: &Record,
+) -> Option<&'a Record> {
+    let parent = i64::try_from(parent.index).ok()?;
+    by_index.get(&index).copied().filter(|record| {
+        heads.contains(&record.head()) && record.ref_at(owner_slot) == Some(parent)
+    })
+}
+
 pub(super) fn shell_chain(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     region_rec: &Record,
     by_index: &HashMap<i64, &Record>,
+    emitted_shells: &HashSet<i64>,
     format: IdFormat,
 ) -> Result<Vec<ShellId>, cadmpeg_core::CodecError> {
     let id = |i: i64| ShellId::from(super::id(format, i));
@@ -1236,8 +1264,12 @@ pub(super) fn shell_chain(
         if !ctx.insert_hash_set(&mut guard, si, "ASM topology guard")? {
             break;
         }
-        ctx.push_vec(&mut out, id(si), "ASM region shells")?;
-        let Some(s) = by_index.get(&si) else { break };
+        let Some(s) = owned_child(by_index, si, &["shell"], 7, region_rec) else {
+            break;
+        };
+        if emitted_shells.contains(&si) {
+            ctx.push_vec(&mut out, id(si), "ASM region shells")?;
+        }
         cur = s.ref_at(3);
     }
     Ok(out)
@@ -1257,8 +1289,10 @@ pub(super) fn region_chain(
         if !ctx.insert_hash_set(&mut guard, li, "ASM topology guard")? {
             break;
         }
+        let Some(l) = owned_child(by_index, li, &["region", "lump"], 5, body_rec) else {
+            break;
+        };
         ctx.push_vec(&mut out, id(li), "ASM body regions")?;
-        let Some(l) = by_index.get(&li) else { break };
         cur = l.ref_at(3);
     }
     Ok(out)

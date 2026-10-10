@@ -2914,7 +2914,7 @@ fn assemble_sketch_text(
         height: head.height,
         color: head.color,
         layout: tail.layout,
-        raw_bytes,
+        raw_bytes: raw_bytes.into(),
     })
 }
 

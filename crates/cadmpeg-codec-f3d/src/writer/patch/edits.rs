@@ -3786,6 +3786,7 @@ mod tests {
 
     fn curve(id: &str, geometry: SolvedCurveGeometry) -> Vec<Curve> {
         vec![Curve {
+            parameter_range: None,
             id: CurveId::mint(id).expect("identity grammar"),
             geometry: CurveGeometry::Solved(geometry),
             source_object: None,

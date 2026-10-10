@@ -265,9 +265,11 @@ pub(super) fn render(listing: &Listing) -> String {
             ));
             for entry in entries {
                 rows.push(format!(
-                    "0x{:08x}  0x{:08x}  {:>12}  {:>12}  {:>8}  0x{:08x}  {}",
+                    "0x{:08x}  {:>10}  {:>12}  {:>12}  {:>8}  0x{:08x}  {}",
                     entry.header_start,
-                    entry.data_start,
+                    entry
+                        .data_start
+                        .map_or_else(|| "unreadable".into(), |offset| format!("0x{offset:08x}")),
                     entry.compressed_size,
                     entry.uncompressed_size,
                     entry.compression.label(),

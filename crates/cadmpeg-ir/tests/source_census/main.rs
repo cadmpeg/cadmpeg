@@ -226,6 +226,11 @@ const HAND_IMPLS: &[(&str, &str, &str)] = &[
         "keyless",
     ),
     (
+        "crates/cadmpeg-ir/src/native/bytes.rs",
+        "NativeBytes",
+        "keyless",
+    ),
+    (
         "crates/cadmpeg-ir/src/native/mod.rs",
         "NativeRecord",
         "free-form",

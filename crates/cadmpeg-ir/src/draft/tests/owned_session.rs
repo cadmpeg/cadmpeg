@@ -111,6 +111,7 @@ fn staged_unknown_cache_moves_source_facts_and_extends_only_new_slots() {
     session
         .unknown_links_mut(0)
         .unwrap()
+        .unwrap()
         .1
         .push("test:model:point#later".into());
     assert!(session.contains(&first_id).unwrap());
@@ -280,7 +281,7 @@ fn owned_source_session_clears_cached_source_positions() {
         .unwrap();
     assert!(!session.contains(first).unwrap());
     assert!(session.contains(second).unwrap());
-    assert_eq!(session.unknown_links_mut(0).unwrap().0, second);
+    assert_eq!(session.unknown_links_mut(0).unwrap().unwrap().0, second);
     assert_eq!(session.unknowns()[0].data().unwrap(), &[2]);
 }
 

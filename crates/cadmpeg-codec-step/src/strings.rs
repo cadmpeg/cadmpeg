@@ -23,11 +23,19 @@ pub(crate) enum StringDecodeFailure {
     Resource(CodecError),
 }
 
+const MAX_STORED_STRING_OCTETS: usize = 32_767;
+
 pub(crate) fn decode_with_context(
     input: &[u8],
     level: ImplementationLevel,
     ctx: &DecodeContext<'_>,
 ) -> Result<String, StringDecodeFailure> {
+    if input.len() > MAX_STORED_STRING_OCTETS {
+        return Err(StringDecodeFailure::Invalid(StringError {
+            offset: 0,
+            message: "string exceeds maximum stored length".to_owned(),
+        }));
+    }
     let len = decoded_len(input, level).map_err(StringDecodeFailure::Invalid)?;
     let operation = "step_string_text";
     let mut output = ctx

@@ -75,10 +75,10 @@ fn procedural_support_allowance(
 /// they constrain at both ends of the construction interval.
 pub(super) fn check_procedural_support_consistency(
     ctx: &DecodeContext<'_>,
-    ir: &CadIr,
+    index: &crate::index::ModelIndex<'_>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
-    let index = crate::index::ModelIndex::build(ir, ctx)?;
+    let ir = index.ir();
     let curves = BorrowedIdentities::build(ctx, |add| {
         for curve in &ir.model.curves {
             add(curve.id.as_str(), &curve.geometry)?;
@@ -106,7 +106,7 @@ pub(super) fn check_procedural_support_consistency(
                 .map(|parameter| {
                     measured_point(model_curve_point_by_id(
                         crate::eval::admission::EvaluationAdmission::Decode(ctx),
-                        &index,
+                        index,
                         owner,
                         parameter,
                     ))
@@ -182,7 +182,7 @@ pub(super) fn check_procedural_support_consistency(
                         endpoints: [solved_start, solved_end],
                         distance: offset.abs(),
                     },
-                    &index,
+                    index,
                     bound,
                     procedural.id.as_str(),
                     findings,
@@ -210,7 +210,7 @@ pub(super) fn check_procedural_support_consistency(
                 ctx,
                 (context, None),
                 SupportEndpointContract::Coincident([base_start, base_end]),
-                &index,
+                index,
                 bound,
                 procedural.id.as_str(),
                 findings,
@@ -274,7 +274,7 @@ pub(super) fn check_procedural_support_consistency(
             ctx,
             (&context, third),
             SupportEndpointContract::Coincident([solved_start, solved_end]),
-            &index,
+            index,
             bound,
             procedural.id.as_str(),
             findings,
@@ -570,10 +570,10 @@ pub(super) fn check_edge_endpoint_consistency(
 /// either sign and either endpoint assignment satisfy the check.
 pub(super) fn check_pcurve_surface_consistency(
     ctx: &DecodeContext<'_>,
-    ir: &CadIr,
+    index: &crate::index::ModelIndex<'_>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
-    let index = crate::index::ModelIndex::build(ir, ctx)?;
+    let ir = index.ir();
     let curves = BorrowedIdentities::build(ctx, |add| {
         for curve in &ir.model.curves {
             add(curve.id.as_str(), &curve.geometry)?;
@@ -708,23 +708,13 @@ pub(super) fn check_pcurve_surface_consistency(
         );
         // A malformed STEP export can retain a stale TRIMMED_CURVE interval
         // even though its carrier still reaches the edge vertices on another
-        // interval. Keep the declared interval as a candidate, but also solve
-        // the mapped carrier against the topology endpoints whenever the
-        // carrier can provide such a witness.
+        // interval. Check the declared interval, then recover a mapped
+        // interval when the carrier needs another endpoint witness.
         let surface_context = SurfacePcurveContext {
-            index: &index,
+            index,
             surface_id: &face.surface,
             geometry,
         };
-        let recovered = edge_pcurve_parameter_ranges(
-            ctx,
-            &surface_context,
-            curve_geometry,
-            [*start, *end],
-            first,
-            last,
-            recovery_bound,
-        )?;
         let declared = if coedge.pcurves.len() == 1 {
             pcurve_parameter_ranges(
                 ctx,
@@ -761,45 +751,62 @@ pub(super) fn check_pcurve_surface_consistency(
             }
         };
         let mut minimum_mismatch: Option<f64> = None;
-        for [t0, t1] in declared
-            .iter()
-            .flat_map(|ranges| ranges.iter())
-            .chain(recovered.iter().flat_map(|ranges| ranges.iter()))
-            .copied()
-        {
-            ctx.charge_work(1, "pcurve interval candidate")?;
-            // A non-finite pcurve or surface point is measured as a finite
-            // one is: the distance it produces is the finding's measure.
-            let pcurve_point = |geometry, parameter| match crate::eval::decode::pcurve_uv(
-                ctx, geometry, parameter,
-            ) {
-                Ok(uv) => Ok(Some(uv.get())),
-                Err(failure) => failure.non_finite(),
-            };
-            let surface_point = |uv: crate::math::Point2| match model_surface_point_by_id(
-                crate::eval::admission::EvaluationAdmission::Decode(ctx),
-                &index,
-                &face.surface,
-                uv.u,
-                uv.v,
-            ) {
-                Ok(point) => Ok(Some(point.get())),
-                Err(failure) => failure.non_finite(),
-            };
-            let (Some(uv0), Some(uv1)) = (
-                pcurve_point(&first.geometry, t0)?,
-                pcurve_point(&last.geometry, t1)?,
-            ) else {
-                continue;
-            };
-            let (Some(p0), Some(p1)) = (surface_point(uv0)?, surface_point(uv1)?) else {
-                continue;
-            };
-            let forward = worse_mismatch(Point3::distance(p0, *start), Point3::distance(p1, *end));
-            let reversed = worse_mismatch(Point3::distance(p0, *end), Point3::distance(p1, *start));
-            let mismatch = forward.min(reversed);
-            minimum_mismatch =
-                Some(minimum_mismatch.map_or(mismatch, |minimum| minimum.min(mismatch)));
+        let mut qualifies = |ranges: &Option<Scratch<'_, [f64; 2]>>| -> Result<bool, CodecError> {
+            for [t0, t1] in ranges.iter().flat_map(|ranges| ranges.iter()).copied() {
+                ctx.charge_work(1, "pcurve interval candidate")?;
+                // A non-finite pcurve or surface point is measured as a finite
+                // one is: the distance it produces is the finding's measure.
+                let pcurve_point = |geometry, parameter| match crate::eval::decode::pcurve_uv(
+                    ctx, geometry, parameter,
+                ) {
+                    Ok(uv) => Ok(Some(uv.get())),
+                    Err(failure) => failure.non_finite(),
+                };
+                let surface_point = |uv: crate::math::Point2| match model_surface_point_by_id(
+                    crate::eval::admission::EvaluationAdmission::Decode(ctx),
+                    index,
+                    &face.surface,
+                    uv.u,
+                    uv.v,
+                ) {
+                    Ok(point) => Ok(Some(point.get())),
+                    Err(failure) => failure.non_finite(),
+                };
+                let (Some(uv0), Some(uv1)) = (
+                    pcurve_point(&first.geometry, t0)?,
+                    pcurve_point(&last.geometry, t1)?,
+                ) else {
+                    continue;
+                };
+                let (Some(p0), Some(p1)) = (surface_point(uv0)?, surface_point(uv1)?) else {
+                    continue;
+                };
+                let forward =
+                    worse_mismatch(Point3::distance(p0, *start), Point3::distance(p1, *end));
+                let reversed =
+                    worse_mismatch(Point3::distance(p0, *end), Point3::distance(p1, *start));
+                let mismatch = forward.min(reversed);
+                minimum_mismatch =
+                    Some(minimum_mismatch.map_or(mismatch, |minimum| minimum.min(mismatch)));
+                if mismatch.is_finite() && mismatch <= bound {
+                    return Ok(true);
+                }
+            }
+            Ok(false)
+        };
+        // A forward-evaluated declared interval already proves consistency.
+        // Recover another interval only when no declared candidate qualifies.
+        if !qualifies(&declared)? {
+            let recovered = edge_pcurve_parameter_ranges(
+                ctx,
+                &surface_context,
+                curve_geometry,
+                [*start, *end],
+                first,
+                last,
+                recovery_bound,
+            )?;
+            qualifies(&recovered)?;
         }
         let Some(mismatch) = minimum_mismatch else {
             continue;

@@ -583,7 +583,7 @@ mod tests {
         let lane = FeatureInputLane {
             id: "lane".into(),
             configuration: None,
-            native_payload: vec![0],
+            native_payload: vec![0].into(),
             classes: Vec::new(),
             names: vec![FeatureInputName {
                 id: "name".into(),
@@ -661,7 +661,7 @@ mod tests {
         let lane = FeatureInputLane {
             id: "lane".into(),
             configuration: None,
-            native_payload: payload,
+            native_payload: payload.into(),
             classes: vec![FeatureInputClass {
                 id: "plane-ref".into(),
                 parent: "lane".into(),
@@ -787,7 +787,7 @@ mod tests {
         let lane = FeatureInputLane {
             id: "lane".into(),
             configuration: None,
-            native_payload: payload,
+            native_payload: payload.into(),
             classes: Vec::new(),
             names: vec![FeatureInputName {
                 id: "name".into(),
@@ -903,7 +903,7 @@ mod tests {
         let lane = FeatureInputLane {
             id: "lane".into(),
             configuration: None,
-            native_payload: payload,
+            native_payload: payload.into(),
             classes: Vec::new(),
             names: vec![FeatureInputName {
                 id: "name".into(),
@@ -996,7 +996,7 @@ mod tests {
         let lane = FeatureInputLane {
             id: "lane".into(),
             configuration: None,
-            native_payload: payload,
+            native_payload: payload.into(),
             classes: vec![FeatureInputClass {
                 id: "plane-ref".into(),
                 parent: "lane".into(),

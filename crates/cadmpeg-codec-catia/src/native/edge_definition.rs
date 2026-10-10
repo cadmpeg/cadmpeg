@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native edge-definition wire projection from its class and raw payload.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use crate::families::consolidated::records::{
     consolidated_edge_definition_data, ConsolidatedEdgeDefinitionClass,
     ConsolidatedEdgeDefinitionData,
@@ -27,7 +29,7 @@ struct EdgeDefinitionWire {
     flag: ConsolidatedFrameFlag,
     class: ConsolidatedEdgeDefinitionClass,
     header_token: u32,
-    payload: Vec<u8>,
+    payload: NativeBytes<Vec<u8>>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -43,7 +45,7 @@ struct EdgeDefinitionWireRef<'a> {
     flag: ConsolidatedFrameFlag,
     class: ConsolidatedEdgeDefinitionClass,
     header_token: u32,
-    payload: &'a [u8],
+    payload: NativeBytes<&'a [u8]>,
     #[serde(skip_serializing_if = "Option::is_none")]
     data: Option<&'a ConsolidatedEdgeDefinitionData>,
 }
@@ -59,7 +61,7 @@ impl Serialize for CatiaConsolidatedEdgeDefinition {
             flag: self.frame.flag,
             class: self.class,
             header_token: self.frame.header_token(),
-            payload: &self.frame.payload,
+            payload: (&self.frame.payload).into(),
             data: self.data(),
         }
         .serialize(serializer)
@@ -105,7 +107,7 @@ impl From<CatiaConsolidatedEdgeDefinition> for EdgeDefinitionWire {
             flag: value.frame.flag,
             class: value.class,
             header_token: value.frame.header_token(),
-            payload: value.frame.payload,
+            payload: (value.frame.payload),
             data: value.data,
         }
     }
@@ -121,7 +123,7 @@ impl TryFrom<EdgeDefinitionWire> for CatiaConsolidatedEdgeDefinition {
                 wire.width,
                 wire.flag,
                 wire.header_token,
-                wire.payload,
+                wire.payload.into_inner(),
             )?,
             class: wire.class,
             data,

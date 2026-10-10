@@ -10,11 +10,11 @@ pub(crate) struct CommonFramePrefix([CompactIndexAtom; 3]);
 impl CommonFramePrefix {
     pub(crate) fn from_wire(
         indices: [u32; 3],
-        raw: &[Vec<u8>; 3],
+        raw: &[impl AsRef<[u8]>; 3],
         marker: [u8; 3],
     ) -> Result<Self, &'static str> {
         let [a, b, c] = [0, 1, 2].map(|slot| {
-            CompactIndexAtom::from_wire(indices[slot], &raw[slot])
+            CompactIndexAtom::from_wire(indices[slot], raw[slot].as_ref())
                 .map_err(|_| "indices/raw_indices: invalid compact token")
         });
         let prefix = Self([a?, b?, c?]);

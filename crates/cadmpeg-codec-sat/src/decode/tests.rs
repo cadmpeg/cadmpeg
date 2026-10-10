@@ -35,6 +35,117 @@ fn sphere_radius(result: &DecodeResult) -> f64 {
 }
 
 #[test]
+fn binary_product_encoding_recovery_keeps_geometry_and_exact_header() {
+    for (kind, first_string) in [(BinaryFixtureKind::Asm, 47), (BinaryFixtureKind::Acis, 31)] {
+        let original = binary_sphere_stream(kind);
+        let expected = decode_bytes(&original);
+        let mut cursor = first_string;
+        let mut positions = Vec::new();
+        for _ in 0..3 {
+            positions.push(cursor + 2);
+            cursor += 2 + usize::from(original[cursor + 1]);
+        }
+        let header_end = cursor + 3 * 9;
+        for position in positions {
+            let mut bytes = original.clone();
+            bytes[position] = 0xff;
+            let recovered = cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(&bytes));
+            assert_eq!(recovered.ir().model, expected.ir().model);
+            assert_eq!(recovered.ir().tolerances, expected.ir().tolerances);
+            assert!(recovered
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code == SatLossCode::HeaderMetadataNoncanonical.kind()));
+            assert_eq!(
+                recovered
+                    .source_fidelity()
+                    .retained_record("sat:source:header#0")
+                    .unwrap()
+                    .data(),
+                Some(&bytes[..header_end])
+            );
+            assert!(cadmpeg_ir::validate_neutral(recovered.ir(), Vec::new())
+                .unwrap()
+                .is_ok());
+        }
+    }
+}
+
+#[test]
+fn text_record_count_metadata_recovery_keeps_geometry_and_exact_header() {
+    for original in [text_sphere_stream(1.0), acis_text_sphere_stream(21_800)] {
+        let original = String::from_utf8(original).unwrap();
+        let expected = decode_bytes(original.as_bytes());
+        for value in [
+            "-1",
+            "4294967296",
+            "999999999999999999999999999999999",
+            "invalid",
+        ] {
+            let source = original.replacen(" 0 2 2", &format!(" {value} 2 2"), 1);
+            let recovered =
+                cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(source.as_bytes()));
+            assert_eq!(recovered.ir().model, expected.ir().model);
+            assert!(recovered
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code == SatLossCode::HeaderMetadataNoncanonical.kind()));
+            let header_end = source.match_indices('\n').nth(2).unwrap().0 + 1;
+            assert_eq!(
+                recovered
+                    .source_fidelity()
+                    .retained_record("sat:source:header#0")
+                    .unwrap()
+                    .data(),
+                Some(&source.as_bytes()[..header_end])
+            );
+            assert!(cadmpeg_ir::validate_neutral(recovered.ir(), Vec::new())
+                .unwrap()
+                .is_ok());
+        }
+    }
+}
+
+#[test]
+fn text_header_metadata_recovery_preserves_geometry_and_exact_header() {
+    for original in [text_sphere_stream(1.0), acis_text_sphere_stream(23_200)] {
+        let original = String::from_utf8(original).unwrap();
+        let expected = decode_bytes(original.as_bytes());
+        for source in [
+            original.replace("9 Synthetic", ""),
+            original.replace(
+                "16 Autodesk Neutron 21 ASM 232.4.0.65535 OSX 9 Synthetic",
+                "bad producer metadata",
+            ),
+            original.replace("9.999999999999999547e-07", "invalid"),
+            original.replace("1.000000000000000036e-10", "NaN"),
+            original.replace("1.000000000000000036e-10", ""),
+        ] {
+            let recovered =
+                cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(source.as_bytes()));
+            assert_eq!(recovered.ir().model, expected.ir().model);
+            assert!(!recovered.report().losses.is_empty());
+            let header_end = source.match_indices('\n').nth(2).unwrap().0 + 1;
+            assert_eq!(
+                recovered
+                    .source_fidelity()
+                    .retained_record("sat:source:header#0")
+                    .unwrap()
+                    .data(),
+                Some(&source.as_bytes()[..header_end])
+            );
+            assert!(cadmpeg_ir::validate_neutral(recovered.ir(), Vec::new())
+                .unwrap()
+                .findings
+                .iter()
+                .all(|finding| finding.severity < cadmpeg_ir::report::Severity::Error));
+        }
+    }
+}
+
+#[test]
 fn both_encodings_decode_the_same_solid() {
     let text = decode_bytes(&text_sphere_stream(1.0));
     let asm_binary = decode_bytes(&binary_sphere_stream(BinaryFixtureKind::Asm));
@@ -525,7 +636,7 @@ fn sat_container_only_ignores_malformed_entity_payload() {
 }
 
 #[test]
-fn sat_header_conversion_refuses_as_not_implemented() {
+fn sat_header_conversion_keeps_geometry_with_default_tolerance() {
     for line in ["20 1.7976931348623157e308 0", "1 5e-324 0"] {
         let source = String::from_utf8(text_sphere_stream(1.0)).expect("text fixture");
         let bytes = source.replacen(
@@ -538,22 +649,25 @@ fn sat_header_conversion_refuses_as_not_implemented() {
                 container_only,
                 ..Default::default()
             };
-            let error = SatCodec
+            let result = SatCodec
                 .decode(&mut Cursor::new(bytes.as_bytes()), &options)
-                .expect_err("converted positive tolerance cannot be represented");
-            assert!(
-                matches!(
-                    error,
-                    cadmpeg_ir::DecodeFailure::Codec(CodecError::NotImplemented(_))
-                ),
-                "{line}, container={container_only}: {error:?}"
+                .expect("unrepresentable tolerance does not control record decode");
+            assert_eq!(
+                result.ir().tolerances.linear,
+                cadmpeg_ir::CadIr::empty().tolerances.linear
             );
+            assert!(result
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code == SatLossCode::HeaderToleranceUnresolved.kind()));
+            assert_eq!(result.ir().model.faces.len(), usize::from(!container_only));
         }
     }
 }
 
 #[test]
-fn sat_recognized_header_values_refuse_as_malformed() {
+fn sat_unusable_header_values_keep_independent_records() {
     for line in [
         "0 1 0", "-1 1 0", "NaN 1 0", "inf 1 0", "bad 1 0", "1 -1 0", "1 NaN 0", "1 inf 0",
         "1 bad 0", "1 1 -1", "1 1 NaN", "1 1 inf", "1 1 bad",
@@ -564,21 +678,328 @@ fn sat_recognized_header_values_refuse_as_malformed() {
             line,
             1,
         );
+        let expected = if line.starts_with("1 ") {
+            SatLossCode::HeaderToleranceUnresolved
+        } else {
+            SatLossCode::HeaderLengthUnitUnresolved
+        };
         for container_only in [false, true] {
             let options = cadmpeg_ir::codec::DecodeOptions {
                 container_only,
                 ..Default::default()
             };
-            let error = SatCodec
+            let recovered = SatCodec
                 .decode(&mut Cursor::new(bytes.as_bytes()), &options)
-                .expect_err("recognized tolerance grammar has invalid values");
+                .expect("an unusable header value does not control record framing");
             assert!(
-                matches!(
-                    error,
-                    cadmpeg_ir::DecodeFailure::Codec(CodecError::Malformed(_))
-                ),
-                "{line}, container={container_only}: {error:?}"
+                recovered
+                    .report()
+                    .losses
+                    .iter()
+                    .any(|loss| loss.code == expected.kind()),
+                "{line}"
+            );
+            assert_eq!(
+                recovered.ir().model.faces.len(),
+                usize::from(!container_only)
             );
         }
+    }
+}
+
+#[test]
+fn zero_vertex_tolerance_keeps_topology_and_retains_its_source_record() {
+    let source = b"700 0 1 0\n1 T 4 ACIS 1 D\n1 0.01 0.001\n\
+body $-1 -1 $-1 $1 $-1 $-1 #\n\
+lump $-1 -1 $-1 $-1 $2 $0 #\n\
+shell $-1 -1 $-1 $-1 $-1 $3 $-1 $1 #\n\
+face $-1 -1 $-1 $-1 $4 $2 $-1 $5 forward single #\n\
+loop $-1 -1 $-1 $-1 $6 $3 #\n\
+plane-surface $-1 -1 $-1 0 0 0 0 0 1 1 0 0 forward_v I I I I #\n\
+coedge $-1 -1 $-1 $6 $6 $-1 $7 forward $4 $-1 #\n\
+edge $-1 -1 $-1 $8 0 $8 6.283185307179586 $6 $9 forward @7 unknown #\n\
+tvertex $-1 -1 $-1 $7 $10 0 #\n\
+ellipse-curve $-1 -1 $-1 0 0 0 0 0 1 10 0 0 1 I I #\n\
+point $-1 -1 $-1 10 0 0 #\nEnd-of-ACIS-data\n";
+    let result = cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(source));
+    assert_eq!(result.ir().model.vertices.len(), 1);
+    assert!(result.ir().model.vertices[0].tolerance.is_none());
+    assert_eq!(result.ir().model.edges.len(), 1);
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == SatLossCode::VertexToleranceUnresolved.kind()));
+    assert_eq!(
+        result
+            .source_fidelity()
+            .retained_record("sat:brep:tvertex#8")
+            .unwrap()
+            .data(),
+        Some(b"tvertex $-1 -1 $-1 $7 $10 0 #".as_slice())
+    );
+}
+
+#[test]
+fn attachment_headers_keep_record_offsets_and_source_bytes() {
+    let prefix = b"X-Sun-Data-Type: default\nX-Sun-Charset: us-ascii\n\n";
+    let mut source = prefix.to_vec();
+    source.extend(text_sphere_stream(1.0));
+    let expected = decode_bytes(&text_sphere_stream(1.0));
+    let result = cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(&source));
+    assert_eq!(result.ir().model, expected.ir().model);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == SatLossCode::HeaderMetadataNoncanonical.kind()));
+    let retained = result
+        .source_fidelity()
+        .retained_record("sat:source:header#0")
+        .unwrap()
+        .data()
+        .unwrap();
+    assert!(retained.starts_with(prefix));
+}
+
+#[test]
+fn empty_leading_record_name_uses_its_table_index_and_keeps_the_source() {
+    let source = String::from_utf8(text_sphere_stream(1.0))
+        .unwrap()
+        .replace("End-of-ASM-data", "-opaque $-1 #\nEnd-of-ASM-data");
+    let result = cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(source.as_bytes()));
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == SatLossCode::SourceRecordNameUnresolved.kind()));
+    assert_eq!(
+        result
+            .source_fidelity()
+            .retained_record("sat:brep:untyped-record#6")
+            .unwrap()
+            .data(),
+        Some(b"-opaque $-1 #".as_slice())
+    );
+}
+
+#[test]
+fn acis_base_extensions_do_not_shift_shared_entity_fields() {
+    let source = String::from_utf8(text_sphere_stream(1.0))
+        .unwrap()
+        .replacen("23200", "2200", 1)
+        .replace(" $-1 -1 $-1 ", " $-1 -1 -1 $-1 ")
+        .replace("forward single #", "forward single F T 0 0 0 0 #")
+        .replace("End-of-ASM-data", "End-of-ACIS-data");
+    let expected = decode_bytes(&text_sphere_stream(1.0));
+    let result = cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(source.as_bytes()));
+    assert_eq!(result.ir().model, expected.ir().model);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == SatLossCode::SourceRecordExtensionsUnprojected.kind()));
+    assert_eq!(
+        result
+            .source_fidelity()
+            .retained_record("sat:source:record-extensions#0")
+            .unwrap()
+            .data(),
+        Some(source.as_bytes())
+    );
+}
+
+#[test]
+fn legacy_spline_context_is_reported_and_retained_with_its_solved_surface() {
+    let source = b"105 0 1 0\n\
+body $-1 $1 $-1 $-1 #\n\
+lump $-1 $-1 $2 $0 #\n\
+shell $-1 $-1 $-1 $3 $1 #\n\
+face $-1 $-1 $-1 $2 $-1 $4 0 0 #\n\
+spline-surface $-1 0 { exactsur nubs 1 1 open open none none 2 2 0 1 1 1 0 1 1 1 0 0 0 10 0 0 0 10 0 10 10 0 0 } #\n\
+End-of-ACIS-data\n";
+    let result = cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(source));
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert!(matches!(
+        result.ir().model.surfaces[0].geometry.solved(),
+        Some(SolvedSurfaceGeometry::Nurbs(_))
+    ));
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == SatLossCode::SourceRecordExtensionsUnprojected.kind()));
+    assert_eq!(
+        result
+            .source_fidelity()
+            .retained_record("sat:source:legacy-context#0")
+            .unwrap()
+            .data(),
+        Some(source.as_slice())
+    );
+}
+
+#[test]
+fn standalone_face_is_retained_when_the_ir_requires_a_shell_owner() {
+    let source = b"201 0 1 0\n1 T 4 ACIS 1 D\n1 0.01 0.001\n\
+face $-1 $-1 $-1 $-1 $-1 $1 forward single #\n\
+plane-surface $-1 0 0 0 0 0 1 1 0 0 forward_v I I I I #\nEnd-of-ACIS-data\n";
+    let result = cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(source));
+    assert!(result.ir().model.faces.is_empty());
+    assert!(result.ir().model.surfaces.is_empty());
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == SatLossCode::TopologyFaceOwnerUnprojected.kind()));
+    assert_eq!(
+        result
+            .source_fidelity()
+            .retained_record("sat:brep:face#0")
+            .unwrap()
+            .data(),
+        Some(b"face $-1 $-1 $-1 $-1 $-1 $1 forward single #".as_slice())
+    );
+    assert_eq!(
+        result
+            .source_fidelity()
+            .retained_record("sat:source:standalone-faces#0")
+            .unwrap()
+            .data(),
+        Some(source.as_slice())
+    );
+    assert!(cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .unwrap()
+        .is_ok());
+}
+
+#[test]
+fn empty_shell_is_retained_without_dangling_region_references() {
+    let source = b"105 0 1 0\n\
+body $-1 $1 $-1 $-1 #\n\
+lump $-1 $-1 $2 $0 #\n\
+shell $-1 $3 $-1 $-1 $1 #\n\
+shell $-1 $-1 $-1 $4 $1 #\n\
+face $-1 $-1 $-1 $3 $-1 $5 0 0 #\n\
+plane-surface $-1 0 0 0 0 0 1 1 0 0 0 #\nEnd-of-ACIS-data\n";
+    let result = cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(source));
+    let model = &result.ir().model;
+    assert_eq!(model.faces.len(), 1);
+    assert_eq!(model.shells.len(), 1);
+    assert_eq!(model.shells[0].id.as_str(), "sat:brep:entity#3");
+    assert_eq!(model.regions[0].shells, [model.shells[0].id.clone()]);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == SatLossCode::TopologyShellUnprojected.kind()));
+    assert_eq!(
+        result
+            .source_fidelity()
+            .retained_record("sat:brep:shell#2")
+            .unwrap()
+            .data(),
+        Some(b"shell $-1 $3 $-1 $-1 $1 #".as_slice())
+    );
+}
+
+#[test]
+fn body_owned_wire_reports_the_missing_ir_ownership_and_retains_its_source() {
+    let source = b"105 0 1 0\n\
+body $-1 $-1 $1 $-1#\n\
+wire $-1 $-1 $2 $0 $-1 0#\n\
+coedge $-1 $2 $2 $-1 $3 0 $1 $-1#\n\
+edge $-1 $4 $5 $2 $6 0#\n\
+vertex $-1 $3 $7#\nvertex $-1 $3 $8#\n\
+straight-curve $-1 0 0 0 1 0 0#\n\
+point $-1 0 0 0#\npoint $-1 5 0 0#\nEnd-of-ACIS-data\n";
+    let result = cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(source));
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == SatLossCode::TopologyWireOwnerUnprojected.kind()));
+    assert_eq!(
+        result
+            .source_fidelity()
+            .retained_record("sat:source:body-wire#0")
+            .unwrap()
+            .data(),
+        Some(source.as_slice())
+    );
+}
+
+#[test]
+fn omitted_use_curve_interval_has_a_sat_loss_code() {
+    use cadmpeg_asm::brep::AsmBrep;
+    use cadmpeg_asm::kernel_header::KernelHeader;
+    use std::collections::BTreeMap;
+    let bytes = text_sphere_stream(1.0);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    let stream = cadmpeg_asm::sat::parse(&ctx, &bytes).unwrap();
+    let header: KernelHeader = stream.header.as_kernel_header(&ctx).unwrap();
+    let evidence = super::StreamEvidence::Text(Some(super::TextEvidence {
+        branch: stream.terminator,
+        header: &header,
+    }));
+    let (matched, kernel) = super::layers(&evidence);
+    let mut graph = AsmBrep::default();
+    graph
+        .stats
+        .other_record_kinds
+        .insert("tcoedge-use-curve-invalid-interval".into(), 1);
+    let result = super::build_result(
+        &ctx,
+        Some(graph),
+        BTreeMap::new(),
+        &header,
+        Some(stream.terminator),
+        matched,
+        &kernel,
+    )
+    .unwrap();
+    assert!(result
+        .body
+        .losses
+        .iter()
+        .any(|loss| loss.code == SatLossCode::GeometryUseCurveIntervalInvalid.kind()));
+}
+
+#[test]
+fn invalid_edge_tolerance_has_a_loss_and_retains_its_source_record() {
+    for tolerance in [0, -1] {
+        let record = format!(
+            "tedge-edge $-1 -1 $-1 $-1 0 $-1 1 $-1 $-1 forward @7 unknown {tolerance} 0 0 #"
+        );
+        let source = String::from_utf8(text_sphere_stream(1.0))
+            .unwrap()
+            .replace("End-of-ASM-data", &format!("{record}\nEnd-of-ASM-data"));
+        let result =
+            cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(source.as_bytes()));
+        assert_eq!(result.ir().model.faces.len(), 1);
+        assert!(
+            matches!(result.ir().model.surfaces[0].geometry.solved(), Some(SolvedSurfaceGeometry::Sphere(sphere)) if sphere.radius().get() == 25.0)
+        );
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == SatLossCode::EdgeToleranceUnresolved.kind()));
+        assert_eq!(
+            result
+                .source_fidelity()
+                .retained_record("sat:brep:tedge#6")
+                .unwrap()
+                .data(),
+            Some(record.as_bytes())
+        );
     }
 }

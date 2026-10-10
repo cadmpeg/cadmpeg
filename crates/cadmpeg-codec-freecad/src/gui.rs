@@ -236,6 +236,44 @@ pub(crate) fn transfer(
     bytes: &[u8],
     sources: &GuiSources<'_, '_>,
 ) -> Result<Graph, CodecError> {
+    match transfer_xml(ctx, ir, bytes, sources) {
+        Err(error @ (CodecError::Malformed(_) | CodecError::Truncated { .. })) => {
+            source_only_graph(ctx, None, &error)
+        }
+        result => result,
+    }
+}
+
+fn source_only_graph(
+    ctx: &DecodeContext<'_>,
+    schema_declaration: Option<&str>,
+    error: &CodecError,
+) -> Result<Graph, CodecError> {
+    let mut graph = Graph::default();
+    ctx.push_vec(
+        &mut graph.documents,
+        GuiDocumentRecord {
+            id: ctx.copy_retained_text("fcstd:gui:document#0", "FCStd GUI document identity")?,
+            schema_version: schema_declaration
+                .map(|value| ctx.copy_retained_text(value, "FCStd GUI schema declaration"))
+                .transpose()?,
+            attributes: BTreeMap::new(),
+            states: Vec::new(),
+        },
+        "FCStd GUI document records",
+    )?;
+    ctx.push_vec(&mut graph.losses, FreecadLossCode::SourceGuiMetadataUnresolved.note(
+        ctx.format_retained(format_args!("GuiDocument.xml remains source-only: {error}; independently decoded geometry is retained"), "FCStd GUI metadata diagnostic")?
+    ), "FCStd GUI metadata losses")?;
+    Ok(graph)
+}
+
+fn transfer_xml(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    bytes: &[u8],
+    sources: &GuiSources<'_, '_>,
+) -> Result<Graph, CodecError> {
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(bytes.len()),
         "validate FreeCAD XML UTF-8",
@@ -266,41 +304,23 @@ pub(crate) fn transfer(
         neutral_schema_version,
         sources,
     );
-    match (admission, transferred) {
-        (GuiSchemaAdmission::Schema1, result) => {
-            let (graph, plan) = result?;
+    let mut graph = match transferred {
+        Ok((graph, plan)) => {
             plan.apply(ctx, ir)?;
-            Ok(graph)
+            graph
         }
-        (GuiSchemaAdmission::Unverified { declaration }, Ok((mut graph, plan))) => {
-            let declaration = declaration.as_deref().unwrap_or("missing");
-            plan.apply(ctx, ir)?;
-            ctx.reserve_vec(&mut graph.losses, 1, "FCStd GUI schema losses")?;
-            graph.losses.push(FreecadLossCode::SourceGuiSchemaUnverified.note(
-                ctx.format_retained(format_args!(
-                    "GuiDocument.xml declares schema {declaration}; decoded with the schema-1 vocabulary"
-                ), "FCStd GUI schema loss text")?,
-            ));
-            Ok(graph)
+        Err(error @ (CodecError::Malformed(_) | CodecError::Truncated { .. })) => {
+            source_only_graph(ctx, schema_declaration.as_deref(), &error)?
         }
-        (
-            GuiSchemaAdmission::Unverified { declaration },
-            Err(error @ (CodecError::Malformed(_) | CodecError::Truncated { .. })),
-        ) => {
-            let declaration = declaration.as_deref().unwrap_or("missing");
-            let mut losses = ctx.collection_vec(1, "FCStd GUI schema losses")?;
-            losses.push(FreecadLossCode::SourceGuiSchemaUnverified.note(
-                ctx.format_retained(format_args!(
-                    "GuiDocument.xml could not be decoded with the schema-1 vocabulary; declared schema {declaration} is the probable cause: {error}"
-                ), "FCStd GUI schema loss text")?,
-            ));
-            Ok(Graph {
-                losses,
-                ..Graph::default()
-            })
-        }
-        (GuiSchemaAdmission::Unverified { .. }, Err(error)) => Err(error),
+        Err(error) => return Err(error),
+    };
+    if let GuiSchemaAdmission::Unverified { declaration } = admission {
+        let declaration = declaration.as_deref().unwrap_or("missing");
+        ctx.push_vec(&mut graph.losses, FreecadLossCode::SourceGuiSchemaUnverified.note(
+            ctx.format_retained(format_args!("GuiDocument.xml declares schema {declaration}; attempted the schema-1 vocabulary"), "FCStd GUI schema loss text")?
+        ), "FCStd GUI schema losses")?;
     }
+    Ok(graph)
 }
 
 fn transfer_schema_one(
@@ -319,24 +339,14 @@ fn transfer_schema_one(
     let requires_alpha_conversion = sources.requires_alpha_conversion;
     let root = xml.root_element();
     let mut plan = AppearancePlan::default();
-    let camera_count = root
-        .children()
-        .filter(|node| node.has_tag_name("Camera"))
-        .count();
-    let camera_error = if camera_count == 1 {
-        None
-    } else {
-        Some(format!(
-            "GuiDocument.xml schema 1 requires one Camera record, found {camera_count}"
-        ))
-    };
-    if let Some(message) = camera_error {
-        return Err(CodecError::Malformed(message));
-    }
     let state_count = root
         .children()
         .filter(roxmltree::Node::is_element)
         .filter(|node| !node.has_tag_name("ViewProviderData"))
+        .count();
+    let camera_count = root
+        .children()
+        .filter(|node| node.has_tag_name("Camera"))
         .count();
     let mut states = ctx.collection_vec(state_count, "FCStd GUI state records")?;
     for (order, node) in root
@@ -379,6 +389,12 @@ fn transfer_schema_one(
     let mut native_providers = Vec::new();
     let mut native_properties = Vec::new();
     let mut losses = Vec::new();
+    if camera_count != 1 {
+        ctx.push_vec(&mut losses, FreecadLossCode::SourceGuiMetadataUnresolved.note(
+            ctx.format_retained(format_args!("GuiDocument.xml contains {camera_count} Camera records; camera selection is unresolved"), "FCStd GUI metadata diagnostic")?
+        ), "FCStd GUI metadata losses")?;
+    }
+
     let mut payload_storage = ctx.reserve_scoped(0, "FCStd GUI payload owners")?;
     let mut payloads_by_owner = Vec::new();
     for payload in payloads {
@@ -885,6 +901,11 @@ fn transfer_neutral_presentation(
         presentation.native_ref =
             Some(ctx.copy_retained_text(&document.id, "FCStd presentation document reference")?);
         let mut states = ctx.collection_vec(document.states.len(), "FCStd presentation states")?;
+        let camera_count = document
+            .states
+            .iter()
+            .filter(|state| state.kind == "Camera")
+            .count();
         for (order, state) in document.states.iter().enumerate() {
             let (attributes, refused) = gui_named_entries(
                 ctx,
@@ -901,8 +922,26 @@ fn transfer_neutral_presentation(
                     .map(|(name, value)| (name.as_str(), value.as_str())),
             )?;
             charge_refused_gui_keys(ctx, &mut state_losses, &refused)?;
-            let kind = if state.kind == "Camera" {
-                PresentationStateKind::Camera(camera_state_value(ctx, state, &mut state_losses)?)
+            let kind = if state.kind == "Camera" && camera_count == 1 {
+                match camera_state_value(ctx, state, &mut state_losses) {
+                    Ok(camera) => PresentationStateKind::Camera(camera),
+                    Err(error @ (CodecError::Malformed(_) | CodecError::Truncated { .. })) => {
+                        ctx.push_vec(
+                            &mut state_losses,
+                            FreecadLossCode::SourceGuiMetadataUnresolved.note(
+                                ctx.format_retained(
+                                    format_args!("GUI Camera remains native: {error}"),
+                                    "FCStd GUI metadata diagnostic",
+                                )?,
+                            ),
+                            "FCStd GUI metadata losses",
+                        )?;
+                        PresentationStateKind::Native(
+                            ctx.copy_retained_text(&state.kind, "FCStd presentation state kind")?,
+                        )
+                    }
+                    Err(error) => return Err(error),
+                }
             } else {
                 PresentationStateKind::Native(
                     ctx.copy_retained_text(&state.kind, "FCStd presentation state kind")?,
@@ -5281,7 +5320,7 @@ mod shape_association_tests {
             hasher_index: None,
             source_entry: None,
             map_id: 1,
-            declared_count: 0,
+            declared_count: Some(0),
             postfixes: Vec::new(),
             maps: vec![ElementMapNode { map_id: 1, groups }]
                 .try_into()

@@ -146,7 +146,10 @@ fn decode_preserves_signal_and_piping_flow_class_order() {
     assert_eq!(signal.fields()["function_flag"], 2);
     assert_eq!(signal.fields()["connections"][0], "iges:entity:directory#1");
     assert_eq!(signal.fields()["joins"][0], "iges:entity:directory#3");
-    assert_eq!(signal.fields()["names"][0][0], 70);
+    assert_eq!(
+        u64::from(crate::test_support::native_bytes(&signal.fields()["names"][0])[0]),
+        70
+    );
     assert_eq!(
         signal.fields()["name_displays"][0],
         "iges:entity:directory#5"
@@ -246,8 +249,8 @@ fn decode_preserves_legacy_signal_text_and_connect_associativities() {
     assert_eq!(signal.fields()["declared_schematic_count"], 1);
     assert_eq!(signal.fields()["declared_physical_count"], 1);
     assert_eq!(
-        signal.fields()["signal_names"][0],
-        serde_json::json!([78, 69, 84])
+        crate::test_support::native_bytes(&signal.fields()["signal_names"][0]),
+        [78, 69, 84]
     );
     assert_eq!(signal.fields()["connections"][0], "iges:entity:directory#3");
     assert_eq!(
@@ -286,8 +289,8 @@ fn decode_preserves_legacy_signal_text_and_connect_associativities() {
     assert_eq!(connect.fields()["points"][0], "iges:entity:directory#1");
     assert_eq!(connect.fields()["data"][0]["kind"], "string");
     assert_eq!(
-        connect.fields()["data"][0]["value"],
-        serde_json::json!([67, 79, 78, 83, 84, 82])
+        crate::test_support::native_bytes(&connect.fields()["data"][0]["value"]),
+        [67, 79, 78, 83, 84, 82]
     );
     assert_eq!(connect.fields()["data"][1]["kind"], "integer");
     assert_eq!(connect.fields()["data"][1]["value"], 42);

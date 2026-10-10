@@ -398,6 +398,11 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
         let (global, mut global_losses) = global::parse(&scan, ctx)?;
         let (directory, quarantined_directory) =
             directory::parse(&scan, global.global_table(), ctx)?;
+        ctx.extend_vec(
+            &mut global_losses,
+            directory::metadata_losses(&directory, ctx)?,
+            "iges directory metadata losses",
+        )?;
         if mode == ParseMode::Decode {
             entities::geometry::enforce_transform_depth(&directory, ctx)?;
         }
@@ -482,6 +487,49 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
         for record in &self.quarantined_parameters {
             ctx.reserve_vec(&mut losses, 1, "iges record loss slots")?;
             losses.push(record.loss_note(ctx)?);
+        }
+        let mut entries = BTreeMap::new();
+        let mut storage = ctx.reserve_scoped(0, "iges literal loss directory index")?;
+        for record in &self.parameters {
+            for (index, token) in record.tokens().iter().enumerate() {
+                ctx.charge_work(1, "iges parameter literal defects")?;
+                let parameter::TokenValue::Unreadable(defect) = token.value else {
+                    continue;
+                };
+                if entries.is_empty() {
+                    for entry in &self.directory {
+                        storage.with_storage(|| {
+                            ctx.insert_btree_map(
+                                &mut entries,
+                                entry.sequence,
+                                entry,
+                                "iges literal loss directory index",
+                            )
+                        })?;
+                    }
+                }
+                let entry = entries.get(&record.directory_sequence).ok_or_else(|| {
+                    CodecError::malformed("IGES parameter literal has no Directory owner")
+                })?;
+                let code = IgesLossCode::ParameterLiteralUnusable;
+                let message = ctx.format_retained(
+                    format_args!(
+                        "Parameter field {index} in D{} is unreadable: {}; exact field retained",
+                        record.directory_sequence,
+                        defect.describe(),
+                    ),
+                    "iges parameter literal loss message",
+                )?;
+                ctx.charge_retained(
+                    4 + cadmpeg_core::decode::u64_from_index(code.code().len()),
+                    "iges parameter literal loss kind",
+                )?;
+                ctx.reserve_vec(&mut losses, 1, "iges record loss slots")?;
+                losses.push(
+                    code.note(message)
+                        .with_provenance(entry.admitted_loss_provenance(ctx)?),
+                );
+            }
         }
         Ok(losses)
     }
@@ -658,6 +706,7 @@ fn decode_with_occurrence_limits(
         "iges combined projection losses",
     )?;
     losses.extend(std::mem::take(&mut projection.losses));
+    entities::ownership::mark_supports(&mut ir, &parse.directory, &parse.parameters, ctx)?;
     let graph_losses = graph::losses(&parse.references, &parse.scan, &parse.parameters, ctx)?;
     ctx.reserve_vec(
         &mut losses,
@@ -747,7 +796,7 @@ fn decode_with_occurrence_limits(
             cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
             "iges_semantic_validation",
         )?;
-        reject_invalid_semantic_ir(&ir)?;
+        reject_invalid_semantic_ir(ctx, &ir)?;
     }
     let attributed = if ctx.container_only() {
         BTreeSet::new()
@@ -869,8 +918,8 @@ fn decode_with_occurrence_limits(
 /// Keeps full [`cadmpeg_ir::validate_neutral`]: `DRAFT_CORE_CHECKS` error
 /// outcomes match full validation on every IGES golden fixture, so the route
 /// stays on the full validator.
-fn reject_invalid_semantic_ir(ir: &CadIr) -> Result<(), CodecError> {
-    let validation = cadmpeg_ir::validate_neutral(ir, Vec::new())?;
+fn reject_invalid_semantic_ir(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<(), CodecError> {
+    let validation = cadmpeg_ir::validate::validate_neutral_for_decode(ctx, ir, Vec::new())?;
     let Some(finding) = validation
         .findings
         .iter()

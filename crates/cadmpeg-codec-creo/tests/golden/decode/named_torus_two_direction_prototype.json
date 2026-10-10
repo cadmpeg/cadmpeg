@@ -81,61 +81,7 @@
       "creo": {
         "surface_parameters": [
           {
-            "body": [
-              115,
-              114,
-              102,
-              95,
-              112,
-              114,
-              105,
-              109,
-              95,
-              112,
-              116,
-              114,
-              40,
-              116,
-              111,
-              114,
-              117,
-              115,
-              41,
-              0,
-              224,
-              2,
-              108,
-              111,
-              99,
-              97,
-              108,
-              95,
-              115,
-              121,
-              115,
-              0,
-              249,
-              4,
-              3,
-              228,
-              15,
-              15,
-              15,
-              67,
-              240,
-              0,
-              15,
-              228,
-              15,
-              15,
-              47,
-              0,
-              0,
-              15,
-              72,
-              0,
-              0
-            ],
+            "body": "7372665f7072696d5f70747228746f7275732900e0026c6f63616c5f73797300f90403e40f0f0f43f0000fe40f0f2f00000f480000",
             "body_offset": 112,
             "boundary": "named_record",
             "cone_half_angle_override": null,
@@ -145,28 +91,12 @@
               {
                 "length": 10,
                 "offset": 7,
-                "raw": [
-                  109,
-                  95,
-                  112,
-                  116,
-                  114,
-                  40,
-                  116,
-                  111,
-                  114,
-                  117
-                ]
+                "raw": "6d5f70747228746f7275"
               },
               {
                 "length": 4,
                 "offset": 24,
-                "raw": [
-                  99,
-                  97,
-                  108,
-                  95
-                ]
+                "raw": "63616c5f"
               }
             ],
             "positional_cone_frame": null,
@@ -181,15 +111,7 @@
                   {
                     "length": 7,
                     "offset": 0,
-                    "raw": [
-                      115,
-                      114,
-                      102,
-                      95,
-                      112,
-                      114,
-                      105
-                    ],
+                    "raw": "7372665f707269",
                     "value": 0.7639648307845849
                   }
                 ]
@@ -200,15 +122,7 @@
                   {
                     "length": 7,
                     "offset": 17,
-                    "raw": [
-                      115,
-                      41,
-                      0,
-                      224,
-                      2,
-                      108,
-                      111
-                    ],
+                    "raw": "732900e0026c6f",
                     "value": 0.7550053000626472
                   }
                 ]
@@ -219,117 +133,79 @@
                   {
                     "length": 7,
                     "offset": 28,
-                    "raw": [
-                      115,
-                      121,
-                      115,
-                      0,
-                      249,
-                      4,
-                      3
-                    ],
+                    "raw": "73797300f90403",
                     "value": 0.7648253458975208
                   },
                   {
                     "length": 1,
                     "offset": 35,
-                    "raw": [
-                      228
-                    ],
+                    "raw": "e4",
                     "value": 1.0
                   },
                   {
                     "length": 1,
                     "offset": 36,
-                    "raw": [
-                      15
-                    ],
+                    "raw": "0f",
                     "value": 0.0
                   },
                   {
                     "length": 1,
                     "offset": 37,
-                    "raw": [
-                      15
-                    ],
+                    "raw": "0f",
                     "value": 0.0
                   },
                   {
                     "length": 1,
                     "offset": 38,
-                    "raw": [
-                      15
-                    ],
+                    "raw": "0f",
                     "value": 0.0
                   },
                   {
                     "length": 3,
                     "offset": 39,
-                    "raw": [
-                      67,
-                      240,
-                      0
-                    ],
+                    "raw": "43f000",
                     "value": -1.0
                   },
                   {
                     "length": 1,
                     "offset": 42,
-                    "raw": [
-                      15
-                    ],
+                    "raw": "0f",
                     "value": 0.0
                   },
                   {
                     "length": 1,
                     "offset": 43,
-                    "raw": [
-                      228
-                    ],
+                    "raw": "e4",
                     "value": 1.0
                   },
                   {
                     "length": 1,
                     "offset": 44,
-                    "raw": [
-                      15
-                    ],
+                    "raw": "0f",
                     "value": 0.0
                   },
                   {
                     "length": 1,
                     "offset": 45,
-                    "raw": [
-                      15
-                    ],
+                    "raw": "0f",
                     "value": 0.0
                   },
                   {
                     "length": 3,
                     "offset": 46,
-                    "raw": [
-                      47,
-                      0,
-                      0
-                    ],
+                    "raw": "2f0000",
                     "value": 2.0
                   },
                   {
                     "length": 1,
                     "offset": 49,
-                    "raw": [
-                      15
-                    ],
+                    "raw": "0f",
                     "value": 0.0
                   },
                   {
                     "length": 3,
                     "offset": 50,
-                    "raw": [
-                      72,
-                      0,
-                      0
-                    ],
+                    "raw": "480000",
                     "value": -2.0
                   }
                 ]
@@ -339,145 +215,91 @@
               {
                 "length": 7,
                 "offset": 0,
-                "raw": [
-                  115,
-                  114,
-                  102,
-                  95,
-                  112,
-                  114,
-                  105
-                ],
+                "raw": "7372665f707269",
                 "value": 0.7639648307845849
               },
               {
                 "length": 7,
                 "offset": 17,
-                "raw": [
-                  115,
-                  41,
-                  0,
-                  224,
-                  2,
-                  108,
-                  111
-                ],
+                "raw": "732900e0026c6f",
                 "value": 0.7550053000626472
               },
               {
                 "length": 7,
                 "offset": 28,
-                "raw": [
-                  115,
-                  121,
-                  115,
-                  0,
-                  249,
-                  4,
-                  3
-                ],
+                "raw": "73797300f90403",
                 "value": 0.7648253458975208
               },
               {
                 "length": 1,
                 "offset": 35,
-                "raw": [
-                  228
-                ],
+                "raw": "e4",
                 "value": 1.0
               },
               {
                 "length": 1,
                 "offset": 36,
-                "raw": [
-                  15
-                ],
+                "raw": "0f",
                 "value": 0.0
               },
               {
                 "length": 1,
                 "offset": 37,
-                "raw": [
-                  15
-                ],
+                "raw": "0f",
                 "value": 0.0
               },
               {
                 "length": 1,
                 "offset": 38,
-                "raw": [
-                  15
-                ],
+                "raw": "0f",
                 "value": 0.0
               },
               {
                 "length": 3,
                 "offset": 39,
-                "raw": [
-                  67,
-                  240,
-                  0
-                ],
+                "raw": "43f000",
                 "value": -1.0
               },
               {
                 "length": 1,
                 "offset": 42,
-                "raw": [
-                  15
-                ],
+                "raw": "0f",
                 "value": 0.0
               },
               {
                 "length": 1,
                 "offset": 43,
-                "raw": [
-                  228
-                ],
+                "raw": "e4",
                 "value": 1.0
               },
               {
                 "length": 1,
                 "offset": 44,
-                "raw": [
-                  15
-                ],
+                "raw": "0f",
                 "value": 0.0
               },
               {
                 "length": 1,
                 "offset": 45,
-                "raw": [
-                  15
-                ],
+                "raw": "0f",
                 "value": 0.0
               },
               {
                 "length": 3,
                 "offset": 46,
-                "raw": [
-                  47,
-                  0,
-                  0
-                ],
+                "raw": "2f0000",
                 "value": 2.0
               },
               {
                 "length": 1,
                 "offset": 49,
-                "raw": [
-                  15
-                ],
+                "raw": "0f",
                 "value": 0.0
               },
               {
                 "length": 3,
                 "offset": 50,
-                "raw": [
-                  72,
-                  0,
-                  0
-                ],
+                "raw": "480000",
                 "value": -2.0
               }
             ],
@@ -493,117 +315,79 @@
                 {
                   "length": 7,
                   "offset": 28,
-                  "raw": [
-                    115,
-                    121,
-                    115,
-                    0,
-                    249,
-                    4,
-                    3
-                  ],
+                  "raw": "73797300f90403",
                   "value": 0.7648253458975208
                 },
                 {
                   "length": 1,
                   "offset": 35,
-                  "raw": [
-                    228
-                  ],
+                  "raw": "e4",
                   "value": 1.0
                 },
                 {
                   "length": 1,
                   "offset": 36,
-                  "raw": [
-                    15
-                  ],
+                  "raw": "0f",
                   "value": 0.0
                 },
                 {
                   "length": 1,
                   "offset": 37,
-                  "raw": [
-                    15
-                  ],
+                  "raw": "0f",
                   "value": 0.0
                 },
                 {
                   "length": 1,
                   "offset": 38,
-                  "raw": [
-                    15
-                  ],
+                  "raw": "0f",
                   "value": 0.0
                 },
                 {
                   "length": 3,
                   "offset": 39,
-                  "raw": [
-                    67,
-                    240,
-                    0
-                  ],
+                  "raw": "43f000",
                   "value": -1.0
                 },
                 {
                   "length": 1,
                   "offset": 42,
-                  "raw": [
-                    15
-                  ],
+                  "raw": "0f",
                   "value": 0.0
                 },
                 {
                   "length": 1,
                   "offset": 43,
-                  "raw": [
-                    228
-                  ],
+                  "raw": "e4",
                   "value": 1.0
                 },
                 {
                   "length": 1,
                   "offset": 44,
-                  "raw": [
-                    15
-                  ],
+                  "raw": "0f",
                   "value": 0.0
                 },
                 {
                   "length": 1,
                   "offset": 45,
-                  "raw": [
-                    15
-                  ],
+                  "raw": "0f",
                   "value": 0.0
                 },
                 {
                   "length": 3,
                   "offset": 46,
-                  "raw": [
-                    47,
-                    0,
-                    0
-                  ],
+                  "raw": "2f0000",
                   "value": 2.0
                 },
                 {
                   "length": 1,
                   "offset": 49,
-                  "raw": [
-                    15
-                  ],
+                  "raw": "0f",
                   "value": 0.0
                 },
                 {
                   "length": 3,
                   "offset": 50,
-                  "raw": [
-                    72,
-                    0,
-                    0
-                  ],
+                  "raw": "480000",
                   "value": -2.0
                 }
               ]
@@ -622,33 +406,11 @@
             "offset": 112,
             "parameters": [
               {
-                "body": [
-                  249,
-                  4,
-                  3,
-                  228,
-                  15,
-                  15,
-                  15,
-                  67,
-                  240,
-                  0,
-                  15,
-                  228,
-                  15,
-                  15,
-                  47,
-                  0,
-                  0,
-                  15,
-                  72,
-                  0,
-                  0
-                ],
+                "body": "f90403e40f0f0f43f0000fe40f0f2f00000f480000",
                 "compact_values": [],
                 "name": "local_sys",
                 "offset": 132,
-                "opaque": [],
+                "opaque": "",
                 "scalar_count": 3,
                 "scalar_dimensions": 4,
                 "scalar_tokens": [],
@@ -670,13 +432,11 @@
                 "value_offset": 144
               },
               {
-                "body": [
-                  228
-                ],
+                "body": "e4",
                 "compact_values": [],
                 "name": "radius1",
                 "offset": 165,
-                "opaque": [],
+                "opaque": "",
                 "scalar_count": null,
                 "scalar_dimensions": null,
                 "scalar_tokens": [],
@@ -687,13 +447,11 @@
                 "value_offset": 175
               },
               {
-                "body": [
-                  228
-                ],
+                "body": "e4",
                 "compact_values": [],
                 "name": "radius2",
                 "offset": 176,
-                "opaque": [],
+                "opaque": "",
                 "scalar_count": null,
                 "scalar_dimensions": null,
                 "scalar_tokens": [],

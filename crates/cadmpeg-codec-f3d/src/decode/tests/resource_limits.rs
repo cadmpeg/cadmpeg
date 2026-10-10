@@ -1400,7 +1400,7 @@ fn typed_dimension_index_refuses_collection_limit() {
                 record_index: 1,
                 frame_length: 100,
                 prefix_offset: 20,
-                prefix_bytes: Vec::new(),
+                prefix_bytes: Vec::new().into(),
                 references: Vec::new(),
                 program_offset: 40,
                 program: vec![-1],

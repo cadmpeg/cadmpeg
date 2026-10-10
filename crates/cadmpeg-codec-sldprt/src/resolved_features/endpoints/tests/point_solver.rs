@@ -55,7 +55,7 @@ fn lane(constraints: &[([u16; 2], f64)]) -> FeatureInputLane {
     FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars,

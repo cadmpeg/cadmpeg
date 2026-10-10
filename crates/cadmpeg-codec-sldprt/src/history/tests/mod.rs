@@ -65,7 +65,7 @@ pub(in crate::history) fn feature_input_lane(
     crate::records::FeatureInputLane {
         id: id.into(),
         configuration: configuration.map(str::to_string),
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),

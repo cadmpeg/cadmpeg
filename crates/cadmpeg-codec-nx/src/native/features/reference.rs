@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! A construction reference with its resolved target and source position.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use crate::om::reference_index::ReferenceIndexToken;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -17,10 +19,10 @@ pub(super) struct Body11ContinuationWire {
     body_reference_ordinal: u32,
     body_object_index: u32,
     continuation_index: u32,
-    raw_continuation_index: Vec<u8>,
+    raw_continuation_index: NativeBytes<Vec<u8>>,
     continuation_source_offset: u64,
     terminal_object_index: u32,
-    raw_terminal_object_index: Vec<u8>,
+    raw_terminal_object_index: NativeBytes<Vec<u8>>,
     terminal_source_offset: u64,
 }
 
@@ -33,10 +35,16 @@ impl serde::Serialize for super::FeatureOperationBody11Continuation {
         wire.serialize_entry("body_reference_ordinal", &self.body_reference_ordinal)?;
         wire.serialize_entry("body_object_index", &self.body_object_index)?;
         wire.serialize_entry("continuation_index", &self.continuation.atom.value())?;
-        wire.serialize_entry("raw_continuation_index", self.continuation.atom.raw())?;
+        wire.serialize_entry(
+            "raw_continuation_index",
+            &NativeBytes::from(self.continuation.atom.raw()),
+        )?;
         wire.serialize_entry("continuation_source_offset", &self.continuation.offset)?;
         wire.serialize_entry("terminal_object_index", &self.terminal.value())?;
-        wire.serialize_entry("raw_terminal_object_index", self.terminal.raw())?;
+        wire.serialize_entry(
+            "raw_terminal_object_index",
+            &NativeBytes::from(self.terminal.raw()),
+        )?;
         wire.serialize_entry("terminal_source_offset", &self.terminal_source_offset)?;
         wire.end()
     }
@@ -51,10 +59,10 @@ impl From<super::FeatureOperationBody11Continuation> for Body11ContinuationWire 
             body_reference_ordinal: value.body_reference_ordinal,
             body_object_index: value.body_object_index,
             continuation_index: value.continuation.atom.value(),
-            raw_continuation_index: value.continuation.atom.raw().to_vec(),
+            raw_continuation_index: (value.continuation.atom.raw().to_vec()).into(),
             continuation_source_offset: value.continuation.offset,
             terminal_object_index: value.terminal.value(),
-            raw_terminal_object_index: value.terminal.raw().to_vec(),
+            raw_terminal_object_index: (value.terminal.raw().to_vec()).into(),
             terminal_source_offset: value.terminal_source_offset,
         }
     }
@@ -93,7 +101,7 @@ mod tests {
 
     #[test]
     fn body11_continuation_borrowed_wire_matches_owned_bytes_and_retained_limit() {
-        let json = r#"{"id":"nx:feature:body11-continuation#0","operation_label":"operation","body_reference_ordinal":0,"body_object_index":114,"continuation_index":67,"raw_continuation_index":[128,67],"continuation_source_offset":126,"terminal_object_index":113,"raw_terminal_object_index":[113],"terminal_source_offset":131}"#;
+        let json = r#"{"id":"nx:feature:body11-continuation#0","operation_label":"operation","body_reference_ordinal":0,"body_object_index":114,"continuation_index":67,"raw_continuation_index":"8043","continuation_source_offset":126,"terminal_object_index":113,"raw_terminal_object_index":"71","terminal_source_offset":131}"#;
         let record: FeatureOperationBody11Continuation = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_vec(&record).unwrap(), json.as_bytes());
         assert_eq!(

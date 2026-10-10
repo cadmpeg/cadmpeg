@@ -332,6 +332,7 @@ fn analytic_vertex_result(
 ) -> Result<super::SolvedTopologicalVertices, CodecError> {
     let (mut scan, mut ir, carriers) = pcurve_vertex_case();
     let make_curve = |curve_id: u32, direction: [f64; 3]| cadmpeg_ir::geometry::Curve {
+        parameter_range: None,
         id: cadmpeg_ir::ids::CurveId::mint(format!("creo:visibgeom:curve#{curve_id}"))
             .expect("identity grammar"),
         geometry: line([0.0, 0.0, 0.0], direction),

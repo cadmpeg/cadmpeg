@@ -24,6 +24,8 @@ use super::geometry::GeometryData;
 use super::topology::TopologyData;
 use super::StageOutcome;
 
+mod bodies;
+
 const MAX_OCCURRENCES: usize = 100_000;
 const MAX_ASSEMBLY_DEPTH: usize = 256;
 const PRODUCT_DEFINITION_FORMATION_TYPES: &[&str] = &[
@@ -1043,22 +1045,15 @@ fn shape_bindings(
         }
     }
     let mut result = BTreeMap::<u64, Vec<BodyId>>::new();
-    let mut representation_cache = BTreeMap::new();
+    let ownership =
+        bodies::RepresentationOwnership::build(exchange, topology, &pds, definitions, ctx)?;
     for record in exchange
         .records()
         .values()
         .filter(|record| record.partial("SHAPE_DEFINITION_REPRESENTATION").is_some())
     {
-        if let Some((definition, bodies)) = shape_binding(
-            record,
-            exchange,
-            &pds,
-            definitions,
-            topology,
-            &mut representation_cache,
-            ctx,
-        )? {
-            let (body_ids, _body_bytes) = bodies.into_parts();
+        if let Some((definition, body_ids)) = shape_binding(record, &pds, definitions, &ownership)?
+        {
             ctx.admit_btree_entry(&result, &definition, "step_shape_binding_groups")?;
             let grouped = result.entry(definition).or_default();
             ctx.reserve_vec(grouped, body_ids.len(), "step_shape_binding_bodies")?;
@@ -1068,15 +1063,12 @@ fn shape_bindings(
     Ok(result)
 }
 
-fn shape_binding<'a>(
+fn shape_binding(
     record: &RawRecord,
-    exchange: &Exchange,
     pds: &BTreeMap<u64, u64>,
     definitions: &BTreeMap<u64, u64>,
-    topology: &TopologyData,
-    representation_cache: &mut BTreeMap<u64, super::topology::AdmittedRepresentationBodies<'a>>,
-    ctx: &'a DecodeContext<'_>,
-) -> Result<Option<(u64, super::topology::AdmittedRepresentationBodies<'a>)>, CodecError> {
+    ownership: &bodies::RepresentationOwnership<'_, '_>,
+) -> Result<Option<(u64, Vec<BodyId>)>, CodecError> {
     let Some(shape) =
         named_parameter(record, "SHAPE_DEFINITION_REPRESENTATION", 0).and_then(ValueExt::reference)
     else {
@@ -1093,14 +1085,7 @@ fn shape_binding<'a>(
     else {
         return Ok(None);
     };
-    let bodies = super::topology::representation_bodies(
-        representation,
-        exchange,
-        topology,
-        representation_cache,
-        &mut BTreeSet::new(),
-        ctx,
-    )?;
+    let bodies = ownership.bodies(definition, representation)?;
     Ok(Some((definition, bodies)))
 }
 

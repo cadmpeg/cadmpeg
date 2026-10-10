@@ -183,6 +183,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
             CurveId::mint("test:model:entity#nx:test:torus-circle").expect("identity grammar");
         ir.model.curves.extend([
             Curve {
+                parameter_range: None,
                 id: cone_ellipse.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
                     cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
@@ -197,6 +198,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
                 source_object: None,
             },
             Curve {
+                parameter_range: None,
                 id: sphere_circle.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                     cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
@@ -210,6 +212,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
                 source_object: None,
             },
             Curve {
+                parameter_range: None,
                 id: torus_circle.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                     cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
@@ -476,6 +479,7 @@ fn boundary_pcurve_requires_an_affine_carrier_witness() {
         let surface =
             SurfaceId::mint("test:model:entity#nx:test:boundary-plane").expect("identity grammar");
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
@@ -557,6 +561,7 @@ fn boundary_plane_pcurve_keeps_wide_finite_parameterization() {
         let surface = SurfaceId::mint("test:model:entity#nx:test:wide-boundary-plane")
             .expect("identity grammar");
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
@@ -617,6 +622,7 @@ fn boundary_cylinder_generator_keeps_wide_finite_parameterization() {
         let surface = SurfaceId::mint("test:model:entity#nx:test:wide-generator-cylinder")
             .expect("identity grammar");
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
@@ -727,6 +733,7 @@ fn boundary_pcurve_accepts_a_certified_affine_nurbs_boundary() {
         let surface = SurfaceId::mint("test:model:entity#nx:test:affine-nurbs-boundary-surface")
             .expect("identity grammar");
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
@@ -773,6 +780,7 @@ fn boundary_nurbs_surface_keeps_wide_finite_affine_pcurve() {
         let surface = SurfaceId::mint("test:model:entity#nx:test:wide-nurbs-boundary-surface")
             .expect("identity grammar");
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
@@ -1694,6 +1702,7 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
         let mut ir = CadIr::empty();
         let curve_id = CurveId::mint("nx:test:curve#0").expect("identity grammar");
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(

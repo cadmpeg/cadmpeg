@@ -9,9 +9,9 @@ fn typed_identity_cache_admits_copies_once_and_repeated_comparisons() {
     use cadmpeg_core::decode::u64_from_index;
     let source = "test:model:point#one";
     // First mapping: one visit, callback copy, grammar scan, three cache
-    // copies and two admitted records. Repeat: visit, key comparison and copy.
-    let first_work = 5 * u64_from_index(source.len()) + 3;
-    let repeat_work = 2 * u64_from_index(source.len()) + 2;
+    // copies, two hashes and two admitted records. Repeat: visit, hash, equality and copy.
+    let first_work = 7 * u64_from_index(source.len()) + 5;
+    let repeat_work = 3 * u64_from_index(source.len()) + 3;
     for allowance in 0..=first_work + repeat_work {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = allowance;
@@ -62,7 +62,7 @@ fn typed_identity_cache_comparison_refusal_cannot_return_a_cached_target() {
     use cadmpeg_core::decode::u64_from_index;
     let source = "test:model:point#one";
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 5 * u64_from_index(source.len()) + 4;
+    policy.limits.max_work_units = 7 * u64_from_index(source.len()) + 6;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut map = IdentityMap::new(&ctx, "refused identity comparison", |source: &str| {
@@ -273,8 +273,8 @@ fn typed_identity_rewrite_retains_its_grammar_proof_through_the_cache() {
     use cadmpeg_core::decode::u64_from_index;
     for source in ["a:b:c#one", "a:b:c#é:部"] {
         let bytes = u64_from_index(source.len());
-        let first_work = 4 * bytes + u64_from_index(source.chars().count()) + 3;
-        let repeat_work = 2 * bytes + 2;
+        let first_work = 6 * bytes + u64_from_index(source.chars().count()) + 5;
+        let repeat_work = 3 * bytes + 3;
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = first_work + repeat_work;
         policy.limits.max_materialized_bytes = 4096;
@@ -309,4 +309,97 @@ fn typed_identity_rewrite_retains_its_grammar_proof_through_the_cache() {
         );
         ctx.finish_session().unwrap();
     }
+}
+
+#[test]
+fn typed_rewrite_reuses_owned_sequence_storage_under_collection_budget() {
+    let mut values = (0..4096)
+        .map(|index| PointId::mint(format!("test:model:point#{index:04}")).unwrap())
+        .collect::<Vec<_>>();
+    values.reserve(128);
+    let pointer = values.as_ptr();
+    let capacity = values.capacity();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // Only the two cache records per distinct identity are new collections.
+    policy.limits.max_collection_items = 8192;
+    policy.limits.max_work_units = 2_000_000;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut map = IdentityMap::new(&ctx, "sequence cache", |source: &str| {
+        ctx.copy_retained_text(source, "sequence target")
+    })
+    .unwrap();
+    let values = values.rewrite_identities(&ctx, &mut map).unwrap();
+    assert_eq!(values.len(), 4096);
+    assert_eq!(values.as_ptr(), pointer);
+    assert_eq!(values.capacity(), capacity);
+    for (index, value) in values.iter().enumerate() {
+        assert_eq!(value.as_str(), format!("test:model:point#{index:04}"));
+    }
+    map.finish(&ctx).unwrap();
+    drop(map);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn typed_rewrite_skips_identity_free_point_grids() {
+    let rows = (0..4096)
+        .map(|_| vec![crate::features::FinitePoint3::ZERO; 4])
+        .collect::<Vec<_>>();
+    let outer = rows.as_ptr();
+    let inner = rows[0].as_ptr();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_work_units = 1;
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut map =
+        IdentityMap::new(&ctx, "no identities", |_| panic!("no identity fields")).unwrap();
+    let rows = rows.rewrite_identities(&ctx, &mut map).unwrap();
+    assert_eq!(rows.as_ptr(), outer);
+    assert_eq!(rows[0].as_ptr(), inner);
+    assert_eq!(rows.len(), 4096);
+    assert!(rows
+        .iter()
+        .flatten()
+        .all(|point| *point == crate::features::FinitePoint3::ZERO));
+    map.finish(&ctx).unwrap();
+    drop(map);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn typed_hash_index_qualifies_thousands_of_long_identities_and_rejects_collisions() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 16_000_000;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let prefix = "x".repeat(128);
+    let mut map = IdentityMap::new(&ctx, "long identity cache", |source: &str| {
+        ctx.format_retained(
+            format_args!(
+                "test:qualified:point#{}",
+                source.rsplit('#').next().unwrap()
+            ),
+            "qualify identity",
+        )
+    })
+    .unwrap();
+    for index in 0..4096 {
+        let source = format!("test:model:point#{prefix}{index:04}");
+        let expected = format!("test:qualified:point#{prefix}{index:04}");
+        assert_eq!(map.identity(&ctx, &source).unwrap(), expected);
+        assert_eq!(map.identity(&ctx, &source).unwrap(), expected);
+    }
+    assert!(
+        matches!(map.identity(&ctx, &format!("test:other:point#{prefix}0000")), Err(CodecError::Malformed(message)) if message.contains("collides"))
+    );
+    assert!(
+        matches!(map.finish(&ctx), Err(CodecError::Malformed(message)) if message.contains("collides"))
+    );
+    drop(map);
+    ctx.finish_session().unwrap();
 }

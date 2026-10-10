@@ -693,7 +693,7 @@ fn native_catalog_emits_bounded_operation_state_statuses_and_slot_lanes() {
 
 #[test]
 fn message_body_preserves_flat_tagged_value_wire() {
-    let json = r#"{"declared_length":3,"text":"A","value_marker":160,"value":0,"raw_value":[160,0,0],"count_or_severity":0}"#;
+    let json = r#"{"declared_length":3,"text":"A","value_marker":160,"value":0,"raw_value":"a00000","count_or_severity":0}"#;
     let body: StateMessage<String> = serde_json::from_str(json).unwrap();
     assert_eq!(serde_json::to_string(&body).unwrap(), json);
     let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
@@ -706,7 +706,7 @@ fn message_body_preserves_flat_tagged_value_wire() {
 
 #[test]
 fn message_body_rejects_text_length_mismatch() {
-    let json = r#"{"declared_length":4,"text":"A","value_marker":160,"value":0,"raw_value":[160,0,0],"count_or_severity":0}"#;
+    let json = r#"{"declared_length":4,"text":"A","value_marker":160,"value":0,"raw_value":"a00000","count_or_severity":0}"#;
     assert!(serde_json::from_str::<StateMessage<String>>(json)
         .unwrap_err()
         .to_string()
@@ -717,12 +717,12 @@ fn message_body_rejects_text_length_mismatch() {
 fn roll_forward_groups_preserve_zero_row_headers_and_reject_count_mismatch() {
     for (prefix, count) in [("null", 0), ("1", 0), ("1", 1)] {
         let json = format!(
-            r#"{{"id":"group","opener":[1,0],"count_prefix":{prefix},"declared_count":{count},"rows":[],"source_offset":0}}"#
+            r#"{{"id":"group","opener":"0100","count_prefix":{prefix},"declared_count":{count},"rows":[],"source_offset":0}}"#
         );
         let group: OmRollForwardStateGroup = serde_json::from_str(&json).unwrap();
         assert_eq!(serde_json::to_string(&group).unwrap(), json);
     }
-    let json = r#"{"id":"group","opener":[1,0],"count_prefix":1,"declared_count":2,"rows":[],"source_offset":0}"#;
+    let json = r#"{"id":"group","opener":"0100","count_prefix":1,"declared_count":2,"rows":[],"source_offset":0}"#;
     assert!(serde_json::from_str::<OmRollForwardStateGroup>(json)
         .unwrap_err()
         .to_string()
@@ -731,7 +731,7 @@ fn roll_forward_groups_preserve_zero_row_headers_and_reject_count_mismatch() {
 
 #[test]
 fn roll_forward_group_derives_row_ordinals() {
-    let json = r#"{"id":"group","opener":[1,0],"count_prefix":1,"declared_count":2,"rows":[{"List":{"ordinal":0,"object_index":1,"raw_object_index":[1],"position":1,"raw_position":[1],"source_offset":4}}],"source_offset":0}"#;
+    let json = r#"{"id":"group","opener":"0100","count_prefix":1,"declared_count":2,"rows":[{"List":{"ordinal":0,"object_index":1,"raw_object_index":"01","position":1,"raw_position":"01","source_offset":4}}],"source_offset":0}"#;
     let group: OmRollForwardStateGroup = serde_json::from_str(json).unwrap();
     assert_eq!(serde_json::to_string(&group).unwrap(), json);
     let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
@@ -744,7 +744,7 @@ fn roll_forward_group_derives_row_ordinals() {
 
 #[test]
 fn state_slot_lane_derives_ordinals_and_preserves_null_tokens() {
-    let json = r#"{"id":"lane","section_link":"section","ordinal":0,"slots":[{"ordinal":0,"object_index":null,"raw_object_index":[255]},{"ordinal":1,"object_index":255,"raw_object_index":[144,0,255]}],"source_entry":"om","source_offset":0,"end_offset":9}"#;
+    let json = r#"{"id":"lane","section_link":"section","ordinal":0,"slots":[{"ordinal":0,"object_index":null,"raw_object_index":"ff"},{"ordinal":1,"object_index":255,"raw_object_index":"9000ff"}],"source_entry":"om","source_offset":0,"end_offset":9}"#;
     let lane: OmOperationStateSlotLane = serde_json::from_str(json).unwrap();
     assert_eq!(serde_json::to_string(&lane).unwrap(), json);
     let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();

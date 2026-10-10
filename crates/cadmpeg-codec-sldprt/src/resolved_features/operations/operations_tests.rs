@@ -42,7 +42,7 @@ fn split_line_limit_input() -> (Vec<FeatureHistory>, Vec<FeatureInputLane>) {
     let lanes = vec![FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: vec![0; 64],
+        native_payload: vec![0; 64].into(),
         classes: Vec::new(),
         names: vec![FeatureInputName {
             id: "name".into(),
@@ -200,7 +200,7 @@ fn split_line_projection_mode_requires_one_owned_project_class() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: vec![0; 200],
+        native_payload: vec![0; 200].into(),
         classes: vec![FeatureInputClass {
             id: "project".into(),
             parent: "lane".into(),
@@ -303,7 +303,7 @@ fn inline_operation_binds_join_and_cut_to_their_family_words() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),
@@ -484,7 +484,7 @@ fn ambiguous_form_code_padding_does_not_shift_the_code() {
             FeatureInputLane {
                 id: "lane".into(),
                 configuration: None,
-                native_payload: payload,
+                native_payload: payload.into(),
                 classes: vec![FeatureInputClass {
                     id: "class".into(),
                     parent: "lane".into(),
@@ -551,7 +551,7 @@ fn ambiguous_form_code_padding_does_not_shift_the_code() {
     let compact_lane = FeatureInputLane {
         id: "compact-lane".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),
@@ -793,7 +793,7 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
     let mut operation_lane = FeatureInputLane {
         id: "lane".into(),
         configuration: Some("0".into()),
-        native_payload: vec![0; 128],
+        native_payload: vec![0; 128].into(),
         classes: vec![FeatureInputClass {
             id: "class".into(),
             parent: "lane".into(),

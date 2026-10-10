@@ -203,7 +203,10 @@ fn decode_v5_general_note_one_blank_string_as_null() {
         .unwrap();
     let v4_text = &v4.ir().native.namespace("iges").unwrap().arenas()["annotations"][0].fields()
         ["strings"][0]["text"];
-    assert_eq!(v4_text[0], u64::from(b' '));
+    assert_eq!(
+        u64::from(crate::test_support::native_bytes(v4_text)[0]),
+        u64::from(b' ')
+    );
 
     let v5 = IgesCodec
         .decode(&mut Cursor::new(file(global_v5)), &DecodeOptions::default())
@@ -299,7 +302,10 @@ fn decode_general_note_defaulted_final_string_keeps_every_declared_string() {
 
     assert_eq!(fields["declared_string_count"], 2);
     assert_eq!(strings.len(), 2);
-    assert_eq!(strings[0]["text"][0], u64::from(b'A'));
+    assert_eq!(
+        u64::from(crate::test_support::native_bytes(&strings[0]["text"])[0]),
+        u64::from(b'A')
+    );
     assert_eq!(strings[1]["declared_character_count"], 0);
     assert!(strings[1]["text"].is_null());
     assert!(
@@ -321,7 +327,10 @@ fn decode_new_general_note_defaulted_final_string_agrees_with_the_neutral_projec
 
     assert_eq!(fields["declared_string_count"], 2);
     assert_eq!(strings.len(), 2);
-    assert_eq!(strings[0]["text"]["text"][0], u64::from(b'T'));
+    assert_eq!(
+        u64::from(crate::test_support::native_bytes(&strings[0]["text"]["text"])[0]),
+        u64::from(b'T')
+    );
     assert_eq!(strings[1]["text"]["declared_character_count"], 0);
     assert!(strings[1]["text"]["text"].is_null());
     assert!(
@@ -346,7 +355,10 @@ fn decode_general_note_surplus_tokens_read_the_declared_strings_and_refuse_the_s
 
     assert_eq!(fields["declared_string_count"], declared);
     assert_eq!(strings.len(), complete.len());
-    assert_eq!(strings[0]["text"][0], u64::from(b'A'));
+    assert_eq!(
+        u64::from(crate::test_support::native_bytes(&strings[0]["text"])[0]),
+        u64::from(b'A')
+    );
     assert_eq!(
         code_count(result.report(), IgesLossCode::ParameterCountOverdeclared),
         0

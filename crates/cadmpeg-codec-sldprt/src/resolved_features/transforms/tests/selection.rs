@@ -208,7 +208,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload,
+        native_payload: native_payload.into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),
@@ -562,7 +562,7 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),
@@ -756,7 +756,7 @@ fn relation_point_uses_resolved_sketch_frame_when_marker_transform_is_ambiguous(
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),

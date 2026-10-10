@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Complete state-journal rows with derived extents.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use super::state_index::StateIndexToken;
 use super::state_tagged_value::StateTaggedValue;
 use cadmpeg_core::decode::View;
@@ -107,9 +109,9 @@ struct Wire {
     #[serde(flatten)]
     value: StateTaggedValue,
     schema_id: u32,
-    raw_schema_id: Vec<u8>,
+    raw_schema_id: NativeBytes<Vec<u8>>,
     state_ordinal: u32,
-    raw_state_ordinal: Vec<u8>,
+    raw_state_ordinal: NativeBytes<Vec<u8>>,
     source_offset: u64,
     end_offset: u64,
 }
@@ -120,9 +122,9 @@ impl Serialize for JournalRow {
             timestamp: self.timestamp(),
             value: self.value(),
             schema_id: self.schema().value(),
-            raw_schema_id: self.schema().raw().to_vec(),
+            raw_schema_id: (self.schema().raw().to_vec()).into(),
             state_ordinal: self.ordinal().value(),
-            raw_state_ordinal: self.ordinal().raw().to_vec(),
+            raw_state_ordinal: (self.ordinal().raw().to_vec()).into(),
             source_offset: self.offset(),
             end_offset: self.end_offset(),
         }
@@ -164,7 +166,7 @@ mod tests {
 
     #[test]
     fn journal_row_wire_preserves_tokens_and_derives_end() {
-        let json = r#"{"timestamp":0,"value_marker":255,"value":0,"raw_value":[255,0,0,0,0],"schema_id":0,"raw_schema_id":[144,0,0],"state_ordinal":0,"raw_state_ordinal":[160,0,0],"source_offset":100,"end_offset":117}"#;
+        let json = r#"{"timestamp":0,"value_marker":255,"value":0,"raw_value":"ff00000000","schema_id":0,"raw_schema_id":"900000","state_ordinal":0,"raw_state_ordinal":"a00000","source_offset":100,"end_offset":117}"#;
         let row: JournalRow = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_string(&row).unwrap(), json);
         let wire: serde_json::Value = serde_json::from_str(json).unwrap();

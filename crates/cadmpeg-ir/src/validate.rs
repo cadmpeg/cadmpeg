@@ -171,8 +171,8 @@ fn validate_model_with_index(
     check_native_links(ctx, ids.native_view(), ids, &mut findings)?;
     check_parameter_domains(ctx, ir, &mut findings)?;
     check_edge_endpoint_consistency(ctx, ir, &mut findings)?;
-    check_pcurve_surface_consistency(ctx, ir, &mut findings)?;
-    check_procedural_support_consistency(ctx, ir, &mut findings)?;
+    check_pcurve_surface_consistency(ctx, ids, &mut findings)?;
+    check_procedural_support_consistency(ctx, ids, &mut findings)?;
     check_topology_tolerances(ctx, ir, &mut findings)?;
     check_tessellations(ctx, ir, &mut findings)?;
     check_sketches(ctx, ir, &mut findings)?;
@@ -259,7 +259,16 @@ pub fn validate_neutral_with_additional_native_identities<'a>(
 
 /// Validate one neutral product model under the standalone application policy.
 pub fn validate_neutral(ir: &CadIr, losses: Vec<LossNote>) -> Result<ValidationReport, CodecError> {
-    standalone_validation(|ctx| validate_model(ctx, ir, losses))
+    standalone_validation(|ctx| validate_neutral_for_decode(ctx, ir, losses))
+}
+
+/// Validate a neutral model using the caller's input-scaled resource policy.
+pub fn validate_neutral_for_decode(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    losses: Vec<LossNote>,
+) -> Result<ValidationReport, CodecError> {
+    validate_model(ctx, ir, losses)
 }
 
 /// Validate an application-owned model together with borrowed annotations.
@@ -278,20 +287,30 @@ pub fn validate_neutral_with_source_fidelity(
     losses: Vec<LossNote>,
 ) -> Result<ValidationReport, CodecError> {
     standalone_validation(|ctx| {
-        let index = crate::index::ModelIndex::build(ir, ctx)?;
-        let mut report = validate_model_with_index(ctx, ir, losses, &index)?;
-        validate_annotations(
-            ctx,
-            &index,
-            &source_fidelity.annotations,
-            source_fidelity
-                .retained_records()
-                .keys()
-                .map(crate::ids::UnknownId::as_str),
-            &mut report.findings,
-        )?;
-        Ok(report)
+        validate_neutral_with_source_fidelity_for_decode(ctx, ir, source_fidelity, losses)
     })
+}
+
+/// Validate a model and its source sidecar using the caller's resource policy.
+pub fn validate_neutral_with_source_fidelity_for_decode(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    source_fidelity: &SourceFidelity,
+    losses: Vec<LossNote>,
+) -> Result<ValidationReport, CodecError> {
+    let index = crate::index::ModelIndex::build(ir, ctx)?;
+    let mut report = validate_model_with_index(ctx, ir, losses, &index)?;
+    validate_annotations(
+        ctx,
+        &index,
+        &source_fidelity.annotations,
+        source_fidelity
+            .retained_records()
+            .keys()
+            .map(crate::ids::UnknownId::as_str),
+        &mut report.findings,
+    )?;
+    Ok(report)
 }
 
 #[cfg(test)]
@@ -614,5 +633,40 @@ mod tests {
 
         let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
         assert!(report.findings.is_empty(), "{:?}", report.findings);
+    }
+}
+
+#[cfg(test)]
+mod caller_policy_tests {
+    use super::{validate_neutral_for_decode, validate_neutral_with_source_fidelity_for_decode};
+    use crate::{CadIr, SourceFidelity};
+    use cadmpeg_core::{
+        decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension},
+        CodecError,
+    };
+
+    #[test]
+    fn neutral_and_source_validation_preserve_caller_work_limits() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        for sidecar in [false, true] {
+            let ctx = DecodeContext::for_loaded_input(&arena, &policy, 1_000_000)
+                .expect("loaded context");
+            let ir = CadIr::empty();
+            let result = if sidecar {
+                validate_neutral_with_source_fidelity_for_decode(
+                    &ctx,
+                    &ir,
+                    &SourceFidelity::default(),
+                    Vec::new(),
+                )
+            } else {
+                validate_neutral_for_decode(&ctx, &ir, Vec::new())
+            };
+            assert!(
+                matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits && limit.limit == 0)
+            );
+        }
     }
 }

@@ -235,7 +235,7 @@ fn element_map_declared_count_is_independent_xml_metadata() {
         "maps": [{"index": 1, "map_id": 0, "groups": []}]
     });
     let record = serde_json::from_value::<super::ElementMapRecord>(wire.clone()).unwrap();
-    assert_eq!(record.declared_count, 999);
+    assert_eq!(record.declared_count, Some(999));
     assert_eq!(serde_json::to_value(record).unwrap(), wire);
 }
 

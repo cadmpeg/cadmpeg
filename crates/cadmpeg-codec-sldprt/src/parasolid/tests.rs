@@ -530,3 +530,16 @@ fn parasolid_frame_storage_refuses_before_expansion_allocation() {
     assert_eq!(ctx.resource_refusal(), Some(limit));
     assert_eq!(allocations, 0);
 }
+
+#[test]
+fn nonmatching_stream_prefixes_pay_only_the_scans_performed() {
+    let payload = vec![0x22; 65_536];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 400_000;
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+    let streams = crate::parasolid::extract_streams_with_offsets(&payload, &ctx).unwrap();
+    assert!(streams.is_empty());
+    assert!(ctx.resource_refusal().is_none());
+}

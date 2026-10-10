@@ -25,6 +25,7 @@ fn charged_procedural_curve_attachment_refuses_before_construction_copy() {
         let owner = CurveId::mint("test:model:curve#charged").expect("valid curve identity");
         let mut model = Model::default();
         model.curves.push(Curve {
+            parameter_range: None,
             id: owner.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
@@ -136,6 +137,7 @@ fn procedural_curve_attachment_moves_the_solved_knot_storage() {
     let original_knot_storage = carrier.knots().as_ptr();
     let mut model = Model::default();
     model.curves.push(Curve {
+        parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(carrier)),
         source_object: None,
@@ -526,6 +528,7 @@ fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
     let curve_construction =
         ProceduralCurveId::mint("test:model:curve-construction#direct").expect("valid identity");
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: curve.clone(),
         geometry: CurveGeometry::Procedural {
             construction: curve_construction.clone(),
@@ -651,6 +654,7 @@ fn charged_procedural_curve_refuses_owner_copy_and_moves_solved_cache() {
     let construction = ProceduralCurveId::mint("test:model:curve-construction#1").unwrap();
     let mut base = CadIr::empty();
     base.model.curves.push(Curve {
+        parameter_range: None,
         id: owner.clone(),
         geometry: CurveGeometry::Solved(crate::geometry::SolvedCurveGeometry::Unknown {
             record: None,
@@ -1100,6 +1104,7 @@ fn geometry_snapshot_matches_filtered_model_wire_without_intermediate_tree() {
 fn geometry_snapshot_admits_procedural_owner_comparison_before_serialization() {
     let mut model = Model::default();
     model.curves.push(Curve {
+        parameter_range: None,
         id: "test:snapshot:curve#one".try_into().unwrap(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
         source_object: None,
@@ -1192,6 +1197,7 @@ fn procedural_attachment_admits_owner_identity_bytes_before_comparison() {
             });
         } else {
             model.curves.push(Curve {
+                parameter_range: None,
                 id: curve_owner.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
                 source_object: None,
@@ -1250,4 +1256,35 @@ fn procedural_attachment_admits_owner_identity_bytes_before_comparison() {
             serde_json::from_value(serde_json::to_value(&model).unwrap()).unwrap();
         assert_eq!(reconstructed, model);
     }
+}
+
+#[test]
+fn repeated_finalize_admits_thousands_of_sorted_long_identities() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let mut model = Model::default();
+    let suffix = "x".repeat(128);
+    for index in 0..4096 {
+        model.curves.push(Curve {
+            parameter_range: None,
+            id: CurveId::mint(format!("test:model:curve#{index:04}{suffix}")).unwrap(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+            source_object: None,
+        });
+    }
+    let before = model.clone();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 200_000;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    model.finalize(&ctx).unwrap();
+    model.finalize(&ctx).unwrap();
+    assert_eq!(model, before);
+    ctx.finish_session().unwrap();
+    // Public-arena mutation must be observed on the next finalize call.
+    model.curves.reverse();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    model.finalize(&ctx).unwrap();
+    assert_eq!(model, before);
 }

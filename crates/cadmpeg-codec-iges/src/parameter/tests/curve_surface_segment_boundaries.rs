@@ -890,7 +890,7 @@ fn type140_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
         9,
         vec![
             140.into(),
-            TokenValue::String(b"bad-nx".to_vec()),
+            TokenValue::String(b"bad-nx".to_vec().into()),
             0.into(),
             1.into(),
             2.into(),
@@ -952,7 +952,7 @@ fn type308_form0_entity_table_boundary_follows_member_count() {
         let mut values = vec![
             308.into(),
             0.into(),
-            TokenValue::String(b"FIG".to_vec()),
+            TokenValue::String(b"FIG".to_vec().into()),
             member_count.into(),
         ];
         values.extend(members.into_iter().map(TokenValue::from));
@@ -1008,7 +1008,7 @@ fn type308_table_boundary_precedes_valid_generic_alternative() {
         vec![
             308.into(),
             0.into(),
-            TokenValue::String(b"FIG".to_vec()),
+            TokenValue::String(b"FIG".to_vec().into()),
             2.into(),
             7.into(),
             2.into(),

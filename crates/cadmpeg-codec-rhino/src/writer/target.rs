@@ -3,7 +3,8 @@
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    target::ResolvedWrite, Consumption, EncodeInput, ExportBody, WritePath,
+    target::ResolvedWrite, ArenaCoverage, ArenaDisposition, ArenaDispositions, Consumption,
+    EncodeInput, ExportBody, WritePath,
 };
 
 use crate::loss::RhinoLossCode;
@@ -58,6 +59,43 @@ pub(crate) fn plan(
                 || cadmpeg_core::convert::f32_from_f64(normal.z).map(f64::from) != Some(normal.z)
         });
     let mut losses = Vec::new();
+    let owned_points = input
+        .ir
+        .model
+        .vertices
+        .iter()
+        .map(|vertex| &vertex.point)
+        .collect::<std::collections::BTreeSet<_>>();
+    let owned_curves = input
+        .ir
+        .model
+        .edges
+        .iter()
+        .filter_map(cadmpeg_ir::topology::Edge::curve)
+        .collect::<std::collections::BTreeSet<_>>();
+    let points = input
+        .ir
+        .model
+        .points
+        .iter()
+        .filter(|point| {
+            !owned_points.contains(&point.id) && super::is_support(point.source_object.as_ref())
+        })
+        .count();
+    let curves = input
+        .ir
+        .model
+        .curves
+        .iter()
+        .filter(|curve| {
+            !owned_curves.contains(&curve.id) && super::is_support(curve.source_object.as_ref())
+        })
+        .count();
+    if points != 0 || curves != 0 {
+        losses.push(RhinoLossCode::WriterSupportGeometryWithheld.note(format!(
+            "{points} support point record(s) and {curves} support curve record(s) were withheld; Rhino cannot encode dependent standalone geometry"
+        )));
+    }
     if let Some(message) = target.displacement_message() {
         losses.push(RhinoLossCode::SourceDialectDisplaced.note(message));
     }
@@ -83,7 +121,60 @@ pub(crate) fn plan(
         write_path: WritePath::Synthesized {
             consumption: Consumption::NotConsumed,
         },
+        coverage: ArenaCoverage::Declared(COVERAGE),
         losses,
         notes: vec![format!("3DM archive version {}", version.value())],
     })
 }
+
+/// What `prepare_write` does with each model arena.
+///
+/// Topology is written as Brep and point objects or refused as orphaned;
+/// unowned pcurves are refused. The refused arenas are the ones
+/// `prepare_write` names in its unsupported-arena refusal.
+const COVERAGE: ArenaDispositions = {
+    use ArenaDisposition::{Omitted, Reported, Written};
+    ArenaDispositions {
+        bodies: Written,
+        regions: Written,
+        shells: Written,
+        faces: Written,
+        loops: Written,
+        coedges: Written,
+        edges: Written,
+        vertices: Written,
+        points: Written,
+        surfaces: Written,
+        curves: Written,
+        subds: Reported,
+        pcurves: Written,
+        procedural_surfaces: Reported,
+        procedural_curves: Reported,
+        assets: Omitted,
+        features: Reported,
+        feature_input_topologies: Omitted,
+        feature_result_topologies: Omitted,
+        configurations: Reported,
+        parameters: Reported,
+        sketches: Reported,
+        sketch_entities: Reported,
+        sketch_constraints: Reported,
+        spatial_sketches: Omitted,
+        spatial_sketch_entities: Omitted,
+        spatial_sketch_constraints: Omitted,
+        spreadsheets: Omitted,
+        product_definitions: Omitted,
+        occurrences: Omitted,
+        assembly_joints: Omitted,
+        drawings: Omitted,
+        semantic_annotations: Omitted,
+        presentation_documents: Omitted,
+        view_presentations: Omitted,
+        tessellations: Written,
+        appearances: Reported,
+        appearance_bindings: Reported,
+        attributes: Reported,
+        pmi: Omitted,
+        presentation_layers: Omitted,
+    }
+};

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Existing encoding and assignment JSON with derived row positions.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use super::{
     Deserialize, DisplayColorFrame, LinkedRow, PaletteIndex, RmDisplayColorAssignment,
     RmDisplayColorAssignmentEncoding, Serialize, TargetRow,
@@ -15,7 +17,7 @@ pub(super) enum EncodingWire {
         /// Unresolved leading object identity.
         object_index: u32,
         /// Exact leading-object token.
-        raw_object_index: Vec<u8>,
+        raw_object_index: NativeBytes<Vec<u8>>,
         /// Absolute leading-object token offset.
         object_index_source_offset: u64,
         /// Row discriminator.
@@ -23,13 +25,13 @@ pub(super) enum EncodingWire {
         /// Target index.
         target_index: u32,
         /// Exact target-index token.
-        raw_target_index: Vec<u8>,
+        raw_target_index: NativeBytes<Vec<u8>>,
         /// Absolute target-index token offset.
         target_index_source_offset: u64,
         /// Three post-marker indices.
         indices: [u32; 3],
         /// Exact post-marker index tokens.
-        raw_indices: [Vec<u8>; 3],
+        raw_indices: [NativeBytes<Vec<u8>>; 3],
         /// Absolute post-marker token offsets.
         index_source_offsets: [u64; 3],
         /// Row flag.
@@ -42,13 +44,13 @@ pub(super) enum EncodingWire {
         /// Target index.
         target_index: u32,
         /// Exact target-index token.
-        raw_target_index: Vec<u8>,
+        raw_target_index: NativeBytes<Vec<u8>>,
         /// Absolute target-index token offset.
         target_index_source_offset: u64,
         /// Three post-marker indices.
         indices: [u32; 3],
         /// Exact post-marker index tokens.
-        raw_indices: [Vec<u8>; 3],
+        raw_indices: [NativeBytes<Vec<u8>>; 3],
         /// Absolute post-marker token offsets.
         index_source_offsets: [u64; 3],
         /// Row mode.
@@ -62,24 +64,24 @@ impl From<RmDisplayColorAssignmentEncoding> for EncodingWire {
         match value {
             RmDisplayColorAssignmentEncoding::Linked(row) => Self::Linked {
                 object_index: row.first_index().atom.value(),
-                raw_object_index: row.first_index().atom.raw().to_vec(),
+                raw_object_index: row.first_index().atom.raw().to_vec().into(),
                 object_index_source_offset: row.first_index().offset,
                 discriminator: row.discriminator(),
                 target_index: row.target_index().atom.value(),
-                raw_target_index: row.target_index().atom.raw().to_vec(),
+                raw_target_index: row.target_index().atom.raw().to_vec().into(),
                 target_index_source_offset: row.target_index().offset,
                 indices: row.indices().map(|index| index.atom.value()),
-                raw_indices: row.indices().map(|index| index.atom.raw().to_vec()),
+                raw_indices: row.indices().map(|index| index.atom.raw().to_vec().into()),
                 index_source_offsets: row.indices().map(|index| index.offset),
                 flag: row.flag(),
                 mode: row.mode(),
             },
             RmDisplayColorAssignmentEncoding::Target(row) => Self::Target {
                 target_index: row.target_index().atom.value(),
-                raw_target_index: row.target_index().atom.raw().to_vec(),
+                raw_target_index: row.target_index().atom.raw().to_vec().into(),
                 target_index_source_offset: row.target_index().offset,
                 indices: row.indices().map(|index| index.atom.value()),
-                raw_indices: row.indices().map(|index| index.atom.raw().to_vec()),
+                raw_indices: row.indices().map(|index| index.atom.raw().to_vec().into()),
                 index_source_offsets: row.indices().map(|index| index.offset),
                 mode: row.mode(),
             },
@@ -191,7 +193,7 @@ pub(super) struct RmDisplayColorAssignmentWire {
     /// Target in `part_color_definitions`.
     color_definition: String,
     /// Exact color-index token.
-    raw_color_index: Vec<u8>,
+    raw_color_index: NativeBytes<Vec<u8>>,
     /// Owning directory entry.
     source_entry: String,
     /// Absolute color-token offset.
@@ -206,7 +208,7 @@ impl TryFrom<RmDisplayColorAssignmentWire> for RmDisplayColorAssignment {
         let color_index =
             PaletteIndex::new(wire.color_index).ok_or("color_index: must be in 1..=216")?;
         let (raw, width) = color_index.display_token();
-        if raw[..width] != wire.raw_color_index {
+        if raw[..width] != *wire.raw_color_index {
             return Err("raw_color_index differs from color_index display token".into());
         }
         let frame = DisplayColorFrame::new(wire.encoding, color_index)
@@ -240,7 +242,7 @@ impl From<RmDisplayColorAssignment> for RmDisplayColorAssignmentWire {
             target_object_id: value.target_object_id,
             color_index: value.frame.color_index.value(),
             color_definition: value.color_definition,
-            raw_color_index: value.frame.color_index.display_raw(),
+            raw_color_index: (value.frame.color_index.display_raw()).into(),
             source_entry: value.source_entry,
             source_offset,
             row_source_offset,
@@ -256,7 +258,7 @@ mod tests {
 
     #[test]
     fn color_assignment_derives_both_offsets_from_its_row_and_token() {
-        let json = r#"{"id":"color","ordinal":0,"encoding":{"kind":"target","target_index":2,"raw_target_index":[2],"target_index_source_offset":15,"indices":[3,4,5],"raw_indices":[[3],[4],[5]],"index_source_offsets":[20,21,22],"mode":7},"color_index":128,"color_definition":"definition","raw_color_index":[128,128],"source_entry":"entry","source_offset":8,"row_source_offset":10}"#;
+        let json = r#"{"id":"color","ordinal":0,"encoding":{"kind":"target","target_index":2,"raw_target_index":"02","target_index_source_offset":15,"indices":[3,4,5],"raw_indices":["03","04","05"],"index_source_offsets":[20,21,22],"mode":7},"color_index":128,"color_definition":"definition","raw_color_index":"8080","source_entry":"entry","source_offset":8,"row_source_offset":10}"#;
         let assignment: RmDisplayColorAssignment = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_string(&assignment).unwrap(), json);
         for field in ["source_offset", "row_source_offset"] {
@@ -269,7 +271,7 @@ mod tests {
         }
         let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
         wire["color_index"] = 127.into();
-        wire["raw_color_index"] = serde_json::json!([127]);
+        wire["raw_color_index"] = serde_json::json!("7f");
         wire["source_offset"] = 9.into();
         let assignment: RmDisplayColorAssignment = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(serde_json::to_value(assignment).unwrap(), wire);
@@ -278,14 +280,14 @@ mod tests {
     #[test]
     fn display_color_encodings_keep_wire_order_and_reject_mismatched_tokens() {
         check_wire::<RmDisplayColorAssignmentEncoding>(
-            r#"{"kind":"linked","object_index":1,"raw_object_index":[128,1],"object_index_source_offset":10,"discriminator":22,"target_index":2,"raw_target_index":[2],"target_index_source_offset":15,"indices":[3,4,5],"raw_indices":[[3],[4],[5]],"index_source_offsets":[20,21,22],"flag":3,"mode":4}"#,
+            r#"{"kind":"linked","object_index":1,"raw_object_index":"8001","object_index_source_offset":10,"discriminator":22,"target_index":2,"raw_target_index":"02","target_index_source_offset":15,"indices":[3,4,5],"raw_indices":["03","04","05"],"index_source_offsets":[20,21,22],"flag":3,"mode":4}"#,
             "raw_object_index",
-            serde_json::json!([2]),
+            serde_json::json!("02"),
         );
         check_wire::<RmDisplayColorAssignmentEncoding>(
-            r#"{"kind":"target","target_index":2,"raw_target_index":[2],"target_index_source_offset":15,"indices":[3,4,5],"raw_indices":[[3],[4],[5]],"index_source_offsets":[20,21,22],"mode":7}"#,
+            r#"{"kind":"target","target_index":2,"raw_target_index":"02","target_index_source_offset":15,"indices":[3,4,5],"raw_indices":["03","04","05"],"index_source_offsets":[20,21,22],"mode":7}"#,
             "raw_indices",
-            serde_json::json!([[3], [4], [255]]),
+            serde_json::json!(["03", "04", "ff"]),
         );
     }
 }

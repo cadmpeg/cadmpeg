@@ -27,3 +27,7 @@ mod topology_budget;
 mod vertex_recipe_limits;
 
 mod recipe_transitions;
+
+mod projection_reuse;
+
+mod topology_projection;

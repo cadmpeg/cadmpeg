@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Intersection declaration forms and derived state-reference sequences.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use crate::framing::xmt_reference::NonNullXmt;
 use cadmpeg_ir::units::FiniteVector;
 use serde::ser::SerializeStruct;
@@ -112,7 +114,7 @@ impl Serialize for Type38State {
         wire.serialize_field("node_id", &self.node_id)?;
         wire.serialize_field("leading_references", &self.leading_references)?;
         if statuses != [1; 5] {
-            wire.serialize_field("leading_statuses", &statuses)?;
+            wire.serialize_field("leading_statuses", &NativeBytes::from(statuses))?;
         }
         wire.serialize_field("marker", &u8::from(self.marker))?;
         wire.serialize_field("linked_references", &linked[..linked_count])?;
@@ -287,16 +289,16 @@ impl Type38State {
         }
     }
 }
-fn default_statuses() -> [u8; 5] {
-    [1; 5]
+fn default_statuses() -> NativeBytes<[u8; 5]> {
+    [1; 5].into()
 }
-fn statuses_are_default(statuses: &[u8]) -> bool {
-    statuses == [1; 5]
+fn statuses_are_default<T: AsRef<[u8]>>(statuses: &T) -> bool {
+    statuses.as_ref() == [1; 5]
 }
 fn deserialize_statuses<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
-) -> Result<[u8; 5], D::Error> {
-    Ok(Option::<[u8; 5]>::deserialize(deserializer)?.unwrap_or_else(default_statuses))
+) -> Result<NativeBytes<[u8; 5]>, D::Error> {
+    Ok(Option::<NativeBytes<[u8; 5]>>::deserialize(deserializer)?.unwrap_or_else(default_statuses))
 }
 #[derive(Serialize, Deserialize)]
 struct StateWire {
@@ -308,7 +310,7 @@ struct StateWire {
         deserialize_with = "deserialize_statuses",
         skip_serializing_if = "statuses_are_default"
     )]
-    leading_statuses: [u8; 5],
+    leading_statuses: NativeBytes<[u8; 5]>,
     marker: u8,
     linked_references: Vec<u32>,
     state_references: Vec<u32>,
@@ -335,7 +337,7 @@ impl TryFrom<StateWire> for Type38State {
             xmt,
             node_id: wire.node_id,
             leading_references: wire.leading_references,
-            leading_statuses: wire.leading_statuses,
+            leading_statuses: *wire.leading_statuses,
             marker,
             linked_references: &linked_references,
             state_references: &state_references,
@@ -351,7 +353,7 @@ impl From<Type38State> for StateWire {
             xmt: state.xmt.into(),
             node_id: state.node_id,
             leading_references: state.leading_references,
-            leading_statuses: state.leading_statuses(),
+            leading_statuses: (state.leading_statuses()).into(),
             marker: state.marker.into(),
             linked_references: state.linked_references(),
             state_references: state.state_references(),
@@ -368,7 +370,7 @@ mod tests {
         for json in [
             r#"{"xmt":80,"node_id":17,"leading_references":[1,7,8,9,1],"marker":45,"linked_references":[87,12],"state_references":[83,82,81],"numeric_values":null}"#,
             r#"{"xmt":112,"node_id":17,"leading_references":[1,7,8,9,1],"marker":45,"linked_references":[118,119],"state_references":[120,121,122],"numeric_values":null}"#,
-            r#"{"xmt":1118,"node_id":3178,"leading_references":[1,3,907,1082,1119],"leading_statuses":[1,1,1,1,0],"marker":45,"linked_references":[1070,1063],"state_references":[1120,1121,1122],"numeric_values":null}"#,
+            r#"{"xmt":1118,"node_id":3178,"leading_references":[1,3,907,1082,1119],"leading_statuses":"0101010100","marker":45,"linked_references":[1070,1063],"state_references":[1120,1121,1122],"numeric_values":null}"#,
             r#"{"xmt":53,"node_id":2711,"leading_references":[1,778,763,372,1],"marker":43,"linked_references":[381],"state_references":[765,803,804,805],"numeric_values":null}"#,
             r#"{"xmt":40000,"node_id":17,"leading_references":[1,7,8,9,1],"marker":45,"linked_references":[11,12],"state_references":[40003,40002,40001],"numeric_values":[0.5,-0.25,1.0,2.0,3.0,4.0,5.0,6.0,7.0,8.0,9.0]}"#,
         ] {
@@ -381,7 +383,7 @@ mod tests {
             for (field, value) in [
                 ("xmt", serde_json::json!(1)),
                 ("marker", serde_json::json!(4)),
-                ("leading_statuses", serde_json::json!([0, 1, 2, 1, 1])),
+                ("leading_statuses", serde_json::json!("0001020101")),
                 ("linked_references", serde_json::json!([])),
                 ("state_references", serde_json::json!([1, 2, 3])),
             ] {

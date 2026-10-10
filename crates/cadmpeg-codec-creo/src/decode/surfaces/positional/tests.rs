@@ -72,7 +72,7 @@ fn scan_with_tabulated_replay() -> crate::container::ContainerScan<'static> {
             parameter_body: Vec::new(),
             control_point_ids: [1, 2, 3, 4],
             successor_reference: 5,
-            control_point_bodies: std::array::from_fn(|_| Vec::new()),
+            control_point_bodies: std::array::from_fn(|_| Vec::new().into()),
             control_points: [None; 4],
             terminal_reference: 6,
             offset: 0,
@@ -530,7 +530,7 @@ fn construction_copy_scan(tabulated: bool) -> crate::container::ContainerScan<'s
             .enumerate()
             .map(|(index, value)| crate::surface::SurfaceParameterScalar {
                 value: Some(*value),
-                raw: vec![0],
+                raw: vec![0].into(),
                 offset: offset + index,
             })
             .collect(),
@@ -542,7 +542,7 @@ fn construction_copy_scan(tabulated: bool) -> crate::container::ContainerScan<'s
             body: Vec::new(),
             scalar_tokens: Vec::new(),
             opaque_spans: vec![crate::surface::SurfaceParameterOpaqueSpan {
-                raw: vec![0x00, 0x0c, 0x9a],
+                raw: vec![0x00, 0x0c, 0x9a].into(),
                 offset: 3,
             }],
             scalar_frames: vec![

@@ -306,22 +306,22 @@ fn vertex_definitions_refuse_collection_limit() {
 }
 
 #[test]
-fn oriented_edge_definitions_refuse_collection_limit() {
+fn oriented_edge_lookup_needs_no_collection_storage() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ORIENTED_EDGE('',*,*,#2,.T.);#2=DUMMY();ENDSEC;END-ISO-10303-21;";
     let (exchange, _) =
         crate::test_support::with_service_context(source, crate::parse::parse_inner)
             .expect("valid oriented edge reference");
-    let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
-    assert!(matches!(
-        super::super::oriented_defs(&exchange, &ctx),
-        Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_oriented_edge_definitions"
-    ));
+    crate::test_support::with_policy_context(source, &policy, |_, _| {
+        for _ in 0..1000 {
+            let edge =
+                super::super::oriented_def(&exchange.records()[&1]).expect("source orientation");
+            assert_eq!(edge.edge, 2);
+            assert!(edge.forward);
+            assert!(matches!(edge.kind, super::super::OrientedKind::Plain));
+        }
+    });
 }
 
 fn edge_definition_refusal(
@@ -347,23 +347,39 @@ fn edge_definition_refusal(
 
 #[test]
 fn edge_definition_active_set_refuses_collection_limit() {
-    assert!(matches!(edge_definition_refusal(0, u64::MAX, u64::MAX),
-        CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_edge_definition_active"));
+    let source = b"ISO-10303-21;HEADER;FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=DUMMY();#2=DUMMY();#3=SUBEDGE('',#1,#2,#4);#4=EDGE('',#1,#2);ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("recursive edge fixture");
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    crate::test_support::with_policy_context(source, &policy, |_, ctx| {
+        assert!(matches!(super::super::edge_defs(&exchange, ctx),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::CollectionItems
+                    && refusal.operation == "step_edge_definition_active"));
+    });
 }
 
 #[test]
-fn edge_definition_cache_refuses_collection_limit() {
-    assert!(matches!(edge_definition_refusal(1, u64::MAX, u64::MAX),
-        CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_edge_definition_cache"));
+fn edge_definition_rejections_refuse_collection_limit() {
+    let source = b"ISO-10303-21;HEADER;FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=EDGE('',$,$);ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("unresolved edge fixture");
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    crate::test_support::with_policy_context(source, &policy, |_, ctx| {
+        assert!(matches!(super::super::edge_defs(&exchange, ctx),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::CollectionItems
+                    && refusal.operation == "step_edge_definition_rejections"));
+    });
 }
 
 #[test]
 fn edge_definitions_refuse_collection_limit() {
-    assert!(matches!(edge_definition_refusal(2, u64::MAX, u64::MAX),
+    assert!(matches!(edge_definition_refusal(0, u64::MAX, u64::MAX),
         CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_edge_definitions"));
@@ -694,7 +710,7 @@ fn staged_regions_refuse_collection_limit() {
 
 #[test]
 fn staged_bodies_refuse_collection_limit() {
-    assert!(matches!(staged_topology_refusal(1, u64::MAX, 0),
+    assert!(matches!(staged_topology_refusal(3, u64::MAX, 0),
         super::super::StageError::Resource(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "draft entity arena"));
@@ -727,13 +743,13 @@ fn brep_builder_refusal(collection_limit: u64) -> super::super::BuildError {
         exchange.records().get(&3).expect("model"),
         super::super::BuildSources {
             exchange: &exchange,
-            ir: &cadmpeg_ir::CadIr::empty(),
+            index: None,
             vdefs: &BTreeMap::new(),
             edefs: &BTreeMap::new(),
-            odefs: &BTreeMap::new(),
             shell_definitions: &shells,
             decoded_pcurves: &std::collections::BTreeSet::new(),
             point_positions: &carriers,
+            seed_cache: &std::cell::RefCell::new(super::super::PcurveSeedCache::default()),
             ctx: &ctx,
         },
         super::super::BuildRoot {
@@ -994,11 +1010,15 @@ fn selected_pcurve_id_refuses_retained_limit() {
         .expect("empty carrier index fits policy");
     let candidate =
         cadmpeg_ir::ids::PcurveId::mint("step:data:pcurve#1").expect("valid pcurve identity");
+    let ir = cadmpeg_ir::CadIr::empty();
+    let index =
+        cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
     assert!(matches!(super::super::select_associated_pcurve(
-        &cadmpeg_ir::CadIr::empty(), &exchange, 1,
+        &index, &exchange, 1,
         &super::super::EdgeDef::Bare { start: 1, end: 2 },
         super::super::PcurveAssociationSources {
             vdefs: &BTreeMap::new(), point_positions: &carriers, candidates: &[candidate],
+            seed_cache: &std::cell::RefCell::new(super::super::PcurveSeedCache::default()),
         }, &ctx,
     ), Err(super::super::PcurveSelectionFailure::Resource(CodecError::ResourceLimit(refusal)))
         if refusal.dimension == ResourceDimension::RetainedBytes

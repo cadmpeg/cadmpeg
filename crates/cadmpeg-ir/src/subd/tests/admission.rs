@@ -57,9 +57,11 @@ fn cage_validation_admits_each_topology_and_grip_walk_before_visiting() {
         (22, "validate SubD grip face owner"),
         (23, "validate SubD grip slots"),
         (24, "validate SubD grip slots"),
+        // The second grip admits membership and insertion in a one-key tree.
         (25, "SubD validation member search"),
-        (26, "validate SubD vertex rows"),
+        (26, "SubD validation member search"),
         (27, "validate SubD vertex rows"),
+        (28, "validate SubD vertex rows"),
     ] {
         let cage = gripped_cage();
         let arena = DecodeArena::new();

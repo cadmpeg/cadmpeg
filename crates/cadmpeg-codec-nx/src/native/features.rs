@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Feature-history record extractors and their record types.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 
@@ -276,7 +278,7 @@ struct FeatureOperationObjectReferenceWire {
     /// Referenced feature object index.
     object_index: u32,
     /// Exact serialized object-index token.
-    raw_object_index: Vec<u8>,
+    raw_object_index: NativeBytes<Vec<u8>>,
     /// Unique target in the native offset-store data-block arena, when found.
     #[serde(
         default,
@@ -302,7 +304,7 @@ impl From<FeatureOperationObjectReference> for FeatureOperationObjectReferenceWi
             ordinal: value.ordinal,
             tag: value.frame.kind().tag(),
             object_index: value.frame.object().value(),
-            raw_object_index: value.frame.object().raw().to_vec(),
+            raw_object_index: (value.frame.object().raw().to_vec()).into(),
             data_block: value.data_block,
             object_index_source_offset: value.frame.object_offset(),
             byte_len: u64::from(value.frame.byte_len()),
@@ -435,7 +437,7 @@ struct FeatureBodyReferenceWire {
     /// Serialized reference index interpreted through its resolved namespace.
     body_object_index: u32,
     /// Exact serialized variable-width object-index token.
-    raw_body_object_index: Vec<u8>,
+    raw_body_object_index: NativeBytes<Vec<u8>>,
     /// Absolute file offset of the object-index token.
     source_offset: u64,
 }
@@ -448,7 +450,7 @@ impl From<FeatureBodyReference> for FeatureBodyReferenceWire {
             operation_label: value.operation_label,
             ordinal: value.ordinal,
             body_object_index: value.body.value(),
-            raw_body_object_index: value.body.raw().to_vec(),
+            raw_body_object_index: (value.body.raw().to_vec()).into(),
             source_offset: value.source_offset,
         }
     }
@@ -969,7 +971,7 @@ struct FeatureDatumCsysConstructionWire {
     operation_label: String,
     control: u8,
     object_indices: [u32; 8],
-    raw_object_indices: [Vec<u8>; 8],
+    raw_object_indices: [NativeBytes<Vec<u8>>; 8],
     data_blocks: [String; 8],
     source_offsets: [u64; 8],
 }
@@ -986,11 +988,12 @@ impl From<FeatureDatumCsysConstruction> for FeatureDatumCsysConstructionWire {
                 .members()
                 .each_ref()
                 .map(|(token, _)| token.value()),
-            raw_object_indices: value
+            raw_object_indices: (value
                 .frame
                 .members()
                 .each_ref()
-                .map(|(token, _)| token.raw().to_vec()),
+                .map(|(token, _)| token.raw().to_vec()))
+            .map(Into::into),
             data_blocks: value
                 .frame
                 .members()
@@ -1113,7 +1116,7 @@ struct FeaturePayloadScalarPairWire {
     /// Ordered finite shifted-IEEE values.
     values: [f64; 2],
     /// Exact shifted-binary64 encodings in value order.
-    raw_values: [[u8; 8]; 2],
+    raw_values: [NativeBytes<[u8; 8]>; 2],
     /// Payload-relative offset of the discriminator.
     payload_offset: u64,
     /// Payload-relative scalar offsets.
@@ -1143,7 +1146,7 @@ impl TryFrom<FeaturePayloadScalarPairWire> for FeaturePayloadScalarPair {
         }
 
         let [first, second] = std::array::from_fn::<_, 2, _>(|i| {
-            ShiftedBinary64::from_wire(wire.values[i], wire.raw_values[i])
+            ShiftedBinary64::from_wire(wire.values[i], *wire.raw_values[i])
                 .map_err(|error| format!("values/raw_values[{i}]: {error}"))
         });
         let atoms = [first?, second?];
@@ -1214,18 +1217,18 @@ impl TryFrom<FeaturePayloadScalarPairWire> for FeaturePayloadScalarPair {
 enum FeatureScalarPairPayloadWire {
     DatumCsys {
         datum_csys_payload: String,
-        discriminator: Vec<u8>,
+        discriminator: NativeBytes<Vec<u8>>,
     },
     DatumPlane {
         datum_plane_payload: String,
     },
     Construction {
         construction_payload: String,
-        discriminator: Vec<u8>,
+        discriminator: NativeBytes<Vec<u8>>,
     },
     SurfaceConstruction {
         surface_construction_payload: String,
-        discriminator: Vec<u8>,
+        discriminator: NativeBytes<Vec<u8>>,
     },
 }
 
@@ -1332,13 +1335,16 @@ impl Serialize for FeaturePayloadScalarPair {
         record.serialize_field(payload_key, payload_id)?;
         record.serialize_field("ordinal", &self.ordinal)?;
         record.serialize_field("values", &atoms.map(|atom| atom.value().get()))?;
-        record.serialize_field("raw_values", &atoms.map(ShiftedBinary64::raw))?;
+        record.serialize_field(
+            "raw_values",
+            &atoms.map(|atom| NativeBytes::from(atom.raw())),
+        )?;
         record.serialize_field("payload_offset", &payload_offset)?;
         record.serialize_field("value_payload_offsets", &positions)?;
         record.serialize_field("source_offset", &self.source_offset)?;
         record.serialize_field("value_source_offsets", &self.value_source_offsets)?;
         if let Some(discriminator) = discriminator {
-            record.serialize_field("discriminator", &discriminator)?;
+            record.serialize_field("discriminator", &NativeBytes::from(discriminator))?;
         }
         record.end()
     }
@@ -1405,7 +1411,7 @@ struct FeaturePayloadScalarWire {
     /// Finite shifted-IEEE binary64 value.
     value: f64,
     /// Exact shifted-binary64 encoding.
-    raw_value: [u8; 8],
+    raw_value: NativeBytes<[u8; 8]>,
     /// Payload-relative offset of the field marker.
     payload_offset: u64,
     /// Absolute source offset of the field marker.
@@ -1422,7 +1428,7 @@ impl From<FeaturePayloadScalar> for FeaturePayloadScalarWire {
             ordinal: value.ordinal,
             field_code: value.field_code,
             value: value.scalar.value().get(),
-            raw_value: value.scalar.raw(),
+            raw_value: (value.scalar.raw()).into(),
             payload_offset: value.payload_offset,
             source_offset: value.source_offset,
         }
@@ -1439,7 +1445,7 @@ impl TryFrom<FeaturePayloadScalarWire> for FeaturePayloadScalar {
             payload: wire.payload,
             ordinal: wire.ordinal,
             field_code: wire.field_code,
-            scalar: ShiftedBinary64::from_wire(wire.value, wire.raw_value)
+            scalar: ShiftedBinary64::from_wire(wire.value, *wire.raw_value)
                 .map_err(|error| format!("value/raw_value: {error}"))?,
             payload_offset: wire.payload_offset,
             source_offset: wire.source_offset,
@@ -1498,11 +1504,11 @@ struct FeatureDatumCsysDescriptorWire {
     /// Resolved source block.
     data_block: String,
     /// Exact bytes preceding the hexadecimal identity.
-    prefix: Vec<u8>,
+    prefix: NativeBytes<Vec<u8>>,
     /// Lowercase 30–32 digit hexadecimal identity.
     identity: String,
     /// Exact bytes following the hexadecimal identity.
-    suffix: Vec<u8>,
+    suffix: NativeBytes<Vec<u8>>,
     /// Absolute source offset of the block.
     source_offset: u64,
     /// Absolute source offset of the identity.
@@ -1519,9 +1525,9 @@ impl From<FeatureDatumCsysDescriptor> for FeatureDatumCsysDescriptorWire {
             construction: value.construction,
             reference_ordinal: value.reference_ordinal.into(),
             data_block: value.data_block,
-            prefix: value.descriptor.descriptor().prefix().to_vec(),
+            prefix: (value.descriptor.descriptor().prefix().to_vec()).into(),
             identity: value.descriptor.descriptor().identity().as_str().to_owned(),
-            suffix: value.descriptor.descriptor().suffix().to_vec(),
+            suffix: (value.descriptor.descriptor().suffix().to_vec()).into(),
             source_offset: value.descriptor.source_offset(),
             identity_source_offset,
         }
@@ -1611,7 +1617,7 @@ struct FeatureDatumPlanePayloadWire {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     index_lane_values: Vec<u32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    index_lane_raw_indices: Vec<Vec<u8>>,
+    index_lane_raw_indices: Vec<NativeBytes<Vec<u8>>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     index_lane_value_offsets: Vec<u64>,
     #[serde(
@@ -1653,7 +1659,10 @@ impl From<FeatureDatumPlanePayload> for FeatureDatumPlanePayloadWire {
             index_lane_offset,
             index_lane_declared_count,
             index_lane_values,
-            index_lane_raw_indices,
+            index_lane_raw_indices: (index_lane_raw_indices)
+                .into_iter()
+                .map(Into::into)
+                .collect(),
             index_lane_value_offsets,
             index_lane_trailer,
         }
@@ -1760,7 +1769,7 @@ struct FeatureDatumPlaneDescriptorWire {
     /// Lowercase hexadecimal identity preceding the delimiter.
     identity: String,
     /// Exact descriptor suffix beginning with `?`.
-    suffix: Vec<u8>,
+    suffix: NativeBytes<Vec<u8>>,
     /// Non-null compact schema index following `?A`.
     schema_index: u32,
     /// Nonempty printable terminal label.
@@ -1779,7 +1788,7 @@ impl From<FeatureDatumPlaneDescriptor> for FeatureDatumPlaneDescriptorWire {
             ordinal: value.ordinal,
             data_block: value.data_block,
             identity: value.descriptor.identity().to_owned(),
-            suffix: value.descriptor.suffix(),
+            suffix: (value.descriptor.suffix()).into(),
             schema_index: value.descriptor.schema_index(),
             label: value.descriptor.label().to_owned(),
             source_offset: value.source_offset,
@@ -2084,11 +2093,11 @@ struct FeatureSketchPayloadScalarLaneWire {
     /// Zero-based lane order within the reconstructed payload.
     ordinal: u32,
     /// Exact discriminator selecting the lane form.
-    discriminator: Vec<u8>,
+    discriminator: NativeBytes<Vec<u8>>,
     /// Ordered finite scalar values after the discriminator.
     values: Vec<f64>,
     /// Exact nonzero scalar atoms in serialized order.
-    raw_values: Vec<Vec<u8>>,
+    raw_values: Vec<NativeBytes<Vec<u8>>>,
     /// Payload-relative offsets of the scalar atoms.
     value_payload_offsets: Vec<u64>,
     /// Payload-relative offset of the terminating zero atom.
@@ -2109,7 +2118,7 @@ impl From<FeatureSketchPayloadScalarLane> for FeatureSketchPayloadScalarLaneWire
             operation_label: record.operation_label,
             construction_payload: record.construction_payload,
             ordinal: record.ordinal,
-            discriminator: record.lane.form().discriminator().to_vec(),
+            discriminator: (record.lane.form().discriminator().to_vec()).into(),
             values: record
                 .lane
                 .iter()
@@ -2119,6 +2128,7 @@ impl From<FeatureSketchPayloadScalarLane> for FeatureSketchPayloadScalarLaneWire
                 .lane
                 .iter()
                 .map(|(_, scalar, _)| scalar.raw().to_vec())
+                .map(Into::into)
                 .collect(),
             value_payload_offsets: record.lane.iter().map(|(offset, _, _)| offset).collect(),
             terminator_payload_offset: record.lane.end(),
@@ -2286,7 +2296,7 @@ struct OffsetStoreNamedPointWire {
     /// Ordered finite native scalar values.
     values: [f64; 2],
     /// Exact shifted-binary64 encodings in scalar order.
-    raw_values: [[u8; 8]; 2],
+    raw_values: [NativeBytes<[u8; 8]>; 2],
     /// Absolute source offsets of the two scalar markers.
     value_source_offsets: [u64; 2],
     /// Absolute source offset of the name frame.
@@ -2301,7 +2311,7 @@ impl From<OffsetStoreNamedPoint> for OffsetStoreNamedPointWire {
             name: value.name,
             data_blocks: value.data_blocks,
             values: value.values.map(|token| token.scalar.value().get()),
-            raw_values: value.values.map(|token| token.scalar.raw()),
+            raw_values: (value.values.map(|token| token.scalar.raw())).map(Into::into),
             value_source_offsets: value.values.map(|token| token.source_offset),
             source_offset: value.source_offset,
         }
@@ -2313,7 +2323,7 @@ impl TryFrom<OffsetStoreNamedPointWire> for OffsetStoreNamedPoint {
 
     fn try_from(wire: OffsetStoreNamedPointWire) -> Result<Self, Self::Error> {
         let [first, second] = std::array::from_fn::<_, 2, _>(|i| {
-            ShiftedBinary64::from_wire(wire.values[i], wire.raw_values[i])
+            ShiftedBinary64::from_wire(wire.values[i], *wire.raw_values[i])
                 .map(|scalar| FeatureBinary64ScalarToken {
                     scalar,
                     source_offset: wire.value_source_offsets[i],
@@ -2647,7 +2657,7 @@ pub(super) struct FeatureThruCurveConstructionEnvelope {
     /// Nonzero control following the second reference group.
     trailing_control: NonZeroU8,
     /// Exact two-byte value selected by the `a0` marker.
-    trailing_value: [u8; 2],
+    trailing_value: NativeBytes<[u8; 2]>,
     /// Absolute source offset of the discriminator.
     source_offset: u64,
 }
@@ -2740,7 +2750,7 @@ struct FeatureExtrudePayloadHeaderWire {
     /// Ordered finite scalar values.
     scalars: [f64; 2],
     /// Exact shifted-binary64 encodings in scalar order.
-    raw_scalars: [[u8; 8]; 2],
+    raw_scalars: [NativeBytes<[u8; 8]>; 2],
     /// Absolute file offset of the first shifted-IEEE scalar.
     source_offset: u64,
 }
@@ -2752,7 +2762,7 @@ impl From<FeatureExtrudePayloadHeader> for FeatureExtrudePayloadHeaderWire {
             id: value.id,
             operation_label: value.operation_label,
             scalars: value.scalars.map(|scalar| scalar.value().get()),
-            raw_scalars: value.scalars.map(ShiftedBinary64::raw),
+            raw_scalars: (value.scalars.map(ShiftedBinary64::raw)).map(Into::into),
             source_offset: value.source_offset,
         }
     }
@@ -2763,7 +2773,7 @@ impl TryFrom<FeatureExtrudePayloadHeaderWire> for FeatureExtrudePayloadHeader {
 
     fn try_from(wire: FeatureExtrudePayloadHeaderWire) -> Result<Self, Self::Error> {
         let [first, second] = std::array::from_fn::<_, 2, _>(|i| {
-            ShiftedBinary64::from_wire(wire.scalars[i], wire.raw_scalars[i])
+            ShiftedBinary64::from_wire(wire.scalars[i], *wire.raw_scalars[i])
         });
         Ok(Self {
             id: wire.id,
@@ -2807,7 +2817,7 @@ struct FeatureOperationBodyMemberWire {
     /// Decoded compact index.
     member_index: u32,
     /// Exact compact-index token.
-    raw_member_index: Vec<u8>,
+    raw_member_index: NativeBytes<Vec<u8>>,
     /// Absolute file offset of the compact-index marker.
     source_offset: u64,
 }
@@ -2822,7 +2832,7 @@ impl From<FeatureOperationBodyMember> for FeatureOperationBodyMemberWire {
             body_object_index: value.body_object_index,
             ordinal: value.ordinal,
             member_index: value.member.atom.value(),
-            raw_member_index: value.member.atom.raw().to_vec(),
+            raw_member_index: (value.member.atom.raw().to_vec()).into(),
             source_offset: value.member.offset,
         }
     }
@@ -2884,7 +2894,7 @@ struct FeatureOperationBodyOperandWire {
     /// Serialized operand body object index.
     operand_object_index: u32,
     /// Exact serialized compact-index token.
-    raw_operand_object_index: Vec<u8>,
+    raw_operand_object_index: NativeBytes<Vec<u8>>,
     /// Same-store offset data block named by the operand, when resolved.
     #[serde(
         default,
@@ -2909,7 +2919,7 @@ impl From<FeatureOperationBodyOperand> for FeatureOperationBodyOperandWire {
             body_reference_ordinal: value.body_reference_ordinal,
             ordinal: value.ordinal,
             operand_object_index: value.operand.atom.value(),
-            raw_operand_object_index: value.operand.atom.raw().to_vec(),
+            raw_operand_object_index: (value.operand.atom.raw().to_vec()).into(),
             operand_data_block: value.operand_data_block,
             segment_body_bindings: value.segment_body_bindings,
             source_offset: value.operand.offset,
@@ -3005,7 +3015,7 @@ struct FeatureOperationBodyReferenceLaneWire {
     /// Ordered decoded indices.
     object_indices: Vec<u32>,
     /// Exact encoded index tokens in lane order.
-    raw_object_indices: Vec<Vec<u8>>,
+    raw_object_indices: Vec<NativeBytes<Vec<u8>>>,
     /// Unique offset-only data blocks addressed by the ordered indices.
     data_blocks: Vec<Option<String>>,
     /// Absolute file offsets of the encoded index markers.
@@ -3057,7 +3067,7 @@ impl From<FeatureOperationBodyReferenceLane> for FeatureOperationBodyReferenceLa
             branch: value.branch,
             encoding,
             object_indices,
-            raw_object_indices,
+            raw_object_indices: (raw_object_indices).into_iter().map(Into::into).collect(),
             data_blocks,
             source_offsets,
         }
@@ -3474,13 +3484,13 @@ struct FeatureBooleanOperationWire {
     /// Object index of the target body.
     target_object_index: u32,
     /// Exact serialized target object-index token.
-    raw_target_object_index: Vec<u8>,
+    raw_target_object_index: NativeBytes<Vec<u8>>,
     /// Absolute file offset of the target object-index token.
     target_source_offset: u64,
     /// Ordered object indices of the tool bodies.
     tool_object_indices: Vec<u32>,
     /// Exact serialized tool object-index tokens in tool order.
-    raw_tool_object_indices: Vec<Vec<u8>>,
+    raw_tool_object_indices: Vec<NativeBytes<Vec<u8>>>,
     /// Absolute file offsets of the tool object-index tokens in tool order.
     tool_source_offsets: Vec<u64>,
     /// Absolute file offset of the operation label tag.
@@ -3495,7 +3505,7 @@ impl From<FeatureBooleanOperation> for FeatureBooleanOperationWire {
             operation_label: operation.operation_label,
             kind: operation.kind,
             target_object_index: operation.target.token.value(),
-            raw_target_object_index: operation.target.token.raw().to_vec(),
+            raw_target_object_index: (operation.target.token.raw().to_vec()).into(),
             target_source_offset: operation.target.offset,
             tool_object_indices: operation
                 .tools
@@ -3506,6 +3516,7 @@ impl From<FeatureBooleanOperation> for FeatureBooleanOperationWire {
                 .tools
                 .iter()
                 .map(|token| token.token.raw().to_vec())
+                .map(Into::into)
                 .collect(),
             tool_source_offsets: operation.tools.iter().map(|token| token.offset).collect(),
             source_offset: operation.source_offset,

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Saved and active Rhino view presentation records.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use crate::loss::Diagnostics;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -163,7 +165,7 @@ struct NamedConstructionPlane {
 
 #[derive(Debug, Serialize)]
 struct Viewport {
-    version: [u8; 2],
+    version: NativeBytes<[u8; 2]>,
     #[serde(flatten)]
     validity: ViewportValidity,
     projection: i32,
@@ -207,7 +209,7 @@ struct FrustumSymmetry {
 
 #[derive(Debug, Serialize)]
 struct WindowPosition {
-    version: [u8; 2],
+    version: NativeBytes<[u8; 2]>,
     maximized: bool,
     left: Fraction,
     right: Fraction,
@@ -270,7 +272,7 @@ struct ViewAttributes {
     width: FiniteReal,
     height: FiniteReal,
     display: Option<String>,
-    version: [u8; 2],
+    version: NativeBytes<[u8; 2]>,
     page_settings: Option<PageSettings>,
     projection_locked: bool,
     clipping_planes: Vec<ClippingPlane>,
@@ -682,7 +684,7 @@ fn parse_viewport(
     };
     reader.skip_remaining()?;
     Ok(Viewport {
-        version,
+        version: (version).into(),
         validity: ViewportValidity {
             camera_valid,
             frustum_valid,
@@ -802,7 +804,7 @@ fn parse_window_position(
         ));
     };
     Ok(WindowPosition {
-        version,
+        version: (version).into(),
         maximized,
         left,
         right,
@@ -860,7 +862,7 @@ fn parse_attributes(
         width,
         height,
         display,
-        version,
+        version: (version).into(),
         page_settings: None,
         projection_locked: false,
         clipping_planes: Vec::new(),

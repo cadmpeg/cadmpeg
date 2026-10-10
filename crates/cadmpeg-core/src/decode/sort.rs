@@ -6,6 +6,37 @@ use std::cmp::Ordering;
 use super::{u64_from_index, DecodeContext};
 use crate::CodecError;
 
+pub(super) const INLINE_SORT_LIMIT: usize = 20;
+
+/// Admit a linear check for a large run before allocating a sort permutation.
+pub(super) fn admit_ordered_run<T>(
+    ctx: &DecodeContext<'_>,
+    values: &[T],
+    compare: &mut impl FnMut(&T, &T) -> Ordering,
+    key_bytes: &impl Fn(&T) -> usize,
+    operation: &'static str,
+) -> Result<bool, CodecError> {
+    // Small unstable runs keep their fixed admission estimate, including
+    // runs collected from hash tables.
+    if values.len() <= INLINE_SORT_LIMIT {
+        return Ok(false);
+    }
+    for pair in values.windows(2) {
+        let work = u64_from_index(key_bytes(&pair[0]))
+            .checked_add(u64_from_index(key_bytes(&pair[1])))
+            .and_then(|work| {
+                work.checked_add(u64_from_index(std::mem::size_of::<T>()).checked_mul(2)?)
+            })
+            .and_then(|work| work.checked_add(1))
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(work, operation)?;
+        if compare(&pair[0], &pair[1]).is_gt() {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
 impl DecodeContext<'_> {
     /// Sorts admitted values in place without allocating scratch.
     ///
@@ -13,12 +44,15 @@ impl DecodeContext<'_> {
     pub fn sort_unstable_by<T>(
         &self,
         values: &mut [T],
-        compare: impl FnMut(&T, &T) -> Ordering,
+        mut compare: impl FnMut(&T, &T) -> Ordering,
         key_bytes: impl Fn(&T) -> usize,
         operation: &'static str,
     ) -> Result<(), CodecError> {
         let count = u64_from_index(values.len());
         self.charge_work(count, operation)?;
+        if admit_ordered_run(self, values, &mut compare, &key_bytes, operation)? {
+            return Ok(());
+        }
         let bytes = values
             .iter()
             .try_fold(0u64, |bytes, value| {

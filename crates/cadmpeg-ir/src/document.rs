@@ -14,7 +14,7 @@ use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
 };
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
 use cadmpeg_core::dialect::{DialectLayers, DialectMatch, FormatIdentity};
 use cadmpeg_core::CodecError;
 
@@ -52,6 +52,7 @@ use admission::ModelAdmission;
 
 pub(crate) mod census;
 pub(crate) mod feature_parents;
+pub mod procedural;
 
 struct UnknownProjection<T>(T);
 
@@ -242,11 +243,14 @@ impl Serialize for CurveWire<'_> {
     where
         S: Serializer,
     {
-        let mut state = serializer.serialize_struct("Curve", 3)?;
+        let mut state = serializer.serialize_struct("Curve", 4)?;
         state.serialize_field("id", &self.0.id)?;
         match self.0.geometry.solved_cache() {
             Some(cache) => state.serialize_field("geometry", cache)?,
             None => state.serialize_field("geometry", &self.0.geometry)?,
+        }
+        if let Some(range) = &self.0.parameter_range {
+            state.serialize_field("parameter_range", range)?;
         }
         if let Some(source_object) = &self.0.source_object {
             state.serialize_field("source_object", source_object)?;
@@ -311,26 +315,47 @@ macro_rules! model_write_value {
     ($model:expr, curves) => {
         $model.curves.iter().map(CurveWire).collect()
     };
-    ($model:expr, procedural_surfaces) => {
-        $model
-            .procedural_surfaces
-            .iter()
-            .map(|procedural| ProceduralSurfaceWire {
-                owner: $model.procedural_surface_owner(&procedural.id),
-                procedural,
-            })
-            .collect()
-    };
-    ($model:expr, procedural_curves) => {
-        $model
-            .procedural_curves
-            .iter()
-            .map(|procedural| ProceduralCurveWire {
-                owner: $model.procedural_curve_owner(&procedural.id),
-                procedural,
-            })
-            .collect()
-    };
+    ($model:expr, procedural_surfaces) => {{
+        if $model.procedural_surfaces.is_empty() {
+            Vec::new()
+        } else {
+            let owners =
+                procedural::standard_owners($model.surfaces.iter().filter_map(|carrier| {
+                    carrier
+                        .geometry
+                        .procedural_construction()
+                        .map(|construction| (construction.as_str(), &carrier.id))
+                }));
+            $model
+                .procedural_surfaces
+                .iter()
+                .map(|procedural| ProceduralSurfaceWire {
+                    owner: owners.get(procedural.id.as_str()).copied().flatten(),
+                    procedural,
+                })
+                .collect()
+        }
+    }};
+    ($model:expr, procedural_curves) => {{
+        if $model.procedural_curves.is_empty() {
+            Vec::new()
+        } else {
+            let owners = procedural::standard_owners($model.curves.iter().filter_map(|carrier| {
+                carrier
+                    .geometry
+                    .procedural_construction()
+                    .map(|construction| (construction.as_str(), &carrier.id))
+            }));
+            $model
+                .procedural_curves
+                .iter()
+                .map(|procedural| ProceduralCurveWire {
+                    owner: owners.get(procedural.id.as_str()).copied().flatten(),
+                    procedural,
+                })
+                .collect()
+        }
+    }};
     ($model:expr, features) => {
         $model
             .features
@@ -391,32 +416,64 @@ macro_rules! sorted_model_value {
         sorted_rows($ctx, &$model.curves, |value| Ok(CurveWire(value)))?
     };
     ($model:expr, $ctx:expr, procedural_surfaces) => {
-        sorted_rows($ctx, &$model.procedural_surfaces, |procedural| {
-            admit_owner_scan(
-                $ctx,
-                &$model.surfaces,
-                procedural.id.as_str(),
-                "find digest procedural owner",
+        if $model.procedural_surfaces.is_empty() {
+            Vec::new()
+        } else {
+            $ctx.charge_work(
+                u64_from_index($model.surfaces.len()),
+                "index digest procedural owners",
             )?;
-            Ok(ProceduralSurfaceWire {
-                owner: $model.procedural_surface_owner(&procedural.id),
-                procedural,
-            })
-        })?
+            let (owners, _storage) = crate::hash::procedural_owners(
+                $ctx,
+                $model.surfaces.iter().filter_map(|surface| {
+                    surface
+                        .geometry
+                        .procedural_construction()
+                        .map(|construction| (construction.as_str(), &surface.id))
+                }),
+                "index digest procedural owners",
+            )?;
+            sorted_rows($ctx, &$model.procedural_surfaces, |procedural| {
+                Ok(ProceduralSurfaceWire {
+                    owner: owners.get(
+                        $ctx,
+                        procedural.id.as_str(),
+                        "find digest procedural owner",
+                    )?,
+                    procedural,
+                })
+            })?
+        }
     };
     ($model:expr, $ctx:expr, procedural_curves) => {
-        sorted_rows($ctx, &$model.procedural_curves, |procedural| {
-            admit_owner_scan(
-                $ctx,
-                &$model.curves,
-                procedural.id.as_str(),
-                "find digest procedural owner",
+        if $model.procedural_curves.is_empty() {
+            Vec::new()
+        } else {
+            $ctx.charge_work(
+                u64_from_index($model.curves.len()),
+                "index digest procedural owners",
             )?;
-            Ok(ProceduralCurveWire {
-                owner: $model.procedural_curve_owner(&procedural.id),
-                procedural,
-            })
-        })?
+            let (owners, _storage) = crate::hash::procedural_owners(
+                $ctx,
+                $model.curves.iter().filter_map(|curve| {
+                    curve
+                        .geometry
+                        .procedural_construction()
+                        .map(|construction| (construction.as_str(), &curve.id))
+                }),
+                "index digest procedural owners",
+            )?;
+            sorted_rows($ctx, &$model.procedural_curves, |procedural| {
+                Ok(ProceduralCurveWire {
+                    owner: owners.get(
+                        $ctx,
+                        procedural.id.as_str(),
+                        "find digest procedural owner",
+                    )?,
+                    procedural,
+                })
+            })?
+        }
     };
     ($model:expr, $ctx:expr, features) => {
         sorted_rows($ctx, &$model.features, |feature| {
@@ -535,19 +592,33 @@ macro_rules! declare_model {
                     model.features.push(feature);
                 }
                 feature_parents::validate_reconstructed(&[&model]).map_err(serde::de::Error::custom)?;
-                for wire in procedural_surfaces {
-                    let (owner, procedural) = wire.into_parts();
-                    model
-                        .add_procedural_surface(&crate::document::admission::StandardAdmission, &owner, procedural)
-                        .map_err(serde::de::Error::custom)?
-                        .map_err(serde::de::Error::custom)?;
+                if !procedural_surfaces.is_empty() {
+                    let mut admission = procedural::ReconstructedAdmission::new(model.surfaces.iter().map(|carrier| {
+                        (carrier.id.as_str(), carrier.geometry.procedural_construction().map(|id| id.as_str()))
+                    }));
+                    for wire in procedural_surfaces {
+                        let (owner, procedural) = wire.into_parts();
+                        let slot = admission.owner("surface", owner.as_str(), procedural.id.as_str()).map_err(serde::de::Error::custom)?;
+                        admission.accept(procedural.id.as_str());
+                        model
+                            .attach_procedural_surface(&crate::document::admission::StandardAdmission, &owner, slot, procedural)
+                            .map_err(serde::de::Error::custom)?
+                            .map_err(serde::de::Error::custom)?;
+                    }
                 }
-                for wire in procedural_curves {
-                    let (owner, procedural) = wire.into_parts();
-                    model
-                        .add_procedural_curve(&crate::document::admission::StandardAdmission, &owner, procedural)
-                        .map_err(serde::de::Error::custom)?
-                        .map_err(serde::de::Error::custom)?;
+                if !procedural_curves.is_empty() {
+                    let mut admission = procedural::ReconstructedAdmission::new(model.curves.iter().map(|carrier| {
+                        (carrier.id.as_str(), carrier.geometry.procedural_construction().map(|id| id.as_str()))
+                    }));
+                    for wire in procedural_curves {
+                        let (owner, procedural) = wire.into_parts();
+                        let slot = admission.owner("curve", owner.as_str(), procedural.id.as_str()).map_err(serde::de::Error::custom)?;
+                        admission.accept(procedural.id.as_str());
+                        model
+                            .attach_procedural_curve(&crate::document::admission::StandardAdmission, &owner, slot, procedural)
+                            .map_err(serde::de::Error::custom)?
+                            .map_err(serde::de::Error::custom)?;
+                    }
                 }
                 Ok(model)
             }
@@ -583,10 +654,12 @@ macro_rules! declare_model {
 
             /// Sort each arena lexicographically by its entity identity.
             pub fn finalize(&mut self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
-                $(ctx.stable_sort_by(&mut self.$field, |left, right| {
+                $(if !arena_is_ordered(ctx, &self.$field)? {
+                    ctx.stable_sort_by(&mut self.$field, |left, right| {
                     crate::schema::EntitySchema::identity(left)
                         .cmp(crate::schema::EntitySchema::identity(right))
-                }, |entity| crate::schema::EntitySchema::identity(entity).len(), "finalize model arena")?;)*
+                }, |entity| crate::schema::EntitySchema::identity(entity).len(), "finalize model arena")?;
+                })*
                 Ok(())
             }
 
@@ -687,6 +760,28 @@ macro_rules! declare_model_view {
     };
 }
 
+// Public arenas can change between calls. Check their current order instead
+// of retaining a flag that direct mutations could leave stale.
+fn arena_is_ordered<T: crate::schema::EntitySchema>(
+    ctx: &DecodeContext<'_>,
+    values: &[T],
+) -> Result<bool, CodecError> {
+    ctx.charge_work(0, "finalize model arena")?;
+    for pair in values.windows(2) {
+        if crate::ids::comparison::compare(
+            ctx,
+            pair[0].identity(),
+            pair[1].identity(),
+            "finalize model arena",
+        )?
+        .is_gt()
+        {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
 fn sorted_rows<'a, T: crate::schema::EntitySchema, U>(
     ctx: &DecodeContext<'_>,
     entities: &'a [T],
@@ -707,22 +802,6 @@ fn sorted_rows<'a, T: crate::schema::EntitySchema, U>(
     );
     drop(storage);
     result
-}
-
-fn admit_owner_scan<T>(
-    ctx: &DecodeContext<'_>,
-    owners: &[T],
-    identity: &str,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    let work = cadmpeg_core::decode::u64_from_index(owners.len())
-        .checked_mul(
-            cadmpeg_core::decode::u64_from_index(identity.len())
-                .checked_add(1)
-                .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
-        )
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(work, operation)
 }
 
 macro_rules! declare_arena_name {
@@ -786,13 +865,16 @@ arena_registry!(declare_arena_name);
 pub struct GeometrySnapshot<'a> {
     model: &'a Model,
     kind: &'a str,
+    curves: ProceduralCurveRows<'a>,
+    surfaces: ProceduralSurfaceRows<'a>,
+    _storage: ScopedReservation<'a>,
 }
 
 impl Model {
-    /// Admit parent validation and owner scans for a borrowed geometry serialization view.
+    /// Admit parent validation and indexed owners for a borrowed geometry serialization view.
     pub fn geometry_snapshot<'a>(
         &'a self,
-        ctx: &DecodeContext<'_>,
+        ctx: &'a DecodeContext<'_>,
         kind: &'a str,
     ) -> Result<GeometrySnapshot<'a>, CodecError> {
         if let Err(error) = feature_parents::validate(ctx, &[self])? {
@@ -801,25 +883,67 @@ impl Model {
                 "geometry snapshot parent diagnostic",
             )?));
         }
-        for procedural in &self.procedural_surfaces {
-            ctx.charge_work(1, "geometry snapshot procedural scan")?;
-            admit_owner_scan(
+        let operation = "find geometry snapshot procedural owner";
+        let mut storage = ctx.reserve_scoped(0, operation)?;
+        let curves = if self.procedural_curves.is_empty() {
+            Vec::new()
+        } else {
+            ctx.charge_work(u64_from_index(self.curves.len()), operation)?;
+            let (owners, _index_storage) = crate::hash::procedural_owners(
                 ctx,
-                &self.surfaces,
-                procedural.id.as_str(),
-                "find geometry snapshot procedural owner",
+                self.curves.iter().filter_map(|carrier| {
+                    carrier
+                        .geometry
+                        .procedural_construction()
+                        .map(|id| (id.as_str(), &carrier.id))
+                }),
+                operation,
             )?;
-        }
-        for procedural in &self.procedural_curves {
-            ctx.charge_work(1, "geometry snapshot procedural scan")?;
-            admit_owner_scan(
+            storage.with_storage(|| -> Result<_, CodecError> {
+                ctx.try_collect_vec(
+                    self.procedural_curves.iter().map(|procedural| {
+                        Ok((
+                            owners.get(ctx, procedural.id.as_str(), operation)?,
+                            procedural,
+                        ))
+                    }),
+                    operation,
+                )
+            })?
+        };
+        let surfaces = if self.procedural_surfaces.is_empty() {
+            Vec::new()
+        } else {
+            ctx.charge_work(u64_from_index(self.surfaces.len()), operation)?;
+            let (owners, _index_storage) = crate::hash::procedural_owners(
                 ctx,
-                &self.curves,
-                procedural.id.as_str(),
-                "find geometry snapshot procedural owner",
+                self.surfaces.iter().filter_map(|carrier| {
+                    carrier
+                        .geometry
+                        .procedural_construction()
+                        .map(|id| (id.as_str(), &carrier.id))
+                }),
+                operation,
             )?;
-        }
-        Ok(GeometrySnapshot { model: self, kind })
+            storage.with_storage(|| -> Result<_, CodecError> {
+                ctx.try_collect_vec(
+                    self.procedural_surfaces.iter().map(|procedural| {
+                        Ok((
+                            owners.get(ctx, procedural.id.as_str(), operation)?,
+                            procedural,
+                        ))
+                    }),
+                    operation,
+                )
+            })?
+        };
+        Ok(GeometrySnapshot {
+            model: self,
+            kind,
+            curves: ProceduralCurveRows(curves),
+            surfaces: ProceduralSurfaceRows(surfaces),
+            _storage: storage,
+        })
     }
 }
 
@@ -847,7 +971,7 @@ impl Serialize for CurveRows<'_> {
     }
 }
 
-struct ProceduralSurfaceRows<'a>(&'a Model);
+struct ProceduralSurfaceRows<'a>(Vec<(Option<&'a SurfaceId>, &'a ProceduralSurface)>);
 
 impl Serialize for ProceduralSurfaceRows<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -867,24 +991,21 @@ impl Serialize for ProceduralSurfaceRows<'_> {
                 state.end()
             }
         }
-        let mut sequence = serializer.serialize_seq(Some(self.0.procedural_surfaces.len()))?;
-        for procedural in &self.0.procedural_surfaces {
-            let owner = self
-                .0
-                .procedural_surface_owner(&procedural.id)
-                .ok_or_else(|| {
-                    serde::ser::Error::custom(format_args!(
-                        "procedural surface {} has no unique owning surface",
-                        procedural.id
-                    ))
-                })?;
+        let mut sequence = serializer.serialize_seq(Some(self.0.len()))?;
+        for &(owner, procedural) in &self.0 {
+            let owner = owner.ok_or_else(|| {
+                serde::ser::Error::custom(format_args!(
+                    "procedural surface {} has no unique owning surface",
+                    procedural.id
+                ))
+            })?;
             sequence.serialize_element(&Row { owner, procedural })?;
         }
         sequence.end()
     }
 }
 
-struct ProceduralCurveRows<'a>(&'a Model);
+struct ProceduralCurveRows<'a>(Vec<(Option<&'a CurveId>, &'a ProceduralCurve)>);
 
 impl Serialize for ProceduralCurveRows<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -901,17 +1022,14 @@ impl Serialize for ProceduralCurveRows<'_> {
                 state.end()
             }
         }
-        let mut sequence = serializer.serialize_seq(Some(self.0.procedural_curves.len()))?;
-        for procedural in &self.0.procedural_curves {
-            let owner = self
-                .0
-                .procedural_curve_owner(&procedural.id)
-                .ok_or_else(|| {
-                    serde::ser::Error::custom(format_args!(
-                        "procedural curve {} has no unique owning curve",
-                        procedural.id
-                    ))
-                })?;
+        let mut sequence = serializer.serialize_seq(Some(self.0.len()))?;
+        for &(owner, procedural) in &self.0 {
+            let owner = owner.ok_or_else(|| {
+                serde::ser::Error::custom(format_args!(
+                    "procedural curve {} has no unique owning curve",
+                    procedural.id
+                ))
+            })?;
             sequence.serialize_element(&Row { owner, procedural })?;
         }
         sequence.end()
@@ -931,8 +1049,8 @@ impl Serialize for GeometrySnapshot<'_> {
         map.serialize_entry("loops", &model.loops)?;
         map.serialize_entry("pcurves", &model.pcurves)?;
         map.serialize_entry("points", &model.points)?;
-        map.serialize_entry("procedural_curves", &ProceduralCurveRows(model))?;
-        map.serialize_entry("procedural_surfaces", &ProceduralSurfaceRows(model))?;
+        map.serialize_entry("procedural_curves", &self.curves)?;
+        map.serialize_entry("procedural_surfaces", &self.surfaces)?;
         map.serialize_entry("regions", &model.regions)?;
         map.serialize_entry("shells", &model.shells)?;
         map.serialize_entry("surfaces", &SurfaceRows(&model.surfaces))?;
@@ -1333,7 +1451,7 @@ impl Model {
                 )?)));
             }
         }
-        let Some(surface) = owner_index.and_then(|index| self.surfaces.get_mut(index)) else {
+        let Some(index) = owner_index else {
             return Ok(Err(ProceduralCarrierError::new(admission.text(
                 format_args!(
                     "procedural surface {} references missing surface {owner}",
@@ -1342,6 +1460,17 @@ impl Model {
                 "procedural surface refusal",
             )?)));
         };
+        self.attach_procedural_surface(admission, owner, index, procedural)
+    }
+
+    fn attach_procedural_surface<A: ModelAdmission>(
+        &mut self,
+        admission: &A,
+        owner: &SurfaceId,
+        index: usize,
+        procedural: ProceduralSurface,
+    ) -> Result<Result<(), ProceduralCarrierError>, A::Error> {
+        let surface = &mut self.surfaces[index];
         match &surface.geometry {
             SurfaceGeometry::Procedural {
                 construction,
@@ -1455,7 +1584,7 @@ impl Model {
                 )?)));
             }
         }
-        let Some(curve) = owner_index.and_then(|index| self.curves.get_mut(index)) else {
+        let Some(index) = owner_index else {
             return Ok(Err(ProceduralCarrierError::new(admission.text(
                 format_args!(
                     "procedural curve {} references missing curve {owner}",
@@ -1464,6 +1593,17 @@ impl Model {
                 "procedural curve refusal",
             )?)));
         };
+        self.attach_procedural_curve(admission, owner, index, procedural)
+    }
+
+    fn attach_procedural_curve<A: ModelAdmission>(
+        &mut self,
+        admission: &A,
+        owner: &CurveId,
+        index: usize,
+        procedural: ProceduralCurve,
+    ) -> Result<Result<(), ProceduralCarrierError>, A::Error> {
+        let curve = &mut self.curves[index];
         match &mut curve.geometry {
             CurveGeometry::Procedural {
                 construction,

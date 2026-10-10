@@ -119,7 +119,7 @@ mod tests {
 
     #[test]
     fn slot_lane_native_limit_refuses_before_string_copy() {
-        let json = r#"{"id":"nx:om:state-slot-lane#0","section_link":"section","ordinal":0,"slots":[{"ordinal":0,"object_index":5,"raw_object_index":[5]}],"source_entry":"om","source_offset":10,"end_offset":16}"#;
+        let json = r#"{"id":"nx:om:state-slot-lane#0","section_link":"section","ordinal":0,"slots":[{"ordinal":0,"object_index":5,"raw_object_index":"05"}],"source_entry":"om","source_offset":10,"end_offset":16}"#;
         let lane: OmOperationStateSlotLane = serde_json::from_str(json).unwrap();
         assert_eq!(
             serde_json::to_vec(&lane).unwrap(),

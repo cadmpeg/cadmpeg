@@ -43,7 +43,7 @@ impl RewriteIdentities for AnnotationRecord {
         map: &mut IdentityMap<'_, F>,
     ) -> Result<Self, CodecError> {
         ctx.charge_work(1, "rewrite ASM annotation identity")?;
-        self.id = self.id.rewrite_identities(ctx, map)?;
+        self.id = map.identity(ctx, &self.id)?;
         Ok(self)
     }
 }

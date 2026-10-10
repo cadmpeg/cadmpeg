@@ -118,7 +118,7 @@ fn type150_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
             2.into(),
             3.into(),
             4.into(),
-            TokenValue::String(b"bad".to_vec()),
+            TokenValue::String(b"bad".to_vec().into()),
             2.into(),
             3.into(),
             1.into(),
@@ -291,7 +291,7 @@ fn type152_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
             4.into(),
             3.into(),
             2.into(),
-            TokenValue::String(b"bad".to_vec()),
+            TokenValue::String(b"bad".to_vec().into()),
             0.into(),
             0.into(),
             0.into(),
@@ -456,7 +456,7 @@ fn type154_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
         vec![
             154.into(),
             5.into(),
-            TokenValue::String(b"bad".to_vec()),
+            TokenValue::String(b"bad".to_vec().into()),
             1.into(),
             2.into(),
             3.into(),
@@ -619,7 +619,7 @@ fn type156_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
         vec![
             156.into(),
             5.into(),
-            TokenValue::String(b"bad".to_vec()),
+            TokenValue::String(b"bad".to_vec().into()),
             1.into(),
             1.into(),
             2.into(),
@@ -777,7 +777,7 @@ fn type158_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
         7,
         vec![
             158.into(),
-            TokenValue::String(b"bad".to_vec()),
+            TokenValue::String(b"bad".to_vec().into()),
             1.into(),
             2.into(),
             3.into(),
@@ -933,7 +933,7 @@ fn type160_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
         vec![
             160.into(),
             4.into(),
-            TokenValue::String(b"bad".to_vec()),
+            TokenValue::String(b"bad".to_vec().into()),
             1.into(),
             1.into(),
             2.into(),
@@ -1101,7 +1101,7 @@ fn type168_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
         vec![
             168.into(),
             4.into(),
-            TokenValue::String(b"bad".to_vec()),
+            TokenValue::String(b"bad".to_vec().into()),
             2.into(),
             1.into(),
             2.into(),
@@ -1281,7 +1281,7 @@ fn type162_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
             vec![
                 162.into(),
                 5.into(),
-                TokenValue::String(b"bad".to_vec()),
+                TokenValue::String(b"bad".to_vec().into()),
                 1.into(),
                 2.into(),
                 3.into(),
@@ -1447,7 +1447,7 @@ fn type164_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
         vec![
             164.into(),
             5.into(),
-            TokenValue::String(b"bad".to_vec()),
+            TokenValue::String(b"bad".to_vec().into()),
             0.into(),
             0.into(),
             1.into(),

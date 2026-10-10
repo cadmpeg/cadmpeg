@@ -57,6 +57,21 @@ pub(crate) fn transfer(
             ctx.collection_vec(source.len(), "fcstd product selected properties")
         })?;
         owned.extend_from_slice(source);
+        if owned.iter().any(|property| {
+            matches!(property.body, crate::native::PropertyBody::Unreadable(_))
+                && matches!(
+                    property.name.as_str(),
+                    "Group"
+                        | "LinkedObject"
+                        | "ElementList"
+                        | "LinkCopyOnChangeSource"
+                        | "LinkCopyOnChangeGroup"
+                )
+        }) {
+            // These fields determine membership or prototype ownership. Their
+            // absence cannot be replaced with an empty group or local prototype.
+            continue;
+        }
         let group = sole_named_property(ctx, "product", &owned, "Group")?;
         let members = group
             .map(|property| {
@@ -377,10 +392,13 @@ pub(crate) fn transfer_neutral(
         .map_err(CodecError::malformed)
     };
     let mut parent_by_object = HashMap::<&str, &str>::new();
-    for record in records
-        .iter()
-        .filter(|record| !matches!(record.node, ProductNode::Occurrence(_)))
-    {
+    for record in records.iter().filter(|record| {
+        matches!(
+            record.node,
+            ProductNode::Part(_) | ProductNode::LinkGroup { .. }
+        )
+    }) {
+        // Ordinary document groups organize objects without owning placements.
         for member in record.members() {
             let member = member.as_str();
             match parent_by_object.get(member) {

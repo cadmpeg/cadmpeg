@@ -2,6 +2,7 @@
 //! End-to-end contracts over synthesized F3D and F3Z archives.
 
 mod attribute_colors;
+mod optional_payloads;
 
 use cadmpeg_test_support::{wire, EditableDecodeResult};
 

@@ -140,12 +140,15 @@ pub(super) fn classify_members<'a>(
         .map(|entry| entry.name.as_str())
         .filter(|name| crate::container::is_f3d_name(name))
     {
-        let member_view = scan.entry_view(member_path).ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "f3z document member {member_path} is not readable"
-            ))
-        })?;
-        let member_scan = match crate::container::scan(ctx, member_view) {
+        let member_scan = match scan
+            .entry_view(member_path)
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "f3z document member {member_path} is not readable"
+                ))
+            })
+            .and_then(|view| crate::container::scan(ctx, view))
+        {
             Ok(member_scan) => member_scan,
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => {
@@ -201,6 +204,7 @@ pub(super) fn classify_members<'a>(
         &mut { crate::dialect::dialect_losses(ctx, &layers)? },
         "append F3Z report losses",
     )?;
+    crate::report::header_losses(ctx, scan, &mut losses)?;
     Ok(ArchiveSession {
         members,
         layers,

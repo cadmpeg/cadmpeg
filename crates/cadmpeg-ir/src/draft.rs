@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, HashMap};
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceLimit, ScopedReservation};
 use cadmpeg_core::CodecError;
 
-use crate::annotations::{AnnotationBuilder, Annotations};
+use crate::annotations::Annotations;
 use crate::appearance::{Appearance, AppearanceBinding};
 use crate::attributes::SourceAttribute;
 use crate::document::{CadIr, Model};
@@ -284,6 +284,7 @@ impl From<CodecError> for DraftError {
 #[derive(Debug)]
 pub struct ModelDraft<A = ()> {
     model: Model,
+    insertion_index: Option<IdentityIndex>,
     accounting: A,
 }
 
@@ -297,6 +298,7 @@ impl Default for ModelDraft {
     fn default() -> Self {
         Self {
             model: Model::default(),
+            insertion_index: Some(IdentityIndex::new()),
             accounting: (),
         }
     }
@@ -331,6 +333,7 @@ impl ModelDraft {
     pub fn with_accounting(self) -> ModelDraft<DraftAccounting> {
         ModelDraft {
             model: self.model,
+            insertion_index: self.insertion_index,
             accounting: DraftAccounting::default(),
         }
     }
@@ -353,16 +356,41 @@ impl<A> ModelDraft<A> {
         ctx: &DecodeContext<'_>,
     ) -> Result<(), DraftError> {
         let identity = entity.identity();
-        macro_rules! check_identity {
-            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
-                $(for existing in &self.model.$field {
-                    ctx.charge_work(1, "draft insertion identity scan")?;
-                    if identities_equal(ctx, existing.identity(), identity, "compare draft insertion identities")? { return Err(DraftError::IdentityCollision(ctx.copy_retained_text(identity, "draft identity collision")?)); }
-                })*
-            };
+        let index = match self.insertion_index.take() {
+            Some(index) => index,
+            None => match index_model_identities(&self.model, ctx)? {
+                Ok(index) => index,
+                Err(identity) => {
+                    return Err(DraftError::IdentityCollision(
+                        ctx.copy_retained_text(identity, "draft identity collision")?,
+                    ))
+                }
+            },
+        };
+        let index = self.insertion_index.insert(index);
+        if identity_index_contains(&self.model, index, identity, ctx)? {
+            return Err(DraftError::IdentityCollision(
+                ctx.copy_retained_text(identity, "draft identity collision")?,
+            ));
         }
-        crate::document::arena_registry!(check_identity);
+        ctx.charge_work(
+            u64_from_index(identity.len()),
+            "hash draft insertion identity",
+        )?;
+        let hash = identity_hash(identity);
+        let slot = IdentitySlot {
+            kind: T::KIND,
+            index: T::arena(&self.model).len(),
+        };
         ctx.reserve_vec(T::arena_mut(&mut self.model), 1, "draft entity arena")?;
+        insert_identity(
+            index,
+            hash,
+            slot,
+            &DecodeStorage(ctx),
+            "draft insertion identity slots",
+        )
+        .map_err(DraftError::Resource)?;
         T::arena_mut(&mut self.model).push(entity);
         Ok(())
     }
@@ -377,6 +405,7 @@ impl<A> ModelDraft<A> {
     /// Commit still checks all identities and references, including entities inserted
     /// through this lower-level surface.
     pub fn model_mut(&mut self) -> &mut Model {
+        self.insertion_index = None;
         &mut self.model
     }
 
@@ -467,14 +496,13 @@ impl ModelDraft<DraftAccounting> {
             format_args!("{identity}"),
             "draft exactness lookup",
         )?;
-        let work = u64_from_index(self.accounting.exactness.len())
-            .checked_add(1)
-            .and_then(|count| count.checked_mul(u64_from_index(identity.len())))
-            .and_then(|count| count.checked_mul(2))
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("draft exactness comparisons", u64::MAX - 1, u64::MAX)
-            })?;
-        ctx.charge_work(work, "draft exactness comparisons")?;
+        crate::annotations::admit_identity_work(
+            ctx,
+            self.accounting.exactness.len(),
+            identity.len(),
+            3,
+            "draft exactness comparisons",
+        )?;
         let identity = if exactness != Exactness::ByteExact
             && !self.accounting.exactness.contains_key(&identity)
         {
@@ -574,6 +602,9 @@ struct CommitState<'ctx, D: BorrowMut<CadIr>> {
     unknowns: Vec<crate::unknown::UnknownRecord>,
     unknown_namespace: Option<&'ctx str>,
     identities: Option<CommittedIdentityIndex>,
+    admission: Option<crate::validate::admit::incremental::AdmittedState<'ctx>>,
+    unindexed_start: Option<[usize; EntityKind::ALL.len()]>,
+    source_admission: Option<crate::validate::admit::NativeUnknownAdmission<'ctx>>,
 }
 
 impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
@@ -589,6 +620,9 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
                 unknowns: Vec::new(),
                 unknown_namespace,
                 identities: None,
+                admission: None,
+                unindexed_start: None,
+                source_admission: None,
             },
             ctx,
             storage: ctx.reserve_scoped(0, "committed identity storage")?,
@@ -604,6 +638,8 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
     pub fn document_mut(&mut self) -> Result<&mut CadIr, CodecError> {
         let storage = self.ctx.reserve_scoped(0, "committed identity storage")?;
         self.state.identities = None;
+        self.state.unindexed_start = None;
+        self.state.admission = None;
         self.storage = storage;
         Ok(self.state.base.borrow_mut())
     }
@@ -620,7 +656,12 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
             unknowns,
             unknown_namespace: _,
             identities,
+            admission,
+            unindexed_start: _,
+            source_admission,
         } = state;
+        drop(source_admission);
+        drop(admission);
         drop(identities);
         drop(storage);
         (base, unknowns)
@@ -632,11 +673,57 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
     }
 
     /// Mutate outgoing links while keeping cached identity positions stable.
-    pub fn unknown_links_mut(&mut self, index: usize) -> Option<(&str, &mut Vec<String>)> {
-        self.state
+    pub fn unknown_links_mut(
+        &mut self,
+        index: usize,
+    ) -> Result<Option<(&str, &mut Vec<String>)>, CodecError> {
+        if self.state.unknowns.get(index).is_some() {
+            if let Some(admission) = &mut self.state.admission {
+                admission.dirty_unknown(self.ctx, index)?;
+            }
+        }
+        if self.state.unknowns.get(index).is_some() {
+            if let Some(source) = &mut self.state.source_admission {
+                source.dirty(self.ctx, index)?;
+            }
+        }
+        Ok(self
+            .state
             .unknowns
             .get_mut(index)
-            .map(crate::unknown::UnknownRecord::id_and_links_mut)
+            .map(crate::unknown::UnknownRecord::id_and_links_mut))
+    }
+
+    /// Expose model arenas for append-only staging. Existing entities and native
+    /// records must remain unchanged. Candidate admission checks the new suffix.
+    pub fn append_model_mut(&mut self) -> Result<&mut Model, CodecError> {
+        self.ctx.charge_work(1, "append-only model staging")?;
+        if self.state.identities.is_some() && self.state.unindexed_start.is_none() {
+            self.ctx.charge_work(
+                u64_from_index(EntityKind::ALL.len()),
+                "append-only identity checkpoint",
+            )?;
+            macro_rules! lengths {
+                ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {[$(self.state.base.borrow().model.$field.len()),*]};
+            }
+            self.state.unindexed_start = Some(crate::document::arena_registry!(lengths));
+        }
+        Ok(&mut self.state.base.borrow_mut().model)
+    }
+
+    /// Edit only entities appended after `checkpoint`, invalidating admission
+    /// facts for that suffix. Existing prefix entities must remain unchanged.
+    pub fn edit_appended_model(
+        &mut self,
+        checkpoint: &ModelCheckpoint,
+    ) -> Result<&mut Model, CodecError> {
+        if let Some(admission) = &mut self.state.admission {
+            admission.rewind(self.ctx, &self.state.base.borrow().model, checkpoint)?;
+        }
+        self.state.identities = None;
+        self.state.unindexed_start = None;
+        self.storage = self.ctx.reserve_scoped(0, "committed identity storage")?;
+        Ok(&mut self.state.base.borrow_mut().model)
     }
 
     /// Move an owned source population into the session and invalidate cached positions.
@@ -650,7 +737,10 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
             "replace source record scan",
         )?;
         self.state.identities = None;
+        self.state.unindexed_start = None;
+        self.state.admission = None;
         self.storage = storage;
+        self.state.source_admission = None;
         self.state.unknowns = records;
         Ok(())
     }
@@ -677,8 +767,29 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
                 )
             })?;
         }
+        self.state.admission = None;
+        self.state.source_admission = None;
         self.state.unknowns.push(record);
         Ok(())
+    }
+
+    /// Check source identity uniqueness once and recheck only edited link lists.
+    pub fn validate_source_records(
+        &mut self,
+    ) -> Result<Result<(), crate::native::NativeConvertError>, CodecError> {
+        match &mut self.state.source_admission {
+            Some(admission) => admission.check(self.ctx, &self.state.unknowns),
+            None => match crate::validate::admit::NativeUnknownAdmission::build(
+                self.ctx,
+                &self.state.unknowns,
+            )? {
+                Ok(admission) => {
+                    self.state.source_admission = Some(admission);
+                    Ok(Ok(()))
+                }
+                Err(error) => Ok(Err(error)),
+            },
+        }
     }
 
     /// Validate and commit one model draft under this session's context.
@@ -697,27 +808,48 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
         annotations: &mut Annotations,
     ) -> Result<Result<(), DraftError>, CodecError> {
         let ctx = self.ctx;
-        let transaction = annotations.copy_transaction(ctx, "draft annotation transaction")?;
-        let ModelDraft { model, accounting } = draft;
-        let ((), transaction) = transaction.update(|annotations| {
-            let mut builder = AnnotationBuilder::resume(std::mem::take(annotations));
-            for (identity, exactness) in accounting.exactness {
-                builder.exactness_owned(ctx, identity, exactness)?;
+        let mut transaction =
+            annotations.sparse_transaction(ctx, "draft annotation transaction")?;
+        let ModelDraft {
+            model,
+            accounting,
+            insertion_index,
+        } = draft;
+        let mut annotations_admitted = self
+            .state
+            .admission
+            .as_ref()
+            .is_some_and(|state| state.annotations_admitted);
+        let annotation_owners = if annotations_admitted && !accounting.exactness.is_empty() {
+            Some(ctx.with_scoped_storage("draft annotation owners", || {
+                index_model_identities(&model, ctx)
+            })?)
+        } else {
+            None
+        };
+        for (identity, exactness) in accounting.exactness {
+            if let Some((Ok(owners), _storage)) = &annotation_owners {
+                annotations_admitted &= identity_index_contains(&model, owners, &identity, ctx)?;
+            } else if annotation_owners.is_some() {
+                annotations_admitted = false;
             }
-            *annotations = builder.build();
-            Ok::<_, CodecError>(())
-        })?;
+            transaction.exactness(&identity, exactness)?;
+        }
         match self.state.commit_with_storage(
             ModelDraft {
                 model,
+                insertion_index,
                 accounting: (),
             },
             ctx,
             &mut self.storage,
-            || transaction.into_retained(),
+            || transaction.prepare(),
         )? {
             Ok(merged) => {
-                *annotations = merged;
+                merged.apply(annotations);
+                if let Some(state) = &mut self.state.admission {
+                    state.annotations_admitted = annotations_admitted;
+                }
                 Ok(Ok(()))
             }
             Err(error) => Ok(Err(error)),
@@ -761,6 +893,210 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
             }
         }
         Ok(result)
+    }
+
+    /// Admit an independent candidate against reusable facts. Shared references,
+    /// arbitrary document mutation and native additions use combined validation.
+    /// Native additions leave admission facts empty. A later neutral candidate
+    /// can establish a new reusable state.
+    /// The callback runs before the append is accepted, so transfer refusal rolls
+    /// back the model and the identity cache together. Local reports contain
+    /// candidate counts and findings; fallback reports describe the combined model.
+    /// Annotation tables must change only through accepted sparse transfers or
+    /// annotations of new suffix entities while admission facts remain cached.
+    pub fn try_admit_append<'ann, T, E>(
+        &mut self,
+        mut candidate: CadIr,
+        changes: crate::annotations::SparseAnnotationTransaction<'ann, 'ctx>,
+        allowed: &[crate::report::check::Check],
+        accept: impl FnOnce(
+            Result<&crate::report::check::ValidationReport, &crate::native::NativeConvertError>,
+            crate::annotations::SparseAnnotationTransaction<'ann, 'ctx>,
+        ) -> Result<Result<T, E>, CodecError>,
+    ) -> Result<Result<T, E>, CodecError> {
+        use crate::validate::admit::incremental::{AdmittedState, CandidateScope};
+        let ctx = self.ctx;
+        let format = self
+            .state
+            .unknown_namespace
+            .ok_or_else(|| CodecError::malformed("candidate admission needs a source namespace"))?;
+        let annotations = changes.base();
+        let reuse =
+            allowed == crate::validate::admit::RHINO_DRAFT_CHECKS && candidate.native.0.is_empty();
+        let mut state = self
+            .state
+            .admission
+            .take()
+            .filter(|state| reuse && state.annotations_admitted);
+        if let Some(admitted) = &mut state {
+            let mut suffix_annotations =
+                annotations.sparse_transaction(ctx, "appended admission annotations")?;
+            macro_rules! select_suffix_annotations {
+                ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
+                    for entity in self.state.base.borrow().model.$field.get(admitted.lengths[<$ty as EntitySchema>::KIND.index()]..).ok_or_else(|| CodecError::malformed("admitted prefix was removed"))? {
+                        suffix_annotations.select(entity.identity())?;
+                    }
+                )*};
+            }
+            crate::document::arena_registry!(select_suffix_annotations);
+            let starts = admitted.lengths;
+            let (report, _report_storage) =
+                ctx.with_scoped_storage("appended admission report", || {
+                    admitted.probe(
+                        ctx,
+                        self.state.base.borrow_mut(),
+                        (format, &self.state.unknowns),
+                        suffix_annotations.annotations(),
+                        allowed,
+                        (starts, CandidateScope::Appended),
+                    )
+                })?;
+            if report.as_ref().is_some_and(|result| {
+                result
+                    .as_ref()
+                    .is_ok_and(crate::report::check::ValidationReport::is_ok)
+            }) {
+                admitted.accept(ctx, self.state.base.borrow())?;
+            } else {
+                state = None;
+            }
+        }
+        let (local, _local_storage) =
+            ctx.with_scoped_storage("candidate admission report", || match &mut state {
+                Some(admitted) => admitted.probe(
+                    ctx,
+                    &mut candidate,
+                    (format, &self.state.unknowns),
+                    changes.annotations(),
+                    allowed,
+                    ([0; EntityKind::ALL.len()], CandidateScope::Detached),
+                ),
+                None => Ok(None),
+            })?;
+        let local = local.filter(|result| {
+            result
+                .as_ref()
+                .is_ok_and(crate::report::check::ValidationReport::is_ok)
+        });
+        let is_local = local.is_some();
+        let result = self.try_append(candidate.model, candidate.native, |combined, unknowns| {
+            let (report, _report_storage) =
+                ctx.with_scoped_storage("combined admission report", || match local {
+                    Some(report) => Ok(report),
+                    None => crate::validate::admit::admit_annotation_delta(
+                        ctx,
+                        combined,
+                        (format, unknowns),
+                        &changes,
+                        allowed,
+                    ),
+                })?;
+            if reuse
+                && report
+                    .as_ref()
+                    .is_ok_and(crate::report::check::ValidationReport::is_ok)
+            {
+                match &mut state {
+                    Some(admitted) if is_local => admitted.accept(ctx, combined)?,
+                    _ => state = Some(AdmittedState::build(ctx, combined, format, unknowns)?),
+                }
+            }
+            accept(report.as_ref(), changes)
+        });
+        if result.as_ref().is_ok_and(Result::is_ok) {
+            self.state.admission = state;
+        }
+        result
+    }
+
+    /// Admit staged model appends after in-place editing of their new suffix.
+    /// Both Rhino routes retain the shared core. Other check sets rebuild facts.
+    pub fn admit_appended(
+        &mut self,
+        annotations: &Annotations,
+        allowed: &[crate::report::check::Check],
+    ) -> Result<
+        Result<crate::report::check::ValidationReport, crate::native::NativeConvertError>,
+        CodecError,
+    > {
+        use crate::validate::admit::{
+            admit_with_native_unknowns,
+            incremental::{AdmittedState, CandidateScope},
+        };
+        let ctx = self.ctx;
+        let format = self
+            .state
+            .unknown_namespace
+            .ok_or_else(|| CodecError::malformed("candidate admission needs a source namespace"))?;
+        let reuse = allowed == crate::RHINO_DRAFT_CHECKS || allowed == crate::RHINO_INSTANCE_CHECKS;
+        let mut state = self.state.admission.take().filter(|state| {
+            reuse && (allowed != crate::RHINO_DRAFT_CHECKS || state.annotations_admitted)
+        });
+        let local = if let Some(admitted) = &mut state {
+            let mut suffix =
+                annotations.sparse_transaction(ctx, "appended admission annotations")?;
+            macro_rules! select_annotations {
+                ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
+                    for entity in self.state.base.borrow().model.$field.get(admitted.lengths[<$ty as EntitySchema>::KIND.index()]..).ok_or_else(|| CodecError::malformed("admitted prefix was removed"))? { suffix.select(entity.identity())?; }
+                )*};
+            }
+            if allowed.contains(&crate::report::check::Check::Annotations) {
+                crate::document::arena_registry!(select_annotations);
+            }
+            let starts = admitted.lengths;
+            admitted.probe(
+                ctx,
+                self.state.base.borrow_mut(),
+                (format, &self.state.unknowns),
+                suffix.annotations(),
+                allowed,
+                (starts, CandidateScope::Appended),
+            )?
+        } else {
+            None
+        };
+        let local = local.filter(|report| {
+            report
+                .as_ref()
+                .is_ok_and(crate::report::check::ValidationReport::is_ok)
+        });
+        let is_local = local.is_some();
+        let report = match local {
+            Some(report) => report,
+            None => admit_with_native_unknowns(
+                ctx,
+                self.state.base.borrow(),
+                (format, &self.state.unknowns),
+                allowed
+                    .contains(&crate::report::check::Check::Annotations)
+                    .then_some(annotations),
+                allowed,
+                Vec::new(),
+            )?,
+        };
+        if reuse
+            && report
+                .as_ref()
+                .is_ok_and(crate::report::check::ValidationReport::is_ok)
+        {
+            match &mut state {
+                Some(admitted) if is_local => admitted.accept(ctx, self.state.base.borrow())?,
+                _ => {
+                    state = Some(AdmittedState::build(
+                        ctx,
+                        self.state.base.borrow(),
+                        format,
+                        &self.state.unknowns,
+                    )?);
+                }
+            }
+            if let Some(admitted) = &mut state {
+                admitted.annotations_admitted = allowed == crate::RHINO_DRAFT_CHECKS
+                    || admitted.annotation_owners_resolve(ctx, annotations)?;
+            }
+            self.state.admission = state;
+        }
+        Ok(report)
     }
 
     /// Look up an identity through the live caller-accounted cache.
@@ -1090,6 +1426,23 @@ impl<D: BorrowMut<CadIr>> CommitState<'_, D> {
                 ctx,
             )?);
         }
+        if let Some(starts) = self.unindexed_start.take() {
+            let identities = self
+                .identities
+                .as_mut()
+                .ok_or_else(|| CodecError::malformed("committed identity index is absent"))?;
+            let storage = DecodeStorage(ctx);
+            macro_rules! index_appended {
+                ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
+                    let start = starts[<$ty as EntitySchema>::KIND.index()];
+                    for (offset, entity) in self.base.borrow().model.$field.get(start..).ok_or_else(|| CodecError::malformed("append-only staging removed an arena prefix"))?.iter().enumerate() {
+                        storage.work(entity.identity().len(), "committed identity scan")?;
+                        insert_identity(identities, identity_hash(entity.identity()), CommittedIdentity::Neutral(IdentitySlot { kind: <$ty as EntitySchema>::KIND, index: start + offset }), &storage, "committed identity slots")?;
+                    }
+                )*};
+            }
+            crate::document::arena_registry!(index_appended);
+        }
         Ok(())
     }
 
@@ -1148,6 +1501,7 @@ mod tests {
     mod feature_parents;
     mod native_identity_slots;
     mod owned_session;
+    mod scaling;
 
     use super::{CommitSession, DraftError, ModelCheckpoint, ModelDraft};
     use crate::annotations::Annotations;
@@ -1189,6 +1543,46 @@ mod tests {
             )
             .expect("insert vertex into draft");
         draft
+    }
+
+    #[test]
+    fn large_draft_insertion_fits_a_linear_work_budget() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 2_000_000;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut draft = ModelDraft::new();
+        for index in 0..4096 {
+            draft
+                .insert(point(&format!("test:model:point#{index}")), &ctx)
+                .unwrap();
+        }
+        assert_eq!(draft.entity_count(), 4096);
+        assert!(matches!(
+            draft.insert(point("test:model:point#4095"), &ctx),
+            Err(DraftError::IdentityCollision(_))
+        ));
+        ctx.finish_session().unwrap();
+    }
+
+    #[test]
+    fn direct_draft_edits_invalidate_insertion_identity_slots() {
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        let mut draft = ModelDraft::new();
+        draft.insert(point("test:model:point#old"), &ctx).unwrap();
+        draft.model_mut().points.clear();
+        draft.insert(point("test:model:point#old"), &ctx).unwrap();
+        draft
+            .model_mut()
+            .points
+            .push(point("test:model:point#direct"));
+        assert!(matches!(
+            draft.insert(point("test:model:point#direct"), &ctx),
+            Err(DraftError::IdentityCollision(_))
+        ));
+        assert_eq!(draft.entity_count(), 2);
     }
 
     #[test]

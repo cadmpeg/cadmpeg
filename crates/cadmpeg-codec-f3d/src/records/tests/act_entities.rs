@@ -70,7 +70,7 @@ fn act_group_admission_rejects_invalid_names_counts_and_locations() {
     }
     for tail_offset in [100, 191, 200] {
         let mut wire = group_wire();
-        wire["channel_class_tail"] = serde_json::json!([1]);
+        wire["channel_class_tail"] = serde_json::json!("01");
         wire["channel_class_tail_offset"] = serde_json::json!(tail_offset);
         assert!(serde_json::from_value::<ActEntity>(wire).is_err());
     }

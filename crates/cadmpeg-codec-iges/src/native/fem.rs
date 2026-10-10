@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed native records for the IGES finite-element entity family.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use crate::directory::DirectoryEntry;
 use crate::graph::expectation::{ExpectationLabel, ReferenceExpectation};
 use crate::graph::ParameterResolver;
@@ -41,7 +43,7 @@ pub(in crate::native) enum NativeFemEntity {
         id: String,
         source_entity: String,
         form: i64,
-        node_number: i64,
+        node_number: Option<i64>,
         coordinates: [Option<f64>; 3],
         definition_transformation: Option<String>,
         displacement_transformation: Option<String>,
@@ -50,11 +52,11 @@ pub(in crate::native) enum NativeFemEntity {
         id: String,
         source_entity: String,
         form: i64,
-        element_number: i64,
+        element_number: Option<i64>,
         topology_type: Option<i64>,
         declared_node_count: Option<i64>,
         nodes: Vec<Option<String>>,
-        element_type: Option<Vec<u8>>,
+        element_type: Option<NativeBytes<Vec<u8>>>,
     },
     NodalDisplacementRotation {
         id: String,
@@ -69,7 +71,7 @@ pub(in crate::native) enum NativeFemEntity {
         id: String,
         source_entity: String,
         form: i64,
-        analysis_case_number: i64,
+        analysis_case_number: Option<i64>,
         analysis_note: Option<String>,
         subcase_number: Option<i64>,
         time: Option<f64>,
@@ -82,7 +84,7 @@ pub(in crate::native) enum NativeFemEntity {
         id: String,
         source_entity: String,
         form: i64,
-        analysis_case_number: i64,
+        analysis_case_number: Option<i64>,
         analysis_note: Option<String>,
         subcase_number: Option<i64>,
         time: Option<f64>,
@@ -152,10 +154,13 @@ fn record_string(
     ctx: &DecodeContext<'_>,
     record: Option<&ParameterRecord>,
     index: usize,
-) -> Result<Option<Vec<u8>>, CodecError> {
+) -> Result<Option<NativeBytes<Vec<u8>>>, CodecError> {
     record
         .and_then(|record| record.string(index))
-        .map(|bytes| ctx.copy_retained(bytes, "iges FEM parameter string"))
+        .map(|bytes| {
+            ctx.copy_retained(bytes, "iges FEM parameter string")
+                .map(NativeBytes::from)
+        })
         .transpose()
 }
 
@@ -819,7 +824,7 @@ mod tests {
             TokenValue::Integer(136),
             TokenValue::Integer(1),
             TokenValue::Integer(0),
-            TokenValue::String(b"BEAM".to_vec()),
+            TokenValue::String(b"BEAM".to_vec().into()),
         ]
         .into_iter()
         .map(|value| Token { value, span: 0..0 })

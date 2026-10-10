@@ -2,11 +2,14 @@
 //! Single-pass ZIP metadata snapshots with budgeted entry opening.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::io::{Cursor, Read};
+use std::io::Read;
 
 use cadmpeg_core::decode::{ByteRange, DecodeContext, ExpandSpec, ScopedReservation, View};
 use cadmpeg_core::{CodecError, ContainerEntry};
-use zip::{CompressionMethod, HasZipMetadata};
+mod entry;
+mod index;
+mod local;
+mod probe;
 
 /// Compression methods supported by [`ArchiveSnapshot::open`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -17,33 +20,25 @@ pub enum ZipCompression {
     Deflate,
     /// The entry payload is a Zstandard frame.
     Zstd,
+    /// A declared method whose payload cannot be decoded by this service.
+    Unsupported(u16),
 }
 
 impl ZipCompression {
-    fn from_zip(method: CompressionMethod, name: &str) -> Result<Self, CodecError> {
-        match method {
-            CompressionMethod::Stored => Ok(Self::Stored),
-            CompressionMethod::Deflated => Ok(Self::Deflate),
-            CompressionMethod::Zstd => Ok(Self::Zstd),
-            other => Err(CodecError::NotImplemented(format!(
-                "ZIP compression {other:?} for {name}"
-            ))),
-        }
-    }
-
     /// Returns the stable container-summary label.
     pub const fn label(self) -> &'static str {
         match self {
             Self::Stored => "stored",
             Self::Deflate => "deflate",
             Self::Zstd => "zstd",
+            Self::Unsupported(_) => "unsupported",
         }
     }
 
     /// Storage of a member with these declared stored and expanded sizes.
     ///
     /// A stored member whose declared compressed size is smaller than its
-    /// uncompressed size is a malformed central-directory record, reported here
+    /// uncompressed size is a malformed declaration, reported here
     /// rather than normalized into a legal span.
     pub fn storage(
         self,
@@ -61,6 +56,12 @@ impl ZipCompression {
             }
             Self::Deflate => CompressionMethod::Deflate,
             Self::Zstd => CompressionMethod::Zstd,
+            Self::Unsupported(_) => {
+                return Ok(EntryStorage::payload_only(
+                    VerbatimLabel::None,
+                    compressed_size,
+                ))
+            }
         };
         Ok(EntryStorage::Compressed {
             method,
@@ -70,13 +71,15 @@ impl ZipCompression {
     }
 }
 
-/// ZIP central-directory facts retained after the parser is dropped.
+/// ZIP declaration facts retained after the parser is dropped.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EntryRecord {
-    /// Entry name as stored in the central directory.
+    /// Entry name from the central directory or a recovered local header.
     pub name: String,
     /// Compression method admitted by the snapshot.
     pub compression: ZipCompression,
+    /// Whether the declared payload is encrypted.
+    pub encrypted: bool,
     /// CRC-32 of the uncompressed payload.
     pub crc32: u32,
     /// Compressed payload size.
@@ -85,22 +88,58 @@ pub struct EntryRecord {
     pub uncompressed_size: u64,
     /// Physical start of the local header.
     pub header_start: u64,
-    /// Physical start of the compressed payload.
-    pub data_start: u64,
-    /// Physical start of the central-directory record.
+    /// Physical start of the payload, when the local member frame is readable.
+    pub data_start: Option<u64>,
+    /// Physical start of the central record, or local header during recovery.
     pub central_start: u64,
+    declaration: Declaration,
     utf8_name: bool,
+    local_header_error: Option<&'static str>,
+    unreadable_range: Option<ByteRange>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Declaration {
+    Central(ByteRange),
+    Local(ByteRange),
 }
 
 impl EntryRecord {
-    /// Returns whether ZIP metadata uses Unicode filename support for this entry.
+    /// Whether this entry is identified by a recovered local declaration.
+    pub fn is_recovered(&self) -> bool {
+        matches!(self.declaration, Declaration::Local(_))
+    }
+
+    /// Exact central record or recovered local-header declaration.
+    pub fn declaration_range(&self) -> ByteRange {
+        match self.declaration {
+            Declaration::Central(range) | Declaration::Local(range) => range,
+        }
+    }
+
+    /// Whether the declaration uses the Unicode filename flag.
     pub fn uses_utf8_name_encoding(&self) -> bool {
         self.utf8_name
+    }
+
+    /// Exact stored bytes retained when opening a member fails. An unreadable
+    /// local frame is retained whole, without claiming a payload boundary.
+    pub fn stored_range(&self) -> Result<ByteRange, CodecError> {
+        match self.data_start {
+            Some(start) => Ok(ByteRange {
+                start,
+                end: self.data_end()?,
+            }),
+            None => self.unreadable_range.ok_or_else(|| {
+                CodecError::malformed("ZIP unreadable member has no bounded source span")
+            }),
+        }
     }
 
     /// Returns the exclusive compressed-payload boundary.
     pub fn data_end(&self) -> Result<u64, CodecError> {
         self.data_start
+            .ok_or_else(|| CodecError::malformed("ZIP member has no readable payload frame"))?
             .checked_add(self.compressed_size)
             .ok_or_else(|| {
                 CodecError::malformed(format_args!("ZIP data range overflows for {}", self.name))
@@ -108,51 +147,84 @@ impl EntryRecord {
     }
 }
 
-/// A ZIP central-directory snapshot over one decode-session root view.
+/// A ZIP declaration snapshot over one decode-session root view.
 #[derive(Debug)]
 pub struct ArchiveSnapshot<'a> {
     root: View<'a>,
     central_start: u64,
     entries: Vec<EntryRecord>,
     by_name: BTreeMap<String, usize>,
+    recovery: Option<Box<local::Recovery>>,
 }
 
 /// Dependency index and the storage reservation that outlives its metadata.
 struct ZipIndex<'bytes, 'ctx> {
-    archive: zip::ZipArchive<Cursor<&'bytes [u8]>>,
+    archive: zip::ZipArchive<index::NamespaceReader<'bytes>>,
     _workspace: ScopedReservation<'ctx>,
 }
 
+enum Admission<T> {
+    Indexed(T),
+    Unreadable(CodecError),
+}
+
 impl<'bytes, 'ctx> ZipIndex<'bytes, 'ctx> {
-    fn new(ctx: &'ctx DecodeContext<'_>, bytes: &'bytes [u8]) -> Result<Self, CodecError> {
-        preflight_central_directory(ctx, bytes)?;
+    fn admit(
+        ctx: &'ctx DecodeContext<'_>,
+        bytes: &'bytes [u8],
+    ) -> Result<Admission<Self>, CodecError> {
+        let admitted = match directory_admission(ctx, bytes)? {
+            Admission::Indexed(admitted) => admitted,
+            Admission::Unreadable(error) => return Ok(Admission::Unreadable(error)),
+        };
+        let directory_bytes = admitted.metadata_bytes;
         let input_bytes = cadmpeg_core::decode::u64_from_index(bytes.len());
         // zip 8.6 keeps fixed metadata in its builder and final index. Each
         // record is below 1 KiB and each central entry occupies at least 46
         // bytes. Names, comments, extras, parsed vectors and index tables fit
-        // the remaining factor in this 64-byte-per-input-byte peak bound.
-        let workspace_bytes = input_bytes
+        // the remaining factor in this 64-byte-per-directory-byte peak bound.
+        // Payload bytes remain borrowed and do not allocate index metadata.
+        let workspace_bytes = directory_bytes
             .checked_mul(64)
             .ok_or_else(|| ctx.refuse_codec_limit("ZIP indexing workspace", u64::MAX, u64::MAX))?;
         let workspace = ctx.reserve_scoped(workspace_bytes, "ZIP indexing workspace")?;
-        let work = input_bytes
+        let work = directory_bytes
             .checked_mul(16)
+            .and_then(|work| work.checked_add(input_bytes))
             .ok_or_else(|| ctx.refuse_codec_limit("ZIP dependency indexing", u64::MAX, u64::MAX))?;
         ctx.charge_work(work, "ZIP dependency indexing")?;
-        let archive = zip::ZipArchive::new(Cursor::new(bytes))
-            .map_err(|error| CodecError::malformed(format_args!("not a readable ZIP: {error}")))?;
-        Ok(Self {
+        let archive =
+            match zip::ZipArchive::new(index::NamespaceReader::new(bytes, admitted.end_record)) {
+                Ok(archive) => archive,
+                Err(
+                    error @ (zip::result::ZipError::InvalidArchive(_)
+                    | zip::result::ZipError::Io(_)),
+                ) => {
+                    return Ok(Admission::Unreadable(CodecError::malformed(format_args!(
+                        "not a readable ZIP: {error}"
+                    ))));
+                }
+                Err(error) => {
+                    return Err(CodecError::malformed(format_args!(
+                        "not a readable ZIP: {error}"
+                    )))
+                }
+            };
+        Ok(Admission::Indexed(Self {
             archive,
             _workspace: workspace,
-        })
+        }))
     }
 }
 
 impl<'a> ArchiveSnapshot<'a> {
-    /// Parses the central directory once and retains replayable physical facts.
+    /// Parses the directory, or recovers bounded local frames when it is unreadable.
     pub fn new(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Self, CodecError> {
-        let mut index = ZipIndex::new(ctx, root.window())?;
-        let archive = &mut index.archive;
+        let index = match ZipIndex::admit(ctx, root.window())? {
+            Admission::Indexed(index) => index,
+            Admission::Unreadable(error) => return local::recover(ctx, root, error),
+        };
+        let archive = &index.archive;
         let archive_central_start = archive.central_directory_start();
         ctx.charge_collection_items(
             cadmpeg_core::decode::u64_from_index(archive.len()),
@@ -175,54 +247,38 @@ impl<'a> ArchiveSnapshot<'a> {
             "ZIP decoded name set",
         )?;
         let mut entries = ctx.vector_storage(archive.len(), "ZIP entry records")?;
-        for index in 0..archive.len() {
-            let file = archive.by_index_raw(index).map_err(|error| {
-                CodecError::malformed(format_args!("bad ZIP entry {index}: {error}"))
-            })?;
-            let name_len = cadmpeg_core::decode::u64_from_index(file.name().len());
+        let mut central = archive_central_start;
+        for ordinal in 0..archive.len() {
+            let name = archive
+                .name_for_index(ordinal)
+                .ok_or_else(|| CodecError::malformed("ZIP indexed name is absent"))?;
+            let name_len = cadmpeg_core::decode::u64_from_index(name.len());
             ctx.charge_retained(name_len, "ZIP entry record name")?;
             ctx.charge_retained(name_len, "ZIP duplicate name")?;
-            let name = file.name().to_owned();
-            if !names.insert(name.clone()) {
+            if !names.insert(name.to_owned()) {
                 return Err(CodecError::malformed(format_args!(
                     "duplicate ZIP entry name {name}"
                 )));
             }
-            if file.encrypted() {
-                return Err(CodecError::malformed(format_args!(
-                    "encrypted ZIP entry {name}"
-                )));
-            }
-            let compression = ZipCompression::from_zip(file.compression(), &name)?;
-            let data_start = file.data_start().ok_or_else(|| {
-                CodecError::malformed(format_args!("missing data offset for {name}"))
-            })?;
-            let record = EntryRecord {
-                name,
-                compression,
-                crc32: file.crc32(),
-                compressed_size: file.compressed_size(),
-                uncompressed_size: file.size(),
-                header_start: file.header_start(),
-                data_start,
-                central_start: file.central_header_start(),
-                utf8_name: file.get_metadata().is_utf8,
-            };
-            for offset in [
-                record.header_start,
-                record.data_start,
-                record.data_end()?,
-                record.central_start,
-            ] {
-                if offset > cadmpeg_core::decode::u64_from_index(root.window().len()) {
-                    return Err(CodecError::malformed(format_args!(
-                        "ZIP offset outside archive for {}",
-                        record.name
-                    )));
+            let admission = entry::read(
+                ctx,
+                root.window(),
+                central,
+                name.to_owned(),
+                archive.offset(),
+                archive_central_start,
+            )?;
+            let (record, next) = match admission {
+                Admission::Indexed(record) => record,
+                Admission::Unreadable(error) => {
+                    drop(index);
+                    return local::recover(ctx, root, error);
                 }
-            }
+            };
             entries.push(record);
+            central = next;
         }
+        entry::frame_unreadable_members(ctx, &mut entries, archive_central_start)?;
         drop(index);
         ctx.charge_collection_items(
             cadmpeg_core::decode::u64_from_index(entries.len()),
@@ -244,30 +300,59 @@ impl<'a> ArchiveSnapshot<'a> {
             central_start: archive_central_start,
             entries,
             by_name,
+            recovery: None,
         })
     }
 
     /// Tests an indexed name without opening payloads or applying compression
     /// and encryption admission. Temporary index storage remains scoped.
-    pub fn contains_name(
+    pub fn contains_matching_name(
         ctx: &DecodeContext<'_>,
         root: View<'_>,
-        name: &str,
+        mut matches: impl FnMut(&str) -> bool,
     ) -> Result<bool, CodecError> {
-        let index = ZipIndex::new(ctx, root.window())?;
+        let index = match ZipIndex::admit(ctx, root.window())? {
+            Admission::Indexed(index) => index,
+            Admission::Unreadable(error) => return Err(error),
+        };
         for candidate in index.archive.file_names() {
             ctx.charge_work(
                 cadmpeg_core::decode::u64_from_index(candidate.len()),
                 "ZIP name probe comparison",
             )?;
-            if candidate == name {
+            if matches(candidate) {
                 return Ok(true);
             }
         }
         Ok(false)
     }
 
-    /// Returns central-directory records in archive order.
+    /// Whether the bounded ZIP footer window contains an end-record signature.
+    /// This is a probe hint; directory admission must still prove the archive.
+    pub fn has_footer(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<bool, CodecError> {
+        let tail = match bytes.len().checked_sub(65_557) {
+            Some(start) => &bytes[start..],
+            None => bytes,
+        };
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(tail.len()),
+            "ZIP footer detection",
+        )?;
+        Ok(tail.windows(4).any(|signature| signature == b"PK\x05\x06"))
+    }
+
+    /// Reads only directory and footer evidence for seekable source detection.
+    /// The returned image has rebased directory offsets and excludes member
+    /// payloads and opaque archive comments;
+    /// it must only be used for detection, never inspection or decoding.
+    pub fn detection_image<'ctx>(
+        ctx: &'ctx DecodeContext<'_>,
+        source: &mut dyn cadmpeg_core::ReadSeek,
+    ) -> Result<Option<(Vec<u8>, ScopedReservation<'ctx>)>, CodecError> {
+        probe::read(ctx, source)
+    }
+
+    /// Returns declarations in directory order, or physical order during recovery.
     pub fn entries(&self) -> &[EntryRecord] {
         &self.entries
     }
@@ -277,16 +362,48 @@ impl<'a> ArchiveSnapshot<'a> {
         self.by_name.get(name).map(|index| &self.entries[*index])
     }
 
+    /// Directory failure that required local recovery. A codec must report this
+    /// through its loss vocabulary even if all recovered members open.
+    pub fn recovery_reason(&self) -> Option<&str> {
+        self.recovery
+            .as_ref()
+            .map(|recovery| recovery.reason.as_str())
+    }
+
+    /// Unframed remainder after the bounded local walk. Offsets are relative to
+    /// this archive view. These bytes remain source-only, never expanded data.
+    pub fn recovery_tail(&self) -> Option<ByteRange> {
+        self.recovery.as_ref().and_then(|recovery| recovery.tail)
+    }
+
     /// Opens an exact entry name as a borrowed stored slice or budgeted expanded view.
     pub fn open(&self, ctx: &DecodeContext<'a>, name: &str) -> Result<View<'a>, CodecError> {
         let entry = self
             .entry(name)
             .ok_or_else(|| CodecError::malformed(format_args!("ZIP entry {name} is absent")))?;
+        if let Some(error) = entry.local_header_error {
+            return Err(CodecError::malformed(format_args!(
+                "{}: {error}",
+                entry.name
+            )));
+        }
+        if entry.encrypted {
+            return Err(CodecError::NotImplemented(format!(
+                "encrypted ZIP entry {}",
+                entry.name
+            )));
+        }
         let end = entry.data_end()?;
         let archive_start = cadmpeg_core::decode::u64_from_index(self.root.start());
-        let absolute_start = archive_start.checked_add(entry.data_start).ok_or_else(|| {
-            CodecError::malformed(format_args!("ZIP data range overflows for {}", entry.name))
-        })?;
+        let absolute_start = archive_start
+            .checked_add(
+                entry
+                    .data_start
+                    .ok_or_else(|| CodecError::malformed("ZIP member payload frame is absent"))?,
+            )
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!("ZIP data range overflows for {}", entry.name))
+            })?;
         let absolute_end = archive_start.checked_add(end).ok_or_else(|| {
             CodecError::malformed(format_args!("ZIP data range overflows for {}", entry.name))
         })?;
@@ -295,6 +412,10 @@ impl<'a> ArchiveSnapshot<'a> {
             end: absolute_end,
         };
         match entry.compression {
+            ZipCompression::Unsupported(method) => Err(CodecError::NotImplemented(format!(
+                "ZIP compression {method:?} for {}",
+                entry.name
+            ))),
             ZipCompression::Stored => self.open_stored(ctx, entry, range),
             ZipCompression::Deflate => {
                 let source = self.compressed_source(entry, range)?;
@@ -416,7 +537,7 @@ impl<'a> ArchiveSnapshot<'a> {
         let mut output = ctx.collection_vec(self.entries.len(), "ZIP container summaries")?;
         for entry in &self.entries {
             let mut attributes = BTreeMap::new();
-            ctx.charge_collection_items(4, "ZIP summary attributes")?;
+            ctx.charge_collection_items(3, "ZIP summary attributes")?;
             attributes.insert(
                 ctx.copy_retained_text("crc32", "ZIP summary attribute key")?,
                 ctx.format_retained(
@@ -426,21 +547,74 @@ impl<'a> ArchiveSnapshot<'a> {
             );
             for (key, value) in [
                 ("header_offset", entry.header_start),
-                ("data_offset", entry.data_start),
-                ("central_header_offset", entry.central_start),
+                (
+                    if entry.is_recovered() {
+                        "recovered_local_header_offset"
+                    } else {
+                        "central_header_offset"
+                    },
+                    entry.central_start,
+                ),
             ] {
                 attributes.insert(
                     ctx.copy_retained_text(key, "ZIP summary attribute key")?,
                     ctx.format_retained(format_args!("{value}"), "ZIP summary attribute value")?,
                 );
             }
-            let storage = declared_storage(
-                ctx,
-                entry.compression,
-                entry.compressed_size,
-                entry.uncompressed_size,
-                &mut attributes,
-            )?;
+            if let Some(reason) = self.recovery_reason() {
+                ctx.insert_btree_map(
+                    &mut attributes,
+                    ctx.copy_retained_text("archive_recovery", "ZIP recovery attribute key")?,
+                    ctx.copy_retained_text(reason, "ZIP recovery attribute value")?,
+                    "ZIP recovery attribute",
+                )?;
+            }
+            if let Some(offset) = entry.data_start {
+                ctx.insert_btree_map(
+                    &mut attributes,
+                    ctx.copy_retained_text("data_offset", "ZIP summary attribute key")?,
+                    ctx.format_retained(format_args!("{offset}"), "ZIP summary attribute value")?,
+                    "ZIP summary data offset",
+                )?;
+            }
+            if let Some(error) = entry.local_header_error {
+                ctx.insert_btree_map(
+                    &mut attributes,
+                    ctx.copy_retained_text("local_header_error", "ZIP summary attribute key")?,
+                    ctx.copy_retained_text(error, "ZIP summary local header error")?,
+                    "ZIP summary local header error",
+                )?;
+            }
+            if let ZipCompression::Unsupported(method) = entry.compression {
+                ctx.insert_btree_map(
+                    &mut attributes,
+                    ctx.copy_retained_text("compression", "ZIP compression declaration key")?,
+                    ctx.format_retained(format_args!("{method:?}"), "ZIP compression declaration")?,
+                    "ZIP compression declaration attribute",
+                )?;
+            }
+            if entry.encrypted {
+                ctx.insert_btree_map(
+                    &mut attributes,
+                    ctx.copy_retained_text("encrypted", "ZIP encryption declaration key")?,
+                    ctx.copy_retained_text("true", "ZIP encryption declaration")?,
+                    "ZIP encryption declaration attribute",
+                )?;
+            }
+            let storage = if entry.encrypted {
+                cadmpeg_core::container::EntryStorage::payload_only(
+                    cadmpeg_core::container::VerbatimLabel::None,
+                    entry.compressed_size,
+                )
+            } else {
+                declared_storage(
+                    ctx,
+                    entry.compression,
+                    entry.compressed_size,
+                    entry.uncompressed_size,
+                    &mut attributes,
+                )?
+            };
             output.push(ContainerEntry {
                 name: ctx.copy_retained_text(&entry.name, "ZIP summary entry name")?,
                 role: classify(&entry.name),
@@ -460,9 +634,28 @@ impl<'a> ArchiveSnapshot<'a> {
     }
 }
 
-fn preflight_central_directory(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<(), CodecError> {
+#[derive(Debug)]
+struct DirectoryPreflight {
+    metadata_bytes: u64,
+    end_record: usize,
+}
+
+fn preflight_central_directory(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<DirectoryPreflight, CodecError> {
+    match directory_admission(ctx, bytes)? {
+        Admission::Indexed(admitted) => Ok(admitted),
+        Admission::Unreadable(error) => Err(error),
+    }
+}
+
+fn directory_admission(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Admission<DirectoryPreflight>, CodecError> {
     let mut first_error = None;
-    let mut max_count = None::<u64>;
+    let mut admitted = None;
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(bytes.len()),
         "ZIP end record search",
@@ -471,10 +664,25 @@ fn preflight_central_directory(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<
         if signature != b"PK\x05\x06" {
             continue;
         }
+        let Some(comment) = View::u16_le_at(bytes, end + 20) else {
+            continue;
+        };
+        if end.checked_add(22 + usize::from(comment)) != Some(bytes.len()) {
+            continue;
+        }
         ctx.charge_work(1, "ZIP end record candidate")?;
         match central_directory_inventory(ctx, bytes, end) {
-            Ok(count) => {
-                max_count = Some(max_count.map_or(count, |current| current.max(count)));
+            Ok((count, size)) => {
+                ctx.charge_collection_items(count, "ZIP central directory entries")?;
+                if admitted.is_some() {
+                    return Err(CodecError::malformed(
+                        "ZIP has ambiguous terminal central-directory declarations",
+                    ));
+                }
+                admitted = Some(DirectoryPreflight {
+                    metadata_bytes: size,
+                    end_record: end,
+                });
             }
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => {
@@ -484,18 +692,19 @@ fn preflight_central_directory(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<
             }
         }
     }
-    let count = max_count.ok_or_else(|| {
-        first_error.unwrap_or_else(|| CodecError::Malformed("ZIP end record is absent".into()))
-    })?;
-    ctx.charge_collection_items(count, "ZIP central directory entries")?;
-    Ok(())
+    Ok(match admitted {
+        Some(admitted) => Admission::Indexed(admitted),
+        None => Admission::Unreadable(
+            first_error.unwrap_or_else(|| CodecError::Malformed("ZIP end record is absent".into())),
+        ),
+    })
 }
 
 fn central_directory_inventory(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     end: usize,
-) -> Result<u64, CodecError> {
+) -> Result<(u64, u64), CodecError> {
     let comment_len = View::u16_le_at(bytes, end + 20)
         .ok_or_else(|| CodecError::Malformed("ZIP end record is truncated".into()))?;
     if end
@@ -506,44 +715,34 @@ fn central_directory_inventory(
     }
     let count = View::u16_le_at(bytes, end + 10)
         .ok_or_else(|| CodecError::Malformed("ZIP end record is truncated".into()))?;
-    let (count, directory_size, directory_start_hint, directory_end) = if count == u16::MAX {
-        if let Some(locator_start) = end
-            .checked_sub(20)
-            .filter(|&start| bytes.get(start..start + 4) == Some(b"PK\x06\x07".as_slice()))
-        {
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(locator_start),
-                "ZIP64 end record search",
-            )?;
-            let record_start = bytes[..locator_start]
-                .windows(4)
-                .rposition(|signature| signature == b"PK\x06\x06")
-                .ok_or_else(|| CodecError::Malformed("ZIP64 end record is absent".into()))?;
-            let record_size = View::u64_le_at(bytes, record_start + 4)
-                .ok_or_else(|| CodecError::Malformed("ZIP64 end record is truncated".into()))?;
-            let record_len = usize::try_from(record_size)
-                .ok()
-                .and_then(|size| record_start.checked_add(12)?.checked_add(size));
-            if record_len != Some(locator_start) {
-                return Err(CodecError::Malformed(
-                    "ZIP64 end record size is invalid".into(),
-                ));
-            }
-            let count = View::u64_le_at(bytes, record_start + 32)
-                .ok_or_else(|| CodecError::Malformed("ZIP64 entry count is truncated".into()))?;
-            let size = View::u64_le_at(bytes, record_start + 40)
-                .ok_or_else(|| CodecError::Malformed("ZIP64 directory size is truncated".into()))?;
-            let start = View::u64_le_at(bytes, record_start + 48).ok_or_else(|| {
-                CodecError::Malformed("ZIP64 directory offset is truncated".into())
-            })?;
-            (count, size, start, record_start)
-        } else {
-            let size = View::u32_le_at(bytes, end + 12)
-                .ok_or_else(|| CodecError::Malformed("ZIP directory size is truncated".into()))?;
-            let start = View::u32_le_at(bytes, end + 16)
-                .ok_or_else(|| CodecError::Malformed("ZIP directory offset is truncated".into()))?;
-            (u64::from(count), u64::from(size), u64::from(start), end)
-        }
+    let locator_start = end
+        .checked_sub(20)
+        .filter(|&start| bytes.get(start..start + 4) == Some(b"PK\x06\x07".as_slice()));
+    let (count, directory_size, directory_start_hint, directory_end) = if let Some(locator_start) =
+        locator_start
+    {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(locator_start),
+            "ZIP64 end record search",
+        )?;
+        let hint = View::u64_le_at(bytes, locator_start + 8)
+            .ok_or_else(|| CodecError::malformed("ZIP64 end locator is truncated"))?;
+        let record_start = probe::find_zip64(
+            ctx,
+            &mut std::io::Cursor::new(bytes),
+            0,
+            locator_start,
+            hint,
+        )?
+        .and_then(|offset| usize::try_from(offset).ok())
+        .ok_or_else(|| CodecError::Malformed("ZIP64 end record is absent".into()))?;
+        let count = View::u64_le_at(bytes, record_start + 32)
+            .ok_or_else(|| CodecError::Malformed("ZIP64 entry count is truncated".into()))?;
+        let size = View::u64_le_at(bytes, record_start + 40)
+            .ok_or_else(|| CodecError::Malformed("ZIP64 directory size is truncated".into()))?;
+        let start = View::u64_le_at(bytes, record_start + 48)
+            .ok_or_else(|| CodecError::Malformed("ZIP64 directory offset is truncated".into()))?;
+        (count, size, start, record_start)
     } else {
         let size = View::u32_le_at(bytes, end + 12)
             .ok_or_else(|| CodecError::Malformed("ZIP directory size is truncated".into()))?;
@@ -575,6 +774,7 @@ fn central_directory_inventory(
             .ok_or_else(|| CodecError::Malformed("ZIP central header is absent".into()))?;
         cadmpeg_core::decode::u64_from_index(start)
     };
+    let entries_start = offset;
     for _ in 0..count {
         ctx.charge_work(1, "ZIP central header preflight")?;
         if signature_at(bytes, offset) != Some(*b"PK\x01\x02") {
@@ -599,7 +799,36 @@ fn central_directory_inventory(
             ));
         }
     }
-    Ok(count)
+    let declared_end = entries_start
+        .checked_add(directory_size)
+        .ok_or_else(|| CodecError::malformed("ZIP declared directory end overflows"))?;
+    if offset < declared_end && signature_at(bytes, offset) == Some(*b"PK\x05\x05") {
+        let size = u64::from(u16_at(
+            bytes,
+            offset
+                + cadmpeg_core::decode::u64_from_index(
+                    crate::layout::digital_signature::DATA_LENGTH,
+                ),
+        )?);
+        offset = offset
+            .checked_add(cadmpeg_core::decode::u64_from_index(
+                crate::layout::digital_signature::LEN,
+            ))
+            .and_then(|end| end.checked_add(size))
+            .ok_or_else(|| CodecError::malformed("ZIP directory signature end overflows"))?;
+    }
+    if offset != declared_end {
+        return Err(CodecError::malformed(
+            "ZIP directory count and declared size disagree",
+        ));
+    }
+    let footer_bytes = cadmpeg_core::decode::u64_from_index(end + crate::layout::end_record::LEN)
+        .checked_sub(directory_end)
+        .ok_or_else(|| CodecError::malformed("ZIP end lies outside archive"))?;
+    let metadata_bytes = directory_size
+        .checked_add(footer_bytes)
+        .ok_or_else(|| CodecError::malformed("ZIP index metadata size overflows"))?;
+    Ok((count, metadata_bytes))
 }
 
 fn reject_duplicate_central_names(bytes: &[u8], central_start: u64) -> Result<usize, CodecError> {
@@ -655,7 +884,7 @@ pub enum ZipSpanRole {
     CompressedPayload(String),
     /// ZIP data descriptor for the named entry.
     DataDescriptor(String),
-    /// ZIP padding, optionally owned by an entry.
+    /// Uninterpreted ZIP bytes, including padding and unreadable local frames.
     Padding {
         /// Owning entry, when the padding belongs to one.
         entry: Option<String>,
@@ -807,6 +1036,21 @@ fn physical_ledger(
         }
 
         for (index, entry) in local_order.iter().enumerate() {
+            let Some(data_start) = entry.data_start else {
+                let range = entry.stored_range()?;
+                push_region(
+                    ctx,
+                    &mut regions,
+                    range.start,
+                    range.end,
+                    ZipSpanRole::Padding {
+                        entry: Some(
+                            ctx.copy_retained_text(&entry.name, "ZIP unreadable frame name")?,
+                        ),
+                    },
+                )?;
+                continue;
+            };
             if signature_at(bytes, entry.header_start) != Some(*b"PK\x03\x04") {
                 return Err(CodecError::malformed(format_args!(
                     "invalid local header signature for {}",
@@ -818,7 +1062,7 @@ fn physical_ledger(
             let extra_len = u64::from(u16_at(bytes, entry.header_start + 28)?);
             let name_end = fixed_end + name_len;
             let extra_end = name_end + extra_len;
-            if extra_end != entry.data_start {
+            if extra_end != data_start {
                 return Err(CodecError::malformed(format_args!(
                     "local header lengths disagree for {}",
                     entry.name
@@ -863,7 +1107,7 @@ fn physical_ledger(
             push_region(
                 ctx,
                 &mut regions,
-                entry.data_start,
+                data_start,
                 entry.data_end()?,
                 ZipSpanRole::CompressedPayload(
                     ctx.copy_retained_text(&entry.name, "ZIP ledger entry name")?,
@@ -920,7 +1164,7 @@ fn physical_ledger(
         }
 
         let mut central_order = ctx.collection_vec(entries.len(), "ZIP ledger central order")?;
-        central_order.extend(entries.iter());
+        central_order.extend(entries.iter().filter(|entry| !entry.is_recovered()));
         ctx.stable_sort_by(
             &mut central_order,
             |left, right| left.central_start.cmp(&right.central_start),
@@ -1197,6 +1441,69 @@ mod tests {
 
     use super::{ArchiveSnapshot, EntryRecord, PhysicalSpan, ZipCompression, ZipSpanRole};
 
+    #[test]
+    fn payload_admission_is_local_to_opened_members() {
+        let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+        for (name, data) in [
+            ("required", b"geometry".as_slice()),
+            ("optional", b"preview".as_slice()),
+        ] {
+            writer.start_file(name, options).expect("member");
+            writer.write_all(data).expect("payload");
+        }
+        let original = writer.finish().expect("archive").into_inner();
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, root) = DecodeContext::from_root_bytes(&original, &arena, &policy).expect("root");
+        let snapshot = ArchiveSnapshot::new(&ctx, root).expect("index");
+        let entry = snapshot.entry("optional").expect("optional");
+        let local = usize::try_from(entry.header_start).expect("offset");
+        let central = usize::try_from(entry.central_start).expect("offset");
+        let payload = usize::try_from(entry.data_start.expect("readable frame")).expect("offset");
+        for kind in [
+            "encrypted",
+            "unsupported",
+            "crc",
+            "local-signature",
+            "local-length",
+        ] {
+            let mut bytes = original.clone();
+            match kind {
+                "encrypted" => {
+                    cadmpeg_test_support::bytes::put_u16(&mut bytes, local + 6, 1);
+                    cadmpeg_test_support::bytes::put_u16(&mut bytes, central + 8, 1);
+                }
+                "unsupported" => {
+                    cadmpeg_test_support::bytes::put_u16(&mut bytes, local + 8, 12);
+                    cadmpeg_test_support::bytes::put_u16(&mut bytes, central + 10, 12);
+                }
+                "local-signature" => bytes[local] ^= 1,
+                "local-length" => {
+                    cadmpeg_test_support::bytes::put_u16(&mut bytes, local + 26, u16::MAX);
+                }
+                _ => bytes[payload] ^= 1,
+            }
+            let arena = DecodeArena::new();
+            let (ctx, root) =
+                DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+            let snapshot = ArchiveSnapshot::new(&ctx, root)
+                .expect("bounded index survives optional payload defect");
+            assert_eq!(
+                snapshot
+                    .open(&ctx, "required")
+                    .expect("independent member")
+                    .window(),
+                b"geometry"
+            );
+            assert!(snapshot.open(&ctx, "optional").is_err(), "{kind}");
+            assert!(!snapshot
+                .physical_ledger(&ctx)
+                .expect("physical framing")
+                .is_empty());
+        }
+    }
+
     fn summary_refuses(dimension: ResourceDimension, limit: u64, operation: &str) {
         let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
         writer
@@ -1415,13 +1722,20 @@ mod tests {
         let entry = EntryRecord {
             name: "empty".to_owned(),
             compression: ZipCompression::Stored,
+            encrypted: false,
             crc32: u32::from_le_bytes(signature),
             compressed_size: 0,
             uncompressed_size: 0,
             header_start: 0,
-            data_start: 30,
+            data_start: Some(30),
             central_start: 42,
+            declaration: super::Declaration::Central(cadmpeg_core::decode::ByteRange {
+                start: 42,
+                end: 42,
+            }),
             utf8_name: false,
+            local_header_error: None,
+            unreadable_range: None,
         };
         assert_eq!(
             super::parse_data_descriptor(&bytes, &entry, 42)
@@ -1640,7 +1954,11 @@ mod tests {
             + "header_offset".len()
             + entry.header_start.to_string().len()
             + "data_offset".len()
-            + entry.data_start.to_string().len()
+            + entry
+                .data_start
+                .expect("readable payload")
+                .to_string()
+                .len()
             + "central_header_offset".len()
             + entry.central_start.to_string().len();
         policy.limits.max_retained_bytes += cadmpeg_core::decode::u64_from_index(attribute_bytes);
@@ -1842,12 +2160,18 @@ mod tests {
         for probe in [false, true] {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
-            policy.limits.max_materialized_bytes =
-                64 * cadmpeg_core::decode::u64_from_index(bytes.len());
+            policy.limits.max_materialized_bytes = 64
+                * (u64::from(
+                    View::u32_le_at(&bytes, bytes.len() - 22 + 12).expect("central size"),
+                ) + 22);
             let (ctx, root) =
                 DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
             if probe {
-                assert!(ArchiveSnapshot::contains_name(&ctx, root, "stored.bin").expect("probe"));
+                assert!(
+                    ArchiveSnapshot::contains_matching_name(&ctx, root, |name| name
+                        == "stored.bin")
+                    .expect("probe")
+                );
             } else {
                 assert_eq!(
                     ArchiveSnapshot::new(&ctx, root)
@@ -1864,7 +2188,8 @@ mod tests {
             let (ctx, root) =
                 DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
             let refused = if probe {
-                ArchiveSnapshot::contains_name(&ctx, root, "stored.bin").map(|_| ())
+                ArchiveSnapshot::contains_matching_name(&ctx, root, |name| name == "stored.bin")
+                    .map(|_| ())
             } else {
                 ArchiveSnapshot::new(&ctx, root).map(|_| ())
             };
@@ -1876,7 +2201,10 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 0;
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        assert!(ArchiveSnapshot::contains_name(&ctx, root, "stored.bin").expect("names are scoped"));
+        assert!(
+            ArchiveSnapshot::contains_matching_name(&ctx, root, |name| name == "stored.bin")
+                .expect("names are scoped")
+        );
     }
 
     #[test]
@@ -1997,6 +2325,20 @@ mod tests {
         assert_eq!(
             ArchiveSnapshot::new(&ctx, root)
                 .expect("directory remains readable")
+                .entries()
+                .len(),
+            1
+        );
+        let end = end + 9;
+        let size = View::u32_le_at(&bytes, end + 12).expect("directory size");
+        cadmpeg_test_support::bytes::put_u32(&mut bytes, end + 12, size + 9);
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("signed archive fits service profile");
+        assert_eq!(
+            ArchiveSnapshot::new(&ctx, root)
+                .expect("declared directory size includes its digital signature")
                 .entries()
                 .len(),
             1
@@ -2210,7 +2552,7 @@ mod tests {
         let first = ArchiveSnapshot::new(&ctx, root).expect("first archive snapshot");
         let second = ArchiveSnapshot::new(&ctx, root).expect("second archive snapshot");
         let mut detached = second.entry("stored.bin").expect("entry exists").clone();
-        detached.data_start = u64::MAX;
+        detached.data_start = Some(u64::MAX);
         detached.crc32 = 0;
         assert_eq!(
             first

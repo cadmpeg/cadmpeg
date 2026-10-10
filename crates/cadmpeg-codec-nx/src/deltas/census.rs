@@ -236,17 +236,13 @@ pub(crate) fn walk(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Census, Cod
             }
             referenced_value_offsets = Some(offsets);
         }
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(
-                referenced_value_offsets.as_ref().map_or(0, BTreeSet::len),
-            ),
-            "resolve NX referenced offset",
+        let value_owned = value_is_owned(
+            ctx,
+            kind,
+            offset,
+            value_boundary,
+            referenced_value_offsets.as_ref(),
         )?;
-        let value_owned = !is_value_family(kind)
-            || value_boundary
-            || referenced_value_offsets
-                .as_ref()
-                .is_some_and(|offsets| offsets.contains(&offset));
         if !value_owned {
             if let Some((parsed_kind, _, byte_len)) =
                 crate::parasolid::value_records::entity_value_record_identity_at(
@@ -317,70 +313,123 @@ fn populate_gap_events(
     census: &mut Census,
 ) -> Result<usize, CodecError> {
     let mut admitted_bytes = 0;
+    let mut covered = merged_event_spans(ctx, census, true)?;
     loop {
-        let covered_before = merged_event_spans(ctx, census, true)?
-            .into_iter()
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(covered.len()),
+            "count NX deltas covered bytes",
+        )?;
+        let covered_before = covered
+            .iter()
+            .copied()
             .map(|(start, end)| end - start)
             .sum::<usize>();
 
-        let lanes = tagged_reference_lanes(ctx, stream, census)?;
+        let lanes = tagged_reference_lanes(ctx, stream, &covered)?;
+        extend_covered_spans(
+            ctx,
+            &mut covered,
+            lanes.iter().map(|event| (event.offset, event.end)),
+        )?;
         ctx.extend_vec(
             &mut census.events.tagged_reference_lanes,
             lanes,
             "NX tagged reference lanes",
         )?;
 
-        let maps = reference_type_maps(ctx, stream, census)?;
+        let maps = reference_type_maps(ctx, stream, census, &covered)?;
+        extend_covered_spans(
+            ctx,
+            &mut covered,
+            maps.iter().map(|event| (event.offset, event.end)),
+        )?;
         ctx.extend_vec(
             &mut census.events.reference_type_maps,
             maps,
             "NX reference type maps",
         )?;
 
-        let state_packets = reference_state_packets(ctx, stream, census)?;
+        let state_packets = reference_state_packets(ctx, stream, &covered)?;
+        extend_covered_spans(
+            ctx,
+            &mut covered,
+            state_packets.iter().map(|event| (event.offset, event.end)),
+        )?;
         ctx.extend_vec(
             &mut census.events.reference_state_packets,
             state_packets,
             "NX reference state packets",
         )?;
 
-        let preambles = schema_reference_preambles(ctx, stream, census)?;
+        let preambles = schema_reference_preambles(ctx, stream, &covered)?;
+        extend_covered_spans(
+            ctx,
+            &mut covered,
+            preambles.iter().map(|event| (event.offset, event.end)),
+        )?;
         ctx.extend_vec(
             &mut census.events.schema_reference_preambles,
             preambles,
             "NX schema reference preambles",
         )?;
 
-        let declarations = inline_schema_declarations(ctx, stream, census)?;
+        let declarations = inline_schema_declarations(ctx, stream, &covered)?;
+        extend_covered_spans(
+            ctx,
+            &mut covered,
+            declarations.iter().map(|event| (event.offset, event.end)),
+        )?;
         ctx.extend_vec(
             &mut census.events.inline_schema_declarations,
             declarations,
             "NX inline schema declarations",
         )?;
 
-        let body_states = inline_body_states(ctx, stream, census)?;
+        let body_states = inline_body_states(ctx, stream, census, &covered)?;
+        extend_covered_spans(
+            ctx,
+            &mut covered,
+            body_states.iter().map(|event| (event.offset, event.end)),
+        )?;
         ctx.extend_vec(
             &mut census.events.inline_body_states,
             body_states,
             "NX inline body states",
         )?;
 
-        let marker_packets = reference_marker_packets(ctx, stream, census)?;
+        let marker_packets = reference_marker_packets(ctx, stream, &covered)?;
+        extend_covered_spans(
+            ctx,
+            &mut covered,
+            marker_packets.iter().map(|event| (event.offset, event.end)),
+        )?;
         ctx.extend_vec(
             &mut census.events.reference_marker_packets,
             marker_packets,
             "NX reference marker packets",
         )?;
 
-        let type_150_packets = type_150_state_packets(ctx, stream, census)?;
+        let type_150_packets = type_150_state_packets(ctx, stream, &covered)?;
+        extend_covered_spans(
+            ctx,
+            &mut covered,
+            type_150_packets
+                .iter()
+                .map(|event| (event.offset, event.end)),
+        )?;
         ctx.extend_vec(
             &mut census.events.type_150_state_packets,
             type_150_packets,
             "NX type 150 state packets",
         )?;
 
-        let covered_after = merged_event_spans(ctx, census, true)?
-            .into_iter()
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(covered.len()),
+            "count NX deltas covered bytes",
+        )?;
+        let covered_after = covered
+            .iter()
+            .copied()
             .map(|(start, end)| end - start)
             .sum::<usize>();
         let added_bytes = covered_after - covered_before;
@@ -441,13 +490,38 @@ fn populate_gap_events(
     Ok(admitted_bytes)
 }
 
+fn value_is_owned(
+    ctx: &DecodeContext<'_>,
+    kind: u16,
+    offset: usize,
+    value_boundary: bool,
+    referenced_offsets: Option<&BTreeSet<usize>>,
+) -> Result<bool, CodecError> {
+    ctx.charge_work(0, "resolve NX referenced offset")?;
+    if !is_value_family(kind) || value_boundary {
+        return Ok(true);
+    }
+    let Some(offsets) = referenced_offsets else {
+        return Ok(false);
+    };
+    // Twelve comparisons per binary level bound the eleven-key B-tree nodes.
+    let comparisons = 12 * u64::from(usize::BITS - offsets.len().leading_zeros()) + 1;
+    ctx.charge_work(comparisons, "resolve NX referenced offset")?;
+    Ok(offsets.contains(&offset))
+}
+
 fn populate_body_revision_state_tails(
     ctx: &DecodeContext<'_>,
     stream: &[u8],
     census: &mut Census,
 ) -> Result<usize, CodecError> {
+    ctx.charge_work(0, "NX body revision state tail boundary")?;
+    if census.body_revisions.is_empty() {
+        return Ok(0);
+    }
     let mut byte_len = 0;
-    for (start, end) in uncovered_spans(ctx, stream.len(), census, true)? {
+    let covered = merged_event_spans(ctx, census, true)?;
+    for (start, end) in uncovered_spans(ctx, stream.len(), &covered)? {
         if let Some(revision) = census
             .events
             .body_revisions
@@ -459,4 +533,183 @@ fn populate_body_revision_state_tails(
         }
     }
     Ok(byte_len)
+}
+
+/// Merge newly admitted spans into an already sorted, disjoint coverage union.
+/// Only the new batch needs sorting; existing record spans remain indexed.
+fn extend_covered_spans(
+    ctx: &DecodeContext<'_>,
+    covered: &mut Vec<(usize, usize)>,
+    spans: impl Iterator<Item = (usize, usize)>,
+) -> Result<(), CodecError> {
+    ctx.charge_work(0, "merge NX deltas coverage")?;
+    let mut added = Vec::new();
+    for span in spans {
+        ctx.push_vec(&mut added, span, "NX added deltas spans")?;
+    }
+    if added.is_empty() {
+        return Ok(());
+    }
+    ctx.sort_unstable_by(&mut added, Ord::cmp, |_| 0, "sort NX added deltas spans")?;
+    let capacity = covered.len().checked_add(added.len()).ok_or_else(|| {
+        ctx.refuse_codec_limit("NX merged deltas coverage", u64::MAX - 1, u64::MAX)
+    })?;
+    let mut merged = ctx.collection_vec(capacity, "NX merged deltas coverage")?;
+    let mut previous = covered.iter().copied().peekable();
+    let mut additions = added.into_iter().peekable();
+    loop {
+        let span = match (previous.peek(), additions.peek()) {
+            (Some(left), Some(right)) if left <= right => previous.next(),
+            (_, Some(_)) => additions.next(),
+            (Some(_), None) => previous.next(),
+            (None, None) => break,
+        };
+        let Some((start, end)) = span else {
+            break;
+        };
+        ctx.charge_work(1, "merge NX deltas coverage")?;
+        if let Some((_, previous_end)) = merged.last_mut().filter(|(_, end)| start <= *end) {
+            *previous_end = (*previous_end).max(end);
+        } else {
+            merged.push((start, end));
+        }
+    }
+    *covered = merged;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{extend_covered_spans, value_is_owned};
+    use std::collections::BTreeSet;
+
+    #[test]
+    fn no_body_revisions_do_not_build_unrelated_event_coverage() {
+        let mut census = super::Census {
+            events: super::CensusEvents::default(),
+            bytes_decoded: 6000,
+        };
+        for index in 0..1000 {
+            census.events.tombstones.push(super::Tombstone {
+                kind: super::RecordKind::try_from(12).expect("BODY kind"),
+                xmt: u32::try_from(index + 2).expect("identity"),
+                offset: 6 * index,
+            });
+        }
+        let before = census.clone();
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_work_units = 0;
+                policy.limits.max_collection_items = 0;
+            },
+            |ctx| {
+                assert_eq!(
+                    super::populate_body_revision_state_tails(ctx, &[], &mut census)
+                        .expect("no BODY revision needs a state tail"),
+                    0
+                );
+                assert!(ctx.resource_refusal().is_none());
+            },
+        );
+        assert_eq!(census, before);
+    }
+
+    #[test]
+    fn empty_body_revision_completion_preserves_the_first_refusal() {
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_work_units = 0,
+            |ctx| {
+                ctx.charge_work(1, "body revision boundary test")
+                    .expect_err("work refusal");
+                let first = ctx.resource_refusal().expect("first refusal");
+                let mut census = super::Census {
+                    events: super::CensusEvents::default(),
+                    bytes_decoded: 0,
+                };
+                assert!(matches!(
+                    super::populate_body_revision_state_tails(ctx, &[], &mut census),
+                    Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == first
+                ));
+            },
+        );
+    }
+
+    #[test]
+    fn referenced_value_membership_uses_the_offset_index() {
+        let offsets = (0..10_000).map(|index| 4 * index).collect::<BTreeSet<_>>();
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_work_units = 400,
+            |ctx| {
+                assert!(value_is_owned(ctx, 98, 32, false, Some(&offsets)).unwrap());
+                assert!(!value_is_owned(ctx, 98, 33, false, Some(&offsets)).unwrap());
+                assert!(ctx.resource_refusal().is_none());
+            },
+        );
+    }
+
+    #[test]
+    fn known_value_boundaries_and_nonvalues_do_not_search_references() {
+        let offsets = BTreeSet::from([32]);
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_work_units = 0,
+            |ctx| {
+                assert!(value_is_owned(ctx, 14, 33, false, Some(&offsets)).unwrap());
+                assert!(value_is_owned(ctx, 98, 33, true, Some(&offsets)).unwrap());
+            },
+        );
+    }
+
+    #[test]
+    fn referenced_value_membership_preserves_work_refusals() {
+        let offsets = BTreeSet::from([32]);
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_work_units = 0,
+            |ctx| {
+                let error = value_is_owned(ctx, 98, 32, false, Some(&offsets))
+                    .expect_err("indexed membership remains charged");
+                assert!(matches!(
+                    error,
+                    cadmpeg_core::CodecError::ResourceLimit(limit)
+                        if limit.operation == "resolve NX referenced offset"
+                            && ctx.resource_refusal() == Some(limit)
+                ));
+            },
+        );
+    }
+
+    #[test]
+    fn coverage_merges_overlaps_adjacency_and_duplicates() {
+        crate::test_support::with_decode_context(|ctx| {
+            let mut covered = vec![(1, 3), (8, 10)];
+            extend_covered_spans(
+                ctx,
+                &mut covered,
+                [(10, 12), (4, 8), (2, 5), (2, 5)].into_iter(),
+            )
+            .expect("admitted coverage merge");
+            assert_eq!(covered, [(1, 12)]);
+        });
+    }
+
+    #[test]
+    fn adding_a_span_does_not_sort_existing_coverage_again() {
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_work_units = 10_000,
+            |ctx| {
+                let mut covered = (0..1000).map(|index| (4 * index, 4 * index + 1)).collect();
+                extend_covered_spans(ctx, &mut covered, [(2, 3)].into_iter())
+                    .expect("one sorted addition and a linear merge");
+                assert_eq!(covered.len(), 1001);
+                assert_eq!(&covered[..3], [(0, 1), (2, 3), (4, 5)]);
+                assert_eq!(covered.last(), Some(&(3996, 3997)));
+                assert!(ctx.resource_refusal().is_none());
+            },
+        );
+    }
 }

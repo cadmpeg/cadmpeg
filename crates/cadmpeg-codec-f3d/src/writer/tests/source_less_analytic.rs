@@ -1131,6 +1131,7 @@ fn generated_source_less_refuses_auxiliary_geometry_and_source_identity_loss() {
         .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
         .unwrap();
     let association = SourceObjectAssociation {
+        geometry_role: None,
         format: cadmpeg_ir::CodecFormat::Step,
         object_id: cadmpeg_core::text::NonBlankString::new("object-1")
             .expect("nonempty source identity"),
@@ -1152,6 +1153,7 @@ fn generated_source_less_refuses_auxiliary_geometry_and_source_identity_loss() {
 
     source_less.model.surfaces[0].source_object = None;
     source_less.model.curves.push(cadmpeg_ir::geometry::Curve {
+        parameter_range: None,
         id: "generated:test:associated-curve#0"
             .try_into()
             .expect("valid identity"),
@@ -1374,6 +1376,7 @@ fn generated_source_less_planar_face_writes_straight_edge_carriers() {
             cadmpeg_ir::math::Vector3::new(delta.x / length, delta.y / length, delta.z / length);
         let id = CurveId::mint(format!("generated:test:curve#{index}")).expect("identity grammar");
         source_less.model.curves.push(Curve {
+            parameter_range: None,
             id: id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(start, direction).unwrap(),
@@ -1453,6 +1456,7 @@ fn generated_source_less_planar_face_writes_circle_edge_carrier() {
         .unwrap(),
     ));
     source_less.model.curves.push(Curve {
+        parameter_range: None,
         id: curve_id.clone(),
         geometry: expected.clone(),
         source_object: None,
@@ -1535,6 +1539,7 @@ fn generated_source_less_planar_face_writes_ellipse_edge_carrier() {
         .unwrap(),
     ));
     source_less.model.curves.push(Curve {
+        parameter_range: None,
         id: curve_id.clone(),
         geometry: expected.clone(),
         source_object: None,
@@ -1734,6 +1739,7 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
             tolerance: None,
         });
         source_less.model.curves.push(Curve {
+            parameter_range: None,
             id: curves[index].clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::try_new(

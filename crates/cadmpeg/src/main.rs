@@ -67,6 +67,9 @@ struct DecodeArgs {
     /// (tight ceilings for unattended use).
     #[arg(long, value_enum, default_value_t = LimitProfile::Desktop)]
     limits: LimitProfile,
+    /// Override the profile's maximum number of physical input bytes.
+    #[arg(long)]
+    max_input_bytes: Option<u64>,
 }
 
 /// Which caller-owned resource-limit profile a decode runs under.
@@ -80,7 +83,7 @@ enum LimitProfile {
 
 impl DecodeArgs {
     fn options(&self) -> cadmpeg_ir::DecodeOptions {
-        let limits = self.limits.limits();
+        let limits = self.limits.limits(self.max_input_bytes);
         let mode = if self.no_salvage {
             cadmpeg_core::decode::DecodeMode::Strict
         } else {
@@ -94,11 +97,15 @@ impl DecodeArgs {
 }
 
 impl LimitProfile {
-    const fn limits(self) -> cadmpeg_core::decode::ResourceLimits {
-        match self {
+    const fn limits(self, max_input_bytes: Option<u64>) -> cadmpeg_core::decode::ResourceLimits {
+        let mut limits = match self {
             LimitProfile::Desktop => cadmpeg_core::decode::ResourceLimits::desktop(),
             LimitProfile::Service => cadmpeg_core::decode::ResourceLimits::service(),
+        };
+        if let Some(max_input_bytes) = max_input_bytes {
+            limits.max_input_bytes = max_input_bytes;
         }
+        limits
     }
 }
 
@@ -309,7 +316,7 @@ fn main() -> ExitCode {
             args.input_format,
             args.json,
             args.report.0.as_ref(),
-            args.limits.limits(),
+            args.limits.limits(args.max_input_bytes),
         )
         .map(|()| ExitCode::SUCCESS),
         Command::Dump {

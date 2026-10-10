@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Holes construction records and extraction.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use super::feature_input_blocks;
 use super::format_feature_history_id;
 
@@ -152,7 +154,7 @@ struct FeatureSimpleHoleRepeatedScalarLaneWire {
     id: String,
     operation_label: String,
     values: Vec<f64>,
-    raw_values: Vec<[u8; 8]>,
+    raw_values: Vec<NativeBytes<[u8; 8]>>,
     first_witness_offsets: Vec<u64>,
     second_witness_offsets: Vec<u64>,
 }
@@ -168,7 +170,12 @@ impl From<FeatureSimpleHoleRepeatedScalarLane> for FeatureSimpleHoleRepeatedScal
                 .iter()
                 .map(|token| token.scalar.value().get())
                 .collect(),
-            raw_values: lane.values.iter().map(|token| token.scalar.raw()).collect(),
+            raw_values: lane
+                .values
+                .iter()
+                .map(|token| token.scalar.raw())
+                .map(Into::into)
+                .collect(),
             first_witness_offsets: lane
                 .values
                 .iter()
@@ -201,7 +208,7 @@ impl TryFrom<FeatureSimpleHoleRepeatedScalarLaneWire> for FeatureSimpleHoleRepea
             .zip(wire.second_witness_offsets)
             .map(|(((value, raw), first), second)| {
                 Ok(RepeatedScalar {
-                    scalar: ShiftedBinary64::from_wire(value, raw)
+                    scalar: ShiftedBinary64::from_wire(value, *raw)
                         .map_err(|error| format!("values/raw_values: {error}"))?,
                     witness_offsets: [first, second],
                 })
@@ -255,14 +262,14 @@ struct FeatureSimpleHoleRepeatedScalarLaneBlockReferencesWire {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_first_reference_prefix"
     )]
-    first_reference_prefix: Option<[u8; 8]>,
+    first_reference_prefix: Option<NativeBytes<[u8; 8]>>,
     /// Exact optional wrapper before the repeated reference pair.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_second_reference_prefix"
     )]
-    second_reference_prefix: Option<[u8; 8]>,
+    second_reference_prefix: Option<NativeBytes<[u8; 8]>>,
     /// Absolute offsets of the first pair of tagged-index tokens.
     first_reference_offsets: [u64; 2],
     /// Absolute offsets of the repeated pair of tagged-index tokens.
@@ -295,14 +302,16 @@ impl From<FeatureSimpleHoleRepeatedScalarLaneBlockReferences>
                 .second
                 .references
                 .map(|reference| reference.data_block),
-            first_reference_prefix: record
+            first_reference_prefix: (record
                 .first
                 .wrapped
-                .then_some(crate::om::simple_hole_references::FIRST_PREFIX),
-            second_reference_prefix: record
+                .then_some(crate::om::simple_hole_references::FIRST_PREFIX))
+            .map(Into::into),
+            second_reference_prefix: (record
                 .second
                 .wrapped
-                .then_some(crate::om::simple_hole_references::SECOND_PREFIX),
+                .then_some(crate::om::simple_hole_references::SECOND_PREFIX))
+            .map(Into::into),
         }
     }
 }
@@ -515,7 +524,7 @@ struct FeatureHolePackageConstructionGroupLaneWire {
     /// Ordered serialized offset-store block indices.
     object_indices: [u32; 4],
     /// Exact variable-width object-index tokens.
-    raw_object_indices: [Vec<u8>; 4],
+    raw_object_indices: [NativeBytes<Vec<u8>>; 4],
     /// Uniquely resolved offset-store blocks.
     data_blocks: [String; 4],
     /// Payload-relative offset of the lane prefix.
@@ -538,10 +547,11 @@ impl From<FeatureHolePackageConstructionGroupLane> for FeatureHolePackageConstru
                 .references
                 .each_ref()
                 .map(|reference| reference.token.value()),
-            raw_object_indices: value
+            raw_object_indices: (value
                 .references
                 .each_ref()
-                .map(|reference| reference.token.raw().to_vec()),
+                .map(|reference| reference.token.raw().to_vec()))
+            .map(Into::into),
             data_blocks: value
                 .references
                 .each_ref()
@@ -1727,11 +1737,11 @@ mod tests;
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(
     deserialize_first_reference_prefix,
-    [u8; 8],
+    cadmpeg_ir::native::bytes::NativeBytes<[u8; 8]>,
     "first_reference_prefix"
 );
 cadmpeg_core::named_optional_field!(
     deserialize_second_reference_prefix,
-    [u8; 8],
+    cadmpeg_ir::native::bytes::NativeBytes<[u8; 8]>,
     "second_reference_prefix"
 );

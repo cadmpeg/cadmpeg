@@ -9,7 +9,7 @@ use super::{HeadOwner, ObjectRecord};
 fn payload_field_borrowed_wire_preserves_json_bytes() {
     let fields = [
         super::PayloadField::Blob {
-            bytes: vec![1, 2, 3],
+            bytes: vec![1, 2, 3].into(),
             offset: 4,
         },
         super::PayloadField::List {
@@ -40,7 +40,7 @@ fn payload_field_retained_limit_refuses_json_record() {
         field: &'a super::PayloadField,
     }
     let field = super::PayloadField::Blob {
-        bytes: vec![1, 2, 3],
+        bytes: vec![1, 2, 3].into(),
         offset: 4,
     };
 
@@ -110,7 +110,7 @@ fn native_payload_copy_refuses_nested_retained_and_collection_limits() {
     let payload = ObjectPayload {
         size: 2,
         fields: vec![PayloadField::Blob {
-            bytes: vec![0xa5, 0x5a],
+            bytes: vec![0xa5, 0x5a].into(),
             offset: 0,
         }],
     };
@@ -1709,7 +1709,7 @@ fn suffix_bearing_record() -> ObjectRecord {
                 fields: vec![
                     atom(44, 0),
                     PayloadField::Blob {
-                        bytes: vec![0; 59],
+                        bytes: vec![0; 59].into(),
                         offset: 1,
                     },
                     atom(5, 65),
@@ -1774,7 +1774,7 @@ fn payload_field_wire_rejects_a_declared_len_disagreeing_with_the_blob() {
     use crate::object_graph::PayloadField;
 
     let field = PayloadField::Blob {
-        bytes: vec![1, 2, 3],
+        bytes: vec![1, 2, 3].into(),
         offset: 4,
     };
     let mut wire = serde_json::to_value(&field).unwrap();

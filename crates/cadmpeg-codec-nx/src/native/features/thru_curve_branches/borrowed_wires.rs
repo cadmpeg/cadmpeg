@@ -4,6 +4,7 @@
 use super::FeatureThruCurveConstructionBranchGroup;
 use crate::om::thru_curve_branches::ThruCurveBranch;
 use crate::om::thru_curve_state::ThruCurveBranchItems;
+use cadmpeg_ir::native::bytes::NativeBytes;
 use serde::ser::{SerializeMap, SerializeSeq};
 use serde::Serialize;
 
@@ -28,15 +29,15 @@ impl Serialize for StateLaneView<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match self.0 {
             ThruCurveBranchItems::Standard(members) => {
-                [0_u8; 258][..members.len() + 4].serialize(serializer)
+                NativeBytes::from(&[0_u8; 258][..members.len() + 4]).serialize(serializer)
             }
             ThruCurveBranchItems::Extended {
                 values: [first, second],
                 ..
-            } => [
+            } => NativeBytes::from([
                 0, 0, 0, 0, 1, 5, first[0], first[1], first[2], first[3], 1, 5, second[0],
                 second[1], second[2], second[3], 0, 0,
-            ]
+            ])
             .serialize(serializer),
         }
     }

@@ -91,7 +91,7 @@ fn duplicate_link_declared_entity_handle_selects_valid_arc_carrier() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: vec![FeatureInputClass {
             id: "class".into(),
             parent: "lane".into(),

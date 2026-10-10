@@ -134,6 +134,10 @@ pub(super) fn try_decode_geometry(
     admitted_entities: &mut u64,
 ) -> Result<Option<GeometryDecode>, CodecError> {
     let mut ir = CadIr::empty();
+    // This scope appends carriers and preserves their identity and construction links.
+    let mut procedural_admission =
+        cadmpeg_ir::document::procedural::ProceduralAdmission::new(ctx, &ir.model)?;
+
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
     let mut stream_unknowns = Vec::new();
@@ -314,7 +318,7 @@ pub(super) fn try_decode_geometry(
         } = parsed.parse_nurbs(ctx, si)?;
         for refusal in nurbs_refusals {
             ctx.reserve_vec(&mut carrier_refusals, 1, "nx carrier refusal losses")?;
-            super::charge_loss_code(ctx, NxLossCode::CarrierLanesUnpaired)?;
+            crate::loss::charge_loss_code(ctx, NxLossCode::CarrierLanesUnpaired)?;
             carrier_refusals.push(NxLossCode::CarrierLanesUnpaired.note(ctx.format_retained(
                 format_args!(
                     "parasolid#{si} {} at byte {} states no carrier: {}",
@@ -502,6 +506,7 @@ pub(super) fn try_decode_geometry(
                         cache: None,
                     },
                     source_object: Some(SourceObjectAssociation {
+                        geometry_role: None,
                         format: cadmpeg_ir::CodecFormat::Nx,
                         object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
                             format_args!("nx:s{si}:offset-surface-record#{}", offset.xmt),
@@ -549,8 +554,8 @@ pub(super) fn try_decode_geometry(
             }
             let procedural = ProceduralSurface::new(procedural_id, definition, None);
 
-            let _attached = ir.model.add_procedural_surface(
-                ctx,
+            let _attached = procedural_admission.add_surface(
+                &mut ir.model,
                 &surface_id.try_clone_for_decode(ctx, "nx offset construction owner")?,
                 procedural,
             )?;
@@ -586,6 +591,7 @@ pub(super) fn try_decode_geometry(
                     cache: None,
                 },
                 source_object: Some(SourceObjectAssociation {
+                    geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Nx,
                     object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
                         format_args!("nx:s{si}:blend-surface-record#{}", blend.xmt),
@@ -611,8 +617,8 @@ pub(super) fn try_decode_geometry(
             annotations.derived(ctx, procedural_id.as_str(), "definition")?;
             let procedural_index = ir.model.procedural_surfaces.len();
 
-            let attached = ir.model.add_procedural_surface(
-                ctx,
+            let attached = procedural_admission.add_surface(
+                &mut ir.model,
                 &surface_id.try_clone_for_decode(ctx, "nx blend construction owner")?,
                 ProceduralSurface::new(
                     procedural_id,
@@ -711,6 +717,7 @@ pub(super) fn try_decode_geometry(
             annotations.derived(ctx, id.as_str(), "geometry")?;
             ctx.reserve_vec(&mut ir.model.curves, 1, "nx geometry curves")?;
             ir.model.curves.push(Curve {
+                parameter_range: None,
                 id: id.try_clone_for_decode(ctx, "nx geometry curve identity")?,
                 geometry,
                 source_object: None,
@@ -731,6 +738,7 @@ pub(super) fn try_decode_geometry(
             annotations.derived(ctx, id.as_str(), "geometry")?;
             ctx.reserve_vec(&mut ir.model.curves, 1, "nx NURBS curves")?;
             ir.model.curves.push(Curve {
+                parameter_range: None,
                 id: id.try_clone_for_decode(ctx, "nx NURBS curve identity")?,
                 geometry: crv.geometry,
                 source_object: None,
@@ -967,6 +975,7 @@ pub(super) fn try_decode_geometry(
             }
             ctx.reserve_vec(&mut ir.model.curves, 1, "nx intersection curves")?;
             ir.model.curves.push(Curve {
+                parameter_range: None,
                 id: curve_id.try_clone_for_decode(ctx, "nx intersection curve identity")?,
                 geometry: if let Some(charted) = charted {
                     CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -998,6 +1007,7 @@ pub(super) fn try_decode_geometry(
                     })
                 },
                 source_object: Some(SourceObjectAssociation {
+                    geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Nx,
                     object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
                         format_args!("nx:s{si}:intersection-record#{}", construction.xmt),
@@ -1103,8 +1113,8 @@ pub(super) fn try_decode_geometry(
             }
             let procedural = ProceduralCurve::new(procedural_id, definition);
 
-            let _attached = ir.model.add_procedural_curve(
-                ctx,
+            let _attached = procedural_admission.add_curve(
+                &mut ir.model,
                 &curve_id.try_clone_for_decode(ctx, "nx intersection owner identity")?,
                 procedural,
             )?;
@@ -1485,6 +1495,7 @@ pub(super) fn try_decode_geometry(
         stream_unknowns.push((si, unknown_index));
     }
 
+    drop(procedural_admission);
     intersection_index.complete_from_model(ctx, &mut ir)?;
     let mut completion_sources =
         ctx.collection_vec(completion_streams.len(), "nx completion sources")?;
@@ -1510,7 +1521,7 @@ pub(super) fn try_decode_geometry(
         return Ok(None);
     }
 
-    ir.source = Some(source_meta(ctx, scan, dialects)?);
+    ir.source = Some(source_meta(ctx, scan, dialects, Some(&parsed))?);
 
     ctx.admit_entities(
         cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
@@ -1818,7 +1829,7 @@ fn retain_live_annotations(
     macro_rules! add_ids {
         ($($arena:expr),+ $(,)?) => {
             $(for entity in &$arena {
-                ctx.insert_btree_set(&mut ids, ctx.copy_retained_text(entity.id.as_str(), "nx live annotation identity text")?, "nx live annotation identities")?;
+                ctx.insert_btree_set(&mut ids, entity.id.as_str(), "nx live annotation identities")?;
             })+
         };
     }
@@ -1842,33 +1853,46 @@ fn retain_live_annotations(
     for unknown in unknowns {
         ctx.insert_btree_set(
             &mut ids,
-            ctx.copy_retained_text(unknown.id().as_str(), "nx live annotation identity text")?,
+            unknown.id().as_str(),
             "nx live annotation identities",
         )?;
     }
-    let mut keep = |id: &str| {
-        let work = ids
-            .len()
-            .checked_add(1)
-            .and_then(|count| {
-                id.len()
-                    .checked_add(1)
-                    .and_then(|bytes| count.checked_mul(bytes))
-            })
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("nx annotation identity lookup", u64::MAX - 1, u64::MAX)
-            })?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(work),
-            "nx annotation identity lookup",
-        )?;
-        Ok(ids.contains(id))
-    };
-    annotations.retain_provenance(ctx, &mut keep)?;
+    let mut live_ids = ids.iter().peekable();
+    annotations.retain_provenance(ctx, |id| {
+        ordered_live_identity_contains(ctx, &mut live_ids, id)
+    })?;
     let mut builder = AnnotationBuilder::resume(std::mem::take(annotations));
-    builder.retain_exactness(ctx, keep)?;
+    let mut live_ids = ids.iter().peekable();
+    builder.retain_exactness(ctx, |id| {
+        ordered_live_identity_contains(ctx, &mut live_ids, id)
+    })?;
     *annotations = builder.build();
     Ok(())
+}
+
+/// Annotation retention visits B-tree keys in order. Advance the live identity
+/// cursor in that same order; each comparison is billed once, without copying
+/// model identities or restarting an indexed search for each annotation.
+fn ordered_live_identity_contains(
+    ctx: &DecodeContext<'_>,
+    live_ids: &mut std::iter::Peekable<std::collections::btree_set::Iter<'_, &str>>,
+    id: &str,
+) -> Result<bool, CodecError> {
+    loop {
+        let Some(&&live_id) = live_ids.peek() else {
+            ctx.charge_work(1, "nx annotation identity lookup")?;
+            return Ok(false);
+        };
+        let work = cadmpeg_core::decode::u64_from_index(live_id.len().min(id.len())) + 1;
+        ctx.charge_work(work, "nx annotation identity lookup")?;
+        match live_id.cmp(id) {
+            std::cmp::Ordering::Less => {
+                live_ids.next();
+            }
+            std::cmp::Ordering::Equal => return Ok(true),
+            std::cmp::Ordering::Greater => return Ok(false),
+        }
+    }
 }
 
 fn retain_live_unknown_links(

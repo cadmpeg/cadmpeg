@@ -7,7 +7,9 @@ use cadmpeg_core::decode::{u64_from_index, DecodeContext, DepthGuard};
 use cadmpeg_core::CodecError;
 
 use crate::document::CadIr;
-use crate::geometry::{ProceduralCurveDefinition, ProceduralSurfaceDefinition};
+use crate::geometry::{
+    ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition,
+};
 use crate::index::{identities::BorrowedIdentities, ModelIndex};
 use crate::report::{
     check::{Check, Finding},
@@ -153,11 +155,109 @@ struct Node<'ir> {
     visit: Visit,
 }
 
+/// Only carrier-to-construction associations are needed by the cycle graph.
+trait CarrierConstructions<'ir> {
+    fn curve(
+        &self,
+        ctx: &DecodeContext<'_>,
+        id: &str,
+    ) -> Result<Option<&'ir ProceduralCurve>, CodecError>;
+    fn surface(
+        &self,
+        ctx: &DecodeContext<'_>,
+        id: &str,
+    ) -> Result<Option<&'ir ProceduralSurface>, CodecError>;
+}
+
+impl<'ir> CarrierConstructions<'ir> for ModelIndex<'ir> {
+    fn curve(
+        &self,
+        ctx: &DecodeContext<'_>,
+        id: &str,
+    ) -> Result<Option<&'ir ProceduralCurve>, CodecError> {
+        Ok(self
+            .procedural_curves_for_curve(id, ctx)?
+            .and_then(|rows| rows.first().copied()))
+    }
+    fn surface(
+        &self,
+        ctx: &DecodeContext<'_>,
+        id: &str,
+    ) -> Result<Option<&'ir ProceduralSurface>, CodecError> {
+        Ok(self.procedural_surface_for_surface(id, ctx)?)
+    }
+}
+
+struct CycleIndex<'ctx, 'ir> {
+    curves: BorrowedIdentities<'ctx, 'ir, &'ir ProceduralCurve>,
+    surfaces: BorrowedIdentities<'ctx, 'ir, &'ir ProceduralSurface>,
+}
+
+impl<'ctx, 'ir> CycleIndex<'ctx, 'ir> {
+    fn build(ctx: &'ctx DecodeContext<'_>, ir: &'ir CadIr) -> Result<Self, CodecError> {
+        // The general index selects the first construction with an exact ID.
+        // BorrowedIdentities selects the last insertion, so reverse these rows.
+        let curves_by_id = BorrowedIdentities::build(ctx, |add| {
+            for row in ir.model.procedural_curves.iter().rev() {
+                add(row.id.as_str(), row)?;
+            }
+            Ok(())
+        })?;
+        let curves = BorrowedIdentities::<&ProceduralCurve>::build(ctx, |add| {
+            for carrier in ir.model.curves.iter().rev() {
+                ctx.charge_work(1, "cycle curve association scan")?;
+                if let Some(construction) = carrier.geometry.procedural_construction() {
+                    if let Some(row) = curves_by_id.get(ctx, construction.as_str())? {
+                        add(carrier.id.as_str(), row)?;
+                    }
+                }
+            }
+            Ok(())
+        })?;
+        drop(curves_by_id);
+        let surfaces_by_id = BorrowedIdentities::build(ctx, |add| {
+            for row in ir.model.procedural_surfaces.iter().rev() {
+                add(row.id.as_str(), row)?;
+            }
+            Ok(())
+        })?;
+        let surfaces = BorrowedIdentities::<&ProceduralSurface>::build(ctx, |add| {
+            for carrier in &ir.model.surfaces {
+                ctx.charge_work(1, "cycle surface association scan")?;
+                if let Some(construction) = carrier.geometry.procedural_construction() {
+                    if let Some(row) = surfaces_by_id.get(ctx, construction.as_str())? {
+                        add(carrier.id.as_str(), row)?;
+                    }
+                }
+            }
+            Ok(())
+        })?;
+        Ok(Self { curves, surfaces })
+    }
+}
+
+impl<'ir> CarrierConstructions<'ir> for CycleIndex<'_, 'ir> {
+    fn curve(
+        &self,
+        ctx: &DecodeContext<'_>,
+        id: &str,
+    ) -> Result<Option<&'ir ProceduralCurve>, CodecError> {
+        Ok(self.curves.get(ctx, id)?.copied())
+    }
+    fn surface(
+        &self,
+        ctx: &DecodeContext<'_>,
+        id: &str,
+    ) -> Result<Option<&'ir ProceduralSurface>, CodecError> {
+        Ok(self.surfaces.get(ctx, id)?.copied())
+    }
+}
+
 /// Walk the evaluator graph, stopping when the finding consumer asks to stop.
-fn walk_cycles(
+fn walk_cycles<'ir>(
     ctx: &DecodeContext<'_>,
-    ir: &CadIr,
-    index: &ModelIndex<'_>,
+    ir: &'ir CadIr,
+    index: &impl CarrierConstructions<'ir>,
     mut emit: impl FnMut(Finding) -> Result<bool, CodecError>,
 ) -> Result<(), CodecError> {
     let mut graph_storage = ctx.reserve_scoped(0, "cycle dependency graph")?;
@@ -165,10 +265,7 @@ fn walk_cycles(
         BorrowedIdentities::build(ctx, |add| {
             for curve in &ir.model.curves {
                 ctx.charge_work(1, "cycle carrier scan")?;
-                if let Some(procedural) = index
-                    .procedural_curves_for_curve(curve.id.as_str(), ctx)?
-                    .and_then(|rows| rows.first().copied())
-                {
+                if let Some(procedural) = index.curve(ctx, curve.id.as_str())? {
                     let dependencies = curve_dependencies(ctx, procedural.definition())?;
                     if !dependencies.is_empty() {
                         add(
@@ -183,9 +280,7 @@ fn walk_cycles(
             }
             for surface in &ir.model.surfaces {
                 ctx.charge_work(1, "cycle carrier scan")?;
-                if let Some(procedural) =
-                    index.procedural_surface_for_surface(surface.id.as_str(), ctx)?
-                {
+                if let Some(procedural) = index.surface(ctx, surface.id.as_str())? {
                     let dependencies = surface_dependencies(ctx, procedural.definition())?;
                     if !dependencies.is_empty() {
                         add(
@@ -306,7 +401,10 @@ pub(crate) fn admit_evaluation_cycles(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
 ) -> Result<(), CodecError> {
-    let index = ModelIndex::new_model_only(ir, ctx)?;
+    if ir.model.procedural_curves.is_empty() && ir.model.procedural_surfaces.is_empty() {
+        return ctx.charge_work(0, "cycle admission");
+    }
+    let index = CycleIndex::build(ctx, ir)?;
     walk_cycles(ctx, ir, &index, |finding| {
         Err(CodecError::Malformed(finding.message))
     })

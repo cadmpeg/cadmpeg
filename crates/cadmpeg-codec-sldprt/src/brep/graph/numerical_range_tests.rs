@@ -126,6 +126,7 @@ fn sphere_fixture(center: Point3, axis: Vector3, reference: Vector3) -> Brep {
         source_object: None,
     });
     out.curves.push(Curve {
+        parameter_range: None,
         id: curve.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
             CircleCurve::try_new(center, axis, reference, 1.).unwrap(),

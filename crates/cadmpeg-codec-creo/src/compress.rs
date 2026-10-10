@@ -33,13 +33,13 @@ pub(crate) fn decode(
     let reservation =
         ctx.reserve_scoped(u64_from_index(expected_length), "inflate Creo TOC section")?;
     let mut output = ctx.begin_expand(ExpandSpec::Exact(u64_from_index(expected_length)))?;
-    let dictionary_bytes = dictionary_limit * 4;
-    let _dictionary_reservation = ctx.reserve_scoped(
-        u64_from_index(dictionary_bytes),
-        "decode Creo LZW dictionary",
-    )?;
-    let mut prefix = ctx.alloc_filled(dictionary_limit, 0u16, "creo LZW prefix slots")?;
-    let mut suffix = ctx.alloc_filled(dictionary_limit, 0u8, "creo LZW suffix slots")?;
+    let ((mut prefix, mut suffix), _dictionary_reservation) = ctx
+        .with_scoped_storage::<_, CodecError>("decode Creo LZW dictionary", || {
+            Ok((
+                ctx.alloc_filled(dictionary_limit, 0u16, "creo LZW prefix slots")?,
+                ctx.alloc_filled(dictionary_limit, 0u8, "creo LZW suffix slots")?,
+            ))
+        })?;
     for (value, slot) in suffix.iter_mut().take(256).enumerate() {
         let Ok(value) = u8::try_from(value) else {
             return Ok(None);

@@ -91,7 +91,6 @@ pub(in super::super) fn feature_edge_selection(
             (ids, native)
         }
     };
-    let result_edge_ids = feature_result_edge_ids_by_feature(ctx, &scan.curves.topology_rows)?;
     let mut edges = Vec::new();
     let mut seen = BTreeSet::new();
     let mut unique = true;
@@ -129,7 +128,7 @@ pub(in super::super) fn feature_edge_selection(
         ids,
         &scan.curves.topology_rows,
         &model_feature_ids(ctx, scan)?,
-        &result_edge_ids,
+        &feature_result_edge_ids_by_feature(ctx, &scan.curves.topology_rows)?,
     )? {
         Ok(Some(
             EdgeSelection::generated(
@@ -166,7 +165,7 @@ pub(in super::super) fn generated_curve_edge_refs(
         })?;
     }
     let mut counts = BTreeMap::<u32, usize>::new();
-    for row in rows {
+    for row in rows.iter().filter(|row| unique_curve_ids.contains(&row.id)) {
         local_storage.with_storage(|| {
             ctx.admit_btree_entry(&counts, &row.id, "creo generated curve count nodes")
         })?;
@@ -216,57 +215,45 @@ pub(in super::super) fn generated_curve_edge_refs(
     Ok(Some(generated))
 }
 
-/// Return the complete feature-local edge roster proven by unique topology rows.
-///
-/// A decoded `crv_array` topology row is one materialized edge identity. The
-/// global curve namespace must contain that identifier exactly once before the
-/// row can be exposed in a feature result state.
-pub(in super::super) fn feature_result_edge_ids(
+/// Group source-ordered feature rosters after one global uniqueness count.
+/// A duplicate curve identifier invalidates every roster that contains it.
+pub(super) fn feature_result_edge_ids_by_feature(
     ctx: &DecodeContext<'_>,
     rows: &[crate::curve::CurveTopologyRow],
-    feature_id: u32,
-) -> Result<Option<Vec<u32>>, CodecError> {
+) -> Result<BTreeMap<u32, Vec<u32>>, CodecError> {
     let mut local_storage = ctx.reserve_scoped(0, "Creo feature selection workspace")?;
+    let mut feature_ids = BTreeSet::new();
     let mut counts = BTreeMap::<u32, usize>::new();
     for row in rows {
         local_storage.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut feature_ids,
+                row.feature_id,
+                "creo feature result edge feature nodes",
+            )?;
             ctx.admit_btree_entry(&counts, &row.id, "creo feature result edge count nodes")
         })?;
         *counts.entry(row.id).or_default() += 1;
     }
-    let mut edge_ids = Vec::new();
-    for row in rows.iter().filter(|row| row.feature_id == feature_id) {
-        if counts.get(&row.id) != Some(&1) {
-            return Ok(None);
-        }
-        ctx.reserve_vec(&mut edge_ids, 1, "creo feature result edge IDs")?;
-        edge_ids.push(row.id);
-    }
-    Ok((!edge_ids.is_empty()).then_some(edge_ids))
-}
-
-fn feature_result_edge_ids_by_feature(
-    ctx: &DecodeContext<'_>,
-    rows: &[crate::curve::CurveTopologyRow],
-) -> Result<BTreeMap<u32, Vec<u32>>, CodecError> {
-    let mut feature_ids = BTreeSet::new();
+    // A duplicate in the global namespace invalidates its owner's whole roster.
     for row in rows {
-        ctx.insert_btree_set(
-            &mut feature_ids,
-            row.feature_id,
-            "creo feature result edge feature nodes",
-        )?;
-    }
-    let mut by_feature = BTreeMap::new();
-    for feature_id in feature_ids {
-        if let Some(edge_ids) = feature_result_edge_ids(ctx, rows, feature_id)? {
-            ctx.insert_btree_map(
-                &mut by_feature,
-                feature_id,
-                edge_ids,
-                "creo feature result edge map nodes",
-            )?;
+        if counts.get(&row.id) != Some(&1) {
+            feature_ids.remove(&row.feature_id);
         }
+    }
+    let mut by_feature = BTreeMap::<u32, Vec<u32>>::new();
+    for row in rows
+        .iter()
+        .filter(|row| feature_ids.contains(&row.feature_id))
+    {
+        ctx.admit_btree_entry(
+            &by_feature,
+            &row.feature_id,
+            "creo feature result edge map nodes",
+        )?;
+        let edge_ids = by_feature.entry(row.feature_id).or_default();
+        ctx.reserve_vec(edge_ids, 1, "creo feature result edge IDs")?;
+        edge_ids.push(row.id);
     }
     Ok(by_feature)
 }
@@ -297,11 +284,10 @@ pub(in super::super) fn agreed_feature_geometry_ids<'a>(
 #[cfg(test)]
 mod tests {
     use super::{
-        feature_edge_selection, feature_result_edge_ids, feature_result_edge_ids_by_feature,
-        generated_curve_edge_refs,
+        feature_edge_selection, feature_result_edge_ids_by_feature, generated_curve_edge_refs,
     };
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
 
     fn one_edge() -> Vec<crate::curve::CurveTopologyRow> {
         vec![crate::curve::CurveTopologyRow {
@@ -547,7 +533,9 @@ mod tests {
         let error = if by_feature {
             feature_result_edge_ids_by_feature(&ctx, &rows).map(|_| ())
         } else {
-            feature_result_edge_ids(&ctx, &rows, 97).map(|_| ())
+            feature_result_edge_ids_by_feature(&ctx, &rows)
+                .map(|mut rosters| rosters.remove(&97))
+                .map(|_| ())
         }
         .expect_err("one edge exceeds the collection limit");
         assert!(
@@ -560,12 +548,12 @@ mod tests {
 
     #[test]
     fn feature_result_edge_count_nodes_refuse_collection_limit() {
-        edge_limit_error(0, false, "creo feature result edge count nodes");
+        edge_limit_error(1, false, "creo feature result edge count nodes");
     }
 
     #[test]
     fn feature_result_edge_ids_refuse_collection_limit() {
-        edge_limit_error(1, false, "creo feature result edge IDs");
+        edge_limit_error(3, false, "creo feature result edge IDs");
     }
 
     #[test]
@@ -575,14 +563,17 @@ mod tests {
 
     #[test]
     fn feature_result_edge_map_nodes_refuse_collection_limit() {
-        edge_limit_error(3, true, "creo feature result edge map nodes");
+        edge_limit_error(2, true, "creo feature result edge map nodes");
     }
 
     #[test]
     fn feature_result_edge_roster_keeps_order() {
         let rows = one_edge();
         crate::decode::with_test_decode_ctx(|ctx| {
-            assert_eq!(feature_result_edge_ids(ctx, &rows, 97)?, Some(vec![77]));
+            assert_eq!(
+                feature_result_edge_ids_by_feature(ctx, &rows)?.remove(&97),
+                Some(vec![77])
+            );
             assert_eq!(
                 feature_result_edge_ids_by_feature(ctx, &rows)?.get(&97),
                 Some(&vec![77])
@@ -590,5 +581,44 @@ mod tests {
             Ok::<(), cadmpeg_core::CodecError>(())
         })
         .expect("service profile admits one result edge");
+    }
+    #[test]
+    fn result_edge_rosters_count_global_identifiers_once() {
+        let row = one_edge().remove(0);
+        let rows = (0..100)
+            .map(|id| crate::curve::CurveTopologyRow {
+                id,
+                feature_id: id,
+                ..row.clone()
+            })
+            .collect::<Vec<_>>();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 600;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let rosters = feature_result_edge_ids_by_feature(&ctx, &rows)
+            .expect("one count per row and one roster per feature");
+        assert_eq!(rosters.len(), 100);
+        for id in 0..100 {
+            assert_eq!(rosters.get(&id), Some(&vec![id]));
+        }
+    }
+
+    #[test]
+    fn duplicate_global_curve_ids_invalidate_whole_owner_rosters() {
+        let row = one_edge().remove(0);
+        let rows =
+            [(4, 17), (3, 17), (5, 18), (4, 19), (8, 20), (7, 20)].map(|(id, feature_id)| {
+                crate::curve::CurveTopologyRow {
+                    id,
+                    feature_id,
+                    ..row.clone()
+                }
+            });
+        let rosters = crate::decode::with_test_decode_ctx(|ctx| {
+            feature_result_edge_ids_by_feature(ctx, &rows)
+        })
+        .expect("rosters");
+        assert_eq!(rosters, BTreeMap::from([(18, vec![5]), (20, vec![8, 7])]));
     }
 }

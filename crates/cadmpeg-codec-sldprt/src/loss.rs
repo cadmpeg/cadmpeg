@@ -126,6 +126,20 @@ pub(crate) enum SldprtLossCode {
     /// Two embedded kernel carriers resolved to one dialect-layer identity.
     DialectLayerCollision,
     /// The selected write target differs from the same-format source dialect.
+    /// Export omits records named by the counted loss message.
+    WriterShellWireTopologyOmitted,
+    /// Export omits records named by the counted loss message.
+    WriterCoedgePcurveUsesOmitted,
+    /// Export omits records named by the counted loss message.
+    WriterSphereSeamCurvesOmitted,
+    /// Export omits records named by the counted loss message.
+    WriterAppearanceBindingsOmitted,
+    /// Export omits records named by the counted loss message.
+    WriterAttributesOmitted,
+    /// Export omits records named by the counted loss message.
+    WriterUnboundAppearancesOmitted,
+    /// Export omits records named by the counted loss message.
+    WriterTessellationMetadataOmitted,
     SourceDialectDisplaced,
     /// A source record states a property whose key holds no non-whitespace
     /// character, so the property cannot be keyed and is not transferred.
@@ -182,6 +196,13 @@ impl SldprtLossCode {
         Self::SourceDialectUnverified,
         Self::KernelDialectUnverified,
         Self::DialectLayerCollision,
+        Self::WriterShellWireTopologyOmitted,
+        Self::WriterCoedgePcurveUsesOmitted,
+        Self::WriterSphereSeamCurvesOmitted,
+        Self::WriterAppearanceBindingsOmitted,
+        Self::WriterAttributesOmitted,
+        Self::WriterUnboundAppearancesOmitted,
+        Self::WriterTessellationMetadataOmitted,
         Self::SourceDialectDisplaced,
         Self::SourcePropertyKeyBlank,
     ];
@@ -236,6 +257,13 @@ impl SldprtLossCode {
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::KernelDialectUnverified => "source.kernel-dialect-unverified",
             Self::DialectLayerCollision => "source.dialect-layer-collision",
+            Self::WriterShellWireTopologyOmitted => "writer.shell-wire-topology-omitted",
+            Self::WriterCoedgePcurveUsesOmitted => "writer.coedge-pcurve-uses-omitted",
+            Self::WriterSphereSeamCurvesOmitted => "writer.sphere-seam-curves-omitted",
+            Self::WriterAppearanceBindingsOmitted => "writer.appearance-bindings-omitted",
+            Self::WriterAttributesOmitted => "writer.attributes-omitted",
+            Self::WriterUnboundAppearancesOmitted => "writer.unbound-appearances-omitted",
+            Self::WriterTessellationMetadataOmitted => "writer.tessellation-metadata-omitted",
             Self::SourceDialectDisplaced => "target.source-dialect-displaced",
             Self::SourcePropertyKeyBlank => "source.property-key-blank",
         }
@@ -245,6 +273,13 @@ impl SldprtLossCode {
     #[must_use]
     const fn severity(self) -> Severity {
         match self {
+            Self::WriterTessellationMetadataOmitted => Severity::Warning,
+            Self::WriterUnboundAppearancesOmitted => Severity::Warning,
+            Self::WriterAttributesOmitted => Severity::Warning,
+            Self::WriterAppearanceBindingsOmitted => Severity::Warning,
+            Self::WriterSphereSeamCurvesOmitted => Severity::Warning,
+            Self::WriterCoedgePcurveUsesOmitted => Severity::Warning,
+            Self::WriterShellWireTopologyOmitted => Severity::Warning,
             Self::GeometryParasolidNotTransferred
             | Self::TopologyGraphNotTransferred
             | Self::SourcePreservedImageUnavailable => Severity::Blocking,
@@ -298,6 +333,13 @@ impl SldprtLossCode {
 
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
+            Self::WriterTessellationMetadataOmitted => LossTaxonomy::AttributesNotTransferred,
+            Self::WriterUnboundAppearancesOmitted => LossTaxonomy::AppearanceReduced,
+            Self::WriterAttributesOmitted => LossTaxonomy::AttributesNotTransferred,
+            Self::WriterAppearanceBindingsOmitted => LossTaxonomy::AppearanceReduced,
+            Self::WriterSphereSeamCurvesOmitted => LossTaxonomy::GeometryNotTransferred,
+            Self::WriterCoedgePcurveUsesOmitted => LossTaxonomy::TopologyNotTransferred,
+            Self::WriterShellWireTopologyOmitted => LossTaxonomy::TopologyNotTransferred,
             Self::ContainerNoParasolidStream => LossTaxonomy::MissingGeometryStream,
             Self::SourcePreservedImageUnavailable => LossTaxonomy::PreservedSourceUnavailable,
             Self::SourceDialectUnverified | Self::KernelDialectUnverified => {
@@ -495,6 +537,13 @@ mod tests {
                 "source.dialect-unverified",
                 "source.kernel-dialect-unverified",
                 "source.dialect-layer-collision",
+                "writer.shell-wire-topology-omitted",
+                "writer.coedge-pcurve-uses-omitted",
+                "writer.sphere-seam-curves-omitted",
+                "writer.appearance-bindings-omitted",
+                "writer.attributes-omitted",
+                "writer.unbound-appearances-omitted",
+                "writer.tessellation-metadata-omitted",
                 "target.source-dialect-displaced",
                 "source.property-key-blank",
             ]

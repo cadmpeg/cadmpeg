@@ -7,33 +7,13 @@ use crate::history::classify::is_history_metadata_record;
 use crate::layout::feature_input_shifted_scalar_trailer as shifted_trailer;
 use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
-    FeatureInputClass, FeatureInputLane, FeatureInputName, FeatureInputOperand,
-    FeatureInputOperandKind, FeatureInputRelationFamily, FeatureInputRelationInstance,
-    FeatureInputScalar, FeatureInputScalarRole,
+    FeatureInputClass, FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind,
+    FeatureInputRelationFamily, FeatureInputRelationInstance, FeatureInputScalar,
+    FeatureInputScalarRole,
 };
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
-
-fn scalar_name_value<'a>(
-    scalar: &FeatureInputScalar,
-    names: &'a [FeatureInputName],
-) -> Option<&'a str> {
-    names
-        .iter()
-        .find(|name| name.id == scalar.name)
-        .map(|name| name.value.as_str())
-}
-
-fn same_scalar_name(
-    first: &FeatureInputScalar,
-    second: &FeatureInputScalar,
-    names: &[FeatureInputName],
-) -> bool {
-    scalar_name_value(first, names).is_some_and(|value| {
-        scalar_name_value(second, names).is_some_and(|candidate| candidate == value)
-    })
-}
 
 /// The offset interval each feature owns, in start order.
 ///
@@ -332,20 +312,33 @@ pub(super) fn relation_instances(
             );
         }
     }
+    // Name lookup keeps the first directory record at a repeated identity.
+    let mut names_by_id = HashMap::<&str, &str>::new();
+    for name in &lane.names {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(name.id.len()),
+            "index SLDPRT relation scalar names",
+        )?;
+        ctx.admit_hash_map_entry(
+            &mut names_by_id,
+            &name.id.as_str(),
+            "index SLDPRT relation scalar names",
+        )?;
+        names_by_id
+            .entry(name.id.as_str())
+            .or_insert(name.value.as_str());
+    }
     let mut groups = Vec::<RelationGroup<'_>>::new();
     for (scalar_index, scalar) in lane.scalars.iter().enumerate() {
-        let comparisons = lane
-            .names
-            .len()
-            .checked_mul(lane.scalars.len())
-            .and_then(|count| count.checked_mul(2))
-            .and_then(|count| count.checked_add(lane.classes.len()))
-            .and_then(|count| count.checked_add(scalar.operands.len()))
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("group SLDPRT relation scalars", u64::MAX - 1, u64::MAX)
-            })?;
         ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(comparisons),
+            cadmpeg_core::decode::u64_from_index(scalar.id.len())
+                .checked_add(cadmpeg_core::decode::u64_from_index(
+                    scalar.feature_ref.as_deref().map_or(0, str::len),
+                ))
+                .and_then(|work| work.checked_add(1))
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("group SLDPRT relation scalars", u64::MAX - 1, u64::MAX)
+                })?,
             "group SLDPRT relation scalars",
         )?;
         let Some(feature_ref) = scalar
@@ -369,6 +362,25 @@ pub(super) fn relation_instances(
             let Some((last_index, last_scalar)) = group.scalars.last() else {
                 continue;
             };
+            // Charge the class interval search and operand comparisons only
+            // when this scalar can extend an existing group.
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(lane.classes.len())
+                    .checked_add(cadmpeg_core::decode::u64_from_index(group.operands.len()))
+                    .and_then(|work| {
+                        work.checked_add(cadmpeg_core::decode::u64_from_index(
+                            scalar.operands.len(),
+                        ))
+                    })
+                    .ok_or_else(|| {
+                        ctx.refuse_codec_limit(
+                            "group SLDPRT relation scalars",
+                            u64::MAX - 1,
+                            u64::MAX,
+                        )
+                    })?,
+                "group SLDPRT relation scalars",
+            )?;
             let same_scope = group.feature_ref == feature_ref
                 && *last_index + 1 == scalar_index
                 && !lane.classes.iter().any(|class| {
@@ -384,23 +396,44 @@ pub(super) fn relation_instances(
                     .operands
                     .iter()
                     .map(|operand| (operand.kind, operand.entity_index)));
-            let repeated_circle_display = same_scope
+            let mut repeated_circle_display = same_scope
                 && group.family == FeatureInputRelationFamily::CircleDiameter
                 && scalar.role == FeatureInputScalarRole::Display
-                && group
-                    .scalars
-                    .iter()
-                    .all(|(_, candidate)| candidate.role == FeatureInputScalarRole::Display)
-                && scalar.operands.len() == 1
-                && group
-                    .scalars
-                    .iter()
-                    .all(|(_, candidate)| candidate.operands.len() == 1)
-                && group.scalars.iter().all(|(_, candidate)| {
-                    candidate.operands[0].kind == scalar.operands[0].kind
-                        && candidate.operands[0].entity_index != scalar.operands[0].entity_index
-                        && same_scalar_name(candidate, scalar, &lane.names)
-                });
+                && scalar.operands.len() == 1;
+            if repeated_circle_display {
+                let scalar_name = names_by_id.get(scalar.name.as_str()).copied();
+                for (_, candidate) in &group.scalars {
+                    ctx.charge_work(
+                        cadmpeg_core::decode::u64_from_index(candidate.name.len())
+                            .checked_add(cadmpeg_core::decode::u64_from_index(scalar.name.len()))
+                            .and_then(|work| {
+                                work.checked_add(cadmpeg_core::decode::u64_from_index(
+                                    scalar_name.map_or(0, str::len),
+                                ))
+                            })
+                            .and_then(|work| work.checked_add(16))
+                            .ok_or_else(|| {
+                                ctx.refuse_codec_limit(
+                                    "group SLDPRT relation scalars",
+                                    u64::MAX - 1,
+                                    u64::MAX,
+                                )
+                            })?,
+                        "group SLDPRT relation scalars",
+                    )?;
+                    if candidate.role != FeatureInputScalarRole::Display
+                        || candidate.operands.len() != 1
+                        || candidate.operands[0].kind != scalar.operands[0].kind
+                        || candidate.operands[0].entity_index == scalar.operands[0].entity_index
+                        || !scalar_name.is_some_and(|name| {
+                            names_by_id.get(candidate.name.as_str()).copied() == Some(name)
+                        })
+                    {
+                        repeated_circle_display = false;
+                        break;
+                    }
+                }
+            }
             if repeated_circle_display {
                 ctx.reserve_vec(
                     &mut group.scalars,
@@ -1911,7 +1944,7 @@ mod relation_records_tests {
         FeatureInputLane {
             id: "lane".into(),
             configuration: None,
-            native_payload: Vec::new(),
+            native_payload: Vec::new().into(),
             classes,
             names: Vec::new(),
             scalars,

@@ -109,7 +109,7 @@ mod tests {
             let terminal = ordinal == 18;
             for target in ["", r#","data_block":"block""#] {
                 let wire = format!(
-                    r#"{{"id":"reference","operation_label":"block-op","control":38,"ordinal":{ordinal},"terminal":{terminal},"object_index":66,"raw_object_index":[240,66]{target},"source_offset":100}}"#
+                    r#"{{"id":"reference","operation_label":"block-op","control":38,"ordinal":{ordinal},"terminal":{terminal},"object_index":66,"raw_object_index":"f042"{target},"source_offset":100}}"#
                 );
                 let reference: FeatureBlockConstructionReference =
                     serde_json::from_str(&wire).unwrap();
@@ -124,7 +124,7 @@ mod tests {
                 );
             }
         }
-        let invalid = r#"{"id":"reference","operation_label":"block-op","control":38,"ordinal":0,"terminal":false,"object_index":66,"raw_object_index":[66],"source_offset":100}"#;
+        let invalid = r#"{"id":"reference","operation_label":"block-op","control":38,"ordinal":0,"terminal":false,"object_index":66,"raw_object_index":"42","source_offset":100}"#;
         assert!(serde_json::from_str::<FeatureBlockConstructionReference>(invalid).is_err());
         for ordinal in [19, u32::MAX] {
             let wire = serde_json::json!({"ordinal":ordinal,"terminal":false});

@@ -72,7 +72,7 @@ fn spatial_projection_limit_error(configure: impl FnOnce(&mut DecodePolicy)) -> 
     let lane = FeatureInputLane {
         id: lane_id.into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),
@@ -506,7 +506,7 @@ fn compact_spatial_profile_points_project_and_ignore_unindexed_anchors() {
     let lane = FeatureInputLane {
         id: lane_id.into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),
@@ -616,7 +616,7 @@ fn current_indexed_profile_spatial_points_project_from_indexed_markers() {
     let lane = FeatureInputLane {
         id: lane_id.into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),

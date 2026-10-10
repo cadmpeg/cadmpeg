@@ -47,7 +47,7 @@ fn reference_point_lane(layout: usize, form: u16, point: [f64; 3]) -> FeatureInp
     FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: Vec::new(),
         names: vec![FeatureInputName {
             id: "name".into(),
@@ -555,7 +555,7 @@ fn two_points_axis_data_frame_is_anchored_after_class_name() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: vec![FeatureInputClass {
             id: "class".into(),
             parent: "lane".into(),
@@ -1190,7 +1190,7 @@ fn classless_reference_plane_enrichment_marks_a_constructed_midplane_axis() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: Vec::new(),
         names: vec![FeatureInputName {
             id: "name".into(),

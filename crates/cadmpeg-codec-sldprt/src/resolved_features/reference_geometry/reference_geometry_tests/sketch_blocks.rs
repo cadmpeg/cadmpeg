@@ -41,7 +41,7 @@ fn sketch_block_error(policy: DecodePolicy) -> CodecError {
     let lane = super::FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: vec![0; 4],
+        native_payload: vec![0; 4].into(),
         classes: Vec::new(),
         names: vec![name("instance-name", 25, 0), name("definition-name", 23, 1)],
         scalars: Vec::new(),

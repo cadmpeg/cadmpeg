@@ -11,7 +11,7 @@ fn body_recipe_operand_borrowed_wire_matches_owned_wire_bytes() {
     let suffix = r#", "references":[],"nested_record_index":5,"nested_record_index_offset":26,"recipe_id":"recipe","next_record_index":6,"next_byte_offset":240}"#;
     for fields in [
         "",
-        ",\"selector_tail\":[7,0,0,0],\"selector_tail_offset\":220",
+        ",\"selector_tail\":\"07000000\",\"selector_tail_offset\":220",
     ] {
         let value: DesignBodyRecipeOperand =
             serde_json::from_str(&format!("{prefix}{fields}{suffix}")).unwrap();
@@ -50,7 +50,7 @@ fn body_recipe_selector_tail_preserves_wire_and_rejects_partial_locations() {
     let suffix = r#","references":[],"nested_record_index":5,"nested_record_index_offset":26,"recipe_id":"recipe","next_record_index":6,"next_byte_offset":240}"#;
     for fields in [
         "",
-        ",\"selector_tail\":[7,0,0,0],\"selector_tail_offset\":220",
+        ",\"selector_tail\":\"07000000\",\"selector_tail_offset\":220",
     ] {
         let wire = format!("{prefix}{fields}{suffix}");
         let value: super::DesignBodyRecipeOperand =
@@ -61,7 +61,7 @@ fn body_recipe_selector_tail_preserves_wire_and_rejects_partial_locations() {
         );
     }
     for fields in [
-        ",\"selector_tail\":[7,0,0,0]",
+        ",\"selector_tail\":\"07000000\"",
         ",\"selector_tail_offset\":220",
     ] {
         let error = serde_json::from_str::<super::DesignBodyRecipeOperand>(&format!(

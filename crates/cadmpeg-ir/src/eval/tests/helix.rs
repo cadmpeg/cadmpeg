@@ -30,6 +30,7 @@ fn helix_fixture() -> (CadIr, CurveId) {
     );
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Procedural {
             construction: construction_id.clone(),

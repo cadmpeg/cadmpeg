@@ -36,45 +36,118 @@ pub enum Terminator {
     Acis,
 }
 
+/// A recovered stream value or extent that could not be interpreted as written.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StreamDiagnostic {
+    /// What the recovery omitted or assumed.
+    pub kind: StreamDiagnosticKind,
+    /// Source location and reason.
+    pub error: StreamError,
+}
+
+/// Text-stream recovery classes shared by SAT and Fusion SMT callers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StreamDiagnosticKind {
+    /// Independently framed descriptive strings or count words were unreadable.
+    Metadata,
+    /// A tolerance cannot enter the normalized kernel header.
+    Tolerance,
+    /// The stream declares no usable length unit; lengths are read unscaled as
+    /// millimetres.
+    Units,
+    /// The input ends without a terminator line after its last complete record.
+    Terminator,
+    /// Bytes after the last framed record were not read as records: an
+    /// incomplete final record or data after the terminator line.
+    Unread,
+}
+
+/// The length unit of a text stream ([`asm.md` §7.1]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TextUnits {
+    /// The units line declares this many millimetres per stream unit.
+    Declared(PositiveReal),
+    /// The stream declares no usable unit. Save formats below 200 store no
+    /// units line, and the units word `-1` declares the unit unset. Lengths
+    /// are read unscaled as millimetres.
+    Unspecified,
+}
+
+impl TextUnits {
+    /// Millimetres per stream unit used to read lengths.
+    pub const fn millimetres_per_unit(self) -> PositiveReal {
+        match self {
+            Self::Declared(scale) => scale,
+            Self::Unspecified => PositiveReal::ONE,
+        }
+    }
+}
+
 /// The three header lines of a text stream: the four binary header words, the
 /// three product strings, and the three kernel doubles.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TextHeader {
     /// ACIS save-format version word, `major * 100 + minor`.
     pub save_format_version: u32,
+    /// Number of native records, or zero when this count is unwritten.
+    pub record_count: Option<u64>,
     /// Entity-count word: the `RecordTable` index of the first referenced record.
     pub entity_count: u64,
     /// Flags word: bit 0 marks a history partition, bits 1..=7 the revision.
     pub flags: u64,
     /// Product family string.
-    pub product_family: String,
+    pub product_family: Option<String>,
     /// Product version string.
-    pub product_version: String,
+    pub product_version: Option<String>,
     /// Save date string.
-    pub save_date: String,
-    /// Length unit of the stream, in millimetres per unit.
-    scale: PositiveReal,
+    pub save_date: Option<String>,
+    /// Length unit of the stream.
+    units: TextUnits,
     /// Absolute distance tolerance in stream length units.
-    resabs: NonNegativeReal,
+    resabs: Option<NonNegativeReal>,
     /// Normal tolerance.
-    resnor: NonNegativeReal,
-    normalized_resabs_cm: NonNegativeReal,
+    resnor: Option<NonNegativeReal>,
+    normalized_resabs_cm: Option<NonNegativeReal>,
+    /// Header recovery notes; framing and resource failures remain fatal.
+    pub diagnostics: Vec<StreamDiagnostic>,
+    /// Exact source extent of the independently framed header lines.
+    pub source_span: std::ops::Range<usize>,
 }
 
 impl TextHeader {
-    /// Length unit of the stream, in millimetres per unit.
+    /// Millimetres per stream unit used to read lengths.
     pub const fn scale(&self) -> PositiveReal {
-        self.scale
+        self.units.millimetres_per_unit()
+    }
+
+    /// The length unit the stream declares, if any.
+    pub const fn units(&self) -> TextUnits {
+        self.units
     }
 
     /// Absolute distance tolerance in stream length units.
-    pub const fn resabs(&self) -> NonNegativeReal {
+    pub const fn resabs(&self) -> Option<NonNegativeReal> {
         self.resabs
     }
 
+    /// Absolute distance tolerance normalized to kernel centimetres.
+    pub const fn resabs_cm(&self) -> Option<NonNegativeReal> {
+        self.normalized_resabs_cm
+    }
+
     /// Normal tolerance.
-    pub const fn resnor(&self) -> NonNegativeReal {
+    pub const fn resnor(&self) -> Option<NonNegativeReal> {
         self.resnor
+    }
+
+    /// The branch the save format selects ([`asm.md` §7.3]): ASM save formats
+    /// have a major version of 100 or more.
+    pub const fn save_format_branch(&self) -> Terminator {
+        if self.save_format_version >= FIRST_ASM_SAVE_FORMAT {
+            Terminator::Asm
+        } else {
+            Terminator::Acis
+        }
     }
 
     /// The header as a [`KernelHeader`] for the shared decode path.
@@ -90,12 +163,12 @@ impl TextHeader {
             save_format_version: Some(self.save_format_version),
             entity_count: Some(self.entity_count),
             flags: Some(self.flags),
-            product_family: Some(copy(&self.product_family)?),
-            product_version: Some(copy(&self.product_version)?),
-            save_date: Some(copy(&self.save_date)?),
+            product_family: self.product_family.as_deref().map(copy).transpose()?,
+            product_version: self.product_version.as_deref().map(copy).transpose()?,
+            save_date: self.save_date.as_deref().map(copy).transpose()?,
             scale: Some(10.0),
-            linear: Some(self.normalized_resabs_cm.get()),
-            angular: Some(self.resnor.get()),
+            linear: self.resabs_cm().map(NonNegativeReal::get),
+            angular: self.resnor.map(NonNegativeReal::get),
         })
     }
 }
@@ -119,13 +192,47 @@ pub struct TextStream {
     /// Records in file order. Index 0 is the first record after the header
     /// lines; the stream does not always begin with `asmheader`.
     pub records: Vec<Record>,
-    /// Which terminator line closed the stream.
+    /// Multiple independently headed reference tables were recovered.
+    pub concatenated_streams: bool,
+    /// A later independently headed stream cannot use the active native layout.
+    pub unread_stream_layout: bool,
+    /// The terminator line that closed the stream, or the branch the save
+    /// format selects when the input ends without one.
     pub terminator: Terminator,
+    /// Whether a terminator line closed the stream.
+    pub has_terminator_line: bool,
+    /// Framing recovery notes for bytes after the last framed record.
+    pub framing: Vec<StreamDiagnostic>,
+    /// Source bytes after the last framed record that were not read as
+    /// records: an incomplete final record or data after the terminator line.
+    pub unread: Option<std::ops::Range<usize>>,
+}
+
+/// Start of the SAT header after an optional Sun attachment header block.
+/// Each transport line starts with `X-Sun-`; a blank line ends the block.
+/// An incomplete or foreign preamble does not select this grammar.
+pub fn text_header_start(bytes: &[u8]) -> usize {
+    if !bytes.starts_with(b"X-Sun-") {
+        return 0;
+    }
+    let mut offset = 0;
+    for line in bytes.split_inclusive(|byte| *byte == b'\n') {
+        let trimmed = line.trim_ascii();
+        offset += line.len();
+        if trimmed.is_empty() {
+            return offset;
+        }
+        if !trimmed.starts_with(b"X-Sun-") || !trimmed.contains(&b':') {
+            return 0;
+        }
+    }
+    0
 }
 
 /// Whether `bytes` begins like a text ASM stream: an ASCII digit run (the
 /// save-format word) followed by a space.
 pub fn has_text_magic(bytes: &[u8]) -> bool {
+    let bytes = &bytes[text_header_start(bytes)..];
     let digits = bytes.iter().take_while(|b| b.is_ascii_digit()).count();
     digits >= 3 && bytes.get(digits) == Some(&b' ')
 }
@@ -133,6 +240,8 @@ pub fn has_text_magic(bytes: &[u8]) -> bool {
 // ---------------------------------------------------------------------------
 // Primitive fields
 // ---------------------------------------------------------------------------
+
+mod segments;
 
 /// One whitespace-delimited field, before typing.
 #[derive(Debug, Clone, PartialEq)]
@@ -160,6 +269,8 @@ fn is_ws(b: u8) -> bool {
 struct FieldReader<'a> {
     bytes: &'a [u8],
     pos: usize,
+    /// Offset of the first field that is not valid UTF-8, and the field count.
+    invalid_utf8: Option<(usize, usize)>,
 }
 
 impl FieldReader<'_> {
@@ -169,9 +280,8 @@ impl FieldReader<'_> {
         }
     }
 
-    /// Read one raw whitespace-delimited field. Returns `None` at end of
-    /// input. An `@N` field consumes one separator byte and exactly `N` raw
-    /// bytes, which may include whitespace and newlines.
+    /// Read one raw field bounded by whitespace or a SAT delimiter. Counted
+    /// payloads are read separately and can contain either kind of boundary.
     fn next_field(
         &mut self,
         ctx: &DecodeContext<'_>,
@@ -183,23 +293,39 @@ impl FieldReader<'_> {
             return Ok(None);
         }
         let start = self.pos;
-        while self.pos < self.bytes.len() && !is_ws(self.bytes[self.pos]) {
+        if matches!(self.bytes[self.pos], b'#' | b'{' | b'}') {
             self.pos += 1;
+        } else {
+            while self.pos < self.bytes.len()
+                && !is_ws(self.bytes[self.pos])
+                && !matches!(self.bytes[self.pos], b'#' | b'{' | b'}')
+            {
+                self.pos += 1;
+            }
         }
-        let word =
-            std::str::from_utf8(&self.bytes[start..self.pos]).map_err(|error| StreamError {
-                format: StreamFormat::Text,
-                offset: start + error.valid_up_to(),
-                reason: "field is not valid UTF-8".to_string(),
-            })?;
+        let word = self.text(start, self.pos);
         let word = if retained {
-            ctx.copy_retained_text(word, "retain SAT record name")
+            ctx.copy_retained_text(&word, "retain SAT record name")
                 .map_err(StreamFailure::from_operation)?
         } else {
-            ctx.copy_scoped_text(word, scratch, "SAT field")
+            ctx.copy_scoped_text(&word, scratch, "SAT field")
                 .map_err(StreamFailure::from_operation)?
         };
         Ok(Some((start, word)))
+    }
+
+    /// The field bytes `start..end` as text. A field that is not valid UTF-8
+    /// keeps its framed boundary; it is read with replacement characters and
+    /// reported once per stream.
+    fn text(&mut self, start: usize, end: usize) -> std::borrow::Cow<'_, str> {
+        let raw = &self.bytes[start..end];
+        if let Err(error) = std::str::from_utf8(raw) {
+            let (_, count) = self
+                .invalid_utf8
+                .get_or_insert((start + error.valid_up_to(), 0));
+            *count += 1;
+        }
+        String::from_utf8_lossy(raw)
     }
 
     /// Consume the `@N` payload after its length field: one separator byte,
@@ -211,6 +337,14 @@ impl FieldReader<'_> {
         at: usize,
         scratch: &mut ScopedReservation<'_>,
     ) -> Result<String, StreamFailure> {
+        if !self.bytes.get(self.pos).is_some_and(|byte| is_ws(*byte)) {
+            return Err(StreamError {
+                format: StreamFormat::Text,
+                offset: at,
+                reason: "counted string has no whitespace separator".to_string(),
+            }
+            .into());
+        }
         self.pos += 1; // one separator byte after the length field
         let end = self
             .pos
@@ -224,14 +358,9 @@ impl FieldReader<'_> {
             }
             .into());
         };
-        let payload =
-            std::str::from_utf8(&self.bytes[self.pos..end]).map_err(|error| StreamError {
-                format: StreamFormat::Text,
-                offset: self.pos + error.valid_up_to(),
-                reason: format!("@{len} string is not valid UTF-8"),
-            })?;
+        let payload = self.text(self.pos, end);
         let payload = ctx
-            .copy_scoped_text(payload, scratch, "SAT string payload")
+            .copy_scoped_text(&payload, scratch, "SAT string payload")
             .map_err(StreamFailure::from_operation)?;
         self.pos = end;
         Ok(payload)
@@ -275,13 +404,12 @@ fn header_int<T: std::str::FromStr>(
 
 /// Read one `N <bytes>` counted string from a header line's raw byte slice.
 /// Header strings use a bare count without the record encoding's `@` prefix.
-fn counted_string(
-    ctx: &DecodeContext<'_>,
-    line: &[u8],
+fn counted_string<'a>(
+    line: &'a [u8],
     pos: &mut usize,
     at: usize,
     what: &str,
-) -> Result<String, StreamFailure> {
+) -> Result<&'a [u8], StreamError> {
     while *pos < line.len() && is_ws(line[*pos]) {
         *pos += 1;
     }
@@ -302,8 +430,7 @@ fn counted_string(
             format: StreamFormat::Text,
             offset: at,
             reason: format!("header {what} count has no separator"),
-        }
-        .into());
+        });
     }
     *pos += 1;
     let end = pos
@@ -314,16 +441,40 @@ fn counted_string(
             offset: at,
             reason: format!("truncated {what} string"),
         })?;
-    let value = std::str::from_utf8(&line[*pos..end]).map_err(|error| StreamError {
-        format: StreamFormat::Text,
-        offset: at + *pos + error.valid_up_to(),
-        reason: format!("header {what} string is not valid UTF-8"),
-    })?;
-    let value = ctx
-        .copy_retained_text(value, "retain SAT header string")
-        .map_err(StreamFailure::from_operation)?;
+    let value = &line[*pos..end];
     *pos = end;
     Ok(value)
+}
+
+/// The first save format whose header stores the product and units lines.
+const FIRST_UNITS_LINE_SAVE_FORMAT: u32 = 200;
+
+/// The first save format whose major version selects the ASM branch.
+const FIRST_ASM_SAVE_FORMAT: u32 = 10_000;
+
+fn push_diagnostic(
+    ctx: &DecodeContext<'_>,
+    diagnostics: &mut Vec<StreamDiagnostic>,
+    kind: StreamDiagnosticKind,
+    offset: usize,
+    reason: std::fmt::Arguments<'_>,
+) -> Result<(), StreamFailure> {
+    let reason = ctx
+        .format_retained(reason, "SAT stream diagnostic text")
+        .map_err(StreamFailure::from_operation)?;
+    ctx.push_vec(
+        diagnostics,
+        StreamDiagnostic {
+            kind,
+            error: StreamError {
+                format: StreamFormat::Text,
+                offset,
+                reason,
+            },
+        },
+        "SAT stream diagnostics",
+    )
+    .map_err(StreamFailure::from_operation)
 }
 
 fn parse_header(
@@ -331,6 +482,8 @@ fn parse_header(
     bytes: &[u8],
     pos: &mut usize,
 ) -> Result<TextHeader, StreamFailure> {
+    let header_start = *pos;
+    *pos += text_header_start(&bytes[*pos..]);
     let at = *pos;
     let line1 = header_line(bytes, pos, "save-format")?;
     let mut fields = line1.split(|b| is_ws(*b)).filter(|field| !field.is_empty());
@@ -344,9 +497,72 @@ fn parse_header(
         .into());
     }
     let save_format_version = header_int(line1[0], at, "save format")?;
-    header_int::<u32>(line1[1], at, "record count")?;
+    let record_count = header_int::<u32>(line1[1], at, "record count")
+        .ok()
+        .map(u64::from);
     let entity_count = header_int(line1[2], at, "entity count")?;
     let flags = header_int(line1[3], at, "flags")?;
+    let mut diagnostics = Vec::new();
+    if at != header_start {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(at - header_start),
+            "SAT transport header scan",
+        )
+        .map_err(StreamFailure::from_operation)?;
+        push_diagnostic(
+            ctx,
+            &mut diagnostics,
+            StreamDiagnosticKind::Metadata,
+            header_start,
+            format_args!(
+                "Sun attachment headers precede the SAT header; record grammar starts at byte {at}"
+            ),
+        )?;
+    }
+    if let Err(error) = header_int::<u32>(line1[1], at, "record count") {
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(error.reason.len()),
+            "SAT header diagnostic text",
+        )
+        .map_err(StreamFailure::from_operation)?;
+        ctx.push_vec(
+            &mut diagnostics,
+            StreamDiagnostic {
+                kind: StreamDiagnosticKind::Metadata,
+                error,
+            },
+            "SAT header diagnostics",
+        )
+        .map_err(StreamFailure::from_operation)?;
+    }
+
+    if save_format_version < FIRST_UNITS_LINE_SAVE_FORMAT {
+        push_diagnostic(
+            ctx,
+            &mut diagnostics,
+            StreamDiagnosticKind::Units,
+            at,
+            format_args!(
+                "save format {save_format_version} stores no product or units line; \
+                 lengths are read unscaled as millimetres"
+            ),
+        )?;
+        return Ok(TextHeader {
+            save_format_version,
+            record_count,
+            entity_count,
+            flags,
+            product_family: None,
+            product_version: None,
+            save_date: None,
+            units: TextUnits::Unspecified,
+            resabs: None,
+            resnor: None,
+            normalized_resabs_cm: None,
+            diagnostics,
+            source_span: header_start..*pos,
+        });
+    }
 
     let at = *pos;
     let line2_start = *pos;
@@ -362,87 +578,156 @@ fn parse_header(
     let line2 = &bytes[line2_start..line2_end];
     *pos = line2_end + 1;
     let mut cursor = 0usize;
-    let product_family = counted_string(ctx, line2, &mut cursor, at, "product family")?;
-    let product_version = counted_string(ctx, line2, &mut cursor, at, "product version")?;
-    let save_date = counted_string(ctx, line2, &mut cursor, at, "save date")?;
-    if line2[cursor..].iter().any(|byte| !is_ws(*byte)) {
-        return Err(StreamError {
-            format: StreamFormat::Text,
-            offset: at,
-            reason: "product header line must contain three counted strings".to_string(),
+    let mut products = [None, None, None];
+    for (slot, what) in products
+        .iter_mut()
+        .zip(["product family", "product version", "save date"])
+    {
+        let field = counted_string(line2, &mut cursor, at, what);
+        let framed = field.is_ok();
+        let text = field.and_then(|bytes| {
+            std::str::from_utf8(bytes).map_err(|error| StreamError {
+                format: StreamFormat::Text,
+                offset: at + cursor - bytes.len() + error.valid_up_to(),
+                reason: format!("header {what} string is not valid UTF-8"),
+            })
+        });
+        match text {
+            Ok(value) => {
+                *slot = Some(
+                    ctx.copy_retained_text(value, "retain SAT header string")
+                        .map_err(StreamFailure::from_operation)?,
+                );
+            }
+            Err(error) => {
+                ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(error.reason.len()),
+                    "SAT header diagnostic text",
+                )
+                .map_err(StreamFailure::from_operation)?;
+                ctx.push_vec(
+                    &mut diagnostics,
+                    StreamDiagnostic {
+                        kind: StreamDiagnosticKind::Metadata,
+                        error,
+                    },
+                    "SAT header diagnostics",
+                )
+                .map_err(StreamFailure::from_operation)?;
+                // The newline frames this entire metadata line. A damaged
+                // count does not justify guessing the next string boundary.
+                if !framed {
+                    cursor = line2.len();
+                    break;
+                }
+            }
         }
-        .into());
     }
+    if line2[cursor..].iter().any(|byte| !is_ws(*byte)) {
+        ctx.push_vec(
+            &mut diagnostics,
+            StreamDiagnostic {
+                kind: StreamDiagnosticKind::Metadata,
+                error: StreamError {
+                    format: StreamFormat::Text,
+                    offset: at + cursor,
+                    reason: ctx
+                        .copy_retained_text(
+                            "product header line has extra fields",
+                            "SAT header diagnostic text",
+                        )
+                        .map_err(StreamFailure::from_operation)?,
+                },
+            },
+            "SAT header diagnostics",
+        )
+        .map_err(StreamFailure::from_operation)?;
+    }
+    let [product_family, product_version, save_date] = products;
 
     let at = *pos;
     let line3 = header_line(bytes, pos, "tolerance")?;
     let mut fields = line3.split(|b| is_ws(*b)).filter(|field| !field.is_empty());
     let line3: [Option<&[u8]>; 3] = std::array::from_fn(|_| fields.next());
-    if line3.iter().any(Option::is_none) || fields.next().is_some() {
-        return Err(StreamError {
-            format: StreamFormat::Text,
-            offset: at,
-            reason: "tolerance header line must contain three fields".to_string(),
-        }
-        .into());
-    }
-    let float = |field: Option<&[u8]>, what: &str| -> Result<f64, StreamFailure> {
+    let extra_fields = fields.next().is_some();
+    let float = |field: Option<&[u8]>| -> Option<f64> {
         field
             .and_then(|field| std::str::from_utf8(field).ok())
             .and_then(|field| field.parse().ok())
-            .ok_or_else(|| {
-                StreamFailure::Malformed(StreamError {
+    };
+    let units = match float(line3[0]).and_then(PositiveReal::new) {
+        Some(scale) => TextUnits::Declared(scale),
+        None => {
+            push_diagnostic(
+                ctx,
+                &mut diagnostics,
+                StreamDiagnosticKind::Units,
+                at,
+                format_args!(
+                    "header units word declares no finite positive length unit; \
+                     lengths are read unscaled as millimetres"
+                ),
+            )?;
+            TextUnits::Unspecified
+        }
+    };
+    let scale = units.millimetres_per_unit();
+    let mut tolerance = |field, what| -> Result<Option<NonNegativeReal>, StreamFailure> {
+        let value = float(field)
+            .and_then(NonNegativeReal::new)
+            .filter(|value| value.get() > 0.0);
+        if value.is_none() {
+            ctx.push_vec(&mut diagnostics, StreamDiagnostic {
+                kind: StreamDiagnosticKind::Tolerance,
+                error: StreamError { format: StreamFormat::Text, offset: at,
+                    reason: ctx.format_retained(format_args!("header {what} must be finite and positive for document tolerance; tolerance omitted"), "SAT header diagnostic text").map_err(StreamFailure::from_operation)? },
+            }, "SAT header diagnostics").map_err(StreamFailure::from_operation)?;
+        }
+        Ok(value)
+    };
+    let resabs = tolerance(line3[1], "resabs")?;
+    let resnor = tolerance(line3[2], "resnor")?;
+    let normalized_resabs_cm = resabs
+        .and_then(|value| NonNegativeReal::new(resabs_cm(scale, value)))
+        .filter(|value| value.get() > 0.0);
+    for reason in [
+        extra_fields.then_some("tolerance header line has extra fields"),
+        (resabs.is_some() && normalized_resabs_cm.is_none())
+            .then_some("header resabs cannot be represented in centimetres; tolerance omitted"),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        ctx.push_vec(
+            &mut diagnostics,
+            StreamDiagnostic {
+                kind: StreamDiagnosticKind::Tolerance,
+                error: StreamError {
                     format: StreamFormat::Text,
                     offset: at,
-                    reason: format!("header line has no valid {what} value"),
-                })
-            })
-    };
-    let scale = PositiveReal::new(float(line3[0], "scale")?).ok_or_else(|| {
-        StreamFailure::Malformed(StreamError {
-            format: StreamFormat::Text,
-            offset: at,
-            reason: "header scale must be finite and positive".to_string(),
-        })
-    })?;
-    let raw_resabs = float(line3[1], "resabs")?;
-    let raw_resnor = float(line3[2], "resnor")?;
-    let (Some(resabs), Some(resnor)) = (
-        NonNegativeReal::new(raw_resabs),
-        NonNegativeReal::new(raw_resnor),
-    ) else {
-        return Err(StreamFailure::Malformed(StreamError {
-            format: StreamFormat::Text,
-            offset: at,
-            reason: "header tolerances must be finite and nonnegative".to_string(),
-        }));
-    };
-    let normalized_resabs = resabs_cm(scale, resabs);
-    if resabs.get() > 0.0 && (!normalized_resabs.is_finite() || normalized_resabs == 0.0) {
-        return Err(StreamFailure::NotImplemented(StreamError {
-            format: StreamFormat::Text,
-            offset: at,
-            reason: "header resabs cannot be represented in centimetres".to_string(),
-        }));
+                    reason: ctx
+                        .copy_retained_text(reason, "SAT header diagnostic text")
+                        .map_err(StreamFailure::from_operation)?,
+                },
+            },
+            "SAT header diagnostics",
+        )
+        .map_err(StreamFailure::from_operation)?;
     }
-    let normalized_resabs_cm = NonNegativeReal::new(normalized_resabs).ok_or_else(|| {
-        StreamFailure::NotImplemented(StreamError {
-            format: StreamFormat::Text,
-            offset: at,
-            reason: "header resabs cannot be represented in centimetres".to_string(),
-        })
-    })?;
     Ok(TextHeader {
         save_format_version,
+        record_count,
         entity_count,
         flags,
         product_family,
         product_version,
         save_date,
-        scale,
+        units,
         resabs,
         resnor,
         normalized_resabs_cm,
+        diagnostics,
+        source_span: header_start..*pos,
     })
 }
 
@@ -482,29 +767,53 @@ pub fn parse_container(
     let branch = match marker {
         Some(b"End-of-ASM-data") => Terminator::Asm,
         Some(b"End-of-ACIS-data") => Terminator::Acis,
-        _ => {
-            return Err(StreamError {
-                format: StreamFormat::Text,
-                offset: position,
-                reason: "text container has no final branch marker".to_string(),
-            }
-            .into())
-        }
+        // Full parsing reports the missing terminator line.
+        _ => header.save_format_branch(),
     };
     Ok((header, branch))
 }
 
-/// Parse a complete text stream into its header and typed record table.
+fn is_sequence_number(field: &str) -> bool {
+    field
+        .strip_prefix('-')
+        .is_some_and(|digits| !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()))
+}
+
+const fn terminator_name(branch: Terminator) -> &'static str {
+    match branch {
+        Terminator::Asm => "ASM",
+        Terminator::Acis => "ACIS",
+    }
+}
+
+/// Parse a text stream into its header and typed record table. Records end at
+/// the terminator line, or at the last complete record when the input ends
+/// without one.
 pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, StreamFailure> {
     let mut pos = 0usize;
     let header = parse_header(ctx, bytes, &mut pos)?;
     // Length conversion into the binary centimetre convention: the stream
     // stores lengths in `scale` millimetres per unit.
-    let scale = header.scale().get();
+    let mut scale = header.scale().get();
+    let mut record_count = header.record_count;
+    let mut segment_start = 0;
+    let mut record_segments = Vec::new();
+    let mut segment_storage = ctx
+        .reserve_scoped(0, "SAT record-table segments")
+        .map_err(StreamFailure::from_operation)?;
+    let mut concatenated_streams = false;
 
-    let mut reader = FieldReader { bytes, pos };
+    let mut reader = FieldReader {
+        bytes,
+        pos,
+        invalid_utf8: None,
+    };
     let mut records = Vec::new();
     let mut terminator = None;
+    let mut framing = Vec::new();
+    let mut incomplete = None;
+    let mut unread = None;
+    let mut unread_stream_layout = false;
     let mut admitted_entities = 0_u64;
     ctx.admit_entities(
         header.entity_count,
@@ -514,19 +823,105 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
     .map_err(StreamFailure::from_operation)?;
     // Record name field, then payload fields until the terminator.
     'stream: loop {
+        let table_complete = terminator.is_some()
+            || record_count.is_some_and(|count| {
+                count > 0
+                    && cadmpeg_core::decode::u64_from_index(records.len() - segment_start) >= count
+            });
+        if let Some(next) = segments::next_header(ctx, bytes, reader.pos, table_complete)
+            .map_err(StreamFailure::from_operation)?
+        {
+            let unread_start = bytes[reader.pos..next]
+                .iter()
+                .position(|byte| !is_ws(*byte))
+                .map_or(next, |offset| reader.pos + offset);
+            let mut end = next;
+            let mut next_header = match parse_header(ctx, bytes, &mut end) {
+                Ok(header) => header,
+                Err(error @ (StreamFailure::Resource(_) | StreamFailure::Operation(_))) => {
+                    return Err(error)
+                }
+                Err(error) => {
+                    push_diagnostic(ctx, &mut framing, StreamDiagnosticKind::Unread, unread_start,
+                        format_args!("the next stream header at byte {next} cannot select a native layout: {error}; the later stream is not read as records"))?;
+                    unread = Some(unread_start..bytes.len());
+                    unread_stream_layout = true;
+                    break 'stream;
+                }
+            };
+            if next_header.save_format_version != header.save_format_version {
+                push_diagnostic(ctx, &mut framing, StreamDiagnosticKind::Unread, unread_start,
+                    format_args!("the next stream header at byte {next} declares save format {}; the active native layout uses {}; the later stream is not read as records",
+                        next_header.save_format_version, header.save_format_version))?;
+                unread = Some(unread_start..bytes.len());
+                unread_stream_layout = true;
+                break 'stream;
+            }
+            segment_storage
+                .with_storage(|| {
+                    ctx.push_vec(
+                        &mut record_segments,
+                        segment_start..records.len(),
+                        "SAT record-table segments",
+                    )
+                })
+                .map_err(StreamFailure::from_operation)?;
+            push_diagnostic(ctx, &mut framing, StreamDiagnosticKind::Metadata, reader.pos,
+                format_args!("a new SAT header at byte {next} starts an independent reference table; tables are rebased separately"))?;
+            ctx.append_vec(
+                &mut framing,
+                &mut next_header.diagnostics,
+                "SAT segment header diagnostics",
+            )
+            .map_err(StreamFailure::from_operation)?;
+            let population = cadmpeg_core::decode::u64_from_index(records.len())
+                .checked_add(next_header.entity_count)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("SAT segment entity population", u64::MAX, u64::MAX)
+                })
+                .map_err(StreamFailure::from_operation)?;
+            ctx.admit_entities(
+                population,
+                &mut admitted_entities,
+                "preflight SAT segment entities",
+            )
+            .map_err(StreamFailure::from_operation)?;
+            scale = next_header.scale().get();
+            record_count = next_header.record_count;
+            segment_start = records.len();
+            reader.pos = end;
+            terminator = None;
+            concatenated_streams = true;
+            continue;
+        }
         let mut scratch = ctx
             .reserve_scoped(0, "frame SAT record")
             .map_err(StreamFailure::from_operation)?;
-        let Some((rec_start, name)) = reader.next_field(ctx, &mut scratch, true)? else {
+        let Some((rec_start, mut name)) = reader.next_field(ctx, &mut scratch, true)? else {
             break;
         };
+        // A stream saved with sequence numbers writes `-N` before each record
+        // name. The record table index remains the file-order position.
+        if is_sequence_number(&name) {
+            let Some((_, record_name)) = reader.next_field(ctx, &mut scratch, true)? else {
+                incomplete = Some((rec_start, name));
+                break;
+            };
+            name = record_name;
+        }
         match name.as_str() {
-            "End-of-ASM-data" => {
-                terminator = Some(Terminator::Asm);
-                break 'stream;
-            }
-            "End-of-ACIS-data" => {
-                terminator = Some(Terminator::Acis);
+            "End-of-ASM-data" | "End-of-ACIS-data" => {
+                terminator = Some(if name == "End-of-ASM-data" {
+                    Terminator::Asm
+                } else {
+                    Terminator::Acis
+                });
+                if segments::next_header(ctx, bytes, reader.pos, true)
+                    .map_err(StreamFailure::from_operation)?
+                    .is_some()
+                {
+                    continue 'stream;
+                }
                 break 'stream;
             }
             _ => {}
@@ -536,12 +931,8 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
         let mut subtype_depth = 0usize;
         loop {
             let Some((at, field)) = reader.next_field(ctx, &mut scratch, false)? else {
-                return Err(StreamError {
-                    format: StreamFormat::Text,
-                    offset: rec_start,
-                    reason: record_error_reason(ctx, &name, "has no `#` terminator")?,
-                }
-                .into());
+                incomplete = Some((rec_start, name));
+                break 'stream;
             };
             if field == "#" {
                 if subtype_depth != 0 {
@@ -600,20 +991,22 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
         scratch
             .grow(cadmpeg_core::decode::u64_from_index(token_bytes))
             .map_err(StreamFailure::from_operation)?;
-        let tokens = type_record(ctx, head, &prims, scale).map_err(|failure| match failure {
-            TypedRecordFailure::Resource(error) => StreamFailure::from_operation(error),
-            TypedRecordFailure::Type(failure) => {
-                let error = StreamError {
-                    format: StreamFormat::Text,
-                    offset: rec_start,
-                    reason: failure.reason().to_string(),
-                };
-                match failure {
-                    TypeFailure::UnrepresentableLength => StreamFailure::NotImplemented(error),
-                    TypeFailure::InvalidSplineCount => StreamFailure::Malformed(error),
+        let tokens = type_record(ctx, head, &prims, scale, header.save_format_version).map_err(
+            |failure| match failure {
+                TypedRecordFailure::Resource(error) => StreamFailure::from_operation(error),
+                TypedRecordFailure::Type(failure) => {
+                    let error = StreamError {
+                        format: StreamFormat::Text,
+                        offset: rec_start,
+                        reason: failure.reason().to_string(),
+                    };
+                    match failure {
+                        TypeFailure::UnrepresentableLength => StreamFailure::NotImplemented(error),
+                        TypeFailure::InvalidSplineCount => StreamFailure::Malformed(error),
+                    }
                 }
-            }
-        })?;
+            },
+        )?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(tokens.len() * std::mem::size_of::<Token>()),
             "retain SAT typed tokens",
@@ -645,27 +1038,93 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
             len: reader.pos - rec_start,
         });
     }
-    let Some(terminator) = terminator else {
-        return Err(StreamError {
-            format: StreamFormat::Text,
-            offset: reader.pos,
-            reason: "stream has no End-of-ASM-data or End-of-ACIS-data line".to_string(),
+    let has_terminator_line = terminator.is_some();
+    let terminator = match terminator {
+        Some(terminator) => {
+            reader.skip_ws();
+            if unread.is_none() && reader.pos != bytes.len() {
+                push_diagnostic(
+                    ctx,
+                    &mut framing,
+                    StreamDiagnosticKind::Unread,
+                    reader.pos,
+                    format_args!(
+                        "{} bytes after the terminator line are not read as records",
+                        bytes.len() - reader.pos
+                    ),
+                )?;
+                unread = Some(reader.pos..bytes.len());
+            }
+            terminator
         }
-        .into());
+        None => {
+            let branch = header.save_format_branch();
+            if unread.is_none() {
+                match incomplete {
+                    Some((start, name)) => {
+                        push_diagnostic(
+                            ctx,
+                            &mut framing,
+                            StreamDiagnosticKind::Unread,
+                            start,
+                            format_args!(
+                                "input ends inside record `{name}` before its `#` terminator; \
+                             the incomplete record is not read, and the stream is read on \
+                             the {} branch its save format selects",
+                                terminator_name(branch)
+                            ),
+                        )?;
+                        unread = Some(start..bytes.len());
+                    }
+                    None => push_diagnostic(
+                        ctx,
+                        &mut framing,
+                        StreamDiagnosticKind::Terminator,
+                        reader.pos,
+                        format_args!(
+                            "input ends without an End-of-ASM-data or End-of-ACIS-data line; \
+                         the stream is read on the {} branch its save format selects",
+                            terminator_name(branch)
+                        ),
+                    )?,
+                }
+            }
+            branch
+        }
     };
-    reader.skip_ws();
-    if reader.pos != bytes.len() {
-        return Err(StreamError {
-            format: StreamFormat::Text,
-            offset: reader.pos,
-            reason: "non-whitespace data follows the stream terminator".to_string(),
-        }
-        .into());
+    if let Some((first, count)) = reader.invalid_utf8 {
+        push_diagnostic(
+            ctx,
+            &mut framing,
+            StreamDiagnosticKind::Metadata,
+            first,
+            format_args!(
+                "{count} field(s) are not valid UTF-8; they are read with replacement characters"
+            ),
+        )?;
+    }
+    if concatenated_streams {
+        segment_storage
+            .with_storage(|| {
+                ctx.push_vec(
+                    &mut record_segments,
+                    segment_start..records.len(),
+                    "SAT record-table segments",
+                )
+            })
+            .map_err(StreamFailure::from_operation)?;
+        segments::rebase(ctx, &mut records, &record_segments)
+            .map_err(StreamFailure::from_operation)?;
     }
     Ok(TextStream {
         header,
         records,
+        concatenated_streams,
+        unread_stream_layout,
         terminator,
+        has_terminator_line,
+        framing,
+        unread,
     })
 }
 
@@ -806,6 +1265,7 @@ struct Cur<'a, 'c, 'p> {
     pos: usize,
     /// Millimetres per stream length unit.
     scale: f64,
+    save_format: u32,
     failure: Option<TypeFailure>,
     resource: Option<cadmpeg_core::CodecError>,
     ctx: &'c DecodeContext<'p>,
@@ -980,6 +1440,14 @@ impl<'a> Cur<'a, '_, '_> {
     }
 
     fn enum_word(&mut self, vocab: &[(&str, i64)], out: &mut Vec<Token>) -> Option<()> {
+        if self.save_format < 200 {
+            if let Some(Prim::Integer(value)) = self.peek() {
+                let value = *value;
+                self.bump();
+                push_token!(self, out, Token::Enum(value));
+                return Some(());
+            }
+        }
         let word = self.word()?;
         let (_, value) = vocab.iter().find(|(name, _)| *name == word)?;
         push_token!(self, out, Token::Enum(*value));
@@ -1063,9 +1531,26 @@ impl<'a> Cur<'a, '_, '_> {
 
 /// Run one fixed slot against the cursor.
 fn take_slot(cur: &mut Cur<'_, '_, '_>, slot: Slot, out: &mut Vec<Token>) -> Option<()> {
+    if cur.save_format < 200 && matches!(slot, Slot::Sense | Slot::Sides | Slot::UvSense | Slot::B)
+    {
+        if let Some(Prim::Integer(value)) = cur.peek() {
+            let token = match value {
+                0 => Token::False,
+                1 => Token::True,
+                _ => return None,
+            };
+            cur.bump();
+            push_token!(cur, out, token);
+            return Some(());
+        }
+    }
     match slot {
         Slot::R => match cur.bump()? {
             Prim::Ref(index) => {
+                push_token!(cur, out, Token::Ref(*index));
+                Some(())
+            }
+            Prim::Integer(index) if cur.save_format < 103 => {
                 push_token!(cur, out, Token::Ref(*index));
                 Some(())
             }
@@ -1098,6 +1583,19 @@ fn take_slot(cur: &mut Cur<'_, '_, '_>, slot: Slot, out: &mut Vec<Token>) -> Opt
         }
         Slot::S => match cur.bump()? {
             Prim::Str(value) => {
+                cur.push_text_token(out, value, true);
+                Some(())
+            }
+            Prim::Integer(0) if cur.save_format < 700 => {
+                cur.push_text_token(out, "", true);
+                Some(())
+            }
+            Prim::Integer(count) if cur.save_format < 700 => {
+                let count = usize::try_from(*count).ok()?;
+                let value = cur.word()?;
+                if value.len() != count {
+                    return None;
+                }
                 cur.push_text_token(out, value, true);
                 Some(())
             }
@@ -1174,11 +1672,13 @@ fn try_shape(
     prims: &[Prim],
     scale: f64,
     slots: &[Slot],
+    save_format: u32,
 ) -> Result<Option<Vec<Token>>, TypedRecordFailure> {
     let mut cur = Cur {
         prims,
         pos: 0,
         scale,
+        save_format,
         failure: None,
         resource: None,
         ctx,
@@ -1300,6 +1800,10 @@ fn bs_surface_block(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<(
     let degree_v = cur.long()?;
     push_token!(cur, out, Token::Long(degree_u));
     push_token!(cur, out, Token::Long(degree_v));
+    if matches!(cur.peek(), Some(Prim::Word(word)) if matches!(word.as_str(), "u" | "v" | "both")) {
+        let scope = cur.word()?;
+        cur.push_text_token(out, scope, false);
+    }
     cur.enum_word(CLOSURE, out)?;
     cur.enum_word(CLOSURE, out)?;
     cur.enum_word(SINGULARITY, out)?;
@@ -1439,12 +1943,7 @@ fn exact_spl_sur_tail(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option
 
 /// A sense word: `forward` is `FALSE`, `reversed` is `TRUE`.
 fn sense_word(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<()> {
-    match cur.word()? {
-        "forward" => push_token!(cur, out, Token::False),
-        "reversed" => push_token!(cur, out, Token::True),
-        _ => return None,
-    }
-    Some(())
+    take_slot(cur, Slot::Sense, out)
 }
 
 /// One nullable support-surface slot: the `null_surface` sentinel, a `spline`
@@ -1679,38 +2178,45 @@ fn type_subtype_tabled(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Optio
         return None;
     };
     cur.push_text_token(out, name, false);
-    let matched = match name {
-        "ref" => cur
-            .long()
-            .map(|index| push_token!(cur, out, Token::Long(index))),
-        "exp_par_cur" | "exppc" => exp_par_cur_tail(cur, out),
-        "exact_int_cur" | "exactcur" => exact_int_cur_tail(cur, out),
-        "exact_spl_sur" | "exactsur" => {
-            let mark = (cur.pos, out.len());
-            exact_spl_sur_tail(cur, out).or_else(|| {
-                cur.pos = mark.0;
-                out.truncate(mark.1);
-                exact_spl_sur_revision_tail(cur, out)
-            })
-        }
-        "int_int_cur" => cache_first_curve_context(cur, out),
-        "par_int_cur" => cache_first_curve_context(cur, out).and_then(|()| {
-            for _ in 0..2 {
+    let matched = if cur.save_format < 700
+        && matches!(cur.peek(), Some(Prim::Word(word)) if matches!(word.as_str(), "nubs" | "nurbs" | "full"))
+        && matches!(name, "exactcur" | "surfintcur" | "exactsur")
+    {
+        legacy::cache_tail(cur, out, name == "exactsur")
+    } else {
+        match name {
+            "ref" => cur
+                .long()
+                .map(|index| push_token!(cur, out, Token::Long(index))),
+            "exp_par_cur" | "exppc" => exp_par_cur_tail(cur, out),
+            "exact_int_cur" | "exactcur" => exact_int_cur_tail(cur, out),
+            "exact_spl_sur" | "exactsur" => {
+                let mark = (cur.pos, out.len());
+                exact_spl_sur_tail(cur, out).or_else(|| {
+                    cur.pos = mark.0;
+                    out.truncate(mark.1);
+                    exact_spl_sur_revision_tail(cur, out)
+                })
+            }
+            "int_int_cur" => cache_first_curve_context(cur, out),
+            "par_int_cur" => cache_first_curve_context(cur, out).and_then(|()| {
+                for _ in 0..2 {
+                    let flag = logical_word(cur.word()?)?;
+                    push_token!(cur, out, flag);
+                }
+                Some(())
+            }),
+            "blend_int_cur" => cache_first_curve_context(cur, out).and_then(|()| {
                 let flag = logical_word(cur.word()?)?;
                 push_token!(cur, out, flag);
+                Some(())
+            }),
+            "spring_int_cur" => {
+                cache_first_curve_context(cur, out).and_then(|()| cur.enum_word(CURV_DIR, out))
             }
-            Some(())
-        }),
-        "blend_int_cur" => cache_first_curve_context(cur, out).and_then(|()| {
-            let flag = logical_word(cur.word()?)?;
-            push_token!(cur, out, flag);
-            Some(())
-        }),
-        "spring_int_cur" => {
-            cache_first_curve_context(cur, out).and_then(|()| cur.enum_word(CURV_DIR, out))
+            "cyl_spl_sur" => cyl_spl_sur_tail(cur, out),
+            _ => None,
         }
-        "cyl_spl_sur" => cyl_spl_sur_tail(cur, out),
-        _ => None,
     };
     let closed = matched.and_then(|()| match cur.peek() {
         Some(Prim::Close) => {
@@ -1754,6 +2260,8 @@ fn fallback_scope(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<()>
 // Head shape tables
 // ---------------------------------------------------------------------------
 
+mod legacy;
+
 use Slot::{DLen, DLenSentinel, OptB, Sense, Sides, Sub, UvSense, VLen, VUnit, B, D, L, P, R, S};
 
 // Every entity record opens with the base fields the `shape!` macro
@@ -1783,7 +2291,10 @@ fn head_shapes(head: &str) -> &'static [&'static [Slot]] {
             shape![R, R, R, R, R, Sense, Sides, B],
         ],
         "loop" => &[shape![R, R, R]],
-        "coedge" => &[shape![R, R, R, R, Sense, R, L, R]],
+        "coedge" => &[
+            shape![R, R, R, R, Sense, R, L, R],
+            shape![R, R, R, R, Sense, R, R],
+        ],
         "tcoedge" => &[
             shape![R, R, R, R, Sense, R, L, R, D, D, R, L, L],
             shape![R, R, R, R, Sense, R, L, R, D, D, R],
@@ -1805,7 +2316,7 @@ fn head_shapes(head: &str) -> &'static [&'static [Slot]] {
             shape![R, L, R, DLenSentinel, DLenSentinel, DLenSentinel, L],
             shape![R, L, R, DLenSentinel, DLenSentinel, DLenSentinel],
             // Save format 700 stores one tolerance and no endpoint index.
-            shape![R, R, DLen],
+            shape![R, R, DLenSentinel],
         ],
         "point" => &[shape![P]],
         // A transform has a two-field base: the attribute head and one
@@ -1850,9 +2361,20 @@ fn type_record(
     head: &str,
     prims: &[Prim],
     scale: f64,
+    save_format: u32,
 ) -> Result<Vec<Token>, TypedRecordFailure> {
+    if save_format < 700 {
+        if let Some(tokens) = legacy::type_record(ctx, head, prims, scale, save_format)? {
+            return Ok(tokens);
+        }
+    }
+    if (1100..10_000).contains(&save_format) {
+        if let Some(tokens) = legacy::type_extended_record(ctx, head, prims, scale, save_format)? {
+            return Ok(tokens);
+        }
+    }
     for slots in head_shapes(head) {
-        if let Some(tokens) = try_shape(ctx, prims, scale, slots)? {
+        if let Some(tokens) = try_shape(ctx, prims, scale, slots, save_format)? {
             return Ok(tokens);
         }
     }
@@ -1860,6 +2382,7 @@ fn type_record(
         prims,
         pos: 0,
         scale,
+        save_format,
         failure: None,
         resource: None,
         ctx,
@@ -1943,6 +2466,7 @@ mod tests {
             prims: &prims,
             pos: 0,
             scale: 10.0,
+            save_format: 23_200,
             failure: None,
             resource: None,
             ctx: &ctx,
@@ -1965,8 +2489,8 @@ mod tests {
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let prims = [Prim::Integer(4)];
-        let error =
-            super::type_record(&ctx, "unknown", &prims, 10.0).expect_err("resource refusal");
+        let error = super::type_record(&ctx, "unknown", &prims, 10.0, 23_200)
+            .expect_err("resource refusal");
         let super::TypedRecordFailure::Resource(CodecError::ResourceLimit(limit)) = error else {
             panic!("expected resource refusal")
         };
@@ -2006,6 +2530,7 @@ mod tests {
                 prims: &prims,
                 pos: 0,
                 scale: 10.0,
+                save_format: 23_200,
                 failure: None,
                 resource: None,
                 ctx,
@@ -2226,7 +2751,6 @@ mod tests {
     #[test]
     fn sat_record_error_text_refuses_each_input_name_limit() {
         for (body, description) in [
-            ("mystery 1\n", "has no `#` terminator"),
             ("mystery { #\n", "terminates inside a subtype scope"),
             ("mystery } #\n", "closes an unopened subtype scope"),
         ] {
@@ -2292,12 +2816,21 @@ mod tests {
         assert_eq!(asm.header.save_format_version, 23200);
         assert_eq!(asm.header.entity_count, 2);
         assert_eq!(asm.header.flags, 2);
-        assert_eq!(asm.header.product_family, "Autodesk Neutron");
-        assert_eq!(asm.header.product_version, "ASM 232.4.0.65535 OSX");
-        assert_eq!(asm.header.save_date, "Fri Jul 17 14:46:47 2026");
+        assert_eq!(
+            asm.header.product_family.as_deref(),
+            Some("Autodesk Neutron")
+        );
+        assert_eq!(
+            asm.header.product_version.as_deref(),
+            Some("ASM 232.4.0.65535 OSX")
+        );
+        assert_eq!(
+            asm.header.save_date.as_deref(),
+            Some("Fri Jul 17 14:46:47 2026")
+        );
         assert!(approx(asm.header.scale().get(), 1.0));
-        assert!(approx(asm.header.resabs().get(), 1.0e-6));
-        assert!(approx(asm.header.resnor().get(), 1.0e-10));
+        assert!(approx(asm.header.resabs().unwrap().get(), 1.0e-6));
+        assert!(approx(asm.header.resnor().unwrap().get(), 1.0e-10));
         assert_eq!(asm.records.len(), 1);
         assert_eq!(asm.records[0].name, "asmheader");
         assert_eq!(
@@ -2349,7 +2882,7 @@ mod tests {
         assert_eq!(header.flags, Some(2));
         // The token values were converted; the reported unit is centimetres.
         assert_eq!(header.scale, Some(10.0));
-        let expected_resabs_cm = stream.header.resabs().get() / 10.0;
+        let expected_resabs_cm = stream.header.resabs().unwrap().get() / 10.0;
         assert_eq!(header.linear, Some(expected_resabs_cm));
     }
 
@@ -2360,7 +2893,7 @@ mod tests {
         let source = source.replacen("1 1e-06 1.0e-10", "25.4 1e-06 1.0e-10", 1);
         let stream = parse(source.as_bytes()).expect("inch-scale stream");
         let actual = kernel_header(&stream.header).linear.expect("resabs");
-        let expected_resabs_cm = stream.header.resabs().get() * 2.54;
+        let expected_resabs_cm = stream.header.resabs().unwrap().get() * 2.54;
         assert!((actual / expected_resabs_cm - 1.0).abs() < f64::EPSILON);
     }
 
@@ -2371,8 +2904,8 @@ mod tests {
         let source = source.replacen("1 1e-06 1.0e-10", "25.4 1e-06 1.0e-10", 1);
         let stream = parse(source.as_bytes()).expect("positive scale and nonnegative tolerances");
         let scale: PositiveReal = stream.header.scale();
-        let resabs: NonNegativeReal = stream.header.resabs();
-        let resnor: NonNegativeReal = stream.header.resnor();
+        let resabs: NonNegativeReal = stream.header.resabs().unwrap();
+        let resnor: NonNegativeReal = stream.header.resnor().unwrap();
         assert_eq!(scale.get(), 25.4);
         assert_eq!(resabs.get(), 1.0e-6);
         assert_eq!(resnor.get(), 1.0e-10);
@@ -2381,21 +2914,24 @@ mod tests {
     }
 
     #[test]
-    fn text_header_refuses_unrepresentable_resabs_conversion() {
+    fn text_header_omits_unrepresentable_resabs_conversion() {
         let source = String::from_utf8(asm_stream("asmheader $-1 -1 @13 232.4.0.65535 #\n"))
             .expect("ASCII stream");
         for replacement in ["20 1.7976931348623157e308 1.0e-10", "5e-324 1 1.0e-10"] {
             let source = source.replacen("1 1e-06 1.0e-10", replacement, 1);
-            let error = parse(source.as_bytes()).expect_err("resabs cannot be normalized");
-            assert_eq!(
-                error.reason,
-                "header resabs cannot be represented in centimetres"
-            );
+            let stream =
+                parse(source.as_bytes()).expect("independent records survive invalid tolerance");
+            assert_eq!(kernel_header(&stream.header).linear, None);
+            assert_eq!(stream.header.diagnostics.len(), 1);
+            assert!(stream.header.diagnostics[0]
+                .error
+                .reason
+                .contains("cannot be represented"));
         }
     }
 
     #[test]
-    fn invalid_header_scales_are_rejected() {
+    fn unusable_header_units_read_lengths_as_millimetres() {
         for scale in ["0", "-1", "NaN", "inf"] {
             let mut stream = asm_stream("asmheader $-1 -1 @13 232.4.0.65535 #\n");
             let scale_start = stream
@@ -2404,14 +2940,120 @@ mod tests {
                 .expect("tolerance line");
             stream.splice(scale_start..=scale_start, scale.bytes());
 
-            let error = parse(&stream).expect_err("invalid scale must fail");
-            assert_eq!(error.offset, scale_start);
-            assert_eq!(error.reason, "header scale must be finite and positive");
+            let parsed = parse(&stream).expect("records survive an unusable units word");
+            assert_eq!(parsed.header.units(), super::TextUnits::Unspecified);
+            assert_eq!(parsed.header.scale(), PositiveReal::ONE);
+            assert_eq!(parsed.records.len(), 1);
+            let units: Vec<_> = parsed
+                .header
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.kind == super::StreamDiagnosticKind::Units)
+                .collect();
+            assert_eq!(units.len(), 1);
+            assert_eq!(units[0].error.offset, scale_start);
         }
     }
 
     #[test]
-    fn invalid_header_tolerances_are_rejected() {
+    fn legacy_save_formats_store_one_header_line() {
+        let stream = parse(
+            b"106 0 1 0           \nbody $-1 $1 $-1 $-1 #\nlump $-1 $-1 $-1 $0 #\nEnd-of-ACIS-data \n",
+        )
+        .expect("legacy stream frames");
+        assert_eq!(stream.header.save_format_version, 106);
+        assert_eq!(stream.header.product_family, None);
+        assert_eq!(stream.header.units(), super::TextUnits::Unspecified);
+        assert_eq!(stream.header.resabs(), None);
+        assert_eq!(stream.header.source_span, 0..21);
+        assert_eq!(
+            stream
+                .records
+                .iter()
+                .map(|record| record.name.as_str())
+                .collect::<Vec<_>>(),
+            ["body", "lump"]
+        );
+        assert_eq!(stream.header.diagnostics.len(), 1);
+        assert_eq!(
+            stream.header.diagnostics[0].kind,
+            super::StreamDiagnosticKind::Units
+        );
+    }
+
+    #[test]
+    fn sequence_numbers_do_not_change_record_indices() {
+        let stream = parse(
+            b"106 0 1 0 \n-0 body $-1 $1 $-1 $-1 #\n-1 lump $-1 $-1 $-1 $0 #\nEnd-of-ACIS-data \n",
+        )
+        .expect("sequence-numbered stream frames");
+        let framed: Vec<_> = stream
+            .records
+            .iter()
+            .map(|record| (record.index, record.name.as_str()))
+            .collect();
+        assert_eq!(framed, [(0, "body"), (1, "lump")]);
+        assert!(stream.framing.is_empty());
+    }
+
+    #[test]
+    fn unterminated_streams_keep_complete_records() {
+        let mut asm = asm_stream("asmheader $-1 -1 @13 232.4.0.65535 #\nbody $-1 -1 ");
+        asm.truncate(asm.len() - b"End-of-ASM-data \n".len());
+        let incomplete = asm.len() - b"body $-1 -1 ".len();
+        let stream = parse(&asm).expect("complete records survive truncation");
+        assert_eq!(stream.records.len(), 1);
+        assert_eq!(stream.terminator, Terminator::Asm);
+        assert!(!stream.has_terminator_line);
+        assert_eq!(stream.unread, Some(incomplete..asm.len()));
+        assert_eq!(stream.framing.len(), 1);
+        assert_eq!(stream.framing[0].kind, super::StreamDiagnosticKind::Unread);
+        assert_eq!(stream.framing[0].error.offset, incomplete);
+
+        let header_only = b"700 0 1 0 \n14 cadmpeg-tests 4 ACIS 0 \n-1 1e-06 1e-10 \n";
+        let stream = parse(header_only).expect("a header-only stream frames no records");
+        assert!(stream.records.is_empty());
+        assert_eq!(stream.terminator, Terminator::Acis);
+        assert_eq!(stream.unread, None);
+        assert_eq!(stream.framing.len(), 1);
+        assert_eq!(
+            stream.framing[0].kind,
+            super::StreamDiagnosticKind::Terminator
+        );
+    }
+
+    #[test]
+    fn data_after_the_terminator_line_is_left_unread() {
+        let mut source = asm_stream("asmheader $-1 -1 @13 232.4.0.65535 #\n");
+        let tail = source.len();
+        source.extend_from_slice(b"body $-1 #\n");
+        let stream = parse(&source).expect("terminated records survive trailing data");
+        assert_eq!(stream.records.len(), 1);
+        assert!(stream.has_terminator_line);
+        assert_eq!(stream.unread, Some(tail..source.len()));
+        assert_eq!(stream.framing[0].kind, super::StreamDiagnosticKind::Unread);
+    }
+
+    #[test]
+    fn non_utf8_fields_keep_their_record_boundaries() {
+        let mut source = asm_stream("");
+        let body_start = source.len() - b"End-of-ASM-data \n".len();
+        let body = b"name_attrib-attrib $-1 $-1 $-1 $-1 7 \x02y\xff\x87 0 #\nbody $-1 #\n";
+        source.splice(body_start..body_start, body.iter().copied());
+        let stream = parse(&source).expect("record boundaries survive invalid UTF-8");
+        assert_eq!(stream.records.len(), 2);
+        assert_eq!(stream.records[1].name, "body");
+        let notes: Vec<_> = stream
+            .framing
+            .iter()
+            .filter(|diagnostic| diagnostic.kind == super::StreamDiagnosticKind::Metadata)
+            .collect();
+        assert_eq!(notes.len(), 1);
+        assert!(notes[0].error.reason.starts_with("1 field(s)"));
+    }
+
+    #[test]
+    fn invalid_header_tolerances_are_omitted_without_losing_records() {
         for (resabs, resnor) in [
             ("-1", "1.0e-10"),
             ("NaN", "1.0e-10"),
@@ -2431,13 +3073,39 @@ mod tests {
                 replacement.bytes(),
             );
 
-            let error = parse(&stream).expect_err("invalid tolerance must fail");
-            assert_eq!(error.offset, tolerance_start);
-            assert_eq!(
-                error.reason,
-                "header tolerances must be finite and nonnegative"
-            );
+            let parsed = parse(&stream).expect("tolerance metadata does not frame records");
+            assert_eq!(parsed.records.len(), 1);
+            assert_eq!(parsed.header.diagnostics.len(), 1);
+            assert_eq!(parsed.header.diagnostics[0].error.offset, tolerance_start);
+            assert!(parsed.header.resabs().is_none() || parsed.header.resnor().is_none());
         }
+    }
+
+    #[test]
+    fn recoverable_header_metadata_propagates_resource_refusals() {
+        let source =
+            String::from_utf8(asm_stream("asmheader $-1 -1 @13 232.4.0.65535 #\n")).unwrap();
+        let source = source
+            .lines()
+            .enumerate()
+            .map(|(index, line)| {
+                if index == 1 {
+                    "bad product metadata"
+                } else {
+                    line
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy).unwrap();
+        let error =
+            super::parse(&ctx, source.as_bytes()).expect_err("diagnostics use the caller budget");
+        assert!(
+            matches!(error, StreamFailure::Resource(limit) if limit.operation == "SAT header diagnostics")
+        );
     }
 
     #[test]
@@ -2459,7 +3127,16 @@ mod tests {
                     malformed.extend_from_slice(bytes);
                 }
             }
-            assert!(parse(&malformed).is_err(), "header line {line}");
+            if line == 0 {
+                assert!(
+                    parse(&malformed).is_err(),
+                    "structural header words must frame"
+                );
+            } else {
+                let parsed = parse(&malformed).expect("extra metadata is independently framed");
+                assert_eq!(parsed.header.diagnostics.len(), 1);
+                assert_eq!(parsed.records.len(), 1);
+            }
         }
     }
 
@@ -2474,9 +3151,11 @@ mod tests {
             .expect("product-family separator");
         malformed.remove(separator);
 
-        let error = parse(&malformed).expect_err("missing counted-string separator must fail");
+        let parsed = parse(&malformed).expect("product-line newline preserves records");
+        assert_eq!(parsed.header.product_family, None);
+        assert_eq!(parsed.records.len(), 1);
         assert_eq!(
-            error.offset,
+            parsed.header.diagnostics[0].error.offset,
             valid.iter().position(|byte| *byte == b'\n').unwrap() + 1
         );
     }
@@ -2500,7 +3179,7 @@ mod tests {
     }
 
     #[test]
-    fn text_fields_reject_invalid_utf8_at_the_source_byte() {
+    fn text_fields_report_invalid_utf8_at_the_source_byte() {
         let mut header = asm_stream("mystery 1 #\n");
         let header_offset = header
             .windows(b"Autodesk".len())
@@ -2523,13 +3202,24 @@ mod tests {
             .expect("counted string offset");
         counted[counted_offset] = 0xff;
 
-        for (bytes, expected_offset) in [
-            (header, header_offset),
-            (bare, bare_offset),
-            (counted, counted_offset),
-        ] {
-            let error = parse(&bytes).expect_err("invalid UTF-8 must fail");
-            assert_eq!(error.offset, expected_offset);
+        let recovered = parse(&header).expect("header UTF-8 defect does not affect record framing");
+        assert_eq!(recovered.header.diagnostics[0].error.offset, header_offset);
+        assert_eq!(recovered.header.product_family, None);
+        assert_eq!(
+            recovered.header.product_version.as_deref(),
+            Some("ASM 232.4.0.65535 OSX")
+        );
+        assert!(recovered.header.save_date.is_some());
+        assert_eq!(recovered.records.len(), 1);
+        for (bytes, expected_offset) in [(bare, bare_offset), (counted, counted_offset)] {
+            let stream = parse(&bytes).expect("framed fields survive invalid UTF-8");
+            assert_eq!(stream.records.len(), 1);
+            assert_eq!(stream.framing.len(), 1);
+            assert_eq!(
+                stream.framing[0].kind,
+                super::StreamDiagnosticKind::Metadata
+            );
+            assert_eq!(stream.framing[0].error.offset, expected_offset);
         }
     }
 
@@ -2571,16 +3261,6 @@ mod tests {
         let stream = parse(&asm_stream("point $-1 -1 $-1 1 \n\t2 \n\t3 #\n")).expect("wrapped");
         assert_eq!(stream.records.len(), 1);
         assert_eq!(stream.records[0].tokens.len(), 4);
-    }
-
-    #[test]
-    fn stream_terminator_rejects_trailing_data() {
-        let mut stream = asm_stream("point $-1 -1 $-1 1 2 3 #\n");
-        let trailing_offset = stream.len();
-        stream.extend_from_slice(b"point $-1 -1 $-1 4 5 6 #\n");
-
-        let error = parse(&stream).expect_err("record after stream terminator must fail");
-        assert_eq!(error.offset, trailing_offset);
     }
 
     #[test]
@@ -2774,6 +3454,7 @@ mod tests {
                 prims: &prims,
                 pos: 0,
                 scale: 10.0,
+                save_format: 23_200,
                 failure: None,
                 resource: None,
                 ctx,
@@ -2821,6 +3502,7 @@ mod tests {
                 prims: &prims,
                 pos: 0,
                 scale: 10.0,
+                save_format: 23_200,
                 failure: None,
                 resource: None,
                 ctx,
@@ -2865,9 +3547,18 @@ mod tests {
     }
 
     #[test]
-    fn a_stream_without_a_terminator_line_is_an_error() {
+    fn a_stream_without_a_terminator_line_takes_its_save_format_branch() {
         let text = "700 0 1 0 \n30 Autodesk Translation Framework 21 ASM 232.4.0.65535 OSX 24 \
                     Fri Jul 17 14:48:06 2026 \n1 1e-06 1.0e-10 \nbody $-1 -1 $-1 $-1 $-1 $-1 #\n";
-        assert!(parse(text.as_bytes()).is_err());
+        let stream = parse(text.as_bytes()).expect("complete records frame");
+        assert_eq!(stream.records.len(), 1);
+        assert_eq!(stream.terminator, Terminator::Acis);
+        assert!(!stream.has_terminator_line);
+        assert_eq!(stream.unread, None);
+        assert_eq!(stream.framing.len(), 1);
+        assert_eq!(
+            stream.framing[0].kind,
+            super::StreamDiagnosticKind::Terminator
+        );
     }
 }

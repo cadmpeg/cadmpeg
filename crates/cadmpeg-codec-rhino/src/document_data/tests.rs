@@ -707,7 +707,12 @@ fn legacy_render_settings_gate_each_v5_suffix() {
         crate::settings::MillimeterScale::IDENTITY,
     )
     .expect("legacy version 102 settings");
-    assert_eq!(value_102.background_bottom_color, Some([9, 10, 11, 12]));
+    assert_eq!(
+        value_102
+            .background_bottom_color
+            .map(cadmpeg_ir::native::bytes::NativeBytes::into_inner),
+        Some([9, 10, 11, 12])
+    );
     assert!(!value_102.image_flags.scale_background_to_fit);
 
     let value_103 = legacy_body(103);

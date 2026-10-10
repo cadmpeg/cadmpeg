@@ -108,7 +108,7 @@ A wire edge appears in exactly one shell's `wire_edges` and in no coedge. A free
 
 Surface carriers are plane, cylinder, cone, sphere, torus, NURBS, procedural, or unknown. Curve carriers are line, circle, ellipse, parabola, hyperbola, degenerate, NURBS, procedural, or unknown. Pcurves are analytic, first-order harmonic, first-order hyperbolic, polar, NURBS, trimmed, or signed-offset curves in a surface's `(u, v)` space. A subdivision surface is a Catmull–Clark control cage with vertices, edges, directed face edge uses, endpoint sharpness, edge tags, vertex tags, and sector coefficients.
 
-Free surface, curve, subdivision-surface, and tessellation carriers may carry a `SourceObjectAssociation`. The association records the source format and native object identifier, effective name, color, visibility, layer, and outermost-to-innermost instance path. These fields preserve source-object identity and display metadata when no topology entity owns the carrier.
+Point, surface, curve, subdivision-surface, and tessellation carriers may carry a `SourceObjectAssociation`. The association records the source format and native object identifier, effective name, color, visibility, layer, and outermost-to-innermost instance path. These fields preserve source-object identity and display metadata. The optional `geometry_role` states `independent` or `support` from source ownership. A support retains its mathematics if its owner cannot be projected; it must not become standalone geometry simply because no projected topology uses it. Absence leaves ownership unknown, and references from existing topology still establish support ownership.
 
 Analytic surfaces carry the frame needed to interpret parameters: plane `u_axis`; cylinder, cone, sphere, and torus axis and `ref_direction`. For optional frame fields, absence means that the source supplied no stable frame. When a decoder constructs a frame, it chooses the normalized projection of the global axis with the smallest absolute dot product with the carrier axis and marks the field `derived`.
 
@@ -125,6 +125,8 @@ Analytic surfaces carry the frame needed to interpret parameters: plane `u_axis`
 | sphere                 | `u` is azimuth in radians; `v` is latitude in `[-π/2, π/2]`                                          |
 | torus                  | `u` is major azimuth and `v` is minor azimuth, both in `[0, 2π]`                                     |
 | NURBS curve or surface | parameters are the stored knot-domain coordinates                                                    |
+
+`Curve.parameter_range` optionally retains a finite source interval independently of topology edges. Its first endpoint is strictly below its second. The interval records the bounded carrier extent; it does not restrict use of the underlying mathematical curve outside that interval.
 
 `Edge.param_range` uses the canonical parameterization of its curve when a 3D carrier exists. A carrier-less degenerate or tolerant edge has no canonical 3D domain; its optional range retains finite native endpoint doubles without imposing carrier-domain ordering. Full circles are anchored to `[0, 2π]`. Periodic ranges may cross a seam by using an end value greater than the start value in the unwrapped domain. Pcurve coordinates use the corresponding surface conventions.
 

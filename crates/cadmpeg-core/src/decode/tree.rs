@@ -13,6 +13,9 @@ const ATTRIBUTE_RECORD_BOUND: u64 = 128;
 /// Bounds roxmltree 0.21.1 `Namespace`, including optional prefix,
 /// `StringStorage` and alignment. Namespace indices are admitted separately.
 const NAMESPACE_RECORD_BOUND: u64 = 64;
+// The built-in xml prefix and URI participate in expanded-name comparisons.
+const XML_PREFIX_BYTES: u64 = 3;
+const XML_NAMESPACE_URI_BYTES: u64 = 36;
 
 /// An XML document and the admission held until its storage is released.
 #[derive(Debug)]
@@ -29,45 +32,316 @@ impl<'input> AdmittedXml<'input, '_> {
 }
 
 #[derive(Clone, Copy)]
-enum XmlScan {
+enum XmlScan<'input> {
     Text,
-    Tag {
-        closing: bool,
-        quote: u8,
-        last: u8,
-        attributes: u64,
-    },
+    Tag(XmlTag<'input>),
     Comment,
     Cdata,
     Instruction,
     Declaration,
 }
 
+#[derive(Clone, Copy)]
+struct XmlTag<'input> {
+    closing: bool,
+    quote: u8,
+    last: u8,
+    attributes: u64,
+    name_bytes: u64,
+    name_complete: bool,
+    attribute_name_bytes: u64,
+    namespace_key_bytes: u64,
+    prefixed_attributes: u64,
+    namespaces: u64,
+    start: usize,
+    undo_start: usize,
+    namespace_prefix: Option<&'input str>,
+    quote_start: usize,
+}
+
+/// Upper bounds for the namespace list visible at one element.
+#[derive(Clone, Copy)]
+struct XmlNamespaceScope {
+    element_depth: u64,
+    undo_start: usize,
+    count: u64,
+    max_prefix: u64,
+    max_uri: u64,
+}
+
+impl Default for XmlNamespaceScope {
+    fn default() -> Self {
+        Self {
+            element_depth: 0,
+            undo_start: 0,
+            count: 0,
+            max_prefix: XML_PREFIX_BYTES,
+            max_uri: XML_NAMESPACE_URI_BYTES,
+        }
+    }
+}
+
+/// Borrow prefix text and restore bindings on closing tags. Namespace-free
+/// children reuse their parent's bound; declarations recompute the union.
+struct XmlNamespaces<'ctx, 'input> {
+    prefixes: std::collections::HashMap<&'input str, u64>,
+    bindings: std::collections::HashSet<(&'input str, &'input str)>,
+    undo: Vec<(&'input str, Option<u64>)>,
+    scopes: Vec<XmlNamespaceScope>,
+    storage: ScopedReservation<'ctx>,
+    ctx: &'ctx DecodeContext<'ctx>,
+}
+
+impl<'ctx, 'input> XmlNamespaces<'ctx, 'input> {
+    fn new(ctx: &'ctx DecodeContext<'_>, operation: &'static str) -> Result<Self, CodecError> {
+        Ok(Self {
+            prefixes: std::collections::HashMap::new(),
+            bindings: std::collections::HashSet::new(),
+            undo: Vec::new(),
+            scopes: Vec::new(),
+            storage: ctx.reserve_scoped(0, operation)?,
+            ctx,
+        })
+    }
+
+    fn parent(&self) -> XmlNamespaceScope {
+        self.scopes.last().copied().unwrap_or_default()
+    }
+
+    fn declare(&mut self, prefix: &'input str, operation: &'static str) -> Result<(), CodecError> {
+        self.ctx.charge_work(
+            u64_from_index(prefix.len())
+                .checked_mul(6)
+                .and_then(|work| work.checked_add(1))
+                .ok_or_else(|| self.ctx.tree_overflow(operation))?,
+            operation,
+        )?;
+        let previous = self.prefixes.get(prefix).copied();
+        if previous.is_none() && self.prefixes.len() == self.prefixes.capacity() {
+            for stored in self.prefixes.keys() {
+                self.ctx.charge_work(
+                    u64_from_index(stored.len())
+                        .checked_add(1)
+                        .ok_or_else(|| self.ctx.tree_overflow(operation))?,
+                    operation,
+                )?;
+            }
+        }
+        self.storage.with_storage(|| {
+            self.ctx
+                .push_vec(&mut self.undo, (prefix, previous), operation)?;
+            self.ctx
+                .insert_hash_map(&mut self.prefixes, prefix, 0, operation)?;
+            Ok::<_, CodecError>(())
+        })
+    }
+
+    fn value(
+        &mut self,
+        prefix: &'input str,
+        uri: &'input str,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        self.ctx.charge_work(
+            u64_from_index(prefix.len())
+                .checked_mul(4)
+                .and_then(|work| work.checked_add(u64_from_index(uri.len()).checked_mul(2)?))
+                .and_then(|work| work.checked_add(1))
+                .ok_or_else(|| self.ctx.tree_overflow(operation))?,
+            operation,
+        )?;
+        if let Some(value) = self.prefixes.get_mut(prefix) {
+            *value = u64_from_index(uri.len());
+        }
+        if self.bindings.contains(&(prefix, uri)) {
+            return Ok(());
+        }
+        if self.bindings.len() == self.bindings.capacity() {
+            for (stored_prefix, stored_uri) in &self.bindings {
+                self.ctx.charge_work(
+                    u64_from_index(stored_prefix.len())
+                        .checked_add(u64_from_index(stored_uri.len()))
+                        .and_then(|work| work.checked_add(1))
+                        .ok_or_else(|| self.ctx.tree_overflow(operation))?,
+                    operation,
+                )?;
+            }
+        }
+        self.storage.with_storage(|| {
+            self.ctx.reserve_set(&mut self.bindings, 1, operation)?;
+            self.bindings.insert((prefix, uri));
+            Ok::<_, CodecError>(())
+        })
+    }
+
+    fn scope(
+        &self,
+        tag: &XmlTag<'_>,
+        operation: &'static str,
+    ) -> Result<XmlNamespaceScope, CodecError> {
+        let mut scope = self.parent();
+        scope.undo_start = tag.undo_start;
+        if tag.namespaces != 0 {
+            scope = XmlNamespaceScope {
+                undo_start: tag.undo_start,
+                // Local declarations include repeated default namespace bindings,
+                // which roxmltree can retain even when their prefixes are equal.
+                count: u64_from_index(self.prefixes.len())
+                    .checked_add(tag.namespaces)
+                    .ok_or_else(|| self.ctx.tree_overflow(operation))?,
+                ..XmlNamespaceScope::default()
+            };
+            for (prefix, uri_bytes) in &self.prefixes {
+                self.ctx.charge_work(1, operation)?;
+                scope.max_prefix = scope.max_prefix.max(u64_from_index(prefix.len()));
+                scope.max_uri = scope.max_uri.max(*uri_bytes);
+            }
+        }
+        Ok(scope)
+    }
+
+    fn restore(&mut self, start: usize, operation: &'static str) -> Result<(), CodecError> {
+        while self.undo.len() > start {
+            if let Some((prefix, previous)) = self.undo.pop() {
+                self.ctx.charge_work(
+                    u64_from_index(prefix.len())
+                        .checked_mul(2)
+                        .and_then(|work| work.checked_add(1))
+                        .ok_or_else(|| self.ctx.tree_overflow(operation))?,
+                    operation,
+                )?;
+                match previous {
+                    Some(previous) => {
+                        self.prefixes.insert(prefix, previous);
+                    }
+                    None => {
+                        self.prefixes.remove(prefix);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn finish(
+        &mut self,
+        tag: &XmlTag<'_>,
+        mut scope: XmlNamespaceScope,
+        depth: Option<u64>,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        if tag.closing {
+            if self
+                .scopes
+                .last()
+                .is_some_and(|parent| Some(parent.element_depth) == depth)
+            {
+                if let Some(parent) = self.scopes.pop() {
+                    self.restore(parent.undo_start, operation)?;
+                }
+            }
+        } else if tag.last == b'/' {
+            self.restore(tag.undo_start, operation)?;
+        } else if tag.namespaces != 0 {
+            scope.element_depth = depth
+                .unwrap_or(0)
+                .checked_add(1)
+                .ok_or_else(|| self.ctx.tree_overflow(operation))?;
+            self.storage
+                .with_storage(|| self.ctx.push_vec(&mut self.scopes, scope, operation))?;
+        }
+        Ok(())
+    }
+}
+
 struct XmlBound {
     nodes: u64,
     attributes: u64,
-    namespaces: u64,
-    max_attributes: u64,
+    namespace_references: Option<u64>,
     depth: u64,
+    local_comparisons: Option<u64>,
+    namespace_unique: u64,
+    namespace_bytes: u64,
 }
 
-/// Counts delimiters and element depth in one pass. Quoted values, comments,
-/// CDATA and processing instructions do not contribute element nesting.
-/// An unmatched closing tag stops depth counting; the parser rejects it.
-fn xml_bound(text: &str) -> XmlBound {
+impl XmlBound {
+    fn tag(&mut self, tag: &XmlTag<'_>, parent: XmlNamespaceScope, scope: XmlNamespaceScope) {
+        self.namespace_bytes += tag.namespace_key_bytes;
+        if tag.namespaces != 0 {
+            self.namespace_references = self
+                .namespace_references
+                .and_then(|references| references.checked_add(scope.count));
+        }
+        self.local_comparisons = self.local_comparisons.and_then(|work| {
+            let attributes = tag
+                .attribute_name_bytes
+                .checked_add(tag.attributes)?
+                .checked_mul(tag.attributes.checked_add(1)?)?;
+            let lookups = tag
+                .name_bytes
+                .checked_add(tag.attribute_name_bytes)?
+                .checked_add(tag.attributes.checked_add(1)?)?
+                .checked_mul(scope.count.checked_add(1)?)?;
+            let uris = tag
+                .prefixed_attributes
+                .checked_mul(tag.prefixed_attributes)?
+                .checked_mul(scope.max_uri.checked_add(1)?)?;
+            let namespaces = if tag.namespaces == 0 {
+                0
+            } else {
+                // Namespace inheritance scans parent names against the growing
+                // local list. Duplicate declarations compare local names too.
+                parent
+                    .count
+                    .checked_mul(parent.count.checked_add(tag.namespaces)?)?
+                    .checked_add(tag.namespaces.checked_mul(tag.namespaces)?)?
+                    .checked_mul(scope.max_prefix.checked_add(1)?)?
+            };
+            work.checked_add(attributes)?
+                .checked_add(lookups)?
+                .checked_add(uris)?
+                .checked_add(namespaces)
+        });
+    }
+
+    fn comparison_work(&self) -> Option<u64> {
+        let namespaces = self.namespace_unique.checked_add(1)?;
+        let levels = u64::from(u64::BITS - namespaces.leading_zeros()) + 1;
+        // Namespace deduplication binary-searches string pairs, then inserts
+        // u16 indices into a sorted vector. Only insertion moves are quadratic.
+        let insertion = self
+            .namespace_bytes
+            .checked_mul(levels)?
+            .checked_add(namespaces.checked_mul(namespaces)?.checked_mul(2)?)?;
+        self.local_comparisons?.checked_add(insertion)
+    }
+}
+
+/// Counts delimiters, element depth and local comparisons in one pass.
+/// Quoted values, comments, CDATA and instructions do not change nesting.
+fn xml_bound(
+    text: &str,
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<XmlBound, CodecError> {
     let bytes = text.as_bytes();
-    let mut markers = 0;
-    let mut attributes = 0;
-    let mut namespaces = 0;
     let mut depth = Some(0_u64);
     let mut maximum = 0;
-    let mut max_attributes = 0;
+    let mut bound = XmlBound {
+        nodes: 0,
+        attributes: 0,
+        namespace_references: Some(0),
+        depth: 0,
+        local_comparisons: Some(0),
+        namespace_unique: 0,
+        namespace_bytes: 0,
+    };
+    let mut namespaces = XmlNamespaces::new(ctx, operation)?;
     let mut state = XmlScan::Text;
     for (index, &byte) in bytes.iter().enumerate() {
-        markers += u64::from(byte == b'<');
-        attributes += u64::from(byte == b'=');
+        bound.nodes += u64::from(byte == b'<');
+        bound.attributes += u64::from(byte == b'=');
         let tail = &bytes[index..];
-        namespaces += u64::from(tail.starts_with(b"xmlns"));
         state = match state {
             XmlScan::Text if byte == b'<' => {
                 if tail.starts_with(b"<!--") {
@@ -79,56 +353,100 @@ fn xml_bound(text: &str) -> XmlBound {
                 } else if tail.starts_with(b"<!") {
                     XmlScan::Declaration
                 } else {
-                    XmlScan::Tag {
+                    XmlScan::Tag(XmlTag {
                         closing: tail.starts_with(b"</"),
                         quote: 0,
                         last: byte,
                         attributes: 0,
-                    }
+                        name_bytes: 0,
+                        name_complete: false,
+                        attribute_name_bytes: 0,
+                        namespace_key_bytes: 0,
+                        prefixed_attributes: 0,
+                        namespaces: 0,
+                        start: index,
+                        undo_start: namespaces.undo.len(),
+                        namespace_prefix: None,
+                        quote_start: index,
+                    })
                 }
             }
-            XmlScan::Tag {
-                closing,
-                quote,
-                last,
-                attributes,
-            } => {
-                if quote != 0 {
-                    XmlScan::Tag {
-                        closing,
-                        quote: if byte == quote { 0 } else { quote },
-                        last,
-                        attributes,
+            XmlScan::Tag(mut tag) => {
+                // The slash before a closing QName is not part of its key.
+                if !(tag.name_complete || byte == b'/' && tag.closing && tag.name_bytes == 0) {
+                    if byte.is_ascii_whitespace() || matches!(byte, b'/' | b'>') {
+                        tag.name_complete = true;
+                    } else {
+                        tag.name_bytes += 1;
+                    }
+                }
+                if tag.quote != 0 {
+                    if byte == tag.quote {
+                        if let Some(prefix) = tag.namespace_prefix {
+                            tag.namespace_key_bytes = tag
+                                .namespace_key_bytes
+                                .checked_add(u64_from_index(index - tag.quote_start))
+                                .ok_or_else(|| ctx.tree_overflow(operation))?;
+                            namespaces.value(prefix, &text[tag.quote_start..index], operation)?;
+                        }
+                        tag.quote = 0;
                     }
                 } else if matches!(byte, b'\'' | b'"') {
-                    XmlScan::Tag {
-                        closing,
-                        quote: byte,
-                        last,
-                        attributes,
-                    }
+                    tag.quote = byte;
+                    tag.quote_start = index + 1;
                 } else if byte == b'>' {
-                    max_attributes = max_attributes.max(attributes);
-                    if closing {
+                    let scope = namespaces.scope(&tag, operation)?;
+                    bound.tag(&tag, namespaces.parent(), scope);
+                    namespaces.finish(&tag, scope, depth, operation)?;
+                    if tag.closing {
                         depth = depth.and_then(|depth| depth.checked_sub(1));
                     } else if let Some(parent_depth) = depth {
                         let element_depth = parent_depth + 1;
                         maximum = maximum.max(element_depth);
-                        if last != b'/' {
+                        if tag.last != b'/' {
                             depth = Some(element_depth);
                         }
                     }
-                    XmlScan::Text
+                    state = XmlScan::Text;
+                    continue;
                 } else {
-                    let attributes = attributes + u64::from(byte == b'=');
-                    max_attributes = max_attributes.max(attributes);
-                    XmlScan::Tag {
-                        closing,
-                        quote,
-                        last: byte,
-                        attributes,
+                    if byte == b'=' {
+                        let mut end = index;
+                        while end > tag.start && bytes[end - 1].is_ascii_whitespace() {
+                            end -= 1;
+                        }
+                        let mut begin = end;
+                        while begin > tag.start
+                            && !bytes[begin - 1].is_ascii_whitespace()
+                            && !matches!(bytes[begin - 1], b'<' | b'>' | b'=' | b'\'' | b'"' | b'/')
+                        {
+                            begin -= 1;
+                        }
+                        let name = &text[begin..end];
+                        tag.attribute_name_bytes = tag
+                            .attribute_name_bytes
+                            .checked_add(u64_from_index(name.len()))
+                            .ok_or_else(|| ctx.tree_overflow(operation))?;
+                        tag.namespace_prefix = if name == "xmlns" {
+                            Some("")
+                        } else {
+                            name.strip_prefix("xmlns:")
+                        };
+                        if let Some(prefix) = tag.namespace_prefix {
+                            tag.namespaces += 1;
+                            tag.namespace_key_bytes = tag
+                                .namespace_key_bytes
+                                .checked_add(u64_from_index(name.len()))
+                                .ok_or_else(|| ctx.tree_overflow(operation))?;
+                            namespaces.declare(prefix, operation)?;
+                        } else {
+                            tag.prefixed_attributes += u64::from(name.contains(':'));
+                        }
+                        tag.attributes += 1;
                     }
+                    tag.last = byte;
                 }
+                XmlScan::Tag(tag)
             }
             XmlScan::Comment if tail.starts_with(b"-->") => XmlScan::Text,
             XmlScan::Cdata if tail.starts_with(b"]]>") => XmlScan::Text,
@@ -137,13 +455,13 @@ fn xml_bound(text: &str) -> XmlBound {
             other => other,
         };
     }
-    XmlBound {
-        nodes: markers,
-        attributes,
-        namespaces,
-        max_attributes,
-        depth: maximum,
+    if let XmlScan::Tag(tag) = state {
+        let scope = namespaces.scope(&tag, operation)?;
+        bound.tag(&tag, namespaces.parent(), scope);
     }
+    bound.depth = maximum;
+    bound.namespace_unique = u64_from_index(namespaces.bindings.len());
+    Ok(bound)
 }
 
 /// Holds nesting guards through the parser call without recursing in the
@@ -189,18 +507,23 @@ impl DecodeContext<'_> {
     }
 
     /// Admits roxmltree 0.21.1 storage before parsing with DTD disabled.
-    /// For N = 2 * '<' + 2, A = '=' and S = 'xmlns' + 1, growing vectors
-    /// reserve 2 * count + their minimum capacity. Storage covers nodes,
-    /// permanent and temporary attributes (minimum 16), namespace records
-    /// and sorted indices, and N * S inherited namespace indices. Node-sized
-    /// scratch includes awaiting-subtree IDs, parent prefixes and text Cows.
+    /// For N = 2 * '<' + 2, A = '=' and S = distinct raw namespace bindings + 1,
+    /// growing vectors reserve 2 * count + their minimum capacity. Storage covers
+    /// nodes, permanent and temporary attributes (minimum 16), namespace records
+    /// and sorted indices. Namespace tree-order slots sum visible bindings at
+    /// elements with declarations; other elements reuse their parent's range.
+    /// Index storage includes old and new allocations during vector growth.
+    /// Node-sized scratch includes awaiting-subtree IDs, parent prefixes and text Cows.
     /// Eight input lengths cover normalization buffers, joined text, shared
     /// strings and transient copies; 32 bytes per string cover Arc headers.
     /// The fixed 1024 bytes cover initial scratch capacities and parser state.
     /// Work covers the scan, parser scans and quadratic attribute/namespace
-    /// comparisons, including string comparisons and namespace insertion. Each
-    /// element compares its attributes locally: work uses maximum attributes
-    /// per tag, not the total across unrelated tags. Temporary node-ID, prefix,
+    /// comparisons, including string comparisons and namespace insertion.
+    /// Attribute comparisons use each tag's name bytes and attribute count. Namespace
+    /// work covers prefix lookups, expanded attribute names, inheritance only
+    /// at tags with declarations, and sorted namespace insertion. Text outside
+    /// tags and ordinary attribute values pay only scanning/normalization work.
+    /// Temporary node-ID, prefix,
     /// text, attribute and namespace-index slots are admitted separately.
     pub fn parse_xml<'input>(
         &self,
@@ -209,15 +532,18 @@ impl DecodeContext<'_> {
     ) -> Result<AdmittedXml<'input, '_>, CodecError> {
         let length = u64_from_index(text.len());
         self.charge_work(length, operation)?;
-        let bound = xml_bound(text);
+        let bound = xml_bound(text, self, operation)?;
         let nodes = bound
             .nodes
             .checked_mul(2)
             .and_then(|n| n.checked_add(2))
             .ok_or_else(|| self.tree_overflow(operation))?;
         let namespaces = bound
-            .namespaces
+            .namespace_unique
             .checked_add(1)
+            .ok_or_else(|| self.tree_overflow(operation))?;
+        let namespace_references = bound
+            .namespace_references
             .ok_or_else(|| self.tree_overflow(operation))?;
         let capacity = |n: u64, minimum: u64| n.checked_mul(2).and_then(|n| n.checked_add(minimum));
         let bytes = (|| {
@@ -226,7 +552,10 @@ impl DecodeContext<'_> {
                 capacity(bound.attributes, 16)?.checked_mul(ATTRIBUTE_RECORD_BOUND * 2)?;
             let namespace_bytes =
                 capacity(namespaces, 4)?.checked_mul(NAMESPACE_RECORD_BOUND + 2)?;
-            let inherited = capacity(nodes.checked_mul(namespaces)?, 4)?.checked_mul(2)?;
+            let namespace_indices = namespace_references
+                .checked_mul(3)?
+                .checked_add(4)?
+                .checked_mul(2)?;
             let strings = nodes
                 .checked_add(bound.attributes)?
                 .checked_add(namespaces)?
@@ -234,21 +563,16 @@ impl DecodeContext<'_> {
             node_bytes
                 .checked_add(attribute_bytes)?
                 .checked_add(namespace_bytes)?
-                .checked_add(inherited)?
+                .checked_add(namespace_indices)?
                 .checked_add(strings)?
                 .checked_add(length.checked_mul(8)?)?
                 .checked_add(1024)
         })()
         .ok_or_else(|| self.tree_overflow(operation))?;
-        let comparisons = bound
-            .max_attributes
-            .checked_add(namespaces)
-            .and_then(|n| n.checked_add(1))
-            .ok_or_else(|| self.tree_overflow(operation))?;
         let work = length
-            .checked_mul(comparisons)
-            .and_then(|n| n.checked_mul(comparisons))
+            .checked_mul(4)
             .and_then(|n| n.checked_add(nodes))
+            .and_then(|n| n.checked_add(bound.comparison_work()?))
             .ok_or_else(|| self.tree_overflow(operation))?;
         self.charge_collection_items(nodes, operation)?;
         self.charge_collection_items(bound.attributes, operation)?;
@@ -257,7 +581,7 @@ impl DecodeContext<'_> {
             .checked_mul(3)
             .and_then(|n| n.checked_add(bound.attributes))
             .and_then(|n| n.checked_add(namespaces))
-            .and_then(|n| n.checked_add(nodes.checked_mul(namespaces)?))
+            .and_then(|n| n.checked_add(namespace_references))
             .ok_or_else(|| self.tree_overflow(operation))?;
         self.charge_collection_items(scratch_items, operation)?;
         self.charge_work(work, operation)?;
@@ -637,6 +961,184 @@ mod tests {
     }
 
     #[test]
+    fn tree_xml_large_text_does_not_pay_attribute_comparison_work() {
+        let mut text = String::from("<r");
+        for index in 0..64 {
+            std::fmt::Write::write_fmt(&mut text, format_args!(" a{index}='0'"))
+                .expect("fixture string");
+        }
+        text.push('>');
+        text.push_str(&"ordinary text ".repeat(16_000));
+        text.push_str("</r>");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 8 * u64_from_index(text.len());
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty input");
+        let tree = ctx
+            .parse_xml(&text, "local XML comparisons")
+            .expect("text scanning is linear");
+        assert_eq!(tree.document().root_element().attributes().len(), 64);
+        drop(tree);
+        ctx.finish_session().expect("unfused session");
+    }
+
+    #[test]
+    fn tree_xml_large_attribute_values_do_not_pay_key_comparison_work() {
+        let value = "value text ".repeat(16_000);
+        let mut text = String::from("<r xmlns:p='urn:shared'");
+        for index in 0..64 {
+            std::fmt::Write::write_fmt(&mut text, format_args!(" a{index}='0'"))
+                .expect("fixture string");
+        }
+        std::fmt::Write::write_fmt(&mut text, format_args!(" data='{value}'/>"))
+            .expect("fixture string");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 8 * u64_from_index(text.len());
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty input");
+        let tree = ctx
+            .parse_xml(&text, "XML attribute value scanning")
+            .expect("values are not comparison keys");
+        assert_eq!(tree.document().root_element().attributes().len(), 65);
+        assert_eq!(
+            tree.document().root_element().attribute("data"),
+            Some(value.as_str())
+        );
+        drop(tree);
+        ctx.finish_session().expect("unfused session");
+    }
+
+    #[test]
+    fn tree_xml_namespace_comparisons_are_separate_from_text() {
+        let text = format!(
+            "<r xmlns:p='urn:shared' xmlns:q='urn:shared'><s p:a='1' q:b='2'>{}</s></r>",
+            "text ".repeat(8_000)
+        );
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 8 * u64_from_index(text.len());
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty input");
+        let tree = ctx
+            .parse_xml(&text, "namespace XML comparisons")
+            .expect("local namespaces");
+        let child = tree
+            .document()
+            .root_element()
+            .first_element_child()
+            .expect("s element");
+        assert_eq!(child.attribute(("urn:shared", "a")), Some("1"));
+        assert_eq!(child.attribute(("urn:shared", "b")), Some("2"));
+        drop(tree);
+        ctx.finish_session().expect("unfused session");
+    }
+
+    #[test]
+    fn tree_xml_repeated_sibling_namespaces_use_local_uri_bounds() {
+        let text = format!(
+            "<r><a xmlns:p='{}'/>{}</r>",
+            "u".repeat(8_192),
+            "<b xmlns:p='urn:small'><p:t p:x='1' p:y='2'/></b>".repeat(128)
+        );
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 32 * u64_from_index(text.len());
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty input");
+        let tree = ctx
+            .parse_xml(&text, "scoped XML namespaces")
+            .expect("sibling namespace work is local");
+        assert_eq!(
+            tree.document()
+                .root_element()
+                .children()
+                .filter(roxmltree::Node::is_element)
+                .count(),
+            129
+        );
+        let last = tree
+            .document()
+            .root_element()
+            .last_element_child()
+            .expect("b element");
+        let child = last.first_element_child().expect("p:t element");
+        assert_eq!(child.attribute(("urn:small", "x")), Some("1"));
+        drop(tree);
+        ctx.finish_session().expect("unfused session");
+    }
+
+    #[test]
+    fn tree_xml_sibling_namespace_storage_is_linear_in_declarations() {
+        let text = format!(
+            "<r>{}</r>",
+            "<b xmlns:p='urn:shared'><p:t p:x='1'/></b>".repeat(5_000)
+        );
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 200_000;
+        policy.limits.max_materialized_bytes = 32 * 1024 * 1024;
+        policy.limits.max_work_units = 16 * u64_from_index(text.len());
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(text.as_bytes(), &arena, &policy).expect("XML root");
+        let tree = ctx
+            .parse_xml(&text, "linear XML namespace storage")
+            .expect("sibling namespace ranges fit the collection and storage limits");
+        assert_eq!(
+            tree.document()
+                .root_element()
+                .children()
+                .filter(roxmltree::Node::is_element)
+                .count(),
+            5_000
+        );
+        let last = tree
+            .document()
+            .root_element()
+            .last_element_child()
+            .expect("b element");
+        assert_eq!(
+            last.first_element_child()
+                .expect("p:t element")
+                .attribute(("urn:shared", "x")),
+            Some("1")
+        );
+        drop(tree);
+        drop(
+            ctx.reserve_scoped(policy.limits.max_materialized_bytes, "XML storage released")
+                .expect("all temporary storage released"),
+        );
+        ctx.finish_session().expect("unfused session");
+    }
+
+    #[test]
+    fn tree_xml_shadowed_namespace_bounds_restore_at_element_depth() {
+        let text = format!(
+            "<r xmlns:p='urn:root'>{}{}<p:last p:x='1'/></r>",
+            "<a xmlns:p='u'>".repeat(16),
+            "</a>".repeat(16)
+        );
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 65_536;
+        policy.limits.max_work_units = 64 * u64_from_index(text.len());
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty input");
+        let tree = ctx
+            .parse_xml(&text, "shadowed XML namespaces")
+            .expect("shadowing keeps a local namespace count");
+        let last = tree
+            .document()
+            .root_element()
+            .last_element_child()
+            .expect("p:last element");
+        assert_eq!(last.tag_name().namespace(), Some("urn:root"));
+        assert_eq!(last.attribute(("urn:root", "x")), Some("1"));
+        drop(tree);
+        drop(
+            ctx.reserve_scoped(policy.limits.max_materialized_bytes, "XML storage released")
+                .expect("all temporary storage released"),
+        );
+        ctx.finish_session().expect("unfused session");
+    }
+
+    #[test]
     fn tree_xml_unterminated_tag_keeps_attribute_work_bound() {
         let mut attributes = String::new();
         for index in 0..16 {
@@ -644,7 +1146,17 @@ mod tests {
                 .expect("fixture string write");
         }
         let text = format!("<r{attributes}");
-        assert_eq!(super::xml_bound(&text).max_attributes, 16);
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("empty input");
+        let bound = super::xml_bound(&text, &ctx, "XML bound").expect("finite bound");
+        let name_bytes = (0..16)
+            .map(|index| format!("x{index}").len())
+            .sum::<usize>();
+        assert!(
+            bound.local_comparisons.expect("finite bound")
+                >= 17 * (u64_from_index(name_bytes) + 16)
+        );
     }
 
     #[test]

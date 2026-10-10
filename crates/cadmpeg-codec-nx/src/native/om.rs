@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Object-model, data-block, expression, and external-reference extractors and record types.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Write;
 
@@ -1166,7 +1168,7 @@ pub(super) struct ClassDefinition {
     trailing_code: u8,
     /// Exact bytes between this declaration core and the next class declaration.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    registry_suffix: Vec<u8>,
+    registry_suffix: NativeBytes<Vec<u8>>,
     /// Absolute file offset of the containing OM section base.
     section_offset: u64,
     /// Directory entry containing the OM section.
@@ -1209,17 +1211,17 @@ struct ClassDefinitionWire {
     registry_reference: Option<u32>,
     /// Exact bytes between this declaration core and the next class declaration.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    registry_suffix: Vec<u8>,
+    registry_suffix: NativeBytes<Vec<u8>>,
     /// Variable-width prefix of a framed indexed-store registry suffix.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    layout_prefix: Vec<u8>,
+    layout_prefix: NativeBytes<Vec<u8>>,
     /// Stable eight-byte class fingerprint in a framed registry suffix.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_schema_fingerprint"
     )]
-    schema_fingerprint: Option<[u8; 8]>,
+    schema_fingerprint: Option<NativeBytes<[u8; 8]>>,
     /// Terminal byte of a framed indexed-store registry suffix.
     #[serde(
         default,
@@ -1251,13 +1253,15 @@ impl From<ClassDefinition> for ClassDefinitionWire {
             registry_base_class: registry
                 .map(|layout| layout.base_class.map_or(0, std::num::NonZeroU32::get)),
             registry_reference: registry.map(|layout| layout.reference.get()),
-            registry_suffix: value.registry_suffix,
-            layout_prefix: layout
+            registry_suffix: (value.registry_suffix),
+            layout_prefix: (layout
                 .as_ref()
-                .map_or_else(Vec::new, |layout| layout.prefix.to_vec()),
-            schema_fingerprint: registry
+                .map_or_else(Vec::new, |layout| layout.prefix.to_vec()))
+            .into(),
+            schema_fingerprint: (registry
                 .map(|layout| layout.schema_fingerprint)
-                .or_else(|| layout.as_ref().map(|layout| layout.fingerprint)),
+                .or_else(|| layout.as_ref().map(|layout| layout.fingerprint)))
+            .map(Into::into),
             layout_terminal: layout.as_ref().map(|layout| layout.terminal),
             section_offset: value.section_offset,
             source_entry: value.source_entry,
@@ -1274,7 +1278,7 @@ impl TryFrom<ClassDefinitionWire> for ClassDefinition {
             name: wire.name,
             ordinal: wire.ordinal,
             trailing_code: wire.trailing_code,
-            registry_suffix: wire.registry_suffix,
+            registry_suffix: (wire.registry_suffix),
             section_offset: wire.section_offset,
             source_entry: wire.source_entry,
             source_offset: wire.source_offset,
@@ -1318,7 +1322,7 @@ pub(super) struct FieldDefinition {
     trailing_code: u8,
     /// Exact bytes between this declaration core and the next member declaration.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    registry_suffix: Vec<u8>,
+    registry_suffix: NativeBytes<Vec<u8>>,
     /// Absolute file offset of the containing OM section signature.
     section_offset: u64,
     /// Directory entry containing the OM section.
@@ -1353,17 +1357,17 @@ struct FieldDefinitionWire {
     registry_owner_class: Option<u32>,
     /// Exact bytes between this declaration core and the next member declaration.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    registry_suffix: Vec<u8>,
+    registry_suffix: NativeBytes<Vec<u8>>,
     /// Variable-width prefix of a framed indexed-store registry suffix.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    layout_prefix: Vec<u8>,
+    layout_prefix: NativeBytes<Vec<u8>>,
     /// Stable eight-byte field fingerprint in a framed registry suffix.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_schema_fingerprint"
     )]
-    schema_fingerprint: Option<[u8; 8]>,
+    schema_fingerprint: Option<NativeBytes<[u8; 8]>>,
     /// Terminal byte of a framed indexed-store registry suffix.
     #[serde(
         default,
@@ -1393,11 +1397,12 @@ impl From<FieldDefinition> for FieldDefinitionWire {
             trailing_code: value.trailing_code,
             registry_storage_code: registry.map(|layout| layout.storage_code.value()),
             registry_owner_class: registry.map(|layout| layout.owner_class.get()),
-            registry_suffix: value.registry_suffix,
-            layout_prefix: layout
+            registry_suffix: (value.registry_suffix),
+            layout_prefix: (layout
                 .as_ref()
-                .map_or_else(Vec::new, |layout| layout.prefix.to_vec()),
-            schema_fingerprint: layout.as_ref().map(|layout| layout.fingerprint),
+                .map_or_else(Vec::new, |layout| layout.prefix.to_vec()))
+            .into(),
+            schema_fingerprint: (layout.as_ref().map(|layout| layout.fingerprint)).map(Into::into),
             layout_terminal: layout.as_ref().map(|layout| layout.terminal),
             section_offset: value.section_offset,
             source_entry: value.source_entry,
@@ -1414,7 +1419,7 @@ impl TryFrom<FieldDefinitionWire> for FieldDefinition {
             name: wire.name,
             ordinal: wire.ordinal,
             trailing_code: wire.trailing_code,
-            registry_suffix: wire.registry_suffix,
+            registry_suffix: (wire.registry_suffix),
             section_offset: wire.section_offset,
             source_entry: wire.source_entry,
             source_offset: wire.source_offset,
@@ -2364,7 +2369,7 @@ struct DataBlockReferenceRef<'a> {
     data_block: &'a str,
     ordinal: u32,
     object_id: u32,
-    raw_object_id: &'a [u8],
+    raw_object_id: NativeBytes<&'a [u8]>,
     #[serde(skip_serializing_if = "Option::is_none")]
     target_record: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -2379,7 +2384,7 @@ impl Serialize for DataBlockReference {
             data_block: &self.data_block,
             ordinal: self.ordinal,
             object_id: self.object.value(),
-            raw_object_id: self.object.raw(),
+            raw_object_id: (self.object.raw()).into(),
             target_record: self.target_record.as_deref(),
             target_expression_declaration: self.target_expression_declaration.as_deref(),
             source_offset: self.source_offset,
@@ -2399,7 +2404,7 @@ struct DataBlockReferenceWire {
     /// Referenced persistent OM object ID.
     object_id: u32,
     /// Exact serialized object-index token.
-    raw_object_id: Vec<u8>,
+    raw_object_id: NativeBytes<Vec<u8>>,
     /// Uniquely resolved object record in the same directory entry.
     #[serde(
         default,
@@ -2426,7 +2431,7 @@ impl From<DataBlockReference> for DataBlockReferenceWire {
             data_block: value.data_block,
             ordinal: value.ordinal,
             object_id: value.object.value(),
-            raw_object_id: value.object.raw().to_vec(),
+            raw_object_id: (value.object.raw().to_vec()).into(),
             target_record: value.target_record,
             target_expression_declaration: value.target_expression_declaration,
             source_offset: value.source_offset,
@@ -4116,7 +4121,7 @@ pub(super) fn class_definitions(
         name: d.name,
         ordinal: d.ordinal,
         trailing_code: d.trailing_code,
-        registry_suffix: d.registry_suffix,
+        registry_suffix: (d.registry_suffix).into(),
         section_offset: d.section_offset,
         source_entry: d.source_entry,
         source_offset: d.source_offset,
@@ -4153,7 +4158,7 @@ pub(super) fn field_definitions(
         name: d.name,
         ordinal: d.ordinal,
         trailing_code: d.trailing_code,
-        registry_suffix: d.registry_suffix,
+        registry_suffix: (d.registry_suffix).into(),
         section_offset: d.section_offset,
         source_entry: d.source_entry,
         source_offset: d.source_offset,
@@ -6569,7 +6574,7 @@ cadmpeg_core::named_optional_field!(deserialize_registry_base_class, u32, "regis
 cadmpeg_core::named_optional_field!(deserialize_registry_reference, u32, "registry_reference");
 cadmpeg_core::named_optional_field!(
     deserialize_schema_fingerprint,
-    [u8; 8],
+    cadmpeg_ir::native::bytes::NativeBytes<[u8; 8]>,
     "schema_fingerprint"
 );
 cadmpeg_core::named_optional_field!(deserialize_layout_terminal, u8, "layout_terminal");

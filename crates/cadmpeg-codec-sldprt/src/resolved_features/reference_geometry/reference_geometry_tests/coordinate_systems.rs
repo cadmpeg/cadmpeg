@@ -168,7 +168,7 @@ fn coordinate_system_record(
         lane: FeatureInputLane {
             id: lane_id.into(),
             configuration: None,
-            native_payload: payload,
+            native_payload: payload.into(),
             classes: Vec::new(),
             names: vec![FeatureInputName {
                 id: format!("{lane_id}-name"),

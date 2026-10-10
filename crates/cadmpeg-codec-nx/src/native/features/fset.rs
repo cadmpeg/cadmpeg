@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native FSET reference graphs and construction payloads.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use super::payload_content::FeaturePayloadContent;
 use super::{
     charged_unique_offset_data_block, format_feature_history_id, offset_data_block_bytes,
@@ -35,13 +37,13 @@ struct FeatureFsetReferenceGraphWire {
     /// Serialized object indices in the bounded first group.
     first_object_indices: [u32; 2],
     /// Exact three-byte word tokens in the first group.
-    raw_first_object_indices: [Vec<u8>; 2],
+    raw_first_object_indices: [NativeBytes<Vec<u8>>; 2],
     /// Unique native data-block targets for the first group.
     first_data_blocks: [Option<String>; 2],
     /// Serialized object indices in the trailing second group.
     second_object_indices: [u32; 3],
     /// Exact three-byte word tokens in the second group.
-    raw_second_object_indices: [Vec<u8>; 3],
+    raw_second_object_indices: [NativeBytes<Vec<u8>>; 3],
     /// Unique native data-block targets for the second group.
     second_data_blocks: [Option<String>; 3],
     /// Absolute source offset of the graph's `01` marker.
@@ -68,7 +70,7 @@ impl Serialize for FeatureFsetReferenceGraph {
             "raw_first_object_indices",
             &first
                 .each_ref()
-                .map(|(index, _)| word_reference_bytes(*index)),
+                .map(|(index, _)| NativeBytes::from(word_reference_bytes(*index))),
         )?;
         wire.serialize_entry(
             "first_data_blocks",
@@ -82,7 +84,7 @@ impl Serialize for FeatureFsetReferenceGraph {
             "raw_second_object_indices",
             &second
                 .each_ref()
-                .map(|(index, _)| word_reference_bytes(*index)),
+                .map(|(index, _)| NativeBytes::from(word_reference_bytes(*index))),
         )?;
         wire.serialize_entry(
             "second_data_blocks",
@@ -107,11 +109,12 @@ impl From<FeatureFsetReferenceGraph> for FeatureFsetReferenceGraphWire {
                 .first()
                 .each_ref()
                 .map(|(index, _)| u32::from(*index)),
-            raw_first_object_indices: value
+            raw_first_object_indices: (value
                 .references
                 .first()
                 .each_ref()
-                .map(|(index, _)| word_reference_bytes(*index).to_vec()),
+                .map(|(index, _)| word_reference_bytes(*index).to_vec()))
+            .map(Into::into),
             first_data_blocks: value
                 .references
                 .first()
@@ -122,11 +125,12 @@ impl From<FeatureFsetReferenceGraph> for FeatureFsetReferenceGraphWire {
                 .second()
                 .each_ref()
                 .map(|(index, _)| u32::from(*index)),
-            raw_second_object_indices: value
+            raw_second_object_indices: (value
                 .references
                 .second()
                 .each_ref()
-                .map(|(index, _)| word_reference_bytes(*index).to_vec()),
+                .map(|(index, _)| word_reference_bytes(*index).to_vec()))
+            .map(Into::into),
             second_data_blocks: value
                 .references
                 .second()
@@ -381,7 +385,7 @@ mod tests {
         FeatureFsetReferenceGraph,
         BTreeMap<String, (&'static [u8], u64)>,
     ) {
-        let graph = serde_json::from_str(r#"{"id":"graph","operation_label":"nx:feature-history:operation-label#0-0000000001","selector":"s","first_object_indices":[1,2],"raw_first_object_indices":[[144,0,1],[144,0,2]],"first_data_blocks":["nx:om-data-blocks-0:block#1","nx:om-data-blocks-0:block#2"],"second_object_indices":[3,4,5],"raw_second_object_indices":[[144,0,3],[144,0,4],[144,0,5]],"second_data_blocks":["nx:om-data-blocks-0:block#3","nx:om-data-blocks-0:block#4","nx:om-data-blocks-0:block#5"],"source_offset":10,"first_source_offsets":[14,17],"second_source_offsets":[21,24,27]}"#)
+        let graph = serde_json::from_str(r#"{"id":"graph","operation_label":"nx:feature-history:operation-label#0-0000000001","selector":"s","first_object_indices":[1,2],"raw_first_object_indices":["900001","900002"],"first_data_blocks":["nx:om-data-blocks-0:block#1","nx:om-data-blocks-0:block#2"],"second_object_indices":[3,4,5],"raw_second_object_indices":["900003","900004","900005"],"second_data_blocks":["nx:om-data-blocks-0:block#3","nx:om-data-blocks-0:block#4","nx:om-data-blocks-0:block#5"],"source_offset":10,"first_source_offsets":[14,17],"second_source_offsets":[21,24,27]}"#)
             .expect("complete FSET graph");
         let blocks = (1u32..=5)
             .map(|ordinal| {
@@ -482,7 +486,7 @@ mod tests {
 
     #[test]
     fn fset_reference_borrowed_wire_matches_owned_bytes_and_retained_limit() {
-        let json = r#"{"id":"nx:feature:fset-reference#0","operation_label":"o","selector":"s","first_object_indices":[1,2],"raw_first_object_indices":[[144,0,1],[144,0,2]],"first_data_blocks":["a",null],"second_object_indices":[3,4,5],"raw_second_object_indices":[[144,0,3],[144,0,4],[144,0,5]],"second_data_blocks":[null,"d","e"],"source_offset":10,"first_source_offsets":[14,17],"second_source_offsets":[21,24,27]}"#;
+        let json = r#"{"id":"nx:feature:fset-reference#0","operation_label":"o","selector":"s","first_object_indices":[1,2],"raw_first_object_indices":["900001","900002"],"first_data_blocks":["a",null],"second_object_indices":[3,4,5],"raw_second_object_indices":["900003","900004","900005"],"second_data_blocks":[null,"d","e"],"source_offset":10,"first_source_offsets":[14,17],"second_source_offsets":[21,24,27]}"#;
         let record: FeatureFsetReferenceGraph = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_vec(&record).unwrap(), json.as_bytes());
         assert_eq!(
@@ -498,7 +502,7 @@ mod tests {
     #[test]
     fn fset_wire_requires_fixed_words_and_selector_framed_positions(
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let json = r#"{"id":"g","operation_label":"o","selector":"s","first_object_indices":[1,2],"raw_first_object_indices":[[144,0,1],[144,0,2]],"first_data_blocks":["a",null],"second_object_indices":[3,4,5],"raw_second_object_indices":[[144,0,3],[144,0,4],[144,0,5]],"second_data_blocks":[null,"d","e"],"source_offset":10,"first_source_offsets":[14,17],"second_source_offsets":[21,24,27]}"#;
+        let json = r#"{"id":"g","operation_label":"o","selector":"s","first_object_indices":[1,2],"raw_first_object_indices":["900001","900002"],"first_data_blocks":["a",null],"second_object_indices":[3,4,5],"raw_second_object_indices":["900003","900004","900005"],"second_data_blocks":[null,"d","e"],"source_offset":10,"first_source_offsets":[14,17],"second_source_offsets":[21,24,27]}"#;
         let graph: FeatureFsetReferenceGraph = serde_json::from_str(json)?;
         assert_eq!(serde_json::to_string(&graph)?, json);
         for (field, value) in [
@@ -509,7 +513,7 @@ mod tests {
             ("selector", serde_json::json!("s".repeat(248))),
             (
                 "raw_first_object_indices",
-                serde_json::json!([[240, 1], [144, 0, 2]]),
+                serde_json::json!(["f001", "900002"]),
             ),
             ("first_object_indices", serde_json::json!([65536, 2])),
             ("first_source_offsets", serde_json::json!([11, 14])),

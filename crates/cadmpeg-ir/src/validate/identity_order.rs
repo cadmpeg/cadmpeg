@@ -14,7 +14,7 @@ use crate::report::{
 
 fn push_identity<'a>(
     ctx: &DecodeContext<'_>,
-    seen: &mut BorrowedIdentities<'_, 'a>,
+    seen: &mut BorrowedIdentities<'_, 'a, bool>,
     findings: &mut Vec<Finding>,
     id: &'a str,
 ) -> Result<(), CodecError> {
@@ -36,8 +36,12 @@ fn push_identity<'a>(
             format_args!("entity id does not match `<format>:<scope>:<kind>#<key>`"),
         )?;
     }
-    let inserted = seen.insert_unique(id, ())?;
-    if !inserted {
+    let Some(visited) = seen.get_mut(ctx, id)? else {
+        return Err(CodecError::malformed(
+            "validation identity index omits an entity",
+        ));
+    };
+    if std::mem::replace(visited, true) {
         super::record_finding(
             ctx,
             findings,
@@ -85,7 +89,7 @@ macro_rules! define_model_identity_checks {
         fn check_model_identity_and_order<'a>(
             ctx: &DecodeContext<'_>,
             ir: &'a CadIr,
-            seen: &mut BorrowedIdentities<'_, 'a>,
+            seen: &mut BorrowedIdentities<'_, 'a, bool>,
             findings: &mut Vec<Finding>,
         ) -> Result<(), CodecError> {
             $(
@@ -111,7 +115,29 @@ pub(super) fn check_identity_and_order(
     view: crate::native::view::NativeView<'_>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
-    let mut seen = BorrowedIdentities::build(ctx, |_| Ok(()))?;
+    // Build the complete identity table once. Ordered insertion for each visit
+    // would shift the existing slots quadratically on large models. Every
+    // occurrence of an identity updates the same last slot, preserving which
+    // visit first reports a duplicate and the original finding order.
+    let mut seen = BorrowedIdentities::build(ctx, |add| {
+        macro_rules! collect_model_identities {
+            ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; )*) => {
+                $(for entity in &view.ir.model.$field {
+                    add(crate::schema::EntitySchema::identity(entity), false)?;
+                })*
+            };
+        }
+        crate::document::arena_registry!(collect_model_identities);
+        view.visit(
+            |work| ctx.charge_work(u64_from_index(work), "validation identity arena scan"),
+            |_, _, records| {
+                for record in records.records() {
+                    add(record.id(), false)?;
+                }
+                Ok(())
+            },
+        )
+    })?;
     check_model_identity_and_order(ctx, view.ir, &mut seen, findings)?;
     let mut by_arena: (BTreeMap<String, Vec<&str>>, _) = (
         BTreeMap::new(),

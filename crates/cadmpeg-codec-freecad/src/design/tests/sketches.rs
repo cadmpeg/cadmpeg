@@ -277,7 +277,7 @@ fn x64_profile_construction_refuses_exhausted_work_on_decode() {
 }
 
 #[test]
-fn rejects_external_geo_without_its_reserved_axis_prefix() {
+fn omits_external_cache_without_its_reserved_axis_prefix() {
     for external_geo in [
         r#"<GeometryList count="1"><Geometry type="Part::GeomCircle" ref="Source.Edge1"><Circle CenterX="0" CenterY="0" Radius="1"/></Geometry></GeometryList>"#,
         r#"<GeometryList count="2"><Geometry type="Part::GeomLineSegment" id="-1"><LineSegment StartX="0" StartY="0" EndX="1" EndY="0"/></Geometry><Geometry type="Part::GeomLineSegment" id="0"><LineSegment StartX="0" StartY="0" EndX="0" EndY="1"/></Geometry></GeometryList>"#,
@@ -291,16 +291,24 @@ fn rejects_external_geo_without_its_reserved_axis_prefix() {
 <Property name="ExternalGeo" type="Part::PropertyGeometryList">{external_geo}</Property>
 </Properties></Object><Object name="Source"><Properties Count="0"/></Object></ObjectData></Document>"#
         );
-        let error = FcstdCodec
+        let decoded = FcstdCodec
             .decode(
                 &mut Cursor::new(archive(&document)),
                 &DecodeOptions::default(),
             )
-            .expect_err("invalid ExternalGeo prefix");
+            .expect("live references do not depend on cache prefix");
+        assert!(decoded.report().losses.iter().any(|loss| loss.code
+            == crate::loss::FreecadLossCode::SketchExternalCacheUnresolved
+                .note("")
+                .code));
+        assert_eq!(decoded.ir().model.sketch_entities.len(), 1);
         assert!(matches!(
-            error,
-            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+            decoded.ir().model.sketch_entities[0].geometry.definition(),
+            cadmpeg_ir::sketches::SketchGeometryDefinition::ExternalReference { .. }
         ));
+        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
+            .unwrap()
+            .is_ok());
     }
 }
 
@@ -380,7 +388,7 @@ fn retains_missing_external_carrier_without_a_link() {
 }
 
 #[test]
-fn rejects_unmatched_external_carrier_without_missing_flag() {
+fn unmatched_external_cache_retains_geometry_without_inventing_a_live_dependency() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2"><Object type="Sketcher::SketchObject" name="Sketch"/><Object type="Part::Feature" name="Source"/></Objects>
 <ObjectData Count="2"><Object name="Sketch"><Properties Count="3">
@@ -392,15 +400,35 @@ fn rejects_unmatched_external_carrier_without_missing_flag() {
 <Geometry type="Part::GeomCircle" id="1" ref="Source.Edge2"><Circle CenterX="0" CenterY="0" Radius="1"/></Geometry>
 </GeometryList></Property>
 </Properties></Object><Object name="Source"><Properties Count="0"/></Object></ObjectData></Document>"#;
-    let error = FcstdCodec
+    let decoded = FcstdCodec
         .decode(
             &mut Cursor::new(archive(document)),
             &DecodeOptions::default(),
         )
-        .expect_err("unmatched external carrier");
-    assert!(error
-        .to_string()
-        .contains("no matching ExternalGeometry link"));
+        .expect("unmatched optional cache");
+    let cached = decoded
+        .ir()
+        .model
+        .sketch_entities
+        .iter()
+        .find(|entity| {
+            matches!(
+                *entity.geometry.definition(),
+                cadmpeg_ir::sketches::SketchGeometryDefinition::Circle { .. }
+            )
+        })
+        .expect("cached circle");
+    assert!(cached.geometry_ref.is_none());
+    assert!(cached.endpoint_refs.is_empty());
+    assert!(matches!(
+        *cached.geometry.definition(),
+        cadmpeg_ir::sketches::SketchGeometryDefinition::Circle { .. }
+    ));
+    assert!(decoded.report().losses.iter().any(|loss| loss.code
+        == crate::loss::FreecadLossCode::SketchExternalReferenceUnresolved
+            .note("")
+            .code));
+    assert!(crate::test_support::validate_native(decoded.ir()).is_empty());
 }
 
 #[test]
@@ -1228,4 +1256,36 @@ fn native_constraint_negative_operands_resolve_to_distinct_builtin_axes() {
             cadmpeg_ir::sketches::SketchGeometryDefinition::ReferenceLine { origin, direction: actual }
             if *origin == cadmpeg_ir::math::Point2::new(0.0, 0.0) && actual.get() == direction));
     }
+}
+
+#[test]
+fn unreadable_external_cache_does_not_abort_live_sketch_geometry() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Sketcher::SketchObject" name="Sketch"/><Object type="Part::Feature" name="Source"/></Objects>
+<ObjectData Count="2"><Object name="Sketch"><Properties Count="3">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="1"><Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="2" EndY="0"/></Geometry></GeometryList></Property>
+<Property name="ExternalGeometry" type="App::PropertyLinkSubList"><LinkSubList count="1"><Link obj="Source" sub="Edge1"/></LinkSubList></Property>
+<Property name="ExternalGeo" type="Part::PropertyGeometryList"><GeometryList count="3">
+<Geometry type="Part::GeomLineSegment" id="-1"><LineSegment StartX="0" StartY="0" EndX="1" EndY="0"/></Geometry>
+<Geometry type="Part::GeomLineSegment" id="-2"><LineSegment StartX="0" StartY="0" EndX="0" EndY="1"/></Geometry>
+<Geometry type="Part::GeomCircle" ref="Source.Edge1" flags="invalid"><Circle CenterX="0" CenterY="0" Radius="1"/></Geometry>
+</GeometryList></Property>
+</Properties></Object><Object name="Source"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("optional cache isolated");
+    assert_eq!(decoded.ir().model.sketch_entities.len(), 2);
+    assert!(decoded.ir().model.sketch_entities.iter().any(|e| matches!(
+        *e.geometry.definition(),
+        cadmpeg_ir::sketches::SketchGeometryDefinition::Line { .. }
+    )));
+    assert!(decoded.report().losses.iter().any(|loss| loss.code
+        == crate::loss::FreecadLossCode::SketchExternalCacheUnresolved
+            .note("")
+            .code));
+    assert_valid_document(decoded.ir());
+    assert!(crate::test_support::validate_native(decoded.ir()).is_empty());
 }

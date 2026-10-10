@@ -192,6 +192,7 @@ fn source_ir() -> CadIr {
     ]);
     let y = 5.0_f64.sqrt();
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: CurveId::mint("creo:visibgeom:curve#10".to_string()).expect("identity grammar"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             NurbsCurve::from_lanes(

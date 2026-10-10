@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Legacy lane columns, checked against the complete frame at deserialization.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use super::{DataBlockAbrReferenceLane, DataBlockCountedIndexLane};
 use crate::om::compact::{CompactIndexAtom, CompactIndexTarget, CountedIndexMembers};
 use crate::om::compact_lane::{AbrLane, CountedLane};
@@ -19,13 +21,13 @@ pub(super) struct DataBlockCountedIndexLaneWire {
     /// Decoded anchoring block index.
     anchor_index: u32,
     /// Exact serialized anchor token.
-    raw_anchor_index: Vec<u8>,
+    raw_anchor_index: NativeBytes<Vec<u8>>,
     /// Same-section block addressed by the anchor.
     anchor_data_block: String,
     /// Ordered decoded member block indices.
     member_indices: Vec<u32>,
     /// Exact serialized member tokens in lane order.
-    raw_member_indices: Vec<Vec<u8>>,
+    raw_member_indices: Vec<NativeBytes<Vec<u8>>>,
     /// Ordered same-section blocks addressed by the members.
     member_data_blocks: Vec<String>,
     /// Absolute file offset of the opening `01` marker.
@@ -47,7 +49,7 @@ pub(super) struct DataBlockAbrReferenceLaneWire {
     /// Sixteen ordered nullable serialized block indices.
     slot_indices: [Option<u32>; 16],
     /// Exact compact-index tokens in slot order.
-    raw_slot_indices: [Vec<u8>; 16],
+    raw_slot_indices: [NativeBytes<Vec<u8>>; 16],
     /// Sixteen ordered nullable same-section block identities.
     slot_data_blocks: [Option<String>; 16],
     /// Absolute file offsets of the sixteen compact-index tokens.
@@ -68,7 +70,7 @@ impl From<DataBlockCountedIndexLane> for DataBlockCountedIndexLaneWire {
             ordinal: value.ordinal,
             declared_count: value.frame.declared_count(),
             anchor_index: anchor.atom.value(),
-            raw_anchor_index: anchor.atom.raw().to_vec(),
+            raw_anchor_index: (anchor.atom.raw().to_vec()).into(),
             anchor_data_block: anchor.target.clone(),
             member_indices: value
                 .frame
@@ -79,6 +81,7 @@ impl From<DataBlockCountedIndexLane> for DataBlockCountedIndexLaneWire {
                 .frame
                 .members()
                 .map(|index| index.atom.raw().to_vec())
+                .map(Into::into)
                 .collect(),
             member_data_blocks: value
                 .frame
@@ -158,10 +161,11 @@ impl From<DataBlockAbrReferenceLane> for DataBlockAbrReferenceLaneWire {
             slot_indices: slots
                 .each_ref()
                 .map(|slot| slot.atom.map(|index| index.atom.value())),
-            raw_slot_indices: slots.each_ref().map(|slot| {
+            raw_slot_indices: (slots.each_ref().map(|slot| {
                 slot.atom
                     .map_or_else(|| vec![0xff], |index| index.atom.raw().to_vec())
-            }),
+            }))
+            .map(Into::into),
             slot_data_blocks: slots
                 .each_ref()
                 .map(|slot| slot.atom.map(|index| index.target.clone())),
@@ -217,8 +221,8 @@ mod tests {
     fn counted_wire_rejects_each_inconsistent_derived_position() {
         let json = serde_json::json!({
             "id": "lane", "data_block": "block", "ordinal": 0, "declared_count": 4,
-            "anchor_index": 1, "raw_anchor_index": [128, 1], "anchor_data_block": "anchor",
-            "member_indices": [2, 3], "raw_member_indices": [[128, 2], [3]], "member_data_blocks": ["a", "b"],
+            "anchor_index": 1, "raw_anchor_index": "8001", "anchor_data_block": "anchor",
+            "member_indices": [2, 3], "raw_member_indices": ["8002","03"], "member_data_blocks": ["a", "b"],
             "source_offset": 9, "anchor_source_offset": 11, "member_source_offsets": [13, 15],
         });
         let lane: DataBlockCountedIndexLane = serde_json::from_value(json.clone()).unwrap();
@@ -279,7 +283,7 @@ mod tests {
     }
     #[test]
     fn counted_lane_wire_preserves_member_columns() {
-        let json = r#"{"id":"lane","data_block":"block","ordinal":0,"declared_count":3,"anchor_index":1,"raw_anchor_index":[1],"anchor_data_block":"anchor","member_indices":[2],"raw_member_indices":[[2]],"member_data_blocks":["member"],"source_offset":9,"anchor_source_offset":11,"member_source_offsets":[12]}"#;
+        let json = r#"{"id":"lane","data_block":"block","ordinal":0,"declared_count":3,"anchor_index":1,"raw_anchor_index":"01","anchor_data_block":"anchor","member_indices":[2],"raw_member_indices":["02"],"member_data_blocks":["member"],"source_offset":9,"anchor_source_offset":11,"member_source_offsets":[12]}"#;
         let lane: crate::native::om::compact_lane::DataBlockCountedIndexLane =
             serde_json::from_str(json).unwrap();
         assert_eq!(
@@ -309,8 +313,8 @@ mod tests {
         }
         for (field, invalid) in [
             ("declared_count", serde_json::json!(4)),
-            ("raw_anchor_index", serde_json::json!([255])),
-            ("raw_member_indices", serde_json::json!([[3]])),
+            ("raw_anchor_index", serde_json::json!("ff")),
+            ("raw_member_indices", serde_json::json!(["03"])),
         ] {
             let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
             malformed[field] = invalid;
@@ -324,7 +328,7 @@ mod tests {
 
     #[test]
     fn abr_lane_wire_preserves_sixteen_nullable_columns() {
-        let json = r#"{"id":"lane","section_ordinal":0,"ordinal":0,"slot_indices":[2,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],"raw_slot_indices":[[2],[255],[255],[255],[255],[255],[255],[255],[255],[255],[255],[255],[255],[255],[255],[255]],"slot_data_blocks":["block",null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],"slot_source_offsets":[10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25],"source_entry":"entry","source_offset":9}"#;
+        let json = r#"{"id":"lane","section_ordinal":0,"ordinal":0,"slot_indices":[2,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],"raw_slot_indices":["02","ff","ff","ff","ff","ff","ff","ff","ff","ff","ff","ff","ff","ff","ff","ff"],"slot_data_blocks":["block",null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],"slot_source_offsets":[10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25],"source_entry":"entry","source_offset":9}"#;
         let lane: crate::native::om::compact_lane::DataBlockAbrReferenceLane =
             serde_json::from_str(json).unwrap();
         assert_eq!(
@@ -369,7 +373,8 @@ mod tests {
         }
         for (slot, raw) in [(0, vec![3]), (1, vec![0])] {
             let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
-            malformed["raw_slot_indices"][slot] = serde_json::json!(raw);
+            malformed["raw_slot_indices"][slot] =
+                serde_json::json!(cadmpeg_ir::native::bytes::NativeBytes::from(raw));
             let error = serde_json::from_value::<
                 crate::native::om::compact_lane::DataBlockAbrReferenceLane,
             >(malformed)

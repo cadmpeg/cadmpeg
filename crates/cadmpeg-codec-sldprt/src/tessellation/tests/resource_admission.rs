@@ -4,6 +4,8 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
+const EPS_AREA_SUM: f64 = 1e-10;
+
 #[test]
 fn polygon_simplicity_and_ear_search_refuse_work_limits() {
     let polygon =
@@ -244,7 +246,7 @@ fn planar_mesh_hole_triangles_refuse_work_before_overlap() {
 }
 
 #[test]
-fn planar_polygon_construction_refuses_boundary_comparison_work() {
+fn single_planar_polygon_does_not_bill_boundary_pairs() {
     let mut model = super::model_with_body();
     let face_id = super::add_square_face(&mut model, "budget", 0.);
     let loops = model.loops.iter().map(|entry| (&entry.id, entry)).collect();
@@ -288,9 +290,10 @@ fn planar_polygon_construction_refuses_boundary_comparison_work() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 128;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(
-        matches!(super::super::planar_trim(&ctx, face, surface, &topology), Err(CodecError::ResourceLimit(limit)) if limit.operation == "compare SLDPRT planar trim boundaries")
-    );
+    assert!(super::super::planar_trim(&ctx, face, surface, &topology)
+        .unwrap()
+        .is_some());
+    assert!(ctx.resource_refusal().is_none());
 }
 
 #[test]
@@ -303,4 +306,148 @@ fn polygon_triangle_check_refuses_a_self_crossing_outer() {
         super::EPS_DISPLAY_QUANTIZATION
     )
     .unwrap());
+}
+
+#[test]
+fn convex_polygon_ear_search_bills_only_visited_candidates() {
+    let polygon = (0..256)
+        .map(|i| {
+            let angle = f64::from(i) * std::f64::consts::TAU / 256.0;
+            Point2::new(angle.cos(), angle.sin())
+        })
+        .collect::<Vec<_>>();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 1_000_000;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let triangles =
+        super::super::triangulate_polygon(&ctx, &polygon, super::EPS_DISPLAY_QUANTIZATION)
+            .unwrap()
+            .unwrap();
+    assert_eq!(triangles.len(), polygon.len() - 2);
+    let area = triangles
+        .iter()
+        .map(|triangle| super::super::signed_area_twice(triangle[0], triangle[1], triangle[2]))
+        .sum::<f64>();
+    let expected =
+        super::super::simple_polygon_area_twice(&polygon, super::EPS_DISPLAY_QUANTIZATION)
+            .unwrap()
+            .get();
+    assert!((area - expected).abs() <= EPS_AREA_SUM);
+    assert!(ctx.resource_refusal().is_none());
+}
+
+#[test]
+fn checked_convex_boundary_is_reused_for_every_triangle() {
+    let polygon = (0..256)
+        .map(|i| {
+            let angle = f64::from(i) * std::f64::consts::TAU / 256.0;
+            Point2::new(angle.cos(), angle.sin())
+        })
+        .collect::<Vec<_>>();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 1_000_000;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let boundary =
+        super::super::CheckedPlanarPolygon::new(&ctx, &polygon, super::EPS_DISPLAY_QUANTIZATION)
+            .unwrap()
+            .unwrap();
+    for index in 1..polygon.len() - 1 {
+        assert!(boundary
+            .contains_triangle(&ctx, [polygon[0], polygon[index], polygon[index + 1]])
+            .unwrap());
+    }
+    assert!(ctx.resource_refusal().is_none());
+}
+
+#[test]
+fn planar_boundary_pairs_bill_only_visited_comparisons() {
+    let polygon = (0..4096)
+        .map(|i| {
+            let angle = f64::from(i) * std::f64::consts::TAU / 4096.0;
+            Point2::new(10.0 + angle.cos(), 10.0 + angle.sin())
+        })
+        .collect::<Vec<_>>();
+    let outside = [
+        Point2::new(-2.0, -2.0),
+        Point2::new(2.0, -2.0),
+        Point2::new(0.0, 2.0),
+    ];
+    let shared_edge = [polygon[0], polygon[1], Point2::new(10.0, 10.0)];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // One three-edge containment probe and one shared-edge intersection.
+    policy.limits.max_work_units = 128;
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(!super::super::polygon_inside_polygon(
+        &ctx,
+        &polygon,
+        &outside,
+        super::EPS_DISPLAY_QUANTIZATION,
+    )
+    .unwrap());
+    assert!(super::super::polygons_overlap(
+        &ctx,
+        &polygon,
+        &shared_edge,
+        super::EPS_DISPLAY_QUANTIZATION,
+    )
+    .unwrap());
+    assert!(ctx.resource_refusal().is_none());
+}
+
+#[test]
+fn disjoint_planar_boundaries_use_linear_bounds_work() {
+    let polygon = |center: f64| {
+        (0u32..4096)
+            .map(|index| {
+                let angle = f64::from(index) * std::f64::consts::TAU / 4096.0;
+                Point2::new(center + angle.cos(), angle.sin())
+            })
+            .collect::<Vec<_>>()
+    };
+    let first = polygon(0.0);
+    let second = polygon(4.0);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 100_000;
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(!super::super::polygons_overlap(
+        &ctx,
+        &first,
+        &second,
+        super::EPS_DISPLAY_QUANTIZATION
+    )
+    .unwrap());
+    assert!(ctx.resource_refusal().is_none());
+}
+
+#[test]
+fn convex_outer_box_proves_inner_boundary_containment() {
+    let polygon = |radius: f64| {
+        (0u32..4096)
+            .map(|index| {
+                let angle = f64::from(index) * std::f64::consts::TAU / 4096.0;
+                Point2::new(radius * angle.cos(), radius * angle.sin())
+            })
+            .collect::<Vec<_>>()
+    };
+    let inner = polygon(1.0);
+    let outer = polygon(4.0);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 2_000_000;
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(super::super::polygon_inside_polygon(
+        &ctx,
+        &inner,
+        &outer,
+        super::EPS_DISPLAY_QUANTIZATION
+    )
+    .unwrap());
+    assert!(ctx.resource_refusal().is_none());
 }

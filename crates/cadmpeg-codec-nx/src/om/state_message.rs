@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Operation-state diagnostic bodies and their source frames.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use super::state_message_text::StateMessageText;
 use super::state_tagged_value::StateTaggedValue;
 use cadmpeg_core::decode::{DecodeContext, View};
@@ -63,7 +65,7 @@ impl<S: crate::immutable_text::ImmutableText> Serialize for StateMessage<S> {
         state.serialize_field("text", self.text.as_str())?;
         state.serialize_field("value_marker", &self.value.marker())?;
         state.serialize_field("value", &self.value.value())?;
-        state.serialize_field("raw_value", self.value.raw())?;
+        state.serialize_field("raw_value", &NativeBytes::from(self.value.raw()))?;
         state.serialize_field("count_or_severity", &self.count_or_severity)?;
         if let Some(severity) = severity {
             state.serialize_field("severity", &severity)?;
@@ -164,7 +166,7 @@ mod tests {
 
     #[test]
     fn wire_severity_is_derived_and_preserves_field_order() {
-        let json = r#"{"declared_length":3,"text":"A","value_marker":160,"value":0,"raw_value":[160,0,0],"count_or_severity":256,"severity":"alert"}"#;
+        let json = r#"{"declared_length":3,"text":"A","value_marker":160,"value":0,"raw_value":"a00000","count_or_severity":256,"severity":"alert"}"#;
         let body: StateMessage<String> = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_string(&body).unwrap(), json);
         let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
@@ -177,7 +179,7 @@ mod tests {
 
     #[test]
     fn state_message_wire_refuses_a_null_severity() {
-        let json = r#"{"declared_length":3,"text":"A","value_marker":160,"value":0,"raw_value":[160,0,0],"count_or_severity":256,"severity":null}"#;
+        let json = r#"{"declared_length":3,"text":"A","value_marker":160,"value":0,"raw_value":"a00000","count_or_severity":256,"severity":null}"#;
         let error = serde_json::from_str::<StateMessage<String>>(json)
             .expect_err("a null severity is not a spelling of an absent severity");
         assert!(error.to_string().contains("null"), "{error}");

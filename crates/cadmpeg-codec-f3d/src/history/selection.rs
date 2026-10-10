@@ -2211,6 +2211,7 @@ pub(crate) fn bind_edge_identity_history(
         )?;
         identities_by_history.insert(history.id.as_str(), index);
     }
+    let mut treatment_cache = super::treatment_index::TreatmentCache::default();
     let mut treatment_candidates_by_transition =
         HashMap::<(String, i64, i64), EdgeTreatmentTransitionCandidates>::new();
     for operand in operands {
@@ -2326,6 +2327,7 @@ pub(crate) fn bind_edge_identity_history(
                             result,
                             topology,
                             &deleted_edges,
+                            &mut treatment_cache,
                         )?;
 
                         decode.reserve_map(

@@ -31,6 +31,16 @@ const NAMESPACE: LossNamespace<'static> = match LossNamespace::new("step") {
 pub(crate) enum StepLossCode {
     /// Parser recovered noncanonical Part 21 syntax.
     ParseNoncanonicalSyntax,
+    /// A bounded DATA record or its dependent could not be interpreted.
+    ParseRecordOmitted,
+    /// A bounded noncanonical prefix remains source-only.
+    ParsePreambleOmitted,
+    /// A pre-standard exchange used the Part 21 instance grammar.
+    ParseDraftGrammar,
+    /// Readable DATA ends before a complete closing envelope.
+    ParseEnvelopeIncomplete,
+    /// ZIP metadata violates the Part 21 profile without preventing root decoding.
+    ContainerMemberNoncanonical,
     /// A decode stage surfaced a per-record warning.
     DecodeWarning,
     /// Byte accounting left source bytes unclassified.
@@ -171,6 +181,10 @@ pub(crate) enum StepLossCode {
     HiddenPmiVisibilityUnsupported,
     /// A wire shell has free vertices without an edge-based STEP carrier.
     WireShellFreeVertices,
+    /// Bodies have no owning product representation.
+    BodyWithoutProductRepresentation,
+    /// Solid and sheet shells omit wire edges and free vertices.
+    SurfaceShellWireTopologyOmitted,
     /// Tessellations require an AP242 target.
     TessellationRequiresAp242,
     /// Tessellation feature-edge classification is not represented.
@@ -269,6 +283,8 @@ pub(crate) enum StepLossCode {
     SourceAttributeNotWritten,
     /// Procedural definitions were reduced to solved STEP carriers.
     ProceduralReducedToCarrier,
+    /// A procedural definition has no emitted native construction or solved carrier.
+    ProceduralDefinitionNotWritten,
     /// Source-native records were not represented.
     SourceNativeRecordOmitted,
     /// A region has no writable outer shell.
@@ -277,12 +293,14 @@ pub(crate) enum StepLossCode {
     RegionOmittedVoidShell,
     /// A shell omitted an outer face with no writable topology.
     ShellOmittedOuterFace,
-    /// A shell omitted an inner face with no writable topology.
-    ShellOmittedInnerFace,
+    /// A shell omitted a face whose boundary roles are unspecified.
+    ShellOmittedUnclassifiedFace,
     /// A face omitted an outer loop with no writable topology.
     FaceOmittedOuterLoop,
     /// A face omitted an inner loop with no writable topology.
     FaceOmittedInnerLoop,
+    /// A face omitted a loop whose boundary role is unspecified.
+    FaceOmittedUnclassifiedLoop,
     /// A face has no writable bounds.
     FaceNoWritableBounds,
     /// A loop was omitted because its record is missing.
@@ -322,6 +340,11 @@ impl StepLossCode {
     #[cfg(test)]
     const ALL: &'static [StepLossCode] = &[
         Self::ParseNoncanonicalSyntax,
+        Self::ParseRecordOmitted,
+        Self::ParsePreambleOmitted,
+        Self::ParseDraftGrammar,
+        Self::ParseEnvelopeIncomplete,
+        Self::ContainerMemberNoncanonical,
         Self::DecodeWarning,
         Self::ByteAccountingUnclassified,
         Self::OpaqueRecordPreserved,
@@ -392,6 +415,8 @@ impl StepLossCode {
         Self::HiddenPresentationLayerVisibilityUnsupported,
         Self::HiddenPmiVisibilityUnsupported,
         Self::WireShellFreeVertices,
+        Self::BodyWithoutProductRepresentation,
+        Self::SurfaceShellWireTopologyOmitted,
         Self::TessellationRequiresAp242,
         Self::TessellationFeatureEdges,
         Self::TessellationCornerNormals,
@@ -441,13 +466,15 @@ impl StepLossCode {
         Self::AppearanceBindingMetadataReduced,
         Self::SourceAttributeNotWritten,
         Self::ProceduralReducedToCarrier,
+        Self::ProceduralDefinitionNotWritten,
         Self::SourceNativeRecordOmitted,
         Self::RegionNoWritableOuterShell,
         Self::RegionOmittedVoidShell,
         Self::ShellOmittedOuterFace,
-        Self::ShellOmittedInnerFace,
+        Self::ShellOmittedUnclassifiedFace,
         Self::FaceOmittedOuterLoop,
         Self::FaceOmittedInnerLoop,
+        Self::FaceOmittedUnclassifiedLoop,
         Self::FaceNoWritableBounds,
         Self::LoopRecordMissing,
         Self::LoopVertexMissing,
@@ -470,7 +497,12 @@ impl StepLossCode {
     #[must_use]
     pub(crate) const fn code(self) -> &'static str {
         match self {
+            Self::ContainerMemberNoncanonical => "container.member-noncanonical",
             Self::ParseNoncanonicalSyntax => "parse.noncanonical-syntax",
+            Self::ParseRecordOmitted => "parse.record-omitted",
+            Self::ParsePreambleOmitted => "parse.preamble-omitted",
+            Self::ParseDraftGrammar => "parse.draft-grammar",
+            Self::ParseEnvelopeIncomplete => "parse.envelope-incomplete",
             Self::DecodeWarning => "decode.warning",
             Self::ByteAccountingUnclassified => "decode.byte-accounting-unclassified",
             Self::OpaqueRecordPreserved => "decode.opaque-record-preserved",
@@ -558,6 +590,8 @@ impl StepLossCode {
                 "presentation.hidden-layer-visibility-unsupported"
             }
             Self::HiddenPmiVisibilityUnsupported => "pmi.hidden-visibility-unsupported",
+            Self::BodyWithoutProductRepresentation => "product.body-without-representation",
+            Self::SurfaceShellWireTopologyOmitted => "topology.surface-shell-wire-omitted",
             Self::WireShellFreeVertices => "topology.wire-shell-free-vertices",
             Self::TessellationRequiresAp242 => "tessellation.requires-ap242",
             Self::TessellationFeatureEdges => "tessellation.feature-edges",
@@ -610,13 +644,15 @@ impl StepLossCode {
             Self::AppearanceBindingMetadataReduced => "appearance.binding-metadata-reduced",
             Self::SourceAttributeNotWritten => "attribute.source-record-not-written",
             Self::ProceduralReducedToCarrier => "geometry.procedural-reduced-to-carrier",
+            Self::ProceduralDefinitionNotWritten => "geometry.procedural-definition-not-written",
             Self::SourceNativeRecordOmitted => "native.source-record-omitted",
             Self::RegionNoWritableOuterShell => "topology.region-no-writable-outer-shell",
             Self::RegionOmittedVoidShell => "topology.region-omitted-void-shell",
             Self::ShellOmittedOuterFace => "topology.shell-omitted-outer-face",
-            Self::ShellOmittedInnerFace => "topology.shell-omitted-inner-face",
+            Self::ShellOmittedUnclassifiedFace => "topology.shell-omitted-unclassified-face",
             Self::FaceOmittedOuterLoop => "topology.face-omitted-outer-loop",
             Self::FaceOmittedInnerLoop => "topology.face-omitted-inner-loop",
+            Self::FaceOmittedUnclassifiedLoop => "topology.face-omitted-unclassified-loop",
             Self::FaceNoWritableBounds => "topology.face-no-writable-bounds",
             Self::LoopRecordMissing => "topology.loop-record-missing",
             Self::LoopVertexMissing => "topology.loop-vertex-missing",
@@ -658,7 +694,9 @@ impl StepLossCode {
             | Self::RegionNoWritableOuterShell
             | Self::RegionOmittedVoidShell
             | Self::ShellOmittedOuterFace
+            | Self::ShellOmittedUnclassifiedFace
             | Self::FaceOmittedOuterLoop
+            | Self::FaceOmittedUnclassifiedLoop
             | Self::FaceNoWritableBounds
             | Self::LoopCoedgeRecordMissing
             | Self::LoopEdgeNotWritable
@@ -693,12 +731,17 @@ impl StepLossCode {
 
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
-            Self::ParseNoncanonicalSyntax
+            Self::ContainerMemberNoncanonical
+            | Self::ParseNoncanonicalSyntax
+            | Self::ParsePreambleOmitted
+            | Self::ParseEnvelopeIncomplete
+            | Self::ParseRecordOmitted
             | Self::OrientedShellOmitsCfsFaces
             | Self::HeaderMetadataNoncanonical => LossTaxonomy::NoncanonicalSourceSyntax,
             Self::DecodeWarning
             | Self::ByteAccountingUnclassified
             | Self::PcurveGlobalFidelityUnproved => LossTaxonomy::DecodeDiagnostic,
+            Self::ParseDraftGrammar => LossTaxonomy::SourceDialectUnverified,
             Self::OpaqueRecordPreserved
             | Self::DrawingRecordTooFewParameters
             | Self::DrawingOrderUnstatable => LossTaxonomy::RecordNotTyped,
@@ -750,13 +793,16 @@ impl StepLossCode {
             | Self::PmiLengthUnitUnresolved
             | Self::PmiAngleUnitUnresolved
             | Self::ValidationMeasureUnitUnresolved
-            | Self::GeometryCarrierNotWritten => LossTaxonomy::GeometryNotTransferred,
+            | Self::GeometryCarrierNotWritten
+            | Self::ProceduralDefinitionNotWritten => LossTaxonomy::GeometryNotTransferred,
             Self::TopologyRootRejected
             | Self::TopologyRootIncomplete
             | Self::AssemblyGraphInvalid
             | Self::OccurrenceUnresolvedParent
             | Self::OccurrenceNoLocalProduct
             | Self::WireShellFreeVertices
+            | Self::BodyWithoutProductRepresentation
+            | Self::SurfaceShellWireTopologyOmitted
             | Self::TessellationBodyLinkUnwritable
             | Self::TopologyUnreachableFromRegion
             | Self::RegionNoShellList
@@ -765,8 +811,9 @@ impl StepLossCode {
             | Self::RegionNoWritableOuterShell
             | Self::RegionOmittedVoidShell
             | Self::ShellOmittedOuterFace
-            | Self::ShellOmittedInnerFace
+            | Self::ShellOmittedUnclassifiedFace
             | Self::FaceOmittedOuterLoop
+            | Self::FaceOmittedUnclassifiedLoop
             | Self::FaceOmittedInnerLoop
             | Self::FaceNoWritableBounds
             | Self::LoopRecordMissing
@@ -873,6 +920,11 @@ mod tests {
             codes,
             [
                 "parse.noncanonical-syntax",
+                "parse.record-omitted",
+                "parse.preamble-omitted",
+                "parse.draft-grammar",
+                "parse.envelope-incomplete",
+                "container.member-noncanonical",
                 "decode.warning",
                 "decode.byte-accounting-unclassified",
                 "decode.opaque-record-preserved",
@@ -943,6 +995,8 @@ mod tests {
                 "presentation.hidden-layer-visibility-unsupported",
                 "pmi.hidden-visibility-unsupported",
                 "topology.wire-shell-free-vertices",
+                "product.body-without-representation",
+                "topology.surface-shell-wire-omitted",
                 "tessellation.requires-ap242",
                 "tessellation.feature-edges",
                 "tessellation.corner-normals",
@@ -992,13 +1046,15 @@ mod tests {
                 "appearance.binding-metadata-reduced",
                 "attribute.source-record-not-written",
                 "geometry.procedural-reduced-to-carrier",
+                "geometry.procedural-definition-not-written",
                 "native.source-record-omitted",
                 "topology.region-no-writable-outer-shell",
                 "topology.region-omitted-void-shell",
                 "topology.shell-omitted-outer-face",
-                "topology.shell-omitted-inner-face",
+                "topology.shell-omitted-unclassified-face",
                 "topology.face-omitted-outer-loop",
                 "topology.face-omitted-inner-loop",
+                "topology.face-omitted-unclassified-loop",
                 "topology.face-no-writable-bounds",
                 "topology.loop-record-missing",
                 "topology.loop-vertex-missing",

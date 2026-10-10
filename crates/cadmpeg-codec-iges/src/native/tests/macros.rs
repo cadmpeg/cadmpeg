@@ -56,13 +56,22 @@ fn macro_definition_and_instance_are_retained_in_v4_and_v5_profiles() {
         assert_eq!(definitions[0].fields()["defined_entity_type"], 621);
         assert_eq!(
             definitions[0].fields()["macro_statement"],
-            json!(b"306,MACRO,621,X,Y")
+            json!(cadmpeg_ir::native::bytes::NativeBytes::from(
+                b"306,MACRO,621,X,Y".as_slice()
+            ))
         );
         assert_eq!(
             definitions[0].fields()["language_statements"],
-            json!([b"LET Z=0"])
+            json!([cadmpeg_ir::native::bytes::NativeBytes::from(
+                b"LET Z=0".as_slice()
+            )])
         );
-        assert_eq!(definitions[0].fields()["end_statement"], json!(b"ENDM"));
+        assert_eq!(
+            definitions[0].fields()["end_statement"],
+            json!(cadmpeg_ir::native::bytes::NativeBytes::from(
+                b"ENDM".as_slice()
+            ))
+        );
 
         let instances = &native.arenas()["macro_instances"];
         assert_eq!(instances.len(), 1);

@@ -16,7 +16,7 @@ fn sample_attributes() -> ViewAttributes {
         width: crate::test_support::finite(210.0),
         height: crate::test_support::finite(297.0),
         display: Some("display-uuid".to_string()),
-        version: [1, 2],
+        version: [1, 2].into(),
         page_settings: None,
         projection_locked: false,
         clipping_planes: Vec::new(),
@@ -42,7 +42,7 @@ fn view_attributes_projection_emits_the_documented_keys_in_order() {
         "\"page_width_mm\":210.0",
         "\"page_height_mm\":297.0",
         "\"display_mode_uuid\":\"display-uuid\"",
-        "\"attributes_version\":[1,2]",
+        "\"attributes_version\":\"0102\"",
         "\"attributes\":{",
     ];
     let mut cursor = 0;

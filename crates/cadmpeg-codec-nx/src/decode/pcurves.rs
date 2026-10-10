@@ -15,6 +15,7 @@ use super::blend::{
 use super::geometry_work::GeometryWorkBudget;
 #[cfg(test)]
 use super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK;
+use super::nurbs_fit::fit_nurbs_surface_parameter;
 use super::offset::{
     lift_periodic_parameter, offset_surface_parameters_with_tolerance_with_index_and_budget,
     refine_offset_surface_parameters_with_index_and_budget, surface_parameter_domain_with_index,
@@ -36,7 +37,6 @@ use cadmpeg_ir::eval::model_surface_point_by_id;
 use cadmpeg_ir::eval::nurbs_curve_speed_bound;
 use cadmpeg_ir::eval::nurbs_surface_isocurve;
 use cadmpeg_ir::eval::nurbs_surface_parameter_within_nonnegative_tolerance_with_budget;
-use cadmpeg_ir::eval::nurbs_surface_parameter_within_tolerance_with_budget;
 use cadmpeg_ir::eval::pcurve_tangent;
 use cadmpeg_ir::eval::surface_second_partials;
 use cadmpeg_ir::eval::EvaluationFailure;
@@ -4441,17 +4441,15 @@ fn surface_parameters_for_fit_with_index_and_budget_and_grid_cache<'a>(
         return Ok(None);
     };
     match carrier.geometry.solved() {
-        Some(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
-            nurbs_surface_parameter_within_tolerance_with_budget(
-                geometry_budget.charges,
-                nurbs,
-                point,
-                seed,
-                tolerance,
-                geometry_budget,
-            )
-            .map(|parameter| parameter.map(FinitePoint2::get))
-        }
+        Some(SolvedSurfaceGeometry::Nurbs(nurbs)) => fit_nurbs_surface_parameter(
+            geometry_budget.charges,
+            nurbs,
+            point,
+            seed,
+            tolerance,
+            geometry_budget,
+        )
+        .map(|parameter| parameter.map(FinitePoint2::get)),
         None => {
             let offset = match seed {
                 // Continuation samples start with the previous branch-local
@@ -4607,6 +4605,10 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
     annotations: &mut AnnotationBuilder,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    // This scope appends carriers and preserves their identity and construction links.
+    let mut procedural_admission =
+        cadmpeg_ir::document::procedural::ProceduralAdmission::new(ctx, &ir.model)?;
+
     let candidates = {
         let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
         let mut endpoint_surface_fits = BTreeMap::<(&SurfaceId, [u64; 3], u64), bool>::new();
@@ -4846,6 +4848,7 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
             .map_err(cadmpeg_core::CodecError::from)?;
         ctx.reserve_vec(&mut ir.model.curves, 1, "nx tolerant edge curves")?;
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve_id.try_clone_for_decode(ctx, "nx tolerant carrier identity")?,
             geometry: CurveGeometry::Procedural {
                 construction: procedural_id
@@ -4855,7 +4858,7 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
             source_object: None,
         });
 
-        let _attached = ir.model.add_procedural_curve(ctx, &curve_id, procedural)?;
+        let _attached = procedural_admission.add_curve(&mut ir.model, &curve_id, procedural)?;
     }
     Ok(())
 }
@@ -5351,6 +5354,7 @@ mod tests {
 
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve.clone(),
             geometry: CurveGeometry::Procedural {
                 construction: procedural_id.clone(),

@@ -50,7 +50,7 @@ fn explicit_point_circle_input() -> (
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: vec![0],
+        native_payload: vec![0].into(),
         classes: vec![FeatureInputClass {
             id: "class".into(),
             parent: "lane".into(),

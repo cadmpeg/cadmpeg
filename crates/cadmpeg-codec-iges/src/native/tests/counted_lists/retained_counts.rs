@@ -864,7 +864,7 @@ fn decode_line_font_pattern_holds_only_complete_lengths_before_its_suffix() {
 
     assert_eq!(fields["segment_count"], 2);
     assert_eq!(fields["lengths"].as_array().unwrap().len(), 2);
-    assert!(fields["hexadecimal_pattern"].is_array());
+    assert!(fields["hexadecimal_pattern"].is_string());
     assert_no_count_loss(&result);
 }
 

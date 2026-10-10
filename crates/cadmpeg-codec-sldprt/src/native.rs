@@ -61,14 +61,6 @@ impl Serialize for HistoryArenaView<'_> {
 /// An empty array for the native sections this view leaves unpopulated.
 const NO_ENTRIES: &[()] = &[];
 
-struct LanePayload<'a>(&'a [u8]);
-
-impl Serialize for LanePayload<'_> {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        cadmpeg_ir::bytes::serialize(self.0, serializer)
-    }
-}
-
 struct LaneArenaView<'a>(&'a FeatureInputLane);
 
 impl Serialize for LaneArenaView<'_> {
@@ -78,7 +70,7 @@ impl Serialize for LaneArenaView<'_> {
         if self.0.configuration.is_some() {
             map.serialize_entry("configuration", &self.0.configuration)?;
         }
-        map.serialize_entry("native_payload", &LanePayload(&self.0.native_payload))?;
+        map.serialize_entry("native_payload", &self.0.native_payload)?;
         for field in [
             "classes",
             "names",

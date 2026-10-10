@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native `THRU_CURVE` groups with one source frame.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use super::{
     charged_unique_offset_data_block, format_feature_history_id,
     visit_feature_history_operation_records,
@@ -41,7 +43,7 @@ struct BranchWire {
     ordinal: u32,
     mode: NonZeroU8,
     declared_count: u8,
-    state_lane: Vec<u8>,
+    state_lane: NativeBytes<Vec<u8>>,
     members: Vec<ReferenceWire>,
     terminal: ReferenceWire,
     suffix: ThruCurveBranchSuffix,
@@ -90,7 +92,7 @@ impl From<FeatureThruCurveConstructionBranchGroup> for GroupWire {
                     ordinal: u32::try_from(ordinal).expect("fixture value fits u32"),
                     mode: branch.mode,
                     declared_count: branch.members.declared_count(),
-                    state_lane: branch.members.state_lane(),
+                    state_lane: (branch.members.state_lane()).into(),
                     members,
                     terminal: ReferenceWire {
                         ordinal: u32::from(branch.members.declared_count() - 1),
@@ -350,19 +352,19 @@ mod tests {
     // extended branch occupies 40 bytes. The adjacent terminator occupies 9.
     pub(super) const WIRE: &str = concat!(
         r#"{"id":"g","operation_label":"o","declared_count":3,"branches":["#,
-        r#"{"ordinal":0,"mode":255,"declared_count":3,"state_lane":[0,0,0,0,0,0],"members":["#,
-        r#"{"ordinal":0,"object_index":0,"raw_object_index":[240,0],"data_block":"","source_offset":104},"#,
-        r#"{"ordinal":1,"object_index":256,"raw_object_index":[241,1,0],"source_offset":106}],"#,
-        r#""terminal":{"ordinal":2,"object_index":1,"raw_object_index":[240,1],"source_offset":120},"#,
-        r#""suffix":[129,88],"source_offset":101},"#,
-        r#"{"ordinal":1,"mode":1,"declared_count":5,"state_lane":[0,0,0,0,1,5,2,3,4,5,1,5,6,7,8,9,0,0],"members":["#,
-        r#"{"ordinal":0,"object_index":1,"raw_object_index":[240,1],"source_offset":128},"#,
-        r#"{"ordinal":1,"object_index":2,"raw_object_index":[240,2],"source_offset":130},"#,
-        r#"{"ordinal":2,"object_index":3,"raw_object_index":[240,3],"source_offset":132},"#,
-        r#"{"ordinal":3,"object_index":4,"raw_object_index":[240,4],"source_offset":134}],"#,
-        r#""terminal":{"ordinal":4,"object_index":256,"raw_object_index":[241,1,0],"data_block":"target","source_offset":159},"#,
-        r#""suffix":[129,72],"source_offset":125}],"#,
-        r#""terminator":[0,0,0,0,0,0,255,255,1],"source_offset":100}"#,
+        r#"{"ordinal":0,"mode":255,"declared_count":3,"state_lane":"000000000000","members":["#,
+        r#"{"ordinal":0,"object_index":0,"raw_object_index":"f000","data_block":"","source_offset":104},"#,
+        r#"{"ordinal":1,"object_index":256,"raw_object_index":"f10100","source_offset":106}],"#,
+        r#""terminal":{"ordinal":2,"object_index":1,"raw_object_index":"f001","source_offset":120},"#,
+        r#""suffix":"8158","source_offset":101},"#,
+        r#"{"ordinal":1,"mode":1,"declared_count":5,"state_lane":"000000000105020304050105060708090000","members":["#,
+        r#"{"ordinal":0,"object_index":1,"raw_object_index":"f001","source_offset":128},"#,
+        r#"{"ordinal":1,"object_index":2,"raw_object_index":"f002","source_offset":130},"#,
+        r#"{"ordinal":2,"object_index":3,"raw_object_index":"f003","source_offset":132},"#,
+        r#"{"ordinal":3,"object_index":4,"raw_object_index":"f004","source_offset":134}],"#,
+        r#""terminal":{"ordinal":4,"object_index":256,"raw_object_index":"f10100","data_block":"target","source_offset":159},"#,
+        r#""suffix":"8148","source_offset":125}],"#,
+        r#""terminator":"000000000000ffff01","source_offset":100}"#,
     );
 
     #[test]
@@ -411,7 +413,7 @@ mod tests {
             ),
             (
                 "/branches/0/members/0/raw_object_index",
-                serde_json::json!([0]),
+                serde_json::json!("00"),
                 "raw_object_index",
             ),
             (
@@ -426,12 +428,12 @@ mod tests {
             ),
             (
                 "/branches/0/terminal/raw_object_index",
-                serde_json::json!([1]),
+                serde_json::json!("01"),
                 "raw_object_index",
             ),
             (
-                "/branches/1/state_lane/5",
-                serde_json::json!(4),
+                "/branches/1/state_lane",
+                serde_json::json!("000000000104020304050105060708090000"),
                 "state_lane",
             ),
         ] {

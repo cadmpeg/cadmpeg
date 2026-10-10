@@ -889,7 +889,7 @@ fn repeated_scalar_lane_route_refuses_work_limit() {
 #[test]
 fn repeated_scalar_lane_preserves_parallel_wire_and_requires_complete_tokens() {
     check_lane_wire::<FeatureSimpleHoleRepeatedScalarLane>(
-        r#"{"id":"lane","operation_label":"operation","values":[2.5,4.0],"raw_values":[[48,4,0,0,0,0,0,0],[48,16,0,0,0,0,0,0]],"first_witness_offsets":[10,18],"second_witness_offsets":[40,48]}"#,
+        r#"{"id":"lane","operation_label":"operation","values":[2.5,4.0],"raw_values":["3004000000000000","3010000000000000"],"first_witness_offsets":[10,18],"second_witness_offsets":[40,48]}"#,
         &[
             "values",
             "raw_values",
@@ -933,7 +933,7 @@ fn repeated_scalar_lane_rejects_empty_and_inconsistent_atoms() {
             .to_string()
             .contains("values")
     );
-    let invalid = r#"{"id":"lane","operation_label":"operation","values":[4.0],"raw_values":[[48,4,0,0,0,0,0,0]],"first_witness_offsets":[10],"second_witness_offsets":[40]}"#;
+    let invalid = r#"{"id":"lane","operation_label":"operation","values":[4.0],"raw_values":["3004000000000000"],"first_witness_offsets":[10],"second_witness_offsets":[40]}"#;
     assert!(
         serde_json::from_str::<FeatureSimpleHoleRepeatedScalarLane>(invalid)
             .unwrap_err()
@@ -1382,10 +1382,12 @@ fn simple_hole_reference_pairs_preserve_wire_and_reject_wrong_witness_wrappers()
         for second in [false, true] {
             let mut wire = base.clone();
             if first {
-                wire["first_reference_prefix"] = serde_json::json!(FIRST_PREFIX);
+                wire["first_reference_prefix"] =
+                    serde_json::json!(cadmpeg_ir::native::bytes::NativeBytes::from(FIRST_PREFIX));
             }
             if second {
-                wire["second_reference_prefix"] = serde_json::json!(SECOND_PREFIX);
+                wire["second_reference_prefix"] =
+                    serde_json::json!(cadmpeg_ir::native::bytes::NativeBytes::from(SECOND_PREFIX));
             }
             let record: FeatureSimpleHoleRepeatedScalarLaneBlockReferences =
                 serde_json::from_value(wire.clone()).unwrap();
@@ -1397,7 +1399,7 @@ fn simple_hole_reference_pairs_preserve_wire_and_reject_wrong_witness_wrappers()
         ("second_reference_prefix", FIRST_PREFIX),
     ] {
         let mut wire = base.clone();
-        wire[field] = serde_json::json!(prefix);
+        wire[field] = serde_json::json!(cadmpeg_ir::native::bytes::NativeBytes::from(prefix));
         let error =
             serde_json::from_value::<FeatureSimpleHoleRepeatedScalarLaneBlockReferences>(wire)
                 .unwrap_err();

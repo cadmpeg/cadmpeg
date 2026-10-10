@@ -69,6 +69,17 @@ pub const HISTORY_PARTITION_FLAG: u64 = 1;
 pub const FORMAT_REVISION_FLAGS: u64 = 0xfe;
 
 impl KernelHeader {
+    /// Product fields whose independently framed payload could not be decoded.
+    pub fn unreadable_product_fields(&self) -> impl Iterator<Item = &'static str> + '_ {
+        [
+            ("product family", self.product_family.as_deref()),
+            ("product version", self.product_version.as_deref()),
+            ("save date", self.save_date.as_deref()),
+        ]
+        .into_iter()
+        .filter_map(|(name, value)| value.is_none().then_some(name))
+    }
+
     /// Major component of the encoded ACIS save-format version.
     pub fn save_format_major(&self) -> Option<u32> {
         self.save_format_version.map(|version| version / 100)
@@ -101,7 +112,10 @@ pub(crate) fn read_string_region(
     for slot in &mut strings {
         match read_u8_string_span(bytes, cur) {
             Some((value, next)) => {
-                *slot = Some(ctx.copy_retained_text(value, "retain kernel header product string")?);
+                if let Ok(value) = std::str::from_utf8(value) {
+                    *slot =
+                        Some(ctx.copy_retained_text(value, "retain kernel header product string")?);
+                }
                 cur = next;
             }
             None => break,
@@ -142,13 +156,13 @@ pub(crate) fn scan_string_region(bytes: &[u8], start: usize) -> (usize, usize, u
     (strings, doubles, cur)
 }
 
-fn read_u8_string_span(bytes: &[u8], at: usize) -> Option<(&str, usize)> {
+fn read_u8_string_span(bytes: &[u8], at: usize) -> Option<(&[u8], usize)> {
     if *bytes.get(at)? != 0x07 {
         return None;
     }
     let len = usize::from(*bytes.get(at + 1)?);
     let start = at + 2;
-    let value = std::str::from_utf8(bytes.get(start..start + len)?).ok()?;
+    let value = bytes.get(start..start + len)?;
     Some((value, start + len))
 }
 
@@ -162,6 +176,76 @@ fn read_tagged_f64(bytes: &[u8], at: usize) -> Option<(f64, usize)> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn binary_product_encoding_does_not_control_framing_or_other_fields() {
+        for (magic, header_len) in [
+            (
+                b"ASM BinaryFile4".as_slice(),
+                crate::layout::asmheader_binaryfile4::LEN,
+            ),
+            (
+                b"ASM BinaryFile8".as_slice(),
+                crate::layout::asmheader_binaryfile8::LEN,
+            ),
+            (
+                b"ACIS BinaryFile".as_slice(),
+                crate::layout::acisheader_binaryfile4::LEN,
+            ),
+        ] {
+            let mut original = magic.to_vec();
+            original.resize(header_len, 0);
+            let mut positions = Vec::new();
+            for value in [b"Family".as_slice(), b"Version", b"Date"] {
+                positions.push(original.len() + 2);
+                original.extend_from_slice(&[7, u8::try_from(value.len()).unwrap()]);
+                original.extend_from_slice(value);
+            }
+            for value in [10.0_f64, 0.125, 0.25] {
+                original.push(6);
+                original.extend_from_slice(&value.to_le_bytes());
+            }
+            let record_start = original.len();
+            original.extend_from_slice(b"records");
+            let start = |bytes: &[u8]| {
+                if magic.starts_with(b"ASM") {
+                    crate::asm_header::record_stream_start(bytes)
+                } else {
+                    crate::acis_header::record_stream_start(bytes)
+                }
+            };
+            for (index, position) in positions.iter().enumerate() {
+                let mut bytes = original.clone();
+                bytes[*position] = 0xff;
+                assert_eq!(start(&bytes), Some(record_start));
+                let ctx = cadmpeg_test_support::service_decode_context();
+                let header = if magic.starts_with(b"ASM") {
+                    crate::asm_header::parse(&ctx, &bytes)
+                } else {
+                    crate::acis_header::parse(&ctx, &bytes)
+                }
+                .unwrap()
+                .unwrap();
+                assert_eq!(header.metadata.linear, Some(0.125));
+                assert_eq!(header.metadata.angular, Some(0.25));
+                assert_eq!(
+                    header
+                        .metadata
+                        .unreadable_product_fields()
+                        .collect::<Vec<_>>(),
+                    [["product family"], ["product version"], ["save date"]][index]
+                );
+                assert_eq!(&bytes[record_start..], &original[record_start..]);
+            }
+            let mut truncated = original[..record_start].to_vec();
+            truncated[positions[0] - 1] = u8::MAX;
+            assert_eq!(
+                start(&truncated),
+                None,
+                "untrusted byte boundaries stay fatal"
+            );
+        }
+    }
+
     #[test]
     fn binary_header_product_string_refuses_retained_limit() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};

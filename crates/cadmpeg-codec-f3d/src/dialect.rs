@@ -134,14 +134,16 @@ impl F3dDialect {
     /// that reading: its own, or the recovery row.
     pub(crate) fn classify_document(
         ctx: &DecodeContext<'_>,
-        version: &str,
+        version: Option<&str>,
     ) -> Result<DialectMatch, CodecError> {
         const OPERATION: &str = "classify F3D manifest dialect";
         let mut declared = BTreeMap::new();
         let key = cadmpeg_core::nonblank_const!(DECLARED_TOP_LEVEL_MANIFEST_VERSION);
-        ctx.admit_btree_entry(&declared, &key, OPERATION)?;
-        declared.insert(key, ctx.copy_retained_text(version, OPERATION)?);
-        let dialect = if version == TOP_LEVEL_MANIFEST_VERSION {
+        if let Some(version) = version {
+            ctx.admit_btree_entry(&declared, &key, OPERATION)?;
+            declared.insert(key, ctx.copy_retained_text(version, OPERATION)?);
+        }
+        let dialect = if version == Some(TOP_LEVEL_MANIFEST_VERSION) {
             Self::Manifest3200
         } else {
             Self::Unknown

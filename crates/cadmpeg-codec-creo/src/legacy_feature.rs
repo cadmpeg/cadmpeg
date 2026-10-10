@@ -48,8 +48,8 @@ pub(crate) struct LegacyFeatureScan {
 
 type ObjectIndex<'a> = BTreeMap<String, &'a ObjectRecord>;
 type ChildrenIndex<'a> = BTreeMap<(usize, &'a str), Vec<&'a ObjectRecord>>;
-type IntegerIndex<'a> = BTreeMap<(usize, &'a str), Vec<&'a legacy::IntegerRecord>>;
-type RealIndex<'a> = BTreeMap<(usize, &'a str), Vec<&'a legacy::RealRecord>>;
+type IntegerIndex<'a> = BTreeMap<(usize, &'a str), Option<&'a legacy::IntegerRecord>>;
+type RealIndex<'a> = BTreeMap<(usize, &'a str), Option<&'a legacy::RealRecord>>;
 
 struct Index<'a> {
     objects: ObjectIndex<'a>,
@@ -65,7 +65,18 @@ impl<'a> Index<'a> {
     ) -> Result<Option<Self>, CodecError> {
         let mut objects = BTreeMap::new();
         let mut children = BTreeMap::new();
-        for object in &persistence.objects {
+        for object in persistence.objects.iter().filter(|object| {
+            matches!(
+                object.name.as_str(),
+                "Sld_Features"
+                    | "Sld_FullData"
+                    | "dim_array"
+                    | "first_feat_ptr"
+                    | "next_feat_ptr"
+                    | "feat_type_ptr"
+                    | "dim_dat_ptr"
+            )
+        }) {
             let id = legacy::checked_object_node_id(
                 ctx,
                 object.offset,
@@ -97,9 +108,23 @@ impl<'a> Index<'a> {
             }
         }
         let mut integers = BTreeMap::new();
-        value_index(ctx, &persistence.integer_values.rows, &mut integers)?;
+        value_index(
+            ctx,
+            persistence.integer_values.rows.iter().filter(|record| {
+                matches!(record.name.as_str(), "id" | "type" | "dim_type" | "feat_id")
+            }),
+            &mut integers,
+        )?;
         let mut reals = BTreeMap::new();
-        value_index(ctx, &persistence.real_values.rows, &mut reals)?;
+        value_index(
+            ctx,
+            persistence
+                .real_values
+                .rows
+                .iter()
+                .filter(|record| record.name == "value"),
+            &mut reals,
+        )?;
         Ok(Some(Self {
             objects,
             children,
@@ -123,10 +148,7 @@ impl<'a> Index<'a> {
     }
 
     fn unique_integer_scalar(&self, parent: usize, name: &str) -> Option<i32> {
-        let records = self.integers.get(&(parent, name))?;
-        let [record] = records.as_slice() else {
-            return None;
-        };
+        let record = self.integers.get(&(parent, name)).copied().flatten()?;
         match &record.payload {
             NumericPayload::Scalar { value } => Some(*value),
             NumericPayload::Array(_) => None,
@@ -134,10 +156,7 @@ impl<'a> Index<'a> {
     }
 
     fn unique_real_scalar(&self, parent: usize, name: &str) -> Option<f64> {
-        let records = self.reals.get(&(parent, name))?;
-        let [record] = records.as_slice() else {
-            return None;
-        };
+        let record = self.reals.get(&(parent, name)).copied().flatten()?;
         match &record.payload {
             NumericPayload::Scalar { value } => Some(value.value()),
             NumericPayload::Array(_) => None,
@@ -151,6 +170,13 @@ pub(crate) fn scan(
     persistence: &Persistence,
     topology_rows: &[CurveTopologyRow],
 ) -> Result<LegacyFeatureScan, CodecError> {
+    if !persistence
+        .objects
+        .iter()
+        .any(|object| object.name == "Sld_Features" && object.parent.is_none())
+    {
+        return Ok(LegacyFeatureScan::default());
+    }
     let Some(index) = Index::build(ctx, persistence)? else {
         return Ok(LegacyFeatureScan::default());
     };
@@ -659,5 +685,37 @@ mod tests {
         let fixture = persistence(&[2.0]);
         assert_eq!(scan(&fixture, &[]).rounds.len(), 1);
         assert_collection_refusal(&fixture, &[], "creo legacy round results");
+    }
+    #[test]
+    fn feature_indexes_only_fields_read_by_its_joins() {
+        let mut persistence = persistence(&[2.0]);
+        let rows = [topology(7)];
+        let expected = scan(&persistence, &rows);
+        let mut unrelated = persistence.integer_values.rows[0].clone();
+        unrelated.name = "unrelated_field".into();
+        persistence
+            .integer_values
+            .rows
+            .extend(std::iter::repeat_n(unrelated, 1000));
+        let actual = scan_with_collection_limit(&persistence, &rows, 1000)
+            .expect("irrelevant fields need no feature index entries");
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn feature_does_not_index_unrelated_object_graphs() {
+        let mut persistence = persistence(&[2.0]);
+        let rows = [topology(7)];
+        let expected = scan(&persistence, &rows);
+        let mut unrelated = persistence.objects[0].clone();
+        unrelated.name = "View".into();
+        unrelated.parent = Some(9000);
+        for offset in 10_000..11_000 {
+            unrelated.offset = offset;
+            persistence.objects.push(unrelated.clone());
+        }
+        let actual = scan_with_collection_limit(&persistence, &rows, 1000)
+            .expect("unrelated object graphs need no feature indices");
+        assert_eq!(actual, expected);
     }
 }

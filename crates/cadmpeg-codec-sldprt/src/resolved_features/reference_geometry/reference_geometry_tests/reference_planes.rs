@@ -50,7 +50,7 @@ fn reference_plane_error(policy: DecodePolicy) -> CodecError {
     let lane = super::FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: Vec::new(),
         names: vec![super::FeatureInputName {
             id: "name".into(),

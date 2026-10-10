@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Work axes, work points, work planes and the vertex recipes they resolve through.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 
@@ -331,7 +333,7 @@ pub(crate) struct DesignVertexRecipe {
     /// Native construction-recipe arena id.
     pub(crate) recipe_id: String,
     /// Complete prefix before the length-prefixed recipe-family name.
-    pub(crate) recipe_prefix_bytes: Vec<u8>,
+    pub(crate) recipe_prefix_bytes: NativeBytes<Vec<u8>>,
     /// Persistent selector/reference entries decoded from the prefix.
     pub(crate) recipe_references: Vec<DesignRecipeReference>,
     /// Byte offset of the first post-name i32.
@@ -359,7 +361,7 @@ impl DesignVertexRecipe {
             paired_class_tag: self.paired_class_tag.try_clone_for_decode(ctx, operation)?,
             recipe_record_byte_offset: self.recipe_record_byte_offset,
             recipe_id: ctx.copy_retained_text(&self.recipe_id, operation)?,
-            recipe_prefix_bytes: ctx.copy_slice(&self.recipe_prefix_bytes, operation)?,
+            recipe_prefix_bytes: (ctx.copy_slice(&self.recipe_prefix_bytes, operation)?).into(),
             recipe_references: ctx.try_collect_retained_with(
                 &self.recipe_references,
                 operation,
@@ -401,7 +403,7 @@ impl DesignVertexRecipe {
             paired_class_tag: draft.paired_class_tag,
             recipe_record_byte_offset: draft.recipe_record_byte_offset,
             recipe_id: draft.recipe_id,
-            recipe_prefix_bytes: draft.recipe_prefix_bytes,
+            recipe_prefix_bytes: (draft.recipe_prefix_bytes).into(),
             recipe_references: draft.recipe_references,
             recipe_program_offset: draft.recipe_program_offset,
             recipe_program: draft.recipe_program,
@@ -435,7 +437,7 @@ impl DesignVertexRecipe {
             recipe_record_byte_offset: self.recipe_record_byte_offset,
             recipe_id: self.recipe_id,
             recipe_prefix_offset,
-            recipe_prefix_bytes: self.recipe_prefix_bytes,
+            recipe_prefix_bytes: self.recipe_prefix_bytes.into_inner(),
             recipe_references: self.recipe_references,
             recipe_program_offset: self.recipe_program_offset,
             recipe_program: self.recipe_program,
@@ -525,8 +527,7 @@ struct DesignVertexRecipeWire {
     /// Byte offset of the recipe-specific prefix after the indexed header.
     recipe_prefix_offset: u64,
     /// Complete prefix before the length-prefixed recipe-family name.
-    #[serde(with = "cadmpeg_ir::bytes")]
-    recipe_prefix_bytes: Vec<u8>,
+    recipe_prefix_bytes: NativeBytes<Vec<u8>>,
     /// Persistent selector/reference entries decoded from the prefix.
     recipe_references: Vec<DesignRecipeReference>,
     /// Byte offset of the first post-name i32.
@@ -566,7 +567,7 @@ impl From<DesignVertexRecipe> for DesignVertexRecipeWire {
             recipe_record_byte_offset: value.recipe_record_byte_offset,
             recipe_id: value.recipe_id,
             recipe_prefix_offset: value.recipe_prefix_offset,
-            recipe_prefix_bytes: value.recipe_prefix_bytes,
+            recipe_prefix_bytes: (value.recipe_prefix_bytes).into(),
             recipe_references: value.recipe_references,
             recipe_program_offset: value.recipe_program_offset,
             recipe_program: value.recipe_program,
@@ -604,7 +605,7 @@ impl TryFrom<DesignVertexRecipeWire> for DesignVertexRecipe {
             recipe_record_byte_offset: value.recipe_record_byte_offset,
             recipe_id: value.recipe_id,
             recipe_prefix_offset: value.recipe_prefix_offset,
-            recipe_prefix_bytes: value.recipe_prefix_bytes,
+            recipe_prefix_bytes: value.recipe_prefix_bytes.into_inner(),
             recipe_references: value.recipe_references,
             recipe_program_offset: value.recipe_program_offset,
             recipe_program: value.recipe_program,

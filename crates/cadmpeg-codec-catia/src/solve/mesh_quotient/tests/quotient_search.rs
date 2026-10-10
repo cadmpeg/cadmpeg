@@ -952,7 +952,6 @@ fn common_full_quotient_refuses_each_collection_limit() {
         "catia_common_quotient_members",
         "catia_common_quotient_classes",
         "catia_quotient_intersection",
-        "catia_quotient_merged_members",
         "catia_common_quotient_roots",
         "catia_common_quotient_allowed",
         "catia_common_quotient_narrowed",

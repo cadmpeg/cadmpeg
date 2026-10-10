@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Body-recipe operands, operand groups, owners and persistent references.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use cadmpeg_core::decode::u64_from_index;
 
 use crate::records::identity::Located;
@@ -35,7 +37,7 @@ pub(crate) struct DesignBodyRecipeOperand {
     /// Class `365` varies this member without a settled neutral meaning;
     /// class `367` stores `01 00 00 00`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    selector_tail: Option<Located<[u8; 4]>>,
+    selector_tail: Option<Located<NativeBytes<[u8; 4]>>>,
     /// Counted persistent Design references carried by this operand.
     references: Vec<DesignBodyRecipeReference>,
     /// Body construction recipe contained by this operand record.
@@ -74,7 +76,7 @@ impl Clone for DesignBodyRecipeOperand {
             asset_id: self.asset_id.clone(),
             context_id: self.context_id.clone(),
             context_id_offset: self.context_id_offset,
-            selector_tail: self.selector_tail,
+            selector_tail: (self.selector_tail),
             references: self.references.clone(),
             recipe_id: self.recipe_id.clone(),
             resolved_face_slot: self.resolved_face_slot,
@@ -134,7 +136,10 @@ impl DesignBodyRecipeOperand {
             asset_id: draft.asset_id,
             context_id: draft.context_id,
             context_id_offset: draft.context_id_offset,
-            selector_tail: draft.selector_tail,
+            selector_tail: draft.selector_tail.map(|tail| Located {
+                value: tail.value.into(),
+                offset: tail.offset,
+            }),
             references: draft.references,
             recipe_id: draft.recipe_id,
             resolved_face_slot: draft.resolved_face_slot,
@@ -176,7 +181,10 @@ impl DesignBodyRecipeOperand {
             asset_id_offset,
             context_id: self.context_id,
             context_id_offset: self.context_id_offset,
-            selector_tail: self.selector_tail,
+            selector_tail: self.selector_tail.map(|tail| Located {
+                value: tail.value.into_inner(),
+                offset: tail.offset,
+            }),
             references: self.references,
             nested_record_index,
             nested_record_index_offset,
@@ -235,7 +243,7 @@ impl Serialize for DesignBodyRecipeOperand {
             context_id: &'a str,
             context_id_offset: u64,
             #[serde(skip_serializing_if = "Option::is_none")]
-            selector_tail: Option<[u8; 4]>,
+            selector_tail: Option<NativeBytes<[u8; 4]>>,
             #[serde(skip_serializing_if = "Option::is_none")]
             selector_tail_offset: Option<u64>,
             references: &'a [DesignBodyRecipeReference],
@@ -264,7 +272,7 @@ impl Serialize for DesignBodyRecipeOperand {
             asset_id_offset: self.asset_id_offset(),
             context_id: self.context_id.as_str(),
             context_id_offset: self.context_id_offset,
-            selector_tail: self.selector_tail.map(|tail| tail.value),
+            selector_tail: (self.selector_tail.map(|tail| tail.value)),
             selector_tail_offset: self.selector_tail.map(|tail| tail.offset),
             references: &self.references,
             nested_record_index: self.nested_record_index(),
@@ -363,7 +371,7 @@ struct DesignBodyRecipeOperandWire {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_selector_tail"
     )]
-    selector_tail: Option<[u8; 4]>,
+    selector_tail: Option<NativeBytes<[u8; 4]>>,
     /// Byte offset of the raw selector-tail member.
     #[serde(
         default,
@@ -424,7 +432,7 @@ impl TryFrom<DesignBodyRecipeOperandWire> for DesignBodyRecipeOperand {
             context_id: wire.context_id.try_into()?,
             context_id_offset: wire.context_id_offset,
             selector_tail: Located::from_wire(
-                wire.selector_tail,
+                wire.selector_tail.map(NativeBytes::into_inner),
                 wire.selector_tail_offset,
                 "selector_tail",
             )?,
@@ -457,7 +465,7 @@ impl From<DesignBodyRecipeOperand> for DesignBodyRecipeOperandWire {
             asset_id_offset: record.asset_id_offset,
             context_id: record.context_id.into(),
             context_id_offset: record.context_id_offset,
-            selector_tail: record.selector_tail.map(|tail| tail.value),
+            selector_tail: (record.selector_tail.map(|tail| tail.value)).map(Into::into),
             selector_tail_offset: record.selector_tail.map(|tail| tail.offset),
             references: record.references,
             nested_record_index: record.nested_record_index,
@@ -590,7 +598,11 @@ impl DesignBodyRecipeOperand {
     }
 }
 
-cadmpeg_core::named_optional_field!(deserialize_selector_tail, [u8; 4], "selector_tail");
+cadmpeg_core::named_optional_field!(
+    deserialize_selector_tail,
+    cadmpeg_ir::native::bytes::NativeBytes<[u8; 4]>,
+    "selector_tail"
+);
 
 cadmpeg_core::named_optional_field!(
     deserialize_selector_tail_offset,

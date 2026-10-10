@@ -28,7 +28,7 @@ fn source_curve_refusal(
     depth_limit: Option<u64>,
 ) -> cadmpeg_core::CodecError {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CIRCLE();ENDSEC;END-ISO-10303-21;";
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CIRCLE();#2=TRIMMED_CURVE('',#1,(),(),.T.,.PARAMETER.);ENDSEC;END-ISO-10303-21;";
     let (exchange, _) =
         crate::test_support::with_service_context(source, crate::parse::parse_inner)
             .expect("valid source curve exchange");
@@ -55,7 +55,7 @@ fn source_curve_parameter_active_refuses_collection_limit() {
     use cadmpeg_core::decode::ResourceDimension;
 
     assert!(matches!(
-        source_curve_refusal(0, None),
+        source_curve_refusal(1, None),
         cadmpeg_core::CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_source_curve_parameter_active"
@@ -67,7 +67,7 @@ fn source_curve_parameter_scales_refuse_collection_limit() {
     use cadmpeg_core::decode::ResourceDimension;
 
     assert!(matches!(
-        source_curve_refusal(1, None),
+        source_curve_refusal(0, None),
         cadmpeg_core::CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_source_curve_parameter_scales"
@@ -83,33 +83,6 @@ fn source_curve_parameter_walk_refuses_depth_limit() {
         cadmpeg_core::CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::RecursionDepth
                 && refusal.operation == "step_source_curve_parameter_walk"
-    ));
-}
-
-#[test]
-fn parameter_inference_point_index_refuses_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    use cadmpeg_ir::features::FinitePoint3;
-    use cadmpeg_ir::ids::PointId;
-    use cadmpeg_ir::topology::Point;
-
-    let mut ir = CadIr::empty();
-    ir.model.points.push(Point::new(
-        PointId::from(crate::ids::data(crate::ids::kind!("point"), 1)),
-        FinitePoint3::ZERO,
-        None,
-    ));
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty input fits the policy");
-    assert!(matches!(
-        super::super::infer_edge_parameter_ranges(&mut ir, &ctx),
-        Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_parameter_inference_points"
     ));
 }
 
@@ -136,6 +109,7 @@ fn parameter_inference_ir(with_edge: bool) -> CadIr {
     if with_edge {
         let curve = CurveId::from(crate::ids::data(crate::ids::kind!("curve"), 3));
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0))
@@ -155,104 +129,70 @@ fn parameter_inference_ir(with_edge: bool) -> CadIr {
 }
 
 fn assert_parameter_inference_refusal(
-    with_edge: bool,
-    collection_limit: u64,
-    retained_limit: Option<u64>,
     dimension: cadmpeg_core::decode::ResourceDimension,
     operation: &str,
 ) {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_core::CodecError;
-
-    if matches!(
-        operation,
-        "step_parameter_inference_ranges" | "step_parameter_inference_edge_curve"
-    ) {
-        let error =
-            cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |limit| {
-                let mut ir = parameter_inference_ir(with_edge);
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::service();
-                match dimension {
-                    cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                        policy.limits.max_collection_items = limit;
-                    }
-                    cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                        policy.limits.max_retained_bytes = limit;
-                    }
-                    other => panic!("unexpected inference dimension: {other:?}"),
-                }
-                let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("root");
-                super::super::infer_edge_parameter_ranges(&mut ir, &ctx)
-            });
-        assert!(matches!(error, CodecError::ResourceLimit(refusal)
-            if refusal.dimension == dimension && refusal.operation == operation));
-        return;
-    }
-    let mut ir = parameter_inference_ir(with_edge);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = collection_limit;
-    if let Some(limit) = retained_limit {
-        policy.limits.max_retained_bytes = limit;
-    }
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty input fits the policy");
-    assert!(matches!(
-        super::super::infer_edge_parameter_ranges(&mut ir, &ctx),
-        Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == dimension && refusal.operation == operation
-    ));
+    let error = cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |limit| {
+        let mut ir = parameter_inference_ir(true);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                policy.limits.max_collection_items = limit;
+            }
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                policy.limits.max_retained_bytes = limit;
+            }
+            other => panic!("unexpected inference dimension: {other:?}"),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("root");
+        super::super::infer_edge_parameter_ranges(&mut ir, &ctx)
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(refusal)
+        if refusal.dimension == dimension && refusal.operation == operation));
 }
 
 #[test]
-fn parameter_inference_vertex_index_refuses_collection_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    assert_parameter_inference_refusal(
-        false,
-        2,
-        None,
-        ResourceDimension::CollectionItems,
-        "step_parameter_inference_vertices",
-    );
+fn parameter_inference_without_edges_needs_no_collection_storage() {
+    let mut ir = parameter_inference_ir(false);
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+        for _ in 0..1000 {
+            super::super::infer_edge_parameter_ranges(&mut ir, ctx)
+                .expect("no edge interval needs inference");
+        }
+        assert_eq!(ir.model.points.len(), 2);
+        assert_eq!(ir.model.vertices.len(), 2);
+    });
 }
 
 #[test]
-fn parameter_inference_candidate_refuses_collection_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    assert_parameter_inference_refusal(
-        true,
-        4,
-        None,
-        ResourceDimension::CollectionItems,
-        "step_parameter_inference_candidates",
+fn streamed_parameter_inference_finds_the_stored_line_endpoints() {
+    let mut ir = parameter_inference_ir(true);
+    crate::test_support::with_service_context(b"", |_, ctx| {
+        super::super::infer_edge_parameter_ranges(&mut ir, ctx).expect("line interval");
+    });
+    assert_eq!(
+        ir.model.edges[0].param_range().expect("inferred interval"),
+        [0.0, 1.0]
     );
 }
 
 #[test]
 fn parameter_inference_range_refuses_collection_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
-
     assert_parameter_inference_refusal(
-        true,
-        5,
-        None,
-        ResourceDimension::CollectionItems,
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
         "step_parameter_inference_ranges",
     );
 }
 
 #[test]
 fn parameter_inference_edge_curve_refuses_retained_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
-
     assert_parameter_inference_refusal(
-        true,
-        6,
-        Some(0),
-        ResourceDimension::RetainedBytes,
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
         "step_parameter_inference_edge_curve",
     );
 }
@@ -603,6 +543,7 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
     let mut ir = CadIr::empty();
     let directrix = CurveId::mint("test:model:curve#line").expect("identity grammar");
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: directrix.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::analytic::LineCurve::try_new(
@@ -776,12 +717,14 @@ fn unresolved_procedural_directrix_has_no_assumed_parameter_units() {
     let mut ir = CadIr::empty();
     let child = CurveId::mint("test:model:curve#unknown-child").expect("identity grammar");
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: child.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
         source_object: None,
     });
     let directrix = CurveId::mint("test:model:curve#composite").expect("identity grammar");
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: directrix.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
             segments: cadmpeg_ir::geometry::CompositeCurveSegments::try_from(vec![
@@ -846,6 +789,7 @@ fn axis_revolution_surface_parameter_units_use_plane_angle_for_u() {
     let directrix = CurveId::mint("test:model:curve#directrix").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: directrix.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::analytic::LineCurve::try_new(

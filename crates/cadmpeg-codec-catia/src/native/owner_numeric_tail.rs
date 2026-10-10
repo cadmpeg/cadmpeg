@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The fixed numeric tail of a class-`0x62` consolidated owner packet.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use cadmpeg_ir::scalar::FiniteBinary32;
 use cadmpeg_ir::topology::IncreasingParameterInterval;
 use serde::{Deserialize, Serialize};
@@ -74,7 +76,7 @@ impl CatiaOwnerNumericTail {
 
 #[derive(Serialize, Deserialize)]
 struct CatiaOwnerNumericTailWire {
-    header: [u8; 5],
+    header: NativeBytes<[u8; 5]>,
     lower: [f64; 2],
     upper: [f64; 2],
     bounds: [[f32; 2]; 3],
@@ -83,7 +85,7 @@ struct CatiaOwnerNumericTailWire {
 impl From<CatiaOwnerNumericTail> for CatiaOwnerNumericTailWire {
     fn from(value: CatiaOwnerNumericTail) -> Self {
         Self {
-            header: value.header,
+            header: (value.header).into(),
             lower: value.lower(),
             upper: value.upper(),
             bounds: value.bounds(),
@@ -95,7 +97,7 @@ impl TryFrom<CatiaOwnerNumericTailWire> for CatiaOwnerNumericTail {
     type Error = String;
 
     fn try_from(wire: CatiaOwnerNumericTailWire) -> Result<Self, Self::Error> {
-        Self::new(wire.header, wire.lower, wire.upper, wire.bounds).ok_or_else(|| {
+        Self::new(*wire.header, wire.lower, wire.upper, wire.bounds).ok_or_else(|| {
             "owner numeric tail box and bounds must be finite and increasing".to_owned()
         })
     }

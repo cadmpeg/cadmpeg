@@ -24,6 +24,7 @@ use cadmpeg_ir::transform::Transform;
 
 #[derive(Default)]
 pub(super) struct SourceUnitCarriers {
+    procedural_index: cadmpeg_ir::document::procedural::ProceduralIndex,
     length_scale_mm: Option<PositiveReal>,
     surfaces: BTreeMap<SurfaceId, SurfaceGeometry>,
     curves: BTreeMap<CurveId, CurveGeometry>,
@@ -34,6 +35,7 @@ pub(super) struct SourceUnitCarriers {
 impl SourceUnitCarriers {
     pub(super) fn new(length_scale_mm: Option<PositiveReal>) -> Self {
         Self {
+            procedural_index: cadmpeg_ir::document::procedural::ProceduralIndex::default(),
             length_scale_mm: length_scale_mm.filter(|scale| scale.get() != 1.0),
             surfaces: BTreeMap::new(),
             curves: BTreeMap::new(),
@@ -594,8 +596,8 @@ impl SourceUnitCarriers {
             crate::decode::build::units::scale_procedural_surface(ctx, &mut procedural, scale)?;
         }
 
-        ir.model
-            .add_procedural_surface(ctx, owner, procedural)?
+        self.procedural_index
+            .add_surface(ctx, &mut ir.model, owner, procedural)?
             .map_err(CodecError::malformed)
     }
 
@@ -610,8 +612,8 @@ impl SourceUnitCarriers {
             crate::decode::build::units::scale_procedural_curve(ctx, &mut procedural, scale)?;
         }
 
-        ir.model
-            .add_procedural_curve(ctx, owner, procedural)?
+        self.procedural_index
+            .add_curve(ctx, &mut ir.model, owner, procedural)?
             .map_err(CodecError::malformed)
     }
 
@@ -795,6 +797,7 @@ mod tests {
     #[test]
     fn replacement_curve_refuses_source_node_and_id_copy_limits() {
         let mut curve = Curve {
+            parameter_range: None,
             id: CurveId::mint("creo:test:replacement-curve#1").expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
@@ -844,6 +847,7 @@ mod tests {
             ),
         });
         let mut curve = Curve {
+            parameter_range: None,
             id: id.clone(),
             geometry: geometry.clone(),
             source_object: None,
@@ -949,6 +953,7 @@ mod tests {
     #[test]
     fn source_curve_admission_refuses_each_outer_boundary() {
         let curve = Curve {
+            parameter_range: None,
             id: CurveId::mint("creo:test:source-curve#1").expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
@@ -1006,6 +1011,7 @@ mod tests {
             ),
         });
         let curve = Curve {
+            parameter_range: None,
             id: id.clone(),
             geometry: geometry.clone(),
             source_object: None,
@@ -1891,6 +1897,7 @@ mod tests {
         )
         .expect("finite source line");
         let curve = Curve {
+            parameter_range: None,
             id: CurveId::mint("creo:visibgeom:curve#1").expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(geometry)),
             source_object: None,
@@ -2010,7 +2017,8 @@ mod tests {
         });
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
+        // Admit the owner-index bucket and entry, but no construction row.
+        policy.limits.max_collection_items = 2;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("valid test setup or admitted service result");
         let error = SourceUnitCarriers::default()
@@ -2040,13 +2048,15 @@ mod tests {
         );
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: owner.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
         });
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
+        // Admit the owner-index bucket and entry, but no construction row.
+        policy.limits.max_collection_items = 2;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("valid test setup or admitted service result");
         let error = SourceUnitCarriers::default()
@@ -2075,6 +2085,7 @@ mod tests {
                 ctx,
                 &mut ir,
                 Curve {
+                    parameter_range: None,
                     id: curve_id.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
                     source_object: None,
@@ -2144,6 +2155,7 @@ mod tests {
                 ctx,
                 &mut ir,
                 Curve {
+                    parameter_range: None,
                     id: curve_id.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                         cadmpeg_ir::geometry::analytic::LineCurve::try_new(
@@ -2193,6 +2205,7 @@ mod tests {
                 ctx,
                 &mut ir,
                 Curve {
+                    parameter_range: None,
                     id: curve_id.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                         cadmpeg_ir::geometry::analytic::LineCurve::try_new(
@@ -2277,6 +2290,7 @@ mod tests {
                     ctx,
                     &mut ir,
                     Curve {
+                        parameter_range: None,
                         id: curve_id.clone(),
                         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                             cadmpeg_ir::geometry::analytic::LineCurve::try_new(

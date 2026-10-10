@@ -4,6 +4,33 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 use cadmpeg_core::CodecError;
 
 #[test]
+fn parent_feature_arrays_accept_wide_feature_identities() {
+    let bytes = b"parent_feats\0\xf8\x03\x7f\xbf\xff\xc0\x40\0\xf7\x10";
+    let sections = [
+        Section::scan("VisibGeom".into(), 0, bytes.len(), None, bytes).expect("bounded section"),
+    ];
+    let ids =
+        crate::decode::with_test_decode_ctx(|ctx| structural_feature_ids(ctx, &sections, &[], &[]))
+            .expect("complete parent roster");
+    assert_eq!(ids, [127, 16383, 16384].into_iter().collect());
+}
+
+#[test]
+fn parent_feature_search_charges_a_single_forward_pass() {
+    let bytes = b"parent_feats\0\xf8\x01\0".repeat(1000);
+    let sections = [
+        Section::scan("VisibGeom".into(), 0, bytes.len(), None, &bytes).expect("bounded section"),
+    ];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::try_from(bytes.len()).expect("size") + 2001;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    assert!(structural_feature_ids(&ctx, &sections, &[], &[])
+        .expect("linear scan")
+        .is_empty());
+}
+
+#[test]
 fn parent_feature_zero_ids_refuse_search_and_entry_work() {
     let bytes = b"parent_feats\0\xf8\x03\0\0\0";
     let section =

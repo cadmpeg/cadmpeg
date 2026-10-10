@@ -106,41 +106,7 @@
       "creo": {
         "surface_parameters": [
           {
-            "body": [
-              24,
-              24,
-              1,
-              17,
-              46,
-              176,
-              18,
-              71,
-              5,
-              51,
-              45,
-              45,
-              255,
-              255,
-              255,
-              255,
-              255,
-              41,
-              71,
-              5,
-              51,
-              46,
-              5,
-              51,
-              45,
-              49,
-              166,
-              102,
-              102,
-              102,
-              102,
-              102,
-              24
-            ],
+            "body": "181801112eb0124705332d2dffffffffff294705332e05332d31a6666666666618",
             "body_offset": 112,
             "boundary": "compound_close",
             "cone_half_angle_override": null,
@@ -150,18 +116,12 @@
               {
                 "length": 3,
                 "offset": 1,
-                "raw": [
-                  24,
-                  1,
-                  17
-                ]
+                "raw": "180111"
               },
               {
                 "length": 1,
                 "offset": 32,
-                "raw": [
-                  24
-                ]
+                "raw": "18"
               }
             ],
             "positional_cone_frame": null,
@@ -176,9 +136,7 @@
                   {
                     "length": 1,
                     "offset": 0,
-                    "raw": [
-                      24
-                    ],
+                    "raw": "18",
                     "value": 0.0
                   }
                 ]
@@ -189,71 +147,37 @@
                   {
                     "length": 3,
                     "offset": 4,
-                    "raw": [
-                      46,
-                      176,
-                      18
-                    ],
+                    "raw": "2eb012",
                     "value": 4114.070588235294
                   },
                   {
                     "length": 3,
                     "offset": 7,
-                    "raw": [
-                      71,
-                      5,
-                      51
-                    ],
+                    "raw": "470533",
                     "value": -2.65
                   },
                   {
                     "length": 8,
                     "offset": 10,
-                    "raw": [
-                      45,
-                      45,
-                      255,
-                      255,
-                      255,
-                      255,
-                      255,
-                      41
-                    ],
+                    "raw": "2d2dffffffffff29",
                     "value": -14.999999999999618
                   },
                   {
                     "length": 3,
                     "offset": 18,
-                    "raw": [
-                      71,
-                      5,
-                      51
-                    ],
+                    "raw": "470533",
                     "value": -2.65
                   },
                   {
                     "length": 3,
                     "offset": 21,
-                    "raw": [
-                      46,
-                      5,
-                      51
-                    ],
+                    "raw": "2e0533",
                     "value": 2.65
                   },
                   {
                     "length": 8,
                     "offset": 24,
-                    "raw": [
-                      45,
-                      49,
-                      166,
-                      102,
-                      102,
-                      102,
-                      102,
-                      102
-                    ],
+                    "raw": "2d31a66666666666",
                     "value": -17.65
                   }
                 ]
@@ -263,79 +187,43 @@
               {
                 "length": 1,
                 "offset": 0,
-                "raw": [
-                  24
-                ],
+                "raw": "18",
                 "value": 0.0
               },
               {
                 "length": 3,
                 "offset": 4,
-                "raw": [
-                  46,
-                  176,
-                  18
-                ],
+                "raw": "2eb012",
                 "value": 4114.070588235294
               },
               {
                 "length": 3,
                 "offset": 7,
-                "raw": [
-                  71,
-                  5,
-                  51
-                ],
+                "raw": "470533",
                 "value": -2.65
               },
               {
                 "length": 8,
                 "offset": 10,
-                "raw": [
-                  45,
-                  45,
-                  255,
-                  255,
-                  255,
-                  255,
-                  255,
-                  41
-                ],
+                "raw": "2d2dffffffffff29",
                 "value": -14.999999999999618
               },
               {
                 "length": 3,
                 "offset": 18,
-                "raw": [
-                  71,
-                  5,
-                  51
-                ],
+                "raw": "470533",
                 "value": -2.65
               },
               {
                 "length": 3,
                 "offset": 21,
-                "raw": [
-                  46,
-                  5,
-                  51
-                ],
+                "raw": "2e0533",
                 "value": 2.65
               },
               {
                 "length": 8,
                 "offset": 24,
-                "raw": [
-                  45,
-                  49,
-                  166,
-                  102,
-                  102,
-                  102,
-                  102,
-                  102
-                ],
+                "raw": "2d31a66666666666",
                 "value": -17.65
               }
             ],
@@ -361,41 +249,7 @@
             "type26_split_coordinate_envelope": null
           },
           {
-            "body": [
-              24,
-              24,
-              1,
-              17,
-              46,
-              184,
-              18,
-              71,
-              5,
-              51,
-              45,
-              40,
-              179,
-              51,
-              51,
-              51,
-              51,
-              51,
-              71,
-              5,
-              51,
-              46,
-              5,
-              51,
-              45,
-              46,
-              0,
-              0,
-              0,
-              0,
-              0,
-              215,
-              24
-            ],
+            "body": "181801112eb8124705332d28b333333333334705332e05332d2e0000000000d718",
             "body_offset": 152,
             "boundary": "compound_close",
             "cone_half_angle_override": null,
@@ -405,18 +259,12 @@
               {
                 "length": 3,
                 "offset": 1,
-                "raw": [
-                  24,
-                  1,
-                  17
-                ]
+                "raw": "180111"
               },
               {
                 "length": 1,
                 "offset": 32,
-                "raw": [
-                  24
-                ]
+                "raw": "18"
               }
             ],
             "positional_cone_frame": null,
@@ -431,9 +279,7 @@
                   {
                     "length": 1,
                     "offset": 0,
-                    "raw": [
-                      24
-                    ],
+                    "raw": "18",
                     "value": 0.0
                   }
                 ]
@@ -444,71 +290,37 @@
                   {
                     "length": 3,
                     "offset": 4,
-                    "raw": [
-                      46,
-                      184,
-                      18
-                    ],
+                    "raw": "2eb812",
                     "value": 6162.070588235294
                   },
                   {
                     "length": 3,
                     "offset": 7,
-                    "raw": [
-                      71,
-                      5,
-                      51
-                    ],
+                    "raw": "470533",
                     "value": -2.65
                   },
                   {
                     "length": 8,
                     "offset": 10,
-                    "raw": [
-                      45,
-                      40,
-                      179,
-                      51,
-                      51,
-                      51,
-                      51,
-                      51
-                    ],
+                    "raw": "2d28b33333333333",
                     "value": -12.35
                   },
                   {
                     "length": 3,
                     "offset": 18,
-                    "raw": [
-                      71,
-                      5,
-                      51
-                    ],
+                    "raw": "470533",
                     "value": -2.65
                   },
                   {
                     "length": 3,
                     "offset": 21,
-                    "raw": [
-                      46,
-                      5,
-                      51
-                    ],
+                    "raw": "2e0533",
                     "value": 2.65
                   },
                   {
                     "length": 8,
                     "offset": 24,
-                    "raw": [
-                      45,
-                      46,
-                      0,
-                      0,
-                      0,
-                      0,
-                      0,
-                      215
-                    ],
+                    "raw": "2d2e0000000000d7",
                     "value": -15.000000000000382
                   }
                 ]
@@ -518,79 +330,43 @@
               {
                 "length": 1,
                 "offset": 0,
-                "raw": [
-                  24
-                ],
+                "raw": "18",
                 "value": 0.0
               },
               {
                 "length": 3,
                 "offset": 4,
-                "raw": [
-                  46,
-                  184,
-                  18
-                ],
+                "raw": "2eb812",
                 "value": 6162.070588235294
               },
               {
                 "length": 3,
                 "offset": 7,
-                "raw": [
-                  71,
-                  5,
-                  51
-                ],
+                "raw": "470533",
                 "value": -2.65
               },
               {
                 "length": 8,
                 "offset": 10,
-                "raw": [
-                  45,
-                  40,
-                  179,
-                  51,
-                  51,
-                  51,
-                  51,
-                  51
-                ],
+                "raw": "2d28b33333333333",
                 "value": -12.35
               },
               {
                 "length": 3,
                 "offset": 18,
-                "raw": [
-                  71,
-                  5,
-                  51
-                ],
+                "raw": "470533",
                 "value": -2.65
               },
               {
                 "length": 3,
                 "offset": 21,
-                "raw": [
-                  46,
-                  5,
-                  51
-                ],
+                "raw": "2e0533",
                 "value": 2.65
               },
               {
                 "length": 8,
                 "offset": 24,
-                "raw": [
-                  45,
-                  46,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  215
-                ],
+                "raw": "2d2e0000000000d7",
                 "value": -15.000000000000382
               }
             ],
@@ -624,13 +400,11 @@
             "offset": 186,
             "parameters": [
               {
-                "body": [
-                  24
-                ],
+                "body": "18",
                 "compact_values": [],
                 "name": "radius1",
                 "offset": 206,
-                "opaque": [],
+                "opaque": "",
                 "scalar_count": null,
                 "scalar_dimensions": null,
                 "scalar_tokens": [],
@@ -641,15 +415,11 @@
                 "value_offset": 216
               },
               {
-                "body": [
-                  46,
-                  5,
-                  51
-                ],
+                "body": "2e0533",
                 "compact_values": [],
                 "name": "radius2",
                 "offset": 217,
-                "opaque": [],
+                "opaque": "",
                 "scalar_count": null,
                 "scalar_dimensions": null,
                 "scalar_tokens": [],

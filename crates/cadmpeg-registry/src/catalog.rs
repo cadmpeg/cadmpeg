@@ -311,6 +311,44 @@ impl InputCatalog {
         self.descriptors.iter()
     }
 
+    /// Resolves seekable source evidence beyond the leading window when needed.
+    /// ZIP directory evidence is acquired without reading member payloads. The
+    /// original source position and prefix remain available for input completion.
+    pub fn resolve_seekable_source<'a>(
+        &'a self,
+        ctx: &DecodeContext<'_>,
+        prefix: View<'_>,
+        source: &mut dyn cadmpeg_core::ReadSeek,
+        forced: Option<ForcedInput>,
+    ) -> Result<ResolvedSource<'a>, ResolveSourceError> {
+        let initial = self.resolve_source(ctx, prefix, forced);
+        let probe = forced.is_none()
+            && match &initial {
+                Ok(ResolvedSource::Unrecognized) => true,
+                Ok(ResolvedSource::Native {
+                    selection: Selection::Detected { confidence },
+                    ..
+                }) => *confidence == Confidence::Low,
+                Err(ResolveSourceError::Ambiguous(tie)) => tie.confidence() == Confidence::Low,
+                _ => false,
+            };
+        if !probe {
+            return initial;
+        }
+        let image = match cadmpeg_container::ArchiveSnapshot::detection_image(ctx, source) {
+            Ok(image) => image,
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error.into()),
+            Err(_) => return initial,
+        };
+        let Some((image, _storage)) = image else {
+            return initial;
+        };
+        match self.resolve_source(ctx, View::over_retained(&image), None) {
+            Ok(ResolvedSource::Unrecognized) => initial,
+            resolved => resolved,
+        }
+    }
+
     /// Resolves a forced format or content detection into a source selection.
     ///
     /// Resolves the shared inspect/load source selection. CADIR is selected only
@@ -370,6 +408,7 @@ pub(crate) fn is_cadir_prefix(prefix: &[u8]) -> bool {
 
 #[cfg(test)]
 mod tests {
+    mod seekable;
     use super::{ForcedInput, InputCatalog, ResolvedSource};
 
     #[test]

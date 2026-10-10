@@ -146,115 +146,77 @@ fn split_lines<'a>(source: &'a [u8], ctx: &DecodeContext<'_>) -> Result<Vec<&'a 
     Ok(lines)
 }
 
-fn logical_global_stream(cards: &[&[u8]], ctx: &DecodeContext<'_>) -> Result<Vec<u8>, CodecError> {
-    let length = cards.iter().try_fold(0_usize, |length, card| {
-        if card.len() != CARD_WIDTH {
-            return Err(malformed("Start and Global records must be 80 columns"));
-        }
-        length.checked_add(CARD_DATA_WIDTH).ok_or_else(|| {
-            CodecError::NotImplemented("IGES Compressed ASCII Global stream exceeds usize".into())
-        })
-    })?;
-    let (mut stream, _stream_storage) =
-        ctx.scoped_vector_storage(length, "iges_compressed_global_stream")?;
-    let (mut pending_digits, _digits_storage) =
-        ctx.scoped_vector_storage(length, "iges_compressed_global_digits")?;
-    let mut hollerith_remaining = 0_usize;
-    for card in cards {
-        for byte in card[..CARD_DATA_WIDTH].iter().copied() {
-            if hollerith_remaining > 0 {
-                stream.push(byte);
-                hollerith_remaining -= 1;
-                continue;
-            }
-            if byte == b' ' {
-                continue;
-            }
-            if byte.is_ascii_digit() {
-                pending_digits.push(byte);
-                continue;
-            }
-            if matches!(byte, b'H' | b'h') && !pending_digits.is_empty() {
-                let count = std::str::from_utf8(&pending_digits)
-                    .map_err(|_| malformed("Global Hollerith count is not ASCII"))?
-                    .parse::<usize>()
-                    .map_err(|_| malformed("Global Hollerith count is out of range"))?;
-                stream.extend_from_slice(&pending_digits);
-                stream.push(byte);
-                pending_digits.clear();
-                hollerith_remaining = count;
-                continue;
-            }
-            stream.append(&mut pending_digits);
-            stream.push(byte);
-        }
-    }
-    stream.append(&mut pending_digits);
-    if hollerith_remaining != 0 {
-        return Err(malformed("Global Hollerith payload is truncated"));
-    }
-    Ok(stream)
-}
-
-fn hollerith_at(bytes: &[u8], start: usize) -> Result<Option<(usize, usize)>, CodecError> {
-    let mut cursor = start;
-    while bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
-        cursor += 1;
-    }
-    if cursor == start || !matches!(bytes.get(cursor), Some(b'H' | b'h')) {
-        return Ok(None);
-    }
-    let count = std::str::from_utf8(&bytes[start..cursor])
-        .map_err(|_| malformed("Global Hollerith count is not ASCII"))?
-        .parse::<usize>()
-        .map_err(|_| malformed("Global Hollerith count is out of range"))?;
-    let payload_start = cursor
-        .checked_add(1)
-        .ok_or_else(|| malformed("Global Hollerith payload offset overflows"))?;
-    let payload_end = payload_start
-        .checked_add(count)
-        .ok_or_else(|| malformed("Global Hollerith payload length overflows"))?;
-    bytes
-        .get(payload_start..payload_end)
-        .ok_or_else(|| malformed("Global Hollerith payload is truncated"))?;
-    Ok(Some((cursor + 1, payload_end)))
-}
-
+/// Delimiter declarations contain one counted byte each. Read only those two
+/// fields; optional Global suffix framing belongs to the Global resolver.
 fn compressed_delimiters(cards: &[&[u8]], ctx: &DecodeContext<'_>) -> Result<(u8, u8), CodecError> {
-    let bytes = logical_global_stream(cards, ctx)?;
-    let (parameter_delimiter, cursor) = if bytes.first() == Some(&b',') {
-        (b',', 1)
-    } else {
-        let Some((header_end, payload_end)) = hollerith_at(&bytes, 0)? else {
-            return Err(malformed("parameter delimiter is not a Hollerith string"));
-        };
-        let payload = &bytes[header_end..payload_end];
-        if payload.len() != 1 || bytes.get(payload_end) != payload.first() {
-            return Err(malformed("parameter delimiter is not a one-byte field"));
-        }
-        (payload[0], payload_end + 1)
-    };
-    let record_delimiter = if bytes.get(cursor) == Some(&parameter_delimiter) {
-        b';'
-    } else {
-        let Some((header_end, payload_end)) = hollerith_at(&bytes, cursor)? else {
-            return Err(malformed("record delimiter is not a Hollerith string"));
-        };
-        let payload = &bytes[header_end..payload_end];
-        if payload.len() != 1 || bytes.get(payload_end) != Some(&parameter_delimiter) {
-            return Err(malformed("record delimiter is not a one-byte field"));
-        }
-        payload[0]
-    };
-    if record_delimiter == b'@' {
+    if cards.iter().any(|card| card.len() != CARD_WIDTH) {
+        return Err(malformed("Start and Global records must be 80 columns"));
+    }
+    let mut bytes = cards
+        .iter()
+        .flat_map(|card| card[..CARD_DATA_WIDTH].iter().copied());
+    let parameter = delimiter_field(&mut bytes, ctx, b',', b',')?;
+    let record = delimiter_field(&mut bytes, ctx, parameter, b';')?;
+    if record == b'@' {
         return Err(malformed(
             "record delimiter conflicts with the Directory field-specifier marker",
         ));
     }
-    if parameter_delimiter == record_delimiter {
+    if parameter == record {
         return Err(malformed("parameter and record delimiters are equal"));
     }
-    Ok((parameter_delimiter, record_delimiter))
+    Ok((parameter, record))
+}
+
+fn delimiter_field(
+    bytes: &mut impl Iterator<Item = u8>,
+    ctx: &DecodeContext<'_>,
+    separator: u8,
+    default: u8,
+) -> Result<u8, CodecError> {
+    let next = |bytes: &mut dyn Iterator<Item = u8>| -> Result<u8, CodecError> {
+        loop {
+            ctx.charge_work(1, "IGES compressed delimiter prefix")?;
+            let byte = bytes
+                .next()
+                .ok_or_else(|| malformed("Global delimiter declaration is truncated"))?;
+            if byte != b' ' {
+                return Ok(byte);
+            }
+        }
+    };
+    let mut byte = next(bytes)?;
+    if byte == separator {
+        return Ok(default);
+    }
+    let mut count = 0_u64;
+    let mut digits = false;
+    while byte.is_ascii_digit() {
+        digits = true;
+        count = count
+            .checked_mul(10)
+            .and_then(|count| count.checked_add(u64::from(byte - b'0')))
+            .ok_or_else(|| malformed("Global delimiter Hollerith count overflows"))?;
+        byte = next(bytes)?;
+    }
+    if !digits || !matches!(byte, b'H' | b'h') || count != 1 {
+        return Err(malformed(
+            "Global delimiter is not a one-byte Hollerith field",
+        ));
+    }
+    ctx.charge_work(1, "IGES compressed delimiter payload")?;
+    let value = bytes
+        .next()
+        .ok_or_else(|| malformed("Global delimiter payload is truncated"))?;
+    let terminator = next(bytes)?;
+    // The first declaration terminates itself. The second uses the first.
+    let expected = if default == b',' { value } else { separator };
+    if terminator != expected {
+        return Err(malformed(
+            "Global delimiter field has an invalid terminator",
+        ));
+    }
+    Ok(value)
 }
 
 fn parse_sequence(bytes: &[u8], start: usize, label: &str) -> Result<(u32, usize), CodecError> {

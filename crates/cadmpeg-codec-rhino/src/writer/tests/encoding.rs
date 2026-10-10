@@ -259,7 +259,7 @@ fn nonempty_layer_per_viewport_settings_are_refused_before_output() {
             serde_json::json!([{
                 "viewport_uuid": "01020304-0506-0708-090a-0b0c0d0e0f10",
                 "settings_mask": 3,
-                "color": [10, 20, 30, 40]
+                "color": "0a141e28"
             }]),
         );
         records[0] = cadmpeg_ir::NativeRecord::new(

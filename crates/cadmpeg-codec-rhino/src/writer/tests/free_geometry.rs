@@ -118,6 +118,7 @@ fn invalid_archive_tolerances_are_rejected_before_output() {
 fn rejection_occurs_before_output() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+        parameter_range: None,
         id: cadmpeg_ir::ids::CurveId::mint("rhino:test:curve#a").expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
             cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(Point3::new(0.0, 0.0, 0.0))
@@ -140,6 +141,7 @@ fn rejection_occurs_before_output() {
 fn source_less_circle_round_trips_with_its_frame() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+        parameter_range: None,
         id: cadmpeg_ir::ids::CurveId::mint("rhino:test:curve#circle").expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Circle(
             cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
@@ -187,6 +189,7 @@ fn source_less_circle_round_trips_with_its_frame() {
 fn rational_nurbs_curve_round_trips_homogeneous_poles() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+        parameter_range: None,
         id: cadmpeg_ir::ids::CurveId::mint("rhino:test:curve#nurbs").expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
@@ -767,6 +770,7 @@ fn unsupported_retained_native_records_are_refused_before_output() {
 fn noncanonical_nurbs_periodicity_is_rejected_atomically() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+        parameter_range: None,
         id: cadmpeg_ir::ids::CurveId::mint("cadir:model:curve#periodic").expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
@@ -839,4 +843,75 @@ fn mesh_coordinate_below_negative_f32_max_refuses_round_up() {
     let error = super::super::check_mesh(&mesh)
         .expect_err("Rhino mesh coordinates use finite 32-bit floats");
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+}
+
+#[test]
+fn standalone_support_points_and_curves_are_withheld_with_counted_export_loss() {
+    use cadmpeg_ir::{
+        geometry::{analytic::LineCurve, Curve, CurveGeometry},
+        SourceGeometryRole, SourceObjectAssociation,
+    };
+    let support = SourceObjectAssociation {
+        format: cadmpeg_ir::CodecFormat::Iges,
+        object_id: cadmpeg_core::nonblank_literal!("D1"),
+        geometry_role: Some(SourceGeometryRole::Support),
+        name: None,
+        color: None,
+        visible: None,
+        layer: None,
+        instance_path: Vec::new(),
+    };
+    let mut ir = CadIr::empty();
+    ir.model.points.push(Point::new(
+        "test:model:point#independent"
+            .try_into()
+            .expect("synthetic support fixture is admitted"),
+        cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
+            .expect("synthetic support fixture is admitted"),
+        None,
+    ));
+    ir.model.points.push(Point::new(
+        "test:model:point#support"
+            .try_into()
+            .expect("synthetic support fixture is admitted"),
+        cadmpeg_ir::features::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0))
+            .expect("synthetic support fixture is admitted"),
+        Some(support.clone()),
+    ));
+    ir.model.curves.push(Curve {
+        id: "test:model:curve#support"
+            .try_into()
+            .expect("synthetic support fixture is admitted"),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(LineCurve::new(
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                .expect("synthetic support fixture is admitted"),
+            cadmpeg_ir::units::UnitVector3::X_AXIS,
+        ))),
+        parameter_range: None,
+        source_object: Some(support),
+    });
+    let plan = RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("synthetic support fixture is admitted");
+    let loss = plan
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == crate::loss::RhinoLossCode::WriterSupportGeometryWithheld.kind())
+        .expect("synthetic support fixture is admitted");
+    assert!(loss
+        .message
+        .starts_with("1 support point record(s) and 1 support curve record(s)"));
+    let mut output = Vec::new();
+    plan.write_to(&mut output)
+        .expect("synthetic support fixture is admitted");
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("synthetic support fixture is admitted");
+    assert_eq!(decoded.ir().model.points.len(), 1);
+    assert_eq!(
+        decoded.ir().model.points[0].position().get(),
+        Point3::new(1.0, 2.0, 3.0)
+    );
+    assert!(decoded.ir().model.curves.is_empty());
 }

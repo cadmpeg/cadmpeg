@@ -344,7 +344,9 @@ fn detect_card_stride(prefix: &[u8]) -> Confidence {
     let (Some(first), Some(second)) = (cards.next(), cards.next()) else {
         return Confidence::No;
     };
-    if header(first) != Some((b'S', 1)) || !matches!(header(second), Some((b'S', 2) | (b'G', 1))) {
+    if !matches!(header(first), Some((b'S', 1..)))
+        || !matches!(header(second), Some((b'S' | b'G', 1..)))
+    {
         return Confidence::No;
     }
     if cards.any(|card| marker(card).is_none()) {
@@ -370,14 +372,14 @@ pub(crate) fn detect_fixed_ascii(prefix: &[u8]) -> Confidence {
     let Some((first, rest)) = take_line(prefix) else {
         return detect_card_stride(prefix);
     };
-    if header(first) != Some((b'S', 1)) {
+    if !matches!(header(first), Some((b'S', 1..))) {
         return Confidence::No;
     }
     let Some(second) = second_card_image(first, rest) else {
         return Confidence::No;
     };
     match header(second) {
-        Some((b'S', 2) | (b'G', 1)) => Confidence::High,
+        Some((b'S' | b'G', 1..)) => Confidence::High,
         _ => Confidence::No,
     }
 }

@@ -328,6 +328,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                 ctx,
                 ir,
                 Curve {
+                    parameter_range: None,
                     id: curve_id.try_clone_for_decode(ctx, "creo revolution identity copy")?,
                     geometry: curve_geometry,
                     source_object: None,

@@ -8,7 +8,6 @@
 //! descriptions identify partition, deltas, and feature-profile payloads.
 
 use cadmpeg_container::compression::inflate_zlib_member;
-use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{DecodeContext, ExpandSpec, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::Point3;
@@ -45,12 +44,8 @@ pub(crate) fn extract_streams_with_offsets(
     payload: &[u8],
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<ExtractedStream>, CodecError> {
-    let scan_work = cadmpeg_core::decode::u64_from_index(payload.len())
-        .checked_mul(64)
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("scan Parasolid stream candidates", u64::MAX - 1, u64::MAX)
-        })?;
-    ctx.charge_work(scan_work, "scan Parasolid stream candidates")?;
+    const OPERATION: &str = "scan Parasolid stream candidates";
+    ctx.charge_work(32, OPERATION)?;
     let mut out = Vec::new();
     let wrapped_prefix = has_wrapped_prefix(payload);
     let starts = if wrapped_prefix {
@@ -72,15 +67,25 @@ pub(crate) fn extract_streams_with_offsets(
     if !out.is_empty() {
         return Ok(out);
     }
-    if !contains(payload, &WRAPPED_MAGIC_PREFIX) {
+    let Some(scan_len) = payload.len().checked_sub(WRAPPED_MAGIC_PREFIX.len() - 1) else {
         return Ok(out);
-    }
-
-    let magic_starts = payload
-        .windows(WRAPPED_MAGIC_PREFIX.len())
-        .enumerate()
-        .filter_map(|(offset, bytes)| (bytes == WRAPPED_MAGIC_PREFIX).then_some(offset));
-    for magic_at in magic_starts {
+    };
+    let mut has_magic = false;
+    for (magic_at, byte) in payload[..scan_len].iter().enumerate() {
+        ctx.charge_work(1, OPERATION)?;
+        if *byte != WRAPPED_MAGIC_PREFIX[0] {
+            continue;
+        }
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(WRAPPED_MAGIC_PREFIX.len()),
+            OPERATION,
+        )?;
+        if payload.get(magic_at..magic_at + WRAPPED_MAGIC_PREFIX.len())
+            != Some(&WRAPPED_MAGIC_PREFIX)
+        {
+            continue;
+        }
+        has_magic = true;
         let stream = if magic_at == 0 {
             single_wrapped_stream(payload, magic_at, ctx)?
         } else {
@@ -91,6 +96,9 @@ pub(crate) fn extract_streams_with_offsets(
                 ctx.push_vec(&mut out, stream, "collect wrapped Parasolid streams")?;
             }
         }
+    }
+    if !has_magic {
+        return Ok(out);
     }
     if !out.is_empty() {
         ctx.stable_sort_by(
@@ -415,6 +423,12 @@ fn direct_stream_headers(
     payload: &[u8],
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<(usize, StreamHeader)>, CodecError> {
+    let work = cadmpeg_core::decode::u64_from_index(payload.len())
+        .checked_mul(4)
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("scan Parasolid stream candidates", u64::MAX - 1, u64::MAX)
+        })?;
+    ctx.charge_work(work, "scan Parasolid stream candidates")?;
     let mut headers = Vec::new();
     for (start, bytes) in payload.windows(4).enumerate() {
         if bytes != b"PS\0\0" {

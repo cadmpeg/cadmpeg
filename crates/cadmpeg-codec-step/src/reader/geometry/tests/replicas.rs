@@ -406,6 +406,7 @@ fn transformed_curves_and_surfaces_round_trip_through_step_replicas() {
     );
     let mut source = CadIr::empty();
     source.model.curves.push(Curve {
+        parameter_range: None,
         id: CurveId::mint("test:model:curve#transformed-curve").expect("identity grammar"),
         geometry: CurveGeometry::Solved(curve_geometry.clone()),
         source_object: None,
@@ -1034,4 +1035,48 @@ fn a_surface_replica_chain_past_the_admitted_depth_is_refused_at_decode() {
                 Some(SolvedSurfaceGeometry::Transformed(_))
             )
     }));
+}
+
+#[test]
+fn two_dimensional_replicas_do_not_create_three_dimensional_fallbacks() {
+    let original = include_str!("../../../../tests/fixtures/ap214_sheet.p21");
+    for definition in ["#71", "#74"] {
+        let nested = if definition == "#74" {
+            "\n#74=CURVE_REPLICA('',#71,#72);"
+        } else {
+            ""
+        };
+        let source = original.replace("#55=DEFINITIONAL_REPRESENTATION('',(#54),#50);", &format!(
+            "#55=DEFINITIONAL_REPRESENTATION('',({definition}),#50);\n#72=CARTESIAN_TRANSFORMATION_OPERATOR_2D('', $,$,#51,1.);\n#71=CURVE_REPLICA('',#54,#72);{nested}"
+        ));
+        let decoded = StepCodec::default()
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap();
+        assert!(decoded
+            .ir()
+            .model
+            .pcurves
+            .iter()
+            .any(|pcurve| pcurve.id.as_str() == "step:data:pcurve#56"));
+        assert!(!decoded
+            .ir()
+            .model
+            .curves
+            .iter()
+            .any(|curve| curve.id.as_str() == "step:data:curve#71"
+                || curve.id.as_str() == "step:data:curve#74"));
+        assert!(!decoded.report().losses.iter().any(|loss| loss
+            .message
+            .contains("CURVE_REPLICA #71 has invalid")
+            || loss.message.contains("CURVE_REPLICA #74 has invalid")));
+        let check = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).unwrap();
+        assert!(
+            check
+                .findings
+                .iter()
+                .all(|finding| finding.severity < cadmpeg_ir::report::Severity::Error),
+            "{:#?}",
+            check.findings
+        );
+    }
 }

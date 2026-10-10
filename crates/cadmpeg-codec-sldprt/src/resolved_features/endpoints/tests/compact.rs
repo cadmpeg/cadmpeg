@@ -1326,6 +1326,22 @@ fn current_referenced_compact_roster_prefers_complete_roster() {
         .collect::<Vec<_>>(),
         ["first", "second"]
     );
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    // Seven complete-roster entries and two selected endpoints.
+    policy.limits.max_collection_items = 9;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let selected =
+        coordinate_roster_curve_endpoint_markers(&ctx, &payload, &curve, &markers).unwrap();
+    assert_eq!(
+        selected
+            .iter()
+            .map(|marker| marker.id())
+            .collect::<Vec<_>>(),
+        ["first", "second"]
+    );
+    assert!(ctx.resource_refusal().is_none());
 }
 
 #[test]

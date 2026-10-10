@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native terminal discriminator wire adapter.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use crate::iter_wire::IterWire;
 use crate::om::compact::{CompactIndexAtom, RawCompactIndex};
 use crate::om::terminal_discriminator::OperationTerminalDiscriminator;
@@ -24,15 +26,15 @@ struct FeatureOperationTerminalDiscriminatorWire {
     /// Two compact type indices following the footer prelude.
     type_indices: [u32; 2],
     /// Exact compact-index tokens for the two type indices.
-    raw_type_indices: [Vec<u8>; 2],
+    raw_type_indices: [NativeBytes<Vec<u8>>; 2],
     /// Absolute file offsets of the two type-index tokens.
     type_index_source_offsets: [u64; 2],
     /// Four serialized one-byte flags.
-    flags: [u8; 4],
+    flags: NativeBytes<[u8; 4]>,
     /// Compact values preceding the payload terminator.
     trailing_indices: Vec<u32>,
     /// Exact compact-index tokens in the trailing lane.
-    raw_trailing_indices: Vec<Vec<u8>>,
+    raw_trailing_indices: Vec<NativeBytes<Vec<u8>>>,
     /// Absolute file offsets of the trailing compact-index tokens.
     trailing_index_source_offsets: Vec<u64>,
     /// Absolute file offset of the footer prelude.
@@ -59,7 +61,7 @@ impl Serialize for FeatureOperationTerminalDiscriminator {
             "type_index_source_offsets",
             &self.frame.type_indices().map(|(_, offset)| offset),
         )?;
-        wire.serialize_entry("flags", &self.frame.flags())?;
+        wire.serialize_entry("flags", &NativeBytes::from(self.frame.flags()))?;
         wire.serialize_entry(
             "trailing_indices",
             &IterWire(
@@ -92,12 +94,13 @@ impl From<FeatureOperationTerminalDiscriminator> for FeatureOperationTerminalDis
             id: lane.id,
             operation_label: lane.operation_label,
             type_indices: lane.frame.type_indices().map(|(token, _)| token.value()),
-            raw_type_indices: lane
+            raw_type_indices: (lane
                 .frame
                 .type_indices()
-                .map(|(token, _)| token.raw().to_vec()),
+                .map(|(token, _)| token.raw().to_vec()))
+            .map(Into::into),
             type_index_source_offsets: lane.frame.type_indices().map(|(_, offset)| offset),
-            flags: lane.frame.flags(),
+            flags: (lane.frame.flags()).into(),
             trailing_indices: lane
                 .frame
                 .trailing_indices()
@@ -107,6 +110,7 @@ impl From<FeatureOperationTerminalDiscriminator> for FeatureOperationTerminalDis
                 .frame
                 .trailing_indices()
                 .map(|(token, _)| token.raw().to_vec())
+                .map(Into::into)
                 .collect(),
             trailing_index_source_offsets: lane
                 .frame
@@ -143,7 +147,7 @@ impl TryFrom<FeatureOperationTerminalDiscriminatorWire> for FeatureOperationTerm
         let frame = OperationTerminalDiscriminator::new(
             wire.source_offset,
             [first?, second?],
-            wire.flags,
+            *wire.flags,
             trailing,
         )?;
         if frame.type_indices().map(|(_, offset)| offset) != wire.type_index_source_offsets {
@@ -174,7 +178,7 @@ mod tests {
 
     #[test]
     fn terminal_discriminator_borrowed_wire_matches_owned_bytes_and_retained_limit() {
-        let json = r#"{"id":"nx:feature:terminal-discriminator#0","operation_label":"o","type_indices":[0,0],"raw_type_indices":[[0],[128,0]],"type_index_source_offsets":[103,104],"flags":[0,255,128,1],"trailing_indices":[],"raw_trailing_indices":[],"trailing_index_source_offsets":[],"source_offset":100}"#;
+        let json = r#"{"id":"nx:feature:terminal-discriminator#0","operation_label":"o","type_indices":[0,0],"raw_type_indices":["00","8000"],"type_index_source_offsets":[103,104],"flags":"00ff8001","trailing_indices":[],"raw_trailing_indices":[],"trailing_index_source_offsets":[],"source_offset":100}"#;
         let record: FeatureOperationTerminalDiscriminator = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_vec(&record).unwrap(), json.as_bytes());
         assert_eq!(
@@ -192,12 +196,12 @@ mod tests {
 
     #[test]
     fn terminal_wire_derives_positions_and_keeps_empty_trailing_arrays() {
-        let wire = r#"{"id":"t","operation_label":"o","type_indices":[0,0],"raw_type_indices":[[0],[128,0]],"type_index_source_offsets":[103,104],"flags":[0,255,128,1],"trailing_indices":[],"raw_trailing_indices":[],"trailing_index_source_offsets":[],"source_offset":100}"#;
+        let wire = r#"{"id":"t","operation_label":"o","type_indices":[0,0],"raw_type_indices":["00","8000"],"type_index_source_offsets":[103,104],"flags":"00ff8001","trailing_indices":[],"raw_trailing_indices":[],"trailing_index_source_offsets":[],"source_offset":100}"#;
         let parsed: FeatureOperationTerminalDiscriminator = serde_json::from_str(wire).unwrap();
         assert_eq!(serde_json::to_string(&parsed).unwrap(), wire);
         let mut populated: serde_json::Value = serde_json::from_str(wire).unwrap();
         populated["trailing_indices"] = serde_json::json!([0, 4096]);
-        populated["raw_trailing_indices"] = serde_json::json!([[0], [144, 0]]);
+        populated["raw_trailing_indices"] = serde_json::json!(["00", "9000"]);
         populated["trailing_index_source_offsets"] = serde_json::json!([119, 120]);
         let parsed: FeatureOperationTerminalDiscriminator =
             serde_json::from_value(populated.clone()).unwrap();

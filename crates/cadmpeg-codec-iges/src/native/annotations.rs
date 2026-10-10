@@ -4,6 +4,8 @@
 //! builder, and the pass that fills the `annotations` arena while recording
 //! counted-tail verdicts.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use super::{collect_native_items, OverdeclaredCounts};
 
 use crate::directory::{DirectoryEntry, UseFlag};
@@ -22,7 +24,7 @@ use std::collections::BTreeMap;
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub(super) struct NativeTextRun {
     declared_character_count: Option<i64>,
-    text: Option<Vec<u8>>,
+    text: Option<NativeBytes<Vec<u8>>>,
     box_size: [Option<f64>; 2],
     font_code: Option<i64>,
     font_definition: Option<String>,
@@ -41,7 +43,7 @@ pub(super) struct NativeNewTextRun {
     line_spacing: Option<f64>,
     font_style: Option<i64>,
     character_angle: Option<f64>,
-    control_codes: Option<Vec<u8>>,
+    control_codes: Option<NativeBytes<Vec<u8>>>,
     text: NativeTextRun,
 }
 
@@ -286,7 +288,11 @@ impl Subject<'_, '_> {
             text: (!v5_null_string)
                 .then_some(text)
                 .flatten()
-                .map(|bytes| self.ctx.copy_retained(bytes, "iges native text run bytes"))
+                .map(|bytes| {
+                    self.ctx
+                        .copy_retained(bytes, "iges native text run bytes")
+                        .map(NativeBytes::from)
+                })
                 .transpose()?,
             box_size: [
                 record.and_then(|record| record.number(start + 1)),
@@ -536,14 +542,15 @@ fn new_general_note(
                     line_spacing: record.and_then(|record| record.number(start + 4)),
                     font_style: record.and_then(|record| record.integer(start + 5)),
                     character_angle: record.and_then(|record| record.number(start + 6)),
-                    control_codes: record
+                    control_codes: (record
                         .and_then(|record| record.string(start + 7))
                         .map(|bytes| {
                             subject
                                 .ctx
                                 .copy_retained(bytes, "iges native new note control codes")
                         })
-                        .transpose()?,
+                        .transpose()?)
+                    .map(Into::into),
                     // A 213 text block is the 212 layout shifted by its
                     // eight-token prefix.
                     text: subject.text_run(start + 8)?,

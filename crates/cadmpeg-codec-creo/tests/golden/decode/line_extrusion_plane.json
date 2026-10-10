@@ -114,22 +114,7 @@
       "creo": {
         "surface_parameters": [
           {
-            "body": [
-              15,
-              15,
-              228,
-              0,
-              12,
-              154,
-              15,
-              15,
-              15,
-              47,
-              0,
-              0,
-              15,
-              15
-            ],
+            "body": "0f0fe4000c9a0f0f0f2f00000f0f",
             "body_offset": 129,
             "boundary": "compound_close",
             "cone_half_angle_override": null,
@@ -143,11 +128,7 @@
               {
                 "length": 3,
                 "offset": 3,
-                "raw": [
-                  0,
-                  12,
-                  154
-                ]
+                "raw": "000c9a"
               }
             ],
             "positional_cone_frame": null,
@@ -162,25 +143,19 @@
                   {
                     "length": 1,
                     "offset": 0,
-                    "raw": [
-                      15
-                    ],
+                    "raw": "0f",
                     "value": 0.0
                   },
                   {
                     "length": 1,
                     "offset": 1,
-                    "raw": [
-                      15
-                    ],
+                    "raw": "0f",
                     "value": 0.0
                   },
                   {
                     "length": 1,
                     "offset": 2,
-                    "raw": [
-                      228
-                    ],
+                    "raw": "e4",
                     "value": 1.0
                   }
                 ]
@@ -191,51 +166,37 @@
                   {
                     "length": 1,
                     "offset": 6,
-                    "raw": [
-                      15
-                    ],
+                    "raw": "0f",
                     "value": 0.0
                   },
                   {
                     "length": 1,
                     "offset": 7,
-                    "raw": [
-                      15
-                    ],
+                    "raw": "0f",
                     "value": 0.0
                   },
                   {
                     "length": 1,
                     "offset": 8,
-                    "raw": [
-                      15
-                    ],
+                    "raw": "0f",
                     "value": 0.0
                   },
                   {
                     "length": 3,
                     "offset": 9,
-                    "raw": [
-                      47,
-                      0,
-                      0
-                    ],
+                    "raw": "2f0000",
                     "value": 2.0
                   },
                   {
                     "length": 1,
                     "offset": 12,
-                    "raw": [
-                      15
-                    ],
+                    "raw": "0f",
                     "value": 0.0
                   },
                   {
                     "length": 1,
                     "offset": 13,
-                    "raw": [
-                      15
-                    ],
+                    "raw": "0f",
                     "value": 0.0
                   }
                 ]
@@ -245,75 +206,55 @@
               {
                 "length": 1,
                 "offset": 0,
-                "raw": [
-                  15
-                ],
+                "raw": "0f",
                 "value": 0.0
               },
               {
                 "length": 1,
                 "offset": 1,
-                "raw": [
-                  15
-                ],
+                "raw": "0f",
                 "value": 0.0
               },
               {
                 "length": 1,
                 "offset": 2,
-                "raw": [
-                  228
-                ],
+                "raw": "e4",
                 "value": 1.0
               },
               {
                 "length": 1,
                 "offset": 6,
-                "raw": [
-                  15
-                ],
+                "raw": "0f",
                 "value": 0.0
               },
               {
                 "length": 1,
                 "offset": 7,
-                "raw": [
-                  15
-                ],
+                "raw": "0f",
                 "value": 0.0
               },
               {
                 "length": 1,
                 "offset": 8,
-                "raw": [
-                  15
-                ],
+                "raw": "0f",
                 "value": 0.0
               },
               {
                 "length": 3,
                 "offset": 9,
-                "raw": [
-                  47,
-                  0,
-                  0
-                ],
+                "raw": "2f0000",
                 "value": 2.0
               },
               {
                 "length": 1,
                 "offset": 12,
-                "raw": [
-                  15
-                ],
+                "raw": "0f",
                 "value": 0.0
               },
               {
                 "length": 1,
                 "offset": 13,
-                "raw": [
-                  15
-                ],
+                "raw": "0f",
                 "value": 0.0
               }
             ],
@@ -323,14 +264,7 @@
             "surface_id": 7,
             "surface_type_byte": 44,
             "tabulated_cylinder_frame": {
-              "prefixes": [
-                15,
-                15,
-                15,
-                47,
-                15,
-                15
-              ],
+              "prefixes": "0f0f0f2f0f0f",
               "values": [
                 0.0,
                 0.0,
@@ -346,51 +280,37 @@
                 {
                   "length": 1,
                   "offset": 6,
-                  "raw": [
-                    15
-                  ],
+                  "raw": "0f",
                   "value": 0.0
                 },
                 {
                   "length": 1,
                   "offset": 7,
-                  "raw": [
-                    15
-                  ],
+                  "raw": "0f",
                   "value": 0.0
                 },
                 {
                   "length": 1,
                   "offset": 8,
-                  "raw": [
-                    15
-                  ],
+                  "raw": "0f",
                   "value": 0.0
                 },
                 {
                   "length": 3,
                   "offset": 9,
-                  "raw": [
-                    47,
-                    0,
-                    0
-                  ],
+                  "raw": "2f0000",
                   "value": 2.0
                 },
                 {
                   "length": 1,
                   "offset": 12,
-                  "raw": [
-                    15
-                  ],
+                  "raw": "0f",
                   "value": 0.0
                 },
                 {
                   "length": 1,
                   "offset": 13,
-                  "raw": [
-                    15
-                  ],
+                  "raw": "0f",
                   "value": 0.0
                 }
               ]

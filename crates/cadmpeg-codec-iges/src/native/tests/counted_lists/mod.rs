@@ -406,8 +406,8 @@ fn decode_external_reference_index_uses_counted_name_pointer_pairs() {
     let fields = index.fields();
     assert_eq!(fields["declared_count"], 1);
     assert_eq!(
-        fields["entries"][0]["symbolic_name"],
-        serde_json::json!([82, 69, 70, 48, 48, 49])
+        crate::test_support::native_bytes(&fields["entries"][0]["symbolic_name"]),
+        [82, 69, 70, 48, 48, 49]
     );
     assert_eq!(fields["entries"][0]["entity"], "iges:entity:directory#1");
     assert!(

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Wire words derived from `RMFastLoad` membership values and counts.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use super::{RmFastLoadObjectId, RmFastLoadObjectIdTable};
 use crate::container::membership::ObjectIdMembers;
 use serde::{Deserialize, Serialize};
@@ -9,7 +11,7 @@ use serde::{Deserialize, Serialize};
 pub(super) struct TableWire {
     id: String,
     members: Vec<String>,
-    raw_count: [u8; 4],
+    raw_count: NativeBytes<[u8; 4]>,
     source_entry: String,
     registry_source_offset: u64,
     source_offset: u64,
@@ -19,7 +21,7 @@ pub(super) struct TableWire {
 struct TableRef<'a> {
     id: &'a str,
     members: &'a [String],
-    raw_count: [u8; 4],
+    raw_count: NativeBytes<[u8; 4]>,
     source_entry: &'a str,
     registry_source_offset: u64,
     source_offset: u64,
@@ -30,7 +32,7 @@ impl Serialize for RmFastLoadObjectIdTable {
         TableRef {
             id: &self.id,
             members: self.members.as_slice(),
-            raw_count: self.raw_count(),
+            raw_count: (self.raw_count()).into(),
             source_entry: &self.source_entry,
             registry_source_offset: self.registry_source_offset,
             source_offset: self.source_offset,
@@ -46,7 +48,7 @@ impl From<RmFastLoadObjectIdTable> for TableWire {
         Self {
             id: value.id,
             members: value.members.into_vec(),
-            raw_count,
+            raw_count: (raw_count).into(),
             source_entry: value.source_entry,
             registry_source_offset: value.registry_source_offset,
             source_offset: value.source_offset,
@@ -82,7 +84,7 @@ pub(super) struct MemberWire {
         deserialize_with = "deserialize_stable_identity"
     )]
     stable_identity: Option<String>,
-    raw: [u8; 4],
+    raw: NativeBytes<[u8; 4]>,
     source_offset: u64,
 }
 #[derive(Serialize)]
@@ -93,7 +95,7 @@ struct MemberRef<'a> {
     value: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     stable_identity: Option<&'a str>,
-    raw: [u8; 4],
+    raw: NativeBytes<[u8; 4]>,
     source_offset: u64,
 }
 
@@ -105,7 +107,7 @@ impl Serialize for RmFastLoadObjectId {
             ordinal: self.ordinal,
             value: self.value,
             stable_identity: self.stable_identity.as_deref(),
-            raw: self.raw(),
+            raw: (self.raw()).into(),
             source_offset: self.source_offset,
         }
         .serialize(serializer)
@@ -122,7 +124,7 @@ impl From<RmFastLoadObjectId> for MemberWire {
             ordinal: value.ordinal,
             value: value.value,
             stable_identity: value.stable_identity,
-            raw,
+            raw: (raw).into(),
             source_offset: value.source_offset,
         }
     }
@@ -152,7 +154,7 @@ mod tests {
 
     #[test]
     fn membership_table_borrowed_wire_matches_owned_bytes() {
-        let json = r#"{"id":"nx:om:object-id-table#0","members":["a","b"],"raw_count":[2,0,0,0],"source_entry":"entry","registry_source_offset":10,"source_offset":20}"#;
+        let json = r#"{"id":"nx:om:object-id-table#0","members":["a","b"],"raw_count":"02000000","source_entry":"entry","registry_source_offset":10,"source_offset":20}"#;
         let record: RmFastLoadObjectIdTable = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_vec(&record).unwrap(), json.as_bytes());
         assert_eq!(
@@ -163,7 +165,7 @@ mod tests {
 
     #[test]
     fn membership_table_retained_limit_refuses_before_member_clone() {
-        let json = r#"{"id":"nx:om:object-id-table#0","members":["a","b"],"raw_count":[2,0,0,0],"source_entry":"entry","registry_source_offset":10,"source_offset":20}"#;
+        let json = r#"{"id":"nx:om:object-id-table#0","members":["a","b"],"raw_count":"02000000","source_entry":"entry","registry_source_offset":10,"source_offset":20}"#;
         let record: RmFastLoadObjectIdTable = serde_json::from_str(json).unwrap();
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &record,
@@ -173,7 +175,7 @@ mod tests {
 
     #[test]
     fn membership_member_borrowed_wire_matches_owned_bytes() {
-        let json = r#"{"id":"nx:om:object-id#0","table":"table","ordinal":0,"value":4294967295,"stable_identity":"stable","raw":[255,255,255,255],"source_offset":24}"#;
+        let json = r#"{"id":"nx:om:object-id#0","table":"table","ordinal":0,"value":4294967295,"stable_identity":"stable","raw":"ffffffff","source_offset":24}"#;
         let record: RmFastLoadObjectId = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_vec(&record).unwrap(), json.as_bytes());
         assert_eq!(
@@ -184,7 +186,7 @@ mod tests {
 
     #[test]
     fn membership_member_retained_limit_refuses_before_identity_clone() {
-        let json = r#"{"id":"nx:om:object-id#0","table":"table","ordinal":0,"value":4294967295,"stable_identity":"stable","raw":[255,255,255,255],"source_offset":24}"#;
+        let json = r#"{"id":"nx:om:object-id#0","table":"table","ordinal":0,"value":4294967295,"stable_identity":"stable","raw":"ffffffff","source_offset":24}"#;
         let record: RmFastLoadObjectId = serde_json::from_str(json).unwrap();
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &record,
@@ -194,21 +196,21 @@ mod tests {
 
     #[test]
     fn membership_keeps_wire_order_and_rejects_inconsistent_words() {
-        let json = r#"{"id":"table","members":["a","b"],"raw_count":[2,0,0,0],"source_entry":"entry","registry_source_offset":10,"source_offset":20}"#;
+        let json = r#"{"id":"table","members":["a","b"],"raw_count":"02000000","source_entry":"entry","registry_source_offset":10,"source_offset":20}"#;
         let table: RmFastLoadObjectIdTable = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_string(&table).unwrap(), json);
         let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
-        wire["raw_count"] = serde_json::json!([1, 0, 0, 0]);
+        wire["raw_count"] = serde_json::json!("01000000");
         assert!(serde_json::from_value::<RmFastLoadObjectIdTable>(wire)
             .unwrap_err()
             .to_string()
             .contains("raw_count"));
 
-        let json = r#"{"id":"a","table":"table","ordinal":0,"value":4294967295,"raw":[255,255,255,255],"source_offset":24}"#;
+        let json = r#"{"id":"a","table":"table","ordinal":0,"value":4294967295,"raw":"ffffffff","source_offset":24}"#;
         let member: RmFastLoadObjectId = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_string(&member).unwrap(), json);
         let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
-        wire["raw"] = serde_json::json!([0, 0, 0, 0]);
+        wire["raw"] = serde_json::json!("00000000");
         assert!(serde_json::from_value::<RmFastLoadObjectId>(wire)
             .unwrap_err()
             .to_string()

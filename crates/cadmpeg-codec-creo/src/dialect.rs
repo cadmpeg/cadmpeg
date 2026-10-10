@@ -8,9 +8,8 @@
 //!
 //! # The discriminant is the layout classification
 //!
-//! Creo declares no version discriminant that partitions anything. `#UGC:2` is
-//! the crate's format gate, not a dialect boundary: every admitted file carries
-//! it. What does partition the document space is the persistence layout, which
+//! `#UGC:1` and `#UGC:2` are container signatures. Dialect identity follows
+//! the persistence layout, which
 //! `container::identify_layout` reads from the enumerated section
 //! table before any decode strategy is chosen — a B1 grammar boundary. So
 //! [`Layout`] is the identity vocabulary itself: [`Layout::id`] pins one
@@ -39,7 +38,7 @@ use std::collections::BTreeMap;
 
 include!("dialect/registry_ids.rs");
 
-/// Key of the `#UGC:2` header line, verbatim, in [`DialectMatch::declared`].
+/// Key of the UGC header line, verbatim, in [`DialectMatch::declared`].
 ///
 /// The first line of the file as the producer wrote it. It carries the
 /// container magic and a producer token; it is evidence, and this codec

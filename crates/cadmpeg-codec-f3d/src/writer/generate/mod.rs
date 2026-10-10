@@ -6,6 +6,7 @@ use std::collections::BTreeSet;
 use std::io::{Seek, SeekFrom, Write};
 
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::write::{ArenaDisposition, ArenaDispositions};
 use cadmpeg_ir::document::CadIr;
 
 use crate::manifest::{self, GENERATED_DESIGN_ASSET_FOLDER as DESIGN_FOLDER};
@@ -32,8 +33,11 @@ use records::{encode_design_bulkstream, encode_design_metastream, encode_documen
 use smbh::encode_smbh;
 
 /// Write a canonical source-less F3D archive for the currently supported
-/// native construction profile.
-pub(super) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), CodecError> {
+/// native construction profile, and state which model arenas it carries.
+pub(super) fn write_new(
+    target: &CadIr,
+    writer: &mut dyn Write,
+) -> Result<ArenaDispositions, CodecError> {
     let loaded_native = f3d_native(target)?;
     validate_assembly_projection(target, loaded_native.as_ref())?;
     let has_native = loaded_native.is_some();
@@ -163,5 +167,61 @@ pub(super) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
     })?;
     staged.seek(SeekFrom::Start(0))?;
     std::io::copy(&mut staged, writer)?;
-    Ok(())
+    Ok(coverage(has_native))
+}
+
+/// What [`write_new`] does with each model arena.
+///
+/// The generator writes B-rep topology, geometry, procedural carriers and
+/// appearances from the neutral model. Configurations and parameters are
+/// written from the native Design records after the neutral arenas are proved
+/// equal to their projection; without an `f3d` namespace a non-empty parameter
+/// arena is refused and configurations are not read. Design history, sketches
+/// and the remaining document arenas come only from native records, so the
+/// neutral arenas are not represented.
+fn coverage(has_native: bool) -> ArenaDispositions {
+    use ArenaDisposition::{Omitted, Reported, Written};
+    ArenaDispositions {
+        bodies: Written,
+        regions: Written,
+        shells: Written,
+        faces: Written,
+        loops: Written,
+        coedges: Written,
+        edges: Written,
+        vertices: Written,
+        points: Written,
+        surfaces: Written,
+        curves: Written,
+        subds: Reported,
+        pcurves: Written,
+        procedural_surfaces: Written,
+        procedural_curves: Written,
+        assets: Reported,
+        features: Omitted,
+        feature_input_topologies: Omitted,
+        feature_result_topologies: Omitted,
+        configurations: if has_native { Written } else { Omitted },
+        parameters: if has_native { Written } else { Reported },
+        sketches: Omitted,
+        sketch_entities: Omitted,
+        sketch_constraints: Omitted,
+        spatial_sketches: Omitted,
+        spatial_sketch_entities: Omitted,
+        spatial_sketch_constraints: Omitted,
+        spreadsheets: Omitted,
+        product_definitions: Omitted,
+        occurrences: Omitted,
+        assembly_joints: Reported,
+        drawings: Omitted,
+        semantic_annotations: Omitted,
+        presentation_documents: Omitted,
+        view_presentations: Omitted,
+        tessellations: Reported,
+        appearances: Written,
+        appearance_bindings: Omitted,
+        attributes: Omitted,
+        pmi: Omitted,
+        presentation_layers: Omitted,
+    }
 }

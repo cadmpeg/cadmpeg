@@ -14,7 +14,7 @@ use crate::loss::IgesLossCode;
 use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
 use crate::IgesCodec;
 
-/// A file whose second Directory Entry pair carries a non-integer level field.
+/// A file whose second Directory Entry pair carries a non-integer Parameter Data pointer.
 fn quarantined_directory_file() -> Vec<u8> {
     let mut bytes = owned_test_file(&[
         OwnedTestEntity {
@@ -32,12 +32,12 @@ fn quarantined_directory_file() -> Vec<u8> {
             parameters: "116,4,5,6,0;".into(),
         },
     ]);
-    let level = bytes
+    let parameter = bytes
         .chunks_exact(81)
         .position(|line| line[72] == b'D')
-        .map(|first| (first + 2) * 81 + 4 * 8)
+        .map(|first| (first + 2) * 81 + 8)
         .expect("Directory card");
-    bytes[level..level + 8].copy_from_slice(b"     abc");
+    bytes[parameter..parameter + 8].copy_from_slice(b"     abc");
     bytes
 }
 

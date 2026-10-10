@@ -941,11 +941,13 @@ pub(crate) fn analytic_conics_round_trip_through_step() {
     let mut source = CadIr::empty();
     source.model.curves.extend([
         Curve {
+            parameter_range: None,
             id: CurveId::mint("test:model:curve#parabola").expect("identity grammar"),
             geometry: parabola.clone(),
             source_object: None,
         },
         Curve {
+            parameter_range: None,
             id: CurveId::mint("test:model:curve#hyperbola").expect("identity grammar"),
             geometry: hyperbola.clone(),
             source_object: None,
@@ -981,6 +983,7 @@ pub(crate) fn analytic_conics_round_trip_through_step() {
 pub(crate) fn standalone_geometry_uses_general_shape_representation() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: CurveId::mint("test:model:curve#line").expect("identity grammar"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::analytic::LineCurve::try_new(
@@ -1021,7 +1024,8 @@ fn cube_emits_full_brep_hierarchy() {
     // 6 loops * 4 coedges = 24 oriented edges.
     assert_eq!(s.matches("ORIENTED_EDGE").count(), 24);
     assert_eq!(s.matches("= EDGE_LOOP(").count(), 6);
-    assert_eq!(s.matches("FACE_OUTER_BOUND").count(), 6);
+    assert_eq!(s.matches("FACE_OUTER_BOUND").count(), 0);
+    assert_eq!(s.matches("FACE_BOUND").count(), 6);
     // Every line edge carries a LINE curve.
     assert_eq!(s.matches("= LINE(").count(), 12);
 }
@@ -1088,6 +1092,52 @@ fn every_reference_resolves() {
                 i += 1;
             }
         }
+    }
+}
+
+#[test]
+fn unclassified_face_loops_round_trip_without_inventing_outer_roles() {
+    let mut ir = unit_cube().expect("unit cube fixture");
+    for face in &mut ir.model.faces {
+        face.loops = cadmpeg_ir::topology::FaceLoops::unspecified(face.loops.to_vec());
+    }
+    let output = export(&ir);
+    assert_eq!(output.matches("FACE_OUTER_BOUND").count(), 0);
+    assert_eq!(output.matches("FACE_BOUND").count(), 6);
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir().model.faces.len(), ir.model.faces.len());
+    assert!(decoded.ir().model.faces.iter().all(|face| matches!(
+        face.loops,
+        cadmpeg_ir::topology::FaceLoops::Unspecified { .. }
+    )));
+}
+
+#[test]
+fn periodic_two_rim_face_keeps_unclassified_bounds_through_export() {
+    let original = include_str!("data/periodic_two_rims.p21");
+    for source in [
+        original.to_owned(),
+        original.replace("FACE_BOUND", "FACE_OUTER_BOUND"),
+    ] {
+        let decoded = StepCodec::default()
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(decoded.ir().model.faces.len(), 1);
+        assert_eq!(decoded.ir().model.loops.len(), 2);
+        let output = export(decoded.ir());
+        assert_eq!(output.matches("FACE_OUTER_BOUND").count(), 0);
+        assert_eq!(output.matches("FACE_BOUND").count(), 2);
+        let round_trip = StepCodec::default()
+            .decode(&mut Cursor::new(output), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(round_trip.ir().model.faces.len(), 1);
+        assert_eq!(round_trip.ir().model.loops.len(), 2);
+        assert!(matches!(
+            round_trip.ir().model.faces[0].loops,
+            cadmpeg_ir::topology::FaceLoops::Unspecified { .. }
+        ));
     }
 }
 
@@ -1866,4 +1916,73 @@ fn a_replica_refuses_a_zero_column() {
             [0.0, 0.0, 0.0, 0.0],
         ],
     );
+}
+
+#[test]
+fn disconnected_wire_edges_export_in_separate_connected_sets() {
+    let full = unit_cube().expect("cube");
+    let mut ir = wire_body_ir(1.0);
+    let second = full
+        .model
+        .edges
+        .iter()
+        .find(|edge| {
+            ir.model
+                .vertices
+                .iter()
+                .all(|v| v.id != edge.start && v.id != edge.end)
+        })
+        .expect("disconnected edge")
+        .clone();
+    let curve = second.curve().expect("curve");
+    ir.model.curves.push(
+        full.model
+            .curves
+            .iter()
+            .find(|item| item.id == *curve)
+            .expect("carrier")
+            .clone(),
+    );
+    for vertex in full
+        .model
+        .vertices
+        .iter()
+        .filter(|v| v.id == second.start || v.id == second.end)
+    {
+        ir.model.points.push(
+            full.model
+                .points
+                .iter()
+                .find(|p| p.id == vertex.point)
+                .expect("point")
+                .clone(),
+        );
+        ir.model.vertices.push(vertex.clone());
+    }
+    ir.model.shells[0]
+        .edit_topology(|_, edges, _| edges.push(second.id.clone()))
+        .expect("wire topology");
+    ir.model.edges.push(second);
+    assert!(cadmpeg_ir::validate_neutral(&ir, Vec::new())
+        .expect("neutral validation")
+        .is_ok());
+    let mut output = Vec::new();
+    write_step(
+        &ir,
+        &mut output,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("export");
+    let (exchange, _) =
+        crate::test_support::with_service_context(&output, crate::parse::parse_inner)
+            .expect("exchange");
+    assert_eq!(exchange.entities("CONNECTED_EDGE_SET").count(), 2);
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("round trip");
+    assert_eq!(decoded.ir().model.edges.len(), 2);
+    assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
+        .expect("validation")
+        .is_ok());
 }

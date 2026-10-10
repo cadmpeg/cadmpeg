@@ -79,7 +79,8 @@ pub fn resolve_and_inspect_with(
     };
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
     let prefix = read_prefix(&ctx, source)?;
-    let resolved = catalog.resolve_source(&ctx, View::over_retained(&prefix), forced);
+    let resolved =
+        catalog.resolve_seekable_source(&ctx, View::over_retained(&prefix), source, forced);
     ctx.finish_session()?;
     match resolved? {
         ResolvedSource::Native { codec, selection } => {

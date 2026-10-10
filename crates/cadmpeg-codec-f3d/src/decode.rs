@@ -1952,6 +1952,15 @@ fn report_design_projection_gaps(
             IncompleteFamilyCounts(&incomplete_families)
         ),
     )?;
+    let mut uninterpreted_scopes = 0;
+    for scope in &native.design_parameter_scopes {
+        ctx.charge_work(1, "F3D optional scope payload census")?;
+        if scope.payload().is_uninterpreted() {
+            uninterpreted_scopes += 1;
+        }
+    }
+    push(F3dLossCode::FeatureScopePayloadUninterpreted, uninterpreted_scopes,
+        format_args!("{uninterpreted_scopes} native feature scope(s) retain their source envelope without interpreted specialized operation data."))?;
     push(
         F3dLossCode::FeatureScopeUnprojected,
         gaps.unprojected_feature_scopes,
@@ -2225,7 +2234,10 @@ fn try_decode_text_model(
         // stream's own unit; the decoded token values are already in the
         // centimetre convention.
         let mut header = stream.header.as_kernel_header(ctx)?;
-        header.scale = Some(stream.header.scale().get());
+        header.scale = match stream.header.units() {
+            cadmpeg_asm::sat::TextUnits::Declared(scale) => Some(scale.get()),
+            cadmpeg_asm::sat::TextUnits::Unspecified => None,
+        };
 
         ctx.reserve_vec(&mut parts, 1, "collect F3D text B-rep parts")?;
         parts.push((
@@ -2712,12 +2724,20 @@ impl<'a> F3dDecodeSession<'a> {
             &mut self.ir.model.configurations,
             &self.ir.model.parameters,
         )?;
+        let scope_histories = crate::history::bind_scope_histories(
+            self.ctx,
+            &self.native.design_parameter_scopes,
+            &self.native.design_body_bindings,
+            &self.native.design_body_recipe_operands,
+            &self.native.asm_histories,
+        )?;
         self.ir.model.feature_input_topologies = crate::history::project_feature_input_topologies(
             ctx,
             &self.ir.model.features,
             &self.native.design_parameter_scopes,
             &self.native.asm_histories,
             &self.native.design_edge_operands,
+            &scope_histories,
         )?;
         crate::history::bind_feature_outputs(
             ctx,
@@ -2889,13 +2909,6 @@ impl<'a> F3dDecodeSession<'a> {
                 &self.native.sketch_surfaces,
                 &self.ir.model.spatial_sketch_entities,
             )?;
-        let scope_histories = crate::history::bind_scope_histories(
-            self.ctx,
-            &self.native.design_parameter_scopes,
-            &self.native.design_body_bindings,
-            &self.native.design_body_recipe_operands,
-            &self.native.asm_histories,
-        )?;
         crate::design::profile_select::bind_extrude_profile_selections(
             &mut self.ir.model.features,
             &self.native.design_parameter_scopes,
@@ -3024,6 +3037,13 @@ impl<'a> F3dDecodeSession<'a> {
             |a, b| a.id.cmp(&b.id),
             |constraint| constraint.id.as_str().len(),
             "sort F3D spatial sketch constraints",
+        )?;
+        crate::history::face_admission::admit_feature_input_faces(
+            ctx,
+            &mut self.ir.model.features,
+            &self.ir.model.feature_input_topologies,
+            &self.ir.model.faces,
+            &mut self.report.losses,
         )?;
         crate::design::configurations::bind_configuration_suppressed_features(
             ctx,
@@ -5608,17 +5628,29 @@ fn build_geometry_ir(
 /// and region comparisons in this crate act on.
 const MIN_ANALYTIC_LINEAR_TOLERANCE_MM: f64 = 1.0e-7;
 
-/// Admit the kernel header tolerances `resabs` and `resnor`. A stated `resabs`
-/// below the analytic floor cannot drive profile and region matching, so it is
-/// refused here and never floored at a comparison site.
-fn admit_kernel_tolerances(resabs: f64, resnor: f64) -> Result<Tolerances, CodecError> {
-    let linear_mm = resabs * 10.0;
-    let tolerances = Tolerances::new(linear_mm, resnor).map_err(CodecError::Malformed)?;
-    if linear_mm < MIN_ANALYTIC_LINEAR_TOLERANCE_MM {
-        return Err(CodecError::NotImplemented(format!(
-            "kernel header resabs {linear_mm} mm is below the analytic linear \
-             tolerance floor {MIN_ANALYTIC_LINEAR_TOLERANCE_MM} mm"
-        )));
+/// Admit each optional kernel tolerance independently. An unrepresentable value
+/// leaves the document default; reports diagnose it from the retained header.
+/// A valid `resabs` below the analytic floor remains unsupported because it
+/// cannot drive profile and region matching at the declared precision.
+fn admit_kernel_tolerances(
+    resabs: Option<f64>,
+    resnor: Option<f64>,
+) -> Result<Tolerances, CodecError> {
+    let mut tolerances = Tolerances::default();
+    if let Some(linear) =
+        resabs.and_then(|value| cadmpeg_ir::scalar::PositiveLength::new(value * 10.0))
+    {
+        if linear.get() < MIN_ANALYTIC_LINEAR_TOLERANCE_MM {
+            return Err(CodecError::NotImplemented(format!(
+                "kernel header resabs {} mm is below the analytic linear \
+                 tolerance floor {MIN_ANALYTIC_LINEAR_TOLERANCE_MM} mm",
+                linear.get()
+            )));
+        }
+        tolerances.linear = linear;
+    }
+    if let Some(angular) = resnor.and_then(cadmpeg_ir::scalar::PositiveAngle::new) {
+        tolerances.angular = angular;
     }
     Ok(tolerances)
 }
@@ -5734,9 +5766,7 @@ fn source_attributes_and_tolerances(
                 )?;
             }
         }
-        if let (Some(resabs), Some(resnor)) = (h.linear, h.angular) {
-            tolerances = admit_kernel_tolerances(resabs, resnor)?;
-        }
+        tolerances = admit_kernel_tolerances(h.linear, h.angular)?;
     }
 
     Ok((attributes, tolerances))
@@ -6025,9 +6055,7 @@ fn build_metadata_ir(
                     )?;
                 }
             }
-            if let (Some(resabs), Some(resnor)) = (h.linear, h.angular) {
-                ir.tolerances = admit_kernel_tolerances(resabs, resnor)?;
-            }
+            ir.tolerances = admit_kernel_tolerances(h.linear, h.angular)?;
         }
 
         append_metadata_unknown(ctx, &mut unknowns, brep)?;

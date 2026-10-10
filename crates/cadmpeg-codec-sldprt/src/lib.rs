@@ -133,7 +133,8 @@ use std::io::Write;
 
 use cadmpeg_ir::codec::write::{
     target::{Catalog, ResolvedWrite},
-    Consumption, EncodeInput, EncoderBackend, ExportBody, PatchConsumption, WritePath,
+    ArenaCoverage, ArenaDispositions, Consumption, EncodeInput, EncoderBackend, ExportBody,
+    PatchConsumption, WritePath,
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::document::CadIr;
@@ -242,7 +243,8 @@ impl SldprtCodec {
         fidelity: SemanticFidelity,
         writer: &mut dyn Write,
     ) -> Result<Written, CodecError> {
-        let dialect = writer::write_semantic_with_records(ir, annotations, records, writer)?;
+        let writer::SemanticOutput { dialect, coverage } =
+            writer::write_semantic_with_records(ir, annotations, records, writer)?;
         let native = ir
             .native
             .namespace("sldprt")
@@ -274,6 +276,7 @@ impl SldprtCodec {
             },
             dialect,
             fidelity,
+            coverage,
         })
     }
 }
@@ -350,6 +353,7 @@ enum Written {
         path: SemanticPath,
         dialect: DialectId,
         fidelity: SemanticFidelity,
+        coverage: ArenaDispositions,
     },
 }
 
@@ -360,6 +364,15 @@ impl Written {
         match self {
             Self::Replayed => WritePath::VerbatimReplay,
             Self::Semantic { path, fidelity, .. } => path.write_path(fidelity.consumption()),
+        }
+    }
+
+    /// Which model arenas the output carries. A replay runs only while the
+    /// document digest matches its decode baseline, so it carries every arena.
+    fn coverage(&self) -> ArenaCoverage {
+        match self {
+            Self::Replayed => ArenaCoverage::Complete,
+            Self::Semantic { coverage, .. } => ArenaCoverage::Declared(*coverage),
         }
     }
 

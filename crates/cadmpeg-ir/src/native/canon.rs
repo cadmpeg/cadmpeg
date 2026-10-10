@@ -249,7 +249,11 @@ impl CanonError {
     }
 
     /// This refusal, stated from one container further out.
-    fn within(self, ctx: &DecodeContext<'_>, step: impl FnOnce() -> Result<Step, Self>) -> Self {
+    pub(super) fn within(
+        self,
+        ctx: &DecodeContext<'_>,
+        step: impl FnOnce() -> Result<Step, Self>,
+    ) -> Self {
         let Self::NonFinite(mut steps) = self else {
             return self;
         };
@@ -404,7 +408,7 @@ impl<'a> CanonValue<'a> {
     }
 
     /// The serializer for a child value that may enter `depth` containers.
-    const fn within(
+    pub(super) const fn within(
         ctx: &'a DecodeContext<'a>,
         depth: usize,
         sink: Option<&'a dyn ByteSink>,
@@ -1059,9 +1063,9 @@ impl ser::SerializeStructVariant for CanonVariantMap<'_> {
 /// Map-key serializer with `serde_json::Value`'s key conventions: strings
 /// pass through, scalar keys and unit variants use their string forms, and
 /// compound or absent keys are rejected. Floating-point keys must be finite.
-struct CanonKey<'a> {
-    ctx: &'a DecodeContext<'a>,
-    sink: Option<&'a dyn ByteSink>,
+pub(super) struct CanonKey<'a> {
+    pub(super) ctx: &'a DecodeContext<'a>,
+    pub(super) sink: Option<&'a dyn ByteSink>,
 }
 
 fn emit_number_key<T: Serialize>(sink: Option<&dyn ByteSink>, value: &T) -> Result<(), Error> {

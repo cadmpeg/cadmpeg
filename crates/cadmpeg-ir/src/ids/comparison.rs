@@ -3,6 +3,8 @@
 
 use std::cmp::Ordering;
 
+pub(crate) mod key;
+
 use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
 
 pub(crate) mod sealed {

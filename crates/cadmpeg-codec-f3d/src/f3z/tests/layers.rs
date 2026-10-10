@@ -417,10 +417,10 @@ fn duplicate_member_layer_identity_is_a_recorded_loss() {
         crate::dialect::F3dDialect::classify_f3z(&ctx, &["part.f3d"]).unwrap(),
     );
     let first = cadmpeg_core::dialect::DialectLayers::of(
-        crate::dialect::F3dDialect::classify_document(&ctx, "3-2-0-0").unwrap(),
+        crate::dialect::F3dDialect::classify_document(&ctx, Some("3-2-0-0")).unwrap(),
     );
     let later = cadmpeg_core::dialect::DialectLayers::of(
-        crate::dialect::F3dDialect::classify_document(&ctx, "3-3-0-0").unwrap(),
+        crate::dialect::F3dDialect::classify_document(&ctx, Some("3-3-0-0")).unwrap(),
     );
 
     assert!(
@@ -450,7 +450,7 @@ fn member_layer_collection_refusal(max_items: u64, collision: bool) -> cadmpeg_c
         crate::dialect::F3dDialect::classify_f3z(&normal, &["part.f3d"]).unwrap(),
     );
     let member = cadmpeg_core::dialect::DialectLayers::of(
-        crate::dialect::F3dDialect::classify_document(&normal, "3-2-0-0").unwrap(),
+        crate::dialect::F3dDialect::classify_document(&normal, Some("3-2-0-0")).unwrap(),
     );
     if collision {
         crate::f3z::archive::merge_member_layers(&normal, &mut target, &member, "part.f3d")

@@ -8,4 +8,4 @@ use super::{
 rewrite_native_record!(ConstructionRecipeDesign<Id>, [Id]; {id, selector});
 rewrite_native_scalar!(ConstructionRecipeKind);
 rewrite_native_scalar!(ConstructionRecipeSelector);
-rewrite_native_record!(CreationTimestamp, []; {id, target, record_index, unix_microseconds});
+rewrite_native_identity_record!(CreationTimestamp; target, record_index, unix_microseconds);

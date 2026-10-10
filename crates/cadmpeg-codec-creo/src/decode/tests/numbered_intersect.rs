@@ -1503,6 +1503,7 @@ fn geometry_signal_excludes_opaque_carriers() {
         source_object: None,
     });
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: CurveId::mint("test:model:entity#curve".to_string()).expect("identity grammar"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
         source_object: None,

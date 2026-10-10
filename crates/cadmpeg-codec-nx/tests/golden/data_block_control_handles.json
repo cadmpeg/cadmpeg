@@ -123,9 +123,7 @@
               "id": "nx:om-data-block-references-0-2:reference#0",
               "object_id": 42,
               "ordinal": 0,
-              "raw_object_id": [
-                42
-              ],
+              "raw_object_id": "2a",
               "source_offset": 169
             }
           ],

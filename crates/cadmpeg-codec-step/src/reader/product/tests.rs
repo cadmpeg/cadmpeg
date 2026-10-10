@@ -1938,3 +1938,53 @@ fn decode_applies_canonical_cartesian_operator_to_mapped_body() {
         .expect("decode mapped body with canonical operator");
     assert_eq!(decoded.ir().model.bodies[0].transform, Some(transform));
 }
+
+#[test]
+fn representation_relationships_and_mapped_children_do_not_duplicate_definition_bodies() {
+    let sheet = std::str::from_utf8(include_bytes!("../../../tests/fixtures/ap214_sheet.p21"))
+        .expect("sheet source");
+    let products = "#100=APPLICATION_CONTEXT('design');#101=PRODUCT_CONTEXT('',#100,'mechanical');#102=PRODUCT('P','Parent','',(#101));#103=PRODUCT('C','Child','',(#101));#104=PRODUCT_DEFINITION_FORMATION('','',#102);#105=PRODUCT_DEFINITION_FORMATION('','',#103);#106=PRODUCT_DEFINITION_CONTEXT('',#100,'design');#107=PRODUCT_DEFINITION('','',#104,#106);#108=PRODUCT_DEFINITION('','',#105,#106);#109=PRODUCT_DEFINITION_SHAPE('','',#107);#110=PRODUCT_DEFINITION_SHAPE('','',#108);#111=SHAPE_REPRESENTATION('parent',(),#2);#112=SHAPE_DEFINITION_REPRESENTATION(#109,#111);#113=SHAPE_DEFINITION_REPRESENTATION(#110,#32);#114=NEXT_ASSEMBLY_USAGE_OCCURRENCE('child','','',#107,#108,$);";
+    for relationship in [
+        "#115=SHAPE_REPRESENTATION_RELATIONSHIP('','',#111,#32);",
+        "#115=SHAPE_REPRESENTATION_RELATIONSHIP('','',#32,#111);",
+        "#115=REPRESENTATION_MAP(#27,#32);#116=MAPPED_ITEM('',#115,#27);",
+    ] {
+        let mut source = sheet.replace(
+            "ENDSEC;
+END-ISO-10303-21;",
+            &format!(
+                "{products}{relationship}ENDSEC;
+END-ISO-10303-21;"
+            ),
+        );
+        if relationship.contains("MAPPED_ITEM") {
+            source = source.replace(
+                "SHAPE_REPRESENTATION('parent',(),#2)",
+                "SHAPE_REPRESENTATION('parent',(#116),#2)",
+            );
+        }
+        let decoded = StepCodec::default()
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .expect("assembly");
+        let parent = decoded
+            .ir()
+            .model
+            .product_definitions
+            .iter()
+            .find(|p| p.source_name.as_deref() == Some("Parent"))
+            .expect("parent");
+        let child = decoded
+            .ir()
+            .model
+            .product_definitions
+            .iter()
+            .find(|p| p.source_name.as_deref() == Some("Child"))
+            .expect("child");
+        assert!(
+            parent.bodies.is_empty(),
+            "parent owns the occurrence, not its child's body"
+        );
+        assert_eq!(child.bodies.len(), 1);
+        assert_eq!(decoded.ir().model.faces.len(), 1);
+    }
+}

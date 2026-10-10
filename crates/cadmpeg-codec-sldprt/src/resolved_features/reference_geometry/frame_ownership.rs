@@ -90,3 +90,20 @@ fn matrix_reference_plane_owns_overlapping_angled_scan_window() {
         )))
     );
 }
+
+#[test]
+fn rejected_plane_windows_do_not_run_overlap_scans() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let payload = [0x22; 4096];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 100_000;
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert_eq!(
+        explicit_reference_plane_frame(&ctx, &payload).unwrap(),
+        Ok(None)
+    );
+    assert!(ctx.resource_refusal().is_none());
+}

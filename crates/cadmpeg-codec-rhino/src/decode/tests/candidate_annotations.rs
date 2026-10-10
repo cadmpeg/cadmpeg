@@ -21,7 +21,8 @@ fn rejected_candidate_annotations_do_not_consume_retained_storage() {
         let original = context.annotations.clone();
         let session = expand.ctx();
         let result = context.validate_candidate_fallible(|_, annotations| {
-            assert_eq!(annotations, &original);
+            assert_eq!(annotations.base(), &original);
+            assert!(annotations.annotations().exactness().is_empty());
             let text =
                 session.copy_retained_text("candidate-only", "candidate annotation mutation")?;
             assert_eq!(text, "candidate-only");
@@ -39,25 +40,17 @@ fn rejected_candidate_annotations_do_not_consume_retained_storage() {
 }
 
 #[test]
-fn candidate_annotation_copy_preserves_materialized_refusal() {
+fn candidate_annotation_edit_preserves_materialized_refusal() {
     let scan = scan_with_objects(&[]);
     with_transaction_limits(&scan, u64::MAX, None, Some(0), |expand| {
         let mut context = DecodeContext::new(&scan, expand).unwrap();
-        let mut annotations = AnnotationBuilder::new();
-        annotations
-            .exactness(
-                &cadmpeg_test_support::service_decode_context(),
-                "rhino:test:point#candidate",
-                Exactness::Derived,
-            )
-            .unwrap();
-        context.annotations = annotations.build();
         let original = context.annotations.clone();
-        let result = context.validate_candidate::<()>(|_, _| {
-            panic!("copy must refuse before applying the candidate")
+        let result = context.validate_candidate_fallible(|_, annotations| {
+            annotations.exactness("rhino:test:point#candidate", Exactness::Derived)
         });
         assert!(
-            matches!(result, Err(CandidateError::Codec(CodecError::ResourceLimit(limit))) if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes && limit.operation == "Rhino speculative annotations")
+            matches!(result, Err(CandidateError::Codec(CodecError::ResourceLimit(limit)))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
         );
         assert_eq!(context.annotations, original);
     });
@@ -238,6 +231,7 @@ fn candidate_source_link_grammar_failure_preserves_admission_classification() {
         context
             .session
             .unknown_links_mut(0)
+            .unwrap()
             .unwrap()
             .1
             .push("invalid".into());

@@ -154,9 +154,18 @@ fn call_route(
     None
 }
 
-fn method_route(method: &syn::ExprMethodCall, environment: &ScanEnvironment) -> bool {
-    method.method == "deserialize_any"
-        && expr_is_direct_binding(&method.receiver, &environment.input_bindings)
+/// Route taken by a method call on the deserializer input itself. `deserialize_any`
+/// admits an open map; `deserialize_str` asks the format for a scalar string, so no
+/// object key can reach the visitor.
+fn method_route(method: &syn::ExprMethodCall, environment: &ScanEnvironment) -> Option<InputRoute> {
+    if !expr_is_direct_binding(&method.receiver, &environment.input_bindings) {
+        return None;
+    }
+    match method.method.to_string().as_str() {
+        "deserialize_any" => Some(InputRoute::FreeForm),
+        "deserialize_str" => Some(InputRoute::Keyless),
+        _ => None,
+    }
 }
 
 fn expr_path_shape(path: &syn::ExprPath) -> Option<PathShape> {
@@ -287,19 +296,19 @@ fn scan_expr(
             }
         }
         syn::Expr::MethodCall(method) => {
-            if method_route(method, environment) {
+            if let Some(input_route) = method_route(method, environment) {
                 if control {
                     unsupported(
                         scan,
-                        "open-map route occurs only on a conditional/control-flow path",
+                        "deserializer-method route occurs only on a conditional/control-flow path",
                     );
                 } else if !propagates {
                     unsupported(
                         scan,
-                        "open-map route does not propagate its deserialization error",
+                        "deserializer-method route does not propagate its deserialization error",
                     );
                 } else {
-                    scan.routes.push(InputRoute::FreeForm);
+                    scan.routes.push(input_route);
                 }
                 for argument in &method.args {
                     scan_expr(argument, route, index, environment, scan, control, false);

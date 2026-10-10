@@ -4,6 +4,9 @@
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+/// Loss kind for an omitted tolerant-coedge use curve with decreasing endpoints.
+pub(crate) const INVALID_USE_CURVE_INTERVAL: &str = "tcoedge-use-curve-invalid-interval";
+
 /// Counts used to construct the B-rep loss report.
 #[derive(Default)]
 pub struct Stats {
@@ -26,7 +29,7 @@ pub struct Stats {
     pub undecoded_pcurve_kinds: std::collections::BTreeMap<String, usize>,
     /// Procedural blends for which only one of two support families resolved.
     pub partial_procedural_supports: usize,
-    /// Residual record counts by full record name.
+    /// Residual record or component counts by native kind.
     pub other_record_kinds: std::collections::BTreeMap<String, usize>,
 }
 
@@ -53,6 +56,15 @@ impl Stats {
     #[must_use]
     pub fn undecoded_pcurve_refs(&self) -> usize {
         self.undecoded_pcurve_kinds.values().sum()
+    }
+
+    /// Use curves omitted because their finite endpoints decrease.
+    #[must_use]
+    pub fn invalid_use_curve_intervals(&self) -> usize {
+        self.other_record_kinds
+            .get(INVALID_USE_CURVE_INTERVAL)
+            .copied()
+            .unwrap_or(0)
     }
 
     /// Total count represented by `other_record_kinds`.

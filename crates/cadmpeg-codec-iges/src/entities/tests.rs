@@ -73,12 +73,13 @@ fn entity_projection_losses_refuse_slots_and_messages() {
             .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
             .unwrap();
         assert!(
-            service
-                .report()
-                .losses
-                .iter()
-                .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()
-                    && loss.message.contains(reason)),
+            service.report().losses.iter().any(|loss| loss.code
+                == if matches!(entity_type, 308 | 212) {
+                    IgesLossCode::EntityNotProjected.kind()
+                } else {
+                    IgesLossCode::GeometryNotProjected.kind()
+                }
+                && loss.message.contains(reason)),
             "{entity_type}: {:#?}",
             service.report().losses
         );

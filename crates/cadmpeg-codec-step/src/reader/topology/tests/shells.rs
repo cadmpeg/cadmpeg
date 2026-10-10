@@ -749,7 +749,7 @@ pub(crate) fn every_region_of_a_body_is_retained_as_a_shape_item() {
         .expect("valid identity");
     ir.model.bodies[0].regions.push(region.id.clone());
     ir.model.regions.push(region);
-    let mut builder = Builder::new(&ir, StepSchema::Ap242Edition3);
+    let mut builder = Builder::new(&ir, StepSchema::Ap242Edition3).unwrap();
     builder.build();
     assert_eq!(builder.body_item_refs[body.as_str()].len(), 2);
 }

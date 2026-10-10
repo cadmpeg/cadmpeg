@@ -2825,20 +2825,37 @@ pub(super) fn explicit_reference_plane_frame(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<Result<Option<PlaneFrame>, ()>, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT explicit sketch frame";
+    // The guards run for each byte position. Full scalar and vector probes
+    // run only for positions that carry the corresponding layout marker.
+    ctx.charge_work(
+        u64_from_index(payload.len())
+            .checked_mul(16)
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
+        OPERATION,
+    )?;
+    for offset in 0..payload.len() {
+        let mut work = 0;
+        if payload.get(offset + matrix_plane::FRAME_MARKER) == Some(&1) {
+            work += 512; // Matrix scan and the matrix guard of the fixed scan.
+        }
+        if payload.get(offset + fixed_plane::FRAME_MARKER) == Some(&1) {
+            work += 512; // Fixed and repeated-normal layouts.
+        }
+        if payload.get(offset + 16) == Some(&1) {
+            work += 256;
+        }
+        if payload.get(offset + 56) == Some(&0x80) {
+            work += 128;
+        }
+        if payload.get(offset + 64) == Some(&0) && payload.get(offset + 81) == Some(&0) {
+            work += 256;
+        }
+        ctx.charge_work(work, OPERATION)?;
+    }
     let frames = matrix_reference_plane_frame_candidates(payload)
         .map(|(_, frame)| frame)
         .chain(fixed_reference_plane_frame_candidates(payload).map(|(_, frame)| frame))
-        .chain(
-            angled_reference_plane_frame_candidates(payload)
-                .filter(|(offset, _)| {
-                    !strong_reference_plane_overlap(
-                        payload,
-                        *offset,
-                        ANGLED_REFERENCE_PLANE_FRAME_LEN,
-                    )
-                })
-                .map(|(_, frame)| frame),
-        )
         .chain(minimal_reference_plane_frame(payload));
     let mut first = None;
     for frame in frames {
@@ -2848,8 +2865,20 @@ pub(super) fn explicit_reference_plane_frame(
             Some(_) => {}
         }
     }
+    for (offset, frame) in raw_angled_reference_plane_frame_candidates(payload) {
+        charge_reference_plane_overlap(ctx, ANGLED_REFERENCE_PLANE_FRAME_LEN)?;
+        if strong_reference_plane_overlap(payload, offset, ANGLED_REFERENCE_PLANE_FRAME_LEN) {
+            continue;
+        }
+        match first {
+            None => first = Some(frame),
+            Some(existing) if existing != frame => return Ok(Err(())),
+            Some(_) => {}
+        }
+    }
     for candidate in compact_reference_plane_frame_candidates(ctx, payload) {
         let (offset, frame) = candidate?;
+        charge_reference_plane_overlap(ctx, COMPACT_REFERENCE_PLANE_FRAME_LEN)?;
         if strong_reference_plane_overlap(payload, offset, COMPACT_REFERENCE_PLANE_FRAME_LEN) {
             continue;
         }
@@ -2860,6 +2889,16 @@ pub(super) fn explicit_reference_plane_frame(
         }
     }
     Ok(Ok(first))
+}
+
+fn charge_reference_plane_overlap(ctx: &DecodeContext<'_>, len: usize) -> Result<(), CodecError> {
+    let positions = matrix_plane::LEN.max(fixed_plane::LEN) - 1 + len;
+    ctx.charge_work(
+        u64_from_index(positions).checked_mul(1024).ok_or_else(|| {
+            ctx.refuse_codec_limit("probe SLDPRT plane frame overlap", u64::MAX - 1, u64::MAX)
+        })?,
+        "probe SLDPRT plane frame overlap",
+    )
 }
 
 fn strong_reference_plane_overlap(payload: &[u8], offset: usize, len: usize) -> bool {
@@ -3236,7 +3275,7 @@ fn constraint_midplane_frame(
     Ok(if ambiguous { None } else { unique })
 }
 
-fn angled_reference_plane_frame_candidates(
+fn raw_angled_reference_plane_frame_candidates(
     payload: &[u8],
 ) -> impl Iterator<Item = (usize, (Point3, Vector3, Vector3))> + '_ {
     let scalar = |bytes: &[u8], relative| {
@@ -3246,21 +3285,6 @@ fn angled_reference_plane_frame_candidates(
     payload
         .windows(ANGLED_REFERENCE_PLANE_FRAME_LEN)
         .enumerate()
-        .filter(|(offset, _)| {
-            let start = offset.checked_sub(fixed_plane::LEN - 1).unwrap_or(0);
-            // Every angled window ends within the payload.
-            let end = offset + ANGLED_REFERENCE_PLANE_FRAME_LEN;
-            !(start..end).any(|fixed_offset| {
-                payload
-                    .get(fixed_offset..)
-                    .and_then(|tail| tail.get(..fixed_plane::LEN))
-                    .is_some_and(|bytes| {
-                        fixed_reference_plane_frame(bytes)
-                            .or_else(|| repeated_normal_reference_plane_frame(bytes))
-                            .is_some()
-                    })
-            })
-        })
         .filter_map(move |(offset, bytes)| {
             if bytes.get(16) != Some(&1)
                 || bytes.get(89..113)?.iter().any(|byte| *byte != 0)
@@ -3286,6 +3310,27 @@ fn angled_reference_plane_frame_candidates(
             }
             Some((offset, (Point3::new(0.0, 0.0, 0.0), normal, u_axis)))
         })
+}
+
+#[cfg(test)]
+fn angled_reference_plane_frame_candidates(
+    payload: &[u8],
+) -> impl Iterator<Item = (usize, (Point3, Vector3, Vector3))> + '_ {
+    raw_angled_reference_plane_frame_candidates(payload).filter(|(offset, _)| {
+        let start = offset.checked_sub(fixed_plane::LEN - 1).unwrap_or(0);
+        // Every angled window ends within the payload.
+        let end = offset + ANGLED_REFERENCE_PLANE_FRAME_LEN;
+        !(start..end).any(|fixed_offset| {
+            payload
+                .get(fixed_offset..)
+                .and_then(|tail| tail.get(..fixed_plane::LEN))
+                .is_some_and(|bytes| {
+                    fixed_reference_plane_frame(bytes)
+                        .or_else(|| repeated_normal_reference_plane_frame(bytes))
+                        .is_some()
+                })
+        })
+    })
 }
 
 fn matrix_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
@@ -3371,12 +3416,13 @@ fn minimal_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vec
     let mut frames = payload
         .windows(MINIMAL_REFERENCE_PLANE_FRAME_LEN)
         .filter_map(|bytes| {
+            if bytes[56] != 0x80 || bytes[48..56].iter().any(|byte| *byte != 0) {
+                return None;
+            }
             let origin = Point3::new(scalar(bytes, 0)?, scalar(bytes, 8)?, scalar(bytes, 16)?);
             let normal = Vector3::new(scalar(bytes, 24)?, scalar(bytes, 32)?, scalar(bytes, 40)?);
             let tail = [scalar(bytes, 57)?, scalar(bytes, 65)?, scalar(bytes, 73)?];
             if normal != Vector3::new(0.0, 0.0, 1.0)
-                || bytes[48..56].iter().any(|byte| *byte != 0)
-                || bytes[56] != 0x80
                 || tail[0].to_bits() != (-0.0_f64).to_bits()
                 || tail[1].to_bits() != (-origin.z).to_bits()
                 || tail[2] != 1.0

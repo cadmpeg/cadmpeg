@@ -34,7 +34,11 @@ impl Serialize for FeatureSimpleHoleRepeatedScalarLane {
         )?;
         wire.serialize_entry(
             "raw_values",
-            &IterWire(self.values.iter().map(|token| token.scalar.raw())),
+            &IterWire(
+                self.values
+                    .iter()
+                    .map(|token| cadmpeg_ir::native::bytes::NativeBytes::from(token.scalar.raw())),
+            ),
         )?;
         wire.serialize_entry(
             "first_witness_offsets",
@@ -72,13 +76,17 @@ impl Serialize for FeatureSimpleHoleRepeatedScalarLaneBlockReferences {
         if self.first.wrapped {
             wire.serialize_entry(
                 "first_reference_prefix",
-                &crate::om::simple_hole_references::FIRST_PREFIX,
+                &cadmpeg_ir::native::bytes::NativeBytes::from(
+                    crate::om::simple_hole_references::FIRST_PREFIX,
+                ),
             )?;
         }
         if self.second.wrapped {
             wire.serialize_entry(
                 "second_reference_prefix",
-                &crate::om::simple_hole_references::SECOND_PREFIX,
+                &cadmpeg_ir::native::bytes::NativeBytes::from(
+                    crate::om::simple_hole_references::SECOND_PREFIX,
+                ),
             )?;
         }
         wire.serialize_entry(
@@ -144,7 +152,10 @@ impl Serialize for FeatureHolePackageConstructionGroupLane {
         )?;
         wire.serialize_entry(
             "raw_object_indices",
-            &self.references.each_ref().map(|item| item.token.raw()),
+            &self
+                .references
+                .each_ref()
+                .map(|item| cadmpeg_ir::native::bytes::NativeBytes::from(item.token.raw())),
         )?;
         wire.serialize_entry(
             "data_blocks",
@@ -205,7 +216,7 @@ mod tests {
         simple_hole_scalar_borrowed_wire_matches_owned_bytes_and_retained_limit,
         FeatureSimpleHoleRepeatedScalarLane,
         FeatureSimpleHoleRepeatedScalarLaneWire,
-        r#"{"id":"nx:feature:simple-hole-scalar#0","operation_label":"operation","values":[2.5,4.0],"raw_values":[[48,4,0,0,0,0,0,0],[48,16,0,0,0,0,0,0]],"first_witness_offsets":[10,18],"second_witness_offsets":[40,48]}"#
+        r#"{"id":"nx:feature:simple-hole-scalar#0","operation_label":"operation","values":[2.5,4.0],"raw_values":["3004000000000000","3010000000000000"],"first_witness_offsets":[10,18],"second_witness_offsets":[40,48]}"#
     );
     wire_test!(
         simple_hole_block_refs_borrowed_wire_matches_owned_bytes_and_retained_limit,
@@ -223,6 +234,6 @@ mod tests {
         hole_package_lane_borrowed_wire_matches_owned_bytes_and_retained_limit,
         FeatureHolePackageConstructionGroupLane,
         FeatureHolePackageConstructionGroupLaneWire,
-        r#"{"id":"nx:feature:hole-package-lane#0","operation_label":"o","selector":70,"branch":17,"object_indices":[1,2,3,4],"raw_object_indices":[[240,1],[240,2],[240,3],[240,4]],"data_blocks":["a","b","c","d"],"payload_offset":20,"source_offset":120,"reference_source_offsets":[132,134,141,143]}"#
+        r#"{"id":"nx:feature:hole-package-lane#0","operation_label":"o","selector":70,"branch":17,"object_indices":[1,2,3,4],"raw_object_indices":["f001","f002","f003","f004"],"data_blocks":["a","b","c","d"],"payload_offset":20,"source_offset":120,"reference_source_offsets":[132,134,141,143]}"#
     );
 }

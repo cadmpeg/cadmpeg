@@ -63,7 +63,7 @@ fn feature_output_history_nodes_refuse_collection_limit() {
 #[test]
 fn feature_output_states_refuse_collection_limit() {
     let history = empty_transition_history();
-    let error = feature_output_error(&[history], &[], 1, u64::MAX);
+    let error = feature_output_error(&[history], &[], 2, u64::MAX);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D feature output states")
@@ -267,7 +267,8 @@ fn bound_output_error(max_items: u64, max_retained: u64) -> cadmpeg_core::CodecE
 
 #[test]
 fn feature_output_bodies_refuse_collection_limit() {
-    let error = bound_output_error(9, u64::MAX);
+    // The two snapshot cache entries and one body-closure vector add three slots.
+    let error = bound_output_error(12, u64::MAX);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D feature output bodies")
@@ -330,11 +331,15 @@ fn affected_history_bodies_refuse_collection_limit() {
     let (_, _, history, _) = output_binding_inputs();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 4;
+    policy.limits.max_collection_items = 7;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error =
-        super::super::affected_body_refs(&ctx, &history.states[0], Some(&history.states[1]))
-            .unwrap_err();
+    let error = super::super::affected_body_refs(
+        &ctx,
+        &history.states[0],
+        Some(&history.states[1]),
+        &mut super::super::HistoricalBodyClosureCache::default(),
+    )
+    .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D affected history bodies")

@@ -3,7 +3,8 @@
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    target::ResolvedWrite, Consumption, EncodeInput, ExportBody, PatchConsumption, WritePath,
+    target::ResolvedWrite, ArenaCoverage, Consumption, EncodeInput, ExportBody, PatchConsumption,
+    WritePath,
 };
 use cadmpeg_ir::document::CadIr;
 
@@ -117,7 +118,10 @@ fn preserved_body(
         },
         PreservedWritePath::VerbatimReplay => WritePath::VerbatimReplay,
     };
-    let mut body = body(ir, write_path, Vec::new(), bytes);
+    // Replay runs only while the document digest matches its decode baseline,
+    // and the patcher refuses unless the patched baseline digests equal to the
+    // target document, so every arena is carried.
+    let mut body = body(ir, write_path, ArenaCoverage::Complete, Vec::new(), bytes);
     body.notes.extend(notes);
     body
 }
@@ -154,12 +158,38 @@ fn synthesized_body(
     cause: SynthesisCause,
 ) -> Result<ExportBody, CodecError> {
     let mut bytes = Vec::new();
-    super::generate::write_new(input.ir, &mut bytes)?;
+    let coverage = super::generate::write_new(input.ir, &mut bytes)?;
     let (consumption, loss) = cause.into_fidelity();
-    let losses = loss.into_iter().collect();
+    let mut losses: Vec<_> = loss.into_iter().collect();
+    for appearance in &input.ir.model.appearances {
+        let written: &[&str] = match appearance.schema.as_deref().unwrap_or("GenericSchema") {
+            "GenericSchema" => &["reflectivity_at_0deg", "refraction_index"],
+            "PrismOpaqueSchema" | "PrismMetalSchema" => &["surface_roughness"],
+            "PrismTransparentSchema" => &["refraction_index"],
+            _ => &[],
+        };
+        let omitted = appearance
+            .properties
+            .keys()
+            .filter(|key| !written.contains(&key.as_str()))
+            .collect::<Vec<_>>();
+        if !omitted.is_empty() {
+            losses.push(F3dLossCode::WriterAppearancePropertiesOmitted.note(format!(
+                    "{} appearance property record(s) of {} were not written: {}",
+                    omitted.len(),
+                    appearance.id,
+                    omitted
+                        .iter()
+                        .map(|key| key.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )));
+        }
+    }
     Ok(body(
         input.ir,
         WritePath::Synthesized { consumption },
+        ArenaCoverage::Declared(coverage),
         losses,
         bytes,
     ))
@@ -168,6 +198,7 @@ fn synthesized_body(
 fn body(
     ir: &CadIr,
     write_path: WritePath,
+    coverage: ArenaCoverage,
     losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     bytes: Vec<u8>,
 ) -> ExportBody {
@@ -183,6 +214,7 @@ fn body(
             counts: ir.census(),
         },
         write_path,
+        coverage,
         losses,
         notes: vec![
             path_note.into(),

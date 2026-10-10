@@ -400,10 +400,6 @@ fn boundary_component_graph_refuses_collection_limits() {
         "catia_component_groups",
         "catia_component_selected_edges",
         "catia_component_ordered_faces",
-        "catia_quotient_clone_union",
-        "catia_quotient_clone_domains",
-        "catia_quotient_clone_member_rows",
-        "catia_quotient_clone_member_nodes",
         "catia_component_states",
         "catia_component_candidates",
         "catia_component_oriented_edges",
@@ -464,10 +460,6 @@ fn unordered_cycle_search_refuses_each_collection_limit() {
     }
     for operation in [
         "catia_unordered_sorted_edges",
-        "catia_quotient_clone_union",
-        "catia_quotient_clone_domains",
-        "catia_quotient_clone_member_rows",
-        "catia_quotient_clone_member_nodes",
         "catia_unordered_nodes",
         "catia_unordered_compatible",
         "catia_unordered_search_boundary",

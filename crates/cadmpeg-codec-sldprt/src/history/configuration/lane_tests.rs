@@ -1522,7 +1522,7 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
     type_signature[4..8].copy_from_slice(&7_u32.to_le_bytes());
     let components = vec![crate::records::FeatureInputComponentPathEntry {
         instance: Some(0x8001),
-        type_signature,
+        type_signature: type_signature.into(),
         local_id: Some(11),
     }];
     let arena = DecodeArena::new();

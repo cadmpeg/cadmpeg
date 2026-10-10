@@ -587,13 +587,13 @@ fn scalar_candidate_refuses(operation: &str, retained: bool) {
         DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     let body = cadmpeg_ir::ids::BodyId::mint("step:model:body#1").expect("body ID");
     let color = cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("color");
-    let result = super::super::push_scalar_candidate(
-        &mut std::collections::HashMap::new(),
-        &cadmpeg_ir::appearance::AppearanceTarget::Body(body),
-        1,
-        color,
-        &ctx,
-    );
+    let mut candidates = std::collections::HashMap::new();
+    let target = cadmpeg_ir::appearance::AppearanceTarget::Body(body);
+    if operation == "step_presentation_scalar_color_members" {
+        super::super::push_scalar_candidate(&mut candidates, &target, 1, color, &ctx)
+            .expect("first candidate is inline");
+    }
+    let result = super::super::push_scalar_candidate(&mut candidates, &target, 1, color, &ctx);
     assert!(matches!(
         result,
         Err(CodecError::ResourceLimit(refusal)) if refusal.operation == operation
@@ -616,8 +616,22 @@ fn presentation_scalar_color_members_refuse_collection_limit() {
 }
 
 #[test]
-fn presentation_distinct_colors_refuse_collection_limit() {
-    vector_refuses("step_presentation_distinct_colors");
+fn scalar_color_singletons_use_only_their_target_slots() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1000;
+    crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+        let mut candidates = std::collections::HashMap::new();
+        let color = cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("color");
+        for id in 0..1000 {
+            let body =
+                cadmpeg_ir::ids::BodyId::mint(format!("step:model:body#{id}")).expect("body ID");
+            let target = cadmpeg_ir::appearance::AppearanceTarget::Body(body);
+            super::super::push_scalar_candidate(&mut candidates, &target, id, color, ctx)
+                .expect("target owns its first color inline");
+        }
+        assert_eq!(candidates.len(), 1000);
+        assert!(candidates.values().all(|group| group.iter().count() == 1));
+    });
 }
 
 #[test]
@@ -655,7 +669,11 @@ fn presentation_scalar_conflict_text_refuses_retained_limit() {
         cadmpeg_ir::ids::BodyId::mint("step:model:body#1").expect("body ID"),
     );
     let color = cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("color");
-    let candidates = [(2, color), (3, color)];
+    let mut candidates = crate::reader::groups::NonemptyGroup::new((2, color));
+    crate::test_support::with_service_context(b"", |_, ctx| {
+        candidates.push((3, color), ctx, "fixture scalar candidates")
+    })
+    .expect("two fixture candidates");
     assert!(matches!(
         super::super::scalar_conflict_message(&candidates, &target, &ctx),
         Err(CodecError::ResourceLimit(refusal))
@@ -707,6 +725,14 @@ fn color_search_refuses(
         };
         let (ctx, _) =
             DecodeContext::from_root_bytes(source, &arena, &policy).expect("root fits policy");
+        let mut cache = super::super::ColorCache::default();
+        if operation == "step_presentation_color_cache_entries" {
+            for id in 1000..1008 {
+                cache
+                    .insert((id, super::super::StyleDomain::Any), None, &ctx)
+                    .expect("inline cache fixture");
+            }
+        }
         let result = (super::super::find_color(
             1,
             &exchange,
@@ -717,7 +743,7 @@ fn color_search_refuses(
                         .expect("scope"),
                 ),
                 active: &mut BTreeSet::new(),
-                cache: &mut std::collections::BTreeMap::new(),
+                cache: &mut cache,
                 losses: &mut Vec::new(),
                 invalid_surface_sides: &mut BTreeSet::new(),
             },
@@ -759,18 +785,22 @@ fn presentation_color_cache_copy_refuses_retained_limit() {
         crate::test_support::with_service_context(source, crate::parse::parse_inner)
             .expect("cache exchange");
     let color = cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("color");
-    let mut cache = std::collections::BTreeMap::new();
-    cache.insert(
-        (1, super::super::StyleDomain::Any),
-        Some(super::super::ColorResolution::Candidate(
-            super::super::ColorCandidate {
-                rank: super::super::SurfaceSideRank::NoUsage,
-                id: 1,
-                color,
-                name: Some("red".into()),
-            },
-        )),
-    );
+    let mut cache = super::super::ColorCache::default();
+    crate::test_support::with_service_context(b"", |_, ctx| {
+        cache.insert(
+            (1, super::super::StyleDomain::Any),
+            Some(super::super::ColorResolution::Candidate(
+                super::super::ColorCandidate {
+                    rank: super::super::SurfaceSideRank::NoUsage,
+                    id: 1,
+                    color,
+                    name: Some("red".into()),
+                },
+            )),
+            ctx,
+        )
+    })
+    .expect("fixture cached color");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 2;

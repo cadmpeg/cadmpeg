@@ -203,6 +203,7 @@ fn array_body(bytes: &[u8], off: usize, tag: u8) -> Option<usize> {
 fn scan_arrays(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
+    referenced_attrs: Option<&HashSet<u16>>,
     compact_attrs: Option<&HashSet<u16>>,
 ) -> Result<Arrays, cadmpeg_core::CodecError> {
     ctx.charge_work(
@@ -244,7 +245,10 @@ fn scan_arrays(
         let Some(attr) = View::u16_be_at(bytes, p + arr_hdr::ATTR) else {
             continue;
         };
-        if attr <= 1 || count > MAX_ARRAY_VALUES {
+        if attr <= 1
+            || count > MAX_ARRAY_VALUES
+            || referenced_attrs.is_some_and(|attrs| !attrs.contains(&attr))
+        {
             continue;
         }
         let values_at = p + arr_hdr::LEN;
@@ -254,6 +258,9 @@ fn scan_arrays(
                 .and_then(|size| values_at.checked_add(size))
                 .is_none_or(|end| end > bytes.len())
             {
+                continue;
+            }
+            if arrays.u16s.contains_key(&attr) {
                 continue;
             }
             let Some(values) =
@@ -271,6 +278,9 @@ fn scan_arrays(
                 .and_then(|size| values_at.checked_add(size))
                 .is_none_or(|end| end > bytes.len())
             {
+                continue;
+            }
+            if arrays.f64s.contains_key(&attr) {
                 continue;
             }
             let Some(values) =
@@ -1003,7 +1013,7 @@ pub(crate) fn patch_nurbs_surface(
         descriptors.values().flat_map(|descriptor| descriptor.refs),
         "index Parasolid patch compact attributes",
     )?;
-    let arrays = scan_arrays(ctx, bytes, Some(&compact_attrs))?;
+    let arrays = scan_arrays(ctx, bytes, Some(&compact_attrs), Some(&compact_attrs))?;
     let mut p = wrapper_offset.checked_add(2).ok_or_else(|| {
         cadmpeg_core::CodecError::malformed("Parasolid patch wrapper offset overflow")
     })?;
@@ -1086,8 +1096,18 @@ pub(crate) fn scan_curve_carriers(
     bytes: &[u8],
     refusals: &mut Vec<LossNote>,
 ) -> Result<HashMap<u16, CurveCarrier>, cadmpeg_core::CodecError> {
-    let arrays = scan_arrays(ctx, bytes, None)?;
     let descriptors = scan_curve_descriptors(ctx, bytes)?;
+    let referenced_attrs = ctx.collect_hash_set(
+        descriptors.values().flat_map(|descriptor| {
+            [
+                descriptor.control_attr,
+                descriptor.multiplicity_attr,
+                descriptor.knot_attr,
+            ]
+        }),
+        "index Parasolid curve array references",
+    )?;
+    let arrays = scan_arrays(ctx, bytes, Some(&referenced_attrs), None)?;
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(bytes.len()),
         "scan Parasolid curve wrappers",
@@ -1341,7 +1361,7 @@ pub(crate) fn scan_surface_carriers(
     for descriptor in descriptors.values() {
         compact_attrs.extend(descriptor.refs);
     }
-    let arrays = scan_arrays(ctx, bytes, Some(&compact_attrs))?;
+    let arrays = scan_arrays(ctx, bytes, Some(&compact_attrs), Some(&compact_attrs))?;
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(bytes.len()),
         "scan Parasolid surface wrappers",
@@ -1586,13 +1606,52 @@ mod tests {
     use cadmpeg_ir::geometry::nurbs::NurbsPoles3;
 
     #[test]
+    fn spline_arrays_materialize_each_identity_once() {
+        let mut bytes = Vec::new();
+        for index in 0..128 {
+            let values = if index == 0 { [1.0; 8] } else { [2.0; 8] };
+            bytes.extend(crate::test_support::parasolid::f64_array(0x2d, 12, &values));
+            bytes.extend(crate::test_support::parasolid::u16_array(13, &[3; 8]));
+        }
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // Eight values and one map entry for each of the two arrays.
+        policy.limits.max_collection_items = 18;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let arrays = scan_arrays(&ctx, &bytes, None, None).unwrap();
+        assert_eq!(arrays.f64s[&12], [1.0; 8]);
+        assert_eq!(arrays.u16s[&13], [3; 8]);
+        assert!(ctx.resource_refusal().is_none());
+    }
+
+    #[test]
+    fn spline_arrays_materialize_only_referenced_attributes() {
+        let mut bytes = crate::test_support::parasolid::f64_array(0x2d, 12, &[1.0, 2.0, 3.0]);
+        let unrelated_values = vec![4.0; 4096];
+        bytes.extend(crate::test_support::parasolid::f64_array(
+            0x2d,
+            13,
+            &unrelated_values,
+        ));
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 4;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let attributes = std::collections::HashSet::from([12]);
+        let arrays = scan_arrays(&ctx, &bytes, Some(&attributes), None).unwrap();
+        assert_eq!(arrays.f64s[&12], [1.0, 2.0, 3.0]);
+        assert!(!arrays.f64s.contains_key(&13));
+    }
+
+    #[test]
     fn parasolid_scalar_array_values_refuse_collection_limit_before_allocation() {
         let bytes = crate::test_support::parasolid::f64_array(0x2d, 12, &[0.0, 1.0, 2.0]);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 2;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error = scan_arrays(&ctx, &bytes, None).expect_err("three values exceed two items");
+        let error =
+            scan_arrays(&ctx, &bytes, None, None).expect_err("three values exceed two items");
         assert!(matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::CollectionItems
@@ -1602,7 +1661,7 @@ mod tests {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("root");
         assert_eq!(
-            scan_arrays(&ctx, &bytes, None)
+            scan_arrays(&ctx, &bytes, None, None)
                 .expect("service scan")
                 .f64s
                 .get(&12)
@@ -1618,7 +1677,8 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 2;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error = scan_arrays(&ctx, &bytes, None).expect_err("three values exceed two items");
+        let error =
+            scan_arrays(&ctx, &bytes, None, None).expect_err("three values exceed two items");
         assert!(matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::CollectionItems
@@ -1653,7 +1713,7 @@ mod tests {
         let bytes = crate::test_support::parasolid::nurbs_curve_carrier(170, 171);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 17;
+        policy.limits.max_collection_items = 20;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
         let error = scan_curve_carriers(&ctx, &bytes, &mut Vec::new())
             .expect_err("three poles exceed the remaining items");
@@ -1675,7 +1735,7 @@ mod tests {
         let bytes = crate::test_support::parasolid::rational_linear_nurbs_curve_carrier(170, 171);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 18;
+        policy.limits.max_collection_items = 21;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
         let error = scan_curve_carriers(&ctx, &bytes, &mut Vec::new())
             .expect_err("two weights exceed the remaining items");
@@ -1690,7 +1750,7 @@ mod tests {
         let bytes = crate::test_support::parasolid::nurbs_curve_carrier(170, 171);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 16;
+        policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
         let error = scan_curve_carriers(&ctx, &bytes, &mut Vec::new())
             .expect_err("curve descriptor insertion exceeds the limit");
@@ -1705,7 +1765,7 @@ mod tests {
         let bytes = crate::test_support::parasolid::nurbs_curve_carrier(170, 171);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 29;
+        policy.limits.max_collection_items = 32;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
         let error = scan_curve_carriers(&ctx, &bytes, &mut Vec::new())
             .expect_err("curve carrier insertion exceeds the limit");
@@ -1720,7 +1780,7 @@ mod tests {
         let bytes = crate::test_support::parasolid::rational_linear_nurbs_curve_carrier(170, 171);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 24;
+        policy.limits.max_collection_items = 27;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
         let error = scan_curve_carriers(&ctx, &bytes, &mut Vec::new())
             .expect_err("weighted pole pairing exceeds the limit");
@@ -1738,7 +1798,7 @@ mod tests {
         let bytes = crate::test_support::parasolid::rational_linear_nurbs_curve_carrier(170, 171);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 26;
+        policy.limits.max_collection_items = 29;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
         let error = scan_curve_carriers(&ctx, &bytes, &mut Vec::new())
             .expect_err("pole admission exceeds the limit");

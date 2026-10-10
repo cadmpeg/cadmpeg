@@ -309,6 +309,35 @@ fn alloc_filled_charges_collection_items_and_reserves() {
 }
 
 #[test]
+fn alloc_filled_admitted_charges_items_and_work_but_no_bytes() {
+    let arena = DecodeArena::new();
+    let policy = policy_with(|limits| {
+        limits.max_retained_bytes = 0;
+        limits.max_materialized_bytes = 0;
+        limits.max_collection_items = 3;
+        limits.max_work_units = 3;
+    });
+    let ctx = DecodeContext::new(&arena, &policy, false);
+    assert_eq!(
+        ctx.alloc_filled_admitted(3, 7u64, "admitted").unwrap(),
+        [7, 7, 7]
+    );
+    assert!(matches!(
+        ctx.alloc_filled_admitted(1, 0u8, "admitted"),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::WorkUnits
+    ));
+    let policy = policy_with(|limits| limits.max_collection_items = 1);
+    let ctx = DecodeContext::new(&arena, &policy, false);
+    assert!(matches!(
+        ctx.alloc_filled_admitted(2, 0u8, "admitted"),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "admitted"
+    ));
+}
+
+#[test]
 fn depth_is_scoped_and_work_budget_is_sticky() {
     let arena = DecodeArena::new();
     let policy = policy_with(|limits| {
@@ -414,4 +443,102 @@ fn stored_expanded_and_concatenated_spaces_have_distinct_zero_based_locations() 
         assert_eq!(view.space().index(), index);
         assert_eq!(view.location().offset, 0);
     }
+}
+
+#[test]
+fn filled_storage_and_fill_work_are_admitted_before_cloning() {
+    use std::cell::Cell;
+    struct Counted<'a>(&'a Cell<usize>);
+    impl Clone for Counted<'_> {
+        fn clone(&self) -> Self {
+            self.0.set(self.0.get() + 1);
+            Self(self.0)
+        }
+    }
+    for dimension in [
+        ResourceDimension::WorkUnits,
+        ResourceDimension::RetainedBytes,
+        ResourceDimension::MaterializedBytes,
+    ] {
+        let arena = DecodeArena::new();
+        let policy = policy_with(|limits| match dimension {
+            ResourceDimension::WorkUnits => limits.max_work_units = 0,
+            ResourceDimension::RetainedBytes => limits.max_retained_bytes = 0,
+            ResourceDimension::MaterializedBytes => limits.max_materialized_bytes = 0,
+            _ => unreachable!(),
+        });
+        let ctx = DecodeContext::new(&arena, &policy, false);
+        let clones = Cell::new(0);
+        let run = || ctx.alloc_filled(3, Counted(&clones), "filled accounting");
+        let result = if dimension == ResourceDimension::MaterializedBytes {
+            ctx.with_scoped_storage("filled backing", run)
+                .map(|(values, _)| values)
+        } else {
+            run()
+        };
+        assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == dimension && limit.operation == "filled accounting"));
+        assert_eq!(clones.get(), 0);
+    }
+    let arena = DecodeArena::new();
+    let policy = policy_with(|limits| {
+        limits.max_work_units = 3;
+        limits.max_retained_bytes = 24;
+    });
+    let ctx = DecodeContext::new(&arena, &policy, false);
+    assert_eq!(
+        ctx.alloc_filled(3, 7u64, "filled accounting").unwrap(),
+        [7, 7, 7]
+    );
+    assert_eq!(ctx.charge_work_limit(1, "measure").unwrap_err().used, 3);
+}
+
+#[test]
+fn lossy_utf8_scans_and_copy_refuse_without_work() {
+    for source in [b"valid".as_slice(), b"A\xffB\xe2\x82".as_slice()] {
+        let arena = DecodeArena::new();
+        let policy = policy_with(|limits| limits.max_work_units = 0);
+        let ctx = DecodeContext::new(&arena, &policy, false);
+        assert!(matches!(ctx.copy_retained_lossy_utf8(source, "UTF-8 work"),
+            Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits));
+    }
+    let arena = DecodeArena::new();
+    let policy = policy_with(|limits| limits.max_work_units = 15);
+    let ctx = DecodeContext::new(&arena, &policy, false);
+    assert_eq!(
+        ctx.copy_retained_lossy_utf8(b"valid", "UTF-8 work")
+            .unwrap(),
+        "valid"
+    );
+    assert_eq!(ctx.charge_work_limit(1, "measure").unwrap_err().used, 15);
+}
+
+#[test]
+fn concatenation_admits_extent_scan_and_byte_copy_separately() {
+    for (budget, requested) in [(0, 2), (2, 4)] {
+        let arena = DecodeArena::new();
+        let policy = policy_with(|limits| limits.max_work_units = budget);
+        let ctx = DecodeContext::new(&arena, &policy, false);
+        let views = [
+            super::View::over_retained(b"ab"),
+            super::View::over_retained(b"cd"),
+        ];
+        assert!(
+            matches!(ctx.concat_views(&views), Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::WorkUnits && limit.additional == requested)
+        );
+    }
+    let arena = DecodeArena::new();
+    let policy = policy_with(|limits| limits.max_work_units = 6);
+    let ctx = DecodeContext::new(&arena, &policy, false);
+    assert_eq!(
+        ctx.concat_views(&[
+            super::View::over_retained(b"ab"),
+            super::View::over_retained(b"cd")
+        ])
+        .unwrap()
+        .window(),
+        b"abcd"
+    );
+    assert_eq!(ctx.charge_work_limit(1, "measure").unwrap_err().used, 6);
 }

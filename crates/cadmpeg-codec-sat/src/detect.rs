@@ -43,8 +43,10 @@ pub(crate) fn classify(
 }
 
 /// Whether the prefix opens like a text stream: a first line of four ASCII
-/// integer fields (the four header words) followed by a counted-string line.
+/// words, with integers in the save-format, reference-index and flags slots.
+/// The unused record-count word is descriptive metadata.
 fn looks_like_text_stream(prefix: &[u8]) -> bool {
+    let prefix = &prefix[sat::text_header_start(prefix)..];
     if !sat::has_text_magic(prefix) {
         return false;
     }
@@ -54,15 +56,21 @@ fn looks_like_text_stream(prefix: &[u8]) -> bool {
     let mut fields = prefix[..line_end]
         .split(|byte| matches!(byte, b' ' | b'\t' | b'\r'))
         .filter(|field| !field.is_empty());
-    for _ in 0..4 {
+    for index in 0..4 {
         let Some(field) = fields.next() else {
             return false;
         };
-        if !std::str::from_utf8(field).is_ok_and(|field| field.parse::<i64>().is_ok()) {
+        if index != 1 && !std::str::from_utf8(field).is_ok_and(|field| field.parse::<i64>().is_ok())
+        {
             return false;
         }
     }
-    fields.next().is_none() && prefix.get(line_end + 1).is_some_and(u8::is_ascii_digit)
+    if fields.next().is_some() {
+        return false;
+    }
+    // The first header line is the discriminant. Product metadata does not
+    // control admission; its own newline is checked by the text parser.
+    prefix.get(line_end + 1).is_some()
 }
 
 pub(crate) fn confidence(prefix: &[u8]) -> Confidence {
@@ -121,6 +129,7 @@ pub(crate) fn inspect(
     let bytes = root.window();
     let mut attributes = BTreeMap::new();
     let mut notes = Vec::new();
+    let mut losses = Vec::new();
     let Some(kind) = classify(ctx, bytes)? else {
         return Err(CodecError::WrongFormat(
             "not an ASM stream: no binary magic and no text header lines".to_string(),
@@ -130,6 +139,7 @@ pub(crate) fn inspect(
     // report the same `sat:` row and the same admission for the same bytes.
     let (matched, kernel) = match &kind {
         StreamKind::AsmBinary(header) => {
+            crate::loss::binary_header_losses(ctx, &header.metadata, &mut losses)?;
             let stream = crate::dialect::record_stream_start(bytes, Family::Asm, header);
             header_attributes(ctx, &header.metadata, Family::Asm, &mut attributes)?;
             if header.metadata.has_history_partition() {
@@ -147,6 +157,7 @@ pub(crate) fn inspect(
             crate::dialect::layers(&evidence)
         }
         StreamKind::AcisBinary(header) => {
+            crate::loss::binary_header_losses(ctx, &header.metadata, &mut losses)?;
             let stream = crate::dialect::record_stream_start(bytes, Family::Acis, header);
             let evidence = StreamEvidence::Binary {
                 family: Family::Acis,
@@ -178,30 +189,44 @@ pub(crate) fn inspect(
             };
             let text = match &parsed {
                 Ok((kernel, stream)) => {
+                    crate::loss::text_stream_losses(
+                        ctx,
+                        stream.header.diagnostics.iter().chain(&stream.framing),
+                        stream
+                            .unread
+                            .as_ref()
+                            .filter(|_| stream.unread_stream_layout)
+                            .map(|span| span.start),
+                        &mut losses,
+                    )?;
                     header_attributes(ctx, kernel, stream.terminator.into(), &mut attributes)?;
+                    let scale = match stream.header.units() {
+                        sat::TextUnits::Declared(scale) => Some(ctx.format_retained(
+                            format_args!("{}", scale.get()),
+                            "retain SAT scale attribute",
+                        )?),
+                        sat::TextUnits::Unspecified => None,
+                    };
+                    let terminator = if stream.has_terminator_line {
+                        Some(ctx.format_retained(
+                            format_args!("{}", terminator_line(stream.terminator)),
+                            "retain SAT terminator attribute",
+                        )?)
+                    } else {
+                        None
+                    };
+                    let records = Some(ctx.format_retained(
+                        format_args!("{}", stream.records.len()),
+                        "retain SAT record count attribute",
+                    )?);
                     for (key, value) in [
-                        (
-                            "scale",
-                            ctx.format_retained(
-                                format_args!("{}", stream.header.scale().get()),
-                                "retain SAT scale attribute",
-                            )?,
-                        ),
-                        (
-                            "records",
-                            ctx.format_retained(
-                                format_args!("{}", stream.records.len()),
-                                "retain SAT record count attribute",
-                            )?,
-                        ),
-                        (
-                            "terminator",
-                            ctx.format_retained(
-                                format_args!("{}", terminator_line(stream.terminator)),
-                                "retain SAT terminator attribute",
-                            )?,
-                        ),
-                    ] {
+                        ("scale", scale),
+                        ("records", records),
+                        ("terminator", terminator),
+                    ]
+                    .into_iter()
+                    .filter_map(|(key, value)| Some((key, value?)))
+                    {
                         let key = ctx.format_retained(
                             format_args!("{key}"),
                             "retain SAT inspect attribute key",
@@ -227,7 +252,9 @@ pub(crate) fn inspect(
             crate::dialect::layers(&evidence)
         }
     };
-    let losses = crate::dialect::dialect_loss(&kernel).into_iter().collect();
+    if let Some(loss) = crate::dialect::dialect_loss(&kernel) {
+        ctx.push_vec(&mut losses, loss, "SAT inspect dialect losses")?;
+    }
     Ok(ContainerSummary::classified(
         cadmpeg_core::dialect::DialectLayers::of(matched)
             .with_for_decode(ctx, kernel, "collect SAT dialect layers")

@@ -223,6 +223,7 @@ fn generated_source_less_face_writes_rational_nurbs_edge_curve() {
         .expect("valid source-less rational curve"),
     );
     source_less.model.curves.push(Curve {
+        parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(expected.clone()),
         source_object: None,
@@ -467,6 +468,7 @@ fn generated_source_less_two_faces_preserve_shared_radial_edge() {
         .unwrap(),
     );
     source_less.model.curves.push(Curve {
+        parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(expected_curve.clone()),
         source_object: None,
@@ -706,6 +708,7 @@ fn generated_source_less_multi_face_writes_nurbs_carriers_and_pcurve() {
         .expect("valid shared rational curve"),
     );
     source_less.model.curves.push(Curve {
+        parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(expected_curve.clone()),
         source_object: None,
@@ -905,6 +908,7 @@ fn generated_source_less_multi_face_writes_torus_and_circle_carriers() {
         .unwrap(),
     );
     source_less.model.curves.push(Curve {
+        parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(expected_curve.clone()),
         source_object: None,
@@ -993,6 +997,7 @@ fn generated_source_less_multi_face_writes_cone_sphere_and_ellipse_carriers() {
         .unwrap(),
     ));
     source_less.model.curves.push(Curve {
+        parameter_range: None,
         id: curve_id.clone(),
         geometry: ellipse.clone(),
         source_object: None,

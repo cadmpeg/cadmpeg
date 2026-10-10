@@ -102,7 +102,7 @@ fn surface_selection_face_bindings<'a>(
             .and_then(|component| {
                 let feature_source_id = match selection.terminal_feature_ref.as_deref() {
                     Some(terminal) => feature_sources.get(terminal).copied().flatten(),
-                    None => View::u32_le_at(&component.type_signature, 4)
+                    None => View::u32_le_at(component.type_signature.as_ref(), 4)
                         .and_then(|source| FeatureSourceId::try_from(source).ok()),
                 }?;
                 faces_by_identity
@@ -943,7 +943,7 @@ mod tests {
         type_signature[4..8].copy_from_slice(&feature_source_id.to_le_bytes());
         FeatureInputComponentPathEntry {
             instance: Some(0x8001),
-            type_signature,
+            type_signature: type_signature.into(),
             local_id: Some(local_face_id),
         }
     }

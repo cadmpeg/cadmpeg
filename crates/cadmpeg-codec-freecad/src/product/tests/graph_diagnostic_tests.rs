@@ -45,7 +45,12 @@ fn duplicate_product_record_refuses_before_diagnostic_allocation() {
 
 #[test]
 fn product_parent_conflict_refuses_before_diagnostic_allocation() {
-    let records = [super::node("A", &["C"]), super::node("B", &["C"])];
+    let mut records = [super::node("A", &["C"]), super::node("B", &["C"])];
+    for record in &mut records {
+        if let native::ProductNode::Group(container) = record.node.clone() {
+            record.node = native::ProductNode::Part(container);
+        }
+    }
     assert_retained_refusal_at(&[], "fcstd product parent conflict", |ctx| {
         transfer_neutral(ctx, &records, &[], &[], &[], &[], &[]).map(|_| ())
     });

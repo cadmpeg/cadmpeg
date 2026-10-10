@@ -60,7 +60,7 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: vec![FeatureInputClass {
             id: "class".into(),
             parent: "lane".into(),
@@ -227,7 +227,7 @@ fn declared_entity_handle_accepts_indexed_radial_point_pair() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: vec![FeatureInputClass {
             id: "class".into(),
             parent: "lane".into(),
@@ -349,7 +349,7 @@ fn declared_entity_handle_indexed_circle_dimension_selects_pair() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: vec![FeatureInputClass {
             id: "class".into(),
             parent: "lane".into(),
@@ -513,7 +513,7 @@ fn explicit_point_entity_handle_circle_dimension_uses_unique_center_identity() {
     let lane = |kind| FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: vec![FeatureInputClass {
             id: "class".into(),
             parent: "lane".into(),
@@ -750,7 +750,7 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: vec![
             FeatureInputClass {
                 id: "entity-class".into(),
@@ -980,7 +980,7 @@ fn explicitly_referenced_current_arc_handle_point_is_dimension_carrier() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload,
+        native_payload: native_payload.into(),
         classes: vec![FeatureInputClass {
             id: "class".into(),
             parent: "lane".into(),
@@ -1089,7 +1089,7 @@ fn unlinked_declared_entity_handle_uses_one_circular_marker_with_one_radial_witn
     let lane = |circular_kind| FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: vec![FeatureInputClass {
             id: "class".into(),
             parent: "lane".into(),
@@ -1241,7 +1241,7 @@ fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness(
     let mut lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: vec![
             FeatureInputClass {
                 id: "entity-class".into(),
@@ -1547,7 +1547,7 @@ fn native_radial_role_propagates_omitted_circle_construction_state() {
         let lane = FeatureInputLane {
             id: "lane".into(),
             configuration: None,
-            native_payload: native,
+            native_payload: native.into(),
             classes: Vec::new(),
             names: Vec::new(),
             scalars: Vec::new(),
@@ -1652,7 +1652,7 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),
@@ -1862,7 +1862,7 @@ fn point_dimension_projection_refuses_collection_limit() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),

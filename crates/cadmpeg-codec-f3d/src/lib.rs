@@ -185,6 +185,29 @@ impl CodecBackend for F3dCodec {
             "detect ZIP magic",
         )?;
         if !prefix.starts_with(ZIP_MAGIC) {
+            if cadmpeg_container::ArchiveSnapshot::has_footer(ctx, prefix)? {
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(prefix.len())
+                        * cadmpeg_core::decode::u64_from_index(
+                            container::DETECT_MARKERS.len() + container::F3Z_DETECT_MARKERS.len(),
+                        ),
+                    "detect Fusion central names",
+                )?;
+                match cadmpeg_container::ArchiveSnapshot::contains_matching_name(
+                    ctx,
+                    cadmpeg_core::decode::View::over_retained(prefix),
+                    |name| {
+                        container::DETECT_MARKERS
+                            .iter()
+                            .chain(container::F3Z_DETECT_MARKERS)
+                            .any(|marker| contains(name.as_bytes(), marker))
+                    },
+                ) {
+                    Ok(true) => return Ok(Confidence::Medium),
+                    Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                    Ok(false) | Err(_) => {}
+                }
+            }
             return Ok(Confidence::No);
         }
         for marker in container::DETECT_MARKERS

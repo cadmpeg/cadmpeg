@@ -1759,10 +1759,12 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
             ctx,
             ir,
             Curve {
+                parameter_range: None,
                 id: id.try_clone_for_decode(ctx, "creo analytic pcurve curve identity copy")?,
                 geometry: geometry
                     .try_clone_for_decode(ctx, "creo analytic pcurve geometry copy")?,
                 source_object: Some(SourceObjectAssociation {
+                    geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: crate::identity::source_object_id_checked(
                         ctx,

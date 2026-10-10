@@ -381,6 +381,22 @@ fn applies_legacy_partdesign_chamfer_flip_migration() {
         assert_eq!(flip_direction(&result), expected);
         assert_valid_document(result.ir());
         assert!(result.report().losses.is_empty());
+        if program_version.is_some() {
+            let conflicting = document(program_version, chamfer_type)
+                .replace("<Document ", "<Document programVersion=\"2.0\" ");
+            let recovered = FcstdCodec
+                .decode(
+                    &mut Cursor::new(archive(&conflicting)),
+                    &DecodeOptions::default(),
+                )
+                .unwrap();
+            assert_eq!(flip_direction(&recovered), expected);
+            assert_eq!(recovered.ir().model, result.ir().model);
+            assert!(recovered.report().losses.iter().any(|loss| loss.code
+                == crate::loss::FreecadLossCode::ProgramVersionNoncanonical
+                    .note("")
+                    .code));
+        }
     }
 }
 
