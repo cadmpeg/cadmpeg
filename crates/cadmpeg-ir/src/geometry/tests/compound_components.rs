@@ -300,8 +300,8 @@ fn compound_curve_decode_moves_both_input_allocations_without_a_storage_charge()
     let component_pointer = components.as_ptr().cast::<()>();
     let parameter_capacity = parameters.capacity();
     let component_capacity = components.capacity();
-    let expected = CompoundCurveConstruction::try_new(parameters.clone(), components.clone(), None)
-        .unwrap();
+    let expected =
+        CompoundCurveConstruction::try_new(parameters.clone(), components.clone(), None).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     // Validation: two parameters and one component. Conversion: two parameter
@@ -316,8 +316,14 @@ fn compound_curve_decode_moves_both_input_allocations_without_a_storage_charge()
             .unwrap()
             .unwrap();
     assert_eq!(construction, expected);
-    assert_eq!(construction.parameters.as_ptr().cast::<()>(), parameter_pointer);
-    assert_eq!(construction.components.as_ptr().cast::<()>(), component_pointer);
+    assert_eq!(
+        construction.parameters.as_ptr().cast::<()>(),
+        parameter_pointer
+    );
+    assert_eq!(
+        construction.components.as_ptr().cast::<()>(),
+        component_pointer
+    );
     assert_eq!(construction.parameters.capacity(), parameter_capacity);
     assert_eq!(construction.components.capacity(), component_capacity);
     ctx.finish_session().unwrap();
@@ -399,7 +405,8 @@ fn compound_curve_decode_admits_conversion_passes_only_after_validation() {
                 component: "test:model:curve#0".try_into().unwrap(),
             }],
             None,
-        ).unwrap_err();
+        )
+        .unwrap_err();
         let CodecError::ResourceLimit(limit) = error else {
             panic!("conversion work must refuse");
         };

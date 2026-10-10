@@ -43,7 +43,7 @@ pub(crate) fn test_ctx() -> DecodeContext<'static> {
 /// field a CADIR document can state is read back.
 const MAX_NATIVE_NESTING_DEPTH: usize = 256;
 
-/// Search-path levels and key comparisons for serde_json's private B-tree.
+/// Search-path levels and key comparisons for `serde_json`'s private B-tree.
 fn map_search_bound(len: usize) -> (u64, u64) {
     let length = u64_from_index(len);
     let half = length / 2 + length % 2;

@@ -1046,7 +1046,9 @@ impl CompoundCurveConstruction {
         components: Vec<CompoundComponent<CurveId>>,
         cache: Option<LegacyCache>,
     ) -> Result<Self, &'static str> {
-        Self::validate(parameters, components, cache, |_, _| Ok::<_, &'static str>(()))?
+        Self::validate(parameters, components, cache, |_, _| {
+            Ok::<_, &'static str>(())
+        })?
     }
 
     /// Admit visited parameters and components within the decode budget.
@@ -1086,15 +1088,29 @@ impl CompoundCurveConstruction {
         // Parameter conversion checks and maps each scalar. Component conversion
         // checks and maps each component. Both input allocations move into the
         // construction without storage admission.
-        visit("compound curve parameter admission", 2 * cadmpeg_core::decode::u64_from_index(parameters.len()))?;
+        visit(
+            "compound curve parameter admission",
+            2 * cadmpeg_core::decode::u64_from_index(parameters.len()),
+        )?;
         let Some([parameters]) = FiniteReal::lanes([parameters]) else {
             return Ok(Err(INVALID));
         };
-        visit("compound curve component admission", cadmpeg_core::decode::u64_from_index(components.len()))?;
-        let Some(components) = components.into_iter().map(CompoundComponent::admit).collect::<Option<Vec<_>>>() else {
+        visit(
+            "compound curve component admission",
+            cadmpeg_core::decode::u64_from_index(components.len()),
+        )?;
+        let Some(components) = components
+            .into_iter()
+            .map(CompoundComponent::admit)
+            .collect::<Option<Vec<_>>>()
+        else {
             return Ok(Err(INVALID));
         };
-        Ok(Ok(Self { parameters, components, cache }))
+        Ok(Ok(Self {
+            parameters,
+            components,
+            cache,
+        }))
     }
 
     /// Return the parameters.
