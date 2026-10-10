@@ -104,7 +104,7 @@ fn empty_table() -> nurbs::toks::SubtypeTable {
     nurbs::toks::SubtypeTable::from_records(&ctx, &[]).unwrap()
 }
 
-fn records() -> [Record; 3] {
+fn records() -> [Record<'static>; 3] {
     std::array::from_fn(|index| {
         crate::test_support::sab::record(
             index,

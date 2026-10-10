@@ -5680,8 +5680,8 @@ pub(super) fn emit_faces(
 /// Source records and decode settings for emitting shell containers.
 #[derive(Clone, Copy)]
 pub(super) struct ContainerInputs<'a, 'record> {
-    pub(super) records: &'record [Record],
-    pub(super) by_index: &'a HashMap<i64, &'record Record>,
+    pub(super) records: &'record [Record<'record>],
+    pub(super) by_index: &'a HashMap<i64, &'record Record<'record>>,
     pub(super) reach: &'a Reachable,
     pub(super) wire: &'a WireShellTopology,
     pub(super) stream: &'a str,

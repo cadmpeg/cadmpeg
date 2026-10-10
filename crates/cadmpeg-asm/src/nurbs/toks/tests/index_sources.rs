@@ -5,7 +5,7 @@ use crate::sab::{Record, Token};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
-fn records() -> [Record; 3] {
+fn records() -> [Record<'static>; 3] {
     std::array::from_fn(|index| {
         crate::test_support::sab::record(
             index,

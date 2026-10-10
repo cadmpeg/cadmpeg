@@ -79,6 +79,7 @@ fn manual_sab_framing_keeps_strict_and_history_eof_semantics() {
         );
         assert_eq!(records[0].name, name);
         assert!(records[0].tokens.is_empty());
+        drop(records);
         ctx.finish_session().unwrap();
     }
 }

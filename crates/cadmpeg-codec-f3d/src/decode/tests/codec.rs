@@ -613,7 +613,7 @@ fn f3d_brep_scan_propagates_header_string_limit() {
             }
             Ok(_) => panic!("BREP scan did not reach the header limit"),
             Err(error) => panic!("BREP scan failed elsewhere: {error}"),
-        }
+        };
     }
     let needed = needed.expect("header string reached within fixture charges");
     let arena = DecodeArena::new();

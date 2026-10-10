@@ -972,7 +972,7 @@ fn analytic_carrier_decode_covers_each_shape() {
     use cadmpeg_asm::sab::{Record, Token};
     use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry};
 
-    fn rec(head: &str, tokens: Vec<Token>) -> Record {
+    fn rec(head: &str, tokens: Vec<Token>) -> Record<'static> {
         cadmpeg_asm::test_support::sab::record(0, head.to_string(), tokens.into(), 0, 0)
     }
     let arena = cadmpeg_core::decode::DecodeArena::new();

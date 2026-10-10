@@ -5,7 +5,7 @@ use crate::sab::{Record, Token};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
-fn definition(index: usize, target: Option<usize>) -> Record {
+fn definition(index: usize, target: Option<usize>) -> Record<'static> {
     let mut tokens = vec![Token::SubtypeOpen, Token::Ident("node".into())];
     if let Some(target) = target {
         tokens.extend([Token::SubtypeOpen, Token::Ident("ref".into()),
