@@ -2891,7 +2891,7 @@ fn advance_compact_boundary_domains<'storage, 'a>(
                 MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => {
                     let (cycles, _cycle_storage) = ctx
                         .with_scoped_storage("catia compact unordered boundary cycles", || {
-                            incidence_cycles(ctx, edges, &points)
+                            incidence_cycles(ctx, edges, points)
                         })?;
                     let Some(cycles) = cycles else {
                         return Ok(None);
@@ -2920,7 +2920,7 @@ fn advance_compact_boundary_domains<'storage, 'a>(
                     Some(alternatives)
                 }
                 MeshFaceBoundaryDomain::DeferredValidation(domain) => {
-                    let Some(materialized) = deferred_boundary_assignment(ctx, domain, &points)?
+                    let Some(materialized) = deferred_boundary_assignment(ctx, domain, points)?
                     else {
                         return Ok(None);
                     };
@@ -4883,7 +4883,7 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
                     .reserve_scoped(0, "catia incidence branch quotient states")?;
                 let next_states = branch_storage.with_storage(|| {
                     let copies = copy_quotient_states(self.ctx, quotient_states)?;
-                    self.advance_ordered_faces(&faces, copies)
+                    self.advance_ordered_faces(faces, copies)
                 })?;
                 if let Some(next_states) = next_states {
                     self.search_with_quotient(
@@ -5610,15 +5610,15 @@ fn orientability_in(
                         "catia orientability component points",
                     )?;
                 }
-                if points.len() == 2 {
-                    if points[0] == points[1] {
-                        points.truncate(1);
+                match points.len() {
+                    0 | 1 => Ok(()),
+                    2 => {
+                        if points[0] == points[1] {
+                            points.truncate(1);
+                        }
+                        Ok(())
                     }
-                    Ok(())
-                } else if points.len() > 2 {
-                    ctx.dedup_vec(&mut points, "catia orientability component points")
-                } else {
-                    Ok(())
+                    _ => ctx.dedup_vec(&mut points, "catia orientability component points"),
                 }
             })?;
             let mut endpoints = Vec::new();

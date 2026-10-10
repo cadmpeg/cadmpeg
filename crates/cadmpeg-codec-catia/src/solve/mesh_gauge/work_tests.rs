@@ -145,6 +145,10 @@ fn relation_row_sort_refuses_endpoint_signature_bytes() {
 
 #[test]
 fn relation_rows_without_pair_columns_skip_signature_slots() {
+    // Two identity rows, four normalized pairs, six grouped key/member
+    // entries, five class-copy entries, and four signature entries.
+    const BASE_ITEMS: u64 = 2 + 4 + 6 + 5 + 4;
+
     let rows = std::array::from_fn::<_, 2, _>(|_| {
         EdgeRow::new(1, vec![0, 1], EdgeBoundaryLayout::CompleteBoundaryRun)
             .expect("nonempty handles")
@@ -161,9 +165,6 @@ fn relation_rows_without_pair_columns_skip_signature_slots() {
         edge_identity_evidence: &evidence,
         coordinate_gauge: None,
     };
-    // Two identity rows, four normalized pairs, six grouped key/member
-    // entries, five class-copy entries, and four signature entries.
-    const BASE_ITEMS: u64 = 2 + 4 + 6 + 5 + 4;
     for choices in [0, 128] {
         let state = (
             vec![None; 2],
