@@ -352,18 +352,98 @@ fn scan_arrays<'ctx>(
     Ok(arrays)
 }
 
-/// The distinct value arrays an attribute names: its framed array, borrowed
-/// from the table, then each compact array that differs from those before it.
-/// Framed reads are cached with their source reservation. Each compact read
-/// keeps a reservation only while its values remain a candidate. A value
-/// occupies `size_of::<T>()` bytes on the wire.
+/// A compact header is usable only when its complete typed payload is bounded.
+impl CompactArray {
+    fn span<T>(&self, bytes: &[u8]) -> Option<ArraySpan> {
+        let start = self.offset.checked_add(compact_arr::LEN)?;
+        let end = self
+            .count
+            .checked_mul(std::mem::size_of::<T>())?
+            .checked_add(start)?;
+        (end <= bytes.len()).then_some(ArraySpan {
+            start,
+            count: self.count,
+        })
+    }
+}
+
+type CandidateHeaders<'a, 'ctx, T> = (
+    &'a BTreeMap<u16, FramedArray<'ctx, T>>,
+    &'a BTreeMap<u16, Vec<CompactArray>>,
+    u16,
+);
+
+/// Read framed values first, then compact aliases in source order. The count
+/// gate and visitor share resolution state. A false visitor stops the source.
+fn visit_array_candidates<'a, 'ctx, T, State>(
+    ctx: &'ctx DecodeContext<'_>,
+    bytes: &[u8],
+    (framed, compact, attr): CandidateHeaders<'a, 'ctx, T>,
+    state: &mut State,
+    mut count_matches: impl FnMut(&mut State, usize) -> Result<bool, cadmpeg_core::CodecError>,
+    read: impl Fn(usize) -> Option<T>,
+    mut visit: impl FnMut(
+        &mut State,
+        ArrayCandidate<'a, 'ctx, T>,
+    ) -> Result<bool, cadmpeg_core::CodecError>,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "collect Parasolid array candidates";
+    if let Some(array) = ctx.get_btree_map(framed, &attr, OPERATION)? {
+        if count_matches(state, array.span.count)?
+            && !visit(state, ArrayCandidate::Borrowed(array.read(ctx, &read)?))?
+        {
+            return Ok(false);
+        }
+    }
+    let Some(arrays) = ctx.get_btree_map(compact, &attr, OPERATION)? else {
+        return Ok(true);
+    };
+    let mut headers = arrays.iter();
+    while headers.len() != 0 {
+        let Some(array) =
+            ctx.next_charged(&mut headers, "scan Parasolid compact attribute arrays")?
+        else {
+            break;
+        };
+        if !count_matches(state, array.count)? {
+            continue;
+        }
+        let Some(span) = array.span::<T>(bytes) else {
+            continue;
+        };
+        let mut candidate_storage =
+            ctx.reserve_scoped(0, "hold Parasolid compact array candidate")?;
+        let Some(values) = candidate_storage.with_storage(|| {
+            read_array(
+                ctx,
+                span.count,
+                "decode Parasolid compact values",
+                |index| read(span.start + index * std::mem::size_of::<T>()),
+            )
+        })?
+        else {
+            continue;
+        };
+        if !visit(
+            state,
+            ArrayCandidate::Owned {
+                values,
+                _storage: candidate_storage,
+            },
+        )? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+/// Collect distinct candidates for tests that inspect complete source discovery.
+#[cfg(test)]
 fn array_candidates<'a, 'ctx, T>(
     ctx: &'ctx DecodeContext<'_>,
-    storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    storage: &mut ScopedReservation<'_>,
     bytes: &[u8],
-    framed: &'a BTreeMap<u16, FramedArray<'ctx, T>>,
-    compact: &BTreeMap<u16, Vec<CompactArray>>,
-    attr: u16,
+    (framed, compact, attr): CandidateHeaders<'a, 'ctx, T>,
     count_matches: impl Fn(usize) -> Result<bool, cadmpeg_core::CodecError>,
     read: impl Fn(usize) -> Option<T>,
 ) -> Result<Vec<ArrayCandidate<'a, 'ctx, T>>, cadmpeg_core::CodecError>
@@ -371,111 +451,61 @@ where
     T: PartialEq + cadmpeg_core::decode::cost::DecodeCost,
 {
     const OPERATION: &str = "collect Parasolid array candidates";
-    let width = std::mem::size_of::<T>();
     let mut candidates = Vec::new();
-    if let Some(array) = ctx.get_btree_map(framed, &attr, OPERATION)? {
-        if count_matches(array.span.count)? {
-            let values = array.read(ctx, &read)?;
-            ctx.push_scoped_vec(
-                storage,
-                &mut candidates,
-                ArrayCandidate::Borrowed(values),
-                OPERATION,
-            )?;
-        }
-    }
-    let Some(arrays) = ctx.get_btree_map(compact, &attr, OPERATION)? else {
-        return Ok(candidates);
-    };
-    for array in ctx.admit_iter(arrays, "scan Parasolid compact attribute arrays")? {
-        if !count_matches(array.count)? {
-            continue;
-        }
-        let Some(start) = array.offset.checked_add(compact_arr::LEN) else {
-            continue;
-        };
-        if array
-            .count
-            .checked_mul(width)
-            .and_then(|size| start.checked_add(size))
-            .is_none_or(|end| end > bytes.len())
-        {
-            continue;
-        }
-        let mut candidate_storage =
-            ctx.reserve_scoped(0, "hold Parasolid compact array candidate")?;
-        let Some(values) = candidate_storage.with_storage(|| {
-            read_array(
-                ctx,
-                array.count,
-                "decode Parasolid compact values",
-                |index| read(start + index * width),
-            )
-        })?
-        else {
-            continue;
-        };
-        if !ctx.any_by(
-            &candidates,
-            |candidate| {
-                Ok(candidate.as_slice().len() == values.len()
-                    && ctx.equal(candidate.as_slice(), values.as_slice(), OPERATION)?)
-            },
-            OPERATION,
-        )? {
-            ctx.push_scoped_vec(
-                storage,
-                &mut candidates,
-                ArrayCandidate::Owned {
-                    values,
-                    _storage: candidate_storage,
+    visit_array_candidates(
+        ctx,
+        bytes,
+        (framed, compact, attr),
+        &mut candidates,
+        |_, count| count_matches(count),
+        read,
+        |candidates, candidate| {
+            if !ctx.any_by(
+                candidates.iter(),
+                |prior: &ArrayCandidate<'_, '_, T>| {
+                    Ok(prior.as_slice().len() == candidate.as_slice().len()
+                        && ctx.equal(prior.as_slice(), candidate.as_slice(), OPERATION)?)
                 },
                 OPERATION,
-            )?;
-        }
-    }
+            )? {
+                ctx.push_scoped_vec(storage, candidates, candidate, OPERATION)?;
+            }
+            Ok(true)
+        },
+    )?;
     Ok(candidates)
 }
 
 /// The one scalar array of `count` values an attribute names, when its
-/// candidates of that length agree.
+/// candidates of that length agree. Ambiguity needs no candidate suffix.
 fn exact_f64_array<'a, 'ctx>(
     ctx: &'ctx DecodeContext<'_>,
-    storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     bytes: &[u8],
     arrays: &'a Arrays<'ctx>,
     attr: u16,
     count: usize,
 ) -> Result<Option<ArrayCandidate<'a, 'ctx, f64>>, cadmpeg_core::CodecError> {
-    let candidates = array_candidates(
-        ctx,
-        storage,
-        bytes,
-        &arrays.f64s,
-        &arrays.compact,
-        attr,
-        |candidate_count| Ok(candidate_count == count),
-        |at| View::f64_be_at(bytes, at),
-    )?;
     let mut selected: Option<ArrayCandidate<'a, 'ctx, f64>> = None;
-    for candidate in ctx.admit_iter(candidates, "scan Parasolid exact scalar array candidates")? {
-        if candidate.as_slice().len() != count {
-            continue;
-        }
-        match &selected {
-            Some(first) => {
-                if !ctx.equal(
-                    first.as_slice(),
-                    candidate.as_slice(),
-                    "compare Parasolid exact scalar array candidates",
-                )? {
-                    return Ok(None);
-                }
+    let agreed = visit_array_candidates(
+        ctx,
+        bytes,
+        (&arrays.f64s, &arrays.compact, attr),
+        &mut selected,
+        |_, candidate_count| Ok(candidate_count == count),
+        |at| View::f64_be_at(bytes, at),
+        |selected, candidate| match selected.as_ref() {
+            Some(first) => ctx.equal(
+                first.as_slice(),
+                candidate.as_slice(),
+                "compare Parasolid exact scalar array candidates",
+            ),
+            None => {
+                *selected = Some(candidate);
+                Ok(true)
             }
-            None => selected = Some(candidate),
-        }
-    }
-    Ok(selected)
+        },
+    )?;
+    Ok(if agreed { selected } else { None })
 }
 
 fn parse_curve_descriptor(bytes: &[u8], off: usize) -> Option<(u16, CurveDescriptor)> {
@@ -657,27 +687,37 @@ pub(in crate::brep) fn scan_curve_carriers_into<'ctx>(
         let Some(descriptor) = sources.curve_for_wrapper(p)? else {
             continue;
         };
-        for reference in [
-            descriptor.control_attr,
-            descriptor.multiplicity_attr,
-            descriptor.knot_attr,
-        ] {
-            sources.array(reference)?;
+        let Some(expected_control_values) =
+            descriptor.control_count.checked_mul(descriptor.dimension)
+        else {
+            continue;
+        };
+        sources.array(descriptor.control_attr)?;
+        if ctx
+            .get_btree_map(
+                &sources.arrays().f64s,
+                &descriptor.control_attr,
+                CURVE_ARRAYS,
+            )?
+            .is_none_or(|array| array.span.count != expected_control_values)
+        {
+            continue;
         }
+        sources.array(descriptor.multiplicity_attr)?;
+        if !ctx.contains_key_btree_map(
+            &sources.arrays().u16s,
+            &descriptor.multiplicity_attr,
+            CURVE_ARRAYS,
+        )? {
+            continue;
+        }
+        sources.array(descriptor.knot_attr)?;
         let arrays = sources.arrays();
         let Some(control_array) =
             ctx.get_btree_map(&arrays.f64s, &descriptor.control_attr, CURVE_ARRAYS)?
         else {
             continue;
         };
-        let Some(expected_control_values) =
-            descriptor.control_count.checked_mul(descriptor.dimension)
-        else {
-            continue;
-        };
-        if control_array.span.count != expected_control_values {
-            continue;
-        }
         let Some(multiplicity_array) =
             ctx.get_btree_map(&arrays.u16s, &descriptor.multiplicity_attr, CURVE_ARRAYS)?
         else {
@@ -860,91 +900,259 @@ struct SurfaceKnotValues {
     multiplicities: Vec<u16>,
 }
 
-/// The one distinct-knot and multiplicity pairing an axis names, when every
-/// candidate pairing that fits the declared count agrees.
+/// Source-backed pair selection and positive or negative multiplicity caches.
+struct KnotCandidates<'a, 'ctx> {
+    multiplicities_by_count: BTreeMap<usize, Option<ArrayCandidate<'a, 'ctx, u16>>>,
+    resolved: Option<(ArrayCandidate<'a, 'ctx, f64>, usize)>,
+}
+
+/// Eligible physical counts of bounded headers, without reading payloads.
+fn eligible_array_counts<T>(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    (framed, compact, attr): CandidateHeaders<'_, '_, T>,
+    declared_count: usize,
+) -> Result<BTreeSet<usize>, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "index Parasolid eligible array counts";
+    let mut counts = BTreeSet::new();
+    if declared_count == 0 {
+        return Ok(counts);
+    }
+    if let Some(array) = ctx.get_btree_map(framed, &attr, OPERATION)? {
+        if array.span.count >= declared_count {
+            ctx.insert_btree_set(&mut counts, array.span.count, OPERATION)?;
+        }
+    }
+    if let Some(arrays) = ctx.get_btree_map(compact, &attr, OPERATION)? {
+        for array in ctx.admit_iter(arrays, OPERATION)? {
+            if array.count >= declared_count && array.span::<T>(bytes).is_some() {
+                ctx.insert_btree_set(&mut counts, array.count, OPERATION)?;
+            }
+        }
+    }
+    Ok(counts)
+}
+
+/// The one distinct-knot and multiplicity pairing an axis names. Header
+/// counts gate both payload lanes. Resolution stops at the first disagreement.
 fn surface_knot_values<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
-    storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
-    output: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    storage: &mut ScopedReservation<'_>,
+    output: &mut ScopedReservation<'_>,
     bytes: &[u8],
     arrays: &Arrays<'ctx>,
     (knot_attr, multiplicity_attr, declared_count): (u16, u16, usize),
 ) -> Result<Option<SurfaceKnotValues>, cadmpeg_core::CodecError> {
     const OPERATION: &str = "collect Parasolid knot candidates";
-    let multiplicity_candidates = array_candidates(
-        ctx,
-        storage,
-        bytes,
-        &arrays.u16s,
-        &arrays.compact,
-        multiplicity_attr,
-        |count| Ok(declared_count != 0 && count >= declared_count),
-        |at| View::u16_be_at(bytes, at),
-    )?;
-    let mut multiplicities_by_count = BTreeMap::<usize, Vec<&[u16]>>::new();
-    for multiplicities in ctx.admit_iter(
-        &multiplicity_candidates,
-        "index Parasolid knot multiplicity counts",
-    )? {
-        let values = multiplicities.as_slice();
-        storage.with_storage(|| {
-            ctx.push_btree_group(
-                &mut multiplicities_by_count,
-                values.len(),
-                values,
-                "index Parasolid knot multiplicity counts",
-                "group Parasolid knot multiplicities",
-            )
-        })?;
-    }
-    if multiplicities_by_count.is_empty() {
+    if ctx
+        .get_btree_map(&arrays.f64s, &knot_attr, OPERATION)?
+        .is_none()
+        && ctx
+            .get_btree_map(&arrays.compact, &knot_attr, OPERATION)?
+            .is_none_or(Vec::is_empty)
+    {
         return Ok(None);
     }
-    let unique_candidates = array_candidates(
-        ctx,
-        storage,
-        bytes,
-        &arrays.f64s,
-        &arrays.compact,
-        knot_attr,
-        |count| ctx.contains_key_btree_map(&multiplicities_by_count, &count, OPERATION),
-        |at| View::f64_be_at(bytes, at),
-    )?;
-    let mut resolved = Vec::<(&[f64], &[u16])>::new();
-    for unique in ctx.admit_iter(&unique_candidates, "scan Parasolid surface knot candidates")? {
-        let unique_values = unique.as_slice();
-        let Some(group) =
-            ctx.get_btree_map(&multiplicities_by_count, &unique_values.len(), OPERATION)?
-        else {
-            continue;
-        };
-        for multiplicities in
-            ctx.admit_iter(group, "scan Parasolid knot multiplicity candidates")?
-        {
-            let Some(candidate) =
-                surface_knot_arrays(ctx, unique_values, multiplicities, declared_count)?
-            else {
-                continue;
-            };
-            if !ctx.any_by(
-                &resolved,
-                |(knots, multiplicities)| {
-                    Ok(ctx.equal(*knots, candidate.0, OPERATION)?
-                        && ctx.equal(*multiplicities, candidate.1, OPERATION)?)
-                },
-                OPERATION,
-            )? {
-                ctx.push_scoped_vec(storage, &mut resolved, candidate, OPERATION)?;
+    if ctx
+        .get_btree_map(&arrays.u16s, &multiplicity_attr, OPERATION)?
+        .is_none()
+        && ctx
+            .get_btree_map(&arrays.compact, &multiplicity_attr, OPERATION)?
+            .is_none_or(Vec::is_empty)
+    {
+        return Ok(None);
+    }
+    let mut count_storage = ctx.reserve_scoped(0, "hold Parasolid paired array counts")?;
+    let counts = {
+        let knot_storage;
+        let knot_counts;
+        (knot_counts, knot_storage) =
+            ctx.with_scoped_storage("hold Parasolid knot header counts", || {
+                eligible_array_counts(
+                    ctx,
+                    bytes,
+                    (&arrays.f64s, &arrays.compact, knot_attr),
+                    declared_count,
+                )
+            })?;
+        if knot_counts.is_empty() {
+            return Ok(None);
+        }
+        let multiplicity_storage;
+        let multiplicity_counts;
+        (multiplicity_counts, multiplicity_storage) =
+            ctx.with_scoped_storage("hold Parasolid multiplicity header counts", || {
+                eligible_array_counts(
+                    ctx,
+                    bytes,
+                    (&arrays.u16s, &arrays.compact, multiplicity_attr),
+                    declared_count,
+                )
+            })?;
+        let mut counts = BTreeSet::new();
+        for count in ctx.admit_iter(
+            &multiplicity_counts,
+            "intersect Parasolid knot header counts",
+        )? {
+            if ctx.contains_btree_set(&knot_counts, count, OPERATION)? {
+                count_storage
+                    .with_storage(|| ctx.insert_btree_set(&mut counts, *count, OPERATION))?;
             }
         }
+        drop((multiplicity_counts, multiplicity_storage));
+        drop((knot_counts, knot_storage));
+        counts
+    };
+    if counts.is_empty() {
+        return Ok(None);
     }
-    let [(unique, multiplicities)] = resolved.as_slice() else {
+    let mut candidates = KnotCandidates {
+        multiplicities_by_count: BTreeMap::new(),
+        resolved: None,
+    };
+    let agreed = visit_array_candidates(
+        ctx,
+        bytes,
+        (&arrays.f64s, &arrays.compact, knot_attr),
+        &mut candidates,
+        |candidates, count| {
+            if !ctx.contains_btree_set(&counts, &count, OPERATION)? {
+                return Ok(false);
+            }
+            Ok(ctx
+                .get_btree_map(&candidates.multiplicities_by_count, &count, OPERATION)?
+                .is_none_or(Option::is_some))
+        },
+        |at| View::f64_be_at(bytes, at),
+        |candidates, unique| {
+            let KnotCandidates {
+                multiplicities_by_count,
+                resolved,
+            } = candidates;
+            let count = unique.as_slice().len();
+            if !ctx.contains_key_btree_map(multiplicities_by_count, &count, OPERATION)? {
+                let mut selected: Option<ArrayCandidate<'_, 'ctx, u16>> = None;
+                let agreed = visit_array_candidates(
+                    ctx,
+                    bytes,
+                    (&arrays.u16s, &arrays.compact, multiplicity_attr),
+                    &mut selected,
+                    |_, candidate_count| Ok(candidate_count == count),
+                    |at| View::u16_be_at(bytes, at),
+                    |selected, multiplicities| {
+                        let Some((_, lane)) = surface_knot_arrays(
+                            ctx,
+                            unique.as_slice(),
+                            multiplicities.as_slice(),
+                            declared_count,
+                        )?
+                        else {
+                            return Ok(true);
+                        };
+                        match selected.as_ref() {
+                            Some(first) => ctx.equal(
+                                first.as_slice().split_at(declared_count).0,
+                                lane,
+                                OPERATION,
+                            ),
+                            None => {
+                                if let Some((first, first_count)) = resolved.as_ref() {
+                                    let Some(Some(first_multiplicities)) = ctx.get_btree_map(
+                                        multiplicities_by_count,
+                                        first_count,
+                                        OPERATION,
+                                    )?
+                                    else {
+                                        return Ok(false);
+                                    };
+                                    if !ctx.equal(
+                                        first.as_slice().split_at(declared_count).0,
+                                        unique.as_slice().split_at(declared_count).0,
+                                        OPERATION,
+                                    )? || !ctx.equal(
+                                        first_multiplicities.as_slice().split_at(declared_count).0,
+                                        lane,
+                                        OPERATION,
+                                    )? {
+                                        return Ok(false);
+                                    }
+                                }
+                                *selected = Some(multiplicities);
+                                Ok(true)
+                            }
+                        }
+                    },
+                )?;
+                if !agreed {
+                    return Ok(false);
+                }
+                let present = selected.is_some();
+                storage.with_storage(|| {
+                    ctx.insert_btree_map(
+                        multiplicities_by_count,
+                        count,
+                        selected,
+                        "index Parasolid knot multiplicity counts",
+                    )
+                })?;
+                if present && resolved.is_none() {
+                    *resolved = Some((unique, count));
+                }
+                return Ok(true);
+            }
+            let Some(Some(multiplicities)) =
+                ctx.get_btree_map(multiplicities_by_count, &count, OPERATION)?
+            else {
+                return Ok(true);
+            };
+            match resolved.as_ref() {
+                Some((first, first_count)) => {
+                    let Some(Some(first_multiplicities)) =
+                        ctx.get_btree_map(multiplicities_by_count, first_count, OPERATION)?
+                    else {
+                        return Ok(false);
+                    };
+                    Ok(ctx.equal(
+                        first.as_slice().split_at(declared_count).0,
+                        unique.as_slice().split_at(declared_count).0,
+                        OPERATION,
+                    )? && ctx.equal(
+                        first_multiplicities.as_slice().split_at(declared_count).0,
+                        multiplicities.as_slice().split_at(declared_count).0,
+                        OPERATION,
+                    )?)
+                }
+                None => Ok(false),
+            }
+        },
+    )?;
+    if !agreed {
+        return Ok(None);
+    }
+    let KnotCandidates {
+        multiplicities_by_count,
+        resolved,
+    } = candidates;
+    let Some((unique, count)) = resolved else {
+        return Ok(None);
+    };
+    let Some(Some(multiplicities)) =
+        ctx.get_btree_map(&multiplicities_by_count, &count, OPERATION)?
+    else {
         return Ok(None);
     };
     Ok(Some(SurfaceKnotValues {
-        unique: output.with_storage(|| ctx.copy_slice(unique, "copy Parasolid distinct knots"))?,
+        unique: output.with_storage(|| {
+            ctx.copy_slice(
+                unique.as_slice().split_at(declared_count).0,
+                "copy Parasolid distinct knots",
+            )
+        })?,
         multiplicities: output.with_storage(|| {
-            ctx.copy_slice(multiplicities, "copy Parasolid knot multiplicities")
+            ctx.copy_slice(
+                multiplicities.as_slice().split_at(declared_count).0,
+                "copy Parasolid knot multiplicities",
+            )
         })?,
     }))
 }
@@ -999,15 +1207,13 @@ pub(in crate::brep) fn scan_surface_carriers_into<'ctx>(
         let Some(descriptor) = sources.surface(descriptor_attr)? else {
             continue;
         };
-        for reference in descriptor.refs {
-            sources.array(reference)?;
-        }
         let Some(expected_poles) = descriptor.u_count.checked_mul(descriptor.v_count) else {
             continue;
         };
         let Some(expected_control_values) = expected_poles.checked_mul(descriptor.dimension) else {
             continue;
         };
+        sources.array(descriptor.refs[0])?;
         sources.prepare_control(descriptor.refs[0], expected_control_values)?;
         // Preserve the control-before-knot resolution gate.
         if sources
@@ -1016,6 +1222,8 @@ pub(in crate::brep) fn scan_surface_carriers_into<'ctx>(
         {
             continue;
         }
+        sources.array(descriptor.refs[1])?;
+        sources.array(descriptor.refs[3])?;
         sources.prepare_knots(
             descriptor.refs[3],
             descriptor.refs[1],
@@ -1031,6 +1239,8 @@ pub(in crate::brep) fn scan_surface_carriers_into<'ctx>(
         {
             continue;
         }
+        sources.array(descriptor.refs[2])?;
+        sources.array(descriptor.refs[4])?;
         sources.prepare_knots(
             descriptor.refs[4],
             descriptor.refs[2],
@@ -1288,3 +1498,6 @@ mod knot_work_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod resolution_tests;

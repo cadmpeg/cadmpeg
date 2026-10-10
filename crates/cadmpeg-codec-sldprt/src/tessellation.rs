@@ -2506,6 +2506,8 @@ fn planar_trim(
         coordinate_scale * f64::from(f32::EPSILON) * DISPLAY_QUANTIZATION_ULPS
             + EPS_DISPLAY_QUANTIZATION,
     );
+    let mut polygon_storage = ctx.reserve_scoped(0, "hold SLDPRT planar polygon attempt")?;
+    let mut polygon_shell = ctx.reserve_scoped(0, "hold SLDPRT planar polygon roster")?;
     let mut polygons = Vec::new();
     let mut circle_storage = ctx.reserve_scoped(0, "collect SLDPRT planar trim circles")?;
     let mut circles = Vec::new();
@@ -2600,7 +2602,7 @@ fn planar_trim(
                     sampling_tolerance
                 }
             )?);
-            samples.append_into(ctx, &mut polygon)?;
+            polygon_storage.with_storage(|| samples.append_into(ctx, &mut polygon))?;
             boundary_tolerance = boundary_tolerance.max(sample_tolerance);
             first_start.get_or_insert(start);
             previous_end = Some(end);
@@ -2608,7 +2610,9 @@ fn planar_trim(
         if require_some!(previous_end).distance(require_some!(first_start)) > tolerance {
             return Ok(None);
         }
-        ctx.reserve_vec(&mut polygons, 1, "collect SLDPRT planar trim polygons")?;
+        polygon_shell.with_storage(|| {
+            ctx.reserve_vec(&mut polygons, 1, "collect SLDPRT planar trim polygons")
+        })?;
         polygons.push(polygon);
     }
     let (outer, holes) = if polygons.is_empty() {
@@ -2626,12 +2630,11 @@ fn planar_trim(
         }
         (PlanarOuter::Circle(outer), planar_holes)
     } else {
-        let (outer, holes) = require_some!(polygon_outer_and_holes(
-            ctx,
-            polygons,
-            &circles,
-            sampling_tolerance
-        )?);
+        let result = polygon_storage.with_storage(|| {
+            polygon_outer_and_holes(ctx, polygons, &circles, sampling_tolerance)
+        })?;
+        drop(polygon_shell);
+        let (outer, holes) = polygon_storage.commit_value(require_some!(result))?;
         (PlanarOuter::Polygon(outer), holes)
     };
     Ok(Some(PlanarTrim {
@@ -2791,6 +2794,7 @@ fn planar_hole_trim(
     if !has_polygon_loop {
         return Ok(None);
     }
+    let mut storage = ctx.reserve_scoped(0, "hold SLDPRT planar hole attempt")?;
     let mut holes = Vec::new();
     for loop_id in ctx
         .admit_iter(outer_loop, "test SLDPRT planar hole loop")?
@@ -2808,17 +2812,22 @@ fn planar_hole_trim(
             if let Some(circle) =
                 closed_planar_circle(ctx, loop_, surface, frame, tolerance, topology)?
             {
-                ctx.reserve_vec(&mut holes, 1, "collect SLDPRT planar hole trim")?;
+                storage.with_storage(|| {
+                    ctx.reserve_vec(&mut holes, 1, "collect SLDPRT planar hole trim")
+                })?;
                 holes.push(PlanarHole::Circle(circle));
             }
         }
     }
-    Ok((!holes.is_empty()).then_some(PlanarTrim {
+    if holes.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(storage.commit_value(PlanarTrim {
         frame,
         outer: None,
         holes,
         boundary_tolerance: 0.0,
-    }))
+    })?))
 }
 
 fn cylindrical_trim(

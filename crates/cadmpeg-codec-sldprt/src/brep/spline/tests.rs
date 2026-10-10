@@ -300,9 +300,7 @@ fn compact_array_duplicates_release_candidate_storage() {
         &ctx,
         &mut storage,
         &bytes,
-        &framed,
-        &compact,
-        12,
+        (&framed, &compact, 12),
         |_| Ok(true),
         |at| View::f64_be_at(&bytes, at),
     )
@@ -775,16 +773,12 @@ plain_surface_boundary!(
     "collect Parasolid integer arrays"
 );
 plain_surface_boundary!(
-    parasolid_array_candidates_refuse_before_insertion,
-    "collect Parasolid array candidates"
-);
-plain_surface_boundary!(
     parasolid_compact_values_refuse_before_allocation,
     "decode Parasolid compact values"
 );
 plain_surface_boundary!(
-    parasolid_knot_multiplicity_groups_refuse_before_insertion,
-    "group Parasolid knot multiplicities"
+    parasolid_knot_multiplicity_cache_refuses_before_insertion,
+    "index Parasolid knot multiplicity counts"
 );
 plain_surface_boundary!(
     parasolid_distinct_knots_refuse_before_copy,
@@ -795,8 +789,8 @@ plain_surface_boundary!(
     "copy Parasolid knot multiplicities"
 );
 plain_surface_boundary!(
-    parasolid_knot_candidates_refuse_before_insertion,
-    "collect Parasolid knot candidates"
+    parasolid_knot_header_counts_refuse_before_insertion,
+    "index Parasolid eligible array counts"
 );
 plain_surface_boundary!(
     parasolid_surface_pole_rows_refuse_before_partition,
