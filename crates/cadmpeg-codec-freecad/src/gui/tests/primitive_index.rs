@@ -126,7 +126,7 @@ fn primitive_prefix_index_adds_later_provider_prefixes_in_arena_order() {
             let candidate_count = index.candidates.len();
 
             index
-                .add_prefixes(ctx, &ir, style, &later)
+                .add_prefixes(ctx, &later)
                 .expect("later provider prefixes");
             assert_eq!(index.candidates.len(), candidate_count);
             assert_eq!(
@@ -237,17 +237,6 @@ fn primitive_prefix_index_admits_lookup_and_storage() {
                     ),
                 },
             )
-        },
-    );
-    crate::test_support::refusal_at(
-        ResourceDimension::WorkUnits,
-        &[],
-        "FCStd GUI primitive prefix lower bound",
-        |ctx| {
-            let style = PrimitiveStyle::Line(PrimitiveSize::Absent);
-            let mut index = PrimitiveIndex::new(ctx, &ir, style, &[])?;
-            let prefixes = [String::from("a:")];
-            index.add_prefixes(ctx, &ir, style, &prefixes)
         },
     );
 }
