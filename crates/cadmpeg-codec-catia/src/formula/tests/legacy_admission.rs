@@ -3,7 +3,7 @@
 
 use cadmpeg_ir::document::CadIr;
 
-fn legacy_values() -> crate::native::CatiaNative {
+pub(super) fn legacy_values() -> crate::native::CatiaNative {
     let mut bytes = Vec::new();
     for entity_id in [1_u32, 4, 9, 12, 13] {
         bytes.push(0xea);
@@ -419,4 +419,21 @@ fn formula_legacy_symbol_index_preserves_bare_and_complete_ordinal_names() {
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation)
         );
     }
+}
+
+#[test]
+fn formula_legacy_empty_symbol_index_does_not_admit_unread_names() {
+    let (mut relation, candidates, _) = relation_fixture(1);
+    relation.expression = "1".to_owned();
+    relation.inputs[0].parameter = "x".repeat(4096);
+    relation
+        .inputs
+        .extend(std::iter::repeat_n(relation.inputs[0].clone(), 4096));
+    let names = std::collections::HashMap::new();
+    // One expression byte and one input-row visit. Empty membership needs no key read.
+    assert!(crate::test_support::with_work_limit(2, |ctx| {
+        super::super::legacy_relation_evaluation(ctx, &relation, &names, &candidates)
+    })
+    .expect("empty membership leaves long names and the input tail unread")
+    .is_none());
 }

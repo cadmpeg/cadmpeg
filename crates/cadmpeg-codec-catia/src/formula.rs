@@ -788,12 +788,18 @@ pub(crate) fn transfer_parameters<'ctx>(
     for (_, candidate) in ctx.admit_iter(candidates, "catia_formula_ordered_parameter_visits")? {
         parameters.push(candidate);
     }
-    ctx.stable_sort_by(
-        &mut parameters,
-        |value| &value.source_order,
-        Ord::cmp,
-        "catia_formula_ordered_parameters_sort",
-    )?;
+    if parameters.len() == 2 {
+        if parameters[0].source_order > parameters[1].source_order {
+            parameters.swap(0, 1);
+        }
+    } else if parameters.len() > 2 {
+        ctx.stable_sort_by(
+            &mut parameters,
+            |value| &value.source_order,
+            Ord::cmp,
+            "catia_formula_ordered_parameters_sort",
+        )?;
+    }
     for (ordinal, candidate) in ctx
         .admit_iter(&mut parameters, "catia_formula_parameter_ordinals")?
         .enumerate()
@@ -952,7 +958,13 @@ fn derivable_candidates(
             }
         }
     }
-    ctx.sort_unstable_by_key(&mut edges, |edge| edge.0, Ord::cmp, OPERATION)?;
+    if edges.len() == 2 {
+        if edges[0].0 > edges[1].0 {
+            edges.swap(0, 1);
+        }
+    } else if edges.len() > 2 {
+        ctx.sort_unstable_by_key(&mut edges, |edge| edge.0, Ord::cmp, OPERATION)?;
+    }
     let mut released = scratch.with_storage(|| ctx.collection_vec(count, OPERATION))?;
     for (position, dependencies) in ctx
         .admit_iter(&remaining, "catia_formula_derivable_root_visits")?
@@ -1746,11 +1758,13 @@ fn legacy_relation_evaluation<'a>(
     let mut dependencies = Vec::new();
     let mut inputs = relation.inputs.iter();
     while let Some(input) = ctx.next_charged(&mut inputs, "catia_formula_legacy_input_visits")? {
-        if !ctx.contains_hash_set(
-            &symbol_parameters,
-            input.parameter.as_str(),
-            "catia_legacy_formula_symbol_index",
-        )? {
+        if symbol_parameters.is_empty()
+            || !ctx.contains_hash_set(
+                &symbol_parameters,
+                input.parameter.as_str(),
+                "catia_legacy_formula_symbol_index",
+            )?
+        {
             return Ok(None);
         }
         let Some(Some(parameter_id)) = ctx.get_hash_map(
