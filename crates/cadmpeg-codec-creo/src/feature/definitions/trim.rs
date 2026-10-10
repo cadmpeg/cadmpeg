@@ -1270,12 +1270,12 @@ enum TrimCarrier {
     },
 }
 
-fn trim_vertex_intersection(
-    ctx: &DecodeContext<'_>,
+fn trim_vertex_intersection<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     entities: &[u32],
     segments: Option<&FeatureSegmentTable>,
     variables: Option<&FeatureVariableTable>,
-    geometry: &mut Option<points::TrimGeometry>,
+    geometry: &mut Option<points::CheckedTrimGeometry<'ctx>>,
 ) -> Result<Option<cadmpeg_ir::units::FinitePoint2>, CodecError> {
     Ok(
         entity_intersection_cached(ctx, entities, segments, variables, geometry)?.and_then(
@@ -1541,12 +1541,12 @@ pub(super) fn entity_intersection(
     })
 }
 
-fn entity_intersection_cached(
-    ctx: &DecodeContext<'_>,
+fn entity_intersection_cached<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     entity_ids: &[u32],
     segments: Option<&FeatureSegmentTable>,
     variables: Option<&FeatureVariableTable>,
-    geometry: &mut Option<points::TrimGeometry>,
+    geometry: &mut Option<points::CheckedTrimGeometry<'ctx>>,
 ) -> Result<Option<[f64; 2]>, CodecError> {
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
