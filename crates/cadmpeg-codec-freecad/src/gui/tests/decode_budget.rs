@@ -598,3 +598,32 @@ fn gui_expression_engine_validation_needs_no_child_storage() {
     assert_eq!(ctx.resource_refusal(), None);
 }
 
+
+#[test]
+fn gui_property_names_are_local_to_each_provider() {
+    let text = "<Providers><ViewProvider name='A'><Properties Count='1'><Property name='Label' type='App::PropertyString'><String value='a'/></Property></Properties></ViewProvider><ViewProvider name='B'><Properties Count='1'><Property name='Label' type='App::PropertyString'><String value='b'/></Property></Properties></ViewProvider></Providers>";
+    let xml = roxmltree::Document::parse(text).expect("provider XML");
+    crate::test_support::with_service_context(&[], |ctx| {
+        let mut providers = Vec::new();
+        let mut properties = Vec::new();
+        for (order, node) in xml.root_element().children().enumerate() {
+            super::super::append_native_provider(ctx, text, node, order, None, &mut providers, &mut properties).expect("separate provider names");
+        }
+        assert_eq!(providers.len(), 2);
+        assert_eq!(properties.len(), 2);
+        assert_ne!(properties[0].owner, properties[1].owner);
+        assert_eq!(properties[0].name, "Label");
+        assert_eq!(properties[1].name, "Label");
+    });
+}
+
+#[test]
+fn gui_duplicate_property_name_precedes_later_invalid_properties() {
+    let text = "<ViewProvider name='A'><Properties Count='3'><Property name='Label' type='App::PropertyString'><String value='a'/></Property><Property name='Label'/><Property/></Properties></ViewProvider>";
+    let xml = roxmltree::Document::parse(text).expect("provider XML");
+    crate::test_support::with_service_context(&[], |ctx| {
+        let error = super::super::append_native_provider(ctx, text, xml.root_element(), 0, None, &mut Vec::new(), &mut Vec::new()).expect_err("duplicate name");
+        assert!(matches!(error, CodecError::Malformed(message) if message == "ViewProvider has duplicate property names"));
+        assert_eq!(ctx.resource_refusal(), None);
+    });
+}

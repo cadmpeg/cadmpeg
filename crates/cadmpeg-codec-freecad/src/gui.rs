@@ -1425,7 +1425,7 @@ fn transfer_schema_one<'ctx>(
     drop(topology_index);
     drop(material_lists);
     drop(material_storage);
-    append_graph_losses(ctx, &mut graph, material_losses)?;
+    ctx.extend_vec(&mut graph.losses, material_losses, "FCStd GUI graph losses")?;
     let mut presentation_losses = Vec::new();
     transfer_neutral_presentation(
         ctx,
@@ -1434,17 +1434,8 @@ fn transfer_schema_one<'ctx>(
         neutral_schema_version,
         &mut presentation_losses,
     )?;
-    append_graph_losses(ctx, &mut graph, presentation_losses)?;
+    ctx.extend_vec(&mut graph.losses, presentation_losses, "FCStd GUI graph losses")?;
     Ok((graph, plan))
-}
-
-fn append_graph_losses(
-    ctx: &DecodeContext<'_>,
-    graph: &mut Graph<'_>,
-    losses: Vec<LossNote>,
-) -> Result<(), CodecError> {
-    ctx.extend_vec(&mut graph.losses, losses, "FCStd GUI graph losses")?;
-    Ok(())
 }
 
 fn push_gui_appearance_loss(
@@ -2747,7 +2738,7 @@ fn append_native_provider(
         if !name_storage.with_storage(|| {
             ctx.insert_hash_set(
                 &mut names,
-                (id.as_str(), property_name),
+                property_name,
                 "FCStd GUI property names",
             )
         })? {

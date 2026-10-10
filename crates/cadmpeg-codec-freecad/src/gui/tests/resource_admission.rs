@@ -81,17 +81,6 @@ fn gui_material_properties_refuse_at_matching_collection_limit() {
     );
 }
 
-#[test]
-fn gui_graph_loss_extension_refuses_at_matching_collection_limit() {
-    crate::test_support::assert_collection_refusal_at(&[], "FCStd GUI graph losses", |ctx| {
-        let mut graph = super::super::Graph::default();
-        super::super::append_graph_losses(
-            ctx,
-            &mut graph,
-            vec![crate::loss::FreecadLossCode::SourceGuiSchemaUnverified.note("schema".to_owned())],
-        )
-    });
-}
 
 fn assert_gui_appearance_loss_limits(
     collection_operation: &'static str,
@@ -1914,4 +1903,12 @@ fn gui_colored_topology_binding_refuses_at_matching_retained_limit() {
         cadmpeg_core::decode::ResourceDimension::RetainedBytes,
         "FCStd GUI binding topology identity",
     );
+}
+
+#[test]
+fn gui_presentation_losses_refuse_at_matching_collection_limit() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
+    let gui = br#"<Document SchemaVersion="1"><Camera settings=""/><ViewProviderData Count="1"><ViewProvider name="Unknown"><Properties Count="1"><Property name="" type="App::PropertyString"><String value="value"/></Property></Properties></ViewProvider></ViewProviderData></Document>"#;
+    let bytes = archive_entries(&[("Document.xml", document), ("GuiDocument.xml", gui)]);
+    assert_gui_decode_limit_at(&bytes, cadmpeg_core::decode::ResourceDimension::CollectionItems, "FCStd GUI graph losses");
 }
