@@ -481,6 +481,9 @@ fn explicit_endpoint_relations<'ctx>(
     CodecError,
 > {
     let mut storage = ctx.reserve_scoped(0, "FCStd explicit profile relations")?;
+    if profile_entities.is_empty() {
+        return Ok((BTreeMap::new(), storage));
+    }
     let relations = storage.with_storage(|| {
         let mut entity_lookup = None;
         let mut relations = BTreeMap::new();
@@ -499,21 +502,6 @@ fn explicit_endpoint_relations<'ctx>(
             else {
                 continue;
             };
-            let (entity_indices, _entity_index_storage) = match &mut entity_lookup {
-                Some(lookup) => lookup,
-                slot @ None => slot.insert(ctx.with_scoped_storage(
-                    "FCStd profile entity lookup storage",
-                    || {
-                        ctx.collect_hash_map(
-                            entities
-                                .iter()
-                                .enumerate()
-                                .map(|(index, entity)| (entity.id().as_str(), index)),
-                            "FCStd profile entity lookup",
-                        )
-                    },
-                )?),
-            };
             let mut endpoint_storage = ctx.reserve_scoped(0, "FCStd explicit profile loci")?;
             let mut endpoints = BTreeSet::new();
             endpoint_storage.with_storage(|| {
@@ -528,6 +516,21 @@ fn explicit_endpoint_relations<'ctx>(
                         SketchLocus::Start(entity) => (entity, true),
                         SketchLocus::End(entity) => (entity, false),
                         _ => continue,
+                    };
+                    let (entity_indices, _entity_index_storage) = match &mut entity_lookup {
+                        Some(lookup) => lookup,
+                        slot @ None => slot.insert(ctx.with_scoped_storage(
+                            "FCStd profile entity lookup storage",
+                            || {
+                                ctx.collect_hash_map(
+                                    entities
+                                        .iter()
+                                        .enumerate()
+                                        .map(|(index, entity)| (entity.id().as_str(), index)),
+                                    "FCStd profile entity lookup",
+                                )
+                            },
+                        )?),
                     };
                     let Some(index) = ctx
                         .get_hash_map(
