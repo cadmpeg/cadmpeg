@@ -2,8 +2,8 @@
 //! Detail-view boundary carrier decoding.
 
 use cadmpeg_core::decode::DecodeContext;
-use std::ops::Range;
 use std::fmt::Write;
+use std::ops::Range;
 
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::scalar::NonNegativeReal;
@@ -36,7 +36,11 @@ fn anonymous<'a>(
     let chunk = chunk_at(data, offset, end, archive, false)?;
     if chunk.typecode != ANONYMOUS || chunk.short() {
         let mut message = String::new();
-        ctx.try_reserve_retained_text(&mut message, family.len() + " is not anonymous".len(), "Rhino detail framing message")?;
+        ctx.try_reserve_retained_text(
+            &mut message,
+            family.len() + " is not anonymous".len(),
+            "Rhino detail framing message",
+        )?;
         message.push_str(family);
         message.push_str(" is not anonymous");
         return Err(GeometryError::malformed(offset, message));
@@ -47,14 +51,20 @@ fn anonymous<'a>(
     if major != 1 {
         let digits = [major, minor].map(|value| {
             usize::try_from(value.unsigned_abs().checked_ilog10().unwrap_or(0)).unwrap_or(0)
-                + 1 + usize::from(value < 0)
+                + 1
+                + usize::from(value < 0)
         });
         let mut message = String::new();
-        let length = "unsupported ".len() + family.len() + " version ".len() + digits[0] + 1 + digits[1];
+        let length =
+            "unsupported ".len() + family.len() + " version ".len() + digits[0] + 1 + digits[1];
         ctx.try_reserve_retained_text(&mut message, length, "Rhino detail version message")?;
-        write!(message, "unsupported {family} version {major}.{minor}")
-            .map_err(|_| GeometryError::malformed(chunk.body().start, "detail version formatting failed"))?;
-        return Err(GeometryError::UnsupportedVersion { offset: chunk.body().start, message });
+        write!(message, "unsupported {family} version {major}.{minor}").map_err(|_| {
+            GeometryError::malformed(chunk.body().start, "detail version formatting failed")
+        })?;
+        return Err(GeometryError::UnsupportedVersion {
+            offset: chunk.body().start,
+            message,
+        });
     }
     Ok((reader, chunk.next_offset(), minor))
 }
@@ -194,15 +204,23 @@ mod tests {
         let wrong_version = crc_chunk(ArchiveVersion::V5, ANONYMOUS, &body);
         for (bytes, expected) in [
             (wrong_type, "detail is not anonymous"),
-            (wrong_version, "unsupported detail version -2147483648.2147483647"),
+            (
+                wrong_version,
+                "unsupported detail version -2147483648.2147483647",
+            ),
         ] {
             let arena = cadmpeg_core::decode::DecodeArena::new();
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
             policy.limits.max_work_units = 0;
-            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-            let error = super::decode(&ctx, &bytes, 0..bytes.len(), ArchiveVersion::V5).unwrap_err();
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                    .unwrap();
+            let error =
+                super::decode(&ctx, &bytes, 0..bytes.len(), ArchiveVersion::V5).unwrap_err();
             let message = match error {
-                crate::curves::GeometryError::Malformed(crate::chunks::FramingError::Structural { message, .. })
+                crate::curves::GeometryError::Malformed(
+                    crate::chunks::FramingError::Structural { message, .. },
+                )
                 | crate::curves::GeometryError::UnsupportedVersion { message, .. } => message,
                 error => panic!("bounded detail error: {error}"),
             };

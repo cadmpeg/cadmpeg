@@ -459,7 +459,6 @@ fn standalone_v1_curve_decode_requires_retained_admission() {
     );
 }
 
-
 fn work_with_rejected_records_between_breps(count: usize, typecode: u32, diagnostic: &str) -> u64 {
     let fixture = legacy_face_archive();
     let comment = chunk_at(&fixture, 32, fixture.len(), ArchiveVersion::V1, false).unwrap();
@@ -476,9 +475,19 @@ fn work_with_rejected_records_between_breps(count: usize, typecode: u32, diagnos
     let decoded = super::super::decode_v1(&ctx, &data).unwrap();
     assert_eq!(decoded.ir.model.bodies.len(), count);
     assert_eq!(decoded.source_fidelity.retained_records().len(), count * 2);
-    assert_eq!(decoded.body.notes.iter().filter(|note| note.starts_with(diagnostic)).count(), count);
+    assert_eq!(
+        decoded
+            .body
+            .notes
+            .iter()
+            .filter(|note| note.starts_with(diagnostic))
+            .count(),
+        count
+    );
     // A final refusal exposes completed work without pinning individual charges.
-    let cadmpeg_core::CodecError::ResourceLimit(limit) = ctx.charge_work(u64::MAX, "completed V1 work").unwrap_err() else {
+    let cadmpeg_core::CodecError::ResourceLimit(limit) =
+        ctx.charge_work(u64::MAX, "completed V1 work").unwrap_err()
+    else {
         panic!("work counter probe refuses");
     };
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
@@ -487,14 +496,36 @@ fn work_with_rejected_records_between_breps(count: usize, typecode: u32, diagnos
 
 #[test]
 fn rejected_v1_meshes_do_not_restore_quadratic_brep_index_work() {
-    let small = work_with_rejected_records_between_breps(64, super::super::TCODE_MESH_OBJECT, "V1 mesh at offset ");
-    let large = work_with_rejected_records_between_breps(128, super::super::TCODE_MESH_OBJECT, "V1 mesh at offset ");
-    assert!(large < 3 * small, "doubling records must remain below quadratic growth: {small} -> {large}");
+    let small = work_with_rejected_records_between_breps(
+        64,
+        super::super::TCODE_MESH_OBJECT,
+        "V1 mesh at offset ",
+    );
+    let large = work_with_rejected_records_between_breps(
+        128,
+        super::super::TCODE_MESH_OBJECT,
+        "V1 mesh at offset ",
+    );
+    assert!(
+        large < 3 * small,
+        "doubling records must remain below quadratic growth: {small} -> {large}"
+    );
 }
 
 #[test]
 fn rejected_v1_curves_do_not_restore_quadratic_brep_index_work() {
-    let small = work_with_rejected_records_between_breps(64, super::super::TCODE_LEGACY_CRV, "V1 curve at offset ");
-    let large = work_with_rejected_records_between_breps(128, super::super::TCODE_LEGACY_CRV, "V1 curve at offset ");
-    assert!(large < 3 * small, "doubling records must remain below quadratic growth: {small} -> {large}");
+    let small = work_with_rejected_records_between_breps(
+        64,
+        super::super::TCODE_LEGACY_CRV,
+        "V1 curve at offset ",
+    );
+    let large = work_with_rejected_records_between_breps(
+        128,
+        super::super::TCODE_LEGACY_CRV,
+        "V1 curve at offset ",
+    );
+    assert!(
+        large < 3 * small,
+        "doubling records must remain below quadratic growth: {small} -> {large}"
+    );
 }

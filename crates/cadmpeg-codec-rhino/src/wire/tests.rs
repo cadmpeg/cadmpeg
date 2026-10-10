@@ -24,7 +24,6 @@ fn canonical_json_sorts_nested_keys() {
     let text = super::admitted_canonical_json(&service, &value, "Rhino canonical JSON")
         .expect("service policy admits JSON");
     assert_eq!(text, r#"{"a":3,"z":{"a":1,"z":2}}"#);
-
 }
 
 /// A non-finite value is refused at its own first byte, not after the read.
@@ -138,7 +137,6 @@ fn canonical_json_preserves_ordinary_raw_value_named_keys() {
     );
 }
 
-
 #[test]
 fn canonical_json_keeps_the_last_duplicate_key() {
     struct DuplicateKeys;
@@ -153,10 +151,11 @@ fn canonical_json_keeps_the_last_duplicate_key() {
         }
     }
     let ctx = cadmpeg_test_support::service_decode_context();
-    assert_eq!(super::admitted_canonical_json(&ctx, &DuplicateKeys, "duplicate JSON").unwrap(),
-        r#"{"a":2,"z":9}"#);
+    assert_eq!(
+        super::admitted_canonical_json(&ctx, &DuplicateKeys, "duplicate JSON").unwrap(),
+        r#"{"a":2,"z":9}"#
+    );
 }
-
 
 #[test]
 fn fixed_finite_field_error_requires_no_work_units() {
@@ -164,11 +163,14 @@ fn fixed_finite_field_error_requires_no_work_units() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_work_units = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy).unwrap();
     let mut reader = BoundedReader::new(&data, 0, data.len()).unwrap();
     let error = read_finite(&ctx, &mut reader, "plot weight").unwrap_err();
-    assert!(matches!(error, FramingError::Structural { offset: 0, message }
-        if message == "plot weight is not finite"));
+    assert!(
+        matches!(error, FramingError::Structural { offset: 0, message }
+        if message == "plot weight is not finite")
+    );
     assert_eq!(ctx.resource_refusal(), None);
     ctx.finish_session().unwrap();
 }

@@ -915,7 +915,8 @@ pub(crate) fn direct_checksum_ranges<'a>(
     let mut cursor = body.start;
     let mut child_ranges = children.as_slice().iter();
     for _ in 0..children.as_slice().len() {
-        let child = ctx.next_charged(&mut child_ranges, "Rhino checksum child validation")?
+        let child = ctx
+            .next_charged(&mut child_ranges, "Rhino checksum child validation")?
             .ok_or_else(|| FramingError::structural(cursor, "checksum child source ended early"))?;
         if child.start < cursor || child.end < child.start || child.end > body.end {
             return Err(FramingError::Structural {
@@ -1155,12 +1156,15 @@ mod direct_range_tests {
                 if message == "nested checksum range overlaps or escapes its parent"
         ));
         assert_eq!(ctx.resource_refusal(), None);
-        let error = ctx.charge_work(1, "test exhausted checksum validation")
+        let error = ctx
+            .charge_work(1, "test exhausted checksum validation")
             .expect_err("only the executed prefix fits");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits
                 && limit.used == prefix_work && limit.additional == 1
-                && ctx.resource_refusal() == Some(limit)));
+                && ctx.resource_refusal() == Some(limit))
+        );
     }
 
     #[test]
