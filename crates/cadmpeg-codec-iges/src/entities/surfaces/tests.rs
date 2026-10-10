@@ -1579,7 +1579,7 @@ fn surface_projection_refuses_variable_work_and_scratch() {
             "iges NURBS surface source weights",
         ),
         (
-            interval_certified_linear_bezier_ruled_surface_file(),
+            projection_refusal::linear_bezier_ruled_file(),
             ResourceDimension::MaterializedBytes,
             "iges ruled linear interval controls",
         ),
@@ -1609,6 +1609,14 @@ fn surface_projection_refuses_variable_work_and_scratch() {
             let decoded = IgesCodec
                 .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
                 .unwrap();
+            if operation == "iges ruled linear interval controls" {
+                assert_eq!(decoded.ir().model.curves.len(), 2);
+                assert_eq!(decoded.ir().model.procedural_surfaces.len(), 1,
+                    "{:?}", decoded.report().losses);
+                assert!(decoded.ir().model.surfaces.iter().any(|surface|
+                    surface.id.as_str() == "iges:model:surface#D5"
+                    && surface.geometry.solved().is_some()));
+            }
             crate::test_support::with_service_context(&bytes, |ctx| {
                 let scan = crate::card::scan_with_context(&bytes, ctx).unwrap();
                 let (global, _, _global_storage) = crate::global::parse(&scan, ctx).unwrap();
@@ -1642,28 +1650,14 @@ fn surface_projection_refuses_variable_work_and_scratch() {
             if let Some((source, directory, parameters, global)) = &projection_inputs {
                 let mut ir = source.clone();
                 crate::test_support::with_policy_context(&[], &policy, |ctx| {
-                    if operation == "iges ruled linear interval controls" {
-                        // The model index has an earlier materialization peak.
-                        // Keep this fixture's curve and source record for the proof.
-                        let cadmpeg_ir::geometry::CurveGeometry::Solved(
-                            SolvedCurveGeometry::Nurbs(curve),
-                        ) = &ir.model.curves[0].geometry
-                        else {
-                            panic!("the fixture starts with a NURBS curve")
-                        };
-                        super::interval_certified_linear_bezier(
-                            curve, &parameters[0], global, ctx,
-                        ).map(|_| ())
-                    } else {
-                        super::project(
-                            &mut ir,
-                            directory,
-                            parameters,
-                            global,
-                            ctx,
-                            &mut super::super::geometry::SourceSequences::default(),
-                        ).map(|_| ())
-                    }
+                    super::project(
+                        &mut ir,
+                        directory,
+                        parameters,
+                        global,
+                        ctx,
+                        &mut super::super::geometry::SourceSequences::default(),
+                    ).map(|_| ())
                 })
             } else {
                 IgesCodec
@@ -1682,10 +1676,10 @@ fn surface_projection_refuses_variable_work_and_scratch() {
             }
         });
         if operation == "iges ruled linear interval controls" {
-            // The cubic fixture has four controls; each holds three intervals.
-            let expected = 4 * std::mem::size_of::<[super::DeclaredInterval; 3]>();
+            let expected = projection_refusal::LINEAR_INTERVAL_CONTROLS
+                * std::mem::size_of::<[super::DeclaredInterval; 3]>();
             assert!(matches!(error, CodecError::ResourceLimit(limit)
-                if limit.additional == u64::try_from(expected).unwrap()));
+                if limit.operation == operation && limit.additional == u64::try_from(expected).unwrap()));
         }
     }
 }
@@ -1898,3 +1892,5 @@ mod weighted_source_visits;
 mod bernstein_source_visits;
 
 mod candidate_storage;
+
+mod projection_refusal;
