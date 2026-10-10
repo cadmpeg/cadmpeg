@@ -3850,6 +3850,7 @@ fn selected_work_planes<'a>(
     if group.members().is_empty() {
         return Ok(None);
     }
+    let mut plane_storage = ctx.reserve_scoped(0, "hold F3D selected work plane rows")?;
     let mut planes = Vec::new();
     let mut target_record_indices = HashSet::new();
     for (ordinal, member) in group
@@ -3892,9 +3893,9 @@ fn selected_work_planes<'a>(
         let Some(target) = target else {
             return Ok(None);
         };
-        ctx.push_vec(&mut planes, target, "f3d selected work plane")?;
+        ctx.push_scoped_vec(&mut plane_storage, &mut planes, target, "f3d selected work plane")?;
     }
-    Ok(Some(planes))
+    plane_storage.commit_value(Some(planes))
 }
 
 fn resolved_split_face_path(
