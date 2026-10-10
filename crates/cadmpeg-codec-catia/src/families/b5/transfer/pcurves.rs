@@ -356,10 +356,10 @@ pub(super) fn oriented_nurbs_range(
         }
         match &mut poles {
             cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => {
-                ctx.reverse(points, "catia_b5_orientation_pole_order")?
+                ctx.reverse(points, "catia_b5_orientation_pole_order")?;
             }
             cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
-                ctx.reverse(points, "catia_b5_orientation_pole_order")?
+                ctx.reverse(points, "catia_b5_orientation_pole_order")?;
             }
         }
         let curve =
@@ -386,10 +386,10 @@ pub(super) fn oriented_nurbs_range(
             )?;
             match &mut poles {
                 cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => {
-                    ctx.reverse(points, "catia_b5_orientation_restore_poles")?
+                    ctx.reverse(points, "catia_b5_orientation_restore_poles")?;
                 }
                 cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
-                    ctx.reverse(points, "catia_b5_orientation_restore_poles")?
+                    ctx.reverse(points, "catia_b5_orientation_restore_poles")?;
                 }
             }
             let curve =

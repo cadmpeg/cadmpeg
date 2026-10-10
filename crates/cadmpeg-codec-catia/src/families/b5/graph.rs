@@ -2939,7 +2939,7 @@ pub(in crate::families) fn edge_vertex_references(
     let mut edges = BTreeMap::new();
     let mut scratch = ctx.reserve_scoped(0, AMBIGUOUS)?;
     let mut ambiguous = HashSet::new();
-    for frame in object_stream_frames(ctx, bytes)? {
+    for frame in object_stream_frames(ctx, bytes) {
         let frame = frame?;
         if frame.family != 0xb5 || frame.class != 0x5e {
             continue;
@@ -7492,20 +7492,20 @@ fn framed_records<'a>(bytes: &'a [u8], frames: &[ObjectFrame]) -> Vec<B5Record<'
 pub(in crate::families) fn framed_ranges<'a>(
     ctx: &'a DecodeContext<'_>,
     bytes: &'a [u8],
-) -> Result<impl Iterator<Item = Result<Range<usize>, CodecError>> + 'a, CodecError> {
-    Ok(object_stream_frames(ctx, bytes)?.map(|frame| frame.map(|frame| frame.start..frame.end)))
+) -> impl Iterator<Item = Result<Range<usize>, CodecError>> + 'a {
+    object_stream_frames(ctx, bytes).map(|frame| frame.map(|frame| frame.start..frame.end))
 }
 
 /// Scan frames without allocating a frame index.
 pub(in crate::families) fn object_stream_frames<'a>(
     ctx: &'a DecodeContext<'_>,
     bytes: &'a [u8],
-) -> Result<impl Iterator<Item = Result<ObjectFrame, CodecError>> + 'a, CodecError> {
+) -> impl Iterator<Item = Result<ObjectFrame, CodecError>> + 'a {
     let mut child = None::<(usize, usize)>;
     let mut skip_until = 0usize;
     let mut failed = false;
     let mut positions = 0..bytes.len();
-    Ok(std::iter::from_fn(move || {
+    std::iter::from_fn(move || {
         if failed {
             return None;
         }
@@ -7580,14 +7580,14 @@ pub(in crate::families) fn object_stream_frames<'a>(
                 object_id,
             }));
         }
-    }))
+    })
 }
 
 pub(in crate::families) fn collect_object_stream_frames(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Vec<ObjectFrame>, CodecError> {
-    ctx.try_collect_vec(object_stream_frames(ctx, bytes)?, "catia_b5_object_frames")
+    ctx.try_collect_vec(object_stream_frames(ctx, bytes), "catia_b5_object_frames")
 }
 
 /// Return maximal contiguous top-level A8/B5 object-frame runs. A run chains

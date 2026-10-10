@@ -4645,7 +4645,7 @@ pub(super) fn standard_object_evidence_from_streams(
     {
         const OPERATION: &str = "catia_standard_population_objects";
         let mut objects = BTreeMap::<u32, Option<std::ops::Range<usize>>>::new();
-        for frame in crate::families::b5::graph::object_stream_frames(ctx, population)? {
+        for frame in crate::families::b5::graph::object_stream_frames(ctx, population) {
             let frame = frame?;
             let range = frame.start..frame.end;
             match ctx.get_mut_btree_map(&mut objects, &frame.object_id, OPERATION)? {
