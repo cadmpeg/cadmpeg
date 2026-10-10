@@ -161,7 +161,9 @@ fn sync_configuration_design_state(
         &validation_arena,
         &DecodePolicy::service(),
     )?;
-    let (aliases, _aliases_storage) = ParameterAliases::scoped(
+    let _aliases_storage;
+    let aliases;
+    (aliases, _aliases_storage) = ParameterAliases::scoped(
         &validation_ctx,
         &ir.model.parameters,
         &feature_names,
