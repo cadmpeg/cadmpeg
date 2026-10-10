@@ -193,13 +193,14 @@ pub(super) fn emit_annotation_records(
                 _ => {}
             }
             if is_edge_record(record) {
-                if let Some(curve) = record
-                    .ref_at(8)
-                    .and_then(|reference| by_index.get(&reference))
-                {
-                    if curve.head() == "ellipse" {
-                        ctx.reserve_vec(&mut derived_fields, 1, "ASM annotation derived fields")?;
-                        derived_fields.push("param_range");
+                if let Some(reference) = record.ref_at(8) {
+                    if let Some(curve) = ctx.get_hash_map(
+                        by_index, &reference, "ASM annotation edge curve record lookup",
+                    )? {
+                        if curve.head() == "ellipse" {
+                            ctx.reserve_vec(&mut derived_fields, 1, "ASM annotation derived fields")?;
+                            derived_fields.push("param_range");
+                        }
                     }
                 }
             }
@@ -277,33 +278,25 @@ pub(super) fn emit_annotation_records(
             }
         }
     }
-    for (index, entity_id, tag) in ctx
-        .admit_iter(
-            std::mem::take(&mut carriers.procedural_support_sources),
-            "ASM procedural support annotations",
-        )?
-        .map(|(index, id)| {
-            (
-                index,
-                cadmpeg_ir::ids::Identity::from(id).into_string(),
-                AnnotationTag::ProceduralSupport,
-            )
-        })
-        .chain(
-            ctx.admit_iter(
-                std::mem::take(&mut carriers.procedural_curve_child_sources),
-                "ASM procedural child annotations",
-            )?
-            .map(|(index, id)| {
-                (
-                    index,
-                    cadmpeg_ir::ids::Identity::from(id).into_string(),
-                    AnnotationTag::ProceduralCurveChild,
-                )
-            }),
-        )
-    {
-        let record = by_index.get(&index).ok_or_else(|| {
+    let mut supports = std::mem::take(&mut carriers.procedural_support_sources).into_iter();
+    let mut children = std::mem::take(&mut carriers.procedural_curve_child_sources).into_iter();
+    while supports.len() != 0 || children.len() != 0 {
+        let (index, entity_id, tag) = if supports.len() != 0 {
+            let Some((index, id)) = ctx.next_charged(
+                &mut supports, "ASM procedural support annotations",
+            )? else { break; };
+            (index, cadmpeg_ir::ids::Identity::from(id).into_string(),
+                AnnotationTag::ProceduralSupport)
+        } else {
+            let Some((index, id)) = ctx.next_charged(
+                &mut children, "ASM procedural child annotations",
+            )? else { break; };
+            (index, cadmpeg_ir::ids::Identity::from(id).into_string(),
+                AnnotationTag::ProceduralCurveChild)
+        };
+        let record = ctx.get_hash_map(
+            by_index, &index, "ASM synthetic annotation source record lookup",
+        )?.ok_or_else(|| {
             cadmpeg_core::CodecError::malformed(format_args!(
                 "synthetic entity {entity_id} source record {index} is missing"
             ))
