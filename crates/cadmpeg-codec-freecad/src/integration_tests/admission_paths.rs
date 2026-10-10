@@ -686,3 +686,5 @@ fn assert_detection_suffix_work(
         }
     }
 }
+
+mod native_storage;
