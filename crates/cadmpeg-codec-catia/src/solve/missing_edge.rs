@@ -5804,6 +5804,15 @@ struct PortCandidateSearch<'a, 'b> {
     outcome: SearchOutcome<Vec<[usize; 2]>>,
     states: usize,
     mode: PortCandidateSearchMode,
+    by_port: HashMap<u32, Vec<usize>>,
+    by_point: HashMap<usize, Vec<usize>>,
+    pending: std::collections::VecDeque<usize>,
+    queued: Vec<bool>,
+    option_order: Vec<Option<(usize, usize)>>,
+    option_leaves: usize,
+    option_undo: Vec<(usize, Option<usize>)>,
+    dependencies_initialized: bool,
+    state_storage: cadmpeg_core::decode::ScopedReservation<'a>,
     map_storage: cadmpeg_core::decode::ScopedReservation<'a>,
     outcome_storage: cadmpeg_core::decode::ScopedReservation<'a>,
 }
@@ -5908,10 +5917,171 @@ impl PortCandidateSearch<'_, '_> {
         Ok(())
     }
 
+    /// Dependencies and row options survive every recursive frame.
+    fn initialize_dependencies(&mut self) -> Result<(), CodecError> {
+        if self.dependencies_initialized {
+            return Ok(());
+        }
+        let ctx = self.ctx;
+        self.state_storage.with_storage(|| {
+            self.queued = ctx.alloc_filled(self.ports.len(), true, "catia_port_search_queue")?;
+            self.option_leaves = self
+                .ports
+                .len()
+                .max(1)
+                .checked_next_power_of_two()
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("catia_port_search_options", u64::MAX, u64::MAX)
+                })?;
+            let count = self.option_leaves.checked_mul(2).ok_or_else(|| {
+                ctx.refuse_codec_limit("catia_port_search_options", u64::MAX, u64::MAX)
+            })?;
+            self.option_order = ctx.alloc_filled(count, None, "catia_port_search_options")?;
+            for (edge, ports) in ctx
+                .admit_iter(self.ports, "catia_port_search_dependencies")?
+                .enumerate()
+            {
+                for &port in unique_ports(ports) {
+                    ctx.push_hash_group(
+                        &mut self.by_port,
+                        port,
+                        edge,
+                        "catia_port_search_dependencies",
+                        "catia_port_search_dependencies",
+                    )?;
+                }
+                if self.mode.enforces_point_bijection() {
+                    let (points, _storage) =
+                        ctx.with_scoped_storage("catia_port_search_dependency_points", || {
+                            let mut points = BTreeSet::new();
+                            for pair in ctx.admit_iter(
+                                &self.candidates[edge],
+                                "catia_port_search_dependency_points",
+                            )? {
+                                for point in pair {
+                                    ctx.insert_btree_set(
+                                        &mut points,
+                                        *point,
+                                        "catia_port_search_dependency_points",
+                                    )?;
+                                }
+                            }
+                            Ok::<_, CodecError>(points)
+                        })?;
+                    for point in ctx.admit_iter(points, "catia_port_search_dependency_points")? {
+                        ctx.push_hash_group(
+                            &mut self.by_point,
+                            point,
+                            edge,
+                            "catia_port_search_dependencies",
+                            "catia_port_search_dependencies",
+                        )?;
+                    }
+                }
+                ctx.push_back(&mut self.pending, edge, "catia_port_search_queue")?;
+            }
+            Ok::<_, CodecError>(())
+        })?;
+        self.dependencies_initialized = true;
+        Ok(())
+    }
+
+    fn set_option(&mut self, edge: usize, count: Option<usize>) -> Result<(), CodecError> {
+        let previous = self.option_order[self.option_leaves + edge].map(|(count, _)| count);
+        if previous == count {
+            return Ok(());
+        }
+        let ctx = self.ctx;
+        self.state_storage.with_storage(|| {
+            ctx.push_vec(
+                &mut self.option_undo,
+                (edge, previous),
+                "catia_port_search_option_undo",
+            )?;
+            Ok::<_, CodecError>(())
+        })?;
+        self.update_priority(edge, count)
+    }
+
+    /// The root stores the least option count, then the least edge ordinal.
+    /// Storage is fixed for the component; rollback updates the same slots.
+    fn update_priority(&mut self, edge: usize, count: Option<usize>) -> Result<(), CodecError> {
+        let leaf = self.option_leaves + edge;
+        self.option_order[leaf] = count.map(|count| (count, edge));
+        if self.option_leaves == 1 {
+            return Ok(());
+        }
+        if self.option_leaves == 2 {
+            self.option_order[1] = [self.option_order[2], self.option_order[3]]
+                .into_iter()
+                .flatten()
+                .min();
+            return Ok(());
+        }
+        let mut nodes =
+            std::iter::successors(Some(leaf / 2), |node| (node / 2 > 0).then_some(node / 2));
+        while let Some(node) = self
+            .ctx
+            .next_charged(&mut nodes, "catia_port_search_options")?
+        {
+            self.option_order[node] =
+                [self.option_order[2 * node], self.option_order[2 * node + 1]]
+                    .into_iter()
+                    .flatten()
+                    .min();
+        }
+        Ok(())
+    }
+
+    /// Wake only rows that use a newly bound port or reverse point.
+    fn enqueue_bindings(&mut self, inserted: PortBindingUndo) -> Result<(), CodecError> {
+        let ctx = self.ctx;
+        for (port, point) in inserted.into_iter().flatten() {
+            let port_edges = ctx
+                .get_hash_map(&self.by_port, &port, "catia_port_search_dependencies")?
+                .map_or(&[][..], Vec::as_slice);
+            let point_edges = if self.mode.enforces_point_bijection() {
+                ctx.get_hash_map(&self.by_point, &point, "catia_port_search_dependencies")?
+                    .map_or(&[][..], Vec::as_slice)
+            } else {
+                &[]
+            };
+            for dependents in [port_edges, point_edges] {
+                for &edge in ctx.admit_iter(dependents, "catia_port_search_dependencies")? {
+                    if self.edge_pairs[edge].is_none() && !self.queued[edge] {
+                        self.state_storage.with_storage(|| {
+                            ctx.push_back(&mut self.pending, edge, "catia_port_search_queue")
+                        })?;
+                        self.queued[edge] = true;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn restore_options(&mut self, checkpoint: usize) -> Result<(), CodecError> {
+        let ctx = self.ctx;
+        while self.option_undo.len() > checkpoint {
+            let Some((edge, previous)) = ctx.next_charged(
+                &mut std::iter::from_fn(|| self.option_undo.pop()),
+                "catia_port_search_option_undo",
+            )?
+            else {
+                break;
+            };
+            self.update_priority(edge, previous)?;
+        }
+        while let Some(edge) = ctx.next_charged(
+            &mut std::iter::from_fn(|| self.pending.pop_front()),
+            "catia_missing_edge_iteration",
+        )? {
+            self.queued[edge] = false;
+        }
+        Ok(())
+    }
+
     fn search(&mut self) -> Result<(), CodecError> {
-        // Native-port binding precedes geometric incidence fallback but can
-        // still contain symmetric coordinate assignments. Ambiguity beyond
-        // this bound is retained for later paths rather than partially bound.
         const MAX_STATES: usize = 1_024;
         const OPERATION: &str = "catia_port_candidate_search";
         let ctx = self.ctx;
@@ -5922,220 +6092,116 @@ impl PortCandidateSearch<'_, '_> {
         }
         let _depth = ctx.enter_nested(OPERATION)?;
         ctx.charge_work(1, OPERATION)?;
+        self.initialize_dependencies()?;
+        let checkpoint = self.option_undo.len();
         let mut propagated_storage = ctx.reserve_scoped(0, "catia_port_search_propagated")?;
         let mut propagated = Vec::new();
-        let branch = if ctx.any_by(
-            &self.edge_pairs,
-            |pair| Ok(pair.is_none()),
-            "catia_port_search_dependencies",
+        let mut dead = false;
+        while let Some(edge) = ctx.next_charged(
+            &mut std::iter::from_fn(|| self.pending.pop_front()),
+            "catia_missing_edge_iteration",
         )? {
-            // Revisit a row only when a port or a reverse point binding used by
-            // that row changes. Keep the final branch tie order by edge ordinal.
-            let (dependencies, _dependency_storage) =
-                ctx.with_scoped_storage("catia_port_search_dependencies", || {
-                    let mut by_port = HashMap::new();
-                    let mut by_point = HashMap::new();
-                    let mut pending = std::collections::VecDeque::new();
-                    for (edge, ports) in ctx
-                        .admit_iter(self.ports, "catia_port_search_dependencies")?
-                        .enumerate()
+            self.queued[edge] = false;
+            if self.edge_pairs[edge].is_some() {
+                continue;
+            }
+            let mut first = None;
+            let mut count = 0;
+            for &pair in ctx.admit_iter(&self.candidates[edge], OPERATION)? {
+                for points in self.compatible(edge, pair)?.into_iter().flatten() {
+                    count += 1;
+                    first.get_or_insert(points);
+                }
+            }
+            let Some(first) = first else {
+                dead = true;
+                break;
+            };
+            self.set_option(edge, Some(count))?;
+            if count != 1 {
+                continue;
+            }
+            let inserted = self.assign(edge, first)?;
+            self.set_option(edge, None)?;
+            propagated_storage.with_storage(|| {
+                ctx.push_vec(
+                    &mut propagated,
+                    (edge, inserted),
+                    "catia_port_search_propagated",
+                )
+            })?;
+            self.enqueue_bindings(inserted)?;
+        }
+        if !dead {
+            // One ordered lookup preserves the option-count and ordinal tie order.
+            let branch = self.option_order[1].map(|(_, edge)| edge);
+            if let Some(edge) = branch {
+                if self.states >= MAX_STATES {
+                    self.outcome.exhaust();
+                } else {
+                    self.states += 1;
+                    let mut candidates = 0..self.candidates[edge].len();
+                    'candidates: while let Some(candidate) =
+                        ctx.next_charged(&mut candidates, OPERATION)?
                     {
-                        if self.edge_pairs[edge].is_some() {
-                            continue;
-                        }
-                        for &port in unique_ports(ports) {
-                            ctx.push_hash_group(
-                                &mut by_port,
-                                port,
-                                edge,
-                                "catia_port_search_dependencies",
-                                "catia_port_search_dependencies",
-                            )?;
-                        }
-                        if self.mode.enforces_point_bijection() {
-                            let (points, _points_storage) = ctx.with_scoped_storage(
-                                "catia_port_search_dependency_points",
-                                || {
-                                    let mut points = BTreeSet::new();
-                                    for pair in ctx.admit_iter(
-                                        &self.candidates[edge],
-                                        "catia_port_search_dependency_points",
-                                    )? {
-                                        for point in pair {
-                                            ctx.insert_btree_set(
-                                                &mut points,
-                                                *point,
-                                                "catia_port_search_dependency_points",
-                                            )?;
-                                        }
-                                    }
-                                    Ok::<_, CodecError>(points)
-                                },
-                            )?;
-                            for point in
-                                ctx.admit_iter(points, "catia_port_search_dependency_points")?
-                            {
-                                ctx.push_hash_group(
-                                    &mut by_point,
-                                    point,
-                                    edge,
-                                    "catia_port_search_dependencies",
-                                    "catia_port_search_dependencies",
-                                )?;
-                            }
-                        }
-                        ctx.push_back(&mut pending, edge, "catia_port_search_queue")?;
-                    }
-                    let queued = ctx.collect_vec(
-                        self.edge_pairs.iter().map(Option::is_none),
-                        "catia_port_search_queue",
-                    )?;
-                    let options =
-                        ctx.alloc_filled(self.ports.len(), None, "catia_port_search_options")?;
-                    Ok::<_, CodecError>((by_port, by_point, pending, queued, options))
-                })?;
-            let (by_port, by_point, mut pending, mut queued, mut options) = dependencies;
-            let mut queue_storage = ctx.reserve_scoped(0, "catia_port_search_queue")?;
-            while let Some(edge) = ctx.next_charged(
-                &mut std::iter::from_fn(|| pending.pop_front()),
-                "catia_missing_edge_iteration",
-            )? {
-                queued[edge] = false;
-                if self.edge_pairs[edge].is_some() {
-                    continue;
-                }
-                let mut first = None;
-                let mut count = 0usize;
-                for &pair in ctx.admit_iter(&self.candidates[edge], OPERATION)? {
-                    for points in self.compatible(edge, pair)?.into_iter().flatten() {
-                        count += 1;
-                        first.get_or_insert(points);
-                    }
-                }
-                let Some(first) = first else {
-                    self.rollback(propagated)?;
-                    return Ok(());
-                };
-                options[edge] = Some(count);
-                if count != 1 {
-                    continue;
-                }
-                let inserted = self.assign(edge, first)?;
-                propagated_storage.with_storage(|| {
-                    ctx.push_vec(
-                        &mut propagated,
-                        (edge, inserted),
-                        "catia_port_search_propagated",
-                    )
-                })?;
-                for (port, point) in inserted.into_iter().flatten() {
-                    let port_edges = ctx
-                        .get_hash_map(&by_port, &port, "catia_port_search_dependencies")?
-                        .map_or(&[][..], Vec::as_slice);
-                    let point_edges = if self.mode.enforces_point_bijection() {
-                        ctx.get_hash_map(&by_point, &point, "catia_port_search_dependencies")?
-                            .map_or(&[][..], Vec::as_slice)
-                    } else {
-                        &[]
-                    };
-                    for dependents in [port_edges, point_edges] {
-                        for &dependent in
-                            ctx.admit_iter(dependents, "catia_port_search_dependencies")?
+                        for points in self
+                            .compatible(edge, self.candidates[edge][candidate])?
+                            .into_iter()
+                            .flatten()
                         {
-                            if self.edge_pairs[dependent].is_none() && !queued[dependent] {
-                                queued[dependent] = true;
-                                queue_storage.with_storage(|| {
-                                    ctx.push_back(
-                                        &mut pending,
-                                        dependent,
-                                        "catia_port_search_queue",
-                                    )
-                                })?;
+                            let branch_checkpoint = self.option_undo.len();
+                            let inserted = self.assign(edge, points)?;
+                            self.set_option(edge, None)?;
+                            self.enqueue_bindings(inserted)?;
+                            self.search()?;
+                            self.unassign(edge, inserted)?;
+                            self.restore_options(branch_checkpoint)?;
+                            if self.outcome.is_closed()
+                                || (!self.mode.requires_unique()
+                                    && matches!(self.outcome, SearchOutcome::Solved(_)))
+                            {
+                                break 'candidates;
                             }
                         }
                     }
                 }
-            }
-            let mut best = None;
-            for (edge, option) in ctx
-                .admit_iter(&options, "catia_port_search_options")?
-                .enumerate()
-            {
-                if self.edge_pairs[edge].is_some() {
-                    continue;
-                }
-                let Some(count) = option else {
-                    self.rollback(propagated)?;
-                    return Ok(());
-                };
-                if best.is_none_or(|(stored, _)| *count < stored) {
-                    best = Some((*count, edge));
-                }
-            }
-            best.map(|(_, edge)| edge)
-        } else {
-            None
-        };
-        let Some(edge) = branch else {
-            // No branch remains only when every edge is assigned.
-            match &self.outcome {
-                SearchOutcome::Open => {
-                    let candidate = self.outcome_storage.with_storage(|| {
-                        ctx.collect_options(
-                            self.edge_pairs.iter().copied(),
-                            "catia_port_search_solution",
-                        )
-                    })?;
-                    if let Some(candidate) = candidate {
-                        self.outcome = SearchOutcome::Solved(candidate);
+            } else {
+                match &self.outcome {
+                    SearchOutcome::Open => {
+                        let candidate = self.outcome_storage.with_storage(|| {
+                            ctx.collect_options(
+                                self.edge_pairs.iter().copied(),
+                                "catia_port_search_solution",
+                            )
+                        })?;
+                        if let Some(candidate) = candidate {
+                            self.outcome = SearchOutcome::Solved(candidate);
+                        }
                     }
-                }
-                SearchOutcome::Solved(previous) => {
-                    let equivalent = previous.len() == self.edge_pairs.len()
-                        && ctx.all_by(
-                            previous.iter().zip(&self.edge_pairs),
-                            |(&left, &right)| {
-                                Ok(right.is_some_and(|right| {
-                                    port_candidate_pair_key(left) == port_candidate_pair_key(right)
-                                }))
-                            },
-                            "catia_port_search_solution",
-                        )?;
-                    if !equivalent {
-                        self.outcome = SearchOutcome::Ambiguous;
-                        self.outcome_storage =
-                            ctx.reserve_scoped(0, "catia_port_search_solution")?;
+                    SearchOutcome::Solved(previous) => {
+                        let equivalent = previous.len() == self.edge_pairs.len()
+                            && ctx.all_by(
+                                previous.iter().zip(&self.edge_pairs),
+                                |(&left, &right)| {
+                                    Ok(right.is_some_and(|right| {
+                                        port_candidate_pair_key(left)
+                                            == port_candidate_pair_key(right)
+                                    }))
+                                },
+                                "catia_port_search_solution",
+                            )?;
+                        if !equivalent {
+                            self.outcome = SearchOutcome::Ambiguous;
+                            self.outcome_storage =
+                                ctx.reserve_scoped(0, "catia_port_search_solution")?;
+                        }
                     }
-                }
-                SearchOutcome::Ambiguous | SearchOutcome::Exhausted => {}
-            }
-            self.rollback(propagated)?;
-            return Ok(());
-        };
-        if self.states >= MAX_STATES {
-            self.outcome.exhaust();
-        } else {
-            self.states += 1;
-            let mut candidates = 0..self.candidates[edge].len();
-            'candidates: while let Some(candidate) = ctx.next_charged(&mut candidates, OPERATION)? {
-                for points in self
-                    .compatible(edge, self.candidates[edge][candidate])?
-                    .into_iter()
-                    .flatten()
-                {
-                    let inserted = self.assign(edge, points)?;
-                    self.search()?;
-                    self.unassign(edge, inserted)?;
-                    if self.outcome.is_closed()
-                        || (!self.mode.requires_unique()
-                            && matches!(self.outcome, SearchOutcome::Solved(_)))
-                    {
-                        break 'candidates;
-                    }
+                    SearchOutcome::Ambiguous | SearchOutcome::Exhausted => {}
                 }
             }
         }
-        self.rollback(propagated)
+        self.rollback(propagated)?;
+        self.restore_options(checkpoint)
     }
 }
 
@@ -6332,6 +6398,15 @@ fn edge_port_candidate_assignment(
                 outcome: SearchOutcome::Open,
                 states: 0,
                 mode,
+                by_port: HashMap::new(),
+                by_point: HashMap::new(),
+                pending: std::collections::VecDeque::new(),
+                queued: Vec::new(),
+                option_order: Vec::new(),
+                option_leaves: 0,
+                option_undo: Vec::new(),
+                dependencies_initialized: false,
+                state_storage: ctx.reserve_scoped(0, "catia_port_search_dependencies")?,
                 map_storage: ctx.reserve_scoped(0, "catia_port_search_points")?,
                 outcome_storage: ctx.reserve_scoped(0, "catia_port_search_solution")?,
             })
@@ -6491,3 +6566,6 @@ pub(crate) fn motif_port_points(
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod index_work_tests;

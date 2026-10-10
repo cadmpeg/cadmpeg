@@ -1102,6 +1102,17 @@ fn closed_port_search_does_not_visit_another_frame() {
         outcome: super::SearchOutcome::Ambiguous,
         states: 0,
         mode: super::PortCandidateSearchMode::UniqueMesh,
+        by_port: std::collections::HashMap::new(),
+        by_point: std::collections::HashMap::new(),
+        pending: std::collections::VecDeque::new(),
+        queued: Vec::new(),
+        option_order: Vec::new(),
+        option_leaves: 0,
+        option_undo: Vec::new(),
+        dependencies_initialized: false,
+        state_storage: ctx
+            .reserve_scoped(0, "catia_port_search_dependencies")
+            .expect("empty storage"),
         map_storage: ctx
             .reserve_scoped(0, "catia_port_search_points")
             .expect("empty storage"),
