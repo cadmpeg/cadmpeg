@@ -125,7 +125,7 @@ pub(crate) fn transfer(
                 entry.data(),
                 cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
                 admitted_entities,
-                Some(admitted_document),
+                admitted_document,
                 &mut ir.model.points,
             )?;
             transferred = true;
@@ -296,7 +296,7 @@ fn parse_points(
     bytes: &[u8],
     current_entities: u64,
     admitted_entities: &mut u64,
-    document: Option<AdmittedXml<'_, '_>>,
+    document: AdmittedXml<'_, '_>,
     points: &mut Vec<Point>,
 ) -> Result<(), CodecError> {
     let mut reader = Reader::new(bytes);
@@ -314,7 +314,7 @@ fn parse_points(
         admitted_entities,
         "FreeCAD point-cloud entities",
     )?;
-    let transform = point_transform(ctx, property, document.as_ref().map(AdmittedXml::document))?;
+    let transform = point_transform(ctx, document.document())?;
     drop(document);
     ctx.reserve_vec(points, count, "FreeCAD point-cloud points")?;
     let mut point_sources = 0..count;
@@ -346,26 +346,8 @@ fn parse_points(
 
 fn point_transform(
     ctx: &DecodeContext<'_>,
-    property: &PropertyRecord,
-    document: Option<&roxmltree::Document<'_>>,
+    document: &roxmltree::Document<'_>,
 ) -> Result<[[FiniteReal; 4]; 4], CodecError> {
-    let admitted_document;
-    let document = if let Some(document) = document {
-        document
-    } else {
-        admitted_document = ctx
-            .parse_xml(property.xml.text(), "FreeCAD XML tree")
-            .or_else(|error| {
-                let CodecError::Malformed(error) = error else {
-                    return Err(error);
-                };
-                Err(CodecError::Malformed(ctx.format_retained(
-                    format_args!("invalid point property XML {}: {error}", property.id),
-                    "FreeCAD point XML error",
-                )?))
-            })?;
-        admitted_document.document()
-    };
     let property_root = ctx.xml_root_element(document, "FreeCAD point property root")?;
     let point_root = ctx.find_by(
         property_root.children(),
@@ -568,7 +550,7 @@ impl<'a> Reader<'a> {
 pub(crate) mod tests {
     mod mesh_publication;
     mod point_publication;
-    use super::{association, parse_mesh, parse_points, ByteOrder, Reader};
+    use super::{association, parse_mesh, ByteOrder, Reader};
     use crate::layout::mesh_kernel_side_entry_header as mesh_hdr;
     use crate::native::{PropertyBody, PropertyFamily, PropertyRecord, RetainedXml};
     use crate::test_support::test_archive::archive_entries;
@@ -577,6 +559,20 @@ pub(crate) mod tests {
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::{Codec, DecodeOptions};
     use std::io::Cursor;
+
+    fn parse_points(
+        ctx: &DecodeContext<'_>,
+        property: &PropertyRecord,
+        bytes: &[u8],
+        current_entities: u64,
+        admitted_entities: &mut u64,
+        points: &mut Vec<cadmpeg_ir::topology::Point>,
+    ) -> Result<(), CodecError> {
+        crate::test_support::with_service_context(&[], |setup| {
+            let document = setup.parse_xml(property.xml.text(), "point test XML")?;
+            super::parse_points(ctx, property, bytes, current_entities, admitted_entities, document, points)
+        })
+    }
 
     fn resource_test_property() -> PropertyRecord {
         PropertyRecord {
@@ -670,7 +666,7 @@ pub(crate) mod tests {
         let short = [1_u32.to_le_bytes().as_slice(), &[0; 12]].concat();
         let budget = crate::test_support::with_service_context(&[], |ctx| {
             let mut points = Vec::new();
-            parse_points(ctx, &property, &short, 0, &mut 0, None, &mut points)
+            parse_points(ctx, &property, &short, 0, &mut 0, &mut points)
                 .expect("short point population");
             assert_eq!(points.len(), 1);
             let CodecError::ResourceLimit(limit) = ctx
@@ -694,7 +690,7 @@ pub(crate) mod tests {
         policy.limits.max_work_units = budget;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let mut points = Vec::new();
-        let error = parse_points(&ctx, &property, &bytes, 0, &mut 0, None, &mut points)
+        let error = parse_points(&ctx, &property, &bytes, 0, &mut 0, &mut points)
             .expect_err("first non-finite point");
         assert!(matches!(error, CodecError::Malformed(message)
             if message == "point-cloud point contains a non-finite coordinate"));
@@ -759,7 +755,6 @@ pub(crate) mod tests {
                     &points,
                     0,
                     &mut 0,
-                    None,
                     &mut Vec::new(),
                 )
             },
@@ -795,7 +790,10 @@ pub(crate) mod tests {
                 cadmpeg_core::decode::ResourceDimension::WorkUnits,
                 &[],
                 operation,
-                |ctx| super::point_transform(ctx, &property, None),
+                |ctx| {
+                    let admitted = ctx.parse_xml(property.xml.text(), "FreeCAD XML tree")?;
+                    super::point_transform(ctx, admitted.document())
+                },
             );
         }
     }
@@ -821,7 +819,7 @@ pub(crate) mod tests {
                 .expect("root"),
             Some("payload".into())
         );
-        let transform = super::point_transform(&ctx, &property, Some(admitted.document()))
+        let transform = super::point_transform(&ctx, admitted.document())
             .expect("transform without reparsing");
         assert_eq!(
             [
@@ -845,13 +843,13 @@ pub(crate) mod tests {
             |ctx| {
                 let document = ctx.parse_xml(property.xml.text(), "FreeCAD XML tree")?;
                 ctx.with_scoped_storage("FreeCAD point test records", || {
-                    parse_points(
+                    super::parse_points(
                         ctx,
                         &property,
                         &bytes,
                         0,
                         &mut 0,
-                        Some(document),
+                        document,
                         &mut Vec::new(),
                     )
                 })
@@ -872,7 +870,7 @@ pub(crate) mod tests {
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("test context");
         let mut admitted = 0;
         assert!(
-            matches!(parse_points(&ctx, &resource_test_property(), &bytes, 0, &mut admitted, None, &mut Vec::new()),
+            matches!(parse_points(&ctx, &resource_test_property(), &bytes, 0, &mut admitted, &mut Vec::new()),
             Err(CodecError::ResourceLimit(limit)) if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities && limit.additional == 2)
         );
         assert_eq!(admitted, 0);
@@ -886,7 +884,6 @@ pub(crate) mod tests {
             &bytes,
             0,
             &mut admitted,
-            None,
             &mut points,
         )
         .expect("admitted points");
@@ -978,16 +975,6 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn invalid_point_xml_refuses_diagnostic_at_retained_limit() {
-        let mut property = resource_test_property();
-        property.xml =
-            RetainedXml::from_text("<Property><Points>".into(), 0).expect("retained XML span");
-        crate::test_support::assert_retained_refusal_at(&[], "FreeCAD point XML error", |ctx| {
-            super::point_transform(ctx, &property, None)
-        });
-    }
-
-    #[test]
     fn invalid_geometry_xml_refuses_diagnostic_at_retained_limit() {
         let mut property = resource_test_property();
         property.xml =
@@ -1062,7 +1049,6 @@ pub(crate) mod tests {
                     &points,
                     0,
                     &mut 0,
-                    None,
                     &mut Vec::new(),
                 )
             },
@@ -1074,7 +1060,7 @@ pub(crate) mod tests {
         let bytes = 1_000_000_u32.to_le_bytes();
         crate::test_support::with_service_context(&bytes, |ctx| {
             assert!(
-                matches!(parse_points(ctx, &resource_test_property(), &bytes, 0, &mut 0, None, &mut Vec::new()),
+                matches!(parse_points(ctx, &resource_test_property(), &bytes, 0, &mut 0, &mut Vec::new()),
                 Err(CodecError::Malformed(message))
                     if message == "point-cloud count exceeds remaining payload")
             );
@@ -1095,7 +1081,6 @@ pub(crate) mod tests {
                 &bytes,
                 0,
                 &mut 0,
-                None,
                 &mut Vec::new()
             ),
             Err(CodecError::Malformed(_))
@@ -1116,7 +1101,6 @@ pub(crate) mod tests {
                     &bytes,
                     0,
                     &mut 0,
-                    None,
                     &mut Vec::new(),
                 )
             },
@@ -1130,7 +1114,7 @@ pub(crate) mod tests {
         points.extend_from_slice(&1_u32.to_le_bytes());
         points.extend_from_slice(&[0; 12]);
         crate::test_support::assert_retained_refusal_at(&points, "FreeCAD model identity", |ctx| {
-            parse_points(ctx, &property, &points, 0, &mut 0, None, &mut Vec::new())
+            parse_points(ctx, &property, &points, 0, &mut 0, &mut Vec::new())
         });
     }
 
