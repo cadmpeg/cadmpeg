@@ -1,4 +1,4 @@
-use super::super::hole_child_tokens;
+use crate::resolved_features::child_sources::child_tokens;
 use cadmpeg_core::decode::{
     DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, ResourceFailure,
 };
@@ -12,7 +12,7 @@ fn hole_child_tokens_preserve_unicode_and_empty_parts() {
         ("", vec![""]),
         ("α,", vec!["α", ""]),
     ] {
-        let tokens = hole_child_tokens(&ctx, text)
+        let tokens = child_tokens(&ctx, text, "scan SLDPRT hole child references")
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
         assert_eq!(tokens, expected);
@@ -29,7 +29,7 @@ fn hole_child_tokens_refuse_on_first_text_visit() {
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let mut children = hole_child_tokens(&ctx, "α,β");
+            let mut children = child_tokens(&ctx, "α,β", "scan SLDPRT hole child references");
             children.next().unwrap()
         },
     );

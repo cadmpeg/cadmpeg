@@ -1212,14 +1212,12 @@ fn compact_reference_list_accepts_unframed_surface_cut_targets() {
         &lane,
         &crate::resolved_features::selections::OperationSurfaceClasses::new(
             &identity_ctx,
-            &lane,
             &crate::resolved_features::selections::generated_surface_identities(
                 &identity_ctx,
                 &lane,
             )
             .unwrap(),
-        )
-        .unwrap(),
+        ),
         0,
         payload.len(),
         None,

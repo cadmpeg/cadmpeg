@@ -56,10 +56,8 @@ impl SourceRecords {
     ) -> Result<(), CodecError> {
         let count = self.records.len();
         self.run_ends = storage.with_storage(|| ctx.alloc_filled(count, count, operation))?;
-        for index in ctx
-            .admit_iter(&(0..count.saturating_sub(1)), operation)?
-            .rev()
-        {
+        for next_index in ctx.admit_iter(1..count, operation)?.rev() {
+            let index = next_index - 1;
             if self.records[index].1 == self.records[index + 1].1 {
                 self.run_ends[index] = self.run_ends[index + 1];
             } else {

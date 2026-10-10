@@ -164,26 +164,24 @@ fn cosmetic_diameter_name_comparison_has_its_own_work_boundary() {
 
 #[test]
 fn variable_fillet_kind_comparisons_refuse_before_class_lookup() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     let lane = lane();
     let mut feature = feature();
     feature.kind = "vArFiLlEt".into();
-    for controls in [false, true] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = if controls {
-            super::super::variable_fillet_control_references(&ctx, &feature, &lane, 0, 0)
-                .unwrap_err()
-        } else {
-            super::super::compact_edge_reference_list_for_feature(&ctx, &[], 0, &feature.kind)
-                .unwrap_err()
-        };
+    for (controls, operation) in [
+        (false, "decode SLDPRT variable fillet references"),
+        (true, "collect SLDPRT variable fillet controls"),
+    ] {
+        let error = crate::test_support::work_refusal_at(operation, |ctx| {
+            if controls {
+                super::super::variable_fillet_control_references(ctx, &feature, &lane, 0, 0).map(|_| ())
+            } else {
+                super::super::compact_edge_reference_list_for_feature(ctx, &[], 0, &feature.kind).map(|_| ())
+            }
+        });
         let CodecError::ResourceLimit(limit) = error else { panic!("kind comparison refusal"); };
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
         assert_eq!(limit.used, 0);
         assert_eq!(limit.additional, 9);
-        assert_eq!(ctx.resource_refusal(), Some(limit));
     }
 }

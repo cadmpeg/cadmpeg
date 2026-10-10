@@ -243,14 +243,12 @@ fn operation_surface_selection_finds_marker_inside_class_body() {
         &lane,
         &crate::resolved_features::selections::OperationSurfaceClasses::new(
             &identity_ctx,
-            &lane,
             &crate::resolved_features::selections::generated_surface_identities(
                 &identity_ctx,
                 &lane,
             )
             .unwrap(),
-        )
-        .unwrap(),
+        ),
         0,
         payload.len(),
         None,
@@ -332,14 +330,12 @@ fn operation_surface_selection_scans_inline_component_faces_and_rejects_collisio
         &lane,
         &crate::resolved_features::selections::OperationSurfaceClasses::new(
             &identity_ctx,
-            &lane,
             &crate::resolved_features::selections::generated_surface_identities(
                 &identity_ctx,
                 &lane,
             )
             .unwrap(),
-        )
-        .unwrap(),
+        ),
         first_body,
         first_end,
         None,
@@ -362,14 +358,12 @@ fn operation_surface_selection_scans_inline_component_faces_and_rejects_collisio
         &lane,
         &crate::resolved_features::selections::OperationSurfaceClasses::new(
             &identity_ctx,
-            &lane,
             &crate::resolved_features::selections::generated_surface_identities(
                 &identity_ctx,
                 &lane
             )
             .unwrap()
-        )
-        .unwrap(),
+        ),
         first_body,
         collision_end,
         None
@@ -1516,14 +1510,12 @@ fn projected_split_line_consumes_self_owned_surface_identity_paths() {
         &lane,
         &crate::resolved_features::selections::OperationSurfaceClasses::new(
             &identity_ctx,
-            &lane,
             &crate::resolved_features::selections::generated_surface_identities(
                 &identity_ctx,
                 &lane,
             )
             .unwrap(),
-        )
-        .unwrap(),
+        ),
         0,
         payload.len(),
         Some(711),
@@ -1546,14 +1538,12 @@ fn projected_split_line_consumes_self_owned_surface_identity_paths() {
         &lane,
         &crate::resolved_features::selections::OperationSurfaceClasses::new(
             &identity_ctx,
-            &lane,
             &crate::resolved_features::selections::generated_surface_identities(
                 &identity_ctx,
                 &lane
             )
             .unwrap()
-        )
-        .unwrap(),
+        ),
         0,
         payload.len(),
         Some(712)

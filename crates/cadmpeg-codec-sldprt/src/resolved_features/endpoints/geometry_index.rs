@@ -405,7 +405,7 @@ impl<'a> MarkerGeometryIndex<'a, '_, '_> {
                 }
                 ctx.push_vec(&mut roster, marker, OPERATION)?;
             }
-            ctx.sort_unstable_by_key(&mut roster, |marker| marker.offset(), Ord::cmp, OPERATION)
+            self.ctx.sort_unstable_by_key(&mut roster, |marker| marker.offset(), Ord::cmp, OPERATION)
         })?;
         Ok(cache.get_or_init(|| roster))
     }
@@ -496,7 +496,7 @@ impl<'a> MarkerGeometryIndex<'a, '_, '_> {
             return Ok(None);
         };
         let last =
-            owner_offset.saturating_sub(crate::resolved_features::LEGACY_SKETCH_MARKER.len());
+            owner_offset.checked_sub(crate::resolved_features::LEGACY_SKETCH_MARKER.len()).map_or(0, std::convert::identity);
         if last < first {
             return Ok(None);
         }
@@ -542,9 +542,9 @@ impl<'a> MarkerGeometryIndex<'a, '_, '_> {
                             };
                             ctx.push_vec(&mut positions, (coordinates[0], marker), OPERATION)?;
                         }
-                        ctx.sort_unstable_by_key(
+                        self.ctx.sort_unstable_by(
                             &mut positions,
-                            |point| point.0,
+                            |point| &point.0,
                             f64::total_cmp,
                             OPERATION,
                         )

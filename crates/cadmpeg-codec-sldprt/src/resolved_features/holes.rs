@@ -734,42 +734,6 @@ fn copy_hole_profile_source(
     }
 }
 
-fn hole_child_tokens<'value, 'ctx, 'arena>(
-    ctx: &'ctx DecodeContext<'arena>,
-    value: &'value str,
-) -> impl Iterator<Item = Result<&'value str, CodecError>> + use<'value, 'ctx, 'arena> {
-    const OPERATION: &str = "scan SLDPRT hole child references";
-    let mut start = 0usize;
-    let mut characters = value
-        .char_indices()
-        .chain(std::iter::once((value.len(), ',')));
-    let mut done = false;
-    std::iter::from_fn(move || {
-        if done {
-            return None;
-        }
-        let token = ctx.find_map(
-            characters.by_ref(),
-            |(offset, character)| {
-                if character != ',' {
-                    return Ok(None);
-                }
-                let token = value
-                    .get(start..offset)
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-                start = offset
-                    .checked_add(1)
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-                Ok(Some(token))
-            },
-            OPERATION,
-        );
-        if !matches!(token, Ok(Some(_))) {
-            done = true;
-        }
-        token.transpose()
-    })
-}
 
 struct HoleHistoryIndex<'history, 'ctx> {
     history: &'history crate::records::FeatureHistory,
@@ -827,13 +791,7 @@ impl<'history, 'ctx> HoleHistoryIndex<'history, 'ctx> {
         source: &str,
     ) -> Result<Option<&'history crate::records::Feature>, CodecError> {
         const OPERATION: &str = "match SLDPRT hole child profile";
-        let parsed = if source == "-1" {
-            Some(FeatureSource::Reserved)
-        } else {
-            ctx.parse_text::<u32>(source, OPERATION)?
-                .ok()
-                .and_then(FeatureSource::from_value)
-        };
+        let parsed = FeatureSource::parse_for_decode(ctx, source, OPERATION)?;
         let by_id = ctx
             .get_hash_map(&self.by_id, source, OPERATION)?
             .map_or(&[][..], Vec::as_slice);
@@ -871,7 +829,7 @@ fn claimed_hole_profiles<'a>(
         else {
             continue;
         };
-        for child in hole_child_tokens(ctx, children) {
+        for child in super::child_sources::child_tokens(ctx, children, "scan SLDPRT hole child references") {
             let child = ctx.trim_text(child?, OPERATION)?;
             if child.is_empty() {
                 continue;
@@ -2276,7 +2234,7 @@ pub(crate) fn project_profiled_hole_constructions(
         if let Some(children) =
             ctx.get_btree_map(&native.properties, "DissectableChildren", OPERATION)?
         {
-            for source in hole_child_tokens(ctx, children) {
+            for source in super::child_sources::child_tokens(ctx, children, "scan SLDPRT hole child references") {
                 let source = ctx.trim_text(source?, OPERATION)?;
                 let Some(profile) = records[history_index].child(ctx, source)? else {
                     continue;
@@ -2360,7 +2318,7 @@ fn collect_claimed_hole_profiles<'a>(
     profiles: &mut HashSet<&'a str>,
 ) -> Result<(), CodecError> {
     const OPERATION: &str = "index SLDPRT claimed axial hole profiles";
-    for child in hole_child_tokens(ctx, children) {
+    for child in super::child_sources::child_tokens(ctx, children, "scan SLDPRT hole child references") {
         let child = ctx.trim_text(child?, OPERATION)?;
         if child.is_empty() {
             continue;
@@ -5024,7 +4982,7 @@ fn direct_hole_position_feature<'a, 's>(
         "DissectableChildren",
         "find SLDPRT hole property",
     )? {
-        for source in hole_child_tokens(ctx, children) {
+        for source in super::child_sources::child_tokens(ctx, children, "scan SLDPRT hole child references") {
             let source = ctx.trim_text(source?, OPERATION)?;
             if source.is_empty() {
                 continue;
