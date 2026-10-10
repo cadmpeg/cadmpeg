@@ -355,7 +355,9 @@ pub(super) fn dimensioned_circle_surface_transforms(
     if compatible.len() != circles.len() {
         return Ok(Vec::new());
     }
-    let candidates = compatible_marker_transform_candidates(ctx, &compatible)?;
+    let (candidates, candidates_storage) = ctx.with_scoped_storage(OPERATION, || {
+        compatible_marker_transform_candidates(ctx, &compatible)
+    })?;
     let mut result = Vec::new();
     for transform in ctx.admit_iter(candidates, OPERATION)? {
         let complete = ctx
@@ -385,6 +387,7 @@ pub(super) fn dimensioned_circle_surface_transforms(
             ctx.push_vec(&mut result, transform, OPERATION)?;
         }
     }
+    drop(candidates_storage);
     Ok(result)
 }
 
@@ -603,6 +606,7 @@ where
         ctx.push_vec(&mut result, transform, OPERATION)?;
         return Ok(result);
     }
+    let mut scored_storage = ctx.reserve_scoped(0, OPERATION)?;
     let mut scored = Vec::new();
     for swap in [false, true] {
         for u_sign in [Sign::Negative, Sign::Positive] {
@@ -621,17 +625,19 @@ where
                 let (translations, _storage) =
                     ctx.with_scoped_storage(OPERATION, || score(axes))?;
                 for (translation, count) in ctx.admit_iter(translations, OPERATION)? {
-                    ctx.push_vec(
-                        &mut scored,
-                        (
-                            MarkerTransform {
-                                translation,
-                                ..axes
-                            },
-                            count,
-                        ),
-                        OPERATION,
-                    )?;
+                    scored_storage.with_storage(|| {
+                        ctx.push_vec(
+                            &mut scored,
+                            (
+                                MarkerTransform {
+                                    translation,
+                                    ..axes
+                                },
+                                count,
+                            ),
+                            OPERATION,
+                        )
+                    })?;
                 }
             }
         }
@@ -654,6 +660,7 @@ where
             ctx.push_vec(&mut candidates, transform, OPERATION)?;
         }
     }
+    drop(scored_storage);
     if candidates.len() == 1 {
         return Ok(candidates);
     }
