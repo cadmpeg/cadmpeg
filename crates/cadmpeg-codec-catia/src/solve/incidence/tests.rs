@@ -313,7 +313,7 @@ fn incidence_propagation_closes_degree_one_vertices_before_search() {
 }
 
 #[test]
-fn incidence_choice_pruning_refuses_face_edge_collection_limit() {
+fn incidence_choice_pruning_refuses_fixed_edge_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
@@ -344,10 +344,10 @@ fn incidence_choice_pruning_refuses_face_edge_collection_limit() {
         1,
         2,
     )
-    .expect_err("face edge collection exceeds the limit");
+    .expect_err("fixed edge collection exceeds the limit");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "catia_incidence_face_edges"));
+            && limit.operation == "catia_incidence_fixed_edges"));
 }
 
 #[test]
@@ -1811,3 +1811,5 @@ fn rejected_endpoint_choice_rows_use_and_release_scoped_storage() {
         }
     }
 }
+
+mod budget_paths;
