@@ -237,7 +237,7 @@ fn empty_projection_error(properties: &[PropertyRecord], expected: &str) {
                 reference: None,
                 placement: crate::native::frame::FiniteFrame::default(),
             },
-            BTreeMap::new(),
+            crate::native::joint::JointParameters::default(),
         )
         .expect("grounded joint")
     });
