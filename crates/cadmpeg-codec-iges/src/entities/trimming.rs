@@ -35,7 +35,10 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::units::FinitePoint2;
 use cadmpeg_ir::CadIr;
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
+
+mod proximity;
+use proximity::ProximityGrid;
 
 struct BoundarySegment {
     model_curve: u32,
@@ -217,13 +220,7 @@ fn cluster_boundary_positions(
         ctx.alloc_filled(positions.len(), 1usize, "iges boundary cluster sizes")
     })?;
     let mut grid_storage = ctx.reserve_scoped(0, "iges boundary proximity grid storage")?;
-    let mut cells = HashMap::<[i64; 3], usize>::new();
-    let mut links = grid_storage.with_storage(|| {
-        ctx.alloc_filled(positions.len(), None, "iges boundary proximity links")
-    })?;
-    grid_storage.with_storage(|| {
-        ctx.reserve_map(&mut cells, positions.len(), "iges boundary proximity cells")
-    })?;
+    let mut grid = grid_storage.with_storage(|| ProximityGrid::new(positions.len(), ctx))?;
     let mut input = positions.iter().enumerate();
     while let Some((index, point)) =
         ctx.next_charged(&mut input, "iges boundary clustering positions")?
@@ -242,10 +239,10 @@ fn cluster_boundary_positions(
                     else {
                         continue;
                     };
-                    let mut previous = cells.get(&neighbour).copied();
+                    let mut previous = grid.head(&neighbour);
                     while let Some(other) = previous {
                         ctx.charge_work(1, "iges boundary clustering comparisons")?;
-                        previous = links[other];
+                        previous = grid.previous(other);
                         if !close(point.get(), positions[other].get(), tolerance) {
                             continue;
                         }
@@ -271,11 +268,9 @@ fn cluster_boundary_positions(
             }
         }
         ctx.charge_work(1, "iges boundary proximity cell insertion")?;
-        // Capacity holds one cell per endpoint, so insertion cannot grow the table.
-        links[index] = cells.insert(cell, index);
+        grid.insert(cell, index)?;
     }
-    drop(cells);
-    drop(links);
+    drop(grid);
     drop(grid_storage);
     drop(sizes);
     drop(size_storage);
