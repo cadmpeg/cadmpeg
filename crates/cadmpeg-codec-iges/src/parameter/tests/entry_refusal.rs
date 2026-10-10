@@ -130,7 +130,7 @@ fn entry_attribute_instance_invalid_structure_preserves_original_refusal() {
     with_entry_context(|ctx, original| {
         for structure in [0, 1, -2, i64::MIN] {
             let mut entry = directory_target(1, 422); entry.structure = structure;
-            let result = super::super::attribute_table_instance_primary_end(&record, &entry, &directory, &records, ctx);
+            let result = super::super::AttributeDefinitionWidths::new(ctx).and_then(|mut widths| super::super::attribute_table_instance_primary_end(&record, &entry, &directory, &records, &mut widths, ctx));
             if let Some(first) = original {
                 assert!(matches!(result, Err(CodecError::ResourceLimit(last)) if last == first));
             } else { assert_eq!(result.unwrap(), 0); }
@@ -160,7 +160,7 @@ fn entry_primary_layout_with_records_preserves_original_refusal() {
     with_entry_context(|ctx, original| {
         for (kind, expected) in [(116, Some(5)), (422, Some(0)), (999, None)] {
             let entry = directory_target(1, kind);
-            let result = super::super::entity_primary_end_with_records_for_entry(&record, &entry, &directory, &records, GlobalTable::V5Later, ctx);
+            let result = super::super::AttributeDefinitionWidths::new(ctx).and_then(|mut widths| super::super::entity_primary_end_with_records_for_entry(&record, &entry, &directory, &records, GlobalTable::V5Later, &mut widths, ctx));
             if let Some(first) = original {
                 assert!(matches!(result, Err(CodecError::ResourceLimit(last)) if last == first));
             } else { assert_eq!(result.unwrap(), expected); }

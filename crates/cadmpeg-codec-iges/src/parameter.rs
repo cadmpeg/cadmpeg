@@ -607,6 +607,7 @@ fn analyze_trailing_pointer_groups_with_records_for_global_table(
     directory: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
     global_table: GlobalTable,
+    widths: &mut AttributeDefinitionWidths<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<TrailingPointerAnalysis, CodecError> {
     let entry = ctx.get_btree_map(
@@ -619,7 +620,7 @@ fn analyze_trailing_pointer_groups_with_records_for_global_table(
     }
     let primary_end = match entry {
         Some(entry) => entity_primary_end_with_records_for_entry(
-            record, entry, directory, records, global_table, ctx,
+            record, entry, directory, records, global_table, widths, ctx,
         )?,
         None => None,
     };
@@ -1357,7 +1358,8 @@ fn entity_primary_end_with_records_for_global_table(
     )? else {
         return Ok(None);
     };
-    entity_primary_end_with_records_for_entry(record, entry, directory, records, global_table, ctx)
+    let mut widths = AttributeDefinitionWidths::new(ctx)?;
+    entity_primary_end_with_records_for_entry(record, entry, directory, records, global_table, &mut widths, ctx)
 }
 
 fn entity_primary_end_with_records_for_entry(
@@ -1366,6 +1368,7 @@ fn entity_primary_end_with_records_for_entry(
     directory: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
     global_table: GlobalTable,
+    widths: &mut AttributeDefinitionWidths<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<usize>, CodecError> {
     if let Some(refusal) = ctx.resource_refusal() {
@@ -1373,7 +1376,7 @@ fn entity_primary_end_with_records_for_entry(
     }
     if entry.entity_type == 422 && matches!(entry.form, 0 | 1) {
         return Ok(Some(attribute_table_instance_primary_end(
-            record, entry, directory, records, ctx,
+            record, entry, directory, records, widths, ctx,
         )?));
     }
     entity_primary_end_for_entry(record, entry, global_table, ctx)
@@ -2180,47 +2183,84 @@ fn attribute_table_definition_primary_end(
     Ok(cursor)
 }
 
+/// Descriptor-count failure in a Type 322 Form 0 row width.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AttributeWidthDefect {
+    ValueCount { attribute: usize },
+    ValueTotal,
+}
+
+/// Sum descriptor value counts. Only the last count may be absent and default to one.
+pub(crate) fn attribute_table_definition_width(
+    record: &ParameterRecord,
+    attribute_count: usize,
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<Result<usize, AttributeWidthDefect>, CodecError> {
+    let mut values_per_row = 0_usize;
+    let refusal = ctx.find_map(
+        0..attribute_count,
+        |attribute| {
+            let descriptor = attribute.checked_mul(3).and_then(|span| span.checked_add(4));
+            let declared = descriptor.and_then(|cursor| {
+                record.tokens.get(cursor)?;
+                record.tokens.get(cursor + 1)?;
+                let count_index = cursor + 2;
+                match record.tokens.get(count_index) {
+                    Some(_) => record.integer_or(count_index, 1),
+                    None if attribute + 1 == attribute_count => Some(1),
+                    None => None,
+                }.and_then(|value| usize::try_from(value).ok())
+            });
+            let Some(declared) = declared else {
+                return Ok(Some(AttributeWidthDefect::ValueCount { attribute }));
+            };
+            let Some(total) = values_per_row.checked_add(declared) else {
+                return Ok(Some(AttributeWidthDefect::ValueTotal));
+            };
+            values_per_row = total;
+            Ok(None)
+        },
+        operation,
+    )?;
+    Ok(refusal.map_or(Ok(values_per_row), Err))
+}
+
 fn attribute_table_definition_values_per_row(
     record: &ParameterRecord,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<usize>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
+    ctx.charge_work(0, "iges parameter primary layout")?;
+    let Some(attribute_count) = record.integer(3)
+        .and_then(|value| usize::try_from(value).ok()).filter(|count| *count > 0)
+    else { return Ok(None); };
+    Ok(attribute_table_definition_width(record, attribute_count, ctx, "iges parameter primary layout")?.ok())
+}
+
+/// Scoped row widths, including malformed definitions, shared by all primary-layout instances.
+struct AttributeDefinitionWidths<'ctx> {
+    values: BTreeMap<u32, Option<usize>>,
+    storage: ScopedReservation<'ctx>,
+}
+
+impl<'ctx> AttributeDefinitionWidths<'ctx> {
+    fn new(ctx: &'ctx DecodeContext<'_>) -> Result<Self, CodecError> {
+        Ok(Self {
+            values: BTreeMap::new(),
+            storage: ctx.reserve_scoped(0, "iges parameter attribute definition widths")?,
+        })
     }
-    let Some(attribute_count) = record
-        .integer(3)
-        .and_then(|value| usize::try_from(value).ok())
-        .filter(|count| *count > 0)
-    else {
-        return Ok(None);
-    };
-    let mut cursor = 4_usize;
-    let mut values_per_row = 0_usize;
-    let mut steps = 0..attribute_count;
-    while !steps.is_empty() || ctx.resource_refusal().is_some() {
-        let Some(attribute_index) = ctx.next_charged(&mut steps, "iges parameter primary layout")? else { break; };
-        let step = (|| {
-            let count_index = cursor.checked_add(2)?;
-            record.tokens.get(cursor)?;
-            record.tokens.get(cursor + 1)?;
-            let value_count = match record.tokens.get(count_index) {
-                Some(_) => record.integer_or(count_index, 1),
-                None if attribute_index + 1 == attribute_count => Some(1),
-                None => None,
-            }
-            .and_then(|value| usize::try_from(value).ok())?;
-            Some((
-                values_per_row.checked_add(value_count)?,
-                count_index.checked_add(1)?,
-            ))
-        })();
-        let Some((next_values, next_cursor)) = step else {
-            return Ok(None);
-        };
-        values_per_row = next_values;
-        cursor = next_cursor;
+
+    fn width(&mut self, record: &ParameterRecord, ctx: &DecodeContext<'_>) -> Result<Option<usize>, CodecError> {
+        if let Some(width) = ctx.get_btree_map(&self.values, &record.directory_sequence, "iges parameter attribute width lookup")? {
+            return Ok(*width);
+        }
+        let width = attribute_table_definition_values_per_row(record, ctx)?;
+        self.storage.with_storage(|| ctx.insert_btree_map(
+            &mut self.values, record.directory_sequence, width, "iges parameter attribute width nodes",
+        ))?;
+        Ok(width)
     }
-    Ok(Some(values_per_row))
 }
 
 fn attribute_table_instance_primary_end(
@@ -2228,6 +2268,7 @@ fn attribute_table_instance_primary_end(
     entry: &DirectoryEntry,
     directory: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
+    widths: &mut AttributeDefinitionWidths<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<usize, CodecError> {
     if let Some(refusal) = ctx.resource_refusal() {
@@ -2256,7 +2297,7 @@ fn attribute_table_instance_primary_end(
     )? else {
         return Ok(record.tokens.len());
     };
-    let Some(values_per_row) = attribute_table_definition_values_per_row(definition_record, ctx)?
+    let Some(values_per_row) = widths.width(definition_record, ctx)?
     else {
         return Ok(record.tokens.len());
     };
@@ -4715,6 +4756,7 @@ pub(crate) fn assemble_with_context<'ctx>(
                 "iges parameter record index",
             ))?;
         }
+        let mut widths = AttributeDefinitionWidths::new(ctx)?;
         let mut analyzed_records = records.iter();
         while analyzed_records.len() != 0 || ctx.resource_refusal().is_some() {
             let Some(record) = ctx.next_charged(&mut analyzed_records, "iges trailing parameter pointers")? else { break; };
@@ -4723,6 +4765,7 @@ pub(crate) fn assemble_with_context<'ctx>(
                 &entries,
                 &record_by_directory,
                 global_table,
+                &mut widths,
                 ctx,
             ))?;
             analysis_storage.with_storage(|| ctx.insert_btree_map(

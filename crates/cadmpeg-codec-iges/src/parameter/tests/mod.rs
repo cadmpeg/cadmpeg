@@ -12,6 +12,7 @@ use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
 
 mod advanced_entity_boundaries;
 mod advanced_geometry_boundaries;
+mod attribute_widths;
 mod curve_surface_boundaries;
 mod curve_surface_segment_boundaries;
 mod drawing_associativity;

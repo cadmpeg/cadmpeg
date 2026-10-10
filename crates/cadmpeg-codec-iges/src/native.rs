@@ -1492,29 +1492,12 @@ fn attribute_table_value_width(
     let Some(attribute_count) = record.count_with_stride_before(3, 3, end) else {
         return Ok(Err(UnstatableAttributeTable::AttributeCount));
     };
-    let mut values_per_row = 0_usize;
-    let refusal = ctx.find_map(
-        0..attribute_count,
-        |attribute| {
-            let count_index = 6 + attribute * 3;
-            let declared = match record.value(count_index) {
-                None | Some(TokenValue::Omitted) => record.integer_or(count_index, 1),
-                Some(TokenValue::Integer(value)) => Some(*value),
-                Some(TokenValue::Real(_) | TokenValue::String(_)) => None,
-            };
-            let Some(declared) = declared.and_then(|declared| usize::try_from(declared).ok())
-            else {
-                return Ok(Some(UnstatableAttributeTable::ValueCount { attribute }));
-            };
-            let Some(total) = values_per_row.checked_add(declared) else {
-                return Ok(Some(UnstatableAttributeTable::ValueTotal));
-            };
-            values_per_row = total;
-            Ok(None)
-        },
-        "iges native attribute definition width scan",
-    )?;
-    Ok(refusal.map_or_else(|| Ok(std::num::NonZeroUsize::new(values_per_row)), Err))
+    Ok(crate::parameter::attribute_table_definition_width(
+        record, attribute_count, ctx, "iges native attribute definition width scan",
+    )?.map(std::num::NonZeroUsize::new).map_err(|defect| match defect {
+        crate::parameter::AttributeWidthDefect::ValueCount { attribute } => UnstatableAttributeTable::ValueCount { attribute },
+        crate::parameter::AttributeWidthDefect::ValueTotal => UnstatableAttributeTable::ValueTotal,
+    }))
 }
 
 /// The instance value grid from its cached definition width and row count.
