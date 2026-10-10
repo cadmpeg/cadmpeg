@@ -28,6 +28,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::units::SumSquaresUnitVector3;
 
 use super::LEN_TO_MM;
+use crate::lane_refusal::scoped::RefusalSink;
 
 /// A parsed swept- or spun-surface carrier.
 #[derive(Debug, Clone)]
@@ -190,7 +191,7 @@ pub(super) fn profile_nurbs<'a, 'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     geometry: &'a CurveGeometry,
     record: &dyn std::fmt::Display,
-    refusal: &mut crate::lane_refusal::LaneRefusals,
+    refusal: &mut RefusalSink<'_, 'ctx>,
 ) -> Result<Option<ProfileNurbs<'a, 'ctx>>, CodecError> {
     if let Some(limit) = ctx.resource_refusal() { return Err(limit.into()); }
     let (center, frame, major_radius, minor_radius) = match geometry {
@@ -287,14 +288,14 @@ fn profile_pole(
 
 /// Build the ruled NURBS patch of a swept surface over `v` in
 /// `[v_start, v_end]` millimetres of travel along the unit direction.
-pub(super) fn swept_nurbs(
-    ctx: &DecodeContext<'_>,
+pub(super) fn swept_nurbs<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     profile: &NurbsCurve,
     direction: SumSquaresUnitVector3,
     v_start: f64,
     v_end: f64,
     record: &dyn std::fmt::Display,
-    refusal: &mut crate::lane_refusal::LaneRefusals,
+    refusal: &mut RefusalSink<'_, 'ctx>,
 ) -> Result<Option<NurbsSurface>, CodecError> {
     if let Some(limit) = ctx.resource_refusal() { return Err(limit.into()); }
     let direction = direction.as_raw();
@@ -379,13 +380,13 @@ pub(super) fn swept_nurbs(
 /// Build the exact rational NURBS of a full surface of revolution: the
 /// profile revolved `2π` about the axis through `base`, with the angular
 /// parameter (`v`, radians) following `A × (C - Z)`.
-pub(super) fn spun_nurbs(
-    ctx: &DecodeContext<'_>,
+pub(super) fn spun_nurbs<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     profile: &NurbsCurve,
     base: Point3,
     axis: SumSquaresUnitVector3,
     record: &dyn std::fmt::Display,
-    refusal: &mut crate::lane_refusal::LaneRefusals,
+    refusal: &mut RefusalSink<'_, 'ctx>,
 ) -> Result<Option<NurbsSurface>, CodecError> {
     use std::f64::consts::FRAC_PI_2;
     let axis = axis.as_raw();
@@ -526,7 +527,7 @@ mod tests {
 
     use cadmpeg_core::decode::index_from_u32;
 
-    use super::{profile_nurbs, spun_nurbs, swept_nurbs, ProfileNurbs, SweepCarrier, SweepKind};
+    use super::{profile_nurbs, spun_nurbs, swept_nurbs, ProfileNurbs, RefusalSink, SweepCarrier, SweepKind};
     use cadmpeg_ir::geometry::nurbs::NurbsCurve;
     use cadmpeg_ir::geometry::nurbs::NurbsSurface;
     use cadmpeg_ir::geometry::CurveGeometry;
@@ -694,7 +695,7 @@ mod tests {
                 ctx,
                 &geometry,
                 &"test profile",
-                &mut crate::lane_refusal::LaneRefusals::new(),
+                &mut RefusalSink::Retained(&mut crate::lane_refusal::LaneRefusals::new()),
             ).and_then(|profile| profile.map(ProfileNurbs::into_retained).transpose())
         })
         .expect("profile fits service policy")
@@ -733,7 +734,7 @@ mod tests {
                 ctx,
                 &geometry,
                 &"test profile",
-                &mut crate::lane_refusal::LaneRefusals::new(),
+                &mut RefusalSink::Retained(&mut crate::lane_refusal::LaneRefusals::new()),
             ).and_then(|profile| profile.map(ProfileNurbs::into_retained).transpose())
         })
         .expect("profile fits service policy")
@@ -831,7 +832,7 @@ mod tests {
                 Point3::new(0.0, 0.0, 0.0),
                 SumSquaresUnitVector3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
                 &"test spun construction",
-                &mut crate::lane_refusal::LaneRefusals::new(),
+                &mut RefusalSink::Retained(&mut crate::lane_refusal::LaneRefusals::new()),
             )
         })
         .expect("spun surface fits service policy")
@@ -885,7 +886,7 @@ mod tests {
                 -2.0,
                 3.0,
                 &"test swept construction",
-                &mut crate::lane_refusal::LaneRefusals::new(),
+                &mut RefusalSink::Retained(&mut crate::lane_refusal::LaneRefusals::new()),
             )
         })
         .expect("swept surface fits service policy")
@@ -926,7 +927,7 @@ mod tests {
                     0.0,
                     1.0,
                     &"sweep",
-                    &mut crate::lane_refusal::LaneRefusals::new(),
+                    &mut RefusalSink::Retained(&mut crate::lane_refusal::LaneRefusals::new()),
                 )
             },
         );
@@ -937,7 +938,7 @@ mod tests {
             0.0,
             1.0,
             &"sweep",
-            &mut crate::lane_refusal::LaneRefusals::new(),
+            &mut RefusalSink::Retained(&mut crate::lane_refusal::LaneRefusals::new()),
         ))
         .expect("service budget")
         .is_some());
@@ -971,7 +972,7 @@ mod tests {
                     Point3::new(0.0, 0.0, 0.0),
                     axis,
                     &"spin",
-                    &mut crate::lane_refusal::LaneRefusals::new(),
+                    &mut RefusalSink::Retained(&mut crate::lane_refusal::LaneRefusals::new()),
                 )
             },
         );
@@ -981,7 +982,7 @@ mod tests {
             Point3::new(0.0, 0.0, 0.0),
             axis,
             &"spin",
-            &mut crate::lane_refusal::LaneRefusals::new(),
+            &mut RefusalSink::Retained(&mut crate::lane_refusal::LaneRefusals::new()),
         ))
         .expect("service budget")
         .is_some());
@@ -1017,7 +1018,7 @@ mod tests {
                     0.0,
                     1.0,
                     &"sweep",
-                    &mut crate::lane_refusal::LaneRefusals::new(),
+                    &mut RefusalSink::Retained(&mut crate::lane_refusal::LaneRefusals::new()),
                 )
             },
         );
@@ -1028,7 +1029,7 @@ mod tests {
             0.0,
             1.0,
             &"sweep",
-            &mut crate::lane_refusal::LaneRefusals::new(),
+            &mut RefusalSink::Retained(&mut crate::lane_refusal::LaneRefusals::new()),
         ))
         .expect("service budget")
         .is_some());
@@ -1062,7 +1063,7 @@ mod tests {
                     Point3::new(0.0, 0.0, 0.0),
                     axis,
                     &"spin",
-                    &mut crate::lane_refusal::LaneRefusals::new(),
+                    &mut RefusalSink::Retained(&mut crate::lane_refusal::LaneRefusals::new()),
                 )
             },
         );
@@ -1072,7 +1073,7 @@ mod tests {
             Point3::new(0.0, 0.0, 0.0),
             axis,
             &"spin",
-            &mut crate::lane_refusal::LaneRefusals::new(),
+            &mut RefusalSink::Retained(&mut crate::lane_refusal::LaneRefusals::new()),
         ))
         .expect("service budget")
         .is_some());
@@ -1102,7 +1103,7 @@ mod tests {
                 0.0,
                 f64::MAX,
                 &"sweep construction at byte 16 for surface attr 3",
-                &mut refusal,
+                &mut RefusalSink::Retained(&mut refusal),
             )
         })
         .expect("first ruling fits service policy");
@@ -1114,7 +1115,7 @@ mod tests {
                 0.0,
                 f64::MAX,
                 &"sweep construction at byte 64 for surface attr 9",
-                &mut refusal,
+                &mut RefusalSink::Retained(&mut refusal),
             )
         })
         .expect("second ruling fits service policy");
@@ -1157,7 +1158,7 @@ mod tests {
                     Point3::new(0., 0., 0.),
                     SumSquaresUnitVector3::new(Vector3::new(0., 0., 1.)).unwrap(),
                     &"audit",
-                    &mut crate::lane_refusal::LaneRefusals::new(),
+                    &mut RefusalSink::Retained(&mut crate::lane_refusal::LaneRefusals::new()),
                 )
             })
             .unwrap()

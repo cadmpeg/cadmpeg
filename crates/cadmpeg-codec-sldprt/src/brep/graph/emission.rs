@@ -1270,21 +1270,23 @@ pub(super) fn decode_graph(
                     tag,
                     exactness,
                 }) = {
-                    let mut sweep_refusal = crate::lane_refusal::LaneRefusals::new();
-                    let resolved = resolve_sweep_surface(ctx, carriers, t, f, &mut sweep_refusal)?;
-                    for record in ctx
-                        .admit_iter(sweep_refusal.take_records(), "collect swept surface losses")?
-                    {
+                    let mut sweep_refusal = crate::lane_refusal::scoped::ScopedLaneRefusals::new(ctx)?;
+                    let resolved = resolve_sweep_surface(ctx, carriers, t, f,
+                        &mut crate::lane_refusal::scoped::RefusalSink::Scoped(&mut sweep_refusal))?;
+                    let mut refusal_records = sweep_refusal.into_records();
+                    while let Some(record) = refusal_records.next(ctx, "collect swept surface losses")? {
                         let note = crate::loss::spline_lane_refusal(
                             ctx,
                             format_args!(
-                                "swept surface for face attr {}: {record}",
-                                f.surface_attr
+                                "swept surface for face attr {}: {}",
+                                f.surface_attr, record.message
                             ),
                         )?;
+                        drop(record);
                         ctx.reserve_vec(&mut out.losses, 1, "collect swept surface losses")?;
                         out.losses.push(note);
                     }
+                    drop(refusal_records);
                     resolved
                 } {
                     annotations.note(

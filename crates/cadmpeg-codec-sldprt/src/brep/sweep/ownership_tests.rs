@@ -11,6 +11,7 @@ use cadmpeg_ir::units::SumSquaresUnitVector3;
 
 use super::{profile_nurbs, spun_nurbs, swept_nurbs};
 use crate::lane_refusal::LaneRefusals;
+use crate::lane_refusal::scoped::{RefusalSink, ScopedLaneRefusals};
 
 const SCRATCH_BYTES: u64 = 16 * 1024 * 1024;
 
@@ -46,10 +47,10 @@ fn build_surface(ctx: &DecodeContext<'_>, profile: &NurbsCurve, spun: bool)
     let direction = SumSquaresUnitVector3::new(Vector3::new(0.0, 1.0, 0.0)).unwrap();
     if spun {
         spun_nurbs(ctx, profile, Point3::new(0.0, 0.0, 0.0), direction,
-            &"ownership spin", &mut LaneRefusals::new())
+            &"ownership spin", &mut RefusalSink::Retained(&mut LaneRefusals::new()))
     } else {
         swept_nurbs(ctx, profile, direction, -2.0, 3.0,
-            &"ownership sweep", &mut LaneRefusals::new())
+            &"ownership sweep", &mut RefusalSink::Retained(&mut LaneRefusals::new()))
     }
 }
 
@@ -74,7 +75,7 @@ fn generated_profile_owns_only_final_knots_and_converted_poles() {
     let mut policy = policy();
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let profile = profile_nurbs(&ctx, &geometry, &"ownership circle", &mut LaneRefusals::new())
+    let profile = profile_nurbs(&ctx, &geometry, &"ownership circle", &mut RefusalSink::Retained(&mut LaneRefusals::new()))
         .unwrap().unwrap();
     assert_eq!(profile.curve().pole_count(), 9);
     assert_eq!(profile.curve().knots().as_slice(), super::FULL_RING_KNOTS);
@@ -98,7 +99,7 @@ fn generated_profile_drop_releases_all_backing_without_retained_publication() {
     let mut policy = policy();
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let profile = profile_nurbs(&ctx, &geometry, &"ownership circle", &mut LaneRefusals::new())
+    let profile = profile_nurbs(&ctx, &geometry, &"ownership circle", &mut RefusalSink::Retained(&mut LaneRefusals::new()))
         .unwrap().unwrap();
     drop(profile);
     drop(ctx.reserve_scoped(SCRATCH_BYTES, "test released generated profile").unwrap());
@@ -114,7 +115,7 @@ fn borrowed_profile_is_free_and_preserves_the_original_fuse() {
     policy.limits.max_materialized_bytes = 0;
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let profile = profile_nurbs(&ctx, &geometry, &"borrowed profile", &mut LaneRefusals::new())
+    let profile = profile_nurbs(&ctx, &geometry, &"borrowed profile", &mut RefusalSink::Retained(&mut LaneRefusals::new()))
         .unwrap().unwrap();
     let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(source)) = &geometry else { unreachable!() };
     assert!(std::ptr::eq(profile.curve(), source));
@@ -123,7 +124,7 @@ fn borrowed_profile_is_free_and_preserves_the_original_fuse() {
     let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, "test borrowed profile fuse") else {
         panic!("work cap");
     };
-    let result = profile_nurbs(&ctx, &geometry, &"borrowed profile", &mut LaneRefusals::new());
+    let result = profile_nurbs(&ctx, &geometry, &"borrowed profile", &mut RefusalSink::Retained(&mut LaneRefusals::new()));
     assert!(matches!(&result, Err(CodecError::ResourceLimit(actual)) if *actual == limit));
     drop(result);
     assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit));
@@ -138,7 +139,7 @@ fn generated_profile_refuses_raw_storage_before_allocation() {
     policy.limits.max_materialized_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let (result, allocations) = crate::test_support::allocation::count_allocations(|| {
-        profile_nurbs(&ctx, &geometry, &"ownership circle", &mut LaneRefusals::new())
+        profile_nurbs(&ctx, &geometry, &"ownership circle", &mut RefusalSink::Retained(&mut LaneRefusals::new()))
     });
     let error = result.err().expect("raw profile storage refusal");
     let CodecError::ResourceLimit(limit) = error else { panic!("raw profile resource limit") };
@@ -210,7 +211,7 @@ fn rejected_sweep_grid_releases_candidate_and_raw_storage_after_note() {
     let mut refusals = LaneRefusals::new();
     let direction = SumSquaresUnitVector3::new(Vector3::new(1.0, 0.0, 0.0)).unwrap();
     assert!(swept_nurbs(&ctx, &profile, direction, 0.0, f64::MAX,
-        &"ownership rejection", &mut refusals).unwrap().is_none());
+        &"ownership rejection", &mut RefusalSink::Retained(&mut refusals)).unwrap().is_none());
     assert_eq!(refusals.take_records(), [expected_message]);
     drop(ctx.reserve_scoped(SCRATCH_BYTES, "test released rejected sweep grid").unwrap());
     let Err(CodecError::ResourceLimit(limit)) = ctx.charge_retained(1, "test sweep note-only bytes") else {
@@ -235,9 +236,141 @@ fn invalid_sweep_bounds_preserve_the_original_sticky_refusal() {
     let direction = SumSquaresUnitVector3::new(Vector3::new(0.0, 1.0, 0.0)).unwrap();
     let mut refusals = LaneRefusals::new();
     let result = swept_nurbs(&ctx, &profile, direction, f64::NAN, 1.0,
-        &"invalid travel", &mut refusals);
+        &"invalid travel", &mut RefusalSink::Retained(&mut refusals));
     assert!(matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == limit));
     assert!(refusals.take_records().is_empty());
+    assert_eq!(ctx.resource_refusal(), Some(limit));
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit));
+}
+
+fn rejected_profile() -> NurbsCurve {
+    NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(), 1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(f64::MAX, 1.0, 0.0)],
+        None, false,
+    ).unwrap().unwrap()
+}
+
+const REJECTED_RECORD: &str = "sldprt swept ruled surface patch: ownership rejection: control_points contains a non-finite point";
+const FINAL_SWEEP_LOSS: &str = "swept surface for face attr 9: sldprt swept ruled surface patch: ownership rejection: control_points contains a non-finite point; the carrier is not emitted and the entities that reference it fall back to an untyped support.";
+
+#[test]
+fn scoped_sweep_refusal_holds_exact_message_and_source_shell() {
+    use crate::lane_refusal::scoped::ScopedRecord;
+
+    let profile = rejected_profile();
+    let arena = DecodeArena::new();
+    let mut policy = policy();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut refusals = ScopedLaneRefusals::new(&ctx).unwrap();
+    let direction = SumSquaresUnitVector3::new(Vector3::new(1.0, 0.0, 0.0)).unwrap();
+    assert!(swept_nurbs(&ctx, &profile, direction, 0.0, f64::MAX,
+        &"ownership rejection", &mut RefusalSink::Scoped(&mut refusals)).unwrap().is_none());
+    assert!((2..=1024).contains(&std::mem::size_of::<ScopedRecord<'_>>()));
+    let expected = u64::try_from(REJECTED_RECORD.len() + 4 * std::mem::size_of::<ScopedRecord<'_>>()).unwrap();
+    let records = refusals.into_records();
+    let Err(CodecError::ResourceLimit(limit)) = ctx.reserve_scoped(SCRATCH_BYTES - expected + 1, "test live sweep refusal source") else {
+        panic!("source message and iterator shell remain live");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+    assert_eq!((limit.used, limit.additional), (expected, SCRATCH_BYTES - expected + 1));
+    drop(records);
+    assert_eq!(ctx.resource_refusal(), Some(limit));
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit));
+}
+
+#[test]
+fn scoped_sweep_refusal_retains_only_published_loss() {
+    use cadmpeg_ir::report::loss::LossNote;
+    use crate::lane_refusal::scoped::ScopedRecord;
+
+    let profile = rejected_profile();
+    let arena = DecodeArena::new();
+    let mut policy = policy();
+    assert!((2..=1024).contains(&std::mem::size_of::<LossNote>()));
+    let expected = u64::try_from(FINAL_SWEEP_LOSS.len() + 4 * std::mem::size_of::<LossNote>()).unwrap();
+    policy.limits.max_retained_bytes = expected;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut refusals = ScopedLaneRefusals::new(&ctx).unwrap();
+    let direction = SumSquaresUnitVector3::new(Vector3::new(1.0, 0.0, 0.0)).unwrap();
+    assert!(swept_nurbs(&ctx, &profile, direction, 0.0, f64::MAX,
+        &"ownership rejection", &mut RefusalSink::Scoped(&mut refusals)).unwrap().is_none());
+    let source_bytes = u64::try_from(REJECTED_RECORD.len() + 4 * std::mem::size_of::<ScopedRecord<'_>>()).unwrap();
+    // Candidate grids and IR diagnostic text have died; only the message and
+    // its four-slot source shell remain while the source is consumed.
+    drop(ctx.reserve_scoped(SCRATCH_BYTES - source_bytes, "test scoped sweep source backing").unwrap());
+    let mut source = refusals.into_records();
+    let mut losses = Vec::new();
+    while let Some(record) = source.next(&ctx, "collect swept surface losses").unwrap() {
+        assert_eq!(record.message, REJECTED_RECORD);
+        let note = crate::loss::spline_lane_refusal(&ctx,
+            format_args!("swept surface for face attr {}: {}", 9, record.message)).unwrap();
+        drop(record);
+        ctx.push_vec(&mut losses, note, "collect swept surface losses").unwrap();
+    }
+    drop(source);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].message, FINAL_SWEEP_LOSS);
+    drop(ctx.reserve_scoped(SCRATCH_BYTES, "test released sweep refusal source").unwrap());
+    let Err(CodecError::ResourceLimit(limit)) = ctx.charge_retained(1, "test published sweep loss backing") else {
+        panic!("exact final loss storage");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!((limit.used, limit.additional), (expected, 1));
+    assert_eq!(ctx.resource_refusal(), Some(limit));
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit));
+}
+
+#[test]
+fn scoped_sweep_refusal_propagates_final_loss_resource_limit() {
+    let profile = rejected_profile();
+    let arena = DecodeArena::new();
+    let mut policy = policy();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut refusals = ScopedLaneRefusals::new(&ctx).unwrap();
+    let direction = SumSquaresUnitVector3::new(Vector3::new(1.0, 0.0, 0.0)).unwrap();
+    assert!(swept_nurbs(&ctx, &profile, direction, 0.0, f64::MAX,
+        &"ownership rejection", &mut RefusalSink::Scoped(&mut refusals)).unwrap().is_none());
+    let mut source = refusals.into_records();
+    let record = source.next(&ctx, "collect swept surface losses").unwrap().unwrap();
+    assert_eq!(record.message, REJECTED_RECORD);
+    let Err(CodecError::ResourceLimit(limit)) = crate::loss::spline_lane_refusal(&ctx,
+        format_args!("swept surface for face attr {}: {}", 9, record.message)) else {
+        panic!("final loss must use retained admission");
+    };
+    assert_eq!(limit.operation, "record SLDPRT spline lane loss");
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!((limit.used, limit.additional), (0, u64::try_from(FINAL_SWEEP_LOSS.len()).unwrap()));
+    drop(record);
+    assert!(matches!(source.next(&ctx, "collect swept surface losses"), Err(CodecError::ResourceLimit(actual)) if actual == limit));
+    drop(source);
+    assert_eq!(ctx.resource_refusal(), Some(limit));
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit));
+}
+
+#[test]
+fn scoped_sweep_refusal_preserves_constructor_resource_limit() {
+    let profile = line();
+    let arena = DecodeArena::new();
+    let mut policy = policy();
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut refusals = ScopedLaneRefusals::new(&ctx).unwrap();
+    let direction = SumSquaresUnitVector3::new(Vector3::new(0.0, 1.0, 0.0)).unwrap();
+    let Err(CodecError::ResourceLimit(limit)) = swept_nurbs(&ctx, &profile, direction, 0.0, 1.0,
+        &"ownership refusal", &mut RefusalSink::Scoped(&mut refusals)) else {
+        panic!("raw grid storage must refuse");
+    };
+    assert_eq!(limit.operation, "construct swept surface pole rows");
+    assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+    assert_eq!((limit.used, limit.additional), (0, u64::try_from(2 * std::mem::size_of::<Vec<Point3>>()).unwrap()));
+    let mut records = refusals.into_records();
+    assert!(matches!(records.next(&ctx, "collect swept surface losses"), Err(CodecError::ResourceLimit(actual)) if actual == limit));
+    drop(records);
     assert_eq!(ctx.resource_refusal(), Some(limit));
     assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit));
 }
