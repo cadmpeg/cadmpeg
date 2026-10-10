@@ -380,3 +380,30 @@ fn revolution_extent_search_keeps_first_match_and_free_exhaustion() {
     assert!(matches!(unique_feature_revolution_extent(&ctx, &[], 40),
         Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) if refusal == original));
 }
+
+fn assert_first_material_without_unique_target(records: Vec<crate::feature::operations::FeatureOperation>) {
+    let mut scan = crate::test_support::empty_container_scan();
+    scan.features.operations = records;
+    crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, &["creo first material identity rows"], |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let result = super::feature_is_first_material_operation(&ctx, &scan, 40);
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(resource)) = &result {
+            assert_ne!(resource.operation, "creo first material operation rows");
+            assert_ne!(resource.operation, "creo first material section transforms");
+        }
+        result.map(|first| assert!(!first))
+    });
+}
+
+#[test]
+fn first_material_selector_skips_other_operations_when_target_is_absent() {
+    assert_first_material_without_unique_target(vec![operation(11), operation(12)]);
+}
+
+#[test]
+fn first_material_selector_skips_other_operations_when_target_is_ambiguous() {
+    assert_first_material_without_unique_target(vec![operation(40), operation(40), operation(11)]);
+}
