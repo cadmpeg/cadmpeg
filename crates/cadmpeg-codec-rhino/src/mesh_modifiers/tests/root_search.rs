@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
+use crate::chunks::{ArchiveVersion, FramingError};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
-use crate::chunks::{ArchiveVersion, FramingError};
 
 #[test]
 fn modifier_xml_root_search_admits_leading_document_children() {

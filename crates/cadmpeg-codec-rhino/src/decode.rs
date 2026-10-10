@@ -2667,7 +2667,10 @@ impl<'a> DecodeContext<'a> {
             return Ok(());
         };
         let identity = &object.identity;
-        let mut morph_storage = self.expand.ctx().reserve_scoped(0, "Rhino morph raw controls")?;
+        let mut morph_storage = self
+            .expand
+            .ctx()
+            .reserve_scoped(0, "Rhino morph raw controls")?;
         let morph = match crate::morph::decode(
             self.expand,
             object.class_data_range.clone(),

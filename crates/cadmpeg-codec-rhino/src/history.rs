@@ -1714,7 +1714,13 @@ fn extended_geometry_json(
         embedded_json(expand.ctx(), &CageJson(&cage), refusal)
     } else if value.class_id == crate::morph::CLASS {
         let morph = optional_geometry(
-            crate::morph::decode(expand, value.class_data_range.clone(), scale, archive, &mut geometry_workspace),
+            crate::morph::decode(
+                expand,
+                value.class_data_range.clone(),
+                scale,
+                archive,
+                &mut geometry_workspace,
+            ),
             refusal,
         )?;
         embedded_json(expand.ctx(), &MorphJson(&morph), refusal)
