@@ -123,11 +123,15 @@ pub(super) fn nurbs_control_extent(
     };
     let bounds = match nurbs.pole_rows() {
         cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => ctx.fold(
-            points, initial, |bounds, point| extend(bounds, *point),
+            points,
+            initial,
+            |bounds, point| extend(bounds, *point),
             "creo NURBS polynomial poles",
         )?,
         cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => ctx.fold(
-            points, initial, |bounds, pole| extend(bounds, pole.point),
+            points,
+            initial,
+            |bounds, pole| extend(bounds, pole.point),
             "creo NURBS rational poles",
         )?,
     };

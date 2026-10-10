@@ -721,7 +721,14 @@ fn round_edge_origin_witness_selects_the_plane_with_an_incident_endpoint() {
 
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| {
-            unique_round_edge_origin_candidate(ctx, &[positive, negative, positive, positive, positive, positive, positive, positive], 2, &[envelope])
+            unique_round_edge_origin_candidate(
+                ctx,
+                &[
+                    positive, negative, positive, positive, positive, positive, positive, positive,
+                ],
+                2,
+                &[envelope],
+            )
         })
         .expect("service round-edge origin scan admitted")
         .expect("incident plane candidate")
@@ -730,7 +737,14 @@ fn round_edge_origin_witness_selects_the_plane_with_an_incident_endpoint() {
         [0.0, -5.5, 0.0]
     );
     assert!(crate::decode::with_test_decode_ctx(|ctx| {
-        unique_round_edge_origin_candidate(ctx, &[positive, negative, positive, positive, positive, positive, positive, positive], 2, &[])
+        unique_round_edge_origin_candidate(
+            ctx,
+            &[
+                positive, negative, positive, positive, positive, positive, positive, positive,
+            ],
+            2,
+            &[],
+        )
     })
     .expect("service round-edge origin scan admitted")
     .is_none());
@@ -955,18 +969,25 @@ fn plane_candidates_refuse_surface_identity_child_scan() {
 #[test]
 fn fixed_round_edge_sign_candidates_need_no_work_without_envelopes() {
     let candidate = PlaneCandidate {
-        equation: PlaneEquation { origin: [0.0; 3], normal: [0.0, 0.0, 1.0] },
-        chart: None, offset: 0,
+        equation: PlaneEquation {
+            origin: [0.0; 3],
+            normal: [0.0, 0.0, 1.0],
+        },
+        chart: None,
+        offset: 0,
     };
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     for count in [1, 8] {
-        assert!(unique_round_edge_origin_candidate(&ctx, &[candidate; 8], count, &[]).expect("fixed candidates").is_none());
+        assert!(
+            unique_round_edge_origin_candidate(&ctx, &[candidate; 8], count, &[])
+                .expect("fixed candidates")
+                .is_none()
+        );
     }
 }
-
 
 #[test]
 fn repeated_plane_branch_propagation_reuses_domain_backing() {
@@ -980,21 +1001,32 @@ fn repeated_plane_branch_propagation_reuses_domain_backing() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = 64 * 1024;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let (candidates, storage) = ctx.with_scoped_storage("plane branch test output", || {
-        let mut candidates = std::collections::BTreeMap::from([(2, vec![PlaneCandidate {
-            equation: PlaneEquation { origin, normal },
-            chart: Some(PlaneChart { origin, normal, u_axis }), offset: 20,
-        }])]);
-        select_stored_frame_branches(&ctx, &scan, &mut candidates)?;
-        Ok::<_, CodecError>(candidates)
-    }).expect("only live branch storage is charged");
+    let (candidates, storage) = ctx
+        .with_scoped_storage("plane branch test output", || {
+            let mut candidates = std::collections::BTreeMap::from([(
+                2,
+                vec![PlaneCandidate {
+                    equation: PlaneEquation { origin, normal },
+                    chart: Some(PlaneChart {
+                        origin,
+                        normal,
+                        u_axis,
+                    }),
+                    offset: 20,
+                }],
+            )]);
+            select_stored_frame_branches(&ctx, &scan, &mut candidates)?;
+            Ok::<_, CodecError>(candidates)
+        })
+        .expect("only live branch storage is charged");
     assert_eq!(candidates[&1].len(), 1);
     assert_eq!(candidates[&1][0].equation.normal, [0.8, 0.0, 0.6]);
     assert_eq!(candidates[&2].len(), 1);
     assert_eq!(candidates[&2][0].equation.origin, origin);
     drop(candidates);
     drop(storage);
-    ctx.reserve_scoped(64 * 1024, "released plane branch storage").expect("all scratch released");
+    ctx.reserve_scoped(64 * 1024, "released plane branch storage")
+        .expect("all scratch released");
 }
 
 #[test]
@@ -1009,47 +1041,66 @@ fn repeated_carrier_pcurve_selection_reuses_domain_backing() {
     policy.limits.max_materialized_bytes = 4096;
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    select_stored_frame_carrier_pcurve_branches(&ctx, &scan, &domains, &mut selected).expect("existing output backing is reused");
+    select_stored_frame_carrier_pcurve_branches(&ctx, &scan, &domains, &mut selected)
+        .expect("existing output backing is reused");
     assert_eq!(selected[&1].len(), 1);
     assert_eq!(selected[&1][0].equation.origin, [0.0; 3]);
     assert_eq!(selected[&1].capacity(), capacity);
-    ctx.reserve_scoped(4096, "released carrier branch scratch").expect("all scratch released");
+    ctx.reserve_scoped(4096, "released carrier branch scratch")
+        .expect("all scratch released");
 }
 
 #[test]
 fn carrier_pcurve_selection_admits_new_domain_backing() {
     let scan = carrier_pcurve_branch_scan();
     let domains = carrier_branch_domains();
-    let selected = crate::test_support::assert_work_boundaries(&["creo carrier pcurve plane branch candidates"], |ctx| {
-        let mut selected = std::collections::BTreeMap::new();
-        select_stored_frame_carrier_pcurve_branches(ctx, &scan, &domains, &mut selected)?;
-        Ok::<_, CodecError>(selected)
-    });
+    let selected = crate::test_support::assert_work_boundaries(
+        &["creo carrier pcurve plane branch candidates"],
+        |ctx| {
+            let mut selected = std::collections::BTreeMap::new();
+            select_stored_frame_carrier_pcurve_branches(ctx, &scan, &domains, &mut selected)?;
+            Ok::<_, CodecError>(selected)
+        },
+    );
     assert_eq!(selected[&1].len(), 1);
     assert_eq!(selected[&1][0].equation.origin, [0.0; 3]);
-    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, "creo carrier pcurve plane branch", |ctx| {
-        let mut selected = std::collections::BTreeMap::new();
-        select_stored_frame_carrier_pcurve_branches(ctx, &scan, &domains, &mut selected)
-    });
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::CollectionItems,
+        "creo carrier pcurve plane branch",
+        |ctx| {
+            let mut selected = std::collections::BTreeMap::new();
+            select_stored_frame_carrier_pcurve_branches(ctx, &scan, &domains, &mut selected)
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo carrier pcurve plane branch"));
 }
 
-
 #[test]
 fn repeated_round_edge_frames_release_envelope_backing() {
     let mut scan = round_edge_envelope_scan();
     let frame = PlaneLocalSystem {
-        surface_id: 1, body: Vec::new(),
+        surface_id: 1,
+        body: Vec::new(),
         slots: [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0].map(Some),
         layout: Some(crate::scalar::PlaneSupportFrameLayout::DirectNormalTriples),
-        classification: LocalSystemClassification::Simple, row_offset: 1, offset: 1,
+        classification: LocalSystemClassification::Simple,
+        row_offset: 1,
+        offset: 1,
     };
     scan.planes.local_systems = vec![frame; 128];
     let candidate = PlaneCandidate {
-        equation: PlaneEquation { origin: [0.0; 3], normal: [1.0, 0.0, 0.0] },
-        chart: Some(PlaneChart { origin: [0.0; 3], normal: [1.0, 0.0, 0.0], u_axis: [0.0, 1.0, 0.0] }),
+        equation: PlaneEquation {
+            origin: [0.0; 3],
+            normal: [1.0, 0.0, 0.0],
+        },
+        chart: Some(PlaneChart {
+            origin: [0.0; 3],
+            normal: [1.0, 0.0, 0.0],
+            u_axis: [0.0, 1.0, 0.0],
+        }),
         offset: 1,
     };
     let mut candidates = std::collections::BTreeMap::from([(1, vec![candidate])]);
@@ -1058,11 +1109,13 @@ fn repeated_round_edge_frames_release_envelope_backing() {
     policy.limits.max_materialized_bytes = 4096;
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    super::super::select_round_edge_origin_branches(&ctx, &scan, &mut candidates).expect("each frame releases its envelopes");
+    super::super::select_round_edge_origin_branches(&ctx, &scan, &mut candidates)
+        .expect("each frame releases its envelopes");
     assert_eq!(candidates[&1].len(), 1);
     assert_eq!(candidates[&1][0].equation.origin, [0.0; 3]);
     assert_eq!(candidates[&1][0].equation.normal, [1.0, 0.0, 0.0]);
-    ctx.reserve_scoped(4096, "released frame envelopes").expect("all frame scratch released");
+    ctx.reserve_scoped(4096, "released frame envelopes")
+        .expect("all frame scratch released");
 }
 
 #[test]
@@ -1073,17 +1126,23 @@ fn fc05_plane_branch_selection_preserves_tangent_frame() {
     policy.limits.max_materialized_bytes = 16 * 1024;
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let (candidates, storage) = ctx.with_scoped_storage("FC05 branch test output", || {
-        let mut candidates = std::collections::BTreeMap::new();
-        select_stored_frame_branches(&ctx, &scan, &mut candidates)?;
-        Ok::<_, CodecError>(candidates)
-    }).expect("tangent branch reuses its domains");
+    let (candidates, storage) = ctx
+        .with_scoped_storage("FC05 branch test output", || {
+            let mut candidates = std::collections::BTreeMap::new();
+            select_stored_frame_branches(&ctx, &scan, &mut candidates)?;
+            Ok::<_, CodecError>(candidates)
+        })
+        .expect("tangent branch reuses its domains");
     // Its distance from the cylinder axis at (1, 0, 0.5) is the unit radius.
     assert_eq!(candidates[&1].len(), 1);
     assert_eq!(candidates[&1][0].equation.origin, [0.0; 3]);
     assert_eq!(candidates[&1][0].equation.normal, [0.6, 0.0, 0.8]);
-    assert_eq!(candidates[&1][0].chart.expect("selected chart").u_axis, [0.8, 0.0, -0.6]);
+    assert_eq!(
+        candidates[&1][0].chart.expect("selected chart").u_axis,
+        [0.8, 0.0, -0.6]
+    );
     drop(candidates);
     drop(storage);
-    ctx.reserve_scoped(16 * 1024, "released FC05 branch storage").expect("all scratch released");
+    ctx.reserve_scoped(16 * 1024, "released FC05 branch storage")
+        .expect("all scratch released");
 }
