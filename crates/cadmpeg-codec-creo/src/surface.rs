@@ -6596,6 +6596,12 @@ fn counted_parameter_scalar_slots(
     count: usize,
     cache: &scalar::ScalarCache,
 ) -> Result<Option<Vec<ScalarTokenSlot>>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    if count == 0 || body.is_empty() {
+        return Ok((count == 0 && body.is_empty()).then(Vec::new));
+    }
     let state_count = body.len().checked_add(1).ok_or_else(|| {
         ctx.refuse_codec_limit("creo_counted_parameter_slots", u64::MAX, u64::MAX)
     })?;
@@ -6628,15 +6634,17 @@ fn counted_parameter_scalar_slots(
                     .checked_add(run)
                     .is_some_and(|next| next <= count)
                 {
-                    let mut slots =
-                        counted_parameter_suffix(ctx, Some(0.0), &body[cursor..=cursor])?;
-                    ctx.reserve_vec(&mut slots, run - 1, "creo counted parameter zero-run slots")?;
-                    slots.extend(std::iter::repeat_n((Some(0.0), Vec::new()), run - 1));
                     add_counted_parameter_state(
                         ctx,
                         &mut states[cursor + 1].0,
                         slots_used + run,
-                        advance_counted_parameter_parse(ctx, parse, slots)?,
+                        advance_counted_parameter_parse(ctx, parse, || {
+                            let mut slots =
+                                counted_parameter_suffix(ctx, Some(0.0), &body[cursor..=cursor])?;
+                            ctx.reserve_vec(&mut slots, run - 1, "creo counted parameter zero-run slots")?;
+                            slots.extend(std::iter::repeat_n((Some(0.0), Vec::new()), run - 1));
+                            Ok(slots)
+                        })?,
                     )?;
                 }
                 continue;
@@ -6650,7 +6658,7 @@ fn counted_parameter_scalar_slots(
                     advance_counted_parameter_parse(
                         ctx,
                         clone_counted_parameter_parse(ctx, &parse)?,
-                        counted_parameter_suffix(ctx, Some(0.0), &[0x18])?,
+                        || counted_parameter_suffix(ctx, Some(0.0), &[0x18]),
                     )?,
                 )?;
                 if let Some((value, next)) = scalar::decode_in_lane(body, cursor, cache)
@@ -6663,7 +6671,7 @@ fn counted_parameter_scalar_slots(
                         advance_counted_parameter_parse(
                             ctx,
                             parse,
-                            counted_parameter_suffix(ctx, Some(value), &body[cursor..next])?,
+                            || counted_parameter_suffix(ctx, Some(value), &body[cursor..next]),
                         )?,
                     )?;
                 }
@@ -6684,7 +6692,7 @@ fn counted_parameter_scalar_slots(
                     advance_counted_parameter_parse(
                         ctx,
                         parse,
-                        counted_parameter_suffix(ctx, value, &body[cursor..next])?,
+                        || counted_parameter_suffix(ctx, value, &body[cursor..next]),
                     )?,
                 )?;
             }
@@ -6738,10 +6746,14 @@ impl cadmpeg_core::decode::cost::DecodeCost for CountedParameterParse {
 fn advance_counted_parameter_parse(
     ctx: &DecodeContext<'_>,
     parse: CountedParameterParse,
-    mut suffix: Vec<ScalarTokenSlot>,
+    suffix: impl FnOnce() -> Result<Vec<ScalarTokenSlot>, CodecError>,
 ) -> Result<CountedParameterParse, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     match parse {
         CountedParameterParse::Unique(mut slots) => {
+            let mut suffix = suffix()?;
             ctx.reserve_vec(
                 &mut slots,
                 suffix.len(),
