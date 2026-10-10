@@ -244,7 +244,10 @@ fn missing_compound_member_message(
     drop(name_storage);
     let (label, names, count) = query?;
 
-    let names = names[..count].iter().map(|name| shell_quote(name)).collect::<Vec<_>>();
+    let names = names[..count]
+        .iter()
+        .map(|name| shell_quote(name))
+        .collect::<Vec<_>>();
     Ok(format!(
         "no stream is named exactly {}; {label}: {}; run `cadmpeg inspect FILE` for the full list",
         shell_quote(name),
@@ -287,7 +290,10 @@ fn missing_member_message(
     drop(name_storage);
     let (label, names, count) = query?;
 
-    let names = names[..count].iter().map(|name| shell_quote(name)).collect::<Vec<_>>();
+    let names = names[..count]
+        .iter()
+        .map(|name| shell_quote(name))
+        .collect::<Vec<_>>();
     Ok(format!(
         "no entry is named exactly {}; {label}: {}; run `cadmpeg inspect container FILE` \
          for the full list",
@@ -462,7 +468,7 @@ fn render(listing: &Listing<'_>) -> Result<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{extract, list, near_name, select_member_names, with_root, shell_quote};
+    use super::{extract, list, near_name, select_member_names, shell_quote, with_root};
     use anyhow::anyhow;
     use cadmpeg_core::decode::{
         DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, ResourceLimits,

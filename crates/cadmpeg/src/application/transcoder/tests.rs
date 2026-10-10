@@ -122,9 +122,8 @@ fn successful_write_returns_original_source_reports() {
         cadmpeg_registry::build_encoder(Format::Cadir),
         LossPolicy::Allow,
     );
-    conversion.document = LoadedDocument::restored(
-        CadIr::empty(), report, SourceFidelity::default(),
-    );
+    conversion.document =
+        LoadedDocument::restored(CadIr::empty(), report, SourceFidelity::default());
     conversion.validation.findings.push(Finding {
         check: Check::Counts,
         severity: Severity::Warning,
@@ -138,8 +137,11 @@ fn successful_write_returns_original_source_reports() {
     let output = dir.path().join("output.cadir.json");
     conversion.destination = ResolvedDestination::File(output.clone());
 
-    let (_, report, validation) = conversion.plan().expect("CADIR plan")
-        .write().expect("CADIR emission and sidecar");
+    let (_, report, validation) = conversion
+        .plan()
+        .expect("CADIR plan")
+        .write()
+        .expect("CADIR emission and sidecar");
     let report = report.expect("restored source report");
     assert_eq!(report.notes.as_ptr(), notes_buffer);
     assert_eq!(report.notes[0].as_ptr(), note_buffer);
