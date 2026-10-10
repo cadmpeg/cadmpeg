@@ -587,7 +587,8 @@ fn appearance_searches_refuse_marker_free_ranges() {
     ] {
         crate::test_support::work_refusal_at(operation, |ctx| match route {
             0 => super::definitions(ctx, &scan).map(|found| found.len()),
-            1 => super::inline_definition(ctx, section, 0, 64).map(|(found, _storage)| usize::from(found.is_some())),
+            1 => super::inline_definition(ctx, section, 0, 64)
+                .map(|(found, _storage)| usize::from(found.is_some())),
             _ => super::feature_assignments(ctx, &scan).map(|found| found.len()),
         });
     }
@@ -1055,7 +1056,9 @@ fn feature_appearance_resolution_storage() -> (u64, u64) {
         pointer_alignment.max(align_of::<FeatureSourceId>()),
     );
     let winner_node = tree_node(
-        size_of::<usize>(), size_of::<super::AppearanceSource<'_>>(), pointer_alignment,
+        size_of::<usize>(),
+        size_of::<super::AppearanceSource<'_>>(),
+        pointer_alignment,
     );
     type FeatureEntry<'a> = (FeatureSourceId, Option<&'a FeatureAppearanceAssignment>);
     // The first hash-table insertion uses four buckets. Core includes control
@@ -1142,17 +1145,26 @@ fn feature_appearance_resolution_refuses_source_copy() {
             policy.limits.max_retained_bytes = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
             let error = super::resolve_display_appearances(&ctx, &scan, section, &faces)
-                .err().expect("expected appearance source-copy refusal");
-            let CodecError::ResourceLimit(limit) = &error else { panic!("expected retained refusal"); };
+                .err()
+                .expect("expected appearance source-copy refusal");
+            let CodecError::ResourceLimit(limit) = &error else {
+                panic!("expected retained refusal");
+            };
             assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
-            assert!(matches!(ctx.charge_work(0, "after appearance source refusal"),
-                Err(CodecError::ResourceLimit(sticky)) if sticky == *limit));
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky))
-                if sticky == *limit));
+            assert!(
+                matches!(ctx.charge_work(0, "after appearance source refusal"),
+                Err(CodecError::ResourceLimit(sticky)) if sticky == *limit)
+            );
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky))
+                if sticky == *limit)
+            );
             Err::<(), _>(error)
         },
     );
-    let CodecError::ResourceLimit(limit) = error else { panic!("expected retained refusal"); };
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected retained refusal");
+    };
     let source_bytes = u64::try_from("ThirdPtyStore/VisualStates".len()).unwrap();
     assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
     assert_eq!(limit.operation, "copy SLDPRT appearance stream name");
@@ -1198,22 +1210,38 @@ fn conflicting_feature_appearance_index_retains_no_output() {
 
 #[test]
 fn display_resolution_skips_copies_of_overridden_defaults() {
-    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{
+        refusal_probe::RefusalProbe, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
+    };
     let faces = vec![Vec::new(); 64];
-    let overrides = (0..64).map(|index| (index, [247, 0, 23])).collect::<Vec<_>>();
+    let overrides = (0..64)
+        .map(|index| (index, [247, 0, 23]))
+        .collect::<Vec<_>>();
     let source = display_fixture([202, 209, 238], &faces, &overrides, &[]);
     let scan = crate::test_support::container::scan(&source);
     let fixture_ctx = cadmpeg_test_support::service_decode_context();
-    let section = scan.sections(&fixture_ctx).unwrap().find(|section| section.name() == Some("Contents/DisplayLists")).unwrap();
+    let section = scan
+        .sections(&fixture_ctx)
+        .unwrap()
+        .find(|section| section.name() == Some("Contents/DisplayLists"))
+        .unwrap();
     let faces = crate::tessellation::section_display_faces(&fixture_ctx, section).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = u64::MAX;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, "copy SLDPRT appearance name", Some(u64::try_from("Body default".len()).unwrap()));
+    let _probe = RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "copy SLDPRT appearance name",
+        Some(u64::try_from("Body default".len()).unwrap()),
+    );
     let result = super::resolve_display_appearances(&ctx, &scan, section, &faces).unwrap();
     assert_eq!(result.by_face.len(), 64);
-    assert!(result.by_face.values().all(|definition| definition.name == "Face override" && definition.color == super::packed_rgb(0x0017_00f7)));
+    assert!(result
+        .by_face
+        .values()
+        .all(|definition| definition.name == "Face override"
+            && definition.color == super::packed_rgb(0x0017_00f7)));
     ctx.finish_session().unwrap();
 }
 
@@ -1223,40 +1251,76 @@ fn display_resolution_holds_only_surviving_output_storage() {
     use cadmpeg_core::CodecError;
     use std::collections::{BTreeMap, BTreeSet};
     let faces = vec![vec![("moFromSktEntSurfIdRep_c", 36, 1)]; 64];
-    let overrides = (0..64).step_by(3).map(|index| (index, [247, 0, 23])).collect::<Vec<_>>();
-    let source = display_fixture([202, 209, 238], &faces, &overrides, &[(36, 10, [236, 255, 0])]);
+    let overrides = (0..64)
+        .step_by(3)
+        .map(|index| (index, [247, 0, 23]))
+        .collect::<Vec<_>>();
+    let source = display_fixture(
+        [202, 209, 238],
+        &faces,
+        &overrides,
+        &[(36, 10, [236, 255, 0])],
+    );
     let scan = crate::test_support::container::scan(&source);
     let fixture_ctx = cadmpeg_test_support::service_decode_context();
-    let section = scan.sections(&fixture_ctx).unwrap().find(|section| section.name() == Some("Contents/DisplayLists")).unwrap();
+    let section = scan
+        .sections(&fixture_ctx)
+        .unwrap()
+        .find(|section| section.name() == Some("Contents/DisplayLists"))
+        .unwrap();
     let faces = crate::tessellation::section_display_faces(&fixture_ctx, section).unwrap();
-    let expected = super::resolve_display_appearances(&fixture_ctx, &scan, section, &faces).unwrap();
+    let expected =
+        super::resolve_display_appearances(&fixture_ctx, &scan, section, &faces).unwrap();
     assert_eq!(expected.by_face.len(), 64);
     let live_storage = |resolve| {
         let arena = DecodeArena::new();
-        let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::MaterializedBytes, "measure resolved appearance storage", |cap| {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_materialized_bytes = cap;
-            policy.limits.max_retained_bytes = 0;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-            let (result, storage) = ctx.with_scoped_storage("resolved appearance test", || {
-                if resolve { super::resolve_display_appearances(&ctx, &scan, section, &faces) }
-                else {
-                    let mut matched_feature_sources = BTreeSet::new();
-                    for &source_id in &expected.matched_feature_sources { ctx.insert_btree_set(&mut matched_feature_sources, source_id, "copy expected appearance sources")?; }
-                    let mut by_face = BTreeMap::new();
-                    for (&index, definition) in &expected.by_face {
-                        let definition = super::copy_definition(&ctx, definition)?;
-                        ctx.insert_btree_map(&mut by_face, index, definition, "copy expected appearances")?;
-                    }
-                    Ok(super::ResolvedDisplayAppearances { by_face, matched_feature_sources })
-                }
-            })?;
-            assert_eq!(result.by_face.len(), 64);
-            let measurement = ctx.reserve_scoped(u64::MAX / 2, "measure resolved appearance storage")?;
-            drop((measurement, result, storage));
-            Ok(())
-        });
-        let CodecError::ResourceLimit(limit) = error else { panic!("measurement refusal"); };
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::MaterializedBytes,
+            "measure resolved appearance storage",
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_materialized_bytes = cap;
+                policy.limits.max_retained_bytes = 0;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                let (result, storage) =
+                    ctx.with_scoped_storage("resolved appearance test", || {
+                        if resolve {
+                            super::resolve_display_appearances(&ctx, &scan, section, &faces)
+                        } else {
+                            let mut matched_feature_sources = BTreeSet::new();
+                            for &source_id in &expected.matched_feature_sources {
+                                ctx.insert_btree_set(
+                                    &mut matched_feature_sources,
+                                    source_id,
+                                    "copy expected appearance sources",
+                                )?;
+                            }
+                            let mut by_face = BTreeMap::new();
+                            for (&index, definition) in &expected.by_face {
+                                let definition = super::copy_definition(&ctx, definition)?;
+                                ctx.insert_btree_map(
+                                    &mut by_face,
+                                    index,
+                                    definition,
+                                    "copy expected appearances",
+                                )?;
+                            }
+                            Ok(super::ResolvedDisplayAppearances {
+                                by_face,
+                                matched_feature_sources,
+                            })
+                        }
+                    })?;
+                assert_eq!(result.by_face.len(), 64);
+                let measurement =
+                    ctx.reserve_scoped(u64::MAX / 2, "measure resolved appearance storage")?;
+                drop((measurement, result, storage));
+                Ok(())
+            },
+        );
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("measurement refusal");
+        };
         limit.used
     };
     assert_eq!(live_storage(true), live_storage(false));
