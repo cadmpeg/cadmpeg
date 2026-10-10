@@ -1,6 +1,6 @@
 use super::super::{
-    dimensioned_arc_native_geometry, extended_radial_circle_index,
-    extended_terminal_repeated_radial_circle_index, terminal_repeated_radial_circle_pairs,
+    compact_radial_circle_index, dimensioned_arc_native_geometry, extended_radial_circle_index,
+    terminal_repeated_radial_circle_pairs,
     DimensionedCurveNative,
 };
 use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind, SketchInputLink};
@@ -254,22 +254,12 @@ fn extended_terminal_radial_record_carries_a_one_based_roster_address() {
     }
 
     assert_eq!(
-        extended_terminal_repeated_radial_circle_index(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            0
-        )
-        .unwrap(),
+        compact_radial_circle_index(&payload, 0),
         Some(12)
     );
     payload[58..60].copy_from_slice(&13u16.to_le_bytes());
     assert_eq!(
-        extended_terminal_repeated_radial_circle_index(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            0
-        )
-        .unwrap(),
+        compact_radial_circle_index(&payload, 0),
         None
     );
 }
@@ -292,14 +282,12 @@ fn duplicated_extended_curve_address_identifies_a_radial_circle_roster() {
     payload[112..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
 
     assert_eq!(
-        extended_radial_circle_index(&cadmpeg_test_support::service_decode_context(), &payload, 0)
-            .unwrap(),
+        extended_radial_circle_index(&payload, 0),
         Some(7)
     );
     payload[66..68].copy_from_slice(&8u16.to_le_bytes());
     assert_eq!(
-        extended_radial_circle_index(&cadmpeg_test_support::service_decode_context(), &payload, 0)
-            .unwrap(),
+        extended_radial_circle_index(&payload, 0),
         None
     );
 }
