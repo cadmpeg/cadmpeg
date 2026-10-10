@@ -64,7 +64,9 @@ pub(super) fn admit(
                         u64::MAX,
                     )
                 })?;
-            let (mut expected, _reservation) =
+            let _reservation;
+            let mut expected;
+            (expected, _reservation) =
                 ctx.scoped_string(length, "decode SLDPRT native validation name")?;
             for character in characters()?.filter_map(Result::ok) {
                 ctx.push_retained_char(
