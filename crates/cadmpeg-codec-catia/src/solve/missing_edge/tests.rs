@@ -1131,3 +1131,5 @@ fn port_viability_retains_only_the_resolved_output() {
         Some(vec![Some([0, 1])])
     );
 }
+
+mod budget_paths;
