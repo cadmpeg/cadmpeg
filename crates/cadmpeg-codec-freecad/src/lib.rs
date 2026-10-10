@@ -87,9 +87,6 @@ const FINDINGS: &str = "FreeCAD native validation findings";
 
 fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, CodecError> {
     const IDENTITIES: &str = "FreeCAD validation identities";
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(namespace) = ir.native.namespace("fcstd") else {
         return Ok(Vec::new());
     };
@@ -1205,9 +1202,6 @@ fn validate_logical_ledger(
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     const OPERATION: &str = "FreeCAD validation logical ledger";
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let entries = records.entries;
     if logical.is_empty() {
         let mut entry_sources = entries.iter();
@@ -1439,9 +1433,6 @@ fn first_difference<T: PartialEq + cadmpeg_core::decode::cost::DecodeCost>(
     derived: &[T],
     operation: &'static str,
 ) -> Result<Option<SliceDifference>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut pairs = stored.iter().zip(derived).enumerate();
     while pairs.len() != 0 {
         let Some((index, (stored, derived))) = ctx.next_charged(&mut pairs, operation)? else {
@@ -1499,9 +1490,6 @@ impl CodecBackend for FcstdCodec {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         prefix: cadmpeg_core::decode::View<'_>,
     ) -> Result<Confidence, cadmpeg_core::CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let prefix = prefix.window();
         if !prefix.starts_with(b"PK\x03\x04") {
             return Ok(Confidence::No);
@@ -1961,9 +1949,6 @@ fn bind_gui_entry_references<'g>(
     gui_graph: &'g gui::Graph,
 ) -> Result<(), CodecError> {
     const OPERATION: &str = "FCStd GUI entry references";
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if entry_records.is_empty() {
         return Ok(());
     }
@@ -2053,9 +2038,6 @@ fn semantic_losses(
     cycle_affected_design_objects: &BTreeSet<String>,
     gui_losses: Vec<LossNote>,
 ) -> Result<Vec<LossNote>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut losses = gui_losses;
     let mut feature_sources = ir.model.features.iter();
     while feature_sources.len() != 0 {

@@ -68,7 +68,7 @@ fn native_comparison_does_not_charge_exact_size_exhaustion() {
 }
 
 #[test]
-fn empty_orchestration_paths_preserve_a_fused_refusal() {
+fn empty_orchestration_paths_use_no_work() {
     let ir = cadmpeg_ir::document::CadIr::empty();
     let mut entries = Vec::new();
     let gui = crate::gui::Graph::default();
@@ -89,20 +89,7 @@ fn empty_orchestration_paths_preserve_a_fused_refusal() {
     assert!(crate::semantic_losses(&ctx, &ir, &affected, Vec::new())
         .expect("no semantic sources")
         .is_empty());
-    let CodecError::ResourceLimit(original) = ctx
-        .charge_work(1, "prior orchestration refusal")
-        .expect_err("work limit")
-    else {
-        panic!("resource refusal")
-    };
-    for result in [
-        crate::validate_native(&ctx, &ir).map(|_| ()),
-        crate::first_difference(&ctx, &[] as &[u8], &[], "empty comparison").map(|_| ()),
-        crate::bind_gui_entry_references(&ctx, &mut entries, &gui),
-        crate::semantic_losses(&ctx, &ir, &affected, Vec::new()).map(|_| ()),
-    ] {
-        assert!(matches!(result, Err(CodecError::ResourceLimit(repeated)) if repeated == original));
-    }
+
 }
 
 fn gui_property(side_entries: Vec<String>) -> crate::native::GuiPropertyRecord {
@@ -194,15 +181,7 @@ fn empty_logical_ledger_skips_entry_and_owner_indexes() {
     crate::validate_logical_ledger(&ctx, &[], &owners, &HashSet::new(), &mut findings)
         .expect("no ledger index consumer");
     assert!(findings.is_empty());
-    let CodecError::ResourceLimit(original) = ctx
-        .charge_work(1, "prior ledger refusal")
-        .expect_err("work limit")
-    else {
-        panic!("resource refusal")
-    };
-    assert!(matches!(crate::validate_logical_ledger(
-        &ctx, &[], &owners, &HashSet::new(), &mut findings,
-    ), Err(CodecError::ResourceLimit(repeated)) if repeated == original));
+
 }
 
 #[test]
@@ -462,15 +441,7 @@ fn element_maps_without_identity_references_skip_both_indexes() {
     .expect("no identity-index consumers");
     assert!(findings.is_empty());
     assert_eq!(ctx.resource_refusal(), None);
-    let CodecError::ResourceLimit(original) = ctx
-        .charge_work(u64::MAX, "prior element-map refusal")
-        .expect_err("work overflow")
-    else {
-        panic!("work refusal")
-    };
-    assert!(matches!(crate::validate_element_maps(
-        &ctx, &ir, &[], &[], &property_ids, &HashSet::new(), &mut findings,
-    ), Err(CodecError::ResourceLimit(repeated)) if repeated == original));
+
 }
 
 #[test]
