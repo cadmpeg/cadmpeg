@@ -2,6 +2,7 @@
 //! Compression and archive support shared by container codecs.
 
 mod archive;
+mod layout;
 pub mod compound;
 pub mod compression;
 

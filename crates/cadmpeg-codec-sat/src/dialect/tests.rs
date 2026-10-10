@@ -128,12 +128,7 @@ fn only_the_acis_kernel_branches_are_banded() {
             let loss = dialect_loss(&cadmpeg_test_support::service_decode_context(), &matched)
                 .unwrap()
                 .expect("the recovery is charged");
-            assert_eq!(
-                loss.code,
-                SatLossCode::SourceDialectUnverified
-                    .kind(&cadmpeg_test_support::service_decode_context())
-                    .expect("service loss code")
-            );
+            assert_eq!(loss.code, SatLossCode::SourceDialectUnverified.kind());
             assert!(loss.message.contains(nearest), "{}", loss.message);
         }
 
@@ -159,12 +154,7 @@ fn only_the_acis_kernel_branches_are_banded() {
             let loss = dialect_loss(&cadmpeg_test_support::service_decode_context(), &matched)
                 .unwrap()
                 .expect("the recovery is charged");
-            assert_eq!(
-                loss.code,
-                SatLossCode::SourceDialectUnverified
-                    .kind(&cadmpeg_test_support::service_decode_context())
-                    .expect("service loss code")
-            );
+            assert_eq!(loss.code, SatLossCode::SourceDialectUnverified.kind());
             assert!(
                 !loss.message.contains("acis:save-format"),
                 "{}",
@@ -426,9 +416,7 @@ fn cases() -> Vec<Case> {
 fn decode_admission_matches_the_stream_and_carries_the_recovery_mark() {
     // End to end on real bytes: the admission the decode reports, and the
     // recovery loss charged exactly with it.
-    let recovery = SatLossCode::SourceDialectUnverified
-        .kind(&cadmpeg_test_support::service_decode_context())
-        .expect("service loss code");
+    let recovery = SatLossCode::SourceDialectUnverified.kind();
     for case in cases() {
         let result = SatCodec
             .decode(

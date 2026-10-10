@@ -120,7 +120,7 @@ pub(crate) struct InventorEmbeddedReference<'a> {
 
 pub(crate) fn parse<'a>(
     ctx: &DecodeContext<'a>,
-    snapshot: &CompoundSnapshot<'a>,
+    snapshot: &CompoundSnapshot<'a, '_>,
     document_kind: &DocumentKind,
 ) -> Result<UfrxState<'a>, CodecError> {
     let Some(stream) = snapshot.stream(ctx, "UFRxDoc")? else {

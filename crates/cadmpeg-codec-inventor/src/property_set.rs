@@ -148,7 +148,7 @@ fn has_property_set_header(bytes: &[u8]) -> bool {
 
 pub(crate) fn inventory<'a>(
     ctx: &DecodeContext<'a>,
-    snapshot: &CompoundSnapshot<'a>,
+    snapshot: &CompoundSnapshot<'a, '_>,
 ) -> Result<Vec<PropertySetDescriptor<'a>>, CodecError> {
     let mut property_sets = Vec::new();
     for entry in ctx.admit_iter(snapshot.entries(), "scan Inventor property-set streams")? {

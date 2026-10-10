@@ -514,7 +514,7 @@ pub(crate) struct RseInventory<'a> {
 impl<'a> RseInventory<'a> {
     pub(crate) fn build(
         ctx: &DecodeContext<'a>,
-        snapshot: &CompoundSnapshot<'a>,
+        snapshot: &CompoundSnapshot<'a, '_>,
     ) -> Result<Self, CodecError> {
         let mut stream_storage = ctx.reserve_scoped(0, "Inventor RSe stream indices")?;
         let mut databases = Vec::new();
