@@ -70,9 +70,11 @@ impl TrimPacket {
             expected = expected
                 .checked_add(*length)
                 .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-            triangle_count = triangle_count
-                .checked_add(length.saturating_sub(2))
-                .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+            if let Some(triangles) = length.checked_sub(2) {
+                triangle_count = triangle_count
+                    .checked_add(triangles)
+                    .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+            }
         }
         if expected != handles.len() {
             return Ok(None);

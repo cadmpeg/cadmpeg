@@ -30,3 +30,22 @@ fn a8_class21_jet_projections_refuse_before_traversal() {
         );
     }
 }
+
+#[test]
+fn a8_class21_strict_knot_refusal_stays_in_the_outer_result() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+    let payload = a8_class21_test_payload();
+    let refused = crate::test_support::with_work_refusal("IR strict knot order", |ctx| {
+        let result = parse_a8_class21_pcurve(ctx, 7, &payload);
+        if let Err(CodecError::ResourceLimit(limit)) = &result {
+            assert_eq!(ctx.resource_refusal(), Some(*limit));
+        }
+        result
+    });
+    let Err(CodecError::ResourceLimit(original)) = refused else {
+        panic!("strict knot refusal must not disappear as a missing candidate");
+    };
+    assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(original.operation, "IR strict knot order");
+}
