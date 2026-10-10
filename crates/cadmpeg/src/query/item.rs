@@ -9,7 +9,6 @@
 use std::fmt;
 
 use anyhow::{bail, Context, Result};
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use clap::Args;
 use serde::de::{DeserializeSeed, IgnoredAny, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
@@ -357,8 +356,6 @@ fn first_parent_keys(values: &[serde_json::Value], path: &str) -> Option<Vec<Str
 /// JSON strings/numbers/bools are bare; tab/newline in a string become `\t`/
 /// `\n`; null or absent is an empty cell; arrays/objects are compact JSON.
 fn project_fields(values: &[serde_json::Value], paths: &[String]) -> Result<(String, Vec<String>)> {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())?;
     if paths.is_empty() {
         bail!("--fields requires at least one dotted path");
     }
@@ -366,7 +363,7 @@ fn project_fields(values: &[serde_json::Value], paths: &[String]) -> Result<(Str
     out.push_str(&paths.join("\t"));
     out.push('\n');
 
-    let mut empty_counts = ctx.alloc_filled(paths.len(), 0usize, "cli query field counts")?;
+    let mut empty_columns = vec![true; paths.len()];
     let row_count = values.len();
     for value in values {
         for (i, path) in paths.iter().enumerate() {
@@ -374,11 +371,11 @@ fn project_fields(values: &[serde_json::Value], paths: &[String]) -> Result<(Str
                 out.push('\t');
             }
             let cell = match navigate(value, path) {
-                None | Some(serde_json::Value::Null) => {
-                    empty_counts[i] += 1;
-                    String::new()
+                None | Some(serde_json::Value::Null) => String::new(),
+                Some(v) => {
+                    empty_columns[i] = false;
+                    field_cell(v)
                 }
-                Some(v) => field_cell(v),
             };
             out.push_str(&cell);
         }
@@ -390,8 +387,8 @@ fn project_fields(values: &[serde_json::Value], paths: &[String]) -> Result<(Str
     } else {
         paths
             .iter()
-            .zip(empty_counts.iter())
-            .filter(|&(_, &count)| count == row_count)
+            .zip(empty_columns)
+            .filter(|(_, empty)| *empty)
             .map(|(path, _)| path.clone())
             .collect()
     };
@@ -742,7 +739,7 @@ impl<'de> Visitor<'de> for ArenaValueVisitor<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::{field_cell, ArenaTarget};
+    use super::{field_cell, project_fields, ArenaTarget};
 
     #[test]
     fn arena_target_parses_shorthand_and_dotted() {
@@ -757,6 +754,29 @@ mod tests {
             }
             ArenaTarget::Model { .. } => panic!("expected native"),
         }
+    }
+
+    #[test]
+    fn field_projection_preserves_presence_and_duplicate_column_order() {
+        let values = [
+            serde_json::json!({"name": "", "present": null, "unset": null}),
+            serde_json::json!({"present": false}),
+        ];
+        let paths = ["name", "present", "unset", "missing", "name", "missing"].map(str::to_owned);
+        let (tsv, empty_paths) = project_fields(&values, &paths).expect("field projection");
+
+        assert_eq!(
+            tsv,
+            concat!(
+                "name\tpresent\tunset\tmissing\tname\tmissing\n",
+                "\t\t\t\t\t\n",
+                "\tfalse\t\t\t\t\n",
+            )
+        );
+        assert_eq!(
+            empty_paths,
+            ["unset", "missing", "missing"].map(str::to_owned)
+        );
     }
 
     #[test]
