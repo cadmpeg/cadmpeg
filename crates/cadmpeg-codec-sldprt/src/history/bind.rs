@@ -80,7 +80,9 @@ pub(crate) fn bind_unique_sketch_feature(
             })?;
         }
     }
-    let (sketches_by_name, _sketch_index) = ctx.unique_index(
+    let _sketch_index;
+    let sketches_by_name;
+    (sketches_by_name, _sketch_index) = ctx.unique_index(
         ctx.admit_iter(sketches, BIND_OPERATION)?
             .filter_map(|sketch| sketch.name.as_deref().map(|name| (name, sketch))),
         BIND_OPERATION,
@@ -253,10 +255,12 @@ pub(crate) fn bind_unique_sketch_feature(
         feature.evaluation.edit(|definition, _| {
             bound = index.bind(ctx, definition);
         });
-        let (mut bound, _bound_storage) = bound?;
-        ctx.sort_unstable_by(&mut bound, |position| position, Ord::cmp, BIND_OPERATION)?;
-        ctx.dedup_vec(&mut bound, BIND_OPERATION)?;
-        for &position in ctx.admit_iter(&bound, BIND_OPERATION)? {
+        let _bound_storage;
+        let mut bound_indices;
+        (bound_indices, _bound_storage) = bound?;
+        ctx.sort_unstable_by(&mut bound_indices, |position| position, Ord::cmp, BIND_OPERATION)?;
+        ctx.dedup_vec(&mut bound_indices, BIND_OPERATION)?;
+        for &position in ctx.admit_iter(&bound_indices, BIND_OPERATION)? {
             let dependency = &bindings[position].feature_id;
             if !ctx.contains(feature.dependencies.as_slice(), dependency, BIND_OPERATION)? {
                 feature.dependencies.insert(
@@ -465,8 +469,8 @@ impl<'b, 's> BindingIndex<'b, 's> {
             FeatureOperation::CompositeCurve { segments, .. } => {
                 // Each binding resolves the first segment still naming it, so the
                 // n-th segment naming a record takes the n-th binding for it.
-                let mut occurrences = HashMap::<&str, usize>::new();
                 let mut workspace = ctx.reserve_scoped(0, BIND_OPERATION)?;
+                let mut occurrences = HashMap::<&str, usize>::new();
                 for segment in ctx.admit_iter(&mut segments[..], BIND_OPERATION)? {
                     let PathRef::Native(native_ref) = &*segment else {
                         continue;
@@ -994,7 +998,9 @@ pub(crate) fn derive_feature_outputs(
     if face_producers.is_empty() {
         return Ok(());
     }
-    let (owners, _owners_storage) = face_owner_bodies(ctx, faces, shells, regions)?;
+    let _owners_storage;
+    let owners;
+    (owners, _owners_storage) = face_owner_bodies(ctx, faces, shells, regions)?;
     let mut produced: HashMap<u32, Vec<&BodyId>> = HashMap::new();
     let mut seen = std::collections::HashSet::new();
     for (face, source_id) in ctx.admit_iter(face_producers, "collect SLDPRT produced bodies")? {
