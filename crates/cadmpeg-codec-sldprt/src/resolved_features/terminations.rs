@@ -1041,7 +1041,7 @@ pub(crate) fn project_surface_sweep_profiles(
     for lane in ctx.admit_iter(lanes, OPERATION)? {
         let Some(reference_class) = ctx.find_by(
             &lane.classes,
-            |class| Ok(class.name.as_str() == "moCompReferenceCurve_c"),
+            |class| ctx.equal(class.name.as_str(), "moCompReferenceCurve_c", OPERATION),
             OPERATION,
         )?
         else {

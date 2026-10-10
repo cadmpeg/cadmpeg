@@ -265,7 +265,7 @@ pub(super) fn class_offsets<'ctx>(
     let mut storage = ctx.reserve_scoped(0, operation)?;
     let mut offsets = Vec::new();
     for class in ctx.admit_iter(&lane.classes, operation)? {
-        if class.name == name {
+        if ctx.equal(class.name.as_str(), name, operation)? {
             storage.with_storage(|| ctx.push_vec(&mut offsets, class.offset, operation))?;
         }
     }

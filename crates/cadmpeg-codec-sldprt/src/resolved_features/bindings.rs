@@ -2135,7 +2135,7 @@ pub(super) fn bind_detached_legacy_sketch_objects(
     let limit = ctx
         .find_by(
             &lane.classes,
-            |class| Ok(class.name == "moFeatureDimHandle_c"),
+            |class| ctx.equal(class.name.as_str(), "moFeatureDimHandle_c", OPERATION),
             "find SLDPRT feature dimension handle",
         )?
         .map_or_else(

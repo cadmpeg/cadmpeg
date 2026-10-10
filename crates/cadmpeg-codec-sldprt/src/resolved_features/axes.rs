@@ -242,7 +242,7 @@ pub(super) fn typed_linear_pattern_dimensions(
         let declared = |class: &&crate::records::FeatureInputClass| {
             Ok(
                 (u64_from_index(object_start)..u64_from_index(object_end)).contains(&class.offset)
-                    && class.name == class_name,
+                    && ctx.equal(class.name.as_str(), class_name, "compare SLDPRT linear pattern class name")?,
             )
         };
         let mut classes = lane.classes.iter();

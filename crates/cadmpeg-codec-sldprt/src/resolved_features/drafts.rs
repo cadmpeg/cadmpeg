@@ -421,20 +421,21 @@ fn unique_declared_plane_reference_token(
     ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
 ) -> Result<Option<[u8; 2]>, CodecError> {
-    let token = |class: &crate::records::FeatureInputClass| {
-        if class.name != "moPlaneRef_w" {
-            return None;
+    const OPERATION: &str = "scan SLDPRT declared plane tokens";
+    let token = |class: &crate::records::FeatureInputClass| -> Result<Option<[u8; 2]>, CodecError> {
+        if !ctx.equal(class.name.as_str(), "moPlaneRef_w", OPERATION)? {
+            return Ok(None);
         }
-        let body = usize::try_from(class.offset)
-            .ok()?
-            .checked_add(6 + class.name.len())?;
-        let value = View::u16_le_at(&lane.native_payload, body)?;
-        is_class_token(value).then_some(value.to_le_bytes())
+        Ok((|| {
+            let body = usize::try_from(class.offset).ok()?.checked_add(6 + class.name.len())?;
+            let value = View::u16_le_at(&lane.native_payload, body)?;
+            is_class_token(value).then_some(value.to_le_bytes())
+        })())
     };
     let mut classes = lane.classes.iter();
     let Some(first) = ctx.find_map(
         &mut classes,
-        |class| Ok(token(class)),
+        |class| token(class),
         "scan SLDPRT declared plane tokens",
     )?
     else {
@@ -442,7 +443,7 @@ fn unique_declared_plane_reference_token(
     };
     let disagrees = ctx.any_by(
         &mut classes,
-        |class| Ok(token(class).is_some_and(|candidate| candidate != first)),
+        |class| Ok(token(class)?.is_some_and(|candidate| candidate != first)),
         "scan SLDPRT declared plane tokens",
     )?;
     Ok((!disagrees).then_some(first))
