@@ -98,21 +98,20 @@ pub(super) fn decode_graph(
     ctx: &DecodeContext<'_>,
     carriers: &CarrierView<'_, '_>,
     t: &topology::Tables,
-    entity_facts: entity::FactsSource<'_>,
+    mut entity_facts: entity::FactsSource<'_>,
     typed_facts: &typed::Facts,
     stream: &cadmpeg_ir::StreamName,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
-    let (entity_facts, _entity_fact_storage) = entity_facts.into_parts();
     let (typed_records, _body_record_storage) = ctx
         .with_scoped_storage("hold Parasolid body records", || {
             typed_body_records(ctx, typed_facts, t)
         })?;
     let body_records = typed_records.unwrap_or_default();
-    let body_modifiers = unique_body_modifiers(ctx, entity_facts.body_modifiers)?;
+    let body_modifiers = unique_body_modifiers(ctx, std::mem::take(&mut entity_facts.body_modifiers))?;
     let (face_colors, conflicting_face_colors) = unique_face_colors(
         ctx,
-        entity_facts.face_colors,
-        entity_facts.face_color_versions,
+        std::mem::take(&mut entity_facts.face_colors),
+        std::mem::take(&mut entity_facts.face_color_versions),
     )?;
     let face_bridge_sequences = sorted_topology_sequences(
         ctx,
@@ -1429,7 +1428,7 @@ pub(super) fn decode_graph(
         };
     }
     let mut bound_faces = BTreeSet::new();
-    for atom in ctx.admit_iter(entity_facts.face_atoms, "bind Parasolid face atoms")? {
+    for atom in ctx.admit_iter(std::mem::take(&mut entity_facts.face_atoms), "bind Parasolid face atoms")? {
         let Some(identity) = atom.identity.as_ref() else {
             continue;
         };
