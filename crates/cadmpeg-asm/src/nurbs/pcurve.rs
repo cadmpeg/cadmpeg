@@ -247,9 +247,9 @@ pub(super) fn pcurve_block_with_end(
     toks: &[Token],
     marker_pos: usize,
 ) -> Option<Result<(PcurveNurbs, usize), cadmpeg_core::CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
+    let mut attempt = propagate_resource!(ctx.reserve_scoped(0, "ASM pcurve block attempt"));
+    let candidate = propagate_resource!(attempt.with_storage(|| {
+        (|| {
     let rational = toks::marker_at(toks, marker_pos)?.rational();
     let mut cur = Cur::at(toks, marker_pos + 1);
     let degree = cur.take_long()?;
@@ -310,6 +310,9 @@ pub(super) fn pcurve_block_with_end(
         .ok()?,
         cur.pos(),
     )))
+        })().transpose()
+    }));
+    candidate.map(|value| attempt.commit_value(value))
 }
 
 fn pcurve_block(
