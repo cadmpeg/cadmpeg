@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Inherited line rules preserve requester units and original diagnostics.
 
+use std::fmt::Write as _;
+
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::PositiveReal;
@@ -12,10 +14,12 @@ fn source(magnitude: f64, ancestors: usize) -> String {
         "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=LINE('',#1002,#1000);#1000=VECTOR('',#1001,{magnitude});#1001=DIRECTION('',(1.,0.,0.));#1002=CARTESIAN_POINT('',(0.,0.,0.));"
     );
     for id in 2..=ancestors + 1 {
-        source.push_str(&format!(
+        write!(
+            source,
             "#{id}=TRIMMED_CURVE('',#{},(0.),(1.),.T.,.PARAMETER.);",
             id - 1
-        ));
+        )
+        .expect("write to String");
     }
     source.push_str("ENDSEC;END-ISO-10303-21;");
     source

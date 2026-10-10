@@ -630,11 +630,11 @@ pub(super) fn decode<'ctx>(
         ctx,
     )?;
     let angle_scale = angle_scale.get();
-    let (source_curve_parameter_scales, source_scale_storage) = ctx
+    let (source_curve_parameter_scales_buffer, source_scale_storage) = ctx
         .with_scoped_storage("step source curve scale storage", || {
             resolve_source_curve_parameter_scales(exchange, &unit_scales, ctx)
         })?;
-    let source_curve_parameter_scales = source_curve_parameter_scales;
+    let source_curve_parameter_scales = source_curve_parameter_scales_buffer;
     let mut typed = BTreeSet::new();
     let mut points = BTreeMap::new();
     let mut points2 = BTreeMap::new();
@@ -1986,12 +1986,12 @@ pub(super) fn decode<'ctx>(
             if missing {
                 continue;
             }
-            let Some(((segments, self_intersect), segment_storage)) =
+            let Some(((segments_buffer, self_intersect), segment_storage)) =
                 composite_curve(record, exchange, &carrier_index, ctx)?
             else {
                 continue;
             };
-            let segments = segments;
+            let segments = segments_buffer;
             let curve = CurveId::from(ids::data(kind!("curve"), id));
             ctx.fold(
                 &segments,
@@ -5017,7 +5017,7 @@ pub(super) fn associate_pcurve_supports(
                 "STEP owned singular vertex pcurve traversal",
             )?;
             ctx.fold(
-                &loop_.anchored_vertex_uses(),
+                loop_.anchored_vertex_uses(),
                 (),
                 |(), use_| {
                     ctx.fold(
@@ -5122,11 +5122,11 @@ pub(super) fn associate_surface_curve_supports(
     owned: &OwnedCarriers,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    let (retained, _retained_storage) = ctx
+    let (retained_buffer, _retained_storage) = ctx
         .with_scoped_storage("step retained surface curve index", || {
             retained_surface_curve_ids(exchange, index, owned, ctx)
         })?;
-    let retained = retained;
+    let retained = retained_buffer;
     for entity in
         exchange.entities_any(ctx, &["SURFACE_CURVE", "SEAM_CURVE", "INTERSECTION_CURVE"])?
     {
@@ -5688,7 +5688,7 @@ fn context_unit_scales(
         let mut length_values = Vec::new();
         let mut angle_values = Vec::new();
         ctx.fold(
-            &units,
+            units,
             (),
             |(), geometry_value| {
                 let Some(unit) = geometry_value.reference() else {
@@ -5918,7 +5918,7 @@ fn document_unit_scale(
             };
             let mut unit_ids = Vec::new();
             ctx.fold(
-                &units,
+                units,
                 (),
                 |(), geometry_value| {
                     let Some(id) = geometry_value.reference() else {
@@ -6179,7 +6179,7 @@ fn context_length_uncertainties(
     let mut named_value = None;
     let mut unresolved = 0;
     ctx.fold(
-        &references,
+        references,
         (),
         |(), geometry_value| {
             let Some(uncertainty_id) = geometry_value.reference() else {
@@ -6271,11 +6271,11 @@ fn linear_uncertainty(
     let mut unresolved = 0;
     for indexed_entity in exchange.entities(ctx, "GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT")? {
         let (_, context) = indexed_entity?;
-        let ((context_candidates, context_unresolved), _context_storage) = ctx
+        let ((context_candidates_buffer, context_unresolved), _context_storage) = ctx
             .with_scoped_storage("step uncertainty context storage", || {
                 context_length_uncertainties(context, exchange, ctx)
             })?;
-        let context_candidates = context_candidates;
+        let context_candidates = context_candidates_buffer;
         unresolved += context_unresolved;
         {
             ctx.charge_work(0, "step uncertainty candidate traversal")?;
@@ -7141,7 +7141,7 @@ fn logical_value(value: &Value) -> Result<Option<bool>, ()> {
 
 fn periodic_value(
     value: Option<&Value>,
-    field: &str,
+    field: std::fmt::Arguments<'_>,
     record_id: u64,
     (losses, loss_storage): (&mut Vec<LossNote>, &mut ScopedReservation<'_>),
     ctx: &DecodeContext<'_>,
@@ -7365,7 +7365,7 @@ fn nurbs_curve_definition<'a>(
     }
     let periodic = geometry_or_none!(periodic_value(
         base.parameters.get(offset + 3),
-        periodicity_field,
+        format_args!("{periodicity_field}"),
         id,
         (losses, loss_storage),
         ctx
@@ -9080,26 +9080,16 @@ fn nurbs_surface(
         ],
     )?
     .unwrap_or("B_SPLINE_SURFACE");
-    let (u_label, _u_label_storage) = ctx.format_scoped(
-        format_args!("{surface_name} U direction"),
-        "STEP surface periodicity label",
-    )?;
-    let u_label = u_label;
     let u_periodic = geometry_or_none!(periodic_value(
         base.parameters.get(offset + 4),
-        &u_label,
+        format_args!("{surface_name} U direction"),
         id,
         (losses, loss_storage),
         ctx,
     )?);
-    let (v_label, _v_label_storage) = ctx.format_scoped(
-        format_args!("{surface_name} V direction"),
-        "STEP surface periodicity label",
-    )?;
-    let v_label = v_label;
     let v_periodic = geometry_or_none!(periodic_value(
         base.parameters.get(offset + 5),
-        &v_label,
+        format_args!("{surface_name} V direction"),
         id,
         (losses, loss_storage),
         ctx,
