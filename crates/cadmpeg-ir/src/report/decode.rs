@@ -6,13 +6,14 @@ use std::collections::BTreeMap;
 use cadmpeg_core::dialect::{DialectLayers, FormatIdentity};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
+use serde::ser::SerializeStruct as _;
 use serde::{Deserialize, Serialize};
 
 use crate::report::loss::LossNote;
 
 /// Transfer status and loss details from a successful decode.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(into = "DecodeReportWire", from = "DecodeReportWire")]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(from = "DecodeReportWire")]
 #[serde(deny_unknown_fields)]
 pub struct DecodeReport {
     classification: FormatIdentity<DialectLayers>,
@@ -102,24 +103,23 @@ struct DecodeReportWire {
     transfer_ledger: TransferLedger,
 }
 
-impl From<DecodeReport> for DecodeReportWire {
-    fn from(report: DecodeReport) -> Self {
-        let DecodeReport {
-            classification,
-            transfer,
-            coverage,
-            losses,
-            notes,
-            transfer_ledger,
-        } = report;
-        Self {
-            identity: classification,
-            transfer,
-            coverage: coverage.into_wire(),
-            losses,
-            notes,
-            transfer_ledger,
+impl Serialize for DecodeReport {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let coverage = self.coverage.as_map();
+        let fields =
+            4 + usize::from(!coverage.is_empty()) + usize::from(!self.transfer_ledger.is_empty());
+        let mut wire = serializer.serialize_struct("DecodeReportWire", fields)?;
+        wire.serialize_field("identity", &self.classification)?;
+        wire.serialize_field("transfer", &self.transfer)?;
+        if !coverage.is_empty() {
+            wire.serialize_field("coverage", coverage)?;
         }
+        wire.serialize_field("losses", &self.losses)?;
+        wire.serialize_field("notes", &self.notes)?;
+        if !self.transfer_ledger.is_empty() {
+            wire.serialize_field("transfer_ledger", &self.transfer_ledger)?;
+        }
+        wire.end()
     }
 }
 
@@ -265,6 +265,32 @@ impl TransferLedger {
         });
     }
 
+    /// Verifies produced targets, stopping at the first unresolved identity.
+    pub fn verify_for_decode(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        index: &crate::index::ModelIndex<'_>,
+    ) -> Result<Result<(), String>, cadmpeg_core::CodecError> {
+        let unresolved = ctx.find_map(
+            &self.entries,
+            |entry| match entry.target() {
+                Some(target) if !index.contains(target, ctx)? => Ok(Some((entry, target))),
+                _ => Ok(None),
+            },
+            "decode transfer verification",
+        )?;
+        match unresolved {
+            Some((entry, target)) => Ok(Err(ctx.format_retained(
+                format_args!(
+                    "transfer source {:?} targets unresolved identity {:?}",
+                    entry.source, target
+                ),
+                "decode transfer refusal",
+            )?)),
+            None => Ok(Ok(())),
+        }
+    }
+
     /// Verifies every produced target against a finalized model index.
     pub fn verify(&self, index: &crate::index::ModelIndex<'_>) -> Result<(), String> {
         for entry in &self.entries {
@@ -345,8 +371,9 @@ impl Coverage {
         key: CoverageKey,
         count: usize,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        ctx.charge_work(1, "decode coverage lookup")?;
-        if let Some(value) = self.entries.get_mut(key.0) {
+        if let Some(value) =
+            ctx.get_mut_btree_map(&mut self.entries, key.0, "decode coverage lookup")?
+        {
             *value = count;
             return Ok(());
         }
@@ -362,16 +389,17 @@ impl Coverage {
         index: u32,
         count: usize,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        let (name, bytes) = ctx.format_scoped(
+        let name = ctx.format_scoped(
             format_args!("{}{index}{}", key.prefix, key.suffix),
             "decode indexed coverage name",
         )?;
-        ctx.charge_work(1, "decode coverage lookup")?;
-        if let Some(value) = self.entries.get_mut(&name) {
+        if let Some(value) =
+            ctx.get_mut_btree_map(&mut self.entries, name.0.as_str(), "decode coverage lookup")?
+        {
             *value = count;
             return Ok(());
         }
-        bytes.commit()?;
+        let name = name.1.commit_value(name.0)?;
         self.insert_name(ctx, name, count)
     }
 
@@ -383,16 +411,17 @@ impl Coverage {
         value: u8,
         count: usize,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        let (name, bytes) = ctx.format_scoped(
+        let name = ctx.format_scoped(
             format_args!("{}{:02x}{}", key.prefix, value, key.suffix),
             "decode hexadecimal coverage name",
         )?;
-        ctx.charge_work(1, "decode coverage lookup")?;
-        if let Some(existing) = self.entries.get_mut(&name) {
+        if let Some(existing) =
+            ctx.get_mut_btree_map(&mut self.entries, name.0.as_str(), "decode coverage lookup")?
+        {
             *existing = count;
             return Ok(());
         }
-        bytes.commit()?;
+        let name = name.1.commit_value(name.0)?;
         self.insert_name(ctx, name, count)
     }
 
@@ -406,10 +435,6 @@ impl Coverage {
         name: String,
         count: usize,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(name.len()),
-            "decode coverage name admission",
-        )?;
         if name != key.0 {
             return Err(cadmpeg_core::CodecError::malformed(
                 "coverage name does not match its declared key",
@@ -424,12 +449,6 @@ impl Coverage {
         name: String,
         count: usize,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        ctx.charge_work(1, "decode coverage lookup")?;
-        if let Some(value) = self.entries.get_mut(&name) {
-            *value = count;
-            return Ok(());
-        }
-        ctx.charge_work(1, "decode coverage nodes")?;
         ctx.insert_btree_map(&mut self.entries, name, count, "decode coverage nodes")?;
         Ok(())
     }
@@ -454,10 +473,6 @@ impl Coverage {
 
     fn from_wire(entries: BTreeMap<String, usize>) -> Self {
         Self { entries }
-    }
-
-    fn into_wire(self) -> BTreeMap<String, usize> {
-        self.entries
     }
 }
 

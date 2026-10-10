@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Source-format namespaces retained outside the format-neutral model.
 
-use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::io::Write;
 use std::num::NonZeroUsize;
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
@@ -16,12 +14,13 @@ use serde_json::{Map, Value};
 mod canon;
 pub mod catalogue;
 mod copy;
+mod read;
 mod replay;
 pub(crate) mod view;
 
 #[cfg(test)]
 thread_local! {
-    static TYPED_RECORD_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static TYPED_RECORD_READ_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 #[cfg(test)]
@@ -43,6 +42,18 @@ pub(crate) fn test_ctx() -> DecodeContext<'static> {
 /// It is twice the 128 containers a `serde_json` text parse admits, so every
 /// field a CADIR document can state is read back.
 const MAX_NATIVE_NESTING_DEPTH: usize = 256;
+
+/// Search-path levels and key comparisons for `serde_json`'s private B-tree.
+fn map_search_bound(len: usize) -> (u64, u64) {
+    let length = u64_from_index(len);
+    let half = length / 2 + length % 2;
+    let height = if half == 0 {
+        0
+    } else {
+        u64::from(half.ilog(6)) + 1
+    };
+    (height, (11 * height).min(length))
+}
 
 /// The text every refusal of [`MAX_NATIVE_NESTING_DEPTH`] carries.
 ///
@@ -190,7 +201,7 @@ pub enum NativeConvertError {
 impl From<NativeConvertError> for cadmpeg_core::CodecError {
     fn from(error: NativeConvertError) -> Self {
         if let Some(limit) = error.resource_limit() {
-            Self::ResourceLimit(limit)
+            Self::ResourceLimit(*limit)
         } else {
             Self::Malformed(error.to_string())
         }
@@ -198,37 +209,17 @@ impl From<NativeConvertError> for cadmpeg_core::CodecError {
 }
 
 impl NativeConvertError {
-    fn resource_limit(&self) -> Option<cadmpeg_core::decode::ResourceLimit> {
+    /// Returns the resource refusal carried by this error or one of its
+    /// contextual wrappers.
+    #[must_use]
+    pub fn resource_limit(&self) -> Option<&cadmpeg_core::decode::ResourceLimit> {
         match self {
-            Self::Resource(cadmpeg_core::CodecError::ResourceLimit(limit)) => Some(*limit),
+            Self::Resource(cadmpeg_core::CodecError::ResourceLimit(limit)) => Some(limit),
             Self::WriteRecord { source, .. } | Self::Arena { source, .. } => {
                 source.resource_limit()
             }
             _ => None,
         }
-    }
-}
-
-/// Charges serialized writes without retaining their bytes.
-struct ChargingJsonWriter<'a, 'b> {
-    ctx: &'a DecodeContext<'b>,
-    refusal: Option<cadmpeg_core::CodecError>,
-}
-
-impl Write for ChargingJsonWriter<'_, '_> {
-    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-        if let Err(error) = self.ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(bytes.len()),
-            "serialize native record",
-        ) {
-            self.refusal = Some(error);
-            return Err(std::io::Error::other("native record resource limit"));
-        }
-        Ok(bytes.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
     }
 }
 
@@ -346,20 +337,32 @@ impl NativeRecord {
         // Format-boundary fixtures admit the record root and every allowed field container.
         policy.limits.max_recursion_depth = u64_from_index(MAX_NATIVE_NESTING_DEPTH + 1);
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-        Self::from_typed_for_decode(&ctx, record, None)
+        Self::from_typed_for_decode(&ctx, record)
     }
 
     fn from_typed_for_decode<T: Serialize>(
         ctx: &DecodeContext<'_>,
         record: &T,
-        sink: Option<&dyn canon::ByteSink>,
     ) -> Result<Self, NativeConvertError> {
-        let serialized = record.serialize(canon::CanonValue::for_record_with_sink(ctx, sink));
-        ctx.charge_work(0, "construct canonical native value")?;
+        let serialized = record.serialize(canon::CanonValue::for_record(ctx));
         let serialized = serialized.map_err(|error| error.into_native(ctx))?;
         let canon::Node::Object(mut fields) = serialized else {
             return Err(NativeConvertError::NonObject);
         };
+        // Map keeps its B-tree private. Admit the search and the shift,
+        // steal and per-level merge passes before removing the identity.
+        let (height, comparisons) = map_search_bound(fields.len());
+        ctx.charge_work(comparisons * 2, "remove native record identity")?;
+        let passes = if height <= 1 { 1 } else { 4 * height + 3 };
+        let node_bytes = 11 * (std::mem::size_of::<String>() + std::mem::size_of::<Value>())
+            + 16 * std::mem::size_of::<usize>()
+            + 2 * std::mem::align_of::<String>()
+                .max(std::mem::align_of::<Value>())
+                .max(std::mem::align_of::<usize>());
+        ctx.charge_work(
+            u64_from_index(node_bytes) * passes,
+            "remove native record identity",
+        )?;
         let Some(Value::String(id)) = fields.remove("id") else {
             return Err(NativeConvertError::MissingId);
         };
@@ -419,7 +422,6 @@ impl NativeRecord {
                 id: self.id.as_str(),
                 links,
             },
-            None,
         )
         .map_err(CodecError::from)
     }
@@ -507,16 +509,43 @@ impl NativeRecord {
         self.fields.get(name).cloned()
     }
 
+    /// Read the record as a codec-owned type.
+    ///
+    /// The reader borrows the stored value; each of its requests is admitted
+    /// before it acts, as [`read`] states.
     fn to_typed<T: DeserializeOwned>(
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<T, NativeConvertError> {
-        let record = copy_value_for_decode(ctx, self)?;
+        let mut storage = ctx.reserve_scoped(0, read::TYPED_READ)?;
+        let id = Value::String(ctx.copy_scoped_text(
+            self.id.as_str(),
+            &mut storage,
+            read::TYPED_READ,
+        )?);
         #[cfg(test)]
-        TYPED_RECORD_CLONE_COUNT.with(|count| count.set(count.get() + 1));
-        match serde_json::from_value(record) {
-            Ok(value) => Ok(value),
-            Err(source) => Err(NativeConvertError::ReadRecord {
+        TYPED_RECORD_READ_COUNT.with(|count| count.set(count.get() + 1));
+        let kept = std::cell::Cell::new(0);
+        let members = std::iter::once(("id", &id))
+            .chain(self.fields.iter().map(|(key, value)| (key.as_str(), value)));
+        let len = self
+            .fields
+            .len()
+            .checked_add(1)
+            .ok_or_else(|| ctx.refuse_codec_limit(read::TYPED_READ, u64::MAX - 1, u64::MAX))?;
+        let read = T::deserialize(read::Record {
+            account: read::Account::new(ctx, &kept),
+            members,
+            len,
+        });
+        match (read, ctx.resource_refusal()) {
+            // A budget refusal fused the session, even when the reader went on
+            // to recover; report it, not the reader's result.
+            (_, Some(limit)) => Err(NativeConvertError::Resource(CodecError::ResourceLimit(
+                limit,
+            ))),
+            (Ok(value), None) => Ok(value),
+            (Err(source), None) => Err(NativeConvertError::ReadRecord {
                 id: self
                     .id
                     .try_clone_for_decode(ctx, "retain native record error identity")?,
@@ -533,18 +562,8 @@ struct DigestUnknown<'a> {
     links: &'a [Value],
 }
 
-/// Copies a value through the canonical serializer's charged allocations.
-fn copy_value_for_decode<T: Serialize + ?Sized>(
-    ctx: &DecodeContext<'_>,
-    value: &T,
-) -> Result<Value, NativeConvertError> {
-    let copied = value.serialize(canon::CanonValue::for_record_with_sink(ctx, None));
-    ctx.charge_work(0, "construct canonical native value")?;
-    Ok(copied.map_err(|error| error.into_native(ctx))?.into_value())
-}
-
 /// Adds an arena name to a semantic typed-record refusal.
-fn read_record<T: DeserializeOwned>(
+pub(crate) fn read_record<T: DeserializeOwned>(
     ctx: &DecodeContext<'_>,
     arena: &str,
     record: &NativeRecord,
@@ -618,10 +637,8 @@ impl JsonSchema for NativeRecord {
 /// canonical records never has to read them back out of a namespace. Each
 /// record is converted before the next is read, and a record the source could
 /// not state stops the walk with that record's own error. Equal identities can
-/// occur before document validation, so ordering must preserve their input
-/// order. A fallibly reserved index permutation orders records by identity and
-/// original ordinal. Its storage is admitted against the caller's temporary-byte
-/// budget before sorting.
+/// occur before document validation, so the sort is stable and keeps their
+/// input order.
 pub fn arena_from<T, E, I>(ctx: &DecodeContext<'_>, records: I) -> Result<Vec<NativeRecord>, E>
 where
     T: Serialize,
@@ -633,17 +650,9 @@ where
         let record = record?;
         ctx.reserve_vec(&mut converted, 1, "store native record")
             .map_err(|error| E::from(NativeConvertError::Resource(error)))?;
-        let writer = RefCell::new(ChargingJsonWriter { ctx, refusal: None });
-        let sink = |bytes: &[u8]| writer.borrow_mut().write_all(bytes);
-        let result = NativeRecord::from_typed_for_decode(ctx, &record, Some(&sink));
-        let record = match result {
+        let record = match NativeRecord::from_typed_for_decode(ctx, &record) {
             Ok(record) => record,
-            Err(error) => {
-                let source = writer
-                    .borrow_mut()
-                    .refusal
-                    .take()
-                    .map_or(error, NativeConvertError::Resource);
+            Err(source) => {
                 if source.resource_limit().is_some() {
                     return Err(E::from(source));
                 }
@@ -660,56 +669,13 @@ where
         };
         converted.push(record);
     }
-    let scratch_bytes = converted
-        .len()
-        .checked_mul(std::mem::size_of::<usize>())
-        .map(cadmpeg_core::decode::u64_from_index)
-        .ok_or_else(|| {
-            E::from(NativeConvertError::Resource(ctx.refuse_codec_limit(
-                "sort native records scratch size",
-                u64::MAX - 1,
-                u64::MAX,
-            )))
-        })?;
-    let _sort_scratch = ctx
-        .reserve_scoped(scratch_bytes, "sort native records")
-        .map_err(|error| E::from(NativeConvertError::Resource(error)))?;
-    let operation = "sort native records";
-    let count = u64::try_from(converted.len()).map_err(|_| {
-        E::from(NativeConvertError::Resource(ctx.refuse_codec_limit(
-            operation,
-            u64::MAX - 1,
-            u64::MAX,
-        )))
-    })?;
-    ctx.charge_collection_items(count, operation)
-        .map_err(|error| E::from(NativeConvertError::Resource(error)))?;
-    let mut order = Vec::new();
-    order.try_reserve_exact(converted.len()).map_err(|_| {
-        E::from(NativeConvertError::Resource(ctx.refuse_codec_limit(
-            operation,
-            u64::MAX - 1,
-            u64::MAX,
-        )))
-    })?;
-    order.extend(0..converted.len());
-    ctx.sort_unstable_by_key(
-        &mut order,
-        |value| (converted[*value].id(), *value),
-        Ord::cmp,
-        operation,
+    crate::ids::comparison::stable_sort_by_identity(
+        ctx,
+        &mut converted,
+        NativeRecord::id,
+        "sort native records",
     )
     .map_err(|error| E::from(NativeConvertError::Resource(error)))?;
-    for start in 0..order.len() {
-        let mut cursor = start;
-        while order[cursor] != start {
-            let next = order[cursor];
-            converted.swap(cursor, next);
-            order[cursor] = cursor;
-            cursor = next;
-        }
-        order[cursor] = cursor;
-    }
     Ok(converted)
 }
 
@@ -766,19 +732,6 @@ impl NativeNamespace {
     ) -> Result<(), NativeConvertError> {
         let name = name.as_ref();
         let name = ctx.copy_retained_text(name, "retain native arena name")?;
-        let comparisons = name
-            .len()
-            .checked_add(1)
-            .and_then(|bytes| {
-                self.arenas
-                    .len()
-                    .checked_add(1)
-                    .and_then(|count| bytes.checked_mul(count))
-            })
-            .and_then(|work| work.checked_mul(2))
-            .map(u64_from_index)
-            .ok_or_else(|| ctx.refuse_codec_limit("store native arena", u64::MAX - 1, u64::MAX))?;
-        ctx.charge_work(comparisons, "store native arena")?;
         let converted = match arena_from(ctx, records.into_iter().map(Ok::<T, NativeConvertError>))
         {
             Ok(converted) => converted,
@@ -794,7 +747,6 @@ impl NativeNamespace {
                 });
             }
         };
-        ctx.charge_work(1, "store native arena")?;
         ctx.insert_btree_map(&mut self.arenas, name, converted, "store native arena")?;
         Ok(())
     }
@@ -839,7 +791,9 @@ impl NativeNamespace {
         name: &str,
     ) -> Result<Vec<T>, NativeConvertError> {
         let mut typed = Vec::new();
-        if let Some((arena, records)) = self.arenas.get_key_value(name) {
+        if let Some((arena, records)) =
+            ctx.get_key_value_btree_map(&self.arenas, name, "select typed native arena")?
+        {
             for record in records {
                 ctx.reserve_vec(&mut typed, 1, "load typed native record")?;
                 typed.push(read_record(ctx, arena, record)?);
@@ -877,14 +831,19 @@ impl NativeNamespace {
         ctx: &'a DecodeContext<'_>,
         name: &str,
     ) -> impl Iterator<Item = Result<T, NativeConvertError>> + 'a {
-        self.arenas
-            .get_key_value(name)
+        let (selected, refusal) =
+            match ctx.get_key_value_btree_map(&self.arenas, name, "select typed native arena") {
+                Ok(selected) => (selected, None),
+                Err(error) => (None, Some(NativeConvertError::Resource(error))),
+            };
+        refusal
             .into_iter()
-            .flat_map(move |(arena, records)| {
+            .map(Err)
+            .chain(selected.into_iter().flat_map(move |(arena, records)| {
                 records
                     .iter()
                     .map(move |record| read_record(ctx, arena, record))
-            })
+            }))
     }
 }
 
@@ -913,12 +872,12 @@ impl Native {
         &mut self,
         ctx: &DecodeContext<'_>,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        for namespace in self.0.values_mut() {
-            for records in namespace.arenas.values_mut() {
-                ctx.stable_sort_by(
+        for (_, namespace) in ctx.admit_iter(&mut self.0, "finalize native namespaces")? {
+            for (_, records) in ctx.admit_iter(&mut namespace.arenas, "finalize native arenas")? {
+                crate::ids::comparison::stable_sort_by_identity(
+                    ctx,
                     records,
-                    |record| record.id(),
-                    Ord::cmp,
+                    NativeRecord::id,
                     "finalize native arena",
                 )?;
             }
