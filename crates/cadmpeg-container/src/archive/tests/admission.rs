@@ -35,7 +35,7 @@ fn snapshot_metadata_is_scoped_until_snapshot_drop() {
 }
 
 #[test]
-fn data_end_error_admits_name_and_preserves_refusal() {
+fn data_end_overflow_is_a_fixed_diagnostic() {
     let bytes = archive_bytes();
     let arena = DecodeArena::new();
     let (setup, root) =
@@ -45,50 +45,30 @@ fn data_end_error_admits_name_and_preserves_refusal() {
     entry.data_start = u64::MAX;
     entry.compressed_size = 1;
     assert!(
-        matches!(entry.data_end(&setup), Err(CodecError::Malformed(message))
-        if message == "ZIP data range overflows for stored.bin")
+        matches!(entry.data_end(), Err(CodecError::Malformed(message))
+        if message == "ZIP data range overflows")
     );
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    let CodecError::ResourceLimit(first) = entry.data_end(&ctx).expect_err("diagnostic work")
-    else {
-        panic!("resource refusal");
-    };
-    assert_eq!(first.operation, "ZIP structural error");
-    let CodecError::ResourceLimit(repeated) =
-        ctx.charge_work(1, "later").expect_err("fused refusal")
-    else {
-        panic!("resource refusal");
-    };
-    assert_eq!(repeated, first);
 }
 
 #[test]
-fn construction_diagnostic_is_retained_outside_snapshot_metadata_scope() {
+fn construction_diagnostics_need_no_budget() {
     let mut bytes = archive_bytes();
     let central = bytes
         .windows(4)
         .position(|signature| signature == b"PK\x01\x02")
         .expect("central header");
+    // General-purpose flag bit 0 marks the first entry encrypted.
     bytes[central + 8..central + 10].copy_from_slice(&1_u16.to_le_bytes());
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-    let CodecError::ResourceLimit(first) =
-        ArchiveSnapshot::new(&ctx, root).expect_err("escaping diagnostic needs retained storage")
-    else {
-        panic!("resource refusal");
-    };
-    assert_eq!(first.dimension, ResourceDimension::RetainedBytes);
-    assert_eq!(first.operation, "ZIP structural error");
-    let CodecError::ResourceLimit(repeated) =
-        ctx.charge_work(1, "later").expect_err("fused refusal")
-    else {
-        panic!("resource refusal");
-    };
-    assert_eq!(repeated, first);
+    assert!(matches!(
+        ArchiveSnapshot::new(&ctx, root),
+        Err(CodecError::Malformed(message)) if message == "encrypted ZIP entry 0"
+    ));
+    ctx.finish_session()
+        .expect("the discarded diagnostic leaves the session unrefused");
 }
 
 #[test]
@@ -118,7 +98,7 @@ fn snapshot_rejects_distinct_encoded_names_with_same_decoded_name() {
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("root");
     assert!(
         matches!(ArchiveSnapshot::new(&ctx, root), Err(CodecError::Malformed(message))
-        if message == "duplicate ZIP entry name \u{a0}")
+        if message == "duplicate ZIP entry name at entry 1")
     );
 }
 

@@ -20,19 +20,14 @@ pub enum ZipCompression {
 }
 
 impl ZipCompression {
-    fn from_zip(
-        ctx: &DecodeContext<'_>,
-        method: CompressionMethod,
-        name: &str,
-    ) -> Result<Self, CodecError> {
+    fn from_zip(method: CompressionMethod, index: usize) -> Result<Self, CodecError> {
         match method {
             CompressionMethod::Stored => Ok(Self::Stored),
             CompressionMethod::Deflated => Ok(Self::Deflate),
             CompressionMethod::Zstd => Ok(Self::Zstd),
-            other => Err(CodecError::NotImplemented(ctx.format_retained(
-                format_args!("ZIP compression {other:?} for {name}"),
-                "ZIP compression error",
-            )?)),
+            other => Err(CodecError::NotImplemented(format!(
+                "ZIP compression {other:?} for entry {index}"
+            ))),
         }
     }
 
@@ -104,14 +99,10 @@ impl EntryRecord {
     }
 
     /// Returns the exclusive compressed-payload boundary.
-    pub fn data_end(&self, ctx: &DecodeContext<'_>) -> Result<u64, CodecError> {
-        let Some(end) = self.data_start.checked_add(self.compressed_size) else {
-            return Err(structural_error(
-                ctx,
-                format_args!("ZIP data range overflows for {}", self.name),
-            ));
-        };
-        Ok(end)
+    pub fn data_end(&self) -> Result<u64, CodecError> {
+        self.data_start
+            .checked_add(self.compressed_size)
+            .ok_or_else(|| CodecError::Malformed("ZIP data range overflows".into()))
     }
 }
 
@@ -158,7 +149,7 @@ impl<'bytes, 'ctx> ZipIndex<'bytes, 'ctx> {
     fn new(ctx: &'ctx DecodeContext<'_>, bytes: &'bytes [u8]) -> Result<Self, CodecError> {
         let admission = zip_parser_admission(ctx, bytes)?;
         let archive = zip::ZipArchive::new(Cursor::new(admission.bytes))
-            .map_err(|error| structural_error(ctx, format_args!("not a readable ZIP: {error}")))?;
+            .map_err(|error| CodecError::malformed(format_args!("not a readable ZIP: {error}")))?;
         Ok(Self {
             archive,
             _workspace: admission.workspace,
@@ -193,7 +184,7 @@ impl<'a, 'ctx> ArchiveSnapshot<'a, 'ctx> {
         for index in 0..archive.len() {
             ctx.charge_work(1, "visit ZIP entry records")?;
             let file = archive.by_index_raw(index).map_err(|error| {
-                structural_error(ctx, format_args!("bad ZIP entry {index}: {error}"))
+                CodecError::malformed(format_args!("bad ZIP entry {index}: {error}"))
             })?;
             let name = ctx.copy_scoped_text(file.name(), &mut metadata, "ZIP entry record name")?;
             let duplicate_key =
@@ -205,20 +196,18 @@ impl<'a, 'ctx> ArchiveSnapshot<'a, 'ctx> {
                 "ZIP decoded name comparison",
                 "ZIP decoded name set",
             )? {
-                return Err(structural_error(
-                    ctx,
-                    format_args!("duplicate ZIP entry name {name}"),
-                ));
+                return Err(CodecError::malformed(format_args!(
+                    "duplicate ZIP entry name at entry {index}"
+                )));
             }
             if file.encrypted() {
-                return Err(structural_error(
-                    ctx,
-                    format_args!("encrypted ZIP entry {name}"),
-                ));
+                return Err(CodecError::malformed(format_args!(
+                    "encrypted ZIP entry {index}"
+                )));
             }
-            let compression = ZipCompression::from_zip(ctx, file.compression(), &name)?;
+            let compression = ZipCompression::from_zip(file.compression(), index)?;
             let data_start = file.data_start().ok_or_else(|| {
-                structural_error(ctx, format_args!("missing data offset for {name}"))
+                CodecError::malformed(format_args!("missing data offset for ZIP entry {index}"))
             })?;
             let record = EntryRecord {
                 name,
@@ -234,14 +223,13 @@ impl<'a, 'ctx> ArchiveSnapshot<'a, 'ctx> {
             for offset in [
                 record.header_start,
                 record.data_start,
-                record.data_end(ctx)?,
+                record.data_end()?,
                 record.central_start,
             ] {
                 if offset > cadmpeg_core::decode::u64_from_index(root.window().len()) {
-                    return Err(structural_error(
-                        ctx,
-                        format_args!("ZIP offset outside archive for {}", record.name),
-                    ));
+                    return Err(CodecError::malformed(format_args!(
+                        "ZIP offset outside archive for entry {index}"
+                    )));
                 }
             }
             ctx.reserve_capacity(&mut entries, 1, "ZIP entry record slot")?;
@@ -360,7 +348,7 @@ impl<'a, 'ctx> ArchiveSnapshot<'a, 'ctx> {
                 format_args!("ZIP entry {name} is absent"),
             ));
         };
-        let end = entry.data_end(ctx)?;
+        let end = entry.data_end()?;
         let archive_start = cadmpeg_core::decode::u64_from_index(self.root.start());
         let absolute_start = archive_start.checked_add(entry.data_start).ok_or_else(|| {
             structural_error(
@@ -1054,7 +1042,7 @@ fn physical_ledger(
             &mut region_storage,
             &mut regions,
             entry.data_start,
-            entry.data_end(ctx)?,
+            entry.data_end()?,
             |storage| {
                 Ok(ZipSpanRole::CompressedPayload(ctx.copy_scoped_text(
                     &entry.name,
@@ -1067,7 +1055,7 @@ fn physical_ledger(
         let next = local_order
             .get(index + 1)
             .map_or(central_begin, |next| next.header_start);
-        if entry.data_end(ctx)? > next {
+        if entry.data_end()? > next {
             return Err(structural_error(
                 ctx,
                 format_args!(
@@ -1076,7 +1064,7 @@ fn physical_ledger(
                 ),
             ));
         }
-        if entry.data_end(ctx)? < next {
+        if entry.data_end()? < next {
             let flags = u16_at(bytes, entry.header_start + 6)?;
             if flags & 0x0008 != 0 {
                 let descriptor_end = parse_data_descriptor(ctx, bytes, entry, next)?;
@@ -1084,7 +1072,7 @@ fn physical_ledger(
                     ctx,
                     &mut region_storage,
                     &mut regions,
-                    entry.data_end(ctx)?,
+                    entry.data_end()?,
                     descriptor_end,
                     |storage| {
                         Ok(ZipSpanRole::DataDescriptor(ctx.copy_scoped_text(
@@ -1115,7 +1103,7 @@ fn physical_ledger(
                     ctx,
                     &mut region_storage,
                     &mut regions,
-                    entry.data_end(ctx)?,
+                    entry.data_end()?,
                     next,
                     |storage| {
                         Ok(ZipSpanRole::Padding {
@@ -1258,7 +1246,7 @@ fn parse_data_descriptor(
     entry: &EntryRecord,
     record_end: u64,
 ) -> Result<u64, CodecError> {
-    let start = entry.data_end(ctx)?;
+    let start = entry.data_end()?;
     let has_signature = signature_at(bytes, start) == Some(*b"PK\x07\x08");
     let local_zip64 = u32_at(bytes, entry.header_start + 18)? == u32::MAX
         || u32_at(bytes, entry.header_start + 22)? == u32::MAX;
@@ -1548,24 +1536,11 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_zip_compression_refuses_before_error_formatting() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-        let CodecError::ResourceLimit(first) =
-            super::ZipCompression::from_zip(&ctx, CompressionMethod::BZIP2, "entry")
-                .expect_err("error format work")
-        else {
-            panic!("refusal")
-        };
-        assert_eq!(first.operation, "ZIP compression error");
-        let CodecError::ResourceLimit(repeated) =
-            ctx.charge_work(1, "later").expect_err("fused refusal")
-        else {
-            panic!("refusal")
-        };
-        assert_eq!(first, repeated);
+    fn unsupported_zip_compression_names_the_entry_ordinal() {
+        assert!(matches!(
+            super::ZipCompression::from_zip(CompressionMethod::BZIP2, 3),
+            Err(CodecError::NotImplemented(message)) if message.ends_with(" for entry 3")
+        ));
     }
 
     #[test]
