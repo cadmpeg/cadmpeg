@@ -444,7 +444,7 @@ impl<'a, 'ctx> ArchiveSnapshot<'a, 'ctx> {
         entry: &EntryRecord,
         range: ByteRange,
     ) -> Result<View<'a>, CodecError> {
-        let view = ctx.register_slice(self.root, range)?;
+        let view = self.compressed_source(ctx, entry, range)?;
         if cadmpeg_core::decode::u64_from_index(view.window().len()) != entry.uncompressed_size {
             return Err(structural_error(
                 ctx,
@@ -461,7 +461,7 @@ impl<'a, 'ctx> ArchiveSnapshot<'a, 'ctx> {
                 format_args!("CRC mismatch for {}", entry.name),
             ));
         }
-        Ok(view)
+        ctx.register_slice(self.root, range)
     }
 
     fn open_expanded(

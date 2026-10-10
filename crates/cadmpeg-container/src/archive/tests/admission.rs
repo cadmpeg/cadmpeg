@@ -148,3 +148,33 @@ fn physical_ledger_diagnostic_is_retained_outside_region_scope() {
     };
     assert_eq!(repeated, first);
 }
+
+#[test]
+fn stored_entry_integrity_is_checked_before_registering_output() {
+    let bytes = archive_bytes();
+    let arena = DecodeArena::new();
+    let (setup, root) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("root");
+    let mut snapshot = ArchiveSnapshot::new(&setup, root).expect("snapshot");
+    let original_crc = snapshot.entries[0].crc32;
+    let original_size = snapshot.entries[0].uncompressed_size;
+    let mut policy = DecodePolicy::service();
+    // The one accepted output owns the session's only borrowed-space slot.
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    snapshot.entries[0].uncompressed_size = original_size + 1;
+    assert!(matches!(snapshot.open(&ctx, "stored.bin"),
+        Err(CodecError::Malformed(message)) if message == "stored size mismatch for stored.bin"));
+    snapshot.entries[0].uncompressed_size = original_size;
+    snapshot.entries[0].crc32 = original_crc ^ 1;
+    assert!(matches!(snapshot.open(&ctx, "stored.bin"),
+        Err(CodecError::Malformed(message)) if message == "CRC mismatch for stored.bin"));
+    snapshot.entries[0].crc32 = original_crc;
+    assert_eq!(
+        snapshot
+            .open(&ctx, "stored.bin")
+            .expect("only accepted output registers")
+            .window(),
+        b"stored"
+    );
+}
