@@ -1425,6 +1425,9 @@ fn repeated_shape_roots_without_element_map_keep_neutral_topology() {
 #[test]
 fn absent_element_map_skips_occurrence_only_work_and_storage() {
     let bytes = repeated_shape_roots_archive(false);
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_work_units = u64::MAX;
+    options.policy.limits.max_collection_items = u64::MAX;
     for (dimension, operation) in [
         (
             ResourceDimension::WorkUnits,
@@ -1445,7 +1448,7 @@ fn absent_element_map_skips_occurrence_only_work_and_storage() {
     ] {
         let _probe = RefusalProbe::arm(dimension, operation, None);
         let result = FcstdCodec
-            .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
+            .decode(&mut Cursor::new(bytes.clone()), &options)
             .expect("no map means no occurrence-only admission");
         assert_eq!(result.ir().model.bodies.len(), 2);
         assert_eq!(result.ir().model.edges.len(), 2);

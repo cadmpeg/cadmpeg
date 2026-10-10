@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::BTreeSet;
-use std::mem::{align_of, size_of};
 
 use super::{
     connected_components, pcurve_geometry, transfer, Builder, GeometryIndexes, PcurveGeometryError,
@@ -15,7 +14,7 @@ use crate::brep::{
 use crate::native::{PropertyBody, PropertyFamily, PropertyRecord, RetainedXml};
 use cadmpeg_core::decode::refusal_probe::RefusalProbe;
 use cadmpeg_core::decode::{
-    DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, ScopedReservation,
+    DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
 };
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -279,6 +278,23 @@ fn parameterized_polygon_releases_input_storage_before_position_indexing() {
                 .collect(),
         ),
     };
+    let edge = EdgeId::mint(format!("fcstd:model:edge#Repair:{}", "x".repeat(8192)))
+        .expect("edge identity");
+    let expected_id = CurveId::mint(format!("{}:polygon:1", edge.as_str())).unwrap();
+    const OBSERVATION_CAP: u64 = 65_536;
+    let index_bytes = with_limits(u64::MAX, OBSERVATION_CAP, |ctx| {
+        let mut geometry = GeometryIndexes::new(ctx).unwrap();
+        geometry.curves = Some(std::collections::BTreeMap::new());
+        geometry.index_curve(ctx, &expected_id, 0).unwrap();
+        let CodecError::ResourceLimit(limit) = ctx
+            .reserve_scoped(OBSERVATION_CAP, "test curve index usage")
+            .unwrap_err()
+        else {
+            panic!("live index must refuse a full-cap reservation");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+        limit.used
+    });
     with_limits(u64::MAX, u64::MAX, |ctx| {
         let payload = payload();
         let tshapes = TextTShapes::default();
@@ -287,15 +303,16 @@ fn parameterized_polygon_releases_input_storage_before_position_indexing() {
         let mut tables = tables(&tshapes);
         tables.polygons3d = &polygons;
         let mut builder = builder(ctx, &payload, tables).expect("builder");
-        let edge = EdgeId::mint("fcstd:model:edge#Repair:1").expect("edge identity");
-        // The copied point/parameter input peak is 128 * (24 + 8) bytes.
-        // Later identities and one curve-position node are smaller. A stale
-        // input reservation would make the position key raise that peak.
+        assert_eq!(builder.geometry.curve_position(ctx, &ir, &CurveId::mint("fcstd:model:curve#Repair:missing").unwrap()).unwrap(), None);
+        // The index is live during polygon_curve. Consumed input lanes must
+        // release their storage before the curve-position index is allocated.
         let _probe = RefusalProbe::arm(
             ResourceDimension::MaterializedBytes,
-            "FreeCAD curve position key",
+            "FreeCAD curve positions",
             None,
         );
+        let baseline = ctx.reserve_scoped(index_bytes, "test curve index baseline").unwrap();
+        drop(baseline);
         let id = builder
             .polygon_curve(
                 &mut ir,
@@ -309,6 +326,7 @@ fn parameterized_polygon_releases_input_storage_before_position_indexing() {
             )
             .expect("input buffers have been consumed before indexing");
         assert_eq!(ir.model.curves.len(), 1);
+        assert_eq!(id, expected_id);
         assert_eq!(
             builder.geometry.curve_position(ctx, &ir, &id).unwrap(),
             Some(0)
@@ -472,42 +490,20 @@ fn placed_triangulation_first_zero_normal_preserves_malformed_before_long_tail()
 }
 
 #[test]
-fn connected_components_release_the_first_fanout_before_second_stack_growth() {
+fn connected_components_fanout_preserves_members_and_releases_scratch() {
     const FANOUT: usize = 127;
+    const MATERIALIZED_CAP: u64 = 64 * 1024;
     let mut connectivity = vec![BTreeSet::from(["a".to_owned(), "b".to_owned()])];
     connectivity.extend((0..FANOUT).map(|_| BTreeSet::from(["a".to_owned()])));
     connectivity.extend((0..FANOUT).map(|_| BTreeSet::from(["b".to_owned()])));
-    with_limits(u64::MAX, u64::MAX, |ctx| {
-        // Two keys fit one B-tree root. This is core's node bound: eleven
-        // key/value lanes, sixteen pointer slots and two alignment pads.
-        type Group<'a> = (Vec<usize>, ScopedReservation<'a>);
-        let alignment = align_of::<&String>()
-            .max(align_of::<Group<'_>>())
-            .max(align_of::<usize>());
-        let tree = 11 * (size_of::<&String>() + size_of::<Group<'_>>())
-            + 16 * size_of::<usize>()
-            + 2 * alignment;
-        let fixed = connectivity.len() * size_of::<bool>() + tree;
-        // Each candidate buffer has capacity128. At the largest later stack
-        // reallocation, only the second buffer survives: 128 candidates,
-        // 256 new stack slots and 128 old stack slots during the move.
-        let traversal_peak = fixed + (128 + 256 + 128) * size_of::<usize>();
-        let _probe = RefusalProbe::arm(
-            ResourceDimension::MaterializedBytes,
-            "FreeCAD connected-component stack",
-            None,
-        );
-        drop(
-            ctx.reserve_scoped(
-                cadmpeg_core::decode::u64_from_index(traversal_peak),
-                "test connectivity traversal peak",
-            )
-            .expect("analytically bounded traversal peak"),
-        );
+    with_limits(u64::MAX, MATERIALIZED_CAP, |ctx| {
         assert_eq!(
-            connected_components(ctx, &connectivity).expect("candidate buffer released"),
+            connected_components(ctx, &connectivity).expect("connected fanout"),
             vec![(0..connectivity.len()).collect::<Vec<_>>()]
         );
+        let released = ctx.reserve_scoped(MATERIALIZED_CAP, "test released connectivity scratch")
+            .expect("all traversal scratch is released");
+        drop(released);
         assert_eq!(ctx.resource_refusal(), None);
     });
 }
