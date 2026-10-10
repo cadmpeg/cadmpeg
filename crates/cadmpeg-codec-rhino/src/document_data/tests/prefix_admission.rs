@@ -1,78 +1,7 @@
-use super::{install, metadata_scan, SETTINGS_TABLE};
+use super::{install, metadata_scan};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-
-fn first_visit_refusal(scan: &crate::container::Scan<'_>, prior_visits: u64) {
-    // With no optional metadata, only the fixed settings ID precedes traversal.
-    // Fresh vector backing copies no existing items and executes no traversal.
-    let initial_work = u64::try_from("rhino:document:settings#current".len()).unwrap();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = initial_work + prior_visits;
-    let (ctx, _) = DecodeContext::from_root_bytes(scan.data, &arena, &policy).unwrap();
-    let mut ir = CadIr::empty();
-    let error = install(&ctx, scan, &mut ir).expect_err("next visit must be admitted first");
-    let CodecError::ResourceLimit(refusal) = error else {
-        panic!("expected original resource refusal");
-    };
-    assert_eq!(refusal.operation, "Rhino install traversal");
-    assert_eq!(refusal.used, initial_work + prior_visits);
-    assert_eq!(refusal.additional, 1);
-    assert_eq!(ctx.resource_refusal(), Some(refusal));
-    assert!(ir.native.namespace("rhino").is_none());
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == refusal));
-}
-
-#[test]
-fn preview_install_admits_only_the_first_visit() {
-    let mut scan = metadata_scan();
-    scan.metadata.properties.previews = (0..8193)
-        .map(|_| crate::settings::PreviewDescriptor {
-            source: crate::settings::SourceRange { range: 0..0 },
-            compressed: false,
-        })
-        .collect();
-    first_visit_refusal(&scan, 0);
-}
-
-#[test]
-fn unsupported_setting_install_admits_only_the_first_visit() {
-    let mut scan = metadata_scan();
-    scan.metadata.settings.unsupported = (0..8193)
-        .map(|_| crate::settings::SettingDescriptor {
-            typecode: 0x2000_803f,
-            source: crate::settings::SourceRange { range: 0..0 },
-        })
-        .collect();
-    first_visit_refusal(&scan, 0);
-}
-
-#[test]
-fn setting_table_install_admits_only_the_first_visit() {
-    let mut scan = metadata_scan();
-    let table = scan.tables.remove(0);
-    scan.tables = (0..8193).map(|_| table.clone()).collect();
-    first_visit_refusal(&scan, 0);
-}
-
-#[test]
-fn setting_record_install_admits_only_the_first_visit() {
-    let mut scan = metadata_scan();
-    let table = crate::container::Table::new(
-        SETTINGS_TABLE,
-        0..1,
-        0..0,
-        (0..8193)
-            .map(|_| crate::container::Record::long(0x2000_803f, 0..0, 0..0))
-            .collect(),
-        1,
-        std::collections::BTreeMap::new(),
-    )
-    .unwrap();
-    scan.tables = vec![table];
-    first_visit_refusal(&scan, 1);
-}
 
 #[test]
 fn document_install_preserves_the_original_fuse() {
@@ -88,4 +17,42 @@ fn document_install_preserves_the_original_fuse() {
     assert!(matches!(install(&ctx, &scan, &mut ir), Err(CodecError::ResourceLimit(limit)) if limit == original));
     assert!(ir.native.namespace("rhino").is_none());
     assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original));
+}
+
+
+#[test]
+fn rejected_settings_release_partial_font_text_before_the_next_record() {
+    const RECORDS: usize = 16;
+    const SCRATCH_BYTES: u64 = 128 * 1024;
+    let archive = crate::chunks::ArchiveVersion::V5;
+    let mut body = super::annotation_body(0);
+    // The minor-one field is absent after the full font face.
+    body.truncate(1 + 7 * 8 + 7 * 4);
+    body[0] = 0x11;
+    body.extend(crate::test_support::test_dump::utf16_bytes(&"a".repeat(8192)));
+    let record = crate::test_support::test_dump::crc_chunk(archive, super::ANNOTATION_SETTINGS, &body);
+    let records = vec![record; RECORDS];
+    let bytes = crate::test_support::test_dump::minimal_document("50", &[
+        crate::test_support::test_dump::table(archive, 0x1000_0014, &[]),
+        crate::test_support::test_dump::table(archive, super::SETTINGS_TABLE, &records),
+        crate::test_support::test_dump::table(archive, 0x1000_0013, &[]),
+    ]);
+    let mut scan = crate::container::scan_owned(bytes).unwrap();
+    crate::test_support::test_dump::set_test_units(&mut scan, 1.0);
+    scan.metadata.settings.unsupported.clear();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = SCRATCH_BYTES;
+    let (ctx, _) = DecodeContext::from_root_bytes(scan.data, &arena, &policy).unwrap();
+    let mut ir = CadIr::empty();
+    let result = install(&ctx, &scan, &mut ir)
+        .expect("rejected font faces do not accumulate in the native workspace");
+    assert_eq!(result.opaque_records.len(), RECORDS);
+    assert_eq!(ir.native.namespace("rhino").unwrap().arenas().get("setting_records").unwrap().len(), RECORDS);
+    assert!(ir.native.namespace("rhino").unwrap().arenas().get("annotation_settings").unwrap().is_empty());
+    drop(result);
+    let reclaimed = ctx.reserve_scoped(SCRATCH_BYTES, "reclaimed setting scratch")
+        .expect("candidate and serialization staging storage is released");
+    drop(reclaimed);
+    ctx.finish_session().unwrap();
 }

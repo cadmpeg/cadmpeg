@@ -680,11 +680,7 @@ pub(crate) fn install<'ctx>(
         }];
         let mut previews =
             ctx.collection_vec(properties.previews.len(), "Rhino document previews")?;
-        let mut preview_values = properties.previews.iter().enumerate();
-        for _ in 0..properties.previews.len() {
-            let (index, value) = ctx
-                .next_charged(&mut preview_values, "Rhino install traversal")?
-                .ok_or_else(|| CodecError::malformed("Rhino preview source ended early"))?;
+        for (index, value) in ctx.admit_iter(&properties.previews, "Rhino install traversal")?.enumerate() {
             previews.push(PreviewRecord {
                 id: retained_numbered_id(
                     ctx,
@@ -706,11 +702,7 @@ pub(crate) fn install<'ctx>(
             settings.unsupported.len(),
             "Rhino unsupported setting records",
         )?;
-        let mut unsupported = settings.unsupported.iter().enumerate();
-        for _ in 0..settings.unsupported.len() {
-            let (index, value) = ctx
-                .next_charged(&mut unsupported, "Rhino install traversal")?
-                .ok_or_else(|| CodecError::malformed("Rhino unsupported setting source ended early"))?;
+        for (index, value) in ctx.admit_iter(&settings.unsupported, "Rhino install traversal")?.enumerate() {
             setting_records.push(SettingRecord {
                 id: retained_numbered_id(
                     ctx,
@@ -748,19 +740,11 @@ pub(crate) fn install<'ctx>(
     let mut losses = ScratchVec::new(ctx, "Rhino document setting loss Vec")?;
     let mut opaque_records = ScratchVec::new(ctx, "Rhino document source Vec")?;
     let mut render_settings_seen = false;
-    let mut tables = scan.tables.iter();
-    for _ in 0..scan.tables.len() {
-        let table = ctx
-            .next_charged(&mut tables, "Rhino install traversal")?
-            .ok_or_else(|| CodecError::malformed("Rhino setting table source ended early"))?;
+    for table in ctx.admit_iter(&scan.tables, "Rhino install traversal")? {
         if table.typecode & !0x0000_8000 != SETTINGS_TABLE {
             continue;
         }
-        let mut records = table.records.iter();
-        for _ in 0..table.records.len() {
-            let record = ctx
-                .next_charged(&mut records, "Rhino install traversal")?
-                .ok_or_else(|| CodecError::malformed("Rhino setting record source ended early"))?;
+        for record in ctx.admit_iter(&table.records, "Rhino install traversal")? {
             if matches!(
                 record.typecode,
                 ANNOTATION_SETTINGS | GRID_DEFAULTS | RENDER_SETTINGS
@@ -810,11 +794,12 @@ pub(crate) fn install<'ctx>(
                 })?;
                 continue;
             }
+            let mut candidate_storage = ctx.reserve_scoped(0, "Rhino setting candidate")?;
             let result = if record.typecode == ANNOTATION_SETTINGS {
                 let Some(scale) = binding.neutral_scale() else {
                     continue;
                 };
-                match native_storage.with_storage(|| {
+                match candidate_storage.with_storage(|| {
                     annotation_settings(ctx, scan.data, record.body(), record.range.start, scale)
                 }) {
                     Ok(value) => {
@@ -824,6 +809,7 @@ pub(crate) fn install<'ctx>(
                             1,
                             "Rhino annotation settings",
                         )?;
+                        native_storage.absorb(&mut candidate_storage)?;
                         annotations.push(value);
                         Ok(())
                     }
@@ -833,7 +819,7 @@ pub(crate) fn install<'ctx>(
                 let Some(scale) = binding.neutral_scale() else {
                     continue;
                 };
-                match native_storage.with_storage(|| {
+                match candidate_storage.with_storage(|| {
                     grid_defaults(ctx, scan.data, record.body(), record.range.start, scale)
                 }) {
                     Ok(value) => {
@@ -843,6 +829,7 @@ pub(crate) fn install<'ctx>(
                             1,
                             "Rhino grid defaults",
                         )?;
+                        native_storage.absorb(&mut candidate_storage)?;
                         grids.push(value);
                         Ok(())
                     }
@@ -852,7 +839,7 @@ pub(crate) fn install<'ctx>(
                 let Some(scale) = binding.neutral_scale() else {
                     continue;
                 };
-                match native_storage.with_storage(|| {
+                match candidate_storage.with_storage(|| {
                     render_settings(
                         ctx,
                         scan.data,
@@ -869,6 +856,7 @@ pub(crate) fn install<'ctx>(
                             1,
                             "Rhino render settings",
                         )?;
+                        native_storage.absorb(&mut candidate_storage)?;
                         renders.push(value);
                         render_settings_seen = true;
                         Ok(())
@@ -877,7 +865,7 @@ pub(crate) fn install<'ctx>(
                 }
             } else if record.typecode == RENDER_USERDATA {
                 if render_settings_seen {
-                    match ctx.with_scoped_storage("Rhino render userdata workspace", || {
+                    match candidate_storage.with_storage(|| {
                         render_userdata(ctx, scan.data, record, scan.archive)
                     }) {
                         Ok(_) => {

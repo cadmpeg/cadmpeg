@@ -320,8 +320,8 @@ impl<'a> BoundedReader<'a> {
 
     /// Reads an archive boolean with the writer-version validation rule.
     ///
-    /// A missing writer version keeps the historical permissive behavior. Raw
-    /// character fields must call [`BoundedReader::u8`] instead.
+    /// Without a writer version, any nonzero byte is true. New writer versions
+    /// require 0 or 1. Raw character fields must call [`BoundedReader::u8`] instead.
     pub(crate) fn bool_with_writer_version(
         &mut self,
         writer_version: Option<i64>,

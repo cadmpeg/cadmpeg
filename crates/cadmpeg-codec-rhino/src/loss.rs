@@ -58,13 +58,7 @@ impl<'ctx, T> ScratchVec<'ctx, T> {
         value: T,
         operation: &'static str,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        self.storage.with_storage(|| {
-            ctx.reserve_capacity(&mut self.values, 1, operation)?;
-            Ok::<_, cadmpeg_core::CodecError>(())
-        })?;
-        ctx.charge_collection_items(1, operation)?;
-        self.values.push(value);
-        Ok(())
+        ctx.push_scoped_vec(&mut self.storage, &mut self.values, value, operation)
     }
 
     pub(crate) fn push_with_storage_admitted(
@@ -75,11 +69,8 @@ impl<'ctx, T> ScratchVec<'ctx, T> {
     ) -> Result<(), cadmpeg_core::CodecError> {
         let mut value_storage = self.ctx.reserve_scoped(0, operation)?;
         let value = value_storage.with_storage(make)?;
-        self.storage.with_storage(|| {
-            ctx.reserve_capacity(&mut self.values, 1, operation)?;
-            ctx.reserve_capacity(&mut self.value_storages, 1, operation)
-        })?;
-        ctx.charge_collection_items(1, operation)?;
+        ctx.reserve_scoped_vec(&mut self.storage, &mut self.values, 1, operation)?;
+        ctx.reserve_scoped_vec(&mut self.storage, &mut self.value_storages, 1, operation)?;
         let index = self.values.len();
         self.values.push(value);
         self.value_storages.push((index, value_storage));
@@ -105,7 +96,7 @@ impl<'ctx> ScratchVec<'ctx, LossNote> {
         let mut value_storages = value_storages.into_iter().peekable();
         let mut source = values.into_iter().enumerate();
         while let Some((index, note)) =
-            ctx.find_map(&mut source, |value| Ok::<_, cadmpeg_core::CodecError>(Some(value)), operation)?
+            ctx.next_charged(&mut source, operation)?
         {
             let scoped_storage = match value_storages.peek() {
                 Some((stored_index, _)) if *stored_index == index => {
@@ -114,12 +105,11 @@ impl<'ctx> ScratchVec<'ctx, LossNote> {
                 _ => None,
             };
             if let Some(scoped_storage) = scoped_storage {
-                let promoted = note
-                    .try_clone_for_decode(ctx, operation)
-                    .and_then(|promoted| destination.push_admitted(ctx, promoted, operation));
-                drop(note);
-                drop(scoped_storage);
-                promoted?;
+                destination.push_with_storage_admitted(
+                    ctx,
+                    || scoped_storage.commit_value(note),
+                    operation,
+                )?;
             } else {
                 destination.push_admitted(ctx, note, operation)?;
             }
@@ -323,7 +313,7 @@ impl Diagnostics {
         let ScratchDiagnostics { values, storage, ctx: _ } = source;
         let mut values = values.into_iter();
         while let Some((diagnostic, value_storage)) =
-            ctx.find_map(&mut values, |value| Ok::<_, cadmpeg_core::CodecError>(Some(value)), "Rhino scoped diagnostic traversal")?
+            ctx.next_charged(&mut values, "Rhino scoped diagnostic traversal")?
         {
             let copied = self.push_coded_admitted(
                 ctx,
@@ -349,16 +339,10 @@ impl Diagnostics {
         let ScratchDiagnostics { values, storage, ctx: _ } = source;
         let mut values = values.into_iter();
         while let Some((diagnostic, value_storage)) =
-            ctx.find_map(&mut values, |value| Ok::<_, cadmpeg_core::CodecError>(Some(value)), operation)?
+            ctx.next_charged(&mut values, operation)?
         {
-            let copied = self.push_coded_admitted(
-                ctx,
-                diagnostic.code,
-                format_args!("{}", diagnostic.message),
-            );
-            drop(diagnostic);
-            drop(value_storage);
-            copied?;
+            ctx.reserve_vec(&mut self.0, 1, "Rhino diagnostics")?;
+            self.0.push(value_storage.commit_value(diagnostic)?);
         }
         drop(values);
         drop(storage);
@@ -432,15 +416,12 @@ impl<'ctx> ScratchDiagnostics<'ctx> {
         let message = value_storage.with_storage(|| {
             ctx.format_retained(message, "Rhino diagnostic message")
         })?;
-        self.storage.with_storage(|| {
-            ctx.reserve_capacity(&mut self.values, 1, "Rhino scoped diagnostics")
-        })?;
-        ctx.charge_collection_items(1, "Rhino scoped diagnostics")?;
-        self.values.push((
-            RhinoDiagnostic { code, message },
-            value_storage,
-        ));
-        Ok(())
+        ctx.push_scoped_vec(
+            &mut self.storage,
+            &mut self.values,
+            (RhinoDiagnostic { code, message }, value_storage),
+            "Rhino scoped diagnostics",
+        )
     }
 
     /// Copies child diagnostics into this parent scratch collection. A failed
@@ -454,7 +435,7 @@ impl<'ctx> ScratchDiagnostics<'ctx> {
         let Self { values, storage, ctx: _ } = source;
         let mut values = values.into_iter();
         while let Some((diagnostic, source_storage)) =
-            ctx.find_map(&mut values, |value| Ok::<_, cadmpeg_core::CodecError>(Some(value)), "Rhino scoped diagnostic traversal")?
+            ctx.next_charged(&mut values, "Rhino scoped diagnostic traversal")?
         {
             let copied = self.push_coded_admitted(
                 ctx,
@@ -901,6 +882,29 @@ mod tests {
             .expect_err("failed value is not inserted");
         assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
         assert!(ctx.reserve_scoped(4, "released scratch field").is_ok());
+    }
+
+    #[test]
+    fn scoped_messages_move_without_copying_during_promotion() {
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut source = super::ScratchVec::new(&ctx, "scratch loss").unwrap();
+        source.push_with_storage_admitted(&ctx, || {
+            crate::wire::admitted_loss(&ctx, RhinoLossCode::IntegrityFailure,
+                format_args!("{}", "a".repeat(8192)), "scratch loss text")
+        }, "scratch loss").unwrap();
+        let pointer = source[0].message.as_ptr();
+        let mut output = Vec::new();
+        source.append_admitted(&ctx, &mut output, "loss promotion").unwrap();
+        assert_eq!(output[0].message.as_ptr(), pointer);
+        assert_eq!(output[0].message.len(), 8192);
+        let mut source = super::ScratchDiagnostics::new(&ctx, "scratch diagnostics").unwrap();
+        source.push_coded_admitted(&ctx, RhinoLossCode::IntegrityFailure,
+            format_args!("{}", "b".repeat(8192))).unwrap();
+        let pointer = source.values[0].0.message.as_ptr();
+        let mut output = super::Diagnostics::new();
+        output.append_scoped_admitted(&ctx, source, "diagnostic promotion").unwrap();
+        assert_eq!(output[0].message.as_ptr(), pointer);
+        assert_eq!(output[0].message.len(), 8192);
     }
 
     #[test]

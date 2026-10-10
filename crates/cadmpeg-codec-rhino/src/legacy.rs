@@ -870,22 +870,13 @@ fn legacy_spline(
     }
 }
 
-fn legacy_curve_segments(
-    ctx: &DecodeContext<'_>,
+fn legacy_curve_segments<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     workspace: &mut ScopedReservation<'_>,
     data: &[u8],
     range: std::ops::Range<usize>,
     scale: MillimeterScale,
-) -> Result<Vec<NurbsCurve>, CodecError> {
-    workspace.with_storage(|| legacy_curve_segments_inner(ctx, data, range, scale))
-}
-
-fn legacy_curve_segments_inner(
-    ctx: &DecodeContext<'_>,
-    data: &[u8],
-    range: std::ops::Range<usize>,
-    scale: MillimeterScale,
-) -> Result<Vec<NurbsCurve>, CodecError> {
+) -> Result<Vec<(NurbsCurve, ScopedReservation<'ctx>)>, CodecError> {
     let stuff = child_with_type(ctx, data, range, TCODE_LEGACY_CRVSTUFF)?
         .ok_or_else(|| CodecError::Malformed("V1 curve has no curve-stuff chunk".to_string()))?;
     let mut reader = BoundedReader::new(data, stuff.body().start, stuff.body().end)
@@ -915,7 +906,8 @@ fn legacy_curve_segments_inner(
             "V1 curve segment count exceeds the remaining bytes".to_string(),
         ));
     }
-    let mut segments = ctx.collection_vec(count, "Rhino V1 curve segments")?;
+    let mut segments = Vec::new();
+    ctx.reserve_scoped_vec(workspace, &mut segments, count, "Rhino V1 curve segments")?;
     for _ in 0..count {
         ctx.charge_work(1, "Rhino V1 counted record traversal")?;
         let spline = chunk_at(
@@ -935,7 +927,17 @@ fn legacy_curve_segments_inner(
             child_with_type(ctx, data, spline.body().clone(), TCODE_LEGACY_SPLSTUFF)?.ok_or_else(
                 || CodecError::Malformed("V1 spline has no spline-stuff chunk".to_string()),
             )?;
-        segments.push(legacy_spline(ctx, data, spline_stuff.body(), scale)?);
+        let mut segment_storage = ctx.reserve_scoped(0, "Rhino V1 curve segment")?;
+        let segment = match segment_storage.with_storage(|| legacy_spline(ctx, data, spline_stuff.body(), scale)) {
+            Ok(segment) => segment,
+            Err(error) => {
+                // The error can own admitted text; keep its reservation through
+                // the caller's diagnostic copy.
+                workspace.absorb(&mut segment_storage)?;
+                return Err(error);
+            }
+        };
+        segments.push((segment, segment_storage));
         reader
             .skip(spline.next_offset() - reader.position())
             .or_else(|error| Err(malformed(ctx, &error)?))?;
@@ -952,9 +954,20 @@ fn legacy_curve(
 ) -> Result<NurbsCurve, CodecError> {
     let offset = range.start;
     let mut source_storage = ctx.reserve_scoped(0, "Rhino V1 joined source curves")?;
-    let segments = legacy_curve_segments(ctx, &mut source_storage, data, range, scale)?;
-    let child_result_storages_storage =
-        ctx.reserve_scoped(0, "Rhino V1 joined child result reservations")?;
+    let sources = match legacy_curve_segments(ctx, &mut source_storage, data, range, scale) {
+        Ok(sources) => sources,
+        Err(error) => {
+            output_storage.absorb(&mut source_storage)?;
+            return Err(error);
+        }
+    };
+    let (mut segments, segment_storage) = ctx.temporary_vec(sources.len(), "Rhino V1 joined curve lanes")?;
+    let (mut child_result_storages, child_result_storages_storage) = ctx.temporary_vec(sources.len(), "Rhino V1 joined child result reservations")?;
+    for (segment, storage) in ctx.admit_iter(sources, "Rhino V1 joined curve lanes")? {
+        segments.push(segment);
+        child_result_storages.push(storage);
+    }
+    drop(source_storage);
     let mut warnings = crate::loss::ScratchDiagnostics::new(
         ctx,
         "Rhino temporary V1 joined curve diagnostics",
@@ -963,8 +976,8 @@ fn legacy_curve(
         ctx,
         segments,
         crate::curves::ScopedJoinInputs {
-            _segment_storage: source_storage,
-            _child_result_storages: Vec::new(),
+            _segment_storage: segment_storage,
+            _child_result_storages: child_result_storages,
             _child_result_storages_storage: child_result_storages_storage,
         },
         offset,
@@ -1864,9 +1877,9 @@ fn union(
     Ok(())
 }
 
-fn append_legacy_brep(
+fn append_legacy_brep_in_session<D: std::borrow::BorrowMut<CadIr>>(
     ctx: &DecodeContext<'_>,
-    ir: &mut CadIr,
+    session: &mut cadmpeg_ir::draft::CommitSession<'_, D>,
     brep: LegacyBrep,
     suffix: &str,
 ) -> Result<(), CodecError> {
@@ -2971,7 +2984,18 @@ fn append_legacy_brep(
         color: None,
         visible: None,
     });
-    draft.commit_model(ir, ctx)?.map_err(CodecError::malformed)
+    session.commit_model(draft)?.map_err(CodecError::malformed)
+}
+
+#[cfg(test)]
+fn append_legacy_brep(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    brep: LegacyBrep,
+    suffix: &str,
+) -> Result<(), CodecError> {
+    let mut session = cadmpeg_ir::draft::CommitSession::new(ir, ctx, None)?;
+    append_legacy_brep_in_session(ctx, &mut session, brep, suffix)
 }
 
 fn legacy_trim(
@@ -3498,11 +3522,12 @@ pub(crate) fn decode_v1_with_header(
     // table, so no openNURBS writer-version stamp is declared.
     let primary = ArchiveVersion::V1.classify(None);
 
-    let mut ir = CadIr::decoded(crate::container::source_meta(
+    let ir = CadIr::decoded(crate::container::source_meta(
         ctx,
         primary,
         crate::container::SourceMetaDetail::FlatLegacyArchive,
     )?);
+    let mut session = cadmpeg_ir::draft::CommitSession::new(ir, ctx, None)?;
     let mut decoded = 0_usize;
     let mut decoded_curves = 0_usize;
     let mut decoded_meshes = 0_usize;
@@ -3536,6 +3561,7 @@ pub(crate) fn decode_v1_with_header(
             continue;
         }
         if chunk.typecode == TCODE_UNIT_AND_TOLERANCES && !chunk.short() {
+            let ir = session.document_mut()?;
             let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)
                 .or_else(|error| Err(malformed(ctx, &error)?))?;
             let version = reader.i32().or_else(|error| Err(malformed(ctx, &error)?))?;
@@ -3586,6 +3612,7 @@ pub(crate) fn decode_v1_with_header(
                 &mut retained_bytes,
             )?;
         } else if chunk.typecode == TCODE_RH_POINT && !chunk.short() {
+            let ir = session.document_mut()?;
             let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)
                 .or_else(|error| Err(malformed(ctx, &error)?))?;
             let Some(position) = FinitePoint3::new(Point3::new(
@@ -3779,12 +3806,13 @@ pub(crate) fn decode_v1_with_header(
                 }
             }
         } else if chunk.typecode == TCODE_LEGACY_CRV && !chunk.short() {
+            let ir = session.document_mut()?;
             let mut workspace = ctx.reserve_scoped(0, "Rhino V1 curve workspace")?;
             match legacy_curve_segments(ctx, &mut workspace, data, chunk.body().clone(), scale) {
                 Ok(segments) => {
                     let mut segments = segments.into_iter();
                     while !segments.as_slice().is_empty() {
-                        let segment = ctx
+                        let (segment, segment_storage) = ctx
                             .next_charged(&mut segments, "Rhino V1 curve segment emission")?
                             .ok_or_else(|| {
                                 CodecError::malformed("V1 curve segment source ended early")
@@ -3907,7 +3935,7 @@ pub(crate) fn decode_v1_with_header(
                         ir.model.curves.push(Curve {
                             id: curve_id
                                 .try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
-                            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(segment)),
+                            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(segment_storage.commit_value(segment)?)),
                             source_object: None,
                         });
                         let start = FinitePoint3::new(start)
@@ -4039,7 +4067,7 @@ pub(crate) fn decode_v1_with_header(
                         )
                     })?;
                 let suffix = suffix_buffer;
-                append_legacy_brep(ctx, &mut ir, brep, &suffix)
+                append_legacy_brep_in_session(ctx, &mut session, brep, &suffix)
             }) {
                 Ok(()) => {
                     push_v1_record(
@@ -4073,7 +4101,9 @@ pub(crate) fn decode_v1_with_header(
                 }
             }
         } else if chunk.typecode == TCODE_MESH_OBJECT && !chunk.short() {
-            match legacy_mesh(
+            let ir = session.document_mut()?;
+            let mut mesh_storage = ctx.reserve_scoped(0, "Rhino V1 mesh candidate")?;
+            match mesh_storage.with_storage(|| legacy_mesh(
                 ctx,
                 data,
                 chunk.body().clone(),
@@ -4082,11 +4112,11 @@ pub(crate) fn decode_v1_with_header(
                     "Rhino V1 mesh identity",
                 )?,
                 scale,
-            ) {
+            )) {
                 Ok(mesh) => {
                     ctx.charge_entities(1, "Rhino V1 mesh")?;
                     ctx.reserve_vec(&mut ir.model.tessellations, 1, "Rhino V1 mesh storage")?;
-                    ir.model.tessellations.push(mesh);
+                    ir.model.tessellations.push(mesh_storage.commit_value(mesh)?);
                     push_v1_record(
                         ctx,
                         &mut source_storage,
@@ -4131,6 +4161,7 @@ pub(crate) fn decode_v1_with_header(
         }
         offset = chunk.next_offset();
     }
+    let (mut ir, _unknowns) = session.into_parts();
     let has_direct_records = !direct_records.is_empty();
     if has_direct_records {
         let namespace = ir.native.namespace_mut("rhino");
@@ -4222,8 +4253,7 @@ pub(crate) fn decode_v1_with_header(
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
     source_fidelity.retain_unknown_records(
         "rhino",
-        ctx.admit_iter(opaque_records, "Rhino V1 source fidelity traversal")?
-            .chain(ctx.admit_iter(typed_source_records, "Rhino V1 source fidelity traversal")?),
+        opaque_records.into_iter().chain(typed_source_records),
     )?;
     Ok(Decoded {
         ir,
