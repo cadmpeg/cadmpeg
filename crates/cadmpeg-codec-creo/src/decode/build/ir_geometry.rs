@@ -275,11 +275,7 @@ pub(super) fn transfer_and_record_scanned_geometry<'ctx>(
             &analytic_pcurve_carriers,
         )
     })?;
-    let (NativeBrepTransferSummary {
-        topological_point_count,
-        native_topological_edge_count,
-        diagnostics,
-    }, diagnostic_storage) = transfer_native_brep(
+    let native_brep = transfer_native_brep(
         ctx,
         scan,
         ir,
@@ -291,6 +287,12 @@ pub(super) fn transfer_and_record_scanned_geometry<'ctx>(
         transfer_losses,
         source_carriers,
     )?;
+    let diagnostic_storage = native_brep.1;
+    let NativeBrepTransferSummary {
+        topological_point_count,
+        native_topological_edge_count,
+        diagnostics,
+    } = native_brep.0;
     drop(derived_intersection_curves);
     drop(nurbs_boundary_curves);
     drop(curve_id_storage);
