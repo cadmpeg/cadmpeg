@@ -5,6 +5,7 @@ use super::{SectionCoordinateVariable, SectionEqualLengthConstraint, SectionEqua
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use std::collections::BTreeMap;
 
+mod admission_visits;
 mod range_admission;
 
 #[test]

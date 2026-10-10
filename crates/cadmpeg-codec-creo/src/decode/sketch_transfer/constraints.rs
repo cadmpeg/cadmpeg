@@ -1007,9 +1007,12 @@ pub(in super::super) fn section_segment_radius_constraints_for_emitted(
     }
     let mut constraints = Vec::new();
     let mut candidates = candidates.into_iter().zip(bindings);
-    while let Some(((mut constraint, offset), binding)) =
-        ctx.next_charged(&mut candidates, "creo emitted radius binding rows")?
-    {
+    while candidates.len() != 0 {
+        let Some(((mut constraint, offset), binding)) =
+            ctx.next_charged(&mut candidates, "creo emitted radius binding rows")?
+        else {
+            break;
+        };
         let reconciled = match constraint.definition.edit(|kind| {
             reconcile_section_segment_radius_constraint(
                 ctx,
@@ -4102,6 +4105,7 @@ mod tests {
 
 #[cfg(test)]
 mod binding_tests {
+    mod admission_visits;
     use cadmpeg_ir::sketches::SketchId;
     #[test]
     fn dimension_constraints_preserve_original_row_after_skipped_candidates() {

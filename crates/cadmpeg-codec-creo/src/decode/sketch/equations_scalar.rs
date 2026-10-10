@@ -1032,9 +1032,12 @@ pub(super) fn propagate_section_equation_scalar_equality_values(
         let mut component_value = None;
         let mut conflicting = false;
         let mut members = component.iter();
-        while let Some(variable) =
-            ctx.next_charged(&mut members, "creo scalar equality component variables")?
-        {
+        while members.len() != 0 {
+            let Some(variable) =
+                ctx.next_charged(&mut members, "creo scalar equality component variables")?
+            else {
+                break;
+            };
             let mut variable_value = match ctx
                 .get_btree_map(
                     &scalar_equality_values,
@@ -1652,9 +1655,12 @@ fn scalar_equality_values_for_components(
         let mut maximum = f64::NEG_INFINITY;
         let mut invalid = false;
         let mut members = component.iter();
-        while let Some(variable) =
-            ctx.next_charged(&mut members, "creo scalar component samples")?
-        {
+        while members.len() != 0 {
+            let Some(variable) =
+                ctx.next_charged(&mut members, "creo scalar component samples")?
+            else {
+                break;
+            };
             match ctx.get_btree_map(&samples, variable, "creo scalar sample lookup")? {
                 Some(Some(samples)) => {
                     first.get_or_insert(samples.first);

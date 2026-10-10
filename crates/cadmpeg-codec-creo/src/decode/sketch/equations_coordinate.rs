@@ -1360,9 +1360,12 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
                 |equation| {
                     let mut terms = equation.terms.iter();
                     let mut lhs = 0.0;
-                    while let Some((variable, coefficient)) =
-                        ctx.next_charged(&mut terms, "creo coordinate validation terms")?
-                    {
+                    while terms.len() != 0 {
+                        let Some((variable, coefficient)) =
+                            ctx.next_charged(&mut terms, "creo coordinate validation terms")?
+                        else {
+                            break;
+                        };
                         let Some(value) = value(variable)? else {
                             return Ok(true);
                         };
@@ -1853,7 +1856,7 @@ fn uniquely_solved_linear_variables(
     let mut pivot_rows = BTreeMap::new();
     let mut pivot_row = 0;
     let mut columns = 0..variable_count;
-    while pivot_row < matrix.len() {
+    while pivot_row < matrix.len() && !columns.is_empty() {
         let Some(column) = ctx.next_charged(&mut columns, "creo section pivot column scan")? else {
             break;
         };

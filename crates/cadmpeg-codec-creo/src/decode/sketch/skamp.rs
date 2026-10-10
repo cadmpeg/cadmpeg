@@ -156,9 +156,12 @@ fn section_line_entity_fixed_coordinate_with_mode(
             continue;
         };
         let mut links = neighbors.iter();
-        while let Some(&(neighbor, edge_parity)) =
-            ctx.next_charged(&mut links, "creo fixed-coordinate adjacency links")?
-        {
+        while links.len() != 0 {
+            let Some(&(neighbor, edge_parity)) =
+                ctx.next_charged(&mut links, "creo fixed-coordinate adjacency links")?
+            else {
+                break;
+            };
             let neighbor_parity = parity ^ edge_parity;
             match ctx.get_btree_map(&parities, &neighbor, "creo fixed-coordinate parity lookup")? {
                 Some(stored) if *stored != neighbor_parity => return Ok(None),
@@ -718,6 +721,7 @@ fn saved_section_point(
 
 #[cfg(test)]
 mod tests {
+    mod admission_visits;
     use super::{
         section_line_entity_fixed_coordinate as section_line_entity_fixed_coordinate_admitted,
         section_line_entity_fixed_coordinate_with_unique_rows as section_line_entity_fixed_coordinate_with_unique_rows_admitted,
