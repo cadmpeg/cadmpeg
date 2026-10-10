@@ -1187,6 +1187,7 @@ ENDSEC;END-ISO-10303-21;",
         .is_none());
     assert!(active.is_empty());
 
+    let mut loss_storage = ctx.reserve_scoped(0, "test geometry report backing").expect("report owner");
     let mut losses = Vec::new();
     assert!(decode_pcurve_geometry(
         3,
@@ -1198,7 +1199,7 @@ ENDSEC;END-ISO-10303-21;",
             transformations: &BTreeMap::new(),
             angle_scale: 1.0
         },
-        &mut losses,
+        (&mut losses, &mut loss_storage),
         &mut super::super::PcurveWalk {
             active: &mut active,
             workspace: &mut super::super::PcurveWorkspace::new(&ctx, "test pcurve workspace")
@@ -1219,7 +1220,7 @@ ENDSEC;END-ISO-10303-21;",
             transformations: &BTreeMap::new(),
             angle_scale: 1.0
         },
-        &mut losses,
+        (&mut losses, &mut loss_storage),
         &mut super::super::PcurveWalk {
             active: &mut active,
             workspace: &mut super::super::PcurveWorkspace::new(&ctx, "test pcurve workspace")

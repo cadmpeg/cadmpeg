@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 mod admission_limits;
 pub(crate) mod analytic;
+mod candidate_storage;
 mod deferred_dependencies;
 mod known_length;
 mod line_parameter_scale;

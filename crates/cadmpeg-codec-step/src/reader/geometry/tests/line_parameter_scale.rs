@@ -32,14 +32,16 @@ fn inherited_line_rules_reuse_completed_ancestors_at_depth_two() {
     policy.limits.max_recursion_depth = 2;
     let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
         .expect("source fits policy");
+    let mut loss_storage = ctx.reserve_scoped(0, "test geometry report backing").expect("report owner");
     let mut index = LineParameterScaleIndex::new(&exchange, &ctx).expect("empty memo");
     let mut losses = Vec::new();
     for id in 1..=65 {
-        assert_eq!(index.resolve(id, PositiveReal::ONE, &mut losses)
+        assert_eq!(index.resolve(id, PositiveReal::ONE, (&mut losses, &mut loss_storage))
             .expect("each ancestor is resolved once").get(), 2.0);
     }
     assert!(losses.is_empty());
     drop(index);
+    drop(loss_storage);
     ctx.finish_session().expect("successful memoized walk");
 }
 
@@ -54,8 +56,9 @@ fn inherited_line_rules_preserve_cold_walk_depth_refusal() {
     policy.limits.max_recursion_depth = 2;
     let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
         .expect("source fits policy");
+    let mut loss_storage = ctx.reserve_scoped(0, "test geometry report backing").expect("report owner");
     let mut index = LineParameterScaleIndex::new(&exchange, &ctx).expect("empty memo");
-    let CodecError::ResourceLimit(first) = index.resolve(65, PositiveReal::ONE, &mut Vec::new())
+    let CodecError::ResourceLimit(first) = index.resolve(65, PositiveReal::ONE, (&mut Vec::new(), &mut loss_storage))
         .expect_err("third actual frame refuses") else { panic!("resource refusal") };
     assert_eq!(first.dimension, ResourceDimension::RecursionDepth);
     assert_eq!(first.operation, "step_line_parameter_scale_walk");
@@ -63,6 +66,7 @@ fn inherited_line_rules_preserve_cold_walk_depth_refusal() {
     assert_eq!(first.additional, 1);
     assert_eq!(first.limit, 2);
     drop(index);
+    drop(loss_storage);
     assert!(matches!(ctx.finish_session(),
         Err(CodecError::ResourceLimit(sticky)) if sticky == first));
 }
@@ -77,10 +81,11 @@ fn inherited_line_rules_apply_each_requesters_units_after_cache_lookup() {
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
         .expect("source fits policy");
+    let mut loss_storage = ctx.reserve_scoped(0, "test geometry report backing").expect("report owner");
     let mut index = LineParameterScaleIndex::new(&exchange, &ctx).expect("empty memo");
     let mut losses = Vec::new();
     for (root, unit, expected) in [(3, 1.0, 2.0), (2, 10.0, 20.0), (3, 3.0, 6.0)] {
-        assert_eq!(index.resolve(root, PositiveReal::new(unit).expect("positive unit"), &mut losses)
+        assert_eq!(index.resolve(root, PositiveReal::new(unit).expect("positive unit"), (&mut losses, &mut loss_storage))
             .expect("resolved rule").get(), expected);
     }
     assert!(losses.is_empty());
@@ -96,11 +101,12 @@ fn inherited_line_rules_preserve_each_unresolved_line_diagnostic() {
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
         .expect("source fits policy");
+    let mut loss_storage = ctx.reserve_scoped(0, "test geometry report backing").expect("report owner");
     let mut index = LineParameterScaleIndex::new(&exchange, &ctx).expect("empty memo");
     let mut losses = Vec::new();
     for root in [3, 2, 3] {
         let unit = PositiveReal::new(10.0).expect("positive unit");
-        assert_eq!(index.resolve(root, unit, &mut losses).expect("fallback rule"), unit);
+        assert_eq!(index.resolve(root, unit, (&mut losses, &mut loss_storage)).expect("fallback rule"), unit);
     }
     assert_eq!(losses.len(), 3);
     for loss in losses {
@@ -118,12 +124,13 @@ fn inherited_line_rules_do_not_cache_a_requesters_numeric_overflow() {
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
         .expect("source fits policy");
+    let mut loss_storage = ctx.reserve_scoped(0, "test geometry report backing").expect("report owner");
     let mut index = LineParameterScaleIndex::new(&exchange, &ctx).expect("empty memo");
     let mut losses = Vec::new();
     let large = PositiveReal::new(f64::MAX).expect("finite unit");
-    assert_eq!(index.resolve(2, large, &mut losses).expect("overflow fallback"), large);
+    assert_eq!(index.resolve(2, large, (&mut losses, &mut loss_storage)).expect("overflow fallback"), large);
     assert_eq!(losses.len(), 1);
-    assert_eq!(index.resolve(2, PositiveReal::new(3.0).expect("positive unit"), &mut losses)
+    assert_eq!(index.resolve(2, PositiveReal::new(3.0).expect("positive unit"), (&mut losses, &mut loss_storage))
         .expect("cached magnitude remains valid").get(), 6.0);
     assert_eq!(losses.len(), 1);
 }
@@ -138,13 +145,15 @@ fn inherited_line_rules_preserve_sticky_refusal_on_a_cache_hit() {
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
         .expect("source fits policy");
+    let mut loss_storage = ctx.reserve_scoped(0, "test geometry report backing").expect("report owner");
     let mut index = LineParameterScaleIndex::new(&exchange, &ctx).expect("empty memo");
-    index.resolve(1, PositiveReal::ONE, &mut Vec::new()).expect("populate memo");
+    index.resolve(1, PositiveReal::ONE, (&mut Vec::new(), &mut loss_storage)).expect("populate memo");
     let CodecError::ResourceLimit(first) = ctx.charge_work(u64::MAX, "test original refusal")
         .expect_err("original work refusal") else { panic!("resource refusal") };
-    assert!(matches!(index.resolve(1, PositiveReal::ONE, &mut Vec::new()),
+    assert!(matches!(index.resolve(1, PositiveReal::ONE, (&mut Vec::new(), &mut loss_storage)),
         Err(CodecError::ResourceLimit(sticky)) if sticky == first));
     drop(index);
+    drop(loss_storage);
     assert!(matches!(ctx.finish_session(),
         Err(CodecError::ResourceLimit(sticky)) if sticky == first));
 }
@@ -159,11 +168,12 @@ fn inherited_line_rules_preserve_cycle_and_missing_record_fallbacks() {
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
         .expect("source fits policy");
+    let mut loss_storage = ctx.reserve_scoped(0, "test geometry report backing").expect("report owner");
     let mut index = LineParameterScaleIndex::new(&exchange, &ctx).expect("empty memo");
     let mut losses = Vec::new();
     for (root, unit) in [(1, 2.0), (2, 3.0), (42, 4.0), (42, 5.0)] {
         let unit = PositiveReal::new(unit).expect("positive unit");
-        assert_eq!(index.resolve(root, unit, &mut losses).expect("fallback"), unit);
+        assert_eq!(index.resolve(root, unit, (&mut losses, &mut loss_storage)).expect("fallback"), unit);
     }
     assert!(losses.is_empty());
 }
@@ -180,17 +190,19 @@ fn inherited_line_rules_admit_the_first_memo_slot_before_insertion() {
     policy.limits.max_collection_items = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
         .expect("source fits policy");
+    let mut loss_storage = ctx.reserve_scoped(0, "test geometry report backing").expect("report owner");
     let mut index = LineParameterScaleIndex::new(&exchange, &ctx).expect("empty memo");
-    let CodecError::ResourceLimit(first) = index.resolve(1, PositiveReal::ONE, &mut Vec::new())
+    let CodecError::ResourceLimit(first) = index.resolve(1, PositiveReal::ONE, (&mut Vec::new(), &mut loss_storage))
         .expect_err("memo slot refuses") else { panic!("resource refusal") };
     assert_eq!(first.dimension, ResourceDimension::CollectionItems);
     assert_eq!(first.operation, "step line parameter scale memo");
     assert_eq!(first.used, 1);
     assert_eq!(first.additional, 1);
     assert_eq!(first.limit, 1);
-    assert!(matches!(index.resolve(1, PositiveReal::ONE, &mut Vec::new()),
+    assert!(matches!(index.resolve(1, PositiveReal::ONE, (&mut Vec::new(), &mut loss_storage)),
         Err(CodecError::ResourceLimit(sticky)) if sticky == first));
     drop(index);
+    drop(loss_storage);
     assert!(matches!(ctx.finish_session(),
         Err(CodecError::ResourceLimit(sticky)) if sticky == first));
 }
@@ -207,11 +219,13 @@ fn inherited_line_rules_keep_memo_storage_scoped_and_reuse_its_slot() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
         .expect("source fits policy");
+    let mut loss_storage = ctx.reserve_scoped(0, "test geometry report backing").expect("report owner");
     let mut index = LineParameterScaleIndex::new(&exchange, &ctx).expect("empty memo");
     for unit in [PositiveReal::ONE, PositiveReal::new(10.0).expect("positive unit")] {
-        assert_eq!(index.resolve(1, unit, &mut Vec::new()).expect("scoped memo").get(),
+        assert_eq!(index.resolve(1, unit, (&mut Vec::new(), &mut loss_storage)).expect("scoped memo").get(),
             2.0 * unit.get());
     }
     drop(index);
+    drop(loss_storage);
     ctx.finish_session().expect("no retained cache or duplicate slot");
 }
