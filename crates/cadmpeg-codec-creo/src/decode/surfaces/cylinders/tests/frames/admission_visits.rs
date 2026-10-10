@@ -27,28 +27,35 @@ fn assert_exact_visits(
     operations: &[&'static str],
     query: impl Fn(&DecodeContext<'_>) -> Result<bool, CodecError>,
 ) {
-    let visits = operations.len() as u64;
-    for cap in 0..=visits {
+    let visits = u64::try_from(operations.len()).expect("fixture visits fit u64");
+    crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, operations, |cap| {
         let arena = DecodeArena::new();
         let policy = visit_policy(cap);
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let result = query(&ctx);
-        let original = if cap == visits {
-            assert!(result.expect("all present visits admitted"));
-            let original = ctx.charge_work_limit(1, "after cylinder visits").expect_err("exact visits");
-            assert_eq!((original.dimension, original.used, original.additional),
-                (ResourceDimension::WorkUnits, visits, 1));
-            original
-        } else {
-            let original = ctx.resource_refusal().expect("visit refusal");
-            assert!(matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original));
-            assert_eq!((original.dimension, original.limit, original.used, original.additional, original.operation),
-                (ResourceDimension::WorkUnits, cap, cap, 1, operations[cap as usize]));
-            original
-        };
-        assert!(matches!(query(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == original));
-        assert_eq!(ctx.resource_refusal(), Some(original));
-    }
+        if let Err(CodecError::ResourceLimit(original)) = &result {
+            assert_eq!((original.limit, original.used), (cap, cap));
+            assert_eq!(ctx.resource_refusal().as_ref(), Some(original));
+            assert_eq!(original.additional, 1);
+            assert!(
+                matches!(query(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == *original)
+            );
+        }
+        result.map(|matched| assert!(matched))
+    });
+    let arena = DecodeArena::new();
+    let policy = visit_policy(visits);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    assert!(query(&ctx).expect("all present visits admitted"));
+    let original = ctx
+        .charge_work_limit(1, "after cylinder visits")
+        .expect_err("exact visits");
+    assert_eq!(
+        (original.dimension, original.used, original.additional),
+        (ResourceDimension::WorkUnits, visits, 1)
+    );
+    assert!(matches!(query(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == original));
+    assert_eq!(ctx.resource_refusal(), Some(original));
 }
 
 #[test]
@@ -64,18 +71,24 @@ fn round_edge_fixed_preconditions_preserve_original_refusal_without_work() {
         nonfinite.vertices[0][0] = f64::NAN;
         let results = [
             round_edge_cylinder_frame(&ctx, edge_envelope(), 0.0, &[]).map(|frame| frame.is_none()),
-            round_edge_cylinder_frame(&ctx, edge_envelope(), -1.0, &[]).map(|frame| frame.is_none()),
-            round_edge_cylinder_frame(&ctx, edge_envelope(), f64::NAN, &[]).map(|frame| frame.is_none()),
-            round_edge_cylinder_frame(&ctx, edge_envelope(), f64::INFINITY, &[]).map(|frame| frame.is_none()),
+            round_edge_cylinder_frame(&ctx, edge_envelope(), -1.0, &[])
+                .map(|frame| frame.is_none()),
+            round_edge_cylinder_frame(&ctx, edge_envelope(), f64::NAN, &[])
+                .map(|frame| frame.is_none()),
+            round_edge_cylinder_frame(&ctx, edge_envelope(), f64::INFINITY, &[])
+                .map(|frame| frame.is_none()),
             round_edge_cylinder_frame(&ctx, nonfinite, 0.2, &[]).map(|frame| frame.is_none()),
             round_edge_cylinder_frame(&ctx, edge_envelope(), 0.2, &[]).map(|frame| frame.is_none()),
-            perpendicular_round_edge_cylinder_frame(&ctx, edge_envelope(), &[])
-                .map(|frame| frame == Err(PerpendicularRoundEdgeFailure::NoPerpendicularSupportPair)),
+            perpendicular_round_edge_cylinder_frame(&ctx, edge_envelope(), &[]).map(|frame| {
+                frame == Err(PerpendicularRoundEdgeFailure::NoPerpendicularSupportPair)
+            }),
         ];
         for result in results {
             if refused {
                 let original = ctx.resource_refusal().expect("seeded refusal");
-                assert!(matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original));
+                assert!(
+                    matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original)
+                );
             } else {
                 assert!(result.expect("fixed precondition needs no input visit"));
             }
@@ -83,16 +96,27 @@ fn round_edge_fixed_preconditions_preserve_original_refusal_without_work() {
     };
     check(false);
     assert_eq!(ctx.resource_refusal(), None);
-    let original = ctx.charge_work_limit(1, "after cylinder fixed preconditions").expect_err("zero cap");
-    assert_eq!((original.dimension, original.used, original.additional), (ResourceDimension::WorkUnits, 0, 1));
+    let original = ctx
+        .charge_work_limit(1, "after cylinder fixed preconditions")
+        .expect_err("zero cap");
+    assert_eq!(
+        (original.dimension, original.used, original.additional),
+        (ResourceDimension::WorkUnits, 0, 1)
+    );
     check(true);
     assert_eq!(ctx.resource_refusal(), Some(original));
 }
 
 #[test]
 fn round_edge_pair_search_admits_present_supports_and_skips_invalid_tails() {
-    let parallel = PlaneEquation { origin: [1.0, 0.0, 0.0], normal: [1.0, 0.0, 0.0] };
-    let invalid = PlaneEquation { origin: [1.0, 0.0, 0.0], normal: [0.0; 3] };
+    let parallel = PlaneEquation {
+        origin: [1.0, 0.0, 0.0],
+        normal: [1.0, 0.0, 0.0],
+    };
+    let invalid = PlaneEquation {
+        origin: [1.0, 0.0, 0.0],
+        normal: [0.0; 3],
+    };
     for count in [0, 1, 2, 5] {
         for plane in [parallel, invalid] {
             let planes = vec![plane; count];
@@ -109,11 +133,29 @@ fn round_edge_pair_search_admits_present_supports_and_skips_invalid_tails() {
             // Each valid first support visits the remaining suffix once:
             // n first visits + n*(n-1)/2 second visits. Invalid first normals
             // stop before constructing or visiting that suffix.
-            assert_exact_visits(&operations("creo round-edge first support planes", "creo round-edge second support planes"),
-                |ctx| round_edge_cylinder_frame(ctx, edge_envelope(), 0.2, &planes).map(|frame| frame.is_none()));
-            assert_exact_visits(&operations("creo perpendicular round-edge first support planes", "creo perpendicular round-edge second support planes"),
-                |ctx| perpendicular_round_edge_cylinder_frame(ctx, edge_envelope(), &planes)
-                    .map(|frame| frame == Err(PerpendicularRoundEdgeFailure::NoPerpendicularSupportPair)));
+            assert_exact_visits(
+                &operations(
+                    "creo round-edge first support planes",
+                    "creo round-edge second support planes",
+                ),
+                |ctx| {
+                    round_edge_cylinder_frame(ctx, edge_envelope(), 0.2, &planes)
+                        .map(|frame| frame.is_none())
+                },
+            );
+            assert_exact_visits(
+                &operations(
+                    "creo perpendicular round-edge first support planes",
+                    "creo perpendicular round-edge second support planes",
+                ),
+                |ctx| {
+                    perpendicular_round_edge_cylinder_frame(ctx, edge_envelope(), &planes).map(
+                        |frame| {
+                            frame == Err(PerpendicularRoundEdgeFailure::NoPerpendicularSupportPair)
+                        },
+                    )
+                },
+            );
         }
     }
 }
@@ -121,11 +163,21 @@ fn round_edge_pair_search_admits_present_supports_and_skips_invalid_tails() {
 #[test]
 fn solved_round_edge_frame_admits_each_executed_support_pass_once() {
     let supports = [
-        PlaneEquation { origin: [1.0, 0.0, 0.0], normal: [1.0, 0.0, 0.0] },
-        PlaneEquation { origin: [0.0, 0.0, 0.0], normal: [0.0, 1.0, 0.0] },
+        PlaneEquation {
+            origin: [1.0, 0.0, 0.0],
+            normal: [1.0, 0.0, 0.0],
+        },
+        PlaneEquation {
+            origin: [0.0, 0.0, 0.0],
+            normal: [0.0, 1.0, 0.0],
+        },
     ];
     let frame_matches = |frame: crate::surface::PositionalCylinderFrame| {
-        frame.frame().origin().into_iter().zip([1.2, 0.2, 0.0])
+        frame
+            .frame()
+            .origin()
+            .into_iter()
+            .zip([1.2, 0.2, 0.0])
             .all(|(actual, expected)| (actual - expected).abs() < super::super::EPS_TEST_GEOMETRY)
             && frame.frame().axis() == [0.0, 0.0, 1.0]
             && (frame.radius().get() - 0.2).abs() < super::super::EPS_TEST_GEOMETRY
@@ -133,32 +185,56 @@ fn solved_round_edge_frame_admits_each_executed_support_pass_once() {
     };
     // Two first-support visits and one second-support visit. The perpendicular
     // solver executes its own three visits, then the same three in the frame solver.
-    let direct = ["creo round-edge first support planes", "creo round-edge second support planes", "creo round-edge first support planes"];
-    assert_exact_visits(&direct, |ctx| round_edge_cylinder_frame(ctx, edge_envelope(), 0.2, &supports)
-        .map(|frame| frame.is_some_and(frame_matches)));
-    let delegated = ["creo perpendicular round-edge first support planes", "creo perpendicular round-edge second support planes", "creo perpendicular round-edge first support planes",
-        direct[0], direct[1], direct[2]];
-    assert_exact_visits(&delegated, |ctx| perpendicular_round_edge_cylinder_frame(ctx, edge_envelope(), &supports)
-        .map(|frame| frame.is_ok_and(frame_matches)));
+    let direct = [
+        "creo round-edge first support planes",
+        "creo round-edge second support planes",
+        "creo round-edge first support planes",
+    ];
+    assert_exact_visits(&direct, |ctx| {
+        round_edge_cylinder_frame(ctx, edge_envelope(), 0.2, &supports)
+            .map(|frame| frame.is_some_and(frame_matches))
+    });
+    let delegated = [
+        "creo perpendicular round-edge first support planes",
+        "creo perpendicular round-edge second support planes",
+        "creo perpendicular round-edge first support planes",
+        direct[0],
+        direct[1],
+        direct[2],
+    ];
+    assert_exact_visits(&delegated, |ctx| {
+        perpendicular_round_edge_cylinder_frame(ctx, edge_envelope(), &supports)
+            .map(|frame| frame.is_ok_and(frame_matches))
+    });
 }
 
 #[test]
 fn support_tangent_absence_admits_only_present_planes_and_releases_workspace() {
     let stored = super::axial_interval_candidate([10.0, 7.0, 9.0]);
-    let unmatched = PlaneEquation { origin: [0.0, 20.0, 0.0], normal: [0.0, 1.0, 0.0] };
-    let invalid = PlaneEquation { origin: [0.0; 3], normal: [0.0; 3] };
+    let unmatched = PlaneEquation {
+        origin: [0.0, 20.0, 0.0],
+        normal: [0.0, 1.0, 0.0],
+    };
+    let invalid = PlaneEquation {
+        origin: [0.0; 3],
+        normal: [0.0; 3],
+    };
     for count in [0, 1, 5] {
         let planes = vec![unmatched; count];
         assert_exact_visits(&vec!["creo support tangent support planes"; count], |ctx| {
             unique_support_tangent_cylinder_frame(ctx, stored, &planes).map(|frame| frame.is_none())
         });
         let arena = DecodeArena::new();
-        let policy = visit_policy(count as u64);
+        let policy = visit_policy(u64::try_from(count).expect("fixture count fits u64"));
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        assert!(unique_support_tangent_cylinder_frame(&ctx, stored, &planes).expect("present planes").is_none());
+        assert!(unique_support_tangent_cylinder_frame(&ctx, stored, &planes)
+            .expect("present planes")
+            .is_none());
         // Empty-root effective materialized allowance is 16 MiB. Both origin
         // and witness backing are gone after the scalar absence result returns.
-        let full_allowance = ctx.reserve_scoped(16 * 1024 * 1024, "after tangent workspace").expect("workspace released");
+        let full_allowance = ctx
+            .reserve_scoped(16 * 1024 * 1024, "after tangent workspace")
+            .expect("workspace released");
         drop(full_allowance);
     }
     let mut planes = vec![unmatched; 129];
