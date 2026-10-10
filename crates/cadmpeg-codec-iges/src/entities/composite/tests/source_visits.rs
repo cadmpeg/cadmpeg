@@ -83,3 +83,112 @@ fn composite_unbounded_candidates_accept_exact_visits_without_an_end_probe() {
         ctx.finish_session().unwrap();
     }
 }
+
+fn unindexed_edges(count: usize, foreign_carrier: bool) -> (CadIr, CurveId, u64, u64) {
+    let id = CurveId::mint("test:model:curve#target").unwrap();
+    let other = CurveId::mint("test:model:curve#different").unwrap();
+    let prelude = 1 + 2 * u64::try_from(id.as_str().len()).unwrap();
+    let comparison = if foreign_carrier {
+        u64::try_from(other.as_str().len() + id.as_str().len()).unwrap()
+    } else { 0 };
+    let mut ir = CadIr::empty();
+    ir.model.curves.push(Curve { id: id.clone(), geometry: CurveGeometry::Solved(line()), source_object: None });
+    for index in 0..count {
+        ir.model.edges.push(Edge {
+            id: EdgeId::mint(format!("test:model:edge#{index}")).unwrap(),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(foreign_carrier.then(|| other.clone()), None).unwrap(),
+            start: VertexId::mint("test:model:vertex#start").unwrap(),
+            end: VertexId::mint("test:model:vertex#end").unwrap(), tolerance: None,
+        });
+    }
+    (ir, id, prelude, comparison)
+}
+
+fn edge_scan_policy(work: u64) -> DecodePolicy {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = work;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_entities = 0;
+    policy.limits.max_recursion_depth = 0;
+    policy
+}
+
+#[test]
+fn composite_unindexed_edge_source_refuses_first_and_last_actual_visits() {
+    for foreign_carrier in [false, true] {
+        for count in [1, 64] {
+            let (ir, id, prelude, comparison) = unindexed_edges(count, foreign_carrier);
+            let before = ir.clone();
+            // Curve lookup visits the first curve and compares both identities.
+            // Each free edge then needs one visit; each foreign carrier also
+            // compares both carrier identities without constructing a candidate.
+            for visited in [0, count - 1] {
+                let cap = prelude + u64::try_from(visited).unwrap() * (1 + comparison);
+                let arena = DecodeArena::new();
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &edge_scan_policy(cap)).unwrap();
+                let first = match super::super::bounded_edge_for_curve(&ir, &id, 0.0, None, &ctx) {
+                    Err(CodecError::ResourceLimit(first)) => first,
+                    _ => panic!("expected actual unindexed edge source refusal"),
+                };
+                assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+                assert_eq!(first.operation, "iges composite scanned edge traversal");
+                assert_eq!((first.limit, first.used, first.additional), (cap, cap, 1));
+                for _ in 0..64 {
+                    for source in [&ir, &CadIr::empty()] {
+                        assert!(matches!(super::super::bounded_edge_for_curve(source, &id, 0.0, None, &ctx),
+                            Err(CodecError::ResourceLimit(last)) if last == first));
+                    }
+                }
+                assert_eq!(ir, before);
+                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+            }
+        }
+    }
+}
+
+#[test]
+fn composite_unindexed_carrier_comparison_refuses_before_the_source_tail() {
+    let (ir, id, prelude, comparison) = unindexed_edges(64, true);
+    let before = ir.clone();
+    let left = u64::try_from(ir.model.edges[0].curve().unwrap().as_str().len()).unwrap();
+    let right = u64::try_from(id.as_str().len()).unwrap();
+    assert_eq!(comparison, left + right);
+    for (charged, additional) in [(0, left), (left, right)] {
+        let cap = prelude + 1 + charged;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &edge_scan_policy(cap)).unwrap();
+        let first = match super::super::bounded_edge_for_curve(&ir, &id, 0.0, None, &ctx) {
+            Err(CodecError::ResourceLimit(first)) => first,
+            _ => panic!("expected input-sized carrier equality refusal"),
+        };
+        assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(first.operation, "iges composite scanned edge carrier");
+        assert_eq!((first.limit, first.used, first.additional), (cap, cap, additional));
+        for _ in 0..64 {
+            for source in [&ir, &CadIr::empty()] {
+                assert!(matches!(super::super::bounded_edge_for_curve(source, &id, 0.0, None, &ctx),
+                    Err(CodecError::ResourceLimit(last)) if last == first));
+            }
+        }
+        assert_eq!(ir, before);
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+    }
+}
+
+#[test]
+fn composite_unindexed_edge_scan_accepts_exact_executed_work_without_backing() {
+    for foreign_carrier in [false, true] {
+        for count in [0, 1, 64] {
+            let (ir, id, prelude, comparison) = unindexed_edges(count, foreign_carrier);
+            let before = ir.clone();
+            let cap = prelude + u64::try_from(count).unwrap() * (1 + comparison);
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &edge_scan_policy(cap)).unwrap();
+            assert!(super::super::bounded_edge_for_curve(&ir, &id, 0.0, None, &ctx).unwrap().is_none());
+            assert_eq!(ir, before);
+            ctx.finish_session().unwrap();
+        }
+    }
+}
