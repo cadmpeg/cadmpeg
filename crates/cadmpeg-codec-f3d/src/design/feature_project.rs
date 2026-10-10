@@ -2837,14 +2837,14 @@ fn project_thread_face_selection(
 ) -> Result<cadmpeg_ir::features::FaceSelection, CodecError> {
     use cadmpeg_ir::features::FaceSelection;
 
-    let mut scratch_storage = ctx.reserve_scoped(0, "F3D feature projection scratch")?;
-
+    ctx.charge_work(0, "F3D Thread face query boundary")?;
+    if face_group_record_indices.is_empty() || groups.is_empty() {
+        return Ok(FaceSelection::Unresolved);
+    }
     let Some(stream) = ids::native_stream_charged(ctx, &scope.id, "resolve F3D Thread face query scope stream")? else {
         return Ok(FaceSelection::Unresolved);
     };
-    if face_group_record_indices.is_empty() {
-        return Ok(FaceSelection::Unresolved);
-    }
+    let mut scratch_storage = ctx.reserve_scoped(0, "F3D feature projection scratch")?;
     let mut ordered_groups = Vec::new();
     for record_index in face_group_record_indices {
         let Some(group) = unique_feature_match_for_decode(
@@ -4003,12 +4003,13 @@ fn selected_work_planes<'a>(
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     scopes: &'a [DesignParameterScope],
 ) -> Result<Option<Vec<&'a DesignParameterScope>>, CodecError> {
-    let mut index_storage = ctx.reserve_scoped(0, "F3D projection index scratch")?;
-
-    let stream = or_none!(ids::native_stream_charged(ctx, &scope.id, "resolve F3D selected work plane stream")?);
+    ctx.charge_work(0, "F3D selected work plane query boundary")?;
     if group.members().is_empty() {
         return Ok(None);
     }
+    let mut index_storage = ctx.reserve_scoped(0, "F3D projection index scratch")?;
+
+    let stream = or_none!(ids::native_stream_charged(ctx, &scope.id, "resolve F3D selected work plane stream")?);
     let mut plane_storage = ctx.reserve_scoped(0, "hold F3D selected work plane rows")?;
     let mut planes = Vec::new();
     let mut target_record_indices = HashSet::new();
@@ -4227,6 +4228,7 @@ pub(super) fn project_thicken(
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation, ThickenSide};
 
+    ctx.charge_work(0, "F3D Thicken query boundary")?;
     let crate::records::feature::scope::DesignScopePayload::Thicken(Some(
         crate::records::feature::direct_face::DesignThickenOperation {
             signed_thickness, ..
@@ -4238,6 +4240,9 @@ pub(super) fn project_thicken(
     let faces = if let Some(faces) = direct_face_selection(ctx, scope, operands)? {
         faces
     } else {
+        if groups.is_empty() {
+            return Ok(None);
+        }
         let stream = ids::native_stream_charged(ctx, &scope.id, "resolve F3D Thicken query scope stream")?;
         let group = or_none!(unique_feature_match_for_decode(
             ctx,
@@ -4387,7 +4392,11 @@ fn project_base_flange(
         FeatureDefinition, FeatureOperation, PlanarProfileRef, SheetMetalThicknessSide,
     };
 
+    ctx.charge_work(0, "F3D base flange query boundary")?;
     let operation = or_none!(scope.base_flange_operation());
+    if groups.is_empty() {
+        return Ok(None);
+    }
     let stream = ids::native_stream_charged(ctx, &scope.id, "resolve F3D base flange query scope stream")?;
     let Some(profile_group) = unique_feature_match_for_decode(
         ctx,
