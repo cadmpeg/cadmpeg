@@ -87,6 +87,9 @@ pub(in super::super) fn feature_is_first_material_operation(
         scan.features.operations.iter().map(|row| (row.feature_id, row)),
         "creo first material identity rows",
     )?;
+    if unique_operations.get(&feature_id).is_none_or(Option::is_none) {
+        return Ok(false);
+    }
     let mut transforms_by_feature = None;
     let mut target_offset = None;
     let mut earliest_other_offset: Option<usize> = None;

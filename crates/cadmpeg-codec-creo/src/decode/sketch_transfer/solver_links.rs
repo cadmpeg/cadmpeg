@@ -47,12 +47,19 @@ impl<'definition, 'ctx> IncidenceJoins<'definition, 'ctx> {
                 )?;
                 storage.absorb(&mut index_storage)?;
                 triples = index;
-                let (index, mut index_storage) = ctx.unique_index(
-                    relations.skamps().iter().map(|row| (row.id, row)),
-                    "creo solver incidence identity rows",
+                let has_join = !triples.is_empty() && ctx.any_by(
+                    relations.triples(),
+                    |row| Ok(key(row).is_some_and(|id| triples.get(&id).is_some_and(Option::is_some))),
+                    "creo solver usable join rows",
                 )?;
-                storage.absorb(&mut index_storage)?;
-                incidences = index;
+                if has_join {
+                    let (index, mut index_storage) = ctx.unique_index(
+                        relations.skamps().iter().map(|row| (row.id, row)),
+                        "creo solver incidence identity rows",
+                    )?;
+                    storage.absorb(&mut index_storage)?;
+                    incidences = index;
+                }
             }
         }
         Ok(Self {
@@ -82,15 +89,41 @@ pub(in super::super) struct RelationIncidences<'definition, 'ctx> {
 }
 
 impl<'definition, 'ctx> RelationIncidences<'definition, 'ctx> {
-    /// Build dimension joins only when the relation-row table has a consumer.
+    /// Build dimension joins only for unique relation rows.
     pub(super) fn for_dimension_rows(
         ctx: &'ctx DecodeContext<'_>,
         definition: &'definition FeatureDefinition,
     ) -> Result<Option<Self>, CodecError> {
-        if definition.relations.as_ref().is_none_or(|table| table.rows.is_empty()) {
+        let Some(table) = definition.relations.as_ref().filter(|table| !table.rows.is_empty()) else {
             return Ok(None);
-        }
-        Self::new(ctx, definition).map(Some)
+        };
+        let mut storage = ctx.reserve_scoped(0, "creo dimension relation index storage")?;
+        let relations = if feature_relation_table_complete(table) {
+            let (index, mut index_storage) = ctx.unique_index(
+                table.rows.iter().map(|row| (row.relation_id, row)),
+                "creo solver relation identity rows",
+            )?;
+            storage.absorb(&mut index_storage)?;
+            index
+        } else {
+            HashMap::new()
+        };
+        let has_unique_relation = !relations.is_empty() && ctx.any_by(
+            &table.rows,
+            |row| Ok(relations.get(&row.relation_id).is_some_and(Option::is_some)),
+            "creo dimension relation join consumers",
+        )?;
+        let joins = if has_unique_relation {
+            let mut joins = IncidenceJoins::new(
+                ctx, definition, |triple| triple.skamp_id.and(triple.relation_id),
+                "creo solver relation join rows",
+            )?;
+            joins.storage.absorb(&mut storage)?;
+            joins
+        } else {
+            IncidenceJoins { triples: HashMap::new(), incidences: HashMap::new(), storage }
+        };
+        Ok(Some(Self { definition, relations, joins }))
     }
 
     pub(in super::super) fn new(
@@ -227,3 +260,6 @@ impl<'definition, 'ctx> SkampEquations<'definition, 'ctx> {
         self.0.joined(skamp_id)?.0.equation_id
     }
 }
+
+#[cfg(test)]
+mod tests;
