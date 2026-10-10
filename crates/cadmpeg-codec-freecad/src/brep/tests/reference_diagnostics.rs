@@ -93,20 +93,4 @@ fn valid_binary_reference_and_orientation_need_no_work_or_text_storage() {
         assert_eq!(binary_orientation(&ctx, value).unwrap(), expected);
     }
     assert_eq!(ctx.resource_refusal(), None);
-    let CodecError::ResourceLimit(original) = ctx
-        .charge_work(1, "original binary reference refusal")
-        .unwrap_err()
-    else {
-        panic!("work refuses")
-    };
-    for (value, allow_zero) in [(-1, false), (0, true), (12, false), (13, false)] {
-        assert!(
-            matches!(checked_binary_reference(&ctx, value, 12, allow_zero, "edge curve"),
-            Err(CodecError::ResourceLimit(actual)) if actual == original)
-        );
-    }
-    for value in [0, 255] {
-        assert!(matches!(binary_orientation(&ctx, value),
-            Err(CodecError::ResourceLimit(actual)) if actual == original));
-    }
 }

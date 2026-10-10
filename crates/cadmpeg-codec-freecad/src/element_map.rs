@@ -80,13 +80,13 @@ pub(crate) fn parse(
             None
         } else {
             owning_property(
-            ctx,
-            node,
-            match &mut owners {
-                Some(owners) => owners,
-                missing @ None => missing.insert(PropertyOwners::new(ctx, properties)?),
-            },
-        )?
+                ctx,
+                node,
+                match &mut owners {
+                    Some(owners) => owners,
+                    missing @ None => missing.insert(PropertyOwners::new(ctx, properties)?),
+                },
+            )?
         };
         let new_layout = ctx
             .xml_attribute(node, "new", "FreeCAD element-map XML attribute")?
@@ -322,11 +322,18 @@ fn string_table_header_count(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<us
 }
 
 /// Whether any owning map can consume source topology bindings.
-pub(crate) fn has_topology_consumers(ctx: &DecodeContext<'_>, maps: &[ElementMapRecord]) -> Result<bool, CodecError> {
+pub(crate) fn has_topology_consumers(
+    ctx: &DecodeContext<'_>,
+    maps: &[ElementMapRecord],
+) -> Result<bool, CodecError> {
     let mut maps = maps.iter();
     while maps.len() != 0 {
-        let Some(map) = ctx.next_charged(&mut maps, "FreeCAD element topology consumers")? else { break; };
-        if map.maps.has_topology_names(ctx)? { return Ok(true); }
+        let Some(map) = ctx.next_charged(&mut maps, "FreeCAD element topology consumers")? else {
+            break;
+        };
+        if map.maps.has_topology_names(ctx)? {
+            return Ok(true);
+        }
     }
     Ok(false)
 }

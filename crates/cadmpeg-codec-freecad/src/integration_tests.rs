@@ -888,4 +888,3 @@ fn positive_detection_admits_the_marker_search() {
         },
     );
 }
-

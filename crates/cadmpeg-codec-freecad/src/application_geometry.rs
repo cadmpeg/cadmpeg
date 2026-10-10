@@ -570,7 +570,15 @@ pub(crate) mod tests {
     ) -> Result<(), CodecError> {
         crate::test_support::with_service_context(&[], |setup| {
             let document = setup.parse_xml(property.xml.text(), "point test XML")?;
-            super::parse_points(ctx, property, bytes, current_entities, admitted_entities, document, points)
+            super::parse_points(
+                ctx,
+                property,
+                bytes,
+                current_entities,
+                admitted_entities,
+                document,
+                points,
+            )
         })
     }
 
@@ -775,9 +783,9 @@ pub(crate) mod tests {
                 &[],
                 operation,
                 |ctx| {
-                let admitted = ctx.parse_xml(property.xml.text(), "FreeCAD XML tree")?;
-                super::validate_value_root(ctx, &property, "Points", admitted.document())
-            },
+                    let admitted = ctx.parse_xml(property.xml.text(), "FreeCAD XML tree")?;
+                    super::validate_value_root(ctx, &property, "Points", admitted.document())
+                },
             );
         }
         for operation in [
@@ -819,8 +827,8 @@ pub(crate) mod tests {
                 .expect("root"),
             Some("payload".into())
         );
-        let transform = super::point_transform(&ctx, admitted.document())
-            .expect("transform without reparsing");
+        let transform =
+            super::point_transform(&ctx, admitted.document()).expect("transform without reparsing");
         assert_eq!(
             [
                 transform[0][3].get(),
@@ -980,7 +988,13 @@ pub(crate) mod tests {
         property.xml =
             RetainedXml::from_text("<Property><Points>".into(), 0).expect("retained XML span");
         crate::test_support::assert_retained_refusal_at(&[], "FreeCAD geometry XML error", |ctx| {
-            super::transfer(ctx, &mut cadmpeg_ir::CadIr::empty(), std::slice::from_ref(&property), &[], &mut 0)
+            super::transfer(
+                ctx,
+                &mut cadmpeg_ir::CadIr::empty(),
+                std::slice::from_ref(&property),
+                &[],
+                &mut 0,
+            )
         });
     }
 

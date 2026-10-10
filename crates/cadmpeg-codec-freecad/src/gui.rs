@@ -816,18 +816,18 @@ fn transfer_schema_one<'ctx>(
     drop(_child_storage);
     let document = native_storage.with_storage(|| {
         Ok::<_, CodecError>(GuiDocumentRecord {
-        id: "fcstd:gui:document#0".to_owned(),
-        schema_version: schema_declaration
-            .map(|value| ctx.copy_retained_text(value, "FCStd GUI schema declaration"))
-            .transpose()?,
-        attributes: gui_xml_attributes(
-            ctx,
-            root,
-            "FCStd GUI document attributes",
-            "FCStd GUI document attribute name",
-            "FCStd GUI document attribute",
-        )?,
-        states,
+            id: "fcstd:gui:document#0".to_owned(),
+            schema_version: schema_declaration
+                .map(|value| ctx.copy_retained_text(value, "FCStd GUI schema declaration"))
+                .transpose()?,
+            attributes: gui_xml_attributes(
+                ctx,
+                root,
+                "FCStd GUI document attributes",
+                "FCStd GUI document attribute name",
+                "FCStd GUI document attribute",
+            )?,
+            states,
         })
     })?;
     let mut native_providers = Vec::new();
@@ -954,15 +954,17 @@ fn transfer_schema_one<'ctx>(
             .get_hash_map(object_names, name, "FCStd GUI object name lookup")?
             .copied()
         else {
-            native_storage.with_storage(|| append_native_provider(
-                ctx,
-                text,
-                provider,
-                provider_order,
-                None,
-                &mut native_providers,
-                &mut native_properties,
-            ))?;
+            native_storage.with_storage(|| {
+                append_native_provider(
+                    ctx,
+                    text,
+                    provider,
+                    provider_order,
+                    None,
+                    &mut native_providers,
+                    &mut native_properties,
+                )
+            })?;
             continue;
         };
         let (_key_storage, provider_key) = ctx
@@ -970,15 +972,17 @@ fn transfer_schema_one<'ctx>(
                 provider_identity_key(ctx, name)
             })
             .map(|(key, storage)| (storage, key))?;
-        native_storage.with_storage(|| append_native_provider(
-            ctx,
-            text,
-            provider,
-            provider_order,
-            Some(object_id),
-            &mut native_providers,
-            &mut native_properties,
-        ))?;
+        native_storage.with_storage(|| {
+            append_native_provider(
+                ctx,
+                text,
+                provider,
+                provider_order,
+                Some(object_id),
+                &mut native_providers,
+                &mut native_properties,
+            )
+        })?;
         let properties_node = unique_child(ctx, provider, "Properties")?.ok_or_else(|| {
             gui_malformed(ctx, format_args!("ViewProvider {name} has no Properties"))
         })?;
@@ -1398,7 +1402,9 @@ fn transfer_schema_one<'ctx>(
     drop(edge_index);
     drop(vertex_index);
     let mut graph = Graph {
-        documents: native_storage.with_storage(|| ctx.collect_vec(std::iter::once(document), "FCStd GUI document records"))?,
+        documents: native_storage.with_storage(|| {
+            ctx.collect_vec(std::iter::once(document), "FCStd GUI document records")
+        })?,
         providers: native_providers,
         properties: native_properties,
         losses,
@@ -1434,7 +1440,11 @@ fn transfer_schema_one<'ctx>(
         neutral_schema_version,
         &mut presentation_losses,
     )?;
-    ctx.extend_vec(&mut graph.losses, presentation_losses, "FCStd GUI graph losses")?;
+    ctx.extend_vec(
+        &mut graph.losses,
+        presentation_losses,
+        "FCStd GUI graph losses",
+    )?;
     Ok((graph, plan))
 }
 
@@ -2736,11 +2746,7 @@ fn append_native_provider(
                 )
             })?;
         if !name_storage.with_storage(|| {
-            ctx.insert_hash_set(
-                &mut names,
-                property_name,
-                "FCStd GUI property names",
-            )
+            ctx.insert_hash_set(&mut names, property_name, "FCStd GUI property names")
         })? {
             return Err(CodecError::Malformed(
                 "ViewProvider has duplicate property names".into(),
@@ -3649,7 +3655,11 @@ fn validate_gui_enumeration(
             ));
         }
     };
-    let element_count = gui_element_child_count(ctx, custom_list, "FCStd GUI custom enumeration element count")?;
+    let element_count = gui_element_child_count(
+        ctx,
+        custom_list,
+        "FCStd GUI custom enumeration element count",
+    )?;
     if element_count != count
         || ctx.any_by(
             custom_list.children(),
@@ -3657,12 +3667,10 @@ fn validate_gui_enumeration(
                 if !value.is_element() {
                     return Ok(false);
                 }
-                Ok(
-                    !ctx.xml_has_tag_name(value, "Enum", "FCStd GUI value tag")?
-                        || ctx
-                            .xml_attribute(value, "value", "FCStd GUI value attribute")?
-                            .is_none(),
-                )
+                Ok(!ctx.xml_has_tag_name(value, "Enum", "FCStd GUI value tag")?
+                    || ctx
+                        .xml_attribute(value, "value", "FCStd GUI value attribute")?
+                        .is_none())
             },
             "FCStd GUI custom enumeration value validation",
         )?
@@ -4374,7 +4382,8 @@ fn validate_gui_center_line_string_collection(
             "CenterLine collection has an invalid count",
         ));
     };
-    let item_count = gui_element_child_count(ctx, field, "FCStd GUI CenterLine collection item count")?;
+    let item_count =
+        gui_element_child_count(ctx, field, "FCStd GUI CenterLine collection item count")?;
     if item_count != count {
         return Err(gui_techdraw_error(
             ctx,
@@ -5125,7 +5134,8 @@ fn validate_visual_layer_list(
                 format_args!("GUI property {property_name} VisualLayerList has an invalid count"),
             )
         })?;
-    let element_count = gui_element_child_count(ctx, root, "FCStd GUI VisualLayerList element count")?;
+    let element_count =
+        gui_element_child_count(ctx, root, "FCStd GUI VisualLayerList element count")?;
     if element_count != count
         || ctx.any_by(
             root.children(),
@@ -5284,7 +5294,9 @@ fn validate_gui_expression_engine(
     let count = gui_list_count(ctx, root, property_name, "ExpressionEngine")?;
     let mut expression_count = 0_usize;
     let mut expression_children = root.children();
-    while let Some(child) = ctx.next_charged(&mut expression_children, "FCStd GUI expression count")? {
+    while let Some(child) =
+        ctx.next_charged(&mut expression_children, "FCStd GUI expression count")?
+    {
         if ctx.xml_has_tag_name(child, "Expression", "FCStd GUI value tag")? {
             expression_count = expression_count
                 .checked_add(1)
@@ -5515,7 +5527,8 @@ fn validate_gui_constraint_list(
         ));
     }
     let count = gui_list_count(ctx, root, property_name, "ConstraintList")?;
-    let element_count = gui_element_child_count(ctx, root, "FCStd GUI ConstraintList element count")?;
+    let element_count =
+        gui_element_child_count(ctx, root, "FCStd GUI ConstraintList element count")?;
     if element_count != count
         || ctx.any_by(
             root.children(),
@@ -7101,8 +7114,7 @@ mod color_tests {
 mod shape_association_tests {
     use super::{
         displayed_shape_bodies, displayed_shape_group, displayed_shape_payload,
-        select_shape_bodies, ShapeIndex,
-        TopologyIndex,
+        select_shape_bodies, ShapeIndex, TopologyIndex,
     };
     use crate::brep::{ShapePayload, ShapePayloadRecord};
     use crate::native::element_map::{ElementMapGroup, ElementMapNode, ElementMapRecord};
@@ -7501,8 +7513,6 @@ mod shape_association_tests {
             assert!(topology_index.is_none());
         });
     }
-
-
 
     #[test]
     fn displayed_shape_body_collection_refuses_at_caller_limit() {

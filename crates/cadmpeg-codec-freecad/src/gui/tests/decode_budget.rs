@@ -131,14 +131,18 @@ fn gui_attribute_lookup_refuses_before_provider_record_copy() {
 
 #[test]
 fn gui_string_list_validation_needs_no_child_storage() {
-    let xml = roxmltree::Document::parse("<StringList count='2'><String value='x'/><String value='y'/></StringList>").expect("list XML");
+    let xml = roxmltree::Document::parse(
+        "<StringList count='2'><String value='x'/><String value='y'/></StringList>",
+    )
+    .expect("list XML");
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     policy.limits.max_materialized_bytes = 0;
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    super::super::validate_gui_string_list(&ctx, xml.root_element(), "names").expect("borrowed validation");
+    super::super::validate_gui_string_list(&ctx, xml.root_element(), "names")
+        .expect("borrowed validation");
     assert_eq!(ctx.resource_refusal(), None);
 }
 
@@ -494,23 +498,33 @@ fn assert_borrowed_gui_property(type_name: &str, contents: &str) {
     policy.limits.max_materialized_bytes = 0;
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    super::super::validate_gui_property(&ctx, xml.root_element(), "values", type_name).expect(type_name);
+    super::super::validate_gui_property(&ctx, xml.root_element(), "values", type_name)
+        .expect(type_name);
     assert_eq!(ctx.resource_refusal(), None);
 }
 
 #[test]
 fn gui_integer_list_validation_needs_no_child_storage() {
-    assert_borrowed_gui_property("App::PropertyIntegerList", "<IntegerList count='2'><I v='1'/><I v='2'/></IntegerList>");
+    assert_borrowed_gui_property(
+        "App::PropertyIntegerList",
+        "<IntegerList count='2'><I v='1'/><I v='2'/></IntegerList>",
+    );
 }
 
 #[test]
 fn gui_integer_set_validation_needs_no_child_storage() {
-    assert_borrowed_gui_property("App::PropertyIntegerSet", "<IntegerSet count='2'><I v='1'/><I v='2'/></IntegerSet>");
+    assert_borrowed_gui_property(
+        "App::PropertyIntegerSet",
+        "<IntegerSet count='2'><I v='1'/><I v='2'/></IntegerSet>",
+    );
 }
 
 #[test]
 fn gui_map_validation_needs_no_child_storage() {
-    assert_borrowed_gui_property("App::PropertyMap", "<Map count='2'><Item key='a' value='1'/><Item key='b' value='2'/></Map>");
+    assert_borrowed_gui_property(
+        "App::PropertyMap",
+        "<Map count='2'><Item key='a' value='1'/><Item key='b' value='2'/></Map>",
+    );
 }
 
 #[test]
@@ -520,17 +534,26 @@ fn gui_enumeration_validation_needs_no_child_storage() {
 
 #[test]
 fn gui_geometry_list_validation_needs_no_child_storage() {
-    assert_borrowed_gui_property("Part::PropertyGeometryList", "<GeometryList count='1'><Geometry/></GeometryList>");
+    assert_borrowed_gui_property(
+        "Part::PropertyGeometryList",
+        "<GeometryList count='1'><Geometry/></GeometryList>",
+    );
 }
 
 #[test]
 fn gui_shape_list_validation_needs_no_child_storage() {
-    assert_borrowed_gui_property("Part::PropertyTopoShapeList", "<ShapeList count='1'><TopoShape file='a'/></ShapeList>");
+    assert_borrowed_gui_property(
+        "Part::PropertyTopoShapeList",
+        "<ShapeList count='1'><TopoShape file='a'/></ShapeList>",
+    );
 }
 
 #[test]
 fn gui_constraint_list_validation_needs_no_child_storage() {
-    assert_borrowed_gui_property("Sketcher::PropertyConstraintList", "<ConstraintList count='1'><Constrain/></ConstraintList>");
+    assert_borrowed_gui_property(
+        "Sketcher::PropertyConstraintList",
+        "<ConstraintList count='1'><Constrain/></ConstraintList>",
+    );
 }
 
 #[test]
@@ -542,46 +565,71 @@ fn gui_visual_layer_validation_needs_no_child_storage() {
     policy.limits.max_materialized_bytes = 0;
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    super::super::validate_gui_property(&ctx, xml.root_element(), "VisualLayerList", "BadType").expect("borrowed visual layers");
+    super::super::validate_gui_property(&ctx, xml.root_element(), "VisualLayerList", "BadType")
+        .expect("borrowed visual layers");
     assert_eq!(ctx.resource_refusal(), None);
 }
 
 #[test]
 fn gui_techdraw_points_validation_needs_no_child_storage() {
-    let xml = roxmltree::Document::parse("<Points PointsCount='1'><Point X='1' Y='2' Z='3'/></Points>").expect("validator XML");
+    let xml =
+        roxmltree::Document::parse("<Points PointsCount='1'><Point X='1' Y='2' Z='3'/></Points>")
+            .expect("validator XML");
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     policy.limits.max_materialized_bytes = 0;
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    super::super::validate_gui_techdraw_points(&ctx, xml.root_element(), "points").expect("borrowed validation");
+    super::super::validate_gui_techdraw_points(&ctx, xml.root_element(), "points")
+        .expect("borrowed validation");
     assert_eq!(ctx.resource_refusal(), None);
 }
 
 #[test]
 fn gui_center_line_collection_validation_needs_no_child_storage() {
-    let xml = roxmltree::Document::parse("<Tags count='1'><Tag value='a'/></Tags>").expect("validator XML");
+    let xml = roxmltree::Document::parse("<Tags count='1'><Tag value='a'/></Tags>")
+        .expect("validator XML");
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     policy.limits.max_materialized_bytes = 0;
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    super::super::validate_gui_center_line_string_collection(&ctx, xml.root_element(), "tags", "Tags", "count", "Tag").expect("borrowed validation");
+    super::super::validate_gui_center_line_string_collection(
+        &ctx,
+        xml.root_element(),
+        "tags",
+        "Tags",
+        "count",
+        "Tag",
+    )
+    .expect("borrowed validation");
     assert_eq!(ctx.resource_refusal(), None);
 }
 
 #[test]
 fn gui_techdraw_list_validation_needs_no_child_storage() {
-    let xml = roxmltree::Document::parse("<Property><Records count='1'><Record type='synthetic'/></Records></Property>").expect("validator XML");
+    let xml = roxmltree::Document::parse(
+        "<Property><Records count='1'><Record type='synthetic'/></Records></Property>",
+    )
+    .expect("validator XML");
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     policy.limits.max_materialized_bytes = 0;
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    super::super::validate_gui_techdraw_list(&ctx, xml.root_element(), "records", "Records", "Record", "synthetic", |_, _, _| Ok(())).expect("borrowed validation");
+    super::super::validate_gui_techdraw_list(
+        &ctx,
+        xml.root_element(),
+        "records",
+        "Records",
+        "Record",
+        "synthetic",
+        |_, _, _| Ok(()),
+    )
+    .expect("borrowed validation");
     assert_eq!(ctx.resource_refusal(), None);
 }
 
@@ -594,10 +642,10 @@ fn gui_expression_engine_validation_needs_no_child_storage() {
     policy.limits.max_materialized_bytes = 0;
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    super::super::validate_gui_expression_engine(&ctx, xml.root_element(), "expressions").expect("borrowed validation");
+    super::super::validate_gui_expression_engine(&ctx, xml.root_element(), "expressions")
+        .expect("borrowed validation");
     assert_eq!(ctx.resource_refusal(), None);
 }
-
 
 #[test]
 fn gui_property_names_are_local_to_each_provider() {
@@ -607,7 +655,16 @@ fn gui_property_names_are_local_to_each_provider() {
         let mut providers = Vec::new();
         let mut properties = Vec::new();
         for (order, node) in xml.root_element().children().enumerate() {
-            super::super::append_native_provider(ctx, text, node, order, None, &mut providers, &mut properties).expect("separate provider names");
+            super::super::append_native_provider(
+                ctx,
+                text,
+                node,
+                order,
+                None,
+                &mut providers,
+                &mut properties,
+            )
+            .expect("separate provider names");
         }
         assert_eq!(providers.len(), 2);
         assert_eq!(properties.len(), 2);
@@ -622,8 +679,19 @@ fn gui_duplicate_property_name_precedes_later_invalid_properties() {
     let text = "<ViewProvider name='A'><Properties Count='3'><Property name='Label' type='App::PropertyString'><String value='a'/></Property><Property name='Label'/><Property/></Properties></ViewProvider>";
     let xml = roxmltree::Document::parse(text).expect("provider XML");
     crate::test_support::with_service_context(&[], |ctx| {
-        let error = super::super::append_native_provider(ctx, text, xml.root_element(), 0, None, &mut Vec::new(), &mut Vec::new()).expect_err("duplicate name");
-        assert!(matches!(error, CodecError::Malformed(message) if message == "ViewProvider has duplicate property names"));
+        let error = super::super::append_native_provider(
+            ctx,
+            text,
+            xml.root_element(),
+            0,
+            None,
+            &mut Vec::new(),
+            &mut Vec::new(),
+        )
+        .expect_err("duplicate name");
+        assert!(
+            matches!(error, CodecError::Malformed(message) if message == "ViewProvider has duplicate property names")
+        );
         assert_eq!(ctx.resource_refusal(), None);
     });
 }

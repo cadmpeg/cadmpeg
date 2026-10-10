@@ -361,21 +361,30 @@ fn parameter_cycle_consumers_skip_all_candidate_indexes() {
     let (object, mut parameters) = parameter_dependency_fixture(false);
     parameters.truncate(1);
     let owner = parameters[0].owner.clone().expect("owned parameter");
-    let objects = (0..4097).map(|index| {
-        let mut object = object.clone();
-        let name = format!("Unused{index}");
-        object.identity = crate::native::object_identity::ObjectIdentity::try_new(
-            format!("fcstd:native:object#{name}"), name,
-        ).expect("object identity");
-        object
-    }).collect::<Vec<_>>();
+    let objects = (0..4097)
+        .map(|index| {
+            let mut object = object.clone();
+            let name = format!("Unused{index}");
+            object.identity = crate::native::object_identity::ObjectIdentity::try_new(
+                format!("fcstd:native:object#{name}"),
+                name,
+            )
+            .expect("object identity");
+            object
+        })
+        .collect::<Vec<_>>();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 64;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("context");
     let (_cycles, _storage) = super::super::ordering::bind_parameter_dependencies(
-        &ctx, &mut parameters, &objects, &std::collections::BTreeSet::from([owner]),
-    ).expect("cycle expressions do not consume candidate indexes");
+        &ctx,
+        &mut parameters,
+        &objects,
+        &std::collections::BTreeSet::from([owner]),
+    )
+    .expect("cycle expressions do not consume candidate indexes");
     assert!(parameters[0].dependencies.is_empty());
     assert_eq!(ctx.resource_refusal(), None);
 }
@@ -383,16 +392,37 @@ fn parameter_cycle_consumers_skip_all_candidate_indexes() {
 #[test]
 fn constant_parameter_expressions_skip_qualified_object_names() {
     let (object, mut parameters) = parameter_dependency_fixture(false);
-    for parameter in &mut parameters { parameter.expression = "1".into(); }
-    let objects = vec![object; 4097];
+    for parameter in &mut parameters {
+        parameter.expression = "1".into();
+    }
+    let objects = (0..4097)
+        .map(|index| {
+            let mut object = object.clone();
+            let name = format!("Unused{index}");
+            object.identity = crate::native::object_identity::ObjectIdentity::try_new(
+                format!("fcstd:native:object#{name}"),
+                name,
+            )
+            .expect("object identity");
+            object.order = index;
+            object
+        })
+        .collect::<Vec<_>>();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 64;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("context");
     let (_cycles, _storage) = super::super::ordering::bind_parameter_dependencies(
-        &ctx, &mut parameters, &objects, &std::collections::BTreeSet::new(),
-    ).expect("constant expressions do not consume qualified names");
-    assert!(parameters.iter().all(|parameter| parameter.dependencies.is_empty()));
+        &ctx,
+        &mut parameters,
+        &objects,
+        &std::collections::BTreeSet::new(),
+    )
+    .expect("constant expressions do not consume qualified names");
+    assert!(parameters
+        .iter()
+        .all(|parameter| parameter.dependencies.is_empty()));
     assert_eq!(ctx.resource_refusal(), None);
 }
 
@@ -406,9 +436,16 @@ fn eligible_parameter_keeps_cycle_owned_candidates() {
     let consumer = parameters[1].id.clone();
     crate::test_support::with_service_context(&[], |ctx| {
         let (_cycles, _storage) = super::super::ordering::bind_parameter_dependencies(
-            ctx, &mut parameters, &[object], &std::collections::BTreeSet::from([cyclic_owner]),
-        ).expect("eligible consumer resolves cycle-owned source");
-        let parameter = parameters.iter().find(|parameter| parameter.id == consumer).expect("consumer");
+            ctx,
+            &mut parameters,
+            &[object],
+            &std::collections::BTreeSet::from([cyclic_owner]),
+        )
+        .expect("eligible consumer resolves cycle-owned source");
+        let parameter = parameters
+            .iter()
+            .find(|parameter| parameter.id == consumer)
+            .expect("consumer");
         assert!(parameter.dependencies.contains(&target));
         assert_eq!(parameter.dependencies.len(), 1);
     });

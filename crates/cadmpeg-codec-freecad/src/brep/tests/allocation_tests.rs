@@ -649,8 +649,15 @@ fn shape_entry_name_copy_requires_materialized_storage() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    let CodecError::ResourceLimit(limit) = super::super::shape_entry_name(&ctx, "scratch.brp").expect_err("filename copy requires storage") else { panic!("materialized refusal"); };
-    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::MaterializedBytes);
+    let CodecError::ResourceLimit(limit) = super::super::shape_entry_name(&ctx, "scratch.brp")
+        .expect_err("filename copy requires storage")
+    else {
+        panic!("materialized refusal");
+    };
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+    );
     assert_eq!(ctx.resource_refusal(), Some(limit));
 }
 
@@ -661,10 +668,13 @@ fn shape_entry_name_storage_releases_after_the_name() {
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_materialized_bytes = 16;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    let (name, storage) = super::super::shape_entry_name(&ctx, "scratch.brp").expect("scoped filename");
+    let (name, storage) =
+        super::super::shape_entry_name(&ctx, "scratch.brp").expect("scoped filename");
     assert_eq!(name, "scratch.brp");
     drop(name);
     drop(storage);
-    let _released = ctx.reserve_scoped(16, "released filename storage").expect("full allowance is available after dropping the name");
+    let _released = ctx
+        .reserve_scoped(16, "released filename storage")
+        .expect("full allowance is available after dropping the name");
     assert_eq!(ctx.resource_refusal(), None);
 }

@@ -216,34 +216,72 @@ fn product_projection_without_consumers_does_not_build_body_prefixes() {
         entry: "shape.brp".into(),
         payload: crate::brep::ShapePayload::Empty,
     };
-    let objects = (0..4097).map(|index| native::ObjectRecord {
-        identity: native::object_identity::ObjectIdentity::try_new(format!("fcstd:native:object#Unused{index}"), format!("Unused{index}")).expect("object identity"),
-        type_name: "Part::Feature".into(), persistent_id: None, view_type: None,
-        attributes: std::collections::BTreeMap::new(), dependencies: Vec::new(),
-        dependency_allow_partial: None, order: index, data: None,
-    }).collect::<Vec<_>>();
+    let objects = (0..4097)
+        .map(|index| native::ObjectRecord {
+            identity: native::object_identity::ObjectIdentity::try_new(
+                format!("fcstd:native:object#Unused{index}"),
+                format!("Unused{index}"),
+            )
+            .expect("object identity"),
+            type_name: "Part::Feature".into(),
+            persistent_id: None,
+            view_type: None,
+            attributes: std::collections::BTreeMap::new(),
+            dependencies: Vec::new(),
+            dependency_allow_partial: None,
+            order: index,
+            data: None,
+        })
+        .collect::<Vec<_>>();
     let long_key = format!("Part:Shape:{}", "x".repeat(65_536));
     let mut payloads = vec![payload.clone()];
     payloads[0].id = format!("fcstd:native:shape-payload#{long_key}");
     payloads.extend((0..4097).map(|index| crate::brep::ShapePayloadRecord {
-        id: format!("fcstd:native:shape-payload#Unused{index}"), property: format!("fcstd:native:property#Unused{index}:Shape"),
-        entry: format!("unused{index}.brp"), payload: crate::brep::ShapePayload::Empty,
+        id: format!("fcstd:native:shape-payload#Unused{index}"),
+        property: format!("fcstd:native:property#Unused{index}:Shape"),
+        entry: format!("unused{index}.brp"),
+        payload: crate::brep::ShapePayload::Empty,
     }));
     let bodies = vec![cadmpeg_ir::topology::Body {
-        id: cadmpeg_ir::ids::BodyId::mint(format!("fcstd:model:body#{long_key}:0")).expect("body identity"),
-        kind: cadmpeg_ir::topology::BodyKind::default(), regions: Vec::new(), transform: None,
-        name: None, color: None, visible: None,
+        id: cadmpeg_ir::ids::BodyId::mint(format!("fcstd:model:body#{long_key}:0"))
+            .expect("body identity"),
+        kind: cadmpeg_ir::topology::BodyKind::default(),
+        regions: Vec::new(),
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
     }];
-    let run = |objects: &[native::ObjectRecord], payloads: &[crate::brep::ShapePayloadRecord], bodies: &[cadmpeg_ir::topology::Body], refuse: bool| {
+    let run = |objects: &[native::ObjectRecord],
+               payloads: &[crate::brep::ShapePayloadRecord],
+               bodies: &[cadmpeg_ir::topology::Body],
+               refuse: bool| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = 0;
-        if refuse { policy.limits.max_work_units = 0; }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty context");
-        let result = super::transfer_neutral(&ctx, &[], &[], objects, std::slice::from_ref(&property), payloads, bodies);
         if refuse {
-            let cadmpeg_core::CodecError::ResourceLimit(limit) = result.expect_err("placement setup work refuses") else { panic!("work refusal"); };
-            assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+            policy.limits.max_work_units = 0;
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty context");
+        let result = super::transfer_neutral(
+            &ctx,
+            &[],
+            &[],
+            objects,
+            std::slice::from_ref(&property),
+            payloads,
+            bodies,
+        );
+        if refuse {
+            let cadmpeg_core::CodecError::ResourceLimit(limit) =
+                result.expect_err("placement setup work refuses")
+            else {
+                panic!("work refusal");
+            };
+            assert_eq!(
+                limit.dimension,
+                cadmpeg_core::decode::ResourceDimension::WorkUnits
+            );
             assert_eq!(ctx.resource_refusal(), Some(limit));
             (None, Some(limit))
         } else {
@@ -251,12 +289,23 @@ fn product_projection_without_consumers_does_not_build_body_prefixes() {
             assert!(definitions.is_empty());
             assert!(occurrences.is_empty());
             assert_eq!(ctx.resource_refusal(), None);
-            let cadmpeg_core::CodecError::ResourceLimit(limit) = ctx.charge_work(u64::MAX, "measure unused product inputs").expect_err("work measurement") else { panic!("work refusal"); };
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = ctx
+                .charge_work(u64::MAX, "measure unused product inputs")
+                .expect_err("work measurement")
+            else {
+                panic!("work refusal");
+            };
             (Some(limit.used), None)
         }
     };
-    assert_eq!(run(&[], std::slice::from_ref(&payload), &[], false), run(&objects, &payloads, &bodies, false));
-    assert_eq!(run(&[], std::slice::from_ref(&payload), &[], true), run(&objects, &payloads, &bodies, true));
+    assert_eq!(
+        run(&[], std::slice::from_ref(&payload), &[], false),
+        run(&objects, &payloads, &bodies, false)
+    );
+    assert_eq!(
+        run(&[], std::slice::from_ref(&payload), &[], true),
+        run(&objects, &payloads, &bodies, true)
+    );
 }
 
 #[test]

@@ -118,8 +118,8 @@ fn point_trailing_payload_keeps_completed_row_and_retained_diagnostic() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("context");
     let mut points = Vec::new();
-    let error = parse_points(&ctx, &property, &bytes, 0, &mut 0, &mut points)
-        .expect_err("trailing byte");
+    let error =
+        parse_points(&ctx, &property, &bytes, 0, &mut 0, &mut points).expect_err("trailing byte");
     let CodecError::Malformed(message) = error else {
         panic!("payload diagnostic")
     };
