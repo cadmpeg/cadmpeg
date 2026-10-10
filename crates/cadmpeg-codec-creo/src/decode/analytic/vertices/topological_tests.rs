@@ -869,7 +869,7 @@ fn line_conic_candidates_cover_periodic_and_nonperiodic_families() {
 }
 
 #[test]
-fn line_conic_candidate_retention_refuses_work_and_preserves_service_result() {
+fn fixed_line_conic_retention_needs_no_work_and_preserves_points() {
     let circle = |axis: [f64; 3]| {
         let reference = if axis[0].abs() > 0.5 {
             [0.0, 1.0, 0.0]
@@ -888,10 +888,12 @@ fn line_conic_candidate_retention_refuses_work_and_preserves_service_result() {
     };
     let first = circle([0.0, 0.0, 1.0]);
     let transverse = circle([1.0, 0.0, 0.0]);
-    let points = crate::test_support::assert_work_boundaries(
-        &["creo line-conic candidate retention"],
-        |ctx| conic_conic_intersections(ctx, &first, &transverse),
-    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let points =
+        conic_conic_intersections(&ctx, &first, &transverse).expect("fixed root filtering");
     assert_eq!(points.len(), 2);
     assert!(points.iter().any(|point| agree(*point, [0.0, 2.0, 0.0])));
     assert!(points.iter().any(|point| agree(*point, [0.0, -2.0, 0.0])));

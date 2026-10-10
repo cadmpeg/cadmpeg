@@ -24,32 +24,55 @@ fn carrier_fixed_preconditions_preserve_original_refusal_without_work() {
     let cylinder_row = super::carrier_row(17, crate::surface::SurfaceKind::Cylinder);
     let lp = crate::test_support::closed_loop(
         std::num::NonZeroU32::new(5),
-        (10..13).map(|curve_id| crate::topology::HalfEdgeId {
-            curve_id, side: crate::topology::Side::Zero,
-        }).collect(),
+        (10..13)
+            .map(|curve_id| crate::topology::HalfEdgeId {
+                curve_id,
+                side: crate::topology::Side::Zero,
+            })
+            .collect(),
     );
     let arena = DecodeArena::new();
     let policy = visit_policy(0);
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let check = |refused| {
         let results = [
-            positional_cylinder_carrier(&ctx, &scan, &plane_row, &scan.surfaces.parameters, None, &source_carriers).map(|carrier| carrier.is_none()),
-            positional_cylinder_carrier(&ctx, &scan, &cylinder_row, &scan.surfaces.parameters, None, &source_carriers).map(|carrier| carrier.is_none()),
+            positional_cylinder_carrier(
+                &ctx,
+                &scan,
+                &plane_row,
+                &scan.surfaces.parameters,
+                None,
+                &source_carriers,
+            )
+            .map(|carrier| carrier.is_none()),
+            positional_cylinder_carrier(
+                &ctx,
+                &scan,
+                &cylinder_row,
+                &scan.surfaces.parameters,
+                None,
+                &source_carriers,
+            )
+            .map(|carrier| carrier.is_none()),
             polygon_strictly_contains(&ctx, &[], [1.0, 1.0]).map(|contains| !contains),
-            polygon_strictly_contains(&ctx, &[[0.0, 0.0], [2.0, 0.0]], [1.0, 1.0]).map(|contains| !contains),
+            polygon_strictly_contains(&ctx, &[[0.0, 0.0], [2.0, 0.0]], [1.0, 1.0])
+                .map(|contains| !contains),
             polygon_strictly_contains_polygon(&ctx, &[], &[]),
             ordered_contained_face_loops(&ctx, Vec::new(), &[]).map(|ordered| ordered.is_none()),
             ordered_contained_face_loops(&ctx, vec![&lp], &[]).map(|ordered| ordered.is_none()),
-            ordered_contained_face_loops(&ctx, vec![&lp, &lp], &[]).map(|ordered| ordered.is_none()),
+            ordered_contained_face_loops(&ctx, vec![&lp, &lp], &[])
+                .map(|ordered| ordered.is_none()),
             ordered_parameter_face_loops(&ctx, vec![&lp], &[]).map(|ordered| {
                 let ordered = ordered.expect("one supplied loop");
-                ordered.len() == 1 && std::ptr::eq(ordered[0], &lp)
+                ordered.len() == 1 && std::ptr::eq(ordered[0], &raw const lp)
             }),
         ];
         for result in results {
             if refused {
                 let original = ctx.resource_refusal().expect("seeded refusal");
-                assert!(matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original));
+                assert!(
+                    matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original)
+                );
             } else {
                 assert!(result.expect("fixed precondition"));
             }
@@ -57,8 +80,13 @@ fn carrier_fixed_preconditions_preserve_original_refusal_without_work() {
     };
     check(false);
     assert_eq!(ctx.resource_refusal(), None);
-    let original = ctx.charge_work_limit(1, "after carrier fixed preconditions").expect_err("zero cap");
-    assert_eq!((original.dimension, original.used, original.additional), (ResourceDimension::WorkUnits, 0, 1));
+    let original = ctx
+        .charge_work_limit(1, "after carrier fixed preconditions")
+        .expect_err("zero cap");
+    assert_eq!(
+        (original.dimension, original.used, original.additional),
+        (ResourceDimension::WorkUnits, 0, 1)
+    );
     check(true);
     assert_eq!(ctx.resource_refusal(), Some(original));
 }
@@ -68,27 +96,54 @@ fn assert_visits(
     expected: bool,
     query: impl Fn(&DecodeContext<'_>) -> Result<bool, CodecError>,
 ) {
-    let visits = operations.len() as u64;
-    for cap in 0..=visits {
+    let visits = u64::try_from(operations.len()).expect("visit count");
+    crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, operations, |cap| {
         let arena = DecodeArena::new();
         let policy = visit_policy(cap);
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let result = query(&ctx);
-        let original = if cap == visits {
-            assert_eq!(result.expect("present comparisons"), expected);
-            let original = ctx.charge_work_limit(1, "after carrier comparisons").expect_err("exact visits");
-            assert_eq!((original.dimension, original.used, original.additional), (ResourceDimension::WorkUnits, visits, 1));
+        let original = if let Ok(actual) = result {
+            assert_eq!(cap, visits);
+            assert_eq!(actual, expected);
+            let original = ctx
+                .charge_work_limit(1, "after carrier comparisons")
+                .expect_err("exact visits");
+            assert_eq!(
+                (original.dimension, original.used, original.additional),
+                (ResourceDimension::WorkUnits, visits, 1)
+            );
             original
         } else {
             let original = ctx.resource_refusal().expect("comparison refusal");
             assert!(matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original));
-            assert_eq!((original.dimension, original.limit, original.used, original.additional, original.operation),
-                (ResourceDimension::WorkUnits, cap, cap, 1, operations[cap as usize]));
+            assert_eq!(
+                (
+                    original.dimension,
+                    original.limit,
+                    original.used,
+                    original.additional,
+                    original.operation
+                ),
+                (
+                    ResourceDimension::WorkUnits,
+                    cap,
+                    cap,
+                    1,
+                    operations[usize::try_from(cap).expect("visited operation index")]
+                )
+            );
             original
         };
-        assert!(matches!(query(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == original));
+        assert!(
+            matches!(query(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == original)
+        );
         assert_eq!(ctx.resource_refusal(), Some(original));
-    }
+        if cap == visits {
+            Ok(())
+        } else {
+            Err(CodecError::ResourceLimit(original))
+        }
+    });
 }
 
 #[test]
@@ -96,14 +151,20 @@ fn polygon_containment_visits_present_edges_and_stops_at_contact() {
     const EDGE: &str = "creo polygon containment points";
     let square = [[0.0, 0.0], [4.0, 0.0], [4.0, 4.0], [0.0, 4.0]];
     for (point, visits, expected) in [
-        ([2.0, 2.0], 4, true), ([-1.0, 2.0], 4, false),
-        ([2.0, 0.0], 1, false), ([2.0, 4.0], 3, false),
+        ([2.0, 2.0], 4, true),
+        ([-1.0, 2.0], 4, false),
+        ([2.0, 0.0], 1, false),
+        ([2.0, 4.0], 3, false),
     ] {
-        assert_visits(&[EDGE; 4][..visits], expected, |ctx| polygon_strictly_contains(ctx, &square, point));
+        assert_visits(&[EDGE; 4][..visits], expected, |ctx| {
+            polygon_strictly_contains(ctx, &square, point)
+        });
     }
     let mut first_contact = square.to_vec();
     first_contact.extend(std::iter::repeat_n([0.0, 4.0], 128));
-    assert_visits(&[EDGE], false, |ctx| polygon_strictly_contains(ctx, &first_contact, [2.0, 0.0]));
+    assert_visits(&[EDGE], false, |ctx| {
+        polygon_strictly_contains(ctx, &first_contact, [2.0, 0.0])
+    });
 }
 
 #[test]
@@ -125,13 +186,21 @@ fn polygon_pair_containment_admits_each_executed_vertex_and_edge_visit() {
         operations.push(INNER_EDGE);
         operations.extend([OUTER_EDGE; 4]);
     }
-    assert_visits(&operations, true, |ctx| polygon_strictly_contains_polygon(ctx, &outer, &inner));
-    assert_visits(&[], true, |ctx| polygon_strictly_contains_polygon(ctx, &outer, &[]));
+    assert_visits(&operations, true, |ctx| {
+        polygon_strictly_contains_polygon(ctx, &outer, &inner)
+    });
+    assert_visits(&[], true, |ctx| {
+        polygon_strictly_contains_polygon(ctx, &outer, &[])
+    });
     let withheld = vec![[1.0, 1.0]; 129];
     // A two-point outer fails its fixed precondition at the first inner point.
-    assert_visits(&[VERTEX], false, |ctx| polygon_strictly_contains_polygon(ctx, &outer[..2], &withheld));
+    assert_visits(&[VERTEX], false, |ctx| {
+        polygon_strictly_contains_polygon(ctx, &outer[..2], &withheld)
+    });
     let outside = vec![[-1.0, 2.0]; 129];
-    assert_visits(&[VERTEX, POINT, POINT, POINT, POINT], false, |ctx| polygon_strictly_contains_polygon(ctx, &outer, &outside));
+    assert_visits(&[VERTEX, POINT, POINT, POINT, POINT], false, |ctx| {
+        polygon_strictly_contains_polygon(ctx, &outer, &outside)
+    });
 }
 
 #[test]
@@ -143,15 +212,22 @@ fn geometry_section_absence_admits_only_present_sections_and_preserves_refusal()
             let offset = 16 + 32 * index;
             scan.framing.sections.push(
                 crate::container::Section::scan_for_test(
-                    "VisibGeom".to_string(), offset, offset + 16, None, &[0; 96],
-                ).expect("section extent").section,
+                    "VisibGeom".to_string(),
+                    offset,
+                    offset + 16,
+                    None,
+                    &[0; 96],
+                )
+                .expect("section extent")
+                .section,
             );
         }
         // Before the first extent and after every extent, all present sections
         // are examined once. Neither miss reaches identity construction.
         for offset in [0, 96] {
             assert_visits(&[SECTION; 2][..count], true, |ctx| {
-                super::super::geometry_section_record(ctx, &scan, offset).map(|record| record.is_none())
+                super::super::geometry_section_record(ctx, &scan, offset)
+                    .map(|record| record.is_none())
             });
         }
     }
