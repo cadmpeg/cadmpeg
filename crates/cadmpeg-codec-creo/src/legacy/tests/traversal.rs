@@ -155,15 +155,19 @@ fn object_completeness_overflow_does_not_visit_trailing_dimensions() {
         complete: false,
     };
     let boundary = work_refusal("creo object array extent traversal", |ctx| {
-        short.is_complete(ctx)
+        super::super::object_array_is_complete(ctx,
+            match &short { super::super::ObjectPayload::Array { dimensions, .. } => dimensions, _ => unreachable!() },
+            &[])
     });
     assert_eq!(
-        work_refusal("creo object array extent traversal", |ctx| long
-            .is_complete(ctx)),
+        work_refusal("creo object array extent traversal", |ctx| super::super::object_array_is_complete(ctx,
+            match &long { super::super::ObjectPayload::Array { dimensions, .. } => dimensions, _ => unreachable!() },
+            &[])),
         boundary
     );
     assert!(
-        !crate::decode::with_test_decode_ctx(|ctx| long.is_complete(ctx))
+        !crate::decode::with_test_decode_ctx(|ctx| super::super::object_array_is_complete(ctx,
+            match &long { super::super::ObjectPayload::Array { dimensions, .. } => dimensions, _ => unreachable!() }, &[]))
             .expect("extent admission")
     );
 }
@@ -178,7 +182,6 @@ fn string_completeness_stops_at_first_unsupported_value() {
     let short = StringPayload::Array {
         dimensions: vec![1],
         values: values.clone(),
-        continuation: None,
         complete: false,
         accepted_value_indices: Vec::new(),
     };
@@ -186,22 +189,32 @@ fn string_completeness_stops_at_first_unsupported_value() {
     let long = StringPayload::Array {
         dimensions: vec![257],
         values,
-        continuation: None,
         complete: false,
         accepted_value_indices: (1..257).collect(),
     };
-    let boundary = work_refusal("creo string array completeness traversal", |ctx| {
-        short.is_complete(ctx)
-    });
-    assert_eq!(
-        work_refusal("creo string array completeness traversal", |ctx| long
-            .is_complete(ctx)),
-        boundary
-    );
-    assert!(
-        !crate::decode::with_test_decode_ctx(|ctx| long.is_complete(ctx))
-            .expect("string admission")
-    );
+    for (payload, count) in [(&short, 0), (&long, 256)] {
+        let wire = serde_json::to_value(payload).expect("supported string array wire");
+        assert_eq!(wire["complete"], false);
+        assert_eq!(wire["values"].as_array().expect("supported values").len(), count);
+        assert!(wire["values"].as_array().expect("values").iter()
+            .all(|value| value == &serde_json::json!({"form": "null"})));
+    }
+    for count in [1, 257] {
+        let mut bytes = format!("@names 1 10\n0 1 [{count}]\n1 1 skipped\n$continued\n").into_bytes();
+        for _ in 1..count {
+            bytes.extend_from_slice(b"1 1 NULL\n");
+        }
+        let persistence = crate::decode::with_test_decode_ctx(|ctx|
+            super::super::scan(ctx, &bytes, std::iter::once(0..bytes.len())))
+            .expect("unsupported-first-value parser");
+        assert_eq!(persistence.incomplete_string_array_count, 1);
+        assert_eq!(persistence.unresolved_string_value_count, 1);
+        let wire = serde_json::to_value(&persistence.string_values[0].payload).expect("parsed wire");
+        assert_eq!(wire["complete"], false);
+        assert_eq!(wire["values"].as_array().expect("supported values").len(), count - 1);
+        assert!(wire["values"].as_array().expect("values").iter()
+            .all(|value| value == &serde_json::json!({"form": "null"})));
+    }
 }
 
 
@@ -225,9 +238,8 @@ fn legacy_empty_and_fixed_lanes_are_free_and_preserve_original_refusal() {
         .expect("fixed null token"), StringValue::Null);
     assert!(!ObjectPayload::Null.is_complete(&ctx).expect("fixed object variant"));
     let strings = StringPayload::Scalar { value: StringValue::Null };
-    assert!(!strings.is_complete(&ctx).expect("fixed string variant"));
-    assert_eq!(strings.element_count(&ctx).expect("fixed scalar count"), 1);
-    assert_eq!(strings.undecoded_encoding_count(&ctx).expect("fixed encoding count"), 0);
+    assert_eq!(serde_json::to_value(&strings).expect("fixed string wire"),
+        serde_json::json!({"form": "scalar", "value": {"form": "null"}}));
     assert_eq!(Persistence::default().principal_unit_system(&ctx).expect("no unit rows"), None);
     let mut empty = "";
     assert_eq!(text_field(&ctx, &mut empty, false).expect("empty field"), None);
@@ -240,10 +252,6 @@ fn legacy_empty_and_fixed_lanes_are_free_and_preserve_original_refusal() {
     assert!(matches!(byte_string_value(&ctx, b"NULL", NullToken::RepresentsNull),
         Err(CodecError::ResourceLimit(r)) if r == original));
     assert!(matches!(ObjectPayload::Null.is_complete(&ctx),
-        Err(CodecError::ResourceLimit(r)) if r == original));
-    assert!(matches!(strings.is_complete(&ctx), Err(CodecError::ResourceLimit(r)) if r == original));
-    assert!(matches!(strings.element_count(&ctx), Err(CodecError::ResourceLimit(r)) if r == original));
-    assert!(matches!(strings.undecoded_encoding_count(&ctx),
         Err(CodecError::ResourceLimit(r)) if r == original));
     assert!(matches!(Persistence::default().principal_unit_system(&ctx),
         Err(CodecError::ResourceLimit(r)) if r == original));
@@ -392,7 +400,7 @@ fn legacy_pruning_visits_only_expired_rows_and_preserves_records() {
 
 
 #[test]
-fn object_array_complete_shape_admits_two_extent_visits() {
+fn object_array_complete_shape_uses_stored_completeness() {
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
     use super::super::ObjectPayload;
     let payload = ObjectPayload::Array {
@@ -405,26 +413,12 @@ fn object_array_complete_shape_admits_two_extent_visits() {
         ].map(str::to_owned).to_vec(),
         complete: true,
     };
-    for allowed in 0..=2 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = allowed;
-        policy.limits.max_materialized_bytes = 0;
-        policy.limits.max_retained_bytes = 0;
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        let result = payload.is_complete(&ctx);
-        if allowed < 2 {
-            let CodecError::ResourceLimit(r) = result.expect_err("next extent multiplication") else {
-                panic!("work refusal");
-            };
-            assert_eq!(r.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(r.operation, "creo object array extent traversal");
-            assert_eq!((r.used, r.additional), (allowed, 1));
-        } else {
-            assert!(result.expect("two extent multiplications"));
-            let r = ctx.charge_work_limit(1, "after object extent visits").expect_err("exact cap");
-            assert_eq!((r.used, r.additional), (2, 1));
-        }
-    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    assert!(payload.is_complete(&ctx).expect("stored completeness is free"));
 }

@@ -308,31 +308,17 @@ fn type_10_strings_decode_null_bytes_and_direct_element_arrays() {
                     text: String::new()
                 }),
             ],
-            continuation: None,
             complete: true,
             accepted_value_indices: vec![0, 1],
         }
     );
-    assert!(
-        crate::decode::with_test_decode_ctx(|ctx| persistence.string_values[4]
-            .payload
-            .is_complete(ctx))
-        .expect("complete array admission")
-    );
-    assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| persistence.string_values[4]
-            .payload
-            .element_count(ctx))
-        .expect("admitted string element count"),
-        2
-    );
-    assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| persistence.string_values[3]
-            .payload
-            .undecoded_encoding_count(ctx))
-        .expect("legacy encoding count admitted"),
-        1
-    );
+    let array = serde_json::to_value(&persistence.string_values[4].payload).expect("string array wire");
+    assert_eq!(array["complete"], true);
+    assert_eq!(array["values"].as_array().expect("supported values").len(), 2);
+    let StringPayload::Scalar { value } = &persistence.string_values[3].payload else {
+        panic!("byte string scalar");
+    };
+    assert_eq!(value.undecoded_encoding_count(), 1);
     assert_eq!(persistence.string_values[4].parent, Some(root_offset));
 }
 
@@ -345,12 +331,8 @@ fn type_10_strings_retain_incomplete_arrays_and_withhold_continuations() {
 
     assert_eq!(persistence.string_values.len(), 1);
     assert_eq!(persistence.incomplete_string_array_count, 1);
-    assert!(
-        !crate::decode::with_test_decode_ctx(|ctx| persistence.string_values[0]
-            .payload
-            .is_complete(ctx))
-        .expect("complete array admission")
-    );
+    assert_eq!(serde_json::to_value(&persistence.string_values[0].payload)
+        .expect("incomplete array wire")["complete"], false);
     assert_eq!(persistence.unresolved_string_value_count, 1);
     assert_eq!(
         persistence.string_values[0].payload,
@@ -359,7 +341,6 @@ fn type_10_strings_retain_incomplete_arrays_and_withhold_continuations() {
             values: vec![Ok(StringValue::Utf8 {
                 text: "only".to_string()
             })],
-            continuation: None,
             complete: false,
             accepted_value_indices: vec![0],
         }
