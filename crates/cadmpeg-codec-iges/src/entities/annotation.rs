@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Text annotation entities.
 
-use super::geometry::{curve_geometry_coplanar, resolve_transform, ProjectionOutcome};
+use super::geometry::{curve_geometry_coplanar_proof, resolve_transform, ProjectionOutcome};
 use super::presentation::{
     general_note_font_valid_for_global_table, new_general_note_charset_valid,
     new_general_note_font_valid,
@@ -250,6 +250,11 @@ impl<'ctx, 'ir> SectionedAreaGeometryCache<'ctx, 'ir> {
                 return Ok(proof.result);
             }
         }
+        for neighbor in super::plane_proof::coplanarity_neighbors(plane_key, pattern_plane.1) {
+            if let Some(proof) = ctx.get_btree_map(&self.proofs, &(sequence, neighbor), "iges section coplanarity proof lookup")? {
+                if proof.matches(neighbor, pattern_plane, resolution) { return Ok(proof.result); }
+            }
+        }
         if self.index.is_none() {
             self.index = Some(ModelIndex::new_model_only(self.ir, ctx)?);
         }
@@ -263,14 +268,15 @@ impl<'ctx, 'ir> SectionedAreaGeometryCache<'ctx, 'ir> {
             crate::ids::curve_admitted(&crate::ids::Stem::directory(sequence), ctx)
         })?;
         let mut proven_geometry = None;
+        let mut envelope = None;
         let coplanar = if let Some(curve) = index.curves(curve_id.as_str(), ctx)? {
             if let Some(geometry) = curve.geometry.solved() {
                 proven_geometry = Some(geometry);
                 active_storage.with_storage(|| {
                     ctx.insert_btree_set(&mut active, curve_id, "iges section active curves")
                 })?;
-                active_storage.with_storage(|| {
-                    curve_geometry_coplanar(
+                let (valid, bounds) = active_storage.with_storage(|| {
+                    curve_geometry_coplanar_proof(
                         geometry,
                         index,
                         identity,
@@ -279,7 +285,9 @@ impl<'ctx, 'ir> SectionedAreaGeometryCache<'ctx, 'ir> {
                         &mut active,
                         ctx,
                     )
-                })?
+                })?;
+                envelope = bounds;
+                valid
             } else {
                 false
             }
@@ -292,6 +300,8 @@ impl<'ctx, 'ir> SectionedAreaGeometryCache<'ctx, 'ir> {
                 key,
                 super::plane_proof::CoplanarityProof {
                     origin: pattern_plane.0,
+                    normal: pattern_plane.1,
+                    envelope,
                     geometry: proven_geometry,
                     result: coplanar,
                 },

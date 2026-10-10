@@ -190,3 +190,71 @@ fn sectioned_area_plane_cache_preserves_origin_subtraction_overflow() {
         });
     }
 }
+
+#[test]
+fn sectioned_area_plane_cache_reuses_oblique_translations_and_scaled_normals() {
+    let mut ir = CadIr::empty();
+    ir.model.curves.push(Curve {
+        id: CurveId::mint("iges:model:curve#D1").unwrap(),
+        geometry: CurveGeometry::Solved(linear_nurbs_for_cache(vec![
+            Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, -1.0, 1.0),
+        ])), source_object: None,
+    });
+    let normal = Vector3::new(1.0, 1.0, 0.0).unit().unwrap();
+    crate::test_support::with_service_context(&[], |ctx| {
+        let mut cache = super::super::SectionedAreaGeometryCache::new(&ir, ctx).unwrap();
+        assert!(cache.curve_coplanar(1, (Point3::new(0.0, 0.0, 0.0), normal), 0.001, ctx).unwrap());
+        {
+            let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+                ResourceDimension::RecursionDepth, "iges coplanar curve recursion", None,
+            );
+            for index in 0..2000 {
+                let coordinate = f64::from(index);
+                let origin = Point3::new(coordinate, -coordinate, coordinate / 2.0);
+                let normal = normal.scale(if index % 2 == 0 { 3.0 } else { -2.0 });
+                assert!(cache.curve_coplanar(1, (origin, normal), 0.001, ctx).unwrap());
+            }
+        }
+        assert_eq!(cache.proofs.len(), 1);
+        assert!(!cache.curve_coplanar(1, (Point3::new(0.001, 0.001, 0.0), normal), 0.001, ctx).unwrap());
+    });
+}
+
+#[test]
+fn sectioned_area_plane_cache_does_not_reuse_a_nearby_plane_across_the_distance_limit() {
+    let normal = Vector3::new(1.0, 1.0, 0.0).unit().unwrap();
+    let center = Point3::new(0.00095 * normal.x, 0.00095 * normal.y, 0.0);
+    let mut ir = CadIr::empty();
+    ir.model.curves.push(Curve {
+        id: CurveId::mint("iges:model:curve#D1").unwrap(),
+        geometry: CurveGeometry::Solved(linear_nurbs_for_cache(vec![center, Point3::new(center.x, center.y, 1.0)])),
+        source_object: None,
+    });
+    crate::test_support::with_service_context(&[], |ctx| {
+        let mut cache = super::super::SectionedAreaGeometryCache::new(&ir, ctx).unwrap();
+        let original = (Point3::new(0.0, 0.0, 0.0), normal);
+        let outside = (Point3::new(-0.0001 * normal.x, -0.0001 * normal.y, 0.0), normal);
+        assert!(cache.curve_coplanar(1, original, 0.001, ctx).unwrap());
+        let mut fresh = super::super::SectionedAreaGeometryCache::new(&ir, ctx).unwrap();
+        let expected = fresh.curve_coplanar(1, outside, 0.001, ctx).unwrap();
+        assert!(!expected);
+        assert_eq!(cache.curve_coplanar(1, outside, 0.001, ctx).unwrap(), expected);
+        assert!(cache.curve_coplanar(1, original, 0.001, ctx).unwrap());
+    });
+}
+
+#[test]
+fn sectioned_area_plane_cache_rechecks_failed_control_points_after_normal_scaling() {
+    let mut ir = CadIr::empty();
+    ir.model.curves.push(Curve {
+        id: CurveId::mint("iges:model:curve#D1").unwrap(),
+        geometry: CurveGeometry::Solved(linear_nurbs_for_cache(vec![
+            Point3::new(0.0, 0.0, 0.00075), Point3::new(1.0, 0.0, 0.00075),
+        ])), source_object: None,
+    });
+    crate::test_support::with_service_context(&[], |ctx| {
+        let mut cache = super::super::SectionedAreaGeometryCache::new(&ir, ctx).unwrap();
+        assert!(!cache.curve_coplanar(1, (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 2.0)), 0.001, ctx).unwrap());
+        assert!(cache.curve_coplanar(1, (Point3::new(1.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)), 0.001, ctx).unwrap());
+    });
+}

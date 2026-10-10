@@ -1552,7 +1552,7 @@ impl SimpleRing {
         )? {
             return Ok(Err(NonSimpleRing));
         }
-        if planar_polyline_has_self_intersection(&points, ctx)? {
+        if planar_polyline_has_self_intersection(&points, None, ctx)? {
             return Ok(Err(NonSimpleRing));
         }
         Ok(Ok(Self(points)))

@@ -30,12 +30,13 @@ use std::fmt;
 
 const MAX_TRANSFORM_DEPTH: usize = 64;
 const COMPUTATION_TOLERANCE: f64 = 64.0 * f64::EPSILON;
-const CURVE_PLANE_NORMAL_EPSILON: f64 = 1.0e-10;
+pub(super) const CURVE_PLANE_NORMAL_EPSILON: f64 = 1.0e-10;
 
 pub(super) type ScopedValues<'ctx, T> = (Vec<T>, cadmpeg_core::decode::ScopedReservation<'ctx>);
 
 pub(super) fn planar_polyline_has_self_intersection(
     points: &[[f64; 2]],
+    margin: Option<&std::cell::Cell<f64>>,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
     if points.len() < 3 {
@@ -66,6 +67,7 @@ pub(super) fn planar_polyline_has_self_intersection(
                         [point_at(first_index), point_at(first_index + 1)],
                         [point_at(second_index), point_at(second_index + 1)],
                         allowed_endpoint,
+                        margin,
                     ))
                 },
                 "iges planar self-intersection comparisons",
@@ -89,6 +91,7 @@ pub(super) fn planar_polylines_intersect(
                     Ok(planar_segments_intersect_beyond_endpoint(
                         [first_segment[0], first_segment[1]],
                         [second_segment[0], second_segment[1]],
+                        None,
                         None,
                     ))
                 },
@@ -251,6 +254,7 @@ fn planar_segments_intersect_beyond_endpoint(
     first: [[f64; 2]; 2],
     second: [[f64; 2]; 2],
     allowed_endpoint: Option<[f64; 2]>,
+    margin: Option<&std::cell::Cell<f64>>,
 ) -> bool {
     let [a, b] = first;
     let [c, d] = second;
@@ -260,6 +264,16 @@ fn planar_segments_intersect_beyond_endpoint(
         planar_cross(c, d, a),
         planar_cross(c, d, b),
     ];
+    if let Some(margin) = margin {
+        // A shared endpoint has an exact zero orientation. Every other
+        // orientation must stay away from zero before a placement can reuse it.
+        for (point, orientation) in [c, d, a, b].into_iter().zip(orientations) {
+            if Some(point) != allowed_endpoint {
+                let area = if orientation.is_finite() { orientation.abs() } else { 0.0 };
+                margin.set(margin.get().min(area));
+            }
+        }
+    }
     let opposite =
         |left: f64, right: f64| (left > 0.0 && right < 0.0) || (left < 0.0 && right > 0.0);
     if opposite(orientations[0], orientations[1]) && opposite(orientations[2], orientations[3]) {
@@ -1454,21 +1468,66 @@ pub(super) fn curve_geometry_coplanar(
     active: &mut BTreeSet<CurveId>,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
+    curve_geometry_coplanar_inner(geometry, index, transform, plane, resolution, (active, None), ctx)
+}
+
+pub(super) fn curve_geometry_coplanar_proof(
+    geometry: &SolvedCurveGeometry,
+    index: &ModelIndex<'_>,
+    transform: Transform,
+    plane: (Point3, Vector3),
+    resolution: f64,
+    active: &mut BTreeSet<CurveId>,
+    ctx: &DecodeContext<'_>,
+) -> Result<(bool, Option<super::plane_proof::CoplanarityEnvelope>), CodecError> {
+    let envelope = std::cell::Cell::new(super::plane_proof::CoplanarityEnvelope::default());
+    let valid = curve_geometry_coplanar_inner(geometry, index, transform, plane, resolution, (active, Some(&envelope)), ctx)?;
+    Ok((valid, valid.then_some(envelope.get())))
+}
+
+fn curve_geometry_coplanar_inner(
+    geometry: &SolvedCurveGeometry,
+    index: &ModelIndex<'_>,
+    transform: Transform,
+    plane: (Point3, Vector3),
+    resolution: f64,
+    (active, envelope): (&mut BTreeSet<CurveId>, Option<&std::cell::Cell<super::plane_proof::CoplanarityEnvelope>>),
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
     let _depth = ctx.enter_nested("iges coplanar curve recursion")?;
+    let record_angle = |residual: f64| {
+        if let Some(envelope) = envelope {
+            let mut bounds = envelope.get();
+            bounds.angular_residual = bounds.angular_residual.max(residual);
+            envelope.set(bounds);
+        }
+    };
     let point_valid = |point: Point3| {
-        transform
-            .apply_point(point)
-            .is_some_and(|point| point_on_plane(point.get(), plane, resolution))
+        transform.apply_point(point).is_some_and(|point| {
+            let point = point.get();
+            if let Some(envelope) = envelope {
+                let mut bounds = envelope.get();
+                bounds.record_point(point, point.vector_from(plane.0).dot(plane.1).abs());
+                envelope.set(bounds);
+            }
+            point_on_plane(point, plane, resolution)
+        })
     };
     let normal_valid = |normal: Vector3| {
-        transform
-            .apply_normal(normal)
-            .is_some_and(|normal| normal_matches_plane(*normal.as_raw(), plane.1))
+        transform.apply_normal(normal).is_some_and(|normal| {
+            if let (Some(normal), Some(plane_normal)) = (normal.as_raw().unit(), plane.1.unit()) {
+                record_angle(normal.cross(plane_normal).norm());
+            }
+            normal_matches_plane(*normal.as_raw(), plane.1)
+        })
     };
     let direction_valid = |direction: Vector3| {
-        transform
-            .apply_vector(direction)
-            .is_some_and(|direction| direction_in_plane(direction.get(), plane.1))
+        transform.apply_vector(direction).is_some_and(|direction| {
+            if let (Some(direction), Some(plane_normal)) = (direction.get().unit(), plane.1.unit()) {
+                record_angle(direction.dot(plane_normal).abs());
+            }
+            direction_in_plane(direction.get(), plane.1)
+        })
     };
     let valid = match geometry {
         SolvedCurveGeometry::Line(line_curve) => {
@@ -1548,8 +1607,8 @@ pub(super) fn curve_geometry_coplanar(
                     ctx.insert_btree_set(active, active_id, "iges coplanar active curves")
                 })?;
                 let result = (|| {
-                    let valid = curve_geometry_coplanar(
-                        geometry, index, transform, plane, resolution, active, ctx,
+                    let valid = curve_geometry_coplanar_inner(
+                        geometry, index, transform, plane, resolution, (active, envelope), ctx,
                     )?;
                     ctx.remove_btree_set(active, &segment.curve, "iges coplanar active removal")?;
                     if active.is_empty() {
@@ -1574,13 +1633,13 @@ pub(super) fn curve_geometry_coplanar(
             valid
         }
         SolvedCurveGeometry::Transformed(placed) => match transform.compose(*placed.transform()) {
-            Ok(transform) => curve_geometry_coplanar(
+            Ok(transform) => curve_geometry_coplanar_inner(
                 placed.basis(),
                 index,
                 transform,
                 plane,
                 resolution,
-                active,
+                (active, envelope),
                 ctx,
             )?,
             Err(_) => false,
