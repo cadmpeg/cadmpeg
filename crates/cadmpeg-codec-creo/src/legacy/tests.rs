@@ -85,10 +85,7 @@ fn principal_unit_system(persistence: &super::Persistence) -> Option<PrincipalUn
         .expect("unit selection fits service limits")
 }
 
-fn scan<I>(
-    data: &[u8],
-    ranges: I,
-) -> Result<super::Persistence, cadmpeg_core::CodecError>
+fn scan<I>(data: &[u8], ranges: I) -> Result<super::Persistence, cadmpeg_core::CodecError>
 where
     I: IntoIterator<Item = Range<usize>>,
     I::IntoIter: ExactSizeIterator,
@@ -591,11 +588,17 @@ fn legacy_unit_object_prefix_is_bounded_and_preserves_scale() {
     let persistence = scan(data.as_bytes(), std::iter::once(0..data.len()))
         .expect("the fixture states every scope inside its own bytes");
     let unit = crate::test_support::assert_work_boundaries(
-        &["creo legacy unit element traversal", "creo legacy unit scalar selection"],
+        &[
+            "creo legacy unit element traversal",
+            "creo legacy unit scalar selection",
+        ],
         |ctx| persistence.principal_unit_system(ctx),
     );
-    assert_eq!(unit, cadmpeg_ir::scalar::PositiveReal::new(factor * super::LEGACY_INCH_TO_MM)
-        .map(PrincipalUnitSystem::LegacyLengthScale));
+    assert_eq!(
+        unit,
+        cadmpeg_ir::scalar::PositiveReal::new(factor * super::LEGACY_INCH_TO_MM)
+            .map(PrincipalUnitSystem::LegacyLengthScale)
+    );
 }
 
 mod traversal;
@@ -607,33 +610,63 @@ fn legacy_unit_literal_names_reject_unrelated_long_names_without_work() {
         let mut persistence = super::Persistence::default();
         let parent = 7;
         persistence.integer_values.rows.push(super::ValueRecord {
-            name: "x".repeat(length), attribute_id: 1, scope_offset: 0,
-            parent: Some(parent), depth: 1,
-            payload: super::NumericPayload::Scalar { value: 1 }, offset: 8,
+            name: "x".repeat(length),
+            attribute_id: 1,
+            scope_offset: 0,
+            parent: Some(parent),
+            depth: 1,
+            payload: super::NumericPayload::Scalar { value: 1 },
+            offset: 8,
         });
         persistence.real_values.rows.push(super::ValueRecord {
-            name: "x".repeat(length), attribute_id: 1, scope_offset: 0,
-            parent: Some(parent), depth: 1,
-            payload: super::NumericPayload::Scalar { value: super::Real(1.0_f64.to_bits()) }, offset: 8,
+            name: "x".repeat(length),
+            attribute_id: 1,
+            scope_offset: 0,
+            parent: Some(parent),
+            depth: 1,
+            payload: super::NumericPayload::Scalar {
+                value: super::Real(1.0_f64.to_bits()),
+            },
+            offset: 8,
         });
         persistence.string_values.push(super::ValueRecord {
-            name: "x".repeat(length), attribute_id: 1, scope_offset: 0,
-            parent: Some(parent), depth: 1,
-            payload: super::StringPayload::Scalar { value: super::StringValue::Null }, offset: 8,
+            name: "x".repeat(length),
+            attribute_id: 1,
+            scope_offset: 0,
+            parent: Some(parent),
+            depth: 1,
+            payload: super::StringPayload::Scalar {
+                value: super::StringValue::Null,
+            },
+            offset: 8,
         });
         for kind in 0..3 {
             let run = |ctx: &DecodeContext<'_>| match kind {
-                0 => persistence.unique_integer_scalar(ctx, parent, "unit_type").map(|value| value.is_none()),
-                1 => persistence.unique_real_scalar(ctx, parent, "factor").map(|value| value.is_none()),
-                _ => persistence.unique_utf8_scalar(ctx, parent, "name").map(|value| value.is_none()),
+                0 => persistence
+                    .unique_integer_scalar(ctx, parent, "unit_type")
+                    .map(|value| value.is_none()),
+                1 => persistence
+                    .unique_real_scalar(ctx, parent, "factor")
+                    .map(|value| value.is_none()),
+                _ => persistence
+                    .unique_utf8_scalar(ctx, parent, "name")
+                    .map(|value| value.is_none()),
             };
-            let refusal = crate::test_support::last_refusal_at(&[],
+            let refusal = crate::test_support::last_refusal_at(
+                &[],
                 cadmpeg_core::decode::ResourceDimension::WorkUnits,
-                "creo legacy unit scalar selection", run);
-            let cadmpeg_core::CodecError::ResourceLimit(refusal) = refusal else { panic!("selection refusal"); };
+                "creo legacy unit scalar selection",
+                run,
+            );
+            let cadmpeg_core::CodecError::ResourceLimit(refusal) = refusal else {
+                panic!("selection refusal");
+            };
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = refusal.used.checked_add(refusal.additional).expect("selection need");
+            policy.limits.max_work_units = refusal
+                .used
+                .checked_add(refusal.additional)
+                .expect("selection need");
             policy.limits.max_retained_bytes = 0;
             policy.limits.max_materialized_bytes = 0;
             policy.limits.max_collection_items = 0;

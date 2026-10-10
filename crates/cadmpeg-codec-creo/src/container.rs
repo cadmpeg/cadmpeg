@@ -966,28 +966,38 @@ fn toc_sections<'a>(
             let Some(marker) = data.get(offset..marker_end) else {
                 continue;
             };
-            if length < marker_len || marker.first() != Some(&b'#') || marker.last() != Some(&b'\n') {
+            if length < marker_len || marker.first() != Some(&b'#') || marker.last() != Some(&b'\n')
+            {
                 continue;
             }
             let marker_name = &marker[1..marker.len() - 1];
             let name_matches = match view_id {
-                Some(id) => marker_name.starts_with(VIEW_PREFIX)
-                    && ctx.equal(
-                        &marker_name[VIEW_PREFIX.len()..],
-                        id.as_bytes(),
-                        "creo TOC marker name equality",
-                    )?,
-                None => ctx.equal(marker_name, name.as_bytes(), "creo TOC marker name equality")?,
+                Some(id) => {
+                    marker_name.starts_with(VIEW_PREFIX)
+                        && ctx.equal(
+                            &marker_name[VIEW_PREFIX.len()..],
+                            id.as_bytes(),
+                            "creo TOC marker name equality",
+                        )?
+                }
+                None => ctx.equal(
+                    marker_name,
+                    name.as_bytes(),
+                    "creo TOC marker name equality",
+                )?,
             };
             if !name_matches {
                 continue;
             }
-            if !offset_storage.with_storage(|| ctx.insert_hash_set(&mut offsets, offset,
-                "creo TOC section offsets"))? {
+            if !offset_storage.with_storage(|| {
+                ctx.insert_hash_set(&mut offsets, offset, "creo TOC section offsets")
+            })? {
                 continue;
             }
             let raw_name = match view_id {
-                Some(id) => ctx.format_retained(format_args!("ModelView#{id}"), "creo TOC section names")?,
+                Some(id) => {
+                    ctx.format_retained(format_args!("ModelView#{id}"), "creo TOC section names")?
+                }
                 None => ctx.copy_retained_text(name, "creo TOC section names")?,
             };
             ctx.reserve_scoped_vec(backing, &mut sections, 1, "creo TOC sections")?;
@@ -1207,8 +1217,9 @@ fn legacy_toc_sections<'a>(
         if data.get(offset..end).is_none() {
             continue;
         }
-        if !offset_storage.with_storage(|| ctx.insert_hash_set(&mut offsets, offset,
-            "creo legacy TOC section offsets"))? {
+        if !offset_storage.with_storage(|| {
+            ctx.insert_hash_set(&mut offsets, offset, "creo legacy TOC section offsets")
+        })? {
             continue;
         }
         let raw_name = ctx.copy_retained_text(raw_name, "creo legacy TOC section names")?;
@@ -1812,8 +1823,7 @@ fn family_table(
     };
     let payload = section.region;
     let label = b"drv_tbl_ptr\0";
-    let Some(label_offset) =
-        ctx.find_bytes_from(payload, label, 0, "find Creo family table")?
+    let Some(label_offset) = ctx.find_bytes_from(payload, label, 0, "find Creo family table")?
     else {
         return Ok(None);
     };
@@ -1904,8 +1914,13 @@ fn loop_array_sections<'a>(
         .admit_iter(model, "creo loop model section traversal")?
         .chain(ctx.admit_iter(nonvisible, "creo loop nonvisible section traversal")?)
     {
-        if !offset_storage.with_storage(|| ctx.insert_hash_set(
-            &mut offsets, section.section.offset(), "creo loop section offsets"))? {
+        if !offset_storage.with_storage(|| {
+            ctx.insert_hash_set(
+                &mut offsets,
+                section.section.offset(),
+                "creo loop section offsets",
+            )
+        })? {
             continue;
         }
         ctx.reserve_vec(&mut selected, 1, "creo loop array sections")?;
@@ -1924,11 +1939,16 @@ fn loop_array_sections<'a>(
             )?
             .is_some()
         {
-            if !offset_storage.with_storage(|| ctx.insert_hash_set(
-            &mut offsets, section.section.offset(), "creo loop section offsets"))? {
-            continue;
-        }
-        ctx.reserve_vec(&mut selected, 1, "creo loop array sections")?;
+            if !offset_storage.with_storage(|| {
+                ctx.insert_hash_set(
+                    &mut offsets,
+                    section.section.offset(),
+                    "creo loop section offsets",
+                )
+            })? {
+                continue;
+            }
+            ctx.reserve_vec(&mut selected, 1, "creo loop array sections")?;
             selected.push(section.copy_retained(ctx)?);
         }
     }
@@ -2504,9 +2524,7 @@ fn structural_feature_ids(
                 if cursor >= payload.len() {
                     return Err(CodecError::malformed("incomplete parent-feature entry"));
                 }
-                let Some(_) =
-                    ctx.next_charged(&mut entries, "creo parent-feature entries")?
-                else {
+                let Some(_) = ctx.next_charged(&mut entries, "creo parent-feature entries")? else {
                     break;
                 };
                 let (id, next) = psb::complete_compact_int(payload, cursor)
@@ -2641,8 +2659,7 @@ impl<'ctx> FeatureIdentityIndex<'ctx> {
         if rows.is_empty() {
             return Ok(index);
         }
-        let mut owner_storage =
-            ctx.reserve_scoped(0, "creo operation identity owner storage")?;
+        let mut owner_storage = ctx.reserve_scoped(0, "creo operation identity owner storage")?;
         let mut owners = std::collections::HashSet::new();
         owner_storage.with_storage(|| {
             for row in ctx.admit_iter(rows, "creo operation identity row selection")? {
@@ -4455,7 +4472,8 @@ pub(crate) fn has_thumbnail(
                 .get(payload_start..)
                 .is_some_and(|payload| payload.starts_with(UNIX_COMPRESS_MAGIC));
             if !raw_is_compressed
-                && ctx.find_bytes_from(raw, JPEG_MAGIC, 0, "find Creo thumbnail")?
+                && ctx
+                    .find_bytes_from(raw, JPEG_MAGIC, 0, "find Creo thumbnail")?
                     .is_some()
             {
                 return Ok(true);
@@ -4737,7 +4755,16 @@ mod feature_row_definition_tests {
             &[],
             ResourceDimension::WorkUnits,
             "creo TOC offset hexadecimal parsing",
-            |ctx| toc_sections(ctx, &mut ctx.reserve_scoped(0, "test section roster storage").expect("empty storage"), data.as_bytes(), 0),
+            |ctx| {
+                toc_sections(
+                    ctx,
+                    &mut ctx
+                        .reserve_scoped(0, "test section roster storage")
+                        .expect("empty storage"),
+                    data.as_bytes(),
+                    0,
+                )
+            },
         );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -4755,7 +4782,16 @@ mod feature_row_definition_tests {
             &[],
             ResourceDimension::WorkUnits,
             "creo TOC length hexadecimal parsing",
-            |ctx| toc_sections(ctx, &mut ctx.reserve_scoped(0, "test section roster storage").expect("empty storage"), data.as_bytes(), 0),
+            |ctx| {
+                toc_sections(
+                    ctx,
+                    &mut ctx
+                        .reserve_scoped(0, "test section roster storage")
+                        .expect("empty storage"),
+                    data.as_bytes(),
+                    0,
+                )
+            },
         );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -4773,7 +4809,16 @@ mod feature_row_definition_tests {
             &[],
             ResourceDimension::WorkUnits,
             "creo TOC expanded length hexadecimal parsing",
-            |ctx| toc_sections(ctx, &mut ctx.reserve_scoped(0, "test section roster storage").expect("empty storage"), data.as_bytes(), 0),
+            |ctx| {
+                toc_sections(
+                    ctx,
+                    &mut ctx
+                        .reserve_scoped(0, "test section roster storage")
+                        .expect("empty storage"),
+                    data.as_bytes(),
+                    0,
+                )
+            },
         );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -4786,11 +4831,16 @@ mod feature_row_definition_tests {
     fn zero_width_toc_has_no_rows() {
         let data = b"#UGC_TOC 2 18446744073709551615 0#\n";
 
-        assert!(
-            crate::decode::with_test_decode_ctx(|ctx| toc_sections(ctx, &mut ctx.reserve_scoped(0, "test section roster storage").expect("empty storage"), data, 0))
-                .expect("empty TOC admitted")
-                .is_empty()
-        );
+        assert!(crate::decode::with_test_decode_ctx(|ctx| toc_sections(
+            ctx,
+            &mut ctx
+                .reserve_scoped(0, "test section roster storage")
+                .expect("empty storage"),
+            data,
+            0
+        ))
+        .expect("empty TOC admitted")
+        .is_empty());
     }
 
     #[test]

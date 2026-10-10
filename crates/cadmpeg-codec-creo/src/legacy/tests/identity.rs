@@ -186,8 +186,12 @@ fn legacy_first_source_model_name_refuses_before_retained_copy() {
     let data = b"@model_name 1 10\n0 1 ROOT\n";
     let persistence = scan(data, std::iter::once(0..data.len()))
         .expect("the fixture states every scope inside its own bytes");
-    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::RetainedBytes,
-        "creo legacy first source model name", |ctx| persistence.first_source_model_name(ctx));
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::RetainedBytes,
+        "creo legacy first source model name",
+        |ctx| persistence.first_source_model_name(ctx),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
@@ -319,26 +323,48 @@ fn legacy_unit_array_conflict_withholds_length_scale() {
 fn source_model_null_keyword_needs_only_row_and_trim_work() {
     let data = b"@model_name 1 10\n0 1 nUlL\n";
     let persistence = scan(data, std::iter::once(0..data.len())).expect("null-name fixture");
-    let refusal = crate::test_support::last_refusal_at(&[], ResourceDimension::WorkUnits,
-        "creo legacy source model name trim", |ctx| persistence.first_source_model_name(ctx));
-    let cadmpeg_core::CodecError::ResourceLimit(refusal) = refusal else { panic!("trim refusal"); };
+    let refusal = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "creo legacy source model name trim",
+        |ctx| persistence.first_source_model_name(ctx),
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(refusal) = refusal else {
+        panic!("trim refusal");
+    };
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = refusal.used.checked_add(refusal.additional).expect("trim need");
+    policy.limits.max_work_units = refusal
+        .used
+        .checked_add(refusal.additional)
+        .expect("trim need");
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_materialized_bytes = 0;
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    assert_eq!(persistence.first_source_model_name(&ctx).expect("fixed null keyword"), None);
+    assert_eq!(
+        persistence
+            .first_source_model_name(&ctx)
+            .expect("fixed null keyword"),
+        None
+    );
 }
 
 #[test]
 fn root_model_solid_keyword_has_bounded_work() {
     let data = b"@sOlId 1 0\n@model_name 2 10\n0 1 ->\n1 2 ROOT\n";
     let persistence = scan(data, std::iter::once(0..data.len())).expect("root-name fixture");
-    let offset = data.windows(b"1 2 ROOT".len()).position(|bytes| bytes == b"1 2 ROOT").expect("value");
+    let offset = data
+        .windows(b"1 2 ROOT".len())
+        .position(|bytes| bytes == b"1 2 ROOT")
+        .expect("value");
     let result = crate::test_support::assert_work_boundaries(
-        &["creo legacy model name object traversal", "creo legacy model name value traversal", "creo legacy model name trim"],
-        |ctx| persistence.model_name(ctx));
+        &[
+            "creo legacy model name object traversal",
+            "creo legacy model name value traversal",
+            "creo legacy model name trim",
+        ],
+        |ctx| persistence.model_name(ctx),
+    );
     assert_eq!(result, Some(("ROOT".to_owned(), offset)));
 }

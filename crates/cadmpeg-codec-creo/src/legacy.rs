@@ -685,8 +685,7 @@ impl Persistence {
                 .and_then(|parent| objects.get(parent))
             {
                 Some(object) => {
-                    object.parent.is_none()
-                        && object.name.eq_ignore_ascii_case("solid")
+                    object.parent.is_none() && object.name.eq_ignore_ascii_case("solid")
                 }
                 None => false,
             };
@@ -742,9 +741,7 @@ impl Persistence {
                 continue;
             };
             let text = ctx.trim_text(text, "creo legacy source model name trim")?;
-            if text.is_empty()
-                || text.eq_ignore_ascii_case("NULL")
-            {
+            if text.is_empty() || text.eq_ignore_ascii_case("NULL") {
                 continue;
             }
             if selected.is_none_or(|(_, offset)| record.offset < offset) {
@@ -930,9 +927,7 @@ impl Persistence {
         let Some(record) = crate::decode::uniqueness::exactly_one_by(
             ctx,
             &self.integer_values.rows,
-            |record| {
-                Ok(record.parent == Some(parent) && record.name == name)
-            },
+            |record| Ok(record.parent == Some(parent) && record.name == name),
             "creo legacy unit scalar selection",
         )?
         else {
@@ -953,9 +948,7 @@ impl Persistence {
         let Some(record) = crate::decode::uniqueness::exactly_one_by(
             ctx,
             &self.real_values.rows,
-            |record| {
-                Ok(record.parent == Some(parent) && record.name == name)
-            },
+            |record| Ok(record.parent == Some(parent) && record.name == name),
             "creo legacy unit scalar selection",
         )?
         else {
@@ -976,9 +969,7 @@ impl Persistence {
         let Some(record) = crate::decode::uniqueness::exactly_one_by(
             ctx,
             &self.string_values,
-            |record| {
-                Ok(record.parent == Some(parent) && record.name == name)
-            },
+            |record| Ok(record.parent == Some(parent) && record.name == name),
             "creo legacy unit scalar selection",
         )?
         else {
@@ -1045,8 +1036,7 @@ pub(crate) fn text_field<'a>(
     let mut first = None;
     let mut characters = text.char_indices();
     while !characters.as_str().is_empty() {
-        let Some((offset, c)) =
-            ctx.next_charged(&mut characters, "creo text field whitespace")?
+        let Some((offset, c)) = ctx.next_charged(&mut characters, "creo text field whitespace")?
         else {
             break;
         };
@@ -1063,8 +1053,7 @@ pub(crate) fn text_field<'a>(
     let mut boundary = None;
     let mut characters = remaining[first_width..].char_indices();
     while !characters.as_str().is_empty() {
-        let Some((offset, c)) =
-            ctx.next_charged(&mut characters, "creo text field boundary")?
+        let Some((offset, c)) = ctx.next_charged(&mut characters, "creo text field boundary")?
         else {
             break;
         };
@@ -1147,9 +1136,7 @@ fn decimal(
     let mut value = 0u32;
     let mut digits = bytes.get(start..).unwrap_or_default().iter();
     while digits.len() != 0 {
-        let Some(digit) =
-            ctx.next_charged(&mut digits, "creo legacy decimal digits")?
-        else {
+        let Some(digit) = ctx.next_charged(&mut digits, "creo legacy decimal digits")? else {
             break;
         };
         if !digit.is_ascii_digit() {
@@ -1232,7 +1219,12 @@ fn array_dimensions(
         if dimension == 0 || bytes.get(after_dimension) != Some(&b']') {
             return Ok(None);
         }
-        ctx.reserve_scoped_vec(&mut storage, &mut dimensions, 1, "creo legacy array dimensions")?;
+        ctx.reserve_scoped_vec(
+            &mut storage,
+            &mut dimensions,
+            1,
+            "creo legacy array dimensions",
+        )?;
         dimensions.push(dimension);
         cursor = after_dimension + 1;
     }
@@ -1302,7 +1294,12 @@ fn continuation_numeric_runs<T>(
                 let Some(run) = numeric_run(ctx, token, scalar)? else {
                     return Ok(None);
                 };
-                ctx.reserve_scoped_vec(&mut storage, &mut runs, 1, "creo legacy continuation numeric runs")?;
+                ctx.reserve_scoped_vec(
+                    &mut storage,
+                    &mut runs,
+                    1,
+                    "creo legacy continuation numeric runs",
+                )?;
                 runs.push(run);
             }
             let Some(comma) = comma else {
@@ -1383,8 +1380,7 @@ fn parent_object_offsets(
 ) -> Result<HashMap<usize, usize>, CodecError> {
     let mut parents = HashMap::new();
     for scope in ctx.admit_iter(scopes, "creo legacy scope traversal")? {
-        let mut active_storage =
-            ctx.reserve_scoped(0, "creo legacy active object storage")?;
+        let mut active_storage = ctx.reserve_scoped(0, "creo legacy active object storage")?;
         let mut active_objects = Vec::<(u32, usize)>::new();
         for value in ctx.admit_iter(&scope.values, "creo legacy value traversal")? {
             while active_objects
@@ -1819,8 +1815,10 @@ where
                 unresolved += 1;
                 continue;
             };
-            let mut payload_storage = ctx.reserve_scoped(0, "creo legacy numeric payload storage")?;
-            let dimensions = payload_storage.with_storage(|| array_dimensions(ctx, payload_bytes))?;
+            let mut payload_storage =
+                ctx.reserve_scoped(0, "creo legacy numeric payload storage")?;
+            let dimensions =
+                payload_storage.with_storage(|| array_dimensions(ctx, payload_bytes))?;
             let payload = if let Some(dimensions) = dimensions {
                 let mut next_index = index + 1;
                 let runs = if let Some(continuation) = &value.continuation {
@@ -1828,7 +1826,9 @@ where
                         unresolved += 1;
                         continue;
                     };
-                    let Some(runs) = payload_storage.with_storage(|| continuation_numeric_runs(ctx, bytes, scalar))? else {
+                    let Some(runs) = payload_storage
+                        .with_storage(|| continuation_numeric_runs(ctx, bytes, scalar))?
+                    else {
                         unresolved += 1;
                         continue;
                     };
@@ -1858,7 +1858,12 @@ where
                         let Some(run) = run else {
                             break;
                         };
-                        ctx.reserve_scoped_vec(&mut payload_storage, &mut runs, 1, "creo legacy numeric child runs")?;
+                        ctx.reserve_scoped_vec(
+                            &mut payload_storage,
+                            &mut runs,
+                            1,
+                            "creo legacy numeric child runs",
+                        )?;
                         runs.push(run);
                         next_index = position + 1;
                         pending = probe;

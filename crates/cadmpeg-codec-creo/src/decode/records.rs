@@ -25,14 +25,14 @@ use super::curve_expressions::curve_expression_record_id;
 use super::expanded::{affected_kind, extent_source, half_edge_ref};
 use super::feature_history::round::replayed_torus_minor_radius;
 use super::native_records::{
-    CreoConeHalfAngleOverride, CreoCurveExpressionAssignment, CreoCurveExpressionEquation,
-    CreoCurveExpressionLine, CreoCurveExpressionLocalSystem, CreoCurveExpressionSolveBlock,
-    CreoFeatureFieldValue, CreoFeatureOperationState, CreoFeatureOutline,
-    CreoFeatureParameterFrame, CreoHalfEdgeRef, CreoOperationNameRecord, CreoPlaneEnvelope,
-    CreoPositionalConeFrame, CreoPositionalCylinderFrame, CreoPositionalTorusFrame,
-    CreoSketchBoundedCurveSegment, CreoSketchCenteredLineSegment, CreoSketchCircleSegment,
-    CreoSketchConicSegment, CreoSketchDimension, CreoSketchDimensionReference,
-    CreoSketchDimensionReferenceTable, serialize_sketch_equations, CreoSketchOpaqueSegment,
+    serialize_sketch_equations, CreoConeHalfAngleOverride, CreoCurveExpressionAssignment,
+    CreoCurveExpressionEquation, CreoCurveExpressionLine, CreoCurveExpressionLocalSystem,
+    CreoCurveExpressionSolveBlock, CreoFeatureFieldValue, CreoFeatureOperationState,
+    CreoFeatureOutline, CreoFeatureParameterFrame, CreoHalfEdgeRef, CreoOperationNameRecord,
+    CreoPlaneEnvelope, CreoPositionalConeFrame, CreoPositionalCylinderFrame,
+    CreoPositionalTorusFrame, CreoSketchBoundedCurveSegment, CreoSketchCenteredLineSegment,
+    CreoSketchCircleSegment, CreoSketchConicSegment, CreoSketchDimension,
+    CreoSketchDimensionReference, CreoSketchDimensionReferenceTable, CreoSketchOpaqueSegment,
     CreoSketchOrderRow, CreoSketchPointSegment, CreoSketchPointState,
     CreoSketchReferenceLineSegment, CreoSketchRelation, CreoSketchRelationTriple,
     CreoSketchSavedEntity, CreoSketchSection3d, CreoSketchSectionOrientation,
@@ -3707,12 +3707,13 @@ pub(super) fn sketch_records<'a, 'ctx>(
                             uvar_id: row.uvar_id,
                             resolved_value: match row.variable_type {
                                 VariableType::U | VariableType::V => {
-                                    let coordinates = match &mut resolved_coordinates {
-                                        Some(coordinates) => coordinates,
-                                        slot => slot.insert(resolution_storage.with_storage(|| {
-                                            resolved_section_coordinates(ctx, definition)
-                                        })?),
-                                    };
+                                    let coordinates =
+                                        match &mut resolved_coordinates {
+                                            Some(coordinates) => coordinates,
+                                            slot => slot.insert(resolution_storage.with_storage(
+                                                || resolved_section_coordinates(ctx, definition),
+                                            )?),
+                                        };
                                     let coordinate = if row.variable_type == VariableType::U {
                                         0
                                     } else {
@@ -3726,26 +3727,24 @@ pub(super) fn sketch_records<'a, 'ctx>(
                                     .and_then(|point| point[coordinate])
                                 }
                                 VariableType::Radius => {
-                                    let radii = match &mut resolved_radii {
-                                        Some(radii) => radii,
-                                        slot => slot.insert(resolution_storage.with_storage(|| {
-                                            resolved_section_radii(ctx, definition)
-                                        })?),
-                                    };
-                                    ctx.get_btree_map(
-                                        radii,
-                                        &row.key,
-                                        "creo sketch radius lookup",
-                                    )?
-                                    .copied()
+                                    let radii =
+                                        match &mut resolved_radii {
+                                            Some(radii) => radii,
+                                            slot => slot.insert(resolution_storage.with_storage(
+                                                || resolved_section_radii(ctx, definition),
+                                            )?),
+                                        };
+                                    ctx.get_btree_map(radii, &row.key, "creo sketch radius lookup")?
+                                        .copied()
                                 }
                                 _ => {
-                                    let scalars = match &mut resolved_scalars {
-                                        Some(scalars) => scalars,
-                                        slot => slot.insert(resolution_storage.with_storage(|| {
-                                            resolved_section_scalar_values(ctx, definition)
-                                        })?),
-                                    };
+                                    let scalars =
+                                        match &mut resolved_scalars {
+                                            Some(scalars) => scalars,
+                                            slot => slot.insert(resolution_storage.with_storage(
+                                                || resolved_section_scalar_values(ctx, definition),
+                                            )?),
+                                        };
                                     ctx.get_btree_map(
                                         scalars,
                                         &(row.variable_type, row.key),
@@ -3770,68 +3769,51 @@ pub(super) fn sketch_records<'a, 'ctx>(
             )
         })?;
         if let Some(table) = &mut equations {
-            for equation in ctx.admit_iter(&mut table.rows, "creo native sketch equation traversal")? {
+            for equation in
+                ctx.admit_iter(&mut table.rows, "creo native sketch equation traversal")?
+            {
                 equation.offset = definition.body_position(equation.offset)?.source()?.get();
             }
         }
-        let record = storage.with_storage(|| Ok::<_, CodecError>(CreoSketchRecord {
-            id,
-            definition_id: definition.identity.id(),
-            owner_feature_id: definition.identity.owner_feature_id(),
-            source_section,
-            offset: definition.offset,
-            section_3d: definition
-                .section_3d
-                .as_ref()
-                .map(|section| CreoSketchSection3d {
-                    sketch_plane_entity_id: section.sketch_plane_entity_id,
-                    sketch_plane_flip: section.sketch_plane_flip.map(binary_flag_value),
-                    reference_planes: &section.reference_planes,
-                    reference_plane_datum_geometry_id: section.reference_plane_datum_geometry_id,
-                    orientation: CreoSketchSectionOrientation {
-                        section_flip: section.orientation.section_flip.map(binary_flag_value),
-                        reference_type: section.orientation.reference_type,
-                        segment_id: section.orientation.segment_id,
-                        reference_flip: section.orientation.reference_flip.map(binary_flag_value),
+        let record = storage.with_storage(|| {
+            let trim_entities = ctx.collect_vec(
+                ctx.admit_iter(
+                    definition
+                        .trim_entities
+                        .as_ref()
+                        .map_or(&[][..], |table| table.rows.as_slice()),
+                    "creo native sketch row traversal",
+                )?
+                .map(|entity| CreoSketchTrimEntity {
+                    external_id: entity.external_id,
+                    mode: entity.mode,
+                    vertices: entity.vertices,
+                    center_vertex: entity.center_vertex(),
+                    kind: match entity.kind {
+                        crate::feature::definitions::TrimEntityKind::Line => "line",
+                        crate::feature::definitions::TrimEntityKind::Arc { .. } => "arc",
                     },
-                    dimension_ids: &section.dimension_ids,
-                    offset: section.offset,
+                    offset: entity.offset,
                 }),
-            table_headers,
-            section_points,
-            solved_external_ids,
-            variables,
-            equations,
-            segments,
-            circle_segments,
-            point_segments,
-            centered_line_segments,
-            reference_line_segments,
-            bounded_curve_segments,
-            conic_segments,
-            opaque_segments,
-            trim_entities: ctx.collect_vec(
-                ctx.admit_iter(definition.trim_entities.as_ref().map_or(&[][..], |table| table.rows.as_slice()), "creo native sketch row traversal")?
-                    .map(|entity| CreoSketchTrimEntity {
-                        external_id: entity.external_id,
-                        mode: entity.mode,
-                        vertices: entity.vertices,
-                        center_vertex: entity.center_vertex(),
-                        kind: match entity.kind {
-                            crate::feature::definitions::TrimEntityKind::Line => "line",
-                            crate::feature::definitions::TrimEntityKind::Arc { .. } => "arc",
-                        },
-                        offset: entity.offset,
-                    }),
                 "creo native sketch trim entities",
-            )?,
-            trim_vertices: ctx.try_collect_vec(
-                (ctx.admit_iter(definition.trim_vertices.as_ref().map_or(&[][..], |table| table.rows.as_slice()), "creo native sketch row traversal")?)
+            )?;
+            let trim_vertices = ctx.try_collect_vec(
+                (ctx.admit_iter(
+                    definition
+                        .trim_vertices
+                        .as_ref()
+                        .map_or(&[][..], |table| table.rows.as_slice()),
+                    "creo native sketch row traversal",
+                )?)
                 .map(|vertex| {
                     Ok::<_, CodecError>(CreoSketchTrimVertex {
                         vertex_id: vertex.vertex_id,
                         entities: ctx.collect_vec(
-                            ctx.admit_iter(&vertex.entities, "creo native sketch trim vertex entity traversal")?.copied(),
+                            ctx.admit_iter(
+                                &vertex.entities,
+                                "creo native sketch trim vertex entity traversal",
+                            )?
+                            .copied(),
                             "creo native sketch trim vertex entities",
                         )?,
                         section_coordinates: vertex.section_coordinates.map(|point| {
@@ -3842,90 +3824,109 @@ pub(super) fn sketch_records<'a, 'ctx>(
                     })
                 }),
                 "creo native sketch trim vertices",
-            )?,
-            order_rows: ctx.collect_vec(
-                ctx.admit_iter(definition.order_table.as_ref().map_or(&[][..], |table| table.rows.as_slice()), "creo native sketch row traversal")?
-                    .map(|row| CreoSketchOrderRow {
-                        external_id: row.external_id,
-                        internal_id: row.internal_id,
-                        bitmask: row.bitmask,
-                        offset: row.offset,
-                    }),
+            )?;
+            let order_rows = ctx.collect_vec(
+                ctx.admit_iter(
+                    definition
+                        .order_table
+                        .as_ref()
+                        .map_or(&[][..], |table| table.rows.as_slice()),
+                    "creo native sketch row traversal",
+                )?
+                .map(|row| CreoSketchOrderRow {
+                    external_id: row.external_id,
+                    internal_id: row.internal_id,
+                    bitmask: row.bitmask,
+                    offset: row.offset,
+                }),
                 "creo native sketch order rows",
-            )?,
-            saved_entities: ctx.collect_vec(
-                ctx.admit_iter(definition.saved_section.as_ref().map_or(&[][..], |table| table.entities.as_slice()), "creo native sketch row traversal")?
-                    .map(|entity| match entity {
-                        crate::feature::definitions::FeatureSavedEntity::Line(line) => {
-                            CreoSketchSavedEntity::Line {
-                                entity_id: line.entity_id,
-                                references: &line.references,
-                                attributes: &line.attributes,
-                                endpoints: line.endpoints,
-                                body: &line.body,
-                                offset: line.offset,
-                            }
+            )?;
+            let saved_entities = ctx.collect_vec(
+                ctx.admit_iter(
+                    definition
+                        .saved_section
+                        .as_ref()
+                        .map_or(&[][..], |table| table.entities.as_slice()),
+                    "creo native sketch row traversal",
+                )?
+                .map(|entity| match entity {
+                    crate::feature::definitions::FeatureSavedEntity::Line(line) => {
+                        CreoSketchSavedEntity::Line {
+                            entity_id: line.entity_id,
+                            references: &line.references,
+                            attributes: &line.attributes,
+                            endpoints: line.endpoints,
+                            body: &line.body,
+                            offset: line.offset,
                         }
-                        crate::feature::definitions::FeatureSavedEntity::Arc(arc) => {
-                            CreoSketchSavedEntity::Arc {
-                                entity_id: arc.entity_id,
-                                center: arc.center,
-                                radius: arc.radius,
-                                endpoints: arc.endpoints,
-                                parameters: arc.parameters,
-                                body: &arc.body,
-                                offset: arc.offset,
-                            }
+                    }
+                    crate::feature::definitions::FeatureSavedEntity::Arc(arc) => {
+                        CreoSketchSavedEntity::Arc {
+                            entity_id: arc.entity_id,
+                            center: arc.center,
+                            radius: arc.radius,
+                            endpoints: arc.endpoints,
+                            parameters: arc.parameters,
+                            body: &arc.body,
+                            offset: arc.offset,
                         }
-                        crate::feature::definitions::FeatureSavedEntity::Circle(circle) => {
-                            CreoSketchSavedEntity::Circle {
-                                entity_id: circle.entity_id,
-                                center: circle.center,
-                                radius: circle.radius,
-                                body: &circle.body,
-                                offset: circle.offset,
-                            }
+                    }
+                    crate::feature::definitions::FeatureSavedEntity::Circle(circle) => {
+                        CreoSketchSavedEntity::Circle {
+                            entity_id: circle.entity_id,
+                            center: circle.center,
+                            radius: circle.radius,
+                            body: &circle.body,
+                            offset: circle.offset,
                         }
-                        crate::feature::definitions::FeatureSavedEntity::Conic(conic) => {
-                            CreoSketchSavedEntity::Conic {
-                                entity_id: conic.entity_id,
-                                endpoints: conic.endpoints,
-                                parameters: conic.parameters,
-                                coefficients: conic.coefficients,
-                                local_system: conic
-                                    .local_system
-                                    .map(cadmpeg_ir::units::FiniteVector::get),
-                                body: &conic.body,
-                                offset: conic.offset,
-                            }
+                    }
+                    crate::feature::definitions::FeatureSavedEntity::Conic(conic) => {
+                        CreoSketchSavedEntity::Conic {
+                            entity_id: conic.entity_id,
+                            endpoints: conic.endpoints,
+                            parameters: conic.parameters,
+                            coefficients: conic.coefficients,
+                            local_system: conic
+                                .local_system
+                                .map(cadmpeg_ir::units::FiniteVector::get),
+                            body: &conic.body,
+                            offset: conic.offset,
                         }
-                        crate::feature::definitions::FeatureSavedEntity::Spline(spline) => {
-                            CreoSketchSavedEntity::Spline {
-                                entity_id: spline.entity_id,
-                                declared_point_count: spline.declared_point_count,
-                                interpolation_points: &spline.interpolation_points,
-                                interpolation_points_body: &spline.interpolation_points_body,
-                                endpoint_tangents: crate::decode::native_records::SplineTangents(
-                                    spline.endpoint_tangents.as_ref(),
-                                ),
-                                parameters: crate::decode::native_records::SplineParameters(
-                                    spline.parameters.as_ref(),
-                                ),
-                                offset: spline.offset,
-                            }
+                    }
+                    crate::feature::definitions::FeatureSavedEntity::Spline(spline) => {
+                        CreoSketchSavedEntity::Spline {
+                            entity_id: spline.entity_id,
+                            declared_point_count: spline.declared_point_count,
+                            interpolation_points: &spline.interpolation_points,
+                            interpolation_points_body: &spline.interpolation_points_body,
+                            endpoint_tangents: crate::decode::native_records::SplineTangents(
+                                spline.endpoint_tangents.as_ref(),
+                            ),
+                            parameters: crate::decode::native_records::SplineParameters(
+                                spline.parameters.as_ref(),
+                            ),
+                            offset: spline.offset,
                         }
-                        crate::feature::definitions::FeatureSavedEntity::Dummy(dummy) => {
-                            CreoSketchSavedEntity::Dummy {
-                                entity_id: dummy.entity_id,
-                                body: &dummy.body,
-                                offset: dummy.offset,
-                            }
+                    }
+                    crate::feature::definitions::FeatureSavedEntity::Dummy(dummy) => {
+                        CreoSketchSavedEntity::Dummy {
+                            entity_id: dummy.entity_id,
+                            body: &dummy.body,
+                            offset: dummy.offset,
                         }
-                    }),
+                    }
+                }),
                 "creo native sketch saved entities",
-            )?,
-            dimensions: ctx.try_collect_vec(
-                (ctx.admit_iter(definition.dimensions.as_ref().map_or(&[][..], |table| table.rows.as_slice()), "creo native sketch row traversal")?).map(|dimension| {
+            )?;
+            let dimensions = ctx.try_collect_vec(
+                (ctx.admit_iter(
+                    definition
+                        .dimensions
+                        .as_ref()
+                        .map_or(&[][..], |table| table.rows.as_slice()),
+                    "creo native sketch row traversal",
+                )?)
+                .map(|dimension| {
                     Ok::<_, CodecError>(CreoSketchDimension {
                         external_id: dimension.external_id,
                         dimension_type: dimension.dimension_type,
@@ -3973,14 +3974,18 @@ pub(super) fn sketch_records<'a, 'ctx>(
                                         declared_count: table.declared_count,
                                         entity_ref: table.entity_ref,
                                         rows: ctx.collect_vec(
-                                            ctx.admit_iter(&table.rows, "creo native sketch dimension reference traversal")?.map(|reference| {
-                                                CreoSketchDimensionReference {
+                                            ctx.admit_iter(
+                                                &table.rows,
+                                                "creo native sketch dimension reference traversal",
+                                            )?
+                                            .map(
+                                                |reference| CreoSketchDimensionReference {
                                                     item_id: reference.item_id,
                                                     sense: reference.sense,
                                                     point: reference.point,
                                                     offset: reference.offset,
-                                                }
-                                            }),
+                                                },
+                                            ),
                                             "creo native sketch dimension references",
                                         )?,
                                         offset: table.offset,
@@ -3992,9 +3997,16 @@ pub(super) fn sketch_records<'a, 'ctx>(
                     })
                 }),
                 "creo native sketch dimensions",
-            )?,
-            relations: ctx.try_collect_vec(
-                (ctx.admit_iter(definition.relations.as_ref().map_or(&[][..], |table| table.rows.as_slice()), "creo native sketch row traversal")?).map(|relation| {
+            )?;
+            let relations = ctx.try_collect_vec(
+                (ctx.admit_iter(
+                    definition
+                        .relations
+                        .as_ref()
+                        .map_or(&[][..], |table| table.rows.as_slice()),
+                    "creo native sketch row traversal",
+                )?)
+                .map(|relation| {
                     Ok::<_, CodecError>(CreoSketchRelation {
                         relation_id: relation.relation_id,
                         used: relation.used,
@@ -4012,9 +4024,15 @@ pub(super) fn sketch_records<'a, 'ctx>(
                     })
                 }),
                 "creo native sketch relations",
-            )?,
-            skamps: ctx.try_collect_vec(
-                (ctx.admit_iter(definition.relations.as_ref().map_or(&[][..], FeatureRelationTable::skamps), "creo native sketch skamp traversal")?)
+            )?;
+            let skamps = ctx.try_collect_vec(
+                (ctx.admit_iter(
+                    definition
+                        .relations
+                        .as_ref()
+                        .map_or(&[][..], FeatureRelationTable::skamps),
+                    "creo native sketch skamp traversal",
+                )?)
                 .map(|skamp| {
                     Ok::<_, CodecError>(CreoSketchSkamp {
                         id: skamp.id,
@@ -4022,7 +4040,11 @@ pub(super) fn sketch_records<'a, 'ctx>(
                         flags: skamp.flags,
                         status: skamp.status,
                         items: ctx.collect_vec(
-                            ctx.admit_iter(&skamp.items, "creo native sketch skamp item traversal")?.map(|item| CreoSketchSkampItem {
+                            ctx.admit_iter(
+                                &skamp.items,
+                                "creo native sketch skamp item traversal",
+                            )?
+                            .map(|item| CreoSketchSkampItem {
                                 entity_id: item.entity_id,
                                 sense: item.sense,
                             }),
@@ -4032,18 +4054,73 @@ pub(super) fn sketch_records<'a, 'ctx>(
                     })
                 }),
                 "creo native sketch skamps",
-            )?,
-            relation_triples: ctx.collect_vec(
-                ctx.admit_iter(definition.relations.as_ref().map_or(&[][..], FeatureRelationTable::triples), "creo native sketch triple traversal")?
-                    .map(|triple| CreoSketchRelationTriple {
-                        relation: triple.relation_id,
-                        equation: triple.equation_id,
-                        skamp: triple.skamp_id,
-                        offset: triple.offset,
-                    }),
+            )?;
+            let relation_triples = ctx.collect_vec(
+                ctx.admit_iter(
+                    definition
+                        .relations
+                        .as_ref()
+                        .map_or(&[][..], FeatureRelationTable::triples),
+                    "creo native sketch triple traversal",
+                )?
+                .map(|triple| CreoSketchRelationTriple {
+                    relation: triple.relation_id,
+                    equation: triple.equation_id,
+                    skamp: triple.skamp_id,
+                    offset: triple.offset,
+                }),
                 "creo native sketch relation triples",
-            )?,
-        }))?;
+            )?;
+            Ok::<_, CodecError>(CreoSketchRecord {
+                id,
+                definition_id: definition.identity.id(),
+                owner_feature_id: definition.identity.owner_feature_id(),
+                source_section,
+                offset: definition.offset,
+                section_3d: definition
+                    .section_3d
+                    .as_ref()
+                    .map(|section| CreoSketchSection3d {
+                        sketch_plane_entity_id: section.sketch_plane_entity_id,
+                        sketch_plane_flip: section.sketch_plane_flip.map(binary_flag_value),
+                        reference_planes: &section.reference_planes,
+                        reference_plane_datum_geometry_id: section
+                            .reference_plane_datum_geometry_id,
+                        orientation: CreoSketchSectionOrientation {
+                            section_flip: section.orientation.section_flip.map(binary_flag_value),
+                            reference_type: section.orientation.reference_type,
+                            segment_id: section.orientation.segment_id,
+                            reference_flip: section
+                                .orientation
+                                .reference_flip
+                                .map(binary_flag_value),
+                        },
+                        dimension_ids: &section.dimension_ids,
+                        offset: section.offset,
+                    }),
+                table_headers,
+                section_points,
+                solved_external_ids,
+                variables,
+                equations,
+                segments,
+                circle_segments,
+                point_segments,
+                centered_line_segments,
+                reference_line_segments,
+                bounded_curve_segments,
+                conic_segments,
+                opaque_segments,
+                trim_entities,
+                trim_vertices,
+                order_rows,
+                saved_entities,
+                dimensions,
+                relations,
+                skamps,
+                relation_triples,
+            })
+        })?;
         storage.with_storage(|| ctx.reserve_vec(&mut records, 1, "creo sketch records"))?;
         records.push(record);
     }

@@ -502,18 +502,19 @@ pub(super) fn serialize_sketch_equations<S: serde::Serializer>(
     table: &Option<crate::feature::definitions::FeatureEquationTable>,
     serializer: S,
 ) -> Result<S::Ok, S::Error> {
-    let rows = table.as_ref().map(|table| table.rows.as_slice()).unwrap_or_default();
-    serializer.collect_seq(rows.iter().map(|equation| {
-        CreoSketchEquation {
-            equation_id: equation.equation_id,
-            function_id: equation.function_id,
-            explicit_argument_count: equation.explicit_argument_count,
-            arguments: &equation.arguments,
-            arguments_body: &equation.arguments_body,
-            auxiliary_body: &equation.auxiliary_body,
-            body: &equation.body,
-            offset: equation.offset,
-        }
+    let rows = table
+        .as_ref()
+        .map(|table| table.rows.as_slice())
+        .unwrap_or_default();
+    serializer.collect_seq(rows.iter().map(|equation| CreoSketchEquation {
+        equation_id: equation.equation_id,
+        function_id: equation.function_id,
+        explicit_argument_count: equation.explicit_argument_count,
+        arguments: &equation.arguments,
+        arguments_body: &equation.arguments_body,
+        auxiliary_body: &equation.auxiliary_body,
+        body: &equation.body,
+        offset: equation.offset,
     }))
 }
 
