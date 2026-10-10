@@ -26,7 +26,6 @@ const EPS_CONIC_EXACT_GEOMETRY: f64 = 1.0e-12;
 
 const CONIC_STANDARD_POSITION_RELATIVE_EPSILON: f64 = EPS_CONIC_EXACT_GEOMETRY;
 
-
 /// The bounded span one conic carrier is projected over.
 #[derive(Clone, Copy)]
 struct BoundedSpan {
@@ -137,7 +136,7 @@ pub(super) fn project<'ctx>(
     let mut wire_edges = Vec::new();
 
     let mut directory_entries = directory.iter();
-    while directory_entries.len() != 0 || ctx.resource_refusal().is_some() {
+    while directory_entries.len() != 0 {
         let Some(entry) = ctx.next_charged(&mut directory_entries, "iges conic directory traversal")? else { break; };
         if entry.entity_type != 104 || !(0..=3).contains(&entry.form) {
             continue;

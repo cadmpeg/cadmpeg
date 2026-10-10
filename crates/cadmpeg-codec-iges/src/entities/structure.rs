@@ -92,7 +92,7 @@ fn network_connect_points(
     };
     let mut points = Vec::new();
     let mut input = 0..count;
-    while !input.is_empty() || ctx.resource_refusal().is_some() {
+    while !input.is_empty() {
         let Some(index) = ctx.next_charged(&mut input, operation)? else {
             break;
         };
@@ -232,9 +232,6 @@ fn single_target_cycle(
             &current_sequence,
             "iges structure cycle visited nodes",
         )? {
-            if let Some(refusal) = ctx.resource_refusal() {
-                return Err(refusal.into());
-            }
             let mut source_values = IntoIterator::into_iter(path);
             while source_values.len() != 0 {
                 let Some(node) =
@@ -274,9 +271,6 @@ fn single_target_cycle(
             }
             _ => None,
         };
-    }
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
     }
     let mut source_values = IntoIterator::into_iter(path);
     while source_values.len() != 0 {
@@ -452,7 +446,7 @@ fn array_mask_valid(
     let mut storage = ctx.reserve_scoped(0, "iges array mask scratch")?;
     let mut positions = BTreeSet::new();
     let mut input = 0..count;
-    while !input.is_empty() || ctx.resource_refusal().is_some() {
+    while !input.is_empty() {
         let Some(index) = ctx.next_charged(&mut input, "iges structure list traversal")? else {
             break;
         };
@@ -769,9 +763,6 @@ fn attribute_definition_valid_and_shape<'ctx>(
     let mut attribute_types = BTreeSet::new();
     let mut shape_storage = ctx.reserve_scoped(0, "iges attribute shape descriptors")?;
     let mut descriptors = Vec::new();
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(0..attribute_count.unwrap_or_default());
     while !source_values.is_empty() {
         let Some(_) = ctx.next_charged(&mut source_values, "iges structure list traversal")? else {
@@ -814,9 +805,6 @@ fn attribute_definition_valid_and_shape<'ctx>(
             )?;
         }
         if entry.form != 0 {
-            if let Some(refusal) = ctx.resource_refusal() {
-                return Err(refusal.into());
-            }
             let mut source_values = IntoIterator::into_iter(0..value_count.unwrap_or_default());
             while !source_values.is_empty() {
                 let Some(_) =
@@ -872,7 +860,7 @@ fn unit_values_valid(
     let mut units_valid = count.is_some_and(|count| record.parameter_end() == 2 + count * 3);
     if let Some(count) = count.filter(|_| units_valid) {
         let mut input = 0..count;
-        while !input.is_empty() || ctx.resource_refusal().is_some() {
+        while !input.is_empty() {
             let Some(offset) = ctx.next_charged(&mut input, "iges structure list traversal")?
             else {
                 break;
@@ -1203,7 +1191,7 @@ fn property_fields_valid(
             )?;
             let mut counts = Some((0_usize, 1_usize));
             let mut offsets = 0..independent_count;
-            while !offsets.is_empty() || ctx.resource_refusal().is_some() {
+            while !offsets.is_empty() {
                 let Some(offset) =
                     ctx.next_charged(&mut offsets, "iges property independent counts")?
                 else {
@@ -1899,7 +1887,7 @@ fn linear_nurbs_boundary_points(
         return Ok(None);
     }
     let mut interior = knots.iter();
-    while interior.len() != 0 || ctx.resource_refusal().is_some() {
+    while interior.len() != 0 {
         let Some(knot) = ctx.next_charged(&mut interior, "iges plane NURBS interior knots")? else {
             break;
         };
@@ -1988,7 +1976,7 @@ fn bounded_plane_curve_is_simple(
                 return Ok(false);
             }
             let mut input = segments.iter();
-            while input.len() != 0 || context.ctx.resource_refusal().is_some() {
+            while input.len() != 0 {
                 let Some(segment) = context
                     .ctx
                     .next_charged(&mut input, "iges plane boundary segment traversal")?
@@ -2373,9 +2361,6 @@ fn plane_face_draft(
     sequences: &mut super::geometry::SourceSequences<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<ModelDraft, LegacyPlaneError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(LegacyPlaneError::Resource(refusal.into()));
-    }
     let tolerance = if resolution > 0.0 {
         Some(
             cadmpeg_ir::scalar::PositiveReal::new(resolution)
@@ -2395,7 +2380,7 @@ fn plane_face_draft(
     let inner_loop_count = boundary.0.iter().skip(1).len();
     let mut loop_ids = ctx.collection_vec(inner_loop_count, "iges legacy plane loop IDs")?;
     let mut input = boundary.0.into_iter().enumerate();
-    while input.len() != 0 || ctx.resource_refusal().is_some() {
+    while input.len() != 0 {
         let Some((boundary_index, edge)) =
             ctx.next_charged(&mut input, "iges structure list traversal")?
         else {
@@ -2594,7 +2579,7 @@ fn legacy_single_parent_face<'ir, 'ctx>(
     let mut children_are_type_108 = true;
     let mut children_have_negative_physical_status = true;
     let mut input = 0..child_count;
-    while !input.is_empty() || ctx.resource_refusal().is_some() {
+    while !input.is_empty() {
         let Some(offset) = ctx.next_charged(&mut input, "iges structure list traversal")? else {
             break;
         };
@@ -2662,7 +2647,7 @@ fn legacy_single_parent_face<'ir, 'ctx>(
         .chain(children.iter().copied())
         .zip(boundary_sequences.iter().copied())
         .enumerate();
-    while input.size_hint().0 != 0 || ctx.resource_refusal().is_some() {
+    while input.size_hint().0 != 0 {
         let Some((boundary_index, (plane_sequence, boundary_sequence))) =
             ctx.next_charged(&mut input, "iges structure list traversal")?
         else {
@@ -2756,7 +2741,7 @@ fn read_flow_required_pointers(
 ) -> Result<Option<Vec<u32>>, CodecError> {
     let mut pointers = ctx.collection_vec(count, operation)?;
     let mut input = 0..count;
-    while (!input.is_empty() || ctx.resource_refusal().is_some())
+    while (!input.is_empty())
         && ctx.next_charged(&mut input, operation)?.is_some()
     {
         let Some(FlowPointer::Sequence(sequence)) =
@@ -2778,7 +2763,7 @@ fn read_flow_optional_pointers(
 ) -> Result<Option<Vec<Option<u32>>>, CodecError> {
     let mut pointers = ctx.collection_vec(count, "iges flow continuation pointers")?;
     let mut input = 0..count;
-    while (!input.is_empty() || ctx.resource_refusal().is_some())
+    while (!input.is_empty())
         && ctx
             .next_charged(&mut input, "iges structure list traversal")?
             .is_some()
@@ -2803,7 +2788,7 @@ fn definition_members(
 ) -> Result<Option<Vec<u32>>, CodecError> {
     let mut members = ctx.collection_vec(count, operation)?;
     let mut input = 0..count;
-    while !input.is_empty() || ctx.resource_refusal().is_some() {
+    while !input.is_empty() {
         let Some(index) = ctx.next_charged(&mut input, operation)? else {
             break;
         };
@@ -2906,7 +2891,7 @@ fn flow_associativity(
         return Ok(None);
     };
     let mut input = 0..counts[3];
-    while (!input.is_empty() || ctx.resource_refusal().is_some())
+    while (!input.is_empty())
         && ctx
             .next_charged(&mut input, "iges structure list traversal")?
             .is_some()
@@ -3466,9 +3451,6 @@ pub(super) fn project<'ctx>(
                             };
                             let mut display_count = 0_usize;
                             if let Some(groups) = groups {
-                                if let Some(refusal) = ctx.resource_refusal() {
-                                    return Err(refusal.into());
-                                }
                                 let mut source_values =
                                     IntoIterator::into_iter(groups.properties());
                                 while source_values.len() != 0 {
@@ -3629,9 +3611,6 @@ pub(super) fn project<'ctx>(
                             }) {
                             Some(groups) => {
                                 let mut sheet_ids = 0_usize;
-                                if let Some(refusal) = ctx.resource_refusal() {
-                                    return Err(refusal.into());
-                                }
                                 let mut source_values =
                                     IntoIterator::into_iter(groups.properties());
                                 while source_values.len() != 0 {
@@ -3832,7 +3811,7 @@ pub(super) fn project<'ctx>(
         let mut values_per_row = shape.map(|_| 0_usize);
         if let Some(shape) = shape {
             let mut descriptors = shape.descriptors.iter();
-            while descriptors.len() != 0 || ctx.resource_refusal().is_some() {
+            while descriptors.len() != 0 {
                 let Some((_, count)) =
                     ctx.next_charged(&mut descriptors, "iges attribute row width")?
                 else {
@@ -3854,18 +3833,12 @@ pub(super) fn project<'ctx>(
             });
         let mut cursor = value_start;
         let mut values_valid = shape.is_some() && row_count.is_some();
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let mut source_values = IntoIterator::into_iter(0..row_count.unwrap_or_default());
         while !source_values.is_empty() {
             let Some(_) = ctx.next_charged(&mut source_values, "iges structure list traversal")?
             else {
                 break;
             };
-            if let Some(refusal) = ctx.resource_refusal() {
-                return Err(refusal.into());
-            }
             let mut source_values = IntoIterator::into_iter(
                 shape.map_or(&[][..], |shape| shape.descriptors.as_slice()),
             );
@@ -3875,9 +3848,6 @@ pub(super) fn project<'ctx>(
                 else {
                     break;
                 };
-                if let Some(refusal) = ctx.resource_refusal() {
-                    return Err(refusal.into());
-                }
                 let mut source_values = IntoIterator::into_iter(0..*count);
                 while !source_values.is_empty() {
                     let Some(_) =
@@ -3988,9 +3958,6 @@ pub(super) fn project<'ctx>(
         let class_count = record.count(1).filter(|count| *count > 0);
         let mut cursor = 2;
         let mut classes_valid = class_count.is_some();
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let mut source_values = IntoIterator::into_iter(0..class_count.unwrap_or_default());
         while !source_values.is_empty() {
             let Some(_) = ctx.next_charged(&mut source_values, "iges structure list traversal")?
@@ -4204,9 +4171,6 @@ pub(super) fn project<'ctx>(
                         let _plane_storage;
                         let (candidate, plane_sequences, result_plane_storage) = result;
                         _plane_storage = result_plane_storage;
-                        if let Some(refusal) = ctx.resource_refusal() {
-                            return Err(refusal.into());
-                        }
                         let mut source_values = IntoIterator::into_iter(plane_sequences);
                         while source_values.len() != 0 {
                             let Some(sequence) = ctx.next_charged(
@@ -4385,9 +4349,6 @@ pub(super) fn project<'ctx>(
     drop(plane_proofs);
     drop(plane_index);
     let mut commit_session = CommitSession::new(ir, ctx, None)?;
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(legacy_face_candidates);
     while source_values.len() != 0 {
         let Some((entry, candidate)) =
@@ -4410,9 +4371,6 @@ pub(super) fn project<'ctx>(
     }
 
     let mut flow_graph = BTreeMap::new();
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(&flows);
     while source_values.len() != 0 {
         let Some((sequence, flow)) =
@@ -4423,7 +4381,7 @@ pub(super) fn project<'ctx>(
         let targets = scratch.with_storage(|| -> Result<Vec<u32>, CodecError> {
             let mut targets = Vec::new();
             let mut input = flow.continuations.iter();
-            while input.len() != 0 || ctx.resource_refusal().is_some() {
+            while input.len() != 0 {
                 let Some(slot) =
                     ctx.next_charged(&mut input, "iges flow graph continuation slots")?
                 else {
@@ -4874,9 +4832,6 @@ pub(super) fn project<'ctx>(
     }
 
     let mut visited_instances = BTreeSet::new();
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(&solid_instances);
     while source_values.len() != 0 {
         let Some((sequence, target)) =
@@ -4973,7 +4928,7 @@ pub(super) fn project<'ctx>(
             .with_storage(|| ctx.collection_vec(count, "iges solid assembly items"))?;
         let mut items_valid = true;
         let mut input = 0..count;
-        while !input.is_empty() || ctx.resource_refusal().is_some() {
+        while !input.is_empty() {
             let Some(index) = ctx.next_charged(&mut input, "iges structure list traversal")? else {
                 break;
             };
@@ -5019,9 +4974,6 @@ pub(super) fn project<'ctx>(
     }
 
     let mut assembly_graph = BTreeMap::new();
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(&assemblies);
     while source_values.len() != 0 {
         let Some((sequence, definition)) =
@@ -5032,7 +4984,7 @@ pub(super) fn project<'ctx>(
         let targets = scratch.with_storage(|| -> Result<Vec<u32>, CodecError> {
             let mut targets = Vec::new();
             let mut input = definition.items.iter();
-            while input.len() != 0 || ctx.resource_refusal().is_some() {
+            while input.len() != 0 {
                 let Some((item, _)) = ctx.next_charged(&mut input, "iges assembly graph items")?
                 else {
                     break;
@@ -5058,7 +5010,7 @@ pub(super) fn project<'ctx>(
     }
     let mut visited = BTreeSet::new();
     let mut input = assemblies.iter();
-    while input.len() != 0 || ctx.resource_refusal().is_some() {
+    while input.len() != 0 {
         let Some((sequence, assembly)) =
             ctx.next_charged(&mut input, "iges structure list traversal")?
         else {
@@ -5074,7 +5026,7 @@ pub(super) fn project<'ctx>(
         let mut has_brep = false;
         let mut items_valid = true;
         let mut input = assembly.items.iter();
-        while input.len() != 0 || ctx.resource_refusal().is_some() {
+        while input.len() != 0 {
             let Some((item, transformation)) =
                 ctx.next_charged(&mut input, "iges structure list traversal")?
             else {
@@ -5655,7 +5607,7 @@ pub(super) fn project<'ctx>(
     }
 
     let mut input = definitions.iter();
-    while input.len() != 0 || ctx.resource_refusal().is_some() {
+    while input.len() != 0 {
         let Some((sequence, definition)) =
             ctx.next_charged(&mut input, "iges structure list traversal")?
         else {
@@ -5763,9 +5715,6 @@ pub(super) fn project<'ctx>(
             )?;
         }
     }
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(&instances);
     while source_values.len() != 0 {
         let Some((sequence, definition_sequence)) =
@@ -5832,7 +5781,7 @@ pub(super) fn project<'ctx>(
         }
     }
     let mut input = network_definitions.iter();
-    while input.len() != 0 || ctx.resource_refusal().is_some() {
+    while input.len() != 0 {
         let Some((sequence, definition)) =
             ctx.next_charged(&mut input, "iges structure list traversal")?
         else {
@@ -5936,9 +5885,6 @@ pub(super) fn project<'ctx>(
                 ),
             )?;
         }
-    }
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
     }
     let mut source_values = IntoIterator::into_iter(&network_instances);
     while source_values.len() != 0 {

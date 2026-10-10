@@ -38,9 +38,6 @@ pub(super) fn planar_polyline_has_self_intersection(
     points: &[[f64; 2]],
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if points.len() < 3 {
         return Ok(false);
     }
@@ -132,9 +129,6 @@ pub(super) fn plane_coordinates(
     plane: (Point3, Vector3),
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<[f64; 2]>>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(normal) = plane.1.unit() else {
         return Ok(None);
     };
@@ -172,9 +166,6 @@ pub(super) fn linear_nurbs_parameters<'ctx>(
     range: [f64; 2],
     ctx: &'ctx DecodeContext<'_>,
 ) -> Result<Option<ScopedValues<'ctx, f64>>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some((degree, expected_knot_count)) = usize::try_from(degree).ok().and_then(|degree| {
         control_count
             .checked_add(degree)?
@@ -218,9 +209,6 @@ pub(super) fn linear_nurbs_parameters<'ctx>(
         "iges linear NURBS parameters",
     )?;
     let mut previous = range[0];
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(knots);
     while source_values.len() != 0 {
         let Some(&knot) =
@@ -307,9 +295,6 @@ fn point_display_symbol_valid(
     global_table: GlobalTable,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     Ok(match record.value(4) {
         None | Some(crate::parameter::TokenValue::Omitted) => true,
         Some(crate::parameter::TokenValue::Integer(0)) => true,
@@ -385,9 +370,6 @@ fn classify_control_point_plane(
     tolerance: f64,
     ctx: &DecodeContext<'_>,
 ) -> Result<ControlPointPlane, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(origin) = points.first().map(|point| point.get()) else {
         return Ok(ControlPointPlane::NoUniquePlane);
     };
@@ -439,9 +421,6 @@ fn control_points_fit_plane(
     tolerance: f64,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(origin) = points.first().map(|point| point.get()) else {
         return Ok(false);
     };
@@ -554,9 +533,6 @@ pub(super) fn type126_declared_control_points(
     precision: RealPrecision,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<[DeclaredInterval; 3]>>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some((control_count, pole_start)) = (|| {
         let control_count = record.count(1)?.checked_add(1)?;
         let degree = usize::try_from(record.integer(2)?).ok()?;
@@ -573,7 +549,7 @@ pub(super) fn type126_declared_control_points(
     let mut controls =
         ctx.collection_vec(control_count, "iges Type126 declared control intervals")?;
     let mut point_iter = 0..control_count;
-    while !point_iter.is_empty() || ctx.resource_refusal().is_some() {
+    while !point_iter.is_empty() {
         let Some(point) =
             ctx.next_charged(&mut point_iter, "iges Type126 declared control traversal")?
         else {
@@ -613,9 +589,6 @@ pub(super) fn declared_affine_progression(
     uncertainties: &[f64],
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if values.len() < 2
         || values.len() != uncertainties.len()
         || ctx.any_by(
@@ -635,14 +608,14 @@ pub(super) fn declared_affine_progression(
     let mut lower = f64::NEG_INFINITY;
     let mut upper = f64::INFINITY;
     let mut first_iter = 0..values.len();
-    while !first_iter.is_empty() || ctx.resource_refusal().is_some() {
+    while !first_iter.is_empty() {
         let Some(first) = ctx.next_charged(&mut first_iter, "iges affine progression origins")?
         else {
             break;
         };
         let first_interval = DeclaredInterval::around(values[first], uncertainties[first]);
         let mut second_iter = first + 1..values.len();
-        while !second_iter.is_empty() || ctx.resource_refusal().is_some() {
+        while !second_iter.is_empty() {
             let Some(second) =
                 ctx.next_charged(&mut second_iter, "iges affine progression pairs")?
             else {
@@ -880,9 +853,6 @@ pub(crate) fn resolve_transform(
     path: &mut BTreeSet<u32>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Transform, TransformResolutionError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(CodecError::ResourceLimit(refusal).into());
-    }
     if sequence == 0 {
         return Ok(Transform::identity());
     }
@@ -1026,7 +996,7 @@ pub(crate) fn enforce_transform_depth(
             policy.min(MAX_TRANSFORM_DEPTH)
         });
     let mut entry_iter = directory.iter();
-    while entry_iter.len() != 0 || ctx.resource_refusal().is_some() {
+    while entry_iter.len() != 0 {
         let Some(entry) = ctx.next_charged(
             &mut entry_iter,
             "iges transform preflight directory traversal",
@@ -1139,9 +1109,6 @@ impl BoundaryVertexDerivation {
         storage.with_storage(|| {
             let mut source_endpoints =
                 ctx.collection_vec(members.len(), "iges boundary derivation endpoints")?;
-            if let Some(refusal) = ctx.resource_refusal() {
-                return Err(refusal.into());
-            }
             let mut source_values = IntoIterator::into_iter(members);
             while source_values.len() != 0 {
                 let Some(member) = ctx.next_charged(
@@ -1195,9 +1162,6 @@ impl ProjectionOutcome<'_> {
         } = self;
         source_decoded_storage = result_decoded_storage;
         loss_slots_storage = result_loss_slots_storage;
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let mut source_values = IntoIterator::into_iter(source_decoded);
         while source_values.len() != 0 {
             let Some(sequence) =
@@ -1237,9 +1201,6 @@ impl WireProjectionOutcome<'_> {
         wire_edges: &mut Vec<EdgeId>,
         ctx: &DecodeContext<'_>,
     ) -> Result<(), CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let mut source_values = IntoIterator::into_iter(self.decoded);
         while source_values.len() != 0 {
             let Some(sequence) =
@@ -1337,9 +1298,6 @@ fn consumed_support_sequences<'ctx>(
         let Some(count) = record.count(1) else {
             continue;
         };
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let mut source_values = IntoIterator::into_iter(0..count.min(record.parameter_end()));
         while !source_values.is_empty() {
             let Some(index) =
@@ -1416,7 +1374,7 @@ fn consumed_support_sequences<'ctx>(
     }
 
     let mut consumed = direction_sequences;
-    while !transform_sequences.is_empty() || ctx.resource_refusal().is_some() {
+    while !transform_sequences.is_empty() {
         let Some(sequence) = ctx
             .next_charged(
                 &mut transform_sequences.iter(),
@@ -1564,7 +1522,7 @@ pub(super) fn curve_geometry_coplanar(
         SolvedCurveGeometry::Composite { segments, .. } => {
             let mut valid = true;
             let mut segment_iter = segments.iter();
-            while segment_iter.len() != 0 || ctx.resource_refusal().is_some() {
+            while segment_iter.len() != 0 {
                 let Some(segment) =
                     ctx.next_charged(&mut segment_iter, "iges coplanar composite segments")?
                 else {
@@ -1789,9 +1747,6 @@ impl<'ctx> SourceSequences<'ctx> {
         stem: &crate::ids::Stem,
         ctx: &DecodeContext<'_>,
     ) -> Result<(), CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         if let Some(sequence) = stem.origin() {
             Self::insert(
                 &mut self.storage,
@@ -2131,7 +2086,7 @@ pub(crate) fn project_geometry<'ctx>(
         }
     }
     let mut primitive_entries = directory.iter();
-    while primitive_entries.len() != 0 || ctx.resource_refusal().is_some() {
+    while primitive_entries.len() != 0 {
         let Some(entry) =
             ctx.next_charged(&mut primitive_entries, "iges geometry family traversal")?
         else {
@@ -2642,7 +2597,7 @@ pub(crate) fn project_geometry<'ctx>(
         })?;
     }
     let mut primitive_entries = directory.iter();
-    while primitive_entries.len() != 0 || ctx.resource_refusal().is_some() {
+    while primitive_entries.len() != 0 {
         let Some(entry) =
             ctx.next_charged(&mut primitive_entries, "iges geometry family traversal")?
         else {

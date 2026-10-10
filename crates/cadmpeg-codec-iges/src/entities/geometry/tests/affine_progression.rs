@@ -15,4 +15,3 @@ fn declared_intervals_prove_or_reject_an_affine_control_polygon() {
         assert!(!declared_affine_progression(&[0.0, 1.0, 2.2, 3.0], &[0.0; 4], ctx).unwrap());
     });
 }
-

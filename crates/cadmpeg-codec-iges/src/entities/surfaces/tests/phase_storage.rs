@@ -257,28 +257,9 @@ fn closure_relative_weight_underflow_accepts_exact_work_and_releases_scratch() {
 }
 
 #[test]
-fn shared_weights_negative_scale_is_free_and_preserves_original_refusal() {
-    let first = rail(0.0, Some(vec![-1.0, 1.0]));
-    let second = rail(1.0, None);
-    let before = (serde_json::to_value(&first).unwrap(), serde_json::to_value(&second).unwrap());
-    crate::test_support::with_entry_context(|ctx, original| {
-        // The two fixed indexed weights yield scale -1. No range visit or
-        // vector allocation executes on the nonpositive-scale return.
-        let result = super::super::projectively_shared_weights(&first, &second, ctx);
-        match original {
-            Some(first) => assert!(matches!(result,
-                Err(CodecError::ResourceLimit(last)) if last == first)),
-            None => assert!(result.unwrap().is_none()),
-        }
-        assert_eq!((serde_json::to_value(&first).unwrap(), serde_json::to_value(&second).unwrap()), before);
-    });
-}
-
-#[test]
 fn shared_weights_last_mismatch_accepts_exact_visits_without_allocation() {
     let first = rail(0.0, Some(vec![1.0, 0.5]));
     let second = rail(1.0, None);
-    let negative = rail(0.0, Some(vec![-1.0, 1.0]));
     let before = (serde_json::to_value(&first).unwrap(), serde_json::to_value(&second).unwrap());
     // Scale is 1, the first pair agrees, and the second pair differs.
     // The matching predicate stops on that second visit before end probing.
@@ -300,7 +281,7 @@ fn shared_weights_last_mismatch_accepts_exact_visits_without_allocation() {
             assert_eq!(original.operation, "iges ruled shared weight equality");
             assert_eq!((original.limit, original.used, original.additional), (1, 1, 1));
             for _ in 0..64 {
-                for replay in [&first, &negative] {
+                { let replay = &first;
                     assert!(matches!(super::super::projectively_shared_weights(replay, &second, &ctx),
                         Err(CodecError::ResourceLimit(last)) if last == original));
                 }

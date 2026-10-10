@@ -44,9 +44,6 @@ impl CopiousProjectionOutcome<'_> {
         free_vertices: &mut Vec<VertexId>,
         ctx: &DecodeContext<'_>,
     ) -> Result<(), CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let mut source_values = IntoIterator::into_iter(self.decoded);
         while source_values.len() != 0 {
             let Some(sequence) = ctx.next_charged(&mut source_values, "iges copious merged sequences")? else {
@@ -110,9 +107,6 @@ fn has_forbidden_form_63_duplicate(
     resolution: f64,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if points.len() == 2 {
         return Ok(true);
     }
@@ -132,7 +126,7 @@ fn has_forbidden_form_63_duplicate(
     let mut cells = HashMap::new();
     let cell_size = resolution * 0.5;
     let mut input = points.iter().copied().enumerate();
-    while input.len() != 0 || ctx.resource_refusal().is_some() {
+    while input.len() != 0 {
         let Some((index, point)) = ctx.next_charged(&mut input, "iges copious duplicate points")? else { break; };
         if cell_size <= 0.0 {
             let exact_points = exact_points.get_or_insert_with(HashMap::new);
@@ -230,9 +224,6 @@ pub(super) fn project<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences<'_>,
 ) -> Result<CopiousProjectionOutcome<'ctx>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(CodecError::ResourceLimit(refusal));
-    }
     let mut decoded_storage = ctx.reserve_scoped(0, "iges copious decoded sequences")?;
     let mut decoded = BTreeSet::new();
     let mut loss_slots_storage = ctx.reserve_scoped(0, "iges entity loss slots")?;
@@ -451,7 +442,7 @@ pub(super) fn project<'ctx>(
         let mut tuples_valid = true;
         let mut positions_valid = true;
         let mut indices = (tuple_start..tuple_end).step_by(tuple_width);
-        while indices.len() != 0 || ctx.resource_refusal().is_some() {
+        while indices.len() != 0 {
             let Some(start) = ctx.next_charged(&mut indices, "iges copious tuple traversal")? else { break; };
             let mut tuple = [FiniteReal::ZERO; 6];
             for (offset, value) in tuple.iter_mut().enumerate().take(tuple_width) {
@@ -527,9 +518,6 @@ pub(super) fn project<'ctx>(
             continue;
         }
         if projects_as_points {
-            if let Some(refusal) = ctx.resource_refusal() {
-                return Err(refusal.into());
-            }
             let mut source_values = IntoIterator::into_iter(positions).enumerate();
             while source_values.len() != 0 {
                 let Some((index, position)) = ctx.next_charged(&mut source_values, "iges copious point projection")? else {

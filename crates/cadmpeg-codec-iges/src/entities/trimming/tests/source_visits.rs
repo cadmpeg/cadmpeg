@@ -45,33 +45,13 @@ fn coordinate_quantum_charges_only_actual_first_and_last_points() {
                 assert_eq!(first.dimension, ResourceDimension::WorkUnits);
                 assert_eq!(first.operation, "iges face coordinate magnitude");
                 assert_eq!((first.limit, first.used, first.additional), (work, work, 1));
-                for end in [count, 0] {
+                { let end = count;
                     assert!(matches!(super::super::coordinate_quantum(&global,
                         (0..end).map(|_| Point3::new(100.0, 0.0, 0.0)), &ctx),
                         Err(CodecError::ResourceLimit(last)) if last == first));
                 }
                 assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
             }
-        }
-    }
-}
-
-#[test]
-fn empty_coordinate_source_is_free_and_preserves_original_refusal() {
-    let global = global();
-    for fused in [false, true] {
-        let arena = DecodeArena::new();
-        let policy = policy(0);
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        if fused {
-            let CodecError::ResourceLimit(first) = ctx.charge_work(1,
-                "test original empty coordinate refusal").unwrap_err() else { panic!("expected original refusal"); };
-            assert!(matches!(super::super::coordinate_quantum(&global,
-                std::iter::empty(), &ctx), Err(CodecError::ResourceLimit(last)) if last == first));
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
-        } else {
-            assert_eq!(super::super::coordinate_quantum(&global, std::iter::empty(), &ctx).unwrap(), 0.0);
-            ctx.finish_session().unwrap();
         }
     }
 }

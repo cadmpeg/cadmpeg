@@ -308,9 +308,6 @@ fn admit_with_scoped_loss_slots<T>(
     losses: &mut Vec<LossNote>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<T>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     match result {
         Ok(value) => Ok(Some(value)),
         Err(message) => {
@@ -327,9 +324,6 @@ fn admit_with_scoped_loss_slots<T>(
 }
 
 fn non_resource_error(error: CodecError, ctx: &DecodeContext<'_>) -> Result<String, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     match error {
         CodecError::ResourceLimit(_) => Err(error),
         other => ctx.format_retained(format_args!("{other}"), "iges diagnostic error text"),
@@ -350,7 +344,7 @@ fn directed_cycle<I: DoubleEndedIterator<Item = u32> + ExactSizeIterator>(
     let mut stack = Vec::new();
     search_storage.with_storage(|| ctx.reserve_vec(&mut stack, 1, "iges cycle stack"))?;
     stack.push((sequence, false));
-    while !stack.is_empty() || ctx.resource_refusal().is_some() {
+    while !stack.is_empty() {
         let Some((current, expanded)) =
             ctx.next_charged(&mut std::iter::from_fn(|| stack.pop()), "iges cycle work")?
         else {
@@ -372,7 +366,7 @@ fn directed_cycle<I: DoubleEndedIterator<Item = u32> + ExactSizeIterator>(
         search_storage.with_storage(|| ctx.reserve_vec(&mut stack, 1, "iges cycle stack"))?;
         stack.push((current, true));
         let mut targets = successors(current)?.rev();
-        while targets.len() != 0 || ctx.resource_refusal().is_some() {
+        while targets.len() != 0 {
             let Some(target) = ctx.next_charged(&mut targets, "iges cycle work")? else {
                 break;
             };

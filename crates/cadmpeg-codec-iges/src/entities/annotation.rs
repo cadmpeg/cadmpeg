@@ -158,7 +158,7 @@ impl<'ctx, 'policy> AnnotationValidation<'ctx, 'policy> {
         let mut total = Some(0_i64);
         if let Some(strings) = note.count(1) {
             let mut offsets = 0..strings;
-            while !offsets.is_empty() || self.ctx.resource_refusal().is_some() {
+            while !offsets.is_empty() {
                 let Some(offset) = self
                     .ctx
                     .next_charged(&mut offsets, "iges flag note width sum")?
@@ -229,9 +229,6 @@ impl<'ctx, 'ir> SectionedAreaGeometryCache<'ctx, 'ir> {
         resolution: f64,
         ctx: &'ctx DecodeContext<'_>,
     ) -> Result<bool, CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         if !resolution.is_finite() || resolution < 0.0 {
             return Ok(false);
         }
@@ -371,9 +368,6 @@ fn general_note_text_valid_for_global_table(
     is_v5_null_string: bool,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if font != 2001 {
         return Ok(true);
     }
@@ -404,9 +398,6 @@ fn general_note_valid_for_global_table(
     form: i64,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let parameter_end = crate::parameter::general_note_layout_end(record, form)
         .unwrap_or_else(|| record.parameter_end());
     if !general_note_suffix_structurally_valid(record, parameter_end) {
@@ -541,9 +532,6 @@ fn new_general_note_valid(
     entries: &BTreeMap<u32, &DirectoryEntry>,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let parameter_end = record.parameter_end();
     let count = match record.count_with_stride_before_default_tail(12, 20, parameter_end) {
         DefaultTailCount::Held(count) if count > 0 => count,
@@ -636,9 +624,6 @@ fn leader_valid_for_global_table(
     global_table: GlobalTable,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(count) = record
         .count_with_stride_at(1, 7, 2, record.parameter_end())
         .filter(|count| *count > 0)
@@ -676,9 +661,6 @@ fn pointer(
     entries: &BTreeMap<u32, &DirectoryEntry>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<u32>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(sequence) = record
         .integer(index)
         .and_then(|value| u32::try_from(value).ok())
@@ -748,9 +730,6 @@ fn general_symbol_note_valid(
     global_table: GlobalTable,
     validation: &mut AnnotationValidation<'_, '_>,
 ) -> Result<bool, CodecError> {
-    if let Some(refusal) = validation.ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     Ok(match record.integer(1) {
         Some(0) => form == 0 && !matches!(global_table, GlobalTable::V4_0),
         Some(_) => pointer(record, 1, entries, validation.ctx)?
@@ -778,9 +757,6 @@ fn dimension_children_valid(
     entries: &BTreeMap<u32, &DirectoryEntry>,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let first_transform = loop {
         let Some(sequence) = children.next() else {
             return Ok(false);
@@ -815,9 +791,6 @@ fn dimension_children_valid(
 }
 
 fn witness_valid(record: &ParameterRecord, ctx: &DecodeContext<'_>) -> Result<bool, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(count) = record
         .count_with_stride_at(2, 4, 2, record.parameter_end())
         .filter(|count| *count >= 3 && *count % 2 == 1)
@@ -1444,9 +1417,6 @@ fn sectioned_area_valid<'ctx>(
     context: SectionedAreaContext,
     ctx: &'ctx DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let SectionedAreaContext {
         global_table,
         transform,

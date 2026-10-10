@@ -43,9 +43,7 @@ fn weighted_source_case(count: usize, work: u64, operation: Option<&'static str>
             assert!(matches!(super::super::pair_admitted_surface_poles(
                 &ctx, rows, Some(weights), "test weighted outer rows", "test weighted row controls"),
                 Err(CodecError::ResourceLimit(last)) if last == first));
-            assert!(matches!(super::super::pair_admitted_surface_poles::<f64>(
-                &ctx, Vec::new(), None, "test weighted outer rows", "test weighted row controls"),
-                Err(CodecError::ResourceLimit(last)) if last == first));
+
         }
         assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
     } else {
