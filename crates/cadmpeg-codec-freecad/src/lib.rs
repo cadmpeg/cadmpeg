@@ -1946,7 +1946,7 @@ impl EncoderBackend for FcstdCodec {
 fn bind_gui_entry_references<'g>(
     ctx: &DecodeContext<'_>,
     entry_records: &mut [native::EntryRecord],
-    gui_graph: &'g gui::Graph,
+    gui_graph: &'g gui::Graph<'_>,
 ) -> Result<(), CodecError> {
     const OPERATION: &str = "FCStd GUI entry references";
     if entry_records.is_empty() {

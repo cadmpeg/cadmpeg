@@ -1046,11 +1046,11 @@ fn y4_2_decode_refuses_unadmitted_gui_text_copy() {
         .expect("service profile admits the GUI state");
 
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "FCStd GUI state XML",
         |cap| {
             let mut options = DecodeOptions::default();
-            options.policy.limits.max_retained_bytes = cap;
+            options.policy.limits.max_work_units = cap;
             FcstdCodec
                 .decode(&mut Cursor::new(&bytes), &options)
                 .map(|_| ())
@@ -1067,7 +1067,7 @@ fn y4_2_decode_refuses_unadmitted_gui_text_copy() {
         matches!(
             &error,
             cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
                     && limit.operation.starts_with("FCStd GUI ")
         ),
         "{error:?}"
@@ -1239,7 +1239,7 @@ fn gui_presentation_document_refuses_at_caller_limit() {
     );
 }
 
-fn view_provider_graph() -> super::super::Graph {
+fn view_provider_graph() -> super::super::Graph<'static> {
     super::super::Graph {
         providers: vec![crate::native::GuiViewProviderRecord {
             id: "fcstd:gui:view-provider#Provider".into(),

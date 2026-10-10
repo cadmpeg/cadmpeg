@@ -30,11 +30,13 @@ use crate::native::{
 use schema::Admission as GuiSchemaAdmission;
 
 #[derive(Default)]
-pub(crate) struct Graph {
+pub(crate) struct Graph<'ctx> {
     pub(crate) documents: Vec<GuiDocumentRecord>,
     pub(crate) providers: Vec<GuiViewProviderRecord>,
     pub(crate) properties: Vec<GuiPropertyRecord>,
     pub(crate) losses: Vec<LossNote>,
+    // Native fields drop before this reservation.
+    pub(crate) _native_storage: Option<cadmpeg_core::decode::ScopedReservation<'ctx>>,
 }
 
 struct AppearancePlan<'ctx> {
@@ -679,12 +681,12 @@ impl<'source, 'ctx> TopologyIndex<'source, 'ctx> {
     }
 }
 
-pub(crate) fn transfer(
-    ctx: &DecodeContext<'_>,
+pub(crate) fn transfer<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     ir: &mut CadIr,
     bytes: &[u8],
     sources: &GuiSources<'_, '_>,
-) -> Result<Graph, CodecError> {
+) -> Result<Graph<'ctx>, CodecError> {
     let text = ctx
         .validate_utf8(bytes, "validate FreeCAD XML UTF-8")?
         .map_err(|_| CodecError::Malformed("GuiDocument.xml is not UTF-8".into()))?;
@@ -757,7 +759,7 @@ fn transfer_schema_one<'ctx>(
     schema_declaration: Option<&str>,
     neutral_schema_version: Option<u32>,
     sources: &GuiSources<'_, '_>,
-) -> Result<(Graph, AppearancePlan<'ctx>), CodecError> {
+) -> Result<(Graph<'ctx>, AppearancePlan<'ctx>), CodecError> {
     let entries = sources.entries;
     let objects = sources.objects;
     let properties = sources.properties;
@@ -788,6 +790,7 @@ fn transfer_schema_one<'ctx>(
             ),
         ));
     }
+    let mut native_storage = ctx.reserve_scoped(0, "FCStd GUI native graph")?;
     let mut states = Vec::new();
     let mut state_candidates = children.iter();
     while state_candidates.len() != 0 {
@@ -799,16 +802,19 @@ fn transfer_schema_one<'ctx>(
             && !ctx.xml_has_tag_name(*node, "ViewProviderData", "FCStd GUI state tag")?
         {
             let order = states.len();
-            ctx.push_vec(
-                &mut states,
-                gui_state(ctx, text, order, *node)?,
-                "FCStd GUI state records",
-            )?;
+            native_storage.with_storage(|| {
+                ctx.push_vec(
+                    &mut states,
+                    gui_state(ctx, text, order, *node)?,
+                    "FCStd GUI state records",
+                )
+            })?;
         }
     }
     drop(children);
     drop(_child_storage);
-    let document = GuiDocumentRecord {
+    let document = native_storage.with_storage(|| {
+        Ok::<_, CodecError>(GuiDocumentRecord {
         id: "fcstd:gui:document#0".to_owned(),
         schema_version: schema_declaration
             .map(|value| ctx.copy_retained_text(value, "FCStd GUI schema declaration"))
@@ -821,7 +827,8 @@ fn transfer_schema_one<'ctx>(
             "FCStd GUI document attribute",
         )?,
         states,
-    };
+        })
+    })?;
     let mut native_providers = Vec::new();
     let mut native_properties = Vec::new();
     let mut losses = Vec::new();
@@ -946,7 +953,7 @@ fn transfer_schema_one<'ctx>(
             .get_hash_map(object_names, name, "FCStd GUI object name lookup")?
             .copied()
         else {
-            append_native_provider(
+            native_storage.with_storage(|| append_native_provider(
                 ctx,
                 text,
                 provider,
@@ -954,7 +961,7 @@ fn transfer_schema_one<'ctx>(
                 None,
                 &mut native_providers,
                 &mut native_properties,
-            )?;
+            ))?;
             continue;
         };
         let (_key_storage, provider_key) = ctx
@@ -962,7 +969,7 @@ fn transfer_schema_one<'ctx>(
                 provider_identity_key(ctx, name)
             })
             .map(|(key, storage)| (storage, key))?;
-        append_native_provider(
+        native_storage.with_storage(|| append_native_provider(
             ctx,
             text,
             provider,
@@ -970,7 +977,7 @@ fn transfer_schema_one<'ctx>(
             Some(object_id),
             &mut native_providers,
             &mut native_properties,
-        )?;
+        ))?;
         let properties_node = unique_child(ctx, provider, "Properties")?.ok_or_else(|| {
             gui_malformed(ctx, format_args!("ViewProvider {name} has no Properties"))
         })?;
@@ -1390,10 +1397,11 @@ fn transfer_schema_one<'ctx>(
     drop(edge_index);
     drop(vertex_index);
     let mut graph = Graph {
-        documents: ctx.collect_vec(std::iter::once(document), "FCStd GUI document records")?,
+        documents: native_storage.with_storage(|| ctx.collect_vec(std::iter::once(document), "FCStd GUI document records"))?,
         providers: native_providers,
         properties: native_properties,
         losses,
+        _native_storage: Some(native_storage),
     };
     let (material_storage, material_lists) = ctx
         .with_scoped_storage("FCStd GUI material lookup", || {
@@ -1431,7 +1439,7 @@ fn transfer_schema_one<'ctx>(
 
 fn append_graph_losses(
     ctx: &DecodeContext<'_>,
-    graph: &mut Graph,
+    graph: &mut Graph<'_>,
     losses: Vec<LossNote>,
 ) -> Result<(), CodecError> {
     ctx.extend_vec(&mut graph.losses, losses, "FCStd GUI graph losses")?;
@@ -1570,7 +1578,7 @@ fn gui_named_entries<'ctx, 'a>(
 fn transfer_neutral_presentation(
     ctx: &DecodeContext<'_>,
     plan: &mut AppearancePlan<'_>,
-    graph: &Graph,
+    graph: &Graph<'_>,
     neutral_schema_version: Option<u32>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
@@ -6193,7 +6201,7 @@ fn read_material_string<'data>(
 fn transfer_shape_appearances<'source, 'ir, 'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     plan: &mut AppearancePlan<'_>,
-    graph: &Graph,
+    graph: &Graph<'_>,
     material_lists: &HashMap<&str, Vec<GuiMaterial<'_>>>,
     sources: &GuiSources<'source, '_>,
     ir: &'ir CadIr,
@@ -7327,7 +7335,7 @@ mod shape_association_tests {
         });
     }
 
-    fn material_graph() -> super::Graph {
+    fn material_graph() -> super::Graph<'static> {
         super::Graph {
             providers: vec![crate::native::GuiViewProviderRecord {
                 id: "fcstd:native:gui-view-provider#P".into(),
