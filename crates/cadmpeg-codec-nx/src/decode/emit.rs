@@ -83,6 +83,7 @@ pub(super) struct EndpointWitnessSink<'data, 'ctx> {
 }
 
 /// Operation names for the distinct allocations in an endpoint proof.
+#[derive(Clone, Copy)]
 pub(super) struct EndpointWitnessOperations {
     pub(super) lookup_key: &'static str,
     pub(super) curve: &'static str,
@@ -121,9 +122,12 @@ impl<'data, 'ctx> EndpointWitnessSink<'data, 'ctx> {
             candidate_storage.with_storage(|| {
                 let witness = (
                     witness.0.try_clone_for_decode(ctx, operations.pcurve)?,
-                    witness.1, witness.2,
+                    witness.1,
+                    witness.2,
                 );
-                if let Some(witnesses) = ctx.get_mut_btree_map(self.values, &key, operations.index)? {
+                if let Some(witnesses) =
+                    ctx.get_mut_btree_map(self.values, &key, operations.index)?
+                {
                     ctx.push_vec(witnesses, witness, operations.witnesses)?;
                 } else {
                     let mut witnesses = Vec::new();
@@ -143,7 +147,10 @@ pub(super) fn emit_topology(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     topology_stream: &TopologyStream<'_>,
-    diagnostics: (&mut AnnotationBuilder, &mut Vec<cadmpeg_ir::report::loss::LossNote>),
+    diagnostics: (
+        &mut AnnotationBuilder,
+        &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    ),
     intersection_index: &mut IntersectionIncidenceIndex,
     topology_budgets: &TopologyBudgets<'_, '_>,
     endpoint_witnesses: &mut EndpointWitnessSink<'_, '_>,
@@ -1124,11 +1131,19 @@ pub(super) fn emit_topology(
             if *candidate_geometry != carrier.geometry || candidate_range != parameter_range {
                 continue;
             }
-            endpoint_witnesses.push(ctx, (curve, support),
-                (&carrier.geometry, parameter_range, endpoints), EndpointWitnessOperations {
-                    lookup_key: "nx endpoint witness lookup key", curve: "nx endpoint witness curve", support: "nx endpoint witness support",
-                    pcurve: "nx endpoint witness pcurve", index: "nx endpoint witness index", witnesses: "nx endpoint witnesses",
-                })?;
+            endpoint_witnesses.push(
+                ctx,
+                (curve, support),
+                (&carrier.geometry, parameter_range, endpoints),
+                EndpointWitnessOperations {
+                    lookup_key: "nx endpoint witness lookup key",
+                    curve: "nx endpoint witness curve",
+                    support: "nx endpoint witness support",
+                    pcurve: "nx endpoint witness pcurve",
+                    index: "nx endpoint witness index",
+                    witnesses: "nx endpoint witnesses",
+                },
+            )?;
         }
         let mut fallback_pcurves = BTreeMap::new();
         for &fin_xmt in ctx
@@ -1497,7 +1512,12 @@ pub(super) fn emit_topology(
         "nx retained edges",
     )?;
     drop((owned_edges, candidate_edges));
-    retain_marked(ctx, &mut ir.model.edges, edge_marks, "nx compact emitted edges")?;
+    retain_marked(
+        ctx,
+        &mut ir.model.edges,
+        edge_marks,
+        "nx compact emitted edges",
+    )?;
     let mut retained_vertices = BTreeSet::new();
     for edge in ctx.admit_iter(&ir.model.edges, "nx retained vertex index")? {
         storage.with_storage(|| {
@@ -1531,7 +1551,12 @@ pub(super) fn emit_topology(
         "nx retained vertices",
     )?;
     drop(retained_vertices);
-    retain_marked(ctx, &mut ir.model.vertices, vertex_marks, "nx compact emitted vertices")?;
+    retain_marked(
+        ctx,
+        &mut ir.model.vertices,
+        vertex_marks,
+        "nx compact emitted vertices",
+    )?;
     Ok(())
 }
 
@@ -2693,97 +2718,163 @@ mod tests {
         const STORAGE: u64 = 64 * 1024;
         let curve = CurveId::mint("test:model:curve#witness").unwrap();
         let support = SurfaceId::mint("test:model:surface#witness").unwrap();
-        let geometry = PcurveGeometry::Nurbs { nurbs: PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(), 1,
-            (0..POLES + 2).map(|index| cadmpeg_core::convert::f64_from_index(index.checked_sub(1).unwrap_or(0)).unwrap()).collect::<Vec<_>>(),
-            vec![Point2::new(0.0, 0.0); POLES], None, false,
-        ).unwrap().unwrap() };
-        let operations = || EndpointWitnessOperations {
-            lookup_key: "nx test witness lookup key", curve: "nx test witness curve",
-            support: "nx test witness support", pcurve: "nx test witness pcurve",
-            index: "nx test witness index", witnesses: "nx test witness values",
+        let geometry = PcurveGeometry::Nurbs {
+            nurbs: PcurveNurbs::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
+                1,
+                (0..POLES + 2)
+                    .map(|index| {
+                        cadmpeg_core::convert::f64_from_index(index.saturating_sub(1)).unwrap()
+                    })
+                    .collect::<Vec<_>>(),
+                vec![Point2::new(0.0, 0.0); POLES],
+                None,
+                false,
+            )
+            .unwrap()
+            .unwrap(),
         };
-        crate::test_support::with_decode_context_over(&[], |policy| {
-            policy.limits.max_retained_bytes = 0;
-            policy.limits.max_materialized_bytes = STORAGE;
-        }, |ctx| {
-            let mut storage = ctx.reserve_scoped(0, "nx test witness map").unwrap();
-            let mut values = super::EndpointWitnesses::new();
-            {
-                let mut sink = EndpointWitnessSink::new(&mut values, &mut storage);
-                for _ in 0..4 {
-                    sink.push(ctx, (&curve, &support), (&geometry, [0.0, 1.0],
-                        [Point3::new(0.0, 0.0, 0.0); 2]), operations()).unwrap();
+        let operations = || EndpointWitnessOperations {
+            lookup_key: "nx test witness lookup key",
+            curve: "nx test witness curve",
+            support: "nx test witness support",
+            pcurve: "nx test witness pcurve",
+            index: "nx test witness index",
+            witnesses: "nx test witness values",
+        };
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_retained_bytes = 0;
+                policy.limits.max_materialized_bytes = STORAGE;
+            },
+            |ctx| {
+                let mut storage = ctx.reserve_scoped(0, "nx test witness map").unwrap();
+                let mut values = super::EndpointWitnesses::new();
+                {
+                    let mut sink = EndpointWitnessSink::new(&mut values, &mut storage);
+                    for _ in 0..4 {
+                        sink.push(
+                            ctx,
+                            (&curve, &support),
+                            (&geometry, [0.0, 1.0], [Point3::new(0.0, 0.0, 0.0); 2]),
+                            operations(),
+                        )
+                        .unwrap();
+                    }
                 }
-            }
-            assert_eq!(values.len(), 1);
-            let witnesses = &values[&(curve.clone(), support.clone())];
-            assert_eq!(witnesses.len(), 4);
-            for witness in witnesses {
-                assert_eq!(witness.0, geometry);
-                assert_eq!(witness.1, [0.0, 1.0]);
-            }
-            drop(values);
-            drop(storage);
-            drop(ctx.reserve_scoped(STORAGE, "nx endpoint proof storage release probe").unwrap());
-            assert_eq!(ctx.resource_refusal(), None);
-        });
+                assert_eq!(values.len(), 1);
+                let witnesses = &values[&(curve.clone(), support.clone())];
+                assert_eq!(witnesses.len(), 4);
+                for witness in witnesses {
+                    assert_eq!(witness.0, geometry);
+                    assert_eq!(witness.1, [0.0, 1.0]);
+                }
+                drop(values);
+                drop(storage);
+                drop(
+                    ctx.reserve_scoped(STORAGE, "nx endpoint proof storage release probe")
+                        .unwrap(),
+                );
+                assert_eq!(ctx.resource_refusal(), None);
+            },
+        );
         // The group backing store is fixture setup. Each insertion owns only
         // its two cloned geometry lanes; the lookup key dies after that call.
         let mut duplicate_values = super::EndpointWitnesses::from([(
-            (curve.clone(), support.clone()), Vec::with_capacity(4),
+            (curve.clone(), support.clone()),
+            Vec::with_capacity(4),
         )]);
         let key_bytes = curve.as_str().len() + support.as_str().len();
         let geometry_bytes = POLES * std::mem::size_of::<cadmpeg_ir::units::FinitePoint2>()
             + (POLES + 2) * std::mem::size_of::<f64>();
         let peak = cadmpeg_core::decode::u64_from_index(4 * geometry_bytes + key_bytes);
-        crate::test_support::with_decode_context_over(&[], |policy| {
-            policy.limits.max_retained_bytes = 0;
-            policy.limits.max_materialized_bytes = peak;
-        }, |ctx| {
-            let mut storage = ctx.reserve_scoped(0, "nx duplicate proof map").unwrap();
-            {
-                let mut sink = EndpointWitnessSink::new(&mut duplicate_values, &mut storage);
-                for _ in 0..4 {
-                    sink.push(ctx, (&curve, &support), (&geometry, [0.0, 1.0],
-                        [Point3::new(0.0, 0.0, 0.0); 2]), operations()).unwrap();
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_retained_bytes = 0;
+                policy.limits.max_materialized_bytes = peak;
+            },
+            |ctx| {
+                let mut storage = ctx.reserve_scoped(0, "nx duplicate proof map").unwrap();
+                {
+                    let mut sink = EndpointWitnessSink::new(&mut duplicate_values, &mut storage);
+                    for _ in 0..4 {
+                        sink.push(
+                            ctx,
+                            (&curve, &support),
+                            (&geometry, [0.0, 1.0], [Point3::new(0.0, 0.0, 0.0); 2]),
+                            operations(),
+                        )
+                        .unwrap();
+                    }
                 }
-            }
-            drop(ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(key_bytes),
-                "nx duplicate key release probe").unwrap());
-            assert_eq!(duplicate_values[&(curve.clone(), support.clone())].len(), 4);
-            drop(duplicate_values);
-            drop(storage);
-            assert_eq!(ctx.resource_refusal(), None);
-        });
-        crate::test_support::resource_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
-            "nx test witness pcurve", |ctx| {
+                drop(
+                    ctx.reserve_scoped(
+                        cadmpeg_core::decode::u64_from_index(key_bytes),
+                        "nx duplicate key release probe",
+                    )
+                    .unwrap(),
+                );
+                assert_eq!(duplicate_values[&(curve.clone(), support.clone())].len(), 4);
+                drop(duplicate_values);
+                drop(storage);
+                assert_eq!(ctx.resource_refusal(), None);
+            },
+        );
+        crate::test_support::resource_refusal_at(
+            &[],
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+            "nx test witness pcurve",
+            |ctx| {
                 let mut storage = ctx.reserve_scoped(0, "nx test witness map")?;
                 let mut values = super::EndpointWitnesses::new();
-                EndpointWitnessSink::new(&mut values, &mut storage).push(ctx, (&curve, &support),
-                    (&geometry, [0.0, 1.0], [Point3::new(0.0, 0.0, 0.0); 2]), operations())
-            });
+                EndpointWitnessSink::new(&mut values, &mut storage).push(
+                    ctx,
+                    (&curve, &support),
+                    (&geometry, [0.0, 1.0], [Point3::new(0.0, 0.0, 0.0); 2]),
+                    operations(),
+                )
+            },
+        );
     }
 
     #[test]
     fn marked_compaction_admits_moves_after_predicate_evaluation() {
         const OPERATION: &str = "nx test marked compaction";
-        crate::test_support::resource_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
-            OPERATION, |ctx| {
+        crate::test_support::resource_refusal_at(
+            &[],
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            OPERATION,
+            |ctx| {
                 let mut values = vec![1_u64, 2, 3, 4, 5];
                 let original = values.clone();
                 let mut storage = ctx.reserve_scoped(0, "nx test keep marks")?;
-                let marks = super::keep_marks(ctx, &mut storage, &values,
-                    |value| Ok(value % 2 == 1), "nx test keep marks")?;
+                let marks = super::keep_marks(
+                    ctx,
+                    &mut storage,
+                    &values,
+                    |value| Ok(value % 2 == 1),
+                    "nx test keep marks",
+                )?;
                 let result = super::retain_marked(ctx, &mut values, marks, OPERATION);
-                if result.is_err() { assert_eq!(values, original); }
+                if result.is_err() {
+                    assert_eq!(values, original);
+                }
                 result
-            });
+            },
+        );
         crate::test_support::with_decode_context(|ctx| {
             let mut values = vec![1_u64, 2, 3, 4, 5];
             let mut storage = ctx.reserve_scoped(0, "nx test keep marks").unwrap();
-            let marks = super::keep_marks(ctx, &mut storage, &values,
-                |value| Ok(value % 2 == 1), "nx test keep marks").unwrap();
+            let marks = super::keep_marks(
+                ctx,
+                &mut storage,
+                &values,
+                |value| Ok(value % 2 == 1),
+                "nx test keep marks",
+            )
+            .unwrap();
             super::retain_marked(ctx, &mut values, marks, OPERATION).unwrap();
             assert_eq!(values, [1, 3, 5]);
         });
