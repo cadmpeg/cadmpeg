@@ -6592,12 +6592,13 @@ fn bind_profile_face_group_cardinality(
             let (Some(topology), Some(changed_faces)) = (previous.topology(), changed_faces) else {
                 continue;
             };
-            let paired_aggregate = crate::design::face_resolve::is_paired_extrude_profile_aggregate(
-                decode,
-                group,
-                operand_groups,
-                operands,
-            )?;
+            let paired_aggregate =
+                crate::design::face_resolve::is_paired_extrude_profile_aggregate(
+                    decode,
+                    group,
+                    operand_groups,
+                    operands,
+                )?;
             let faces =
                 if paired_aggregate {
                     if let Some(transition) = state.transition.as_ref().filter(|transition| {
