@@ -934,14 +934,14 @@ fn emit_loft_member_form(
 
     out: &mut AsmBrep,
     data: LoftProfileData,
-    support_id: SurfaceId,
+    support_id: impl FnOnce() -> Result<SurfaceId, cadmpeg_core::CodecError>,
 ) -> Result<cadmpeg_ir::geometry::LoftMemberForm, cadmpeg_core::CodecError> {
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
     }
     match data {
         LoftProfileData::Classic(data) => {
-            let (type_code, data) = emit_classic_loft_data(ctx, out, data, support_id)?;
+            let (type_code, data) = emit_classic_loft_data(ctx, out, data, support_id()?)?;
             Ok(cadmpeg_ir::geometry::LoftMemberForm::Support {
                 type_code,
                 surface: Some(data.surface),
@@ -966,6 +966,7 @@ fn emit_loft_member_form(
         } => {
             let surface = surface
                 .map(|geometry| -> Result<_, cadmpeg_core::CodecError> {
+                    let support_id = support_id()?;
                     charged_push!(
                         ctx,
                         out.surfaces,
@@ -1012,7 +1013,7 @@ fn emit_loft_path_curve(
 
     out: &mut AsmBrep,
     layout: EmbeddedLoftPathLayout,
-    id: CurveId,
+    id: impl FnOnce() -> Result<CurveId, cadmpeg_core::CodecError>,
 ) -> Result<Option<LoftPathCurve>, cadmpeg_core::CodecError> {
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
@@ -1024,6 +1025,7 @@ fn emit_loft_path_curve(
             (curve.geometry, Some(curve.endpoints))
         }
     };
+    let id = id()?;
     charged_push!(
         ctx,
         out.curves,
@@ -1074,7 +1076,7 @@ fn emit_loft_surface(
                                         ctx,
                                         out,
                                         member.data,
-                                        brep_id!(
+                                        || Ok(brep_id!(
                                             format,
                                             SurfaceId,
                                             "procedural_surface",
@@ -1087,7 +1089,7 @@ fn emit_loft_surface(
                                                 ":support:",
                                                 member_index
                                             )
-                                        ),
+                                        )),
                                     )?;
                                     charged_push!(
                                         ctx,
@@ -1119,12 +1121,12 @@ fn emit_loft_surface(
                         ctx,
                         out,
                         entry.path.layout,
-                        brep_id!(
+                        || Ok(brep_id!(
                             format,
                             CurveId,
                             "procedural_surface",
                             brep_key!(i, ":loft:", section_index, ":", entry_index, ":path")
-                        ),
+                        )),
                     )?;
                     let auxiliaries = ctx.try_collect_vec(
                         ctx.admit_iter(entry.path.auxiliaries, "ASM procedural members")?.enumerate().map(
@@ -1380,10 +1382,10 @@ fn emit_compound_loft_surface(
     };
     let mut scale_index = 0;
     let scales = (*embedded.scales).map(|scale| {
-        let name = brep_key!("scale", scale_index);
+        let index = scale_index;
         scale_index += 1;
         scale
-            .map(|scale| map_scale(&mut *out, name, scale))
+            .map(|scale| map_scale(&mut *out, brep_key!("scale", index), scale))
             .transpose()
     });
     let [first, second, third, fourth] = scales;
@@ -1673,10 +1675,10 @@ fn emit_scaled_compound_loft_surface(
     };
     let mut scale_index = 0;
     let scales = (*embedded.scales).map(|scale| {
-        let name = brep_key!("scale", scale_index);
+        let index = scale_index;
         scale_index += 1;
         scale
-            .map(|scale| map_scale(&mut *out, name, scale))
+            .map(|scale| map_scale(&mut *out, brep_key!("scale", index), scale))
             .transpose()
     });
     let [first, second, third] = scales;
@@ -2237,7 +2239,7 @@ fn emit_net_surface(
                                         ctx,
                                         out,
                                         member.data,
-                                        brep_id!(
+                                        || Ok(brep_id!(
                                             format,
                                             SurfaceId,
                                             "procedural_surface",
@@ -2251,7 +2253,7 @@ fn emit_net_surface(
                                                 member_index,
                                                 ":surface"
                                             )
-                                        ),
+                                        )),
                                     )?;
                                     charged_push!(
                                         ctx,
@@ -2283,12 +2285,12 @@ fn emit_net_surface(
                             ctx,
                             out,
                             entry.path.layout,
-                            brep_id!(
+                            || Ok(brep_id!(
                                 format,
                                 CurveId,
                                 "procedural_surface",
                                 brep_key!(i, ":net:", section_index, ":", entry_index, ":path")
-                            ),
+                            )),
                         )?;
                         let auxiliaries = ctx.try_collect_vec(
                             ctx.admit_iter(entry.path.auxiliaries, "ASM procedural members")?
@@ -3110,7 +3112,7 @@ fn emit_revision_compound_loft_surface(
                                     id: curve,
                                     endpoints: member.data.endpoints(),
                                 },
-                                form: emit_loft_member_form(ctx, out, member.data, {
+                                form: emit_loft_member_form(ctx, out, member.data, || {
                                     let mut copied_storage =
                                         ctx.reserve_scoped(0, "ASM temporary identity key")?;
                                     copied_storage.with_storage(|| {
@@ -3128,7 +3130,7 @@ fn emit_revision_compound_loft_surface(
                                             )
                                         ))
                                     })
-                                }?)?,
+                                })?,
                             }
                         })
                     },
@@ -3140,7 +3142,7 @@ fn emit_revision_compound_loft_surface(
                         path: EmbeddedLoftPath,
                         out: &mut AsmBrep|
      -> Result<cadmpeg_ir::geometry::LoftPath, cadmpeg_core::CodecError> {
-        let curve = emit_loft_path_curve(ctx, out, path.layout, {
+        let curve = emit_loft_path_curve(ctx, out, path.layout, || {
             let mut copied_storage = ctx.reserve_scoped(0, "ASM temporary identity key")?;
             copied_storage.with_storage(|| {
                 Ok::<_, cadmpeg_core::CodecError>(brep_id!(
@@ -3153,7 +3155,7 @@ fn emit_revision_compound_loft_surface(
                     )
                 ))
             })
-        }?)?;
+        })?;
         let auxiliaries = ctx.try_collect_vec(
             ctx.admit_iter(path.auxiliaries, "ASM procedural members")?
                 .enumerate()
@@ -4737,8 +4739,6 @@ fn emit_law_curve(
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
     }
-    let prefix = brep_key!(i, ":law");
-    let scope = LawExpressionScope::Curve(&prefix);
     let (parameter_range, version) = match embedded.layout {
         EmbeddedLawCurveLayout::Legacy(range) => (range, None),
         EmbeddedLawCurveLayout::Version {
@@ -4757,6 +4757,8 @@ fn emit_law_curve(
             )
         }
     };
+    let prefix = brep_key!(i, ":law");
+    let scope = LawExpressionScope::Curve(&prefix);
     let [first, second] = embedded.surfaces;
     let mut emit_support =
         |side, slot: crate::nurbs::proc_curve::SupportSlot| -> Result<_, CarrierCurveError> {

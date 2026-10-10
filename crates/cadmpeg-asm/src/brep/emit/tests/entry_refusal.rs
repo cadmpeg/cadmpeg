@@ -102,12 +102,12 @@ fn asm_refused_curve_carrier_keeps_source_map() { curve(true); }
 
 #[test]
 fn asm_absent_loft_path_preserves_original_refusal() {
-    let id = cadmpeg_ir::ids::CurveId::mint("sat:brep:entity#7").expect("path input identity");
     with_owner(|ctx, _, original| {
         let mut out = AsmBrep::default();
         let before = serde_json::to_value(&out).expect("context-free output snapshot");
         let result = super::super::emit_loft_path_curve(ctx, &mut out,
-            crate::nurbs::proc_surface::EmbeddedLoftPathLayout::Revision(None), id.clone());
+            crate::nurbs::proc_surface::EmbeddedLoftPathLayout::Revision(None),
+            || panic!("absent or refused path executes no identity factory"));
         match original {
             Some(first) => assert!(matches!(result, Err(CodecError::ResourceLimit(last)) if last == first)),
             None => assert!(result.expect("absent loft path is free").is_none()),
@@ -148,7 +148,6 @@ fn asm_null_law_expression_preserves_original_refusal() {
 fn absent_member(pair: bool) {
     use crate::nurbs::proc_surface::LoftProfileData;
     use cadmpeg_ir::geometry::{LoftMemberForm, LoftSubdata};
-    let id = cadmpeg_ir::ids::SurfaceId::mint("sat:brep:entity#7").expect("support input identity");
     with_owner(|ctx, _, original| {
         let mut out = AsmBrep::default();
         let subdata = LoftSubdata::Type211 { dimensions: [0, 0], row: [0.0, 1.0] };
@@ -161,7 +160,8 @@ fn absent_member(pair: bool) {
                 surface: None, support_bounds: [None; 4], pcurve: None, first_flag: false,
                 asm_extension: None, subdata, direction: None }
         };
-        let result = super::super::emit_loft_member_form(ctx, &mut out, data, id.clone());
+        let result = super::super::emit_loft_member_form(ctx, &mut out, data,
+            || panic!("absent or refused support executes no identity factory"));
         match original {
             Some(first) => assert!(matches!(result, Err(CodecError::ResourceLimit(last)) if last == first)),
             None if pair => assert!(matches!(result, Ok(LoftMemberForm::PcurvePair {
