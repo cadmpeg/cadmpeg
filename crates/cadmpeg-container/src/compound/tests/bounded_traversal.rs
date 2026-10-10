@@ -99,11 +99,6 @@ fn empty_hierarchy_build_skips_the_fixed_root_record() {
     with_context(&[], &policy, |ctx| {
         assert!(build_entries(ctx, &state, 1).expect("empty hierarchy uses no work or storage").is_empty());
         assert_eq!(ctx.resource_refusal(), None);
-        let CodecError::ResourceLimit(first) = ctx.charge_work(1, "seed root reachability refusal")
-            .expect_err("zero work fuses the context") else { panic!("resource refusal") };
-        let error = build_entries(ctx, &state, 1).expect_err("empty tail preserves saved refusal");
-        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit == first));
-        assert_eq!(ctx.resource_refusal(), Some(first));
     });
 }
 

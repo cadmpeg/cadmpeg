@@ -131,7 +131,6 @@ impl SectorChain {
         ctx: &DecodeContext<'_>,
         mut visit: impl FnMut(u32) -> Result<(), CodecError>,
     ) -> Result<(), CodecError> {
-        ctx.charge_work(0, "visit CFB chain sectors")?;
         visit(self.first)?;
         ctx.fold(&self.rest, (), |(), &sector| visit(sector), "visit CFB chain sectors")
     }
@@ -369,7 +368,7 @@ impl<'a, 'ctx> CompoundSnapshot<'a, 'ctx> {
         metadata_storage.absorb(&mut root_chain_storage)?;
         let mut by_path = BTreeMap::new();
         let mut streams_by_id = BTreeMap::new();
-        ctx.charge_work(0, "visit CFB indexed entries")?;
+
         ctx.fold(&entries, 0_usize, |index, entry| {
             let key = metadata_storage.with_storage(|| path_key(ctx, entry.path()))?;
             // Strict sibling ordering and unique reached directory ids already
@@ -454,9 +453,6 @@ impl<'a, 'ctx> CompoundSnapshot<'a, 'ctx> {
         ctx: &DecodeContext<'a>,
         entry: &CompoundStreamEntry,
     ) -> Result<View<'a>, CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(CodecError::ResourceLimit(refusal));
-        }
         if entry.snapshot_id != self.snapshot_id {
             return malformed("CFB stream handle does not belong to this snapshot");
         }
@@ -636,9 +632,6 @@ impl CompoundState {
         construction_storage: &mut ScopedReservation<'_>,
         root_chain_storage: &mut ScopedReservation<'_>,
     ) -> Result<Self, CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(CodecError::ResourceLimit(refusal));
-        }
         if bytes.get(..8) != Some(&MAGIC) {
             return malformed("input is not a CFB file");
         }
@@ -935,7 +928,7 @@ impl CompoundState {
             &mut reached,
             (&mut output, metadata_storage),
         )?;
-        ctx.charge_work(0, "check CFB directory reachability")?;
+
         ctx.fold(
             self.directory.get(1..).unwrap_or_default(),
             1_usize,
@@ -1167,7 +1160,7 @@ impl CompoundState {
                 CodecError::Malformed("CFB root mini-stream size does not fit memory".into())
             })?
             .div_ceil(MINI_SECTOR_SIZE);
-        ctx.charge_work(0, "visit CFB stream ownership")?;
+
         ctx.fold(entries, (), |(), entry| {
             if let CompoundEntry::Stream(stream) = entry {
                 let StreamData::Allocated {
@@ -1210,7 +1203,7 @@ impl CompoundState {
             }
             Ok(())
         }, "visit CFB stream ownership")?;
-        ctx.charge_work(0, "visit CFB mini FAT ownership")?;
+
         ctx.fold(&self.mini_fat, 0_usize, |ordinal, marker| {
             let sector = ordinal;
             let sector = u32::try_from(sector)
@@ -1222,7 +1215,7 @@ impl CompoundState {
             }
             Ok(ordinal + 1)
         }, "visit CFB mini FAT ownership")?;
-        ctx.charge_work(0, "visit CFB FAT ownership")?;
+
         ctx.fold(&self.fat[..self.sector_count.min(self.fat.len())], 0_usize, |ordinal, marker| {
             let sector = ordinal;
             let sector = u32::try_from(sector)
@@ -1743,7 +1736,7 @@ impl CompoundPrefixProbe {
                         }
                     }
                 }
-                ctx.charge_work(0, "visit CFB probe reachability")?;
+
                 let reachability = ctx.fold(
                     directory.0.get(1..).unwrap_or_default(),
                     1_usize,
@@ -1872,7 +1865,7 @@ fn parse_directory_records(
         "parse CFB directory entries",
     )?;
     let mut entries = ctx.vector_storage(entry_count, "parse CFB directory entries")?;
-    ctx.charge_work(0, "visit CFB directory records")?;
+
     for index in 0..entry_count {
         ctx.charge_work(1, "visit CFB directory records")?;
         let raw = records.get(index)?;
@@ -2213,9 +2206,6 @@ fn chain(
     length: Option<ChainLength>,
     role: ChainRole,
 ) -> Result<Option<SectorChain>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(CodecError::ResourceLimit(refusal));
-    }
     let accepts_free = matches!(
         role,
         ChainRole::RootMiniStream | ChainRole::Stream | ChainRole::MiniStream
@@ -2339,7 +2329,6 @@ impl<'a, const WIDTH: usize> StructuralRecords<'a, WIDTH> {
         ctx: &DecodeContext<'_>, bytes: &'a [u8], sector_size: usize,
         sector_count: usize, sectors: Option<(&'a u32, &'a [u32])>,
     ) -> Result<Self, CodecError> {
-        ctx.charge_work(0, "validate CFB structural sectors")?;
         // The two production widths, 4 and 128, tile both header-selected
         // sector widths, 512 and 4096. No record crosses a sector boundary.
         if WIDTH == 0 || !sector_size.is_multiple_of(WIDTH) {
@@ -2724,7 +2713,6 @@ mod tests {
     }
 
 
-
     #[test]
     fn storage_parent_path_uses_output_ordinal_at_exact_scratch_peak() {
         let file = fixture();
@@ -2936,7 +2924,6 @@ mod tests {
         drop((probe, storage));
     }
 
-
     #[test]
     fn snapshot_preserves_parent_ordinals_for_nested_storage_siblings() {
         const V4_SECTOR_SIZE: usize = 4096;
@@ -2960,7 +2947,6 @@ mod tests {
             vec!["Store", "Store/A", "Store/A/B", "Store/C"]
         );
     }
-
 
     #[test]
     fn compound_summary_refuses_before_classification() {
@@ -3022,14 +3008,12 @@ mod tests {
         }
     }
 
-
     #[test]
     fn rejects_a_partial_structural_sector() {
         let mut file = fixture();
         file.truncate(SECTOR_SIZE * 12 + 37);
         assert!(!snapshot_parses(&file));
     }
-
 
 
     #[test]

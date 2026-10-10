@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn malformed_fixed_header_diagnostic_is_free_but_honors_fused_refusal() {
+fn malformed_fixed_header_diagnostic_is_free() {
     let mut file = fixture();
     put_u16(&mut file, 30, 8);
     let arena = DecodeArena::new();
@@ -16,18 +16,6 @@ fn malformed_fixed_header_diagnostic_is_free_but_honors_fused_refusal() {
         CompoundPrefixProbe::Malformed("invalid CFB sector layout".into())
     );
     drop(storage);
-
-    let (ctx, root) = DecodeContext::from_root_bytes(&file, &arena, &policy)
-        .expect("fixture root fits the input limit");
-    let CodecError::ResourceLimit(fused) = ctx
-        .charge_work(1, "fuse CFB prefix probe")
-        .expect_err("zero work allowance fuses the context")
-    else {
-        panic!("resource refusal is typed");
-    };
-    let error = CompoundPrefixProbe::inspect_with_context(&ctx, root)
-        .expect_err("the zero-byte result owner preserves a prior refusal");
-    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit == fused));
 }
 
 #[test]
