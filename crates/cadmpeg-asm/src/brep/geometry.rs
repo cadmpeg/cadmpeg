@@ -60,9 +60,6 @@ pub(super) fn collect_carrier<'ctx>(
         vectors: Vec::new(),
         doubles: Vec::new(),
     };
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(rec.tokens.as_ref());
     while source_values.len() != 0 {
         let Some(t) = ctx.next_charged(&mut source_values, "ASM analytic carrier tokens")? else {
@@ -544,9 +541,6 @@ pub(super) fn reverse_curve_geometry(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     geometry: &mut CurveGeometry,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
             line_curve.reverse_parameterization();
@@ -692,9 +686,6 @@ pub(super) fn analytic_procedural_surface(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &DecodedProceduralSurfaceDefinition,
 ) -> Option<Result<SurfaceGeometry, cadmpeg_core::CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     match definition {
         DecodedProceduralSurfaceDefinition::Extrusion {
             directrix,
@@ -735,9 +726,6 @@ fn analytic_rolling_ball_surface(
     spine: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     signed_radius: f64,
 ) -> Option<Result<SurfaceGeometry, cadmpeg_core::CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     let radius = signed_radius.abs();
     if !radius.is_finite() || radius <= f64::EPSILON {
         return None;
@@ -867,9 +855,6 @@ fn linear_nurbs_spine(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
 ) -> Option<Result<(Point3, UnitVector3), cadmpeg_core::CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     if curve.degree() == 0 || curve.periodic() {
         return None;
     }
@@ -896,9 +881,6 @@ fn linear_spine_points<T>(
     points: &[T],
     point: impl Fn(&T) -> FinitePoint3,
 ) -> Option<Result<(Point3, UnitVector3), cadmpeg_core::CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     let origin = point(points.first()?);
     let farthest = propagate_resource!(ctx.max_by_key(
         points,
@@ -934,9 +916,6 @@ pub(super) fn rational_four_arc_circle(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
 ) -> Option<Result<(Point3, Vector3, Vector3, f64), cadmpeg_core::CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     let cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } = curve.pole_rows() else {
         return None;
     };
@@ -987,9 +966,6 @@ pub(super) fn rational_four_arc_circle(
         ctx.temporary_vec(points.len(), "ASM rational four-arc homogeneous poles")
     );
     _homogeneous_storage = result_homogeneous_storage;
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     let mut source_values = IntoIterator::into_iter(points);
     while source_values.len() != 0 {
         let Some(pole) = propagate_resource!(
@@ -1119,9 +1095,6 @@ fn reduce_homogeneous_bezier_to_quadratic(
                 ctx.temporary_vec(degree, "ASM rational four-arc degree reduction")?;
             reduced_storage = result_reduced_storage;
             reduced.push(control[0]);
-            if let Some(refusal) = ctx.resource_refusal() {
-                return Err(refusal.into());
-            }
             let mut source_values = IntoIterator::into_iter(1..degree);
             while !source_values.is_empty() {
                 let Some(index) =
@@ -1220,9 +1193,6 @@ pub(super) fn clamp_edge_ranges_to_carrier_domains(
             )
         })?;
     }
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(&mut out.edges);
     while source_values.len() != 0 {
         let Some(edge) = ctx.next_charged(&mut source_values, "ASM edge range clamp")? else {
@@ -1257,9 +1227,6 @@ pub(super) fn classify_body_kinds(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut storage = ctx.reserve_scoped(0, "ASM body classification storage")?;
     let mut shell_bodies = HashMap::new();
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(&out.regions);
     while source_values.len() != 0 {
         let Some(region) =
@@ -1267,9 +1234,6 @@ pub(super) fn classify_body_kinds(
         else {
             break;
         };
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let mut source_values = IntoIterator::into_iter(&region.shells);
         while source_values.len() != 0 {
             let Some(shell) = ctx.next_charged(&mut source_values, "ASM region shells")? else {
@@ -1283,9 +1247,6 @@ pub(super) fn classify_body_kinds(
     let mut body_has_faces = HashSet::new();
     let mut body_has_wires = HashSet::new();
     let mut face_bodies = HashMap::new();
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(&out.shells);
     while source_values.len() != 0 {
         let Some(shell) = ctx.next_charged(&mut source_values, "ASM body classification shells")?
@@ -1308,9 +1269,6 @@ pub(super) fn classify_body_kinds(
                 ctx.insert_hash_set(&mut body_has_faces, body, "ASM bodies with faces")
             })?;
         }
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let mut source_values = IntoIterator::into_iter(shell.faces());
         while source_values.len() != 0 {
             let Some(face) = ctx.next_charged(&mut source_values, "ASM shell faces")? else {
@@ -1322,9 +1280,6 @@ pub(super) fn classify_body_kinds(
         }
     }
     let mut loop_bodies = HashMap::new();
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(&out.faces);
     while source_values.len() != 0 {
         let Some(face) = ctx.next_charged(&mut source_values, "ASM body classification faces")?
@@ -1346,9 +1301,6 @@ pub(super) fn classify_body_kinds(
                 ctx.insert_hash_map(&mut loop_bodies, outer, body, "ASM loop bodies")
             })?;
         }
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let mut source_values = IntoIterator::into_iter(inner);
         while source_values.len() != 0 {
             let Some(loop_id) = ctx.next_charged(&mut source_values, "ASM face loops")? else {
@@ -1360,9 +1312,6 @@ pub(super) fn classify_body_kinds(
         }
     }
     let mut coedge_bodies = HashMap::new();
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(&out.loops);
     while source_values.len() != 0 {
         let Some(loop_) = ctx.next_charged(&mut source_values, "ASM body classification loops")?
@@ -1375,9 +1324,6 @@ pub(super) fn classify_body_kinds(
         else {
             continue;
         };
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let mut source_values = IntoIterator::into_iter(loop_.coedges());
         while source_values.len() != 0 {
             let Some(coedge) = ctx.next_charged(&mut source_values, "ASM loop coedges")? else {
@@ -1389,9 +1335,6 @@ pub(super) fn classify_body_kinds(
         }
     }
     let mut edge_use_counts = HashMap::<_, std::collections::BTreeMap<&EdgeId, usize>>::new();
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(&out.coedges);
     while source_values.len() != 0 {
         let Some(coedge) =
@@ -1412,9 +1355,6 @@ pub(super) fn classify_body_kinds(
             })?;
             *counts.entry(&coedge.edge).or_default() += 1;
         }
-    }
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
     }
     let mut source_values = IntoIterator::into_iter(&mut out.bodies);
     while source_values.len() != 0 {

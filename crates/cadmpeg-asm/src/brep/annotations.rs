@@ -127,9 +127,6 @@ pub(super) fn emit_annotation_records(
             ctx.insert_hash_set(&mut procedural_ids, id, "ASM annotation procedural IDs")
         })?;
     }
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(records);
     while source_values.len() != 0 {
         let Some(record) = ctx.next_charged(&mut source_values, "ASM annotation source records")? else {

@@ -95,9 +95,6 @@ impl StreamFailure {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         parse: impl FnOnce(StreamError) -> cadmpeg_core::CodecError,
     ) -> cadmpeg_core::CodecError {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return refusal.into();
-        }
         match self {
             Self::Parse(error) => parse(error),
             Self::Malformed(error) => cadmpeg_core::CodecError::malformed(error),
@@ -159,60 +156,6 @@ mod tests {
 
     fn stream_error() -> StreamError {
         StreamError { format: StreamFormat::Binary, offset: 17, reason: "source detail".into() }
-    }
-
-    fn assert_original_refusal(mut make: impl FnMut() -> StreamFailure) {
-        // Build owned failures before the measured caller session.
-        let mut failures: Vec<_> = (0..384).map(|_| make()).collect();
-        let mut calls = 0;
-        crate::test_support::with_entry_context(|ctx, original| {
-            let Some(first) = original else { return; };
-            let error = failures.pop().expect("prepared failure").into_codec_error(
-                ctx, |_| panic!("refused session must not call the parser"),
-            );
-            assert!(matches!(error, CodecError::ResourceLimit(last) if last == first));
-            calls += 1;
-        });
-        assert_eq!(calls, 384);
-        assert!(failures.is_empty());
-    }
-
-    #[test]
-    fn stream_parse_preserves_original_refusal_without_callback() {
-        assert_original_refusal(|| StreamFailure::Parse(stream_error()));
-    }
-
-    #[test]
-    fn stream_malformed_preserves_original_refusal() {
-        assert_original_refusal(|| StreamFailure::Malformed(stream_error()));
-    }
-
-    #[test]
-    fn stream_unsupported_preserves_original_refusal() {
-        assert_original_refusal(|| StreamFailure::NotImplemented(stream_error()));
-    }
-
-    #[test]
-    fn stream_malformed_operation_preserves_original_refusal() {
-        assert_original_refusal(|| StreamFailure::from_operation(CodecError::Malformed("operation".into())));
-    }
-
-    #[test]
-    fn stream_unsupported_operation_preserves_original_refusal() {
-        assert_original_refusal(|| StreamFailure::from_operation(CodecError::NotImplemented("operation".into())));
-    }
-
-    #[test]
-    fn stream_io_operation_preserves_original_refusal() {
-        assert_original_refusal(|| StreamFailure::from_operation(CodecError::Io(std::io::Error::other("operation"))));
-    }
-
-    #[test]
-    fn stream_foreign_resource_preserves_caller_original_refusal() {
-        let ctx = cadmpeg_test_support::service_decode_context();
-        let CodecError::ResourceLimit(foreign) = ctx.refuse_codec_limit("other session", 5, 4)
-        else { panic!("foreign refusal"); };
-        assert_original_refusal(|| StreamFailure::Resource(foreign));
     }
 
     #[test]

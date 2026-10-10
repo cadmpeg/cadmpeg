@@ -51,7 +51,7 @@ fn control_points(
         marker.rational(),
     ));
     let mut visits = 0..count;
-    while (!visits.is_empty() || ctx.resource_refusal().is_some())
+    while !visits.is_empty()
         && propagate_resource!(ctx.next_charged(&mut visits, "ASM control points entries"))
             .is_some()
     {
@@ -79,9 +79,6 @@ pub(super) fn surface_block(
     toks: &[Token],
     marker_pos: usize,
 ) -> Option<Result<(NurbsSurface, usize), cadmpeg_core::CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     let marker = toks::marker_at(toks, marker_pos)?;
     let mut cur = Cur::at(toks, marker_pos + 1);
 
@@ -152,12 +149,12 @@ pub(super) fn surface_block(
             |_| ctx.collection_vec(n_poles_v, "ASM NURBS grid row poles"),
         ));
         let mut columns = 0..n_poles_v;
-        while (!columns.is_empty() || ctx.resource_refusal().is_some())
+        while !columns.is_empty()
             && propagate_resource!(ctx.next_charged(&mut columns, "ASM surface control columns"))
                 .is_some()
         {
             let mut rows = rows.iter_mut();
-            while rows.len() != 0 || ctx.resource_refusal().is_some() {
+            while rows.len() != 0 {
                 let Some(row) =
                     propagate_resource!(ctx.next_charged(&mut rows, "ASM surface control points"))
                 else {
@@ -182,12 +179,12 @@ pub(super) fn surface_block(
             |_| ctx.collection_vec(n_poles_v, "ASM NURBS grid row poles"),
         ));
         let mut columns = 0..n_poles_v;
-        while (!columns.is_empty() || ctx.resource_refusal().is_some())
+        while !columns.is_empty()
             && propagate_resource!(ctx.next_charged(&mut columns, "ASM surface control columns"))
                 .is_some()
         {
             let mut rows = rows.iter_mut();
-            while rows.len() != 0 || ctx.resource_refusal().is_some() {
+            while rows.len() != 0 {
                 let Some(row) =
                     propagate_resource!(ctx.next_charged(&mut rows, "ASM surface control points"))
                 else {
@@ -229,9 +226,6 @@ pub(super) fn curve_block(
     toks: &[Token],
     marker_pos: usize,
 ) -> Option<Result<(NurbsCurve, usize), cadmpeg_core::CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     let marker = toks::marker_at(toks, marker_pos)?;
     let mut cur = Cur::at(toks, marker_pos + 1);
 
@@ -413,9 +407,6 @@ where
         toks::SubtypeScope<'_>,
     ) -> Option<Result<T, cadmpeg_core::CodecError>>,
 {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     (|| -> Result<Option<T>, cadmpeg_core::CodecError> {
         if toks.is_empty() {
             return Ok(None);
@@ -1194,5 +1185,5 @@ mod tests {
     }
 
     mod attempt_storage;
-    mod entry_refusal;
+
 }

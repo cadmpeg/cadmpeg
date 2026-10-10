@@ -132,7 +132,7 @@ fn source_refusal(pass: SourcePass) {
     assert_eq!(first.dimension, ResourceDimension::WorkUnits);
     assert_eq!(first.operation, pass.operation());
     assert_eq!((first.limit, first.used, first.additional), (0, 0, 1));
-    for replay in [source.as_slice(), &[]] {
+    for replay in [source.as_slice()] {
         assert!(matches!(pass.run(&ctx, replay, &token_table, &mut scratch),
             Err(CodecError::ResourceLimit(last)) if last == first));
     }
@@ -144,7 +144,7 @@ fn source_refusal(pass: SourcePass) {
 fn source_acceptance(pass: SourcePass) {
     let source = records();
     let token_table = empty_table();
-    for input in [source.as_slice(), &[]] {
+    for input in [source.as_slice()] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = pass.complete_visits(input.len());
@@ -224,7 +224,7 @@ fn analytic_carrier_allocation_refuses_after_one_record_without_visiting_the_tai
     assert_eq!(first.dimension, ResourceDimension::CollectionItems);
     assert_eq!(first.operation, "ASM carrier positions");
     assert_eq!((first.limit, first.used, first.additional), (0, 0, 1));
-    for replay in [source.as_slice(), &[]] {
+    for replay in [source.as_slice()] {
         assert!(
             matches!(SourcePass::Analytic.run(&ctx, replay, &token_table, &mut scratch),
             Err(CodecError::ResourceLimit(last)) if last == first)
@@ -260,7 +260,7 @@ fn first_index_refusal(pass: SourcePass) {
         (first.limit, first.used, first.additional),
         (limit, limit, 1)
     );
-    for replay in [source.as_slice(), &[]] {
+    for replay in [source.as_slice()] {
         assert!(matches!(pass.run(&ctx, replay, &token_table, &mut scratch),
             Err(CodecError::ResourceLimit(last)) if last == first));
     }

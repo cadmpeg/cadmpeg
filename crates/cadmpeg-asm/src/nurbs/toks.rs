@@ -11,7 +11,6 @@
 use crate::kernel_header::RefWidth;
 use crate::nurbs::reader::{finish_knot_layout, BsplineMarker, Nullable};
 use crate::sab::Token;
-use cadmpeg_core::decode::admission::Admission;
 
 /// A cursor over one record's payload tokens.
 ///
@@ -160,9 +159,6 @@ impl<'a> Cur<'a> {
         &mut self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Option<Result<Vec<f64>, cadmpeg_core::CodecError>> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Some(Err(refusal.into()));
-        }
         let mark = self.pos;
         let Some(count) = self.take_long().and_then(|c| usize::try_from(c).ok()) else {
             self.pos = mark;
@@ -392,9 +388,6 @@ pub(super) fn find_owned_subtype_marker<'n>(
     toks: &[Token],
     names: &[&'n str],
 ) -> Option<Result<(usize, &'n str), cadmpeg_core::CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     if names.is_empty() {
         return None;
     }
@@ -553,9 +546,6 @@ pub(super) fn find_owned_intcurve_subtype(
     toks: &[Token],
     modern: &str,
 ) -> Option<Result<usize, cadmpeg_core::CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     if modern.is_empty() {
         return None;
     }
@@ -644,10 +634,7 @@ pub(super) fn subtype_span<'a>(
     start: usize,
 ) -> Result<Option<SubtypeScope<'a>>, cadmpeg_core::CodecError> {
     if !matches!(toks.get(start), Some(Token::SubtypeOpen)) {
-        return match Admission::resource_refusal(ctx) {
-            Some(refusal) => Err(refusal.into()),
-            None => Ok(None),
-        };
+        return Ok(None);
     }
     let mut depth = 0usize;
     let mut tokens = toks[start..].iter();
@@ -693,9 +680,6 @@ pub fn payload_subtype_toks<'r>(
     chunk_index: usize,
     expected: &str,
 ) -> Result<Option<SubtypeScope<'r>>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = Admission::resource_refusal(ctx) {
-        return Err(refusal.into());
-    }
     let mut chunk = 0usize;
     let mut open = None;
     let mut tokens = record.tokens.iter();
@@ -758,9 +742,6 @@ impl SubtypeTable {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         records: &[crate::sab::Record],
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(cadmpeg_core::CodecError::from(refusal));
-        }
         let mut defs: Vec<SubtypeDefinition> = Vec::new();
         let mut source_index_entries = records.iter();
         while source_index_entries.len() != 0 {
@@ -846,9 +827,6 @@ pub(crate) fn admit_subtype_references(
     records: &[crate::sab::Record],
     table: &SubtypeTable,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut scratch = ctx.reserve_scoped(0, "walk ASM subtype references")?;
     let mut visited = std::collections::BTreeSet::new();
     let mut source_values = IntoIterator::into_iter(records);
@@ -970,7 +948,6 @@ pub fn test_table(
 
 #[cfg(test)]
 mod tests {
-    mod entry_routes;
     mod index_sources;
     use super::{
         cache_scope as cache_scope_ctx, lex_test_span, marker_at,
@@ -1512,42 +1489,6 @@ mod tests {
     }
 
     #[test]
-    fn subtype_span_no_open_is_fixed_work_and_does_not_hide_a_fused_refusal() {
-        use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
-
-        let toks = [ident("x"), Token::SubtypeClose];
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("test decode context");
-        assert!(subtype_span_ctx(&ctx, &toks, 0)
-            .expect("no scan occurs")
-            .is_none());
-        ctx.finish_session().expect("no-open is a fixed O(1) check");
-
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("test decode context");
-        let error = ctx
-            .charge_work(1, "ASM prior scan refusal")
-            .expect_err("the first positive charge is refused");
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-            panic!("expected work refusal: {error:?}");
-        };
-        assert!(matches!(
-            subtype_span_ctx(&ctx, &toks, 0),
-            Err(cadmpeg_core::CodecError::ResourceLimit(actual)) if actual == limit
-        ));
-        assert!(matches!(
-            ctx.finish_session(),
-            Err(cadmpeg_core::CodecError::ResourceLimit(actual)) if actual == limit
-        ));
-    }
-
-    #[test]
     fn payload_subtype_lookup_charges_payload_prefix_and_matching_scope() {
         use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
 
@@ -1605,43 +1546,6 @@ mod tests {
         assert_eq!(limit.operation, "ASM subtype span token scan");
         assert_eq!(limit.used, 11);
         assert_eq!(limit.additional, 1);
-        assert!(matches!(
-            ctx.finish_session(),
-            Err(cadmpeg_core::CodecError::ResourceLimit(actual)) if actual == limit
-        ));
-    }
-
-    #[test]
-    fn payload_subtype_lookup_preserves_a_fused_refusal_when_no_chunk_exists() {
-        use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
-
-        let record = crate::test_support::sab::record(0, "pcurve".into(), Vec::new().into(), 0, 0);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("test decode context");
-        assert!(super::payload_subtype_toks(&ctx, &record, 0, "exp_par_cur")
-            .expect("empty lookup does not scan")
-            .is_none());
-        ctx.finish_session().expect("empty lookup uses no work");
-
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("test decode context");
-        let error = ctx
-            .charge_work(1, "ASM prior scan refusal")
-            .expect_err("the first positive charge is refused");
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-            panic!("expected work refusal: {error:?}");
-        };
-
-        assert!(matches!(
-            super::payload_subtype_toks(&ctx, &record, 0, "exp_par_cur"),
-            Err(cadmpeg_core::CodecError::ResourceLimit(actual)) if actual == limit
-        ));
         assert!(matches!(
             ctx.finish_session(),
             Err(cadmpeg_core::CodecError::ResourceLimit(actual)) if actual == limit
