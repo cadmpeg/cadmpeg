@@ -57,9 +57,6 @@ pub(crate) fn scan_history_boundary(
     ref_width: RefWidth,
     preamble: Option<&[&str]>,
 ) -> Result<Option<usize>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if bytes.get(start..).is_none() {
         return Ok(None);
     }
@@ -324,9 +321,6 @@ pub fn payload_subtype_range(
     ref_width: RefWidth,
     expected: &str,
 ) -> Result<Option<std::ops::Range<usize>>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(limit) = record.offset.checked_add(record.len) else {
         return Ok(None);
     };
@@ -407,9 +401,6 @@ pub fn payload_token(
     ref_width: RefWidth,
     token_index: usize,
 ) -> Result<Option<(usize, Token)>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(limit) = record.offset.checked_add(record.len) else {
         return Ok(None);
     };
@@ -477,9 +468,6 @@ pub(crate) fn lex<'bytes>(
     pos: usize,
     ref_width: RefWidth,
 ) -> Result<Result<(Lexed<'bytes>, usize), StreamError>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let parsed = (|| -> Result<(Lexed<'bytes>, usize), StreamFailure> {
         let err = |reason: &str| StreamError {
             format: StreamFormat::Binary,
@@ -657,9 +645,6 @@ fn frame_impl(
     declared_entities: Option<u64>,
     eof_terminates_final_record: bool,
 ) -> Result<Vec<Record>, StreamFailure> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(StreamFailure::from_operation(refusal.into()));
-    }
     let Some(bytes) = bytes.get(..limit) else {
         return Err(StreamError {
             format: StreamFormat::Binary,

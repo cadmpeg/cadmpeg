@@ -62,9 +62,6 @@ pub fn record_count(bytes: &[u8]) -> Option<u32> {
 /// is absent. Fields that cannot be read (short stream or unexpected tags) are
 /// left `None` rather than guessed.
 pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Option<BinaryHeader>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(width) = declared_width(bytes) else {
         return Ok(None);
     };
@@ -126,9 +123,6 @@ pub fn record_stream_start(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Option<usize>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(width) = declared_width(bytes) else {
         return Ok(None);
     };
@@ -171,9 +165,6 @@ pub fn solved_record_limit(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Option<usize>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(width) = declared_width(bytes) else {
         return Ok(None);
     };
@@ -204,9 +195,6 @@ pub fn solved_record_limit_with_header(
     bytes: &[u8],
     header: &BinaryHeader,
 ) -> Result<Option<usize>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if !header.metadata.has_history_partition() {
         return Ok(None);
     }
@@ -224,7 +212,7 @@ pub fn solved_record_limit_with_header(
 
 #[cfg(test)]
 mod tests {
-    mod entry_refusal;
+
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 

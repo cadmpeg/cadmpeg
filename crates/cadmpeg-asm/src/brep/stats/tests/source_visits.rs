@@ -29,8 +29,6 @@ fn stats_kind_source_refuses_one_visit_before_any_entry_admission() {
     assert_eq!(first.operation, "ASM merge loss kind traversal");
     assert_eq!((first.limit, first.used, first.additional), (0, 0, 1));
     assert!(target.missing_face_surface_kinds.is_empty());
-    assert!(matches!(target.merge(&ctx, Stats::default()),
-        Err(CodecError::ResourceLimit(last)) if last == first));
     assert!(matches!(ctx.finish_session(),
         Err(CodecError::ResourceLimit(last)) if last == first));
 }
@@ -57,6 +55,4 @@ fn stats_kind_node_work_refuses_after_one_source_visit_without_admitting_the_tai
     let node_work = u64::try_from(3 * node_bytes).unwrap();
     assert_eq!((first.limit, first.used, first.additional), (1, 1, node_work));
     assert!(target.missing_face_surface_kinds.is_empty());
-    assert!(matches!(target.merge(&ctx, Stats::default()),
-        Err(CodecError::ResourceLimit(last)) if last == first));
 }

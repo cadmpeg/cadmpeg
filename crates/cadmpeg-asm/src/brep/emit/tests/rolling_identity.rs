@@ -134,22 +134,6 @@ fn rolling_surface_and_curve_share_one_identity_factory() {
 }
 
 #[test]
-fn rolling_present_sides_skip_factory_after_original_refusal() {
-    crate::test_support::with_entry_context(|ctx, original| {
-        let Some(first) = original else {
-            return;
-        };
-        for (surface, curve) in [(true, false), (false, true), (true, true)] {
-            let mut out = AsmBrep::default();
-            assert!(matches!(super::super::emit_rolling_ball_side(ctx, &mut out,
-                crate::asm_format!("sat"), || panic!("original refusal precedes factory"),
-                side(surface, curve)), Err(CodecError::ResourceLimit(last)) if last == first));
-            assert!(out.surfaces.is_empty() && out.curves.is_empty());
-        }
-    });
-}
-
-#[test]
 fn rolling_factory_refusal_precedes_both_output_arenas() {
     for (surface, curve) in [(true, false), (false, true), (true, true)] {
         let input = side(surface, curve);
@@ -178,15 +162,7 @@ fn rolling_factory_refusal_precedes_both_output_arenas() {
         assert_eq!(first.operation, "test original rolling factory refusal");
         assert_eq!((first.limit, first.used, first.additional), (0, 0, 1));
         assert!(out.surfaces.is_empty() && out.curves.is_empty());
-        for _ in 0..64 {
-            for (surface, curve) in [(false, false), (true, false), (false, true), (true, true)] {
-                assert!(
-                    matches!(super::super::emit_rolling_ball_side(&ctx, &mut out,
-                    crate::asm_format!("sat"), || panic!("fused factory cannot run"),
-                    side(surface, curve)), Err(CodecError::ResourceLimit(last)) if last == first)
-                );
-            }
-        }
+
         assert!(out.surfaces.is_empty() && out.curves.is_empty());
         assert!(
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
@@ -248,16 +224,7 @@ fn surface_prefix_copy_bound(refuses: Option<ResourceDimension>) {
         (limit, used, copy)
     );
     assert!(out.surfaces.is_empty() && out.curves.is_empty());
-    for _ in 0..64 {
-        for (surface, curve) in [(false, false), (true, false), (false, true), (true, true)] {
-            assert!(
-                matches!(super::super::emit_rolling_ball_side(&ctx, &mut out,
-                crate::asm_format!("sat"), || panic!("original copy refusal precedes factory"),
-                side(surface, curve)), Err(CodecError::ResourceLimit(last)) if last == first)
-            );
-            assert!(out.surfaces.is_empty() && out.curves.is_empty());
-        }
-    }
+
     assert!(matches!(ctx.finish_session(),
         Err(CodecError::ResourceLimit(last)) if last == first));
 }

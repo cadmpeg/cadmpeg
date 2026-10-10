@@ -348,9 +348,6 @@ pub(super) fn decode_rolling_ball_curve(
     position: &mut usize,
     int_width: RefWidth,
 ) -> Option<Result<RollingBallSupportCurve<CurveGeometry>, cadmpeg_core::CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     if marker_at(bytes, *position).is_some() {
         let curve = decode_curve_block(bytes, *position, int_width)?;
         *position = curve.end();
@@ -483,9 +480,6 @@ pub(super) fn rolling_ball_side(
 > {
     use cadmpeg_ir::geometry::VariableBlendSupportKind;
 
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     let support_kind = match cur.take_str()? {
         "blend_support_cos_curve" | "blendsupcos" => VariableBlendSupportKind::CosineCurve,
         "blend_support_curve" | "blendsupcur" => VariableBlendSupportKind::Curve,
@@ -551,9 +545,6 @@ pub(super) fn optional_rolling_ball_surface(
     reference_context: Option<&SubtypeTable>,
 ) -> Option<Result<Nullable<RollingBallSupportSurface<SurfaceGeometry>>, cadmpeg_core::CodecError>>
 {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     let saved = cur.pos();
     if cur.take_ident() == Some("null_surface") {
         return Some(Ok(Nullable::Null));
@@ -569,9 +560,6 @@ fn rolling_ball_surface(
     cur: &mut Cur<'_>,
     reference_context: Option<&SubtypeTable>,
 ) -> Option<Result<RollingBallSupportSurface<SurfaceGeometry>, cadmpeg_core::CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     let toks = cur.toks();
     let saved = cur.pos();
     let kind = cur.take_ident()?;
@@ -630,9 +618,6 @@ pub(super) fn rolling_ball_curve(
     cur: &mut Cur<'_>,
     reference_context: Option<&SubtypeTable>,
 ) -> Option<Result<RollingBallSupportCurve<CurveGeometry>, cadmpeg_core::CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     let toks = cur.toks();
     if toks::marker_at(toks, cur.pos()).is_some() {
         let (curve, curve_end) = propagate_resource!(curve_block(ctx, toks, cur.pos())?);
@@ -750,9 +735,6 @@ fn rolling_ball_third_side(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
 ) -> Option<Result<EmbeddedRollingBallThirdSide, cadmpeg_core::CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     let label = propagate_resource!(
         ctx.copy_retained_text(cur.take_str()?, "ASM rolling ball third-side label")
     );
@@ -905,7 +887,7 @@ fn variable_blend_value(
                     Err(error) => return Some(Err(error)),
                 };
             let mut visits = 0..count;
-            while (!visits.is_empty() || ctx.resource_refusal().is_some())
+            while !visits.is_empty()
                 && propagate_resource!(
                     ctx.next_charged(&mut visits, "ASM variable blend value entries")
                 )
@@ -1163,9 +1145,6 @@ fn vertex_blend_boundary(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
 ) -> Option<Result<EmbeddedVertexBlendBoundary, cadmpeg_core::CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     let kind = cur.take_str()?;
     let boundary_type = cur.take_bool()?;
     let magic = cur.take_position()?;
@@ -1270,9 +1249,6 @@ fn revision_vertex_blend_boundary(
     cur: &mut Cur<'_>,
     resolver: Option<&SubtypeTable>,
 ) -> Option<Result<EmbeddedVertexBlendBoundary, cadmpeg_core::CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     let table = resolver?;
     let kind = cur.take_ident()?;
     let boundary_type = cur.take_bool()?;
@@ -1415,7 +1391,7 @@ pub(super) fn vertex_blend_spl_sur(
         Err(error) => return Some(Err(error)),
     };
     let mut visits = 0..count;
-    while (!visits.is_empty() || ctx.resource_refusal().is_some())
+    while !visits.is_empty()
         && propagate_resource!(ctx.next_charged(&mut visits, "ASM vertex blend spl sur entries"))
             .is_some()
     {

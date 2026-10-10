@@ -133,7 +133,7 @@ fn domain_source_refusal(work: u64) {
     assert_eq!((first.limit, first.used, first.additional), (work, work, 1));
     assert_eq!(out.curves, expected.curves);
     for _ in 0..64 {
-        for mut replay in [rejected_carriers(), AsmBrep::default()] {
+        for mut replay in [rejected_carriers()] {
             assert!(matches!(clamp_edge_ranges_to_carrier_domains(&ctx, &mut replay),
                 Err(CodecError::ResourceLimit(last)) if last == first));
         }

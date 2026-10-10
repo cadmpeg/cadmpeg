@@ -157,9 +157,6 @@ struct FieldReader<'a> {
 
 impl<'a> FieldReader<'a> {
     fn skip_ws(&mut self, ctx: &DecodeContext<'_>) -> Result<(), StreamFailure> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(StreamFailure::from_operation(refusal.into()));
-        }
         while self.pos < self.bytes.len() {
             ctx.charge_work(1, "scan SAT whitespace")
                 .map_err(StreamFailure::from_operation)?;
@@ -221,9 +218,6 @@ impl<'a> FieldReader<'a> {
         len: usize,
         at: usize,
     ) -> Result<&'a str, StreamFailure> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(StreamFailure::from_operation(refusal.into()));
-        }
         self.pos += 1; // one separator byte after the length field
         let end = self
             .pos
@@ -323,9 +317,6 @@ fn header_int<T: cadmpeg_core::decode::text::TextScalar>(
     at: usize,
     what: &str,
 ) -> Result<T, StreamFailure> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(StreamFailure::from_operation(refusal.into()));
-    }
     let no_field = || StreamError {
         format: StreamFormat::Text,
         offset: at,
@@ -418,9 +409,6 @@ fn header_float(
     at: usize,
     what: &str,
 ) -> Result<f64, StreamFailure> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(StreamFailure::from_operation(refusal.into()));
-    }
     let malformed = || {
         StreamFailure::Malformed(StreamError {
             format: StreamFormat::Text,
@@ -600,9 +588,6 @@ pub fn parse_container(
 
 /// Parse a complete text stream into its header and typed record table.
 pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, StreamFailure> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(StreamFailure::from_operation(refusal.into()));
-    }
     let mut pos = 0usize;
     let header = parse_header(ctx, bytes, &mut pos)?;
     // Length conversion into the binary centimetre convention: the stream
@@ -764,9 +749,6 @@ fn lex_prim<'a>(
     field: &'a str,
     integer: bool,
 ) -> Result<Prim<'a>, StreamFailure> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(StreamFailure::from_operation(refusal.into()));
-    }
     if let Some(rest) = field.strip_prefix('$') {
         let index = ctx
             .parse_text::<i64>(rest, "parse SAT reference index")
@@ -997,10 +979,6 @@ impl<'a> Cur<'a, '_, '_> {
     }
 
     fn length(&mut self, value: f64) -> Option<f64> {
-        if let Some(refusal) = self.ctx.resource_refusal() {
-            self.resource = Some(CodecError::ResourceLimit(refusal));
-            return None;
-        }
         match length_cm(value, self.scale) {
             Some(converted) => Some(converted),
             None => {
@@ -1011,19 +989,11 @@ impl<'a> Cur<'a, '_, '_> {
     }
 
     fn invalid_spline_count<T>(&mut self) -> Option<T> {
-        if let Some(refusal) = self.ctx.resource_refusal() {
-            self.resource = Some(CodecError::ResourceLimit(refusal));
-            return None;
-        }
         self.failure = Some(TypeFailure::InvalidSplineCount);
         None
     }
     fn peek(&mut self) -> Option<&'a Prim<'a>> {
         if self.resource.is_some() {
-            return None;
-        }
-        if let Some(refusal) = self.ctx.resource_refusal() {
-            self.resource = Some(CodecError::ResourceLimit(refusal));
             return None;
         }
         if self.pos >= self.prims.len() {
@@ -1267,9 +1237,6 @@ fn run_shape<'a>(
     slots: &[Slot],
     out: &mut Vec<PendingToken<'a>>,
 ) -> Result<Option<()>, CodecError> {
-    if let Some(refusal) = cur.ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     for slot in slots {
         if take_slot(cur, *slot, out)?.is_none() {
             return Ok(None);
@@ -2137,7 +2104,6 @@ fn type_record(
 mod tests {
     mod frame_order;
     mod manual_scans;
-    mod typing_entry;
     fn with_work_limit<T>(
         bytes: &[u8],
         max_work: u64,

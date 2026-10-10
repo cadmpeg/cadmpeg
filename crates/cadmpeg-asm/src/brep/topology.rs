@@ -35,9 +35,6 @@ pub(super) fn decode_analytic_carriers(
     let mut surface_geo: HashMap<i64, SurfaceGeometry> = HashMap::new();
     let mut inward_normal_surfaces = HashSet::new();
     let mut curve_geo: HashMap<i64, CurveGeometry> = HashMap::new();
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(records);
     while source_values.len() != 0 {
         let Some(r) = ctx.next_charged(&mut source_values, "ASM topology record pass")? else {
@@ -143,9 +140,6 @@ pub(super) fn keep_faces_and_carriers(
         undecoded_carriers,
         ..
     } = &mut *reach;
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(records);
     while source_values.len() != 0 {
         let Some(r) = ctx.next_charged(&mut source_values, "ASM topology record pass")? else {
@@ -445,9 +439,6 @@ pub(super) fn walk_reachable_topology(
     // Source order makes shared carrier resolution deterministic.
     let mut walked_face_storage = ctx.reserve_scoped(0, "ASM visited faces")?;
     let mut walked_faces = HashSet::new();
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(records);
     while source_values.len() != 0 {
         let Some(face) = ctx.next_charged(&mut source_values, "ASM reachable face walk")? else {
@@ -839,9 +830,6 @@ pub(super) fn collect_wire_topology(
     let mut shell_edge_membership = HashSet::new();
     let mut shell_vertex_membership = HashSet::new();
     if let Some(limit) = saved_entity_limit {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let mut source_values = IntoIterator::into_iter(records);
         while source_values.len() != 0 {
             let Some(edge) = ctx.next_charged(&mut source_values, "ASM saved edge record pass")?
@@ -882,9 +870,6 @@ pub(super) fn collect_wire_topology(
         let mut wire_guard = HashSet::new();
         let mut roots_storage = ctx.reserve_scoped(0, "ASM shell wire root storage")?;
         let roots = roots_storage.with_storage(|| shell_wire_roots(ctx, shell, by_index))?;
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let mut source_values = IntoIterator::into_iter(roots);
         while source_values.len() != 0 {
             let Some(root) = ctx.next_charged(&mut source_values, "ASM shell wire roots")? else {
@@ -1075,9 +1060,6 @@ fn keep_wire_edge(
         purpose,
         format,
     } = inputs;
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Carriers {
         curve_geo,
         procedural_curve_defs,
@@ -1264,9 +1246,6 @@ pub(super) fn classify_edge_curve_senses(
     } = reach;
     let mut reversed_curve_refs: HashSet<i64> = HashSet::new();
     let mut forward_curve_refs: HashSet<i64> = HashSet::new();
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(records);
     while source_values.len() != 0 {
         let Some(r) = ctx.next_charged(&mut source_values, "ASM topology record pass")? else {
@@ -1311,9 +1290,6 @@ pub(super) fn ring_coedges(
     kept: &HashSet<i64>,
     format: IdFormat,
 ) -> Result<Vec<CoedgeId>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let id = |i: i64| CoedgeId::from(super::id(format, i));
     let mut out = Vec::new();
     let Some(first) = loop_rec.ref_at(4) else {

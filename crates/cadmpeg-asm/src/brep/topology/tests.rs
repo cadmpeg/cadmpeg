@@ -10,7 +10,6 @@ use cadmpeg_ir::geometry::RevisionCacheForm;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use std::collections::{HashMap, HashSet};
 
-mod entry_refusal;
 mod shared_carrier;
 mod source_visits;
 

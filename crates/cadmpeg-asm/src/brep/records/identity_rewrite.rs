@@ -12,16 +12,10 @@ use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
 macro_rules! scalar {
     ($($owner:ty),*) => {$(
         impl RewriteIdentities for $owner {
-            fn visit_identity_references(&self, ctx: &DecodeContext<'_>, _visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>) -> Result<(), CodecError> {
-                if let Some(refusal) = ctx.resource_refusal() {
-                    return Err(refusal.into());
-                }
+            fn visit_identity_references(&self, _ctx: &DecodeContext<'_>, _visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>) -> Result<(), CodecError> {
                 Ok(())
             }
-            fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(self, ctx: &DecodeContext<'_>, _map: &mut IdentityMap<'_, F>) -> Result<Self, CodecError> {
-                if let Some(refusal) = ctx.resource_refusal() {
-                    return Err(refusal.into());
-                }
+            fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(self, _ctx: &DecodeContext<'_>, _map: &mut IdentityMap<'_, F>) -> Result<Self, CodecError> {
                 Ok(self)
             }
         }
@@ -188,70 +182,6 @@ mod tests {
     #[test]
     fn fixed_asm_scalars_visit_and_rewrite_with_zero_budgets() {
         scalar_cases!(check_free_scalar);
-    }
-
-    fn check_fused_scalar<T: RewriteIdentities + Clone + serde::Serialize>(value: &T) {
-        let wire = serde_json::to_value(value).unwrap();
-        for dimension in [
-            ResourceDimension::WorkUnits,
-            ResourceDimension::CollectionItems,
-            ResourceDimension::MaterializedBytes,
-            ResourceDimension::RetainedBytes,
-            ResourceDimension::Entities,
-            ResourceDimension::RecursionDepth,
-        ] {
-            let arena = DecodeArena::new();
-            let policy = zero_policy();
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let mut map = IdentityMap::new(&ctx, "test unused ASM scalar map", |_source: &str| {
-                panic!("a refused scalar must not map an identity");
-            })
-            .unwrap();
-            let refused = match dimension {
-                ResourceDimension::WorkUnits => {
-                    ctx.charge_work(1, "test original ASM scalar refusal")
-                }
-                ResourceDimension::CollectionItems => {
-                    ctx.charge_collection_items(1, "test original ASM scalar refusal")
-                }
-                ResourceDimension::MaterializedBytes => ctx
-                    .reserve_scoped(1, "test original ASM scalar refusal")
-                    .map(|_| ()),
-                ResourceDimension::RetainedBytes => {
-                    ctx.charge_retained(1, "test original ASM scalar refusal")
-                }
-                ResourceDimension::Entities => {
-                    ctx.charge_entities(1, "test original ASM scalar refusal")
-                }
-                ResourceDimension::RecursionDepth => ctx
-                    .enter_nested("test original ASM scalar refusal")
-                    .map(|_| ()),
-                _ => panic!("scalar refusal dimension"),
-            };
-            let Err(CodecError::ResourceLimit(first)) = refused else {
-                panic!("expected original refusal");
-            };
-            assert_eq!(first.dimension, dimension);
-            for _ in 0..64 {
-                assert!(
-                    matches!(value.visit_identity_references(&ctx, &mut |_source| {
-                    panic!("a refused scalar must not visit an identity");
-                }), Err(CodecError::ResourceLimit(last)) if last == first)
-                );
-                assert!(matches!(value.clone().rewrite_identities(&ctx, &mut map),
-                    Err(CodecError::ResourceLimit(last)) if last == first));
-                assert_eq!(serde_json::to_value(value).unwrap(), wire);
-            }
-            drop(map);
-            assert!(
-                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
-            );
-        }
-    }
-
-    #[test]
-    fn fixed_asm_scalars_replay_each_original_resource_refusal() {
-        scalar_cases!(check_fused_scalar);
     }
 
     fn record() -> super::super::EdgeContinuity {

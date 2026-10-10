@@ -40,7 +40,7 @@ fn source_boundary(cap: u64, operation: &'static str, dimension: ResourceDimensi
     } else {
         assert_eq!((first.limit, first.used), (0, 0));
     }
-    for replay in [&records[..], &[][..]] {
+    for replay in [&records[..]] {
         assert!(matches!(SubtypeTable::from_records(&ctx, replay),
             Err(CodecError::ResourceLimit(last)) if last == first));
     }
