@@ -245,8 +245,8 @@ fn relation_fixture(
                     value: Some(ParameterValue::Real(
                         cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite"),
                     )),
-                    dependencies: Default::default(),
-                    properties: Default::default(),
+                    dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                    properties: std::collections::BTreeMap::new(),
                     pmi: None,
                     native_ref: None,
                 },

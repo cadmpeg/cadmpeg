@@ -2390,6 +2390,9 @@ pub(crate) fn notes(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Vec<String>, CodecError> {
+    const ENUMERATION_NOTE: &str =
+        "container-level enumeration; `decode` applies the identified storage family's \
+         standard, freeform, E5, zero-entity, or metadata-fallback route";
     let mut notes = Vec::new();
     let outer = ctx.format_retained(format_args!(
             "outer V5_CFV2 container: directory offset {} + length {} = {} (file size {}); variant: {}",
@@ -2466,11 +2469,8 @@ pub(crate) fn notes(
         )?;
         ctx.push_vec(&mut notes, note, "catia_container_notes")?;
     }
-    const NOTE: &str =
-        "container-level enumeration; `decode` applies the identified storage family's \
-         standard, freeform, E5, zero-entity, or metadata-fallback route";
-    let mut note = ctx.retained_string(NOTE.len(), "catia_container_note")?;
-    note.push_str(NOTE);
+    let mut note = ctx.retained_string(ENUMERATION_NOTE.len(), "catia_container_note")?;
+    note.push_str(ENUMERATION_NOTE);
     ctx.push_vec(&mut notes, note, "catia_container_notes")?;
     Ok(notes)
 }

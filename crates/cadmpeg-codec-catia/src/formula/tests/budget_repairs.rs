@@ -80,7 +80,7 @@ fn formula_transfer_preserves_the_candidate_promotion_refusal() {
             let Err(CodecError::ResourceLimit(limit)) = result else {
                 panic!("candidate promotion must refuse");
             };
-            assert_eq!(ctx.resource_refusal(), Some(limit.clone()));
+            assert_eq!(ctx.resource_refusal(), Some(limit));
             assert!(ir.model.parameters.is_empty());
             assert!(matches!(ctx.charge_work(0, "after candidate promotion"),
                 Err(CodecError::ResourceLimit(original)) if original == limit));
