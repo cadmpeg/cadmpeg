@@ -2192,8 +2192,8 @@ impl From<CodecError> for PlaneBoundaryError {
     }
 }
 
-type PlaneBoundaryKey = (u32, super::CoplanarityPlaneKey);
-type PlaneBoundaryProof<'ir> = (super::CoplanarityProof<'ir, &'ir Edge>, bool);
+type PlaneBoundaryKey = (u32, super::plane_proof::CoplanarityPlaneKey);
+type PlaneBoundaryProof<'ir> = (super::plane_proof::CoplanarityProof<'ir, &'ir Edge>, bool);
 
 /// Successful boundary proofs for one immutable model.
 struct PlaneBoundaryProofs<'ir, 'ctx> {
@@ -2210,7 +2210,7 @@ fn plane_boundary_edge<'ir>(
     ctx: &DecodeContext<'_>,
     proofs: &mut PlaneBoundaryProofs<'ir, '_>,
 ) -> Result<&'ir Edge, PlaneBoundaryError> {
-    let plane_key = super::coplanarity_plane_key(plane, resolution);
+    let plane_key = super::plane_proof::coplanarity_plane_key(plane, resolution);
     let mut proof_key = (boundary_sequence, plane_key);
     if let Some((proof, simplicity_origin_invariant)) = ctx.get_btree_map(
         &proofs.proven,
@@ -2224,7 +2224,7 @@ fn plane_boundary_edge<'ir>(
         }
         proof_key = (
             boundary_sequence,
-            super::coplanarity_placement_key(plane, resolution),
+            super::plane_proof::coplanarity_placement_key(plane, resolution),
         );
         if let Some((proof, _)) = ctx.get_btree_map(
             &proofs.proven,
@@ -2308,7 +2308,7 @@ fn plane_boundary_edge<'ir>(
             &mut proofs.proven,
             proof_key,
             (
-                super::CoplanarityProof {
+                super::plane_proof::CoplanarityProof {
                     origin: plane.0,
                     geometry: Some(geometry),
                     result: source_edge,
