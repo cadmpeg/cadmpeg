@@ -429,7 +429,7 @@ fn walk_saved_toggle_stream<'a>(
         return Ok(None);
     }
     let mut ordinals = 0..count;
-    while ordinals.len() != 0 {
+    while !ordinals.is_empty() {
         let Some(ordinal) = ctx.next_charged(&mut ordinals, "walk NX saved toggle members")? else {
             break;
         };
@@ -1008,18 +1008,29 @@ mod tests {
     #[test]
     fn malformed_first_saved_toggle_stops_before_unvisited_members() {
         let bytes = stream(&["0123456789abcdef0123456789abcdef;On"; 64], [0; 4]);
-        crate::test_support::with_decode_context_over(&[],
+        crate::test_support::with_decode_context_over(
+            &[],
             |policy| policy.limits.max_work_units = 1,
             |ctx| {
-                assert!(super::walk_saved_toggle_stream(ctx, &bytes, |_, _| panic!("malformed member cannot be visited")).unwrap().is_none());
+                assert!(super::walk_saved_toggle_stream(ctx, &bytes, |_, _| panic!(
+                    "malformed member cannot be visited"
+                ))
+                .unwrap()
+                .is_none());
                 assert_eq!(ctx.resource_refusal(), None);
-            });
-        let error = crate::test_support::resource_refusal_at(&[], ResourceDimension::WorkUnits,
-            "walk NX saved toggle members", |ctx| super::walk_saved_toggle_stream(ctx, &bytes, |_, _| Ok(Some(()))));
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "walk NX saved toggle members" && limit.additional == 1));
+            },
+        );
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            ResourceDimension::WorkUnits,
+            "walk NX saved toggle members",
+            |ctx| super::walk_saved_toggle_stream(ctx, &bytes, |_, _| Ok(Some(()))),
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "walk NX saved toggle members" && limit.additional == 1)
+        );
     }
-
 }
 
 // Each optional key below names itself in whatever it refuses.
