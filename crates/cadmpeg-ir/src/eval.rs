@@ -54,6 +54,7 @@ mod bezier;
 mod depth;
 mod curve_higher;
 mod curve_nurbs;
+mod contact_higher;
 mod model_surface_point;
 mod pcurve_nurbs;
 mod polyline;
@@ -6582,6 +6583,7 @@ enum ContactRequest {
     Support,
     Tangent,
     NormalDerivative,
+    Higher(SurfaceRequest),
 }
 
 /// The contact track of a blend side at a parameter: the support's point
@@ -6593,6 +6595,7 @@ struct ContactTrack {
     support: SurfaceFirstOrder,
     uv_tangent: Result<FinitePoint2, EvaluationFailure<()>>,
     normal_derivative: Result<Vector3, EvaluationFailure<()>>,
+    higher: [Result<FiniteVector3, EvaluationFailure<()>>; 4],
 }
 
 impl ContactTrack {
@@ -6643,14 +6646,14 @@ fn variable_blend_contact_track(
 ) -> Result<ContactTrack, EvaluationFailure<()>> {
     let no_value = EvaluationFailure::NoValue;
     let surface = &side.surface.as_ref().ok_or(no_value)?.surface;
-    let pcurve = side.pcurve.as_ref().ok_or(no_value)?;
+    let geometry = side.pcurve.as_ref().ok_or(no_value)?;
     // The point owner already computes this actual pcurve differential.
     // Keep its scalar Results and release its scratch before support traversal.
     let pcurve = {
         let scratch = decode::Scratch::new(admission);
         let result = (|| {
             let parameter = FiniteReal::new(parameter).ok_or(no_value)?;
-            let evaluated = pcurve_uv_differential(&scratch, pcurve, parameter).ok_or(no_value)?;
+            let evaluated = pcurve_uv_differential(&scratch, geometry, parameter).ok_or(no_value)?;
             if let Some(limit) = evaluated.resource {
                 return Err(EvaluationFailure::ResourceLimit(limit));
             }
@@ -6660,8 +6663,19 @@ fn variable_blend_contact_track(
     };
     // A non-finite offset-pcurve point still reaches the actual support.
     let uv = pcurve.point.map_or_else(|point| point, FinitePoint2::get);
-    let support = surface_request::model::first_order(admission, index, surface, uv.u, uv.v)
-        .map_err(|failure| failure.map(|_| ()))?;
+    let (support, higher) = if let ContactRequest::Higher(order) = request {
+        let requested = surface_request::model::requested(admission, index, surface, uv.u, uv.v, order)
+            .map_err(|failure| failure.map(|_| ()))?;
+        let higher = contact_higher::evaluate(geometry, &pcurve, &requested, order);
+        if let Some(limit) = higher.iter().find_map(|result| match result {
+            Err(EvaluationFailure::ResourceLimit(limit)) => Some(*limit),
+            _ => None,
+        }) { return Err(EvaluationFailure::ResourceLimit(limit)); }
+        (requested.jet.first_order(), higher)
+    } else {
+        (surface_request::model::first_order(admission, index, surface, uv.u, uv.v)
+            .map_err(|failure| failure.map(|_| ()))?, [Err(no_value); 4])
+    };
     let uv_tangent = if request == ContactRequest::Support {
         Err(no_value)
     } else { pcurve.tangent.map_err(|failure| failure.map(|_| ())) };
@@ -6693,6 +6707,7 @@ fn variable_blend_contact_track(
         support,
         uv_tangent,
         normal_derivative,
+        higher,
     })
 }
 

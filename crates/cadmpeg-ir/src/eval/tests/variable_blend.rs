@@ -507,6 +507,7 @@ fn circular_variable_blend_skips_non_finite_residual_before_valid_candidate() {
         },
         uv_tangent: Err(crate::eval::EvaluationFailure::NoValue),
         normal_derivative: Err(crate::eval::EvaluationFailure::NoValue),
+        higher: [Err(crate::eval::EvaluationFailure::NoValue); 4],
     };
     let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
     let section = cacheless_circular_variable_blend_section(
@@ -534,6 +535,7 @@ fn contact_track_normal_exists_when_finite_partials_cross_outside_range() {
         },
         uv_tangent: Err(crate::eval::EvaluationFailure::NoValue),
         normal_derivative: Err(crate::eval::EvaluationFailure::NoValue),
+        higher: [Err(crate::eval::EvaluationFailure::NoValue); 4],
     };
     assert_eq!(track.normal(), Ok(Vector3::new(0.0, 0.0, 1.0)));
 }

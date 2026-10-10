@@ -104,6 +104,7 @@ fn contact_track(point: Point3, tangent: Vector3) -> crate::eval::ContactTrack {
             crate::units::FinitePoint2::new(crate::math::Point2::new(1.0, 0.0)).unwrap(),
         ),
         normal_derivative: Err(crate::eval::EvaluationFailure::NoValue),
+        higher: [Err(crate::eval::EvaluationFailure::NoValue); 4],
     }
 }
 
