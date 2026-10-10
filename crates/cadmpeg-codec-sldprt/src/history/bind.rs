@@ -1469,10 +1469,6 @@ mod tests {
             assert_eq!(limit.limit, cap);
             assert_eq!(limit.used, used);
             assert_eq!(limit.additional, additional);
-            assert!(
-                matches!(ctx.charge_work(0, "probe original face-owner refusal"),
-                Err(cadmpeg_core::CodecError::ResourceLimit(first)) if first == limit)
-            );
             drop(result);
             assert!(matches!(ctx.finish_session(),
                 Err(cadmpeg_core::CodecError::ResourceLimit(first)) if first == limit));

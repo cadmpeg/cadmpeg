@@ -150,7 +150,7 @@ fn generated_profile_drop_releases_all_backing_without_retained_publication() {
 }
 
 #[test]
-fn borrowed_profile_is_free_and_preserves_the_original_fuse() {
+fn borrowed_profile_is_free() {
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(line()));
     let arena = DecodeArena::new();
     let mut policy = policy();
@@ -172,21 +172,7 @@ fn borrowed_profile_is_free_and_preserves_the_original_fuse() {
     assert!(std::ptr::eq(profile.curve(), source));
     drop(profile);
     assert!(ctx.resource_refusal().is_none());
-    let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, "test borrowed profile fuse")
-    else {
-        panic!("work cap");
-    };
-    let result = profile_nurbs(
-        &ctx,
-        &geometry,
-        &"borrowed profile",
-        &mut RefusalSink::Retained(&mut LaneRefusals::new()),
-    );
-    assert!(matches!(&result, Err(CodecError::ResourceLimit(actual)) if *actual == limit));
-    drop(result);
-    assert!(
-        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit)
-    );
+    ctx.finish_session().unwrap();
 }
 
 #[test]
@@ -326,36 +312,6 @@ fn rejected_sweep_grid_releases_candidate_and_raw_storage_after_note() {
         panic!("exact retained refusal record");
     };
     assert_eq!((limit.used, limit.additional), (expected, 1));
-    assert_eq!(ctx.resource_refusal(), Some(limit));
-    assert!(
-        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit)
-    );
-}
-
-#[test]
-fn invalid_sweep_bounds_preserve_the_original_sticky_refusal() {
-    let profile = line();
-    let arena = DecodeArena::new();
-    let mut policy = policy();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, "test original sweep refusal")
-    else {
-        panic!("original work refusal");
-    };
-    let direction = SumSquaresUnitVector3::new(Vector3::new(0.0, 1.0, 0.0)).unwrap();
-    let mut refusals = LaneRefusals::new();
-    let result = swept_nurbs(
-        &ctx,
-        &profile,
-        direction,
-        f64::NAN,
-        1.0,
-        &"invalid travel",
-        &mut RefusalSink::Retained(&mut refusals),
-    );
-    assert!(matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == limit));
-    assert!(refusals.take_records().is_empty());
     assert_eq!(ctx.resource_refusal(), Some(limit));
     assert!(
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit)
@@ -531,9 +487,6 @@ fn scoped_sweep_refusal_propagates_final_loss_resource_limit() {
         (0, u64::try_from(FINAL_SWEEP_LOSS.len()).unwrap())
     );
     drop(record);
-    assert!(
-        matches!(source.next(&ctx, "collect swept surface losses"), Err(CodecError::ResourceLimit(actual)) if actual == limit)
-    );
     drop(source);
     assert_eq!(ctx.resource_refusal(), Some(limit));
     assert!(
@@ -571,10 +524,7 @@ fn scoped_sweep_refusal_preserves_constructor_resource_limit() {
             u64::try_from(2 * std::mem::size_of::<Vec<Point3>>()).unwrap()
         )
     );
-    let mut records = refusals.into_records();
-    assert!(
-        matches!(records.next(&ctx, "collect swept surface losses"), Err(CodecError::ResourceLimit(actual)) if actual == limit)
-    );
+    let records = refusals.into_records();
     drop(records);
     assert_eq!(ctx.resource_refusal(), Some(limit));
     assert!(

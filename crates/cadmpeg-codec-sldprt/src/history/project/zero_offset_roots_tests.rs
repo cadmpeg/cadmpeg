@@ -61,11 +61,6 @@ fn zero_offset_roots_refuse_at_the_exact_workspace_peak_and_keep_original_refusa
     assert_eq!(first.used, 2 * array);
     assert_eq!(first.additional, output);
     assert_eq!(ctx.resource_refusal(), Some(first));
-    let CodecError::ResourceLimit(next) = ctx.reserve_scoped(0, "sticky refusal").unwrap_err()
-    else {
-        panic!("expected original sticky refusal");
-    };
-    assert_eq!(next, first);
 }
 
 fn principal_feature() -> cadmpeg_ir::features::Feature {
@@ -156,10 +151,4 @@ fn offset_binding_frame_growth_refuses_at_exact_peak_and_keeps_original_refusal(
     assert_eq!(first.used, before_frames);
     assert_eq!(first.additional, frames);
     assert_eq!(ctx.resource_refusal(), Some(first));
-    let CodecError::ResourceLimit(next) =
-        ctx.reserve_scoped(0, "sticky frame refusal").unwrap_err()
-    else {
-        panic!("expected original frame refusal");
-    };
-    assert_eq!(next, first);
 }

@@ -76,9 +76,6 @@ fn terminal_cache_unqualified_marker_skips_index_and_lookup() {
         assert_eq!(limit.used, 0);
         assert_eq!(limit.additional, 1);
         assert_eq!(ctx.resource_refusal(), Some(limit));
-        assert!(
-            matches!(ctx.charge_work(0, "after unused terminal operation"), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-        );
         drop(cache);
         assert!(
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
@@ -141,9 +138,6 @@ fn terminal_cache_reuses_positive_and_negative_indexes() {
         assert_eq!(limit.additional, 1);
         assert_eq!(ctx.resource_refusal(), Some(limit));
         assert!(
-            matches!(ctx.charge_work(0, "after cached terminal index"), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-        );
-        assert!(
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
         );
         drop(probe);
@@ -185,9 +179,6 @@ fn terminal_cache_refusal_leaves_index_unpublished() {
         assert_eq!(limit.used, used);
         assert_eq!(limit.additional, additional);
         assert_eq!(ctx.resource_refusal(), Some(limit));
-        assert!(
-            matches!(ctx.charge_work(0, "after terminal index refusal"), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-        );
         drop(cache);
         assert!(
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)

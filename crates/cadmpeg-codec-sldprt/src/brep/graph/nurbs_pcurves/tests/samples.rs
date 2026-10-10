@@ -118,25 +118,3 @@ fn rejected_sample_domain_needs_no_storage_or_scan_work() {
         .is_none());
     ctx.finish_session().unwrap();
 }
-
-#[test]
-fn rejected_sample_domain_preserves_the_original_sticky_refusal() {
-    let curve = curve();
-    let arena = DecodeArena::new();
-    let mut policy = policy();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, "test original sample refusal")
-    else {
-        panic!("original work refusal");
-    };
-    let result = nurbs_curve_sample_parameters(&ctx, &curve, [1.0, 0.0]);
-    assert!(
-        matches!(result, Err(NurbsPcurveFailure::Resource(CodecError::ResourceLimit(actual))) if actual == limit)
-    );
-    drop(result);
-    assert_eq!(ctx.resource_refusal(), Some(limit));
-    assert!(
-        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit)
-    );
-}

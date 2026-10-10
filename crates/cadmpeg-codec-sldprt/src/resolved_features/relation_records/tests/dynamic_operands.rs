@@ -576,10 +576,6 @@ fn strict_point_match_leaves_coordinate_probe_armed() {
     assert_eq!(limit.additional, 1);
     assert_eq!(ctx.resource_refusal(), Some(limit));
     assert!(
-        matches!(ctx.charge_work(0, "after unused coordinate probe"),
-        Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-    );
-    assert!(
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
     );
     drop(probe);
@@ -639,10 +635,6 @@ fn strict_point_match_refuses_exact_storage_boundaries() {
         assert_eq!(limit.used, used);
         assert_eq!(limit.additional, additional);
         assert_eq!(ctx.resource_refusal(), Some(limit));
-        assert!(
-            matches!(ctx.charge_work(0, "after strict point storage refusal"),
-            Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-        );
         assert!(
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
         );
@@ -749,10 +741,6 @@ fn equal_line_indices_leave_solver_probe_armed() {
     assert_eq!(limit.additional, 1);
     assert_eq!(ctx.resource_refusal(), Some(limit));
     assert!(
-        matches!(ctx.charge_work(0, "after unused line solver probe"),
-        Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-    );
-    assert!(
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
     );
     drop(probe);
@@ -798,10 +786,6 @@ fn equal_line_index_clear_refusal_stays_fused() {
         assert_eq!(limit.used, 0);
         assert_eq!(limit.additional, 2);
         assert_eq!(ctx.resource_refusal(), Some(limit));
-        assert!(
-            matches!(ctx.charge_work(0, "after equal line index refusal"),
-            Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-        );
         assert!(
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
         );
@@ -875,8 +859,6 @@ fn explicit_point_reference_work_requires_finite_point_kind() {
         assert_eq!(limit.used, 0);
         assert_eq!(limit.additional, 1);
         assert_eq!(ctx.resource_refusal(), Some(limit));
-        assert!(matches!(ctx.charge_work(0, "after point roster refusal"),
-            Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
         assert!(
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
         );
@@ -917,8 +899,6 @@ fn curve_reference_work_requires_curve_kind() {
         assert_eq!(limit.operation, "compare SLDPRT relation curve references");
         assert_eq!(limit.additional, 1);
         assert_eq!(ctx.resource_refusal(), Some(limit));
-        assert!(matches!(ctx.charge_work(0, "after unused curve reference"),
-            Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
         assert!(
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
         );

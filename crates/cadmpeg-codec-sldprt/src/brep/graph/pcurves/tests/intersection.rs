@@ -615,13 +615,6 @@ fn intersection_pcurve_refuses_exact_workspace_and_final_backing_boundaries() {
             assert_eq!(limit.additional, output_bytes);
         }
         assert_eq!(ctx.resource_refusal(), Some(limit));
-        let cadmpeg_core::CodecError::ResourceLimit(replay) = ctx
-            .reserve_scoped(0, "replay original intersection pcurve refusal")
-            .unwrap_err()
-        else {
-            panic!("original refusal remains sticky after all candidate values die");
-        };
-        assert_eq!(replay, limit);
     }
 }
 

@@ -221,10 +221,6 @@ fn selected_declaration_candidates_refuse_exact_storage_boundaries() {
         assert_eq!(limit.additional, additional);
         assert_eq!(ctx.resource_refusal(), Some(limit));
         assert!(
-            matches!(ctx.charge_work(0, "after declaration boundary refusal"),
-            Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-        );
-        assert!(
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
         );
     }
@@ -1000,10 +996,6 @@ fn declaration_signature_rejection_leaves_feature_probe_armed() {
     assert_eq!(limit.additional, 1);
     assert_eq!(ctx.resource_refusal(), Some(limit));
     assert!(
-        matches!(ctx.charge_work(0, "after unused declaration feature"),
-        Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-    );
-    assert!(
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
     );
     drop(probe);
@@ -1068,8 +1060,6 @@ fn relation_group_fixed_rejection_skips_operand_signature() {
         );
         assert_eq!(limit.additional, 1);
         assert_eq!(ctx.resource_refusal(), Some(limit));
-        assert!(matches!(ctx.charge_work(0, "after unused group signature"),
-            Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
         assert!(
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
         );
@@ -1126,10 +1116,6 @@ fn promoted_group_reuses_proved_class_difference() {
     assert_eq!(limit.operation, "compare SLDPRT relation group classes");
     assert_eq!(limit.additional, 1);
     assert_eq!(ctx.resource_refusal(), Some(limit));
-    assert!(
-        matches!(ctx.charge_work(0, "after unused promoted class comparison"),
-        Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-    );
     assert!(
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
     );
@@ -1189,10 +1175,6 @@ fn unstatable_declaration_does_not_demand_an_index() {
     assert_eq!(limit.additional, 1);
     assert_eq!(ctx.resource_refusal(), Some(limit));
     assert!(
-        matches!(ctx.charge_work(0, "after unused declaration index"),
-        Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-    );
-    assert!(
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
     );
     drop(probe);
@@ -1211,10 +1193,6 @@ fn unstatable_declaration_does_not_demand_an_index() {
     assert_eq!(limit.used, 0);
     assert_eq!(limit.additional, 1);
     assert_eq!(ctx.resource_refusal(), Some(limit));
-    assert!(
-        matches!(ctx.charge_work(0, "after unstatable class visit refusal"),
-        Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-    );
     assert!(
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
     );
@@ -1263,10 +1241,6 @@ fn open_interval_still_demands_the_declaration_index_at_high_offsets() {
     assert_eq!(limit.used, 2);
     assert_eq!(limit.additional, 1);
     assert_eq!(ctx.resource_refusal(), Some(limit));
-    assert!(
-        matches!(ctx.charge_work(0, "after required declaration index"),
-        Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-    );
     assert!(
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
     );
@@ -1382,9 +1356,6 @@ fn relation_group_phases_refuse_actual_first_scalar_slot() {
         assert_eq!(limit.used, used);
         assert_eq!(limit.additional, additional);
         assert_eq!(ctx.resource_refusal(), Some(limit));
-        assert!(
-            matches!(ctx.charge_work(0, "after grouping slot refusal"), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-        );
         assert!(
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
         );

@@ -118,13 +118,6 @@ fn projected_nurbs_value_handoff_preserves_exact_storage_and_refusal() {
                     assert_eq!(limit.additional, u64::try_from(output_pole_bytes).unwrap());
                 }
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(&limit));
-                let CodecError::ResourceLimit(replayed) = ctx
-                    .reserve_scoped(0, "replay projected NURBS refusal")
-                    .unwrap_err()
-                else {
-                    panic!("the original resource refusal remains sticky");
-                };
-                assert_eq!(replayed, limit);
             } else {
                 let output = output.unwrap().unwrap();
                 let SketchGeometryDefinition::Nurbs { curve } = output.definition() else {

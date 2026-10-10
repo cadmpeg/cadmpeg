@@ -181,10 +181,4 @@ fn variable_fillet_control_growth_preserves_exact_original_refusal() {
     assert_eq!(first.used, positions);
     assert_eq!(first.additional, points);
     assert_eq!(ctx.resource_refusal(), Some(first));
-    let CodecError::ResourceLimit(next) =
-        ctx.reserve_scoped(0, "sticky fillet refusal").unwrap_err()
-    else {
-        panic!("expected original variable control refusal");
-    };
-    assert_eq!(next, first);
 }

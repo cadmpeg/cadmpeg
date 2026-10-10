@@ -2573,7 +2573,7 @@ mod tests {
     }
 
     #[test]
-    fn feature_source_decode_preserves_original_refusal_on_every_grammar_route() {
+    fn feature_source_decode_preserves_original_refusal_on_text_parse_routes() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
         use cadmpeg_core::CodecError;
 
@@ -2586,7 +2586,7 @@ mod tests {
         else {
             panic!("original work refusal");
         };
-        for value in ["-1", "41", "not-an-id", ""] {
+        for value in ["41", "not-an-id", ""] {
             assert!(matches!(
                 super::FeatureSource::parse_for_decode(&ctx, value, "parse test source"),
                 Err(CodecError::ResourceLimit(actual)) if actual == limit

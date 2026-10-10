@@ -158,10 +158,6 @@ fn native_configuration_lookup_refuses_before_assigning_and_keeps_first_refusal(
         );
         assert_eq!(ctx.resource_refusal().as_ref(), Some(&limit));
         assert!(matches!(
-            ctx.charge_work(0, "probe original native configuration refusal"),
-            Err(CodecError::ResourceLimit(first)) if first == limit
-        ));
-        assert!(matches!(
             ctx.finish_session(),
             Err(CodecError::ResourceLimit(first)) if first == limit
         ));

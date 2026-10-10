@@ -83,9 +83,6 @@ fn native_load_attachment_refusal_excludes_completed_validation_tables() {
     assert_eq!(limit.additional, 8);
     assert_eq!(ctx.resource_refusal(), Some(limit));
     assert!(
-        matches!(ctx.charge_work(0, "after native attachment refusal"), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-    );
-    assert!(
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
     );
 }

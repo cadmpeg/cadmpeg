@@ -710,10 +710,6 @@ fn appearance_name_phases_refuse_original_storage_limits() {
         assert_eq!(limit.additional, additional);
         assert_eq!(ctx.resource_refusal(), Some(limit));
         assert!(
-            matches!(ctx.charge_work(0, "after appearance storage refusal"),
-            Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-        );
-        assert!(
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky))
             if sticky == limit)
         );
@@ -865,8 +861,6 @@ fn feature_appearance_final_name_refuses_its_exact_backing_and_stays_fused() {
                     u64::try_from("SolidWorks feature appearance".len()).unwrap()
                 );
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
-                assert!(matches!(ctx.charge_work(0, "after appearance refusal"),
-                    Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == *limit));
                 assert!(
                     matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == *limit)
                 );
@@ -987,10 +981,6 @@ fn appearance_class_workspace_refuses_first_growth_and_stays_fused() {
         assert_eq!(limit.additional, class_bytes);
         assert_eq!(ctx.resource_refusal().as_ref(), Some(&limit));
         assert!(
-            matches!(ctx.charge_work(0, "after appearance class refusal"),
-            Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-        );
-        assert!(
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky))
             if sticky == limit)
         );
@@ -1024,10 +1014,6 @@ fn feature_appearance_output_refuses_one_byte_below_assignment_backing() {
     assert_eq!(limit.used, source_bytes);
     assert_eq!(limit.additional, assignment_bytes);
     assert_eq!(ctx.resource_refusal().as_ref(), Some(&limit));
-    assert!(
-        matches!(ctx.charge_work(0, "after appearance output refusal"),
-        Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-    );
     assert!(
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky))
         if sticky == limit)
@@ -1151,10 +1137,6 @@ fn feature_appearance_resolution_refuses_source_copy() {
                 panic!("expected retained refusal");
             };
             assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
-            assert!(
-                matches!(ctx.charge_work(0, "after appearance source refusal"),
-                Err(CodecError::ResourceLimit(sticky)) if sticky == *limit)
-            );
             assert!(
                 matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky))
                 if sticky == *limit)

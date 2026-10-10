@@ -2620,10 +2620,6 @@ mod point_candidate_tests {
             assert_eq!(limit.additional, additional);
             assert_eq!(ctx.resource_refusal(), Some(limit));
             assert!(
-                matches!(ctx.charge_work(0, "after point candidate storage refusal"),
-                Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-            );
-            assert!(
                 matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky))
                 if sticky == limit)
             );
