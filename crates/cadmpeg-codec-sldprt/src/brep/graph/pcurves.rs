@@ -1499,7 +1499,8 @@ pub(super) fn intersection_support_pcurve<'ctx>(
                     control_storage.with_storage(|| ctx.reserve_capacity(
                         &mut control_points, chart_points.len(), "solve intersection support UV controls",
                     ))?;
-                    for point in ctx.admit_iter(chart_points, "scan SLDPRT chart_points values")? {
+                    let mut points = chart_points.iter();
+                    while let Some(point) = ctx.next_charged(&mut points, "scan SLDPRT chart_points values")? {
                         let parameters = match nurbs_surface_parameter_within_tolerance(
                             ctx,
                             surface,
@@ -1521,7 +1522,8 @@ pub(super) fn intersection_support_pcurve<'ctx>(
                     control_storage.with_storage(|| ctx.reserve_capacity(
                         &mut control_points, chart_points.len(), "project intersection analytic controls",
                     ))?;
-                    for point in ctx.admit_iter(chart_points, "scan SLDPRT chart_points values")? {
+                    let mut points = chart_points.iter();
+                    while let Some(point) = ctx.next_charged(&mut points, "scan SLDPRT chart_points values")? {
                         let parameters = some_or_none!(analytic_surface_parameters(surface, point.get()));
                         control_storage.with_storage(|| ctx.push_vec(
                             &mut control_points, cadmpeg_ir::math::Point2::from(parameters), "project intersection analytic controls",
@@ -1640,7 +1642,8 @@ pub(super) fn intersection_support_pcurve<'ctx>(
         let mut mapped_points_storage = ctx.reserve_scoped(0, "SLDPRT temporary vector storage")?;
         let mut mapped_points = Vec::new();
         mapped_points_storage.with_storage(|| ctx.reserve_capacity(&mut mapped_points, control_points.len(), "map intersection support controls"))?;
-        for parameters in ctx.admit_iter(&control_points, "scan SLDPRT intersection_support_pcurve values")? {
+        let mut parameters = control_points.iter();
+        while let Some(parameters) = ctx.next_charged(&mut parameters, "scan SLDPRT intersection_support_pcurve values")? {
             let Some(point) = crate::brep::evaluation::surface_point(ctx, surface, parameters.u, parameters.v)? else { return Ok(None); };
             let point = point.get();
             mapped_points_storage.with_storage(|| ctx.push_vec(&mut (mapped_points), point, "map intersection support controls"))?;
@@ -1664,11 +1667,10 @@ pub(super) fn intersection_support_pcurve<'ctx>(
         )? {
             return Ok(None);
         }
-        for ((parameters, chord), endpoint_errors) in ctx.admit_iter(&control_points, "scan Parasolid intersection parameter segments")?
-            .windows(const { crate::nonzero(2) })
+        let mut segments = control_points.windows(2)
             .zip(chart_points.windows(2))
-            .zip(control_errors.windows(2))
-        {
+            .zip(control_errors.windows(2));
+        while let Some(((parameters, chord), endpoint_errors)) = ctx.next_charged(&mut segments, "scan Parasolid intersection parameter segments")? {
             let exceeds = match surface {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) => {
                     let error = nurbs_surface_parameter_segment_chord_bound(

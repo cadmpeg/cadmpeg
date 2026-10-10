@@ -116,7 +116,7 @@ fn nurbs_boundary_pcurve(
             && candidate.periodic() == curve.periodic()
             && candidate.pole_count() == curve.pole_count()
             && candidate.knots().len() == curve.knots().len()
-            && ctx.equal(candidate.knots().as_slice(), curve.knots().as_slice(), "compare Parasolid boundary curve knots")?
+            && ctx.all_by(candidate.knots().iter().zip(curve.knots().iter()), |(left, right)| Ok(left == right), "compare Parasolid boundary curve knots")?
             && ctx.all_by(0..curve.pole_count(), |index| {
                 let (Some(candidate), Some(actual)) = (
                     candidate.pole_rows().point_at(index),
@@ -230,9 +230,9 @@ pub(super) fn nurbs_strict_isocurve_pcurve(
             || curve.periodic() != varying_periodic
             || curve.pole_count() != varying_count
             || curve.knots().len() != varying_knots.len()
-            || !ctx.equal(
-                curve.knots().as_slice(),
-                varying_knots.as_slice(),
+            || !ctx.all_by(
+                curve.knots().iter().zip(varying_knots.iter()),
+                |(left, right)| Ok(left == right),
                 "compare Parasolid ruled curve knots",
             )?
         {
@@ -804,7 +804,8 @@ fn nurbs_curve_surface_deviation(
     };
     let mut seed = None;
     let mut maximum = 0.0_f64;
-    for &parameter in ctx.admit_iter(&parameters.values, "measure NURBS curve surface deviation")? {
+    let mut samples = parameters.values.iter();
+    while let Some(&parameter) = ctx.next_charged(&mut samples, "measure NURBS curve surface deviation")? {
         let Some(point) = crate::brep::evaluation::nurbs_curve_point(ctx, curve, parameter)? else {
             return Ok(None);
         };
@@ -890,7 +891,8 @@ pub(super) fn nurbs_degree_one_cache_lanes<'ctx, 'arena>(
         )
     })?;
     let mut seed = None;
-    for index in ctx.admit_iter(0..curve.pole_count(), "collect NURBS cache pcurve controls")? {
+    let mut indices = 0..curve.pole_count();
+    while let Some(index) = ctx.next_charged(&mut indices, "collect NURBS cache pcurve controls")? {
         let Some(point) = curve.pole_rows().point_at(index) else {
             return Ok(None);
         };
@@ -927,7 +929,8 @@ pub(super) fn nurbs_degree_one_cache_lanes<'ctx, 'arena>(
         return Ok(None);
     };
     let mut fit_tolerance = 0.0_f64;
-    for &parameter in ctx.admit_iter(&parameters.values, "measure NURBS cache pcurve fit")? {
+    let mut samples = parameters.values.iter();
+    while let Some(&parameter) = ctx.next_charged(&mut samples, "measure NURBS cache pcurve fit")? {
         let Some(model_point) = crate::brep::evaluation::nurbs_curve_point(ctx, curve, parameter)?
         else {
             return Ok(None);

@@ -137,3 +137,20 @@ fn inverse_empty_source_preserves_the_original_sticky_refusal() {
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit)
     );
 }
+
+#[test]
+fn inverse_first_objective_rejection_needs_no_knot_tail_work() {
+    let arena = DecodeArena::new();
+    let mut policy = policy();
+    policy.limits.max_work_units = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let knots: Vec<_> = (0..100).map(f64::from).collect();
+    let mut calls = 0;
+    assert!(sampled_parameter_minima(&ctx, &knots, [0.0, 99.0], |_| {
+        calls += 1;
+        Ok(None)
+    }).unwrap().is_none());
+    assert_eq!(calls, 1);
+    drop(ctx.reserve_scoped(SCRATCH_BYTES, "test released first inverse rejection").unwrap());
+    ctx.finish_session().unwrap();
+}
