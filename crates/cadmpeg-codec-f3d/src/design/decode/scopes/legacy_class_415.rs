@@ -4,6 +4,7 @@
 use cadmpeg_core::decode::{index_from_u32, u64_from_index};
 
 use crate::bytes::f64s_at;
+use crate::design::decode::byte_fields::zeros_at;
 use crate::layout::legacy_class_415_one_sided_distance_extrude_prefix as distance;
 use crate::layout::legacy_class_415_one_sided_to_face_extrude_prefix as to_face;
 use crate::layout::legacy_class_415_symmetric_extrude_prefix as symmetric;
@@ -65,6 +66,9 @@ pub(crate) fn is_one_sided_layout(
     .is_some()
 }
 
+/// The one-sided class-415 Extrude prologue. The variant fixes the reference
+/// run at seven or nine members, so every membership and listing test reads at
+/// most nine values.
 pub(super) fn exact_one_sided_extrude_prologue(
     bytes: &[u8],
     start: usize,
@@ -117,20 +121,14 @@ pub(super) fn exact_one_sided_extrude_prologue(
         || reference_members.len() != reference_count
         || View::u32_le_at(bytes, start.checked_add(to_face::PREFIX_CONSTANT)?)?
             != to_face::PREFIX_CONSTANT_VALUE
-        || bytes.get(
-            start.checked_add(to_face::ZERO_RUN_3)?
-                ..start.checked_add(to_face::OPERATION_PREFIX_MARKER)?,
-        )? != [0; 3]
-        || bytes.get(start.checked_add(to_face::OPERATION_PREFIX_MARKER)?)
+        || !zeros_at::<3>(bytes, start + to_face::ZERO_RUN_3)
+        || bytes.get(start + to_face::OPERATION_PREFIX_MARKER)
             != Some(&to_face::OPERATION_PREFIX_MARKER_VALUE)
-        || bytes.get(
-            start.checked_add(to_face::ZERO_RUN_3_AFTER_START)?
-                ..start.checked_add(to_face::PROFILE_NORMAL)?,
-        )? != [0; 3]
+        || !zeros_at::<3>(bytes, start + to_face::ZERO_RUN_3_AFTER_START)
     {
         return None;
     }
-    let operation_offset = start.checked_add(to_face::OPERATION)?;
+    let operation_offset = start + to_face::OPERATION;
     let operation = match View::u32_le_at(bytes, operation_offset)? {
         1 => DesignExtrudeOperation::Join,
         2 => DesignExtrudeOperation::Cut,
@@ -138,8 +136,8 @@ pub(super) fn exact_one_sided_extrude_prologue(
         4 => DesignExtrudeOperation::NewBody,
         _ => return None,
     };
-    let direction_offset = start.checked_add(to_face::DIRECTION)?;
-    let face_extend_offset = start.checked_add(to_face::FACE_EXTEND)?;
+    let direction_offset = start + to_face::DIRECTION;
+    let face_extend_offset = start + to_face::FACE_EXTEND;
     let direction_face_extend_values = [
         View::u32_le_at(bytes, direction_offset)?,
         View::u32_le_at(bytes, face_extend_offset)?,
@@ -147,27 +145,26 @@ pub(super) fn exact_one_sided_extrude_prologue(
     if direction_face_extend_values != [to_face::DIRECTION_VALUE, face_extend] {
         return None;
     }
-    let direction_reversed_offset = start.checked_add(to_face::DIRECTION_REVERSED)?;
+    let direction_reversed_offset = start + to_face::DIRECTION_REVERSED;
     let direction_reversed = match bytes.get(direction_reversed_offset)? {
         0 => false,
         1 => true,
         _ => return None,
     };
-    let solid_operation_offset = start.checked_add(to_face::GEOMETRY_KIND)?;
+    let solid_operation_offset = start + to_face::GEOMETRY_KIND;
     let solid_operation = match bytes.get(solid_operation_offset)? {
         0 => false,
         1 => true,
         _ => return None,
     };
-    let start_offset = start.checked_add(to_face::START_SUPPORT)?;
+    let start_offset = start + to_face::START_SUPPORT;
     let start_support = match bytes.get(start_offset)? {
         0 => DesignExtrudeStart::ProfilePlane,
         1 => DesignExtrudeStart::OffsetProfilePlane,
         2 => DesignExtrudeStart::FromFace,
         _ => return None,
     };
-    let profile_normal_offset = start.checked_add(to_face::PROFILE_NORMAL)?;
-    let profile_normal = f64s_at::<3>(bytes, profile_normal_offset)?;
+    let profile_normal = f64s_at::<3>(bytes, start + to_face::PROFILE_NORMAL)?;
     let profile_normal_squared = profile_normal
         .iter()
         .map(|component| component * component)
@@ -179,15 +176,13 @@ pub(super) fn exact_one_sided_extrude_prologue(
     {
         return None;
     }
-    let first_side_extent_offset = start.checked_add(first_side_extent_offset)?;
+    let first_side_extent_offset = start + first_side_extent_offset;
     let second_side_extent_offset = reference_count_at.checked_sub(4)?;
     let side_extent_discriminators = [
         View::u32_le_at(bytes, first_side_extent_offset)?,
         View::u32_le_at(bytes, second_side_extent_offset)?,
     ];
-    if side_extent_discriminators != [first_side_extent, 0]
-        || second_side_extent_offset.checked_add(4)? != reference_count_at
-    {
+    if side_extent_discriminators != [first_side_extent, 0] {
         return None;
     }
     let extent = super::extrude::exact_extrude_extent(
@@ -197,41 +192,65 @@ pub(super) fn exact_one_sided_extrude_prologue(
     if let Some(offset) = first_side_offset_reference {
         let record_index =
             super::shared_frames::marked_record_reference(bytes, start.checked_add(offset)?)?;
-        if !reference_members.contains(&record_index) {
+        if !<&[u32; 9]>::try_from(reference_members)
+            .ok()?
+            .contains(&record_index)
+        {
             return None;
         }
     }
     if View::u32_le_at(bytes, reference_count_at)? != u32::try_from(reference_count).ok()? {
         return None;
     }
-    let first_reference_marker = reference_count_at.checked_add(4)?;
-    for (ordinal, record_index) in reference_members.iter().enumerate() {
-        let marker = first_reference_marker.checked_add(ordinal.checked_mul(11)?)?;
-        if super::shared_frames::marked_record_reference(bytes, marker)? != *record_index {
-            return None;
+    let first_reference_marker = reference_count_at + 4;
+    let listed = match variant {
+        OneSidedVariant::ToFace => {
+            references_listed::<9>(bytes, first_reference_marker, reference_members)
         }
+        OneSidedVariant::Distance => {
+            references_listed::<7>(bytes, first_reference_marker, reference_members)
+        }
+    };
+    if !listed {
+        return None;
     }
     Some(DesignExtrudePrologue::ReferenceAware {
         reference: None,
         operation,
-        operation_offset: u64::try_from(operation_offset).ok()?,
+        operation_offset: u64_from_index(operation_offset),
         direction_face_extend_values,
         side_extent_discriminators,
         side_extent_discriminator_offsets: [
-            u64::try_from(first_side_extent_offset).ok()?,
-            u64::try_from(second_side_extent_offset).ok()?,
+            u64_from_index(first_side_extent_offset),
+            u64_from_index(second_side_extent_offset),
         ],
         first_side_target_ordinal: None,
         extent,
         direction_face_extend_offsets: [
-            u64::try_from(direction_offset).ok()?,
-            u64::try_from(face_extend_offset).ok()?,
+            u64_from_index(direction_offset),
+            u64_from_index(face_extend_offset),
         ],
         direction_reversed,
-        direction_reversed_offset: u64::try_from(direction_reversed_offset).ok()?,
+        direction_reversed_offset: u64_from_index(direction_reversed_offset),
         solid_operation,
-        solid_operation_offset: u64::try_from(solid_operation_offset).ok()?,
+        solid_operation_offset: u64_from_index(solid_operation_offset),
         start: start_support,
-        start_offset: u64::try_from(start_offset).ok()?,
+        start_offset: u64_from_index(start_offset),
+    })
+}
+
+/// Whether the `N` marked references from `first_marker` list
+/// `reference_members` in order, eleven bytes apart.
+fn references_listed<const N: usize>(
+    bytes: &[u8],
+    first_marker: usize,
+    reference_members: &[u32],
+) -> bool {
+    let Ok(members) = <&[u32; N]>::try_from(reference_members) else {
+        return false;
+    };
+    members.iter().enumerate().all(|(ordinal, record_index)| {
+        super::shared_frames::marked_record_reference(bytes, first_marker + ordinal * 11)
+            == Some(*record_index)
     })
 }

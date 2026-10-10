@@ -1,12 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse exact image-plane bindings owned by Design `Canvas` scopes.
 
-use crate::bytes::lp_ascii_filtered_view;
 use crate::bytes::lp_utf16_bounded_charged;
 use crate::container::ContainerScan;
-use crate::design::decode::image::embedded_image_asset;
-use crate::design::decode::scopes::shared_frames::marked_reference;
-use crate::design::decode::sketch::next_indexed_record_offset_with_index;
+use crate::design::decode::byte_fields::{bytes_at, zeros_at};
+use crate::design::decode::image::{
+    embedded_image_asset, embedded_image_entry, neutral_asset_id_charged,
+};
+use crate::design::decode::record_streams::{has_stream, record_stream};
+use crate::design::decode::scopes::shared_frames::{exact_indexed_header_at, marked_reference};
+use crate::design::decode::sketch::{indexed_record_header_at, IndexedRecordOffsets};
+use crate::design::decode::text::retain_class_tag;
 
 use crate::ids;
 use crate::records::{
@@ -50,31 +54,61 @@ pub(crate) fn project_canvas_images(
     features: &mut [Feature],
 ) -> Result<Vec<Asset>, CodecError> {
     let mut assets = Vec::new();
-    for image in images {
-        let Some(scope) = scopes.iter().find(|scope| {
-            scope.record_index == image.scope_record_index
-                && crate::ids::native_stream(&scope.id) == crate::ids::native_stream(&image.id)
-        }) else {
+    for image in ctx.admit_iter(images, "scan F3D Canvas images")? {
+        let image_stream = record_stream(ctx, &image.id)?;
+        let Some(scope) = ctx.find_by(
+            scopes,
+            |scope| {
+                Ok(scope.record_index == image.scope_record_index
+                    && has_stream(ctx, &scope.id, image_stream)?)
+            },
+            "find F3D Canvas image scopes",
+        )?
+        else {
             continue;
         };
-        let feature_id = crate::design::identity::neutral_feature_id(ctx, scope)?;
-        let Some(feature) = features.iter_mut().find(|feature| feature.id == feature_id) else {
+        let (feature_id, _feature_id_storage) = ctx
+            .with_scoped_storage("f3d Canvas neutral feature ID", || {
+                crate::design::identity::neutral_feature_id(ctx, scope)
+            })?;
+        let Some(feature_index) = ctx.position_by(
+            &*features,
+            |feature| {
+                ctx.equal_bytes(
+                    feature.id.as_str().as_bytes(),
+                    feature_id.as_str().as_bytes(),
+                    "match F3D Canvas neutral feature",
+                )
+            },
+            "find F3D Canvas neutral feature",
+        )?
+        else {
+            continue;
+        };
+        let Some(feature) = features.get_mut(feature_index) else {
             continue;
         };
         let (mirror_u, mirror_v) = image.geometry().boundary.mirroring();
         let [minimum, maximum] = image.geometry().boundary.extents();
-        let Some(asset) = embedded_image_asset(ctx, scan, image.asset_name())? else {
+        let Some(entry) = embedded_image_entry(ctx, scan, image.asset_name())? else {
             continue;
         };
-        let asset_id = asset
-            .id
-            .try_clone_for_decode(ctx, "f3d image feature asset identifier")?;
-        if !assets
-            .iter()
-            .any(|candidate: &Asset| candidate.id == asset_id)
-        {
-            ctx.reserve_vec(&mut assets, 1, "f3d Canvas assets")?;
-            assets.push(asset);
+        let asset_id = neutral_asset_id_charged(ctx, &entry.name)?;
+        // The image bytes are copied only for the first asset with its ID.
+        if !ctx.any_by(
+            &assets,
+            |candidate: &Asset| {
+                ctx.equal_bytes(
+                    candidate.id.as_str().as_bytes(),
+                    asset_id.as_str().as_bytes(),
+                    "match F3D Canvas asset",
+                )
+            },
+            "find F3D Canvas asset",
+        )? {
+            let id = asset_id.try_clone_for_decode(ctx, "f3d image feature asset identifier")?;
+            let asset = embedded_image_asset(ctx, scan, entry, image.asset_name(), id)?;
+            ctx.push_vec(&mut assets, asset, "f3d Canvas assets")?;
         }
         let (opacity, frame) = image.geometry().payload.decoded();
         feature
@@ -120,186 +154,243 @@ pub(crate) fn project_canvas_images(
     Ok(assets)
 }
 
+/// The fixed members after the prologue of a Canvas geometry record at
+/// `geometry_at` whose paired record opens at `paired_at`.
+struct CanvasGeometryFrame {
+    boundary: DesignCanvasBounds,
+    payload: DesignCanvasGeometryPayload,
+    plane_entity_suffix: u32,
+    component_entity_suffix: u32,
+    asset_record_index: u32,
+}
+
+/// Offset of the geometry reference in the Canvas scope at `scope_at`: the
+/// scope either stores ten zero bytes or nine zero bytes and a marked zero
+/// reference before it.
+fn geometry_reference_at(bytes: &[u8], scope_at: usize) -> Option<usize> {
+    if zeros_at::<10>(bytes, scope_at + 11) {
+        Some(scope_at + 21)
+    } else if zeros_at::<9>(bytes, scope_at + 11) && marked_reference(bytes, scope_at + 20)? == 0 {
+        Some(scope_at + 25)
+    } else {
+        None
+    }
+}
+
+/// Read the fixed layout of a Canvas geometry record. The test reads a
+/// constant number of bytes.
+fn canvas_geometry_frame(
+    bytes: &[u8],
+    scope_record_index: u32,
+    geometry_at: usize,
+    paired_at: usize,
+) -> Option<CanvasGeometryFrame> {
+    let paired_component_at = paired_at + 19;
+    if !zeros_at::<8>(bytes, paired_at + 11) {
+        return None;
+    }
+
+    let boundary_offsets = [
+        geometry_at + 26,
+        geometry_at + 34,
+        geometry_at + 42,
+        geometry_at + 50,
+        geometry_at + 181,
+        geometry_at + 189,
+        geometry_at + 197,
+        geometry_at + 205,
+    ];
+    let mut coordinates = [0.0; 8];
+    for (coordinate, offset) in coordinates.iter_mut().zip(boundary_offsets) {
+        *coordinate = View::f64_le_at(bytes, offset)?;
+    }
+    let boundary_segments = [
+        [
+            Point2::new(coordinates[0], coordinates[1]),
+            Point2::new(coordinates[2], coordinates[3]),
+        ],
+        [
+            Point2::new(coordinates[4], coordinates[5]),
+            Point2::new(coordinates[6], coordinates[7]),
+        ],
+    ];
+    let boundary = DesignCanvasBounds::try_from(boundary_segments).ok()?;
+
+    let plane_at = geometry_at + 58;
+    let scope_reference_at = geometry_at + 146;
+    let component_at = geometry_at + 157;
+    let asset_at = geometry_at + 169;
+    let plane_entity_suffix = marked_reference(bytes, plane_at)?;
+    let scope_reference = marked_reference(bytes, scope_reference_at)?;
+    let component_entity_suffix = marked_reference(bytes, component_at)?;
+    let asset_record_index = marked_reference(bytes, asset_at)?;
+    if scope_reference != scope_record_index
+        || marked_reference(bytes, paired_component_at)? != component_entity_suffix
+        || !zeros_at::<6>(bytes, paired_component_at + 5)
+        || !zeros_at::<6>(bytes, plane_at + 5)
+        || !zeros_at::<6>(bytes, scope_reference_at + 5)
+        || !zeros_at::<7>(bytes, component_at + 5)
+        || !zeros_at::<6>(bytes, asset_at + 5)
+        || bytes.get(asset_at + 11) != Some(&1)
+    {
+        return None;
+    }
+    let payload =
+        DesignCanvasGeometryPayload::try_from(bytes.get(geometry_at + 69..geometry_at + 146)?)
+            .ok()?;
+    Some(CanvasGeometryFrame {
+        boundary,
+        payload,
+        plane_entity_suffix,
+        component_entity_suffix,
+        asset_record_index,
+    })
+}
+
+/// The Canvas image of `scope`. Its geometry record is the first header that
+/// carries the geometry record index, and the paired geometry header is the
+/// first one with that index at least eleven bytes later.
 fn parse_canvas_image(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
+    records: &IndexedRecordOffsets,
     stream: &str,
     scope: &DesignParameterScope,
 ) -> Result<Option<DesignCanvasImage>, CodecError> {
-    let parsed = (|| {
-        let scope_at = usize::try_from(scope.byte_offset()).ok()?;
-        let geometry_reference_at = if bytes.get(scope_at + 11..scope_at + 21)? == [0; 10] {
-            scope_at + 21
-        } else if bytes.get(scope_at + 11..scope_at + 20)? == [0; 9]
-            && marked_reference(bytes, scope_at + 20)? == 0
-        {
-            scope_at + 25
-        } else {
-            return None;
-        };
-        let geometry_record_index = marked_reference(bytes, geometry_reference_at)?;
-        let geometry_at = next_indexed_record_offset_with_index(bytes, 0, geometry_record_index)?;
-        let (geometry_class_tag, after_geometry_tag) =
-            lp_ascii_filtered_view(bytes, geometry_at, 0..=2000, u8::is_ascii_graphic)?;
-        let geometry_prologue: [u8; 15] = bytes
-            .get(geometry_at + 11..geometry_at + 26)?
-            .try_into()
-            .ok()?;
-        let geometry_prologue = DesignCanvasPrologue::try_from(geometry_prologue).ok()?;
-        if View::u32_le_at(bytes, after_geometry_tag)? != geometry_record_index {
-            return None;
-        }
+    let Ok(scope_at) = usize::try_from(scope.byte_offset()) else {
+        return Ok(None);
+    };
+    let Some(geometry_reference_at) = geometry_reference_at(bytes, scope_at) else {
+        return Ok(None);
+    };
+    let Some(geometry_record_index) = marked_reference(bytes, geometry_reference_at) else {
+        return Ok(None);
+    };
+    let geometry_offsets = records.offsets(geometry_record_index);
+    let Some(geometry) = geometry_offsets
+        .first()
+        .and_then(|&at| indexed_record_header_at(bytes, at))
+    else {
+        return Ok(None);
+    };
+    let geometry_at = geometry.offset;
+    let Some(prologue) = bytes_at::<15>(bytes, geometry_at + 11)
+        .and_then(|prologue| DesignCanvasPrologue::try_from(*prologue).ok())
+    else {
+        return Ok(None);
+    };
+    let paired_position = ctx.partition_point(
+        geometry_offsets,
+        |offset| Ok(*offset < geometry_at + 11),
+        "find F3D Canvas paired geometry header",
+    )?;
+    let Some(paired) = geometry_offsets
+        .get(paired_position)
+        .and_then(|&at| indexed_record_header_at(bytes, at))
+    else {
+        return Ok(None);
+    };
+    let paired_at = paired.offset;
+    let Some(frame) = canvas_geometry_frame(bytes, scope.record_index, geometry_at, paired_at)
+    else {
+        return Ok(None);
+    };
+    let asset_record_at = paired_at + 30;
+    let Some(asset_class_tag) =
+        exact_indexed_header_at(bytes, asset_record_at, frame.asset_record_index)
+    else {
+        return Ok(None);
+    };
+    if !zeros_at::<10>(bytes, asset_record_at + 11) {
+        return Ok(None);
+    }
+    let Ok(geometry_reference_offset) = u64::try_from(geometry_reference_at + 1) else {
+        return Ok(None);
+    };
+    let Ok(geometry_offset) = u64::try_from(geometry_at) else {
+        return Ok(None);
+    };
 
-        let paired_at = next_indexed_record_offset_with_index(
-            bytes,
-            geometry_at.checked_add(11)?,
-            geometry_record_index,
-        )?;
-        let (paired_geometry_class_tag, after_paired_tag) =
-            lp_ascii_filtered_view(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
-        let paired_component_at = paired_at + 19;
-        if View::u32_le_at(bytes, after_paired_tag)? != geometry_record_index
-            || paired_at <= geometry_at
-            || bytes.get(paired_at + 11..paired_component_at)? != [0; 8]
-        {
-            return None;
-        }
+    let Some((label, after_label)) = lp_utf16_bounded_charged(
+        ctx,
+        bytes,
+        geometry_at + 213,
+        1..=256,
+        "f3d Design UTF-16 text",
+    )?
+    else {
+        return Ok(None);
+    };
+    if after_label != paired_at {
+        return Ok(None);
+    }
+    let Some((asset_name, after_asset_name)) = lp_utf16_bounded_charged(
+        ctx,
+        bytes,
+        asset_record_at + 21,
+        1..=1024,
+        "f3d Design UTF-16 text",
+    )?
+    else {
+        return Ok(None);
+    };
+    if after_asset_name != scope_at {
+        return Ok(None);
+    }
+    let geometry_class_tag = geometry.retain_class_tag(ctx, "f3d Canvas geometry class tag")?;
+    let paired_geometry_class_tag =
+        paired.retain_class_tag(ctx, "f3d Canvas paired geometry class tag")?;
+    let asset_class_tag = retain_class_tag(ctx, *asset_class_tag, "f3d Canvas asset class tag")?;
+    let id = ids::native_scoped_id_charged(ctx, stream, "design-canvas-image", geometry_at)?;
 
-        let boundary_offsets = [
-            geometry_at + 26,
-            geometry_at + 34,
-            geometry_at + 42,
-            geometry_at + 50,
-            geometry_at + 181,
-            geometry_at + 189,
-            geometry_at + 197,
-            geometry_at + 205,
-        ];
-        let mut coordinates = [0.0; 8];
-        for (coordinate, offset) in coordinates.iter_mut().zip(boundary_offsets) {
-            *coordinate = View::f64_le_at(bytes, offset)?;
-        }
-        let boundary_segments = [
-            [
-                Point2::new(coordinates[0], coordinates[1]),
-                Point2::new(coordinates[2], coordinates[3]),
-            ],
-            [
-                Point2::new(coordinates[4], coordinates[5]),
-                Point2::new(coordinates[6], coordinates[7]),
-            ],
-        ];
-        let boundary = DesignCanvasBounds::try_from(boundary_segments).ok()?;
-
-        let plane_at = geometry_at + 58;
-        let scope_reference_at = geometry_at + 146;
-        let component_at = geometry_at + 157;
-        let asset_at = geometry_at + 169;
-        let plane_entity_suffix = marked_reference(bytes, plane_at)?;
-        let scope_record_index = marked_reference(bytes, scope_reference_at)?;
-        let component_entity_suffix = marked_reference(bytes, component_at)?;
-        let asset_record_index = marked_reference(bytes, asset_at)?;
-        if scope_record_index != scope.record_index
-            || marked_reference(bytes, paired_component_at)? != component_entity_suffix
-            || bytes.get(paired_component_at + 5..paired_component_at + 11)? != [0; 6]
-            || bytes.get(plane_at + 5..plane_at + 11)? != [0; 6]
-            || bytes.get(scope_reference_at + 5..scope_reference_at + 11)? != [0; 6]
-            || bytes.get(component_at + 5..component_at + 12)? != [0; 7]
-            || bytes.get(asset_at + 5..asset_at + 11)? != [0; 6]
-            || bytes.get(asset_at + 11) != Some(&1)
-        {
-            return None;
-        }
-        let geometry_payload = bytes.get(geometry_at + 69..geometry_at + 146)?;
-        let geometry_payload = DesignCanvasGeometryPayload::try_from(geometry_payload).ok()?;
-
-        let (label, after_label) = match lp_utf16_bounded_charged(
-            ctx,
-            bytes,
-            geometry_at + 213,
-            1..=256,
-            "f3d Design UTF-16 text",
-        ) {
-            Ok(Some(value)) => value,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
-        if after_label != paired_at {
-            return None;
-        }
-        let asset_record_at = paired_at.checked_add(30)?;
-        let (asset_class_tag, after_asset_tag) =
-            lp_ascii_filtered_view(bytes, asset_record_at, 0..=2000, u8::is_ascii_graphic)?;
-        if View::u32_le_at(bytes, after_asset_tag)? != asset_record_index
-            || bytes.get(asset_record_at + 11..asset_record_at + 21)? != [0; 10]
-        {
-            return None;
-        }
-        let (asset_name, after_asset_name) = match lp_utf16_bounded_charged(
-            ctx,
-            bytes,
-            asset_record_at + 21,
-            1..=1024,
-            "f3d Design UTF-16 text",
-        ) {
-            Ok(Some(value)) => value,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
-        if after_asset_name != scope_at {
-            return None;
-        }
-        let geometry_class_tag =
-            match ctx.copy_retained_text(geometry_class_tag, "f3d Canvas geometry class tag") {
-                Ok(value) => value,
-                Err(error) => return Some(Err(error)),
-            };
-        let paired_geometry_class_tag = match ctx.copy_retained_text(
-            paired_geometry_class_tag,
-            "f3d Canvas paired geometry class tag",
-        ) {
-            Ok(value) => value,
-            Err(error) => return Some(Err(error)),
-        };
-        let asset_class_tag =
-            match ctx.copy_retained_text(asset_class_tag, "f3d Canvas asset class tag") {
-                Ok(value) => value,
-                Err(error) => return Some(Err(error)),
-            };
-
-        DesignCanvasImage::new(
-            ids::native_design_canvas_image_id(stream, geometry_at),
-            scope.record_index,
-            u64::try_from(geometry_reference_at + 1).ok()?,
-            DesignCanvasGeometry::new(
-                [geometry_class_tag, paired_geometry_class_tag],
-                geometry_record_index,
-                u64::try_from(geometry_at).ok()?,
-                label,
-                geometry_prologue,
-                boundary,
-                geometry_payload,
-            )
-            .ok()?,
-            DesignCanvasAsset::new(
-                asset_class_tag.try_into().ok()?,
-                asset_record_index,
-                asset_name,
-            )
-            .ok()?,
-            plane_entity_suffix,
-            component_entity_suffix,
-        )
-        .ok()
-        .map(Ok)
-    })();
-    parsed.transpose()
+    let Ok(geometry) = DesignCanvasGeometry::new(
+        [
+            String::from(geometry_class_tag),
+            String::from(paired_geometry_class_tag),
+        ],
+        geometry_record_index,
+        geometry_offset,
+        label,
+        prologue,
+        frame.boundary,
+        frame.payload,
+    ) else {
+        return Ok(None);
+    };
+    let Ok(asset) = DesignCanvasAsset::new(asset_class_tag, frame.asset_record_index, asset_name)
+    else {
+        return Ok(None);
+    };
+    Ok(DesignCanvasImage::new(
+        id,
+        scope.record_index,
+        geometry_reference_offset,
+        geometry,
+        asset,
+        frame.plane_entity_suffix,
+        frame.component_entity_suffix,
+    )
+    .ok())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::parse_canvas_image;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    use crate::records::canvas::DesignCanvasImage;
+    use crate::records::feature::scope::DesignParameterScope;
+
+    /// Parse `scope` against a stream index built outside `ctx`.
+    fn parse_canvas_image(
+        ctx: &DecodeContext<'_>,
+        bytes: &[u8],
+        stream: &str,
+        scope: &DesignParameterScope,
+    ) -> Result<Option<DesignCanvasImage>, CodecError> {
+        let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
+        super::parse_canvas_image(ctx, bytes, &records, stream, scope)
+    }
 
     fn header(bytes: &mut [u8], at: usize, tag: [u8; 3], index: u32) {
         bytes[at..at + 4].copy_from_slice(&3u32.to_le_bytes());
@@ -434,6 +525,24 @@ mod tests {
     }
 
     #[test]
+    fn canvas_paired_header_search_refuses_work_limit_through_optional_parse() {
+        let (bytes, scope) = fixture();
+        let operation = "find F3D Canvas paired geometry header";
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            0,
+            |ctx| parse_canvas_image(ctx, &bytes, "Design/BulkStream.dat", &scope).map(|_| ()),
+        );
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(refusal)
+                if refusal.dimension == ResourceDimension::WorkUnits
+                    && refusal.operation == operation
+        ));
+    }
+
+    #[test]
     fn canvas_projection_refuses_asset_copy_and_output_limits() {
         use cadmpeg_ir::features::{
             Feature, FeatureDefinition, FeatureEvaluation, FeatureOperation, SketchFeatureBinding,
@@ -476,38 +585,51 @@ mod tests {
         zip.write_all(b"PNG").unwrap();
         let archive = zip.finish().unwrap().into_inner();
         crate::test_support::zip_test::with_scan(&archive, |scan| {
-            let asset_id_len = crate::ids::neutral_asset_id(ENTRY).as_str().len();
-            let base = 3 + "a.png".len() + crate::ids::native_scope(ENTRY).len() + asset_id_len;
-            for (retained, items, dimension, operation) in [
+            let error = crate::test_support::resource_refusal_at(
+                ResourceDimension::WorkUnits,
+                "find F3D Canvas neutral feature",
+                0,
+                |ctx| {
+                    super::project_canvas_images(
+                        ctx,
+                        scan,
+                        std::slice::from_ref(&scope),
+                        std::slice::from_ref(&image),
+                        &mut [feature()],
+                    )
+                },
+            );
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "find F3D Canvas neutral feature")
+            );
+            for (dimension, operation) in [
+                (ResourceDimension::RetainedBytes, "f3d asset identifier"),
                 (
-                    u64::MAX,
-                    0,
-                    ResourceDimension::CollectionItems,
-                    "f3d Canvas assets",
-                ),
-                (
-                    u64::try_from(base + asset_id_len - 1).unwrap(),
-                    u64::MAX,
                     ResourceDimension::RetainedBytes,
                     "f3d image feature asset identifier",
                 ),
+                (ResourceDimension::RetainedBytes, "f3d embedded image data"),
+                (
+                    ResourceDimension::MaterializedBytes,
+                    "f3d feature identifier",
+                ),
+                (ResourceDimension::CollectionItems, "f3d Canvas assets"),
             ] {
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::default();
-                policy.limits.max_retained_bytes = retained;
-                policy.limits.max_collection_items = items;
-
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                let result = super::project_canvas_images(
-                    &ctx,
-                    scan,
-                    std::slice::from_ref(&scope),
-                    std::slice::from_ref(&image),
-                    &mut [feature()],
-                );
+                let error =
+                    crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
+                        super::project_canvas_images(
+                            ctx,
+                            scan,
+                            std::slice::from_ref(&scope),
+                            std::slice::from_ref(&image),
+                            &mut [feature()],
+                        )
+                    });
                 assert!(matches!(
-                    result,
-                    Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                    error,
+                    cadmpeg_core::CodecError::ResourceLimit(failure)
                         if failure.dimension == dimension && failure.operation == operation
                 ));
             }
