@@ -219,3 +219,35 @@ fn actual_mixed_quadratic_offset_fourth_uses_all_product_rule_lanes() {
         assert_eq!(actual.get(), Vector3::new(0.0, 0.0, z));
     }
 }
+
+#[test]
+fn actual_quintic_source_fifth_supplies_true_offset_fourth() {
+    use crate::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+    // S=(u,v,u^5). At0, n=(-5u^4,0,1)/sqrt(1+25u^8),
+    // so n_uuuu=(-120,0,0). All lower normal derivatives vanish.
+    let poles = (0..=5).map(|i: u32| (0..=1).map(|j: u32|
+        Point3::new(f64::from(i) / 5.0, f64::from(j), if i == 5 { 1.0 } else { 0.0 })
+    ).collect()).collect();
+    let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(),
+        NurbsSurfaceAxis::new(5, vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0], false),
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceLanes::new(poles, None), false).unwrap().unwrap();
+    let geometry = SolvedSurfaceGeometry::Nurbs(surface);
+    let policy = DecodePolicy::service();
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    for admission in [EvaluationAdmission::Standard, EvaluationAdmission::Decode(&ctx)] {
+        let scratch = Scratch::new(admission);
+        let source = crate::eval::surface_requested_jet_solved(&scratch, &geometry, 0.0, 0.0, SurfaceRequest::Fifth).unwrap();
+        close(source.higher.fifth().unwrap()[0].get(), Vector3::new(0.0, 0.0, 120.0));
+        let result = super::super::offset(source, 1.0, SurfaceRequest::Fourth).unwrap();
+        assert_eq!(result.jet.point.get(), Point3::new(0.0, 0.0, 1.0));
+        close(result.jet.first.unwrap()[0].get(), Vector3::new(1.0, 0.0, 0.0));
+        close(result.jet.second.unwrap()[0].get(), Vector3::new(0.0, 0.0, 0.0));
+        for vector in result.higher.third().unwrap() { close(vector.get(), Vector3::new(0.0, 0.0, 0.0)); }
+        let fourth = result.higher.fourth().unwrap();
+        close(fourth[0].get(), Vector3::new(-120.0, 0.0, 0.0));
+        for vector in &fourth[1..] { close(vector.get(), Vector3::new(0.0, 0.0, 0.0)); }
+    }
+    ctx.finish_session().unwrap();
+}

@@ -7,6 +7,8 @@ use crate::features::FiniteVector3;
 use crate::eval::rational::tensor::TensorWindow;
 use crate::math::sum::{ExactSignedSum, ScaledValue};
 
+pub(super) mod fifth;
+
 #[derive(Clone, Copy)]
 pub(in crate::eval) enum Orders {
     Third,
@@ -107,7 +109,7 @@ fn project<const N: usize, const D: usize>(
     sums: [[ExactSignedSum; 3]; N],
     widths: [ScaledValue; 2],
 ) -> Result<[FiniteVector3; N], EvaluationFailure<()>> {
-    const { assert!((N == 4 && D == 3) || (N == 5 && D == 4)) };
+    const { assert!((N == 4 && D == 3) || (N == 5 && D == 4) || (N == 6 && D == 5)) };
     let mut output = [FiniteVector3::ZERO; N];
     for (order, (lanes, destination)) in sums.into_iter().zip(&mut output).enumerate() {
         let denominators = std::array::from_fn(|factor| widths[usize::from(factor >= D - order)]);
