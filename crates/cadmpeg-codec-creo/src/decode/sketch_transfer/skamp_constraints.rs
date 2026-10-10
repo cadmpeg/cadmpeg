@@ -1012,12 +1012,18 @@ pub(in super::super) fn section_skamp_candidates_for_geometry<'ctx>(
                 skamp.offset,
             ))
         };
-        let candidate = storage.with_storage(|| Ok::<_, cadmpeg_core::CodecError>(build_candidate()))?;
+        let candidate =
+            storage.with_storage(|| Ok::<_, cadmpeg_core::CodecError>(build_candidate()))?;
         if let Some(error) = resource_error.into_inner() {
             return Err(error);
         }
         if let Some((constraint, offset)) = candidate {
-            ctx.push_scoped_vec(&mut slots, &mut constraints, (constraint, offset, storage), "creo skamp constraints")?;
+            ctx.push_scoped_vec(
+                &mut slots,
+                &mut constraints,
+                (constraint, offset, storage),
+                "creo skamp constraints",
+            )?;
         }
     }
     Ok((constraints, slots))
@@ -1031,8 +1037,12 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
     geometry: Option<&BTreeMap<SketchEntityId, SketchGeometry>>,
 ) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
     let (rows, _slots) = section_skamp_candidates_for_geometry(ctx, definition, sketch, geometry)?;
+    if rows.is_empty() {
+        return Ok(Vec::new());
+    }
     ctx.try_collect_vec(
-        rows.into_iter().map(|(constraint, offset, storage)| storage.commit_value((constraint, offset))),
+        rows.into_iter()
+            .map(|(constraint, offset, storage)| storage.commit_value((constraint, offset))),
         "creo skamp constraints",
     )
 }
@@ -1289,6 +1299,27 @@ mod tests {
         }
     }
 
+    fn assert_skamp_candidate_boundaries<T>(
+        operations: &[&'static str],
+        run: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
+    ) -> T {
+        use cadmpeg_core::decode::ResourceDimension;
+        for &operation in operations {
+            let error = crate::test_support::last_refusal_at(
+                &[],
+                ResourceDimension::MaterializedBytes,
+                operation,
+                &run,
+            );
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+                if resource.dimension == ResourceDimension::MaterializedBytes
+                    && resource.operation == operation)
+            );
+        }
+        crate::test_support::assert_retained_boundaries(&["creo SKAMP candidate storage"], run)
+    }
+
     #[test]
     fn discarded_skamp_candidates_do_not_consume_retained_storage() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
@@ -1299,11 +1330,20 @@ mod tests {
         policy.limits.max_retained_bytes = 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         for _ in 0..16 {
-            let (rows, _slots) = super::section_skamp_candidates_for_geometry(&ctx, &definition, &sketch, None).expect("candidate storage stays provisional");
+            let (rows, _slots) =
+                super::section_skamp_candidates_for_geometry(&ctx, &definition, &sketch, None)
+                    .expect("candidate storage stays provisional");
             assert_eq!(rows.len(), 1);
-            assert!(matches!(rows[0].0.definition.kind(), SketchConstraintDefinitionInput::Native { .. }));
+            assert!(matches!(
+                rows[0].0.definition.kind(),
+                SketchConstraintDefinitionInput::Native { .. }
+            ));
         }
-        assert_eq!(ctx.copy_retained_text("x", "test surviving output").expect("discarded candidates retained no bytes"), "x");
+        assert_eq!(
+            ctx.copy_retained_text("x", "test surviving output")
+                .expect("discarded candidates retained no bytes"),
+            "x"
+        );
         ctx.finish_session().expect("active session");
     }
 
@@ -1413,11 +1453,55 @@ mod tests {
             });
             let sketch =
                 cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#1").expect("sketch");
-            let constraints = crate::test_support::assert_retained_boundaries(
+            let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+                super::section_skamp_constraints_for_geometry(ctx, &definition, &sketch, None)
+            };
+            let constraints = crate::test_support::assert_work_boundaries(
                 &["creo skamp arc endpoint identity copy"],
-                |ctx| {
-                    super::section_skamp_constraints_for_geometry(ctx, &definition, &sketch, None)
-                },
+                run,
+            );
+            assert_eq!(assert_skamp_candidate_boundaries(&[], run), constraints);
+
+            // The arc-angle row stores one entity identity; endpoint equality stores two.
+            let mut angle = definition.clone();
+            angle
+                .relations
+                .as_mut()
+                .expect("relations")
+                .skamps
+                .as_mut()
+                .expect("SKAMP table")
+                .rows_mut()[0]
+                .kind = 10;
+            let run_angle = |cap| {
+                let arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) =
+                    cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                        .expect("root");
+                super::section_skamp_constraints_for_geometry(&ctx, &angle, &sketch, None)
+            };
+            let cap = crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                None,
+                run_angle,
+            );
+            let angle_constraints = run_angle(cap).expect("one entity identity is admitted");
+            assert_eq!(angle_constraints.len(), 1);
+            assert!(matches!(
+                angle_constraints[0].0.definition.kind(),
+                SketchConstraintDefinitionInput::ArcAngle { .. }
+            ));
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                    .expect("root");
+            assert!(
+                matches!(run(&ctx), Err(cadmpeg_core::CodecError::ResourceLimit(resource))
+                if resource.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
             );
             assert_eq!(constraints.len(), 1);
             assert!(matches!(
@@ -1468,10 +1552,12 @@ mod tests {
                     super::section_skamp_constraints_for_geometry(ctx, &definition, &sketch, None)
                 },
             );
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
                 if resource.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
-                    && resource.operation == "creo sketch native reference"));
-            let constraints = crate::test_support::assert_retained_boundaries(expected, |ctx| {
+                    && resource.operation == "creo sketch native reference")
+            );
+            let constraints = assert_skamp_candidate_boundaries(expected, |ctx| {
                 super::section_skamp_constraints_for_geometry(
                     ctx,
                     &definition,
@@ -1496,17 +1582,15 @@ mod tests {
                     offset: 0,
                 }],
             });
-        let constraints = crate::test_support::assert_retained_boundaries(
-            &["creo sketch native reference"],
-            |ctx| {
+        let constraints =
+            assert_skamp_candidate_boundaries(&["creo sketch native reference"], |ctx| {
                 super::section_skamp_constraints_for_geometry(
                     ctx,
                     &joined,
                     &sketch,
                     Some(&geometry),
                 )
-            },
-        );
+            });
         let SketchConstraintDefinitionInput::Native { operands, .. } =
             constraints[0].0.definition.kind()
         else {
@@ -1775,20 +1859,20 @@ mod tests {
                 )
             },
         );
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
-                && resource.operation == "creo sketch entity identity"));
-        let constraints = crate::test_support::assert_retained_boundaries(
-            &["creo sketch entity identity"],
-            |ctx| {
+                && resource.operation == "creo sketch entity identity")
+        );
+        let constraints =
+            assert_skamp_candidate_boundaries(&["creo sketch entity identity"], |ctx| {
                 super::section_skamp_constraints_for_geometry(
                     ctx,
                     &definition,
                     &sketch,
                     Some(&geometry),
                 )
-            },
-        );
+            });
         assert_eq!(constraints.len(), 1);
     }
 
