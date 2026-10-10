@@ -47,7 +47,6 @@ fn face_equation_projection_and_cache_refuse_before_growth() {
             ctx,
             assignments: &assignments,
             possible_face_choices: choices,
-            possible_face_equations: equations,
             face_work: vec![Some(1)],
             edge_candidates: &candidates,
             edge_rows: &[],
@@ -156,8 +155,6 @@ fn face_equation_cache_ignores_unrelated_quotient_components() {
     let search = MeshSelectionSearch {
         ctx: &ctx,
         assignments: &assignments,
-        possible_face_equations: possible_face_equations(&ctx, &assignments)
-            .expect("service resource budget"),
         possible_face_choices: possible_face_choices(
             &ctx,
             &assignments,
@@ -247,7 +244,6 @@ fn face_projection_ignores_member_insertion_order() {
     let search = MeshSelectionSearch {
         ctx: &ctx,
         assignments: &assignments,
-        possible_face_equations: Vec::new(),
         possible_face_choices: Vec::new(),
         face_work: Vec::new(),
         edge_candidates: &[],
