@@ -262,15 +262,27 @@ fn resolve_surface_aliases(
         let terminals =
             super::super::surface_alias_terminals(ctx, &aliases, &by_id, None, &mut scratch)?
                 .expect("no local ceiling");
-        super::super::resolve_surface_aliases(
-            ctx,
-            &aliases,
-            &terminals,
-            surfaces,
-            (conflicts, &mut scratch),
-            None,
-        )
-        .map(|changed| changed.expect("no local ceiling"))
+        let mut changed = false;
+        for record in ctx.admit_iter(&aliases, "test_b5_alias_scan")? {
+            let Some(terminal) = super::super::resolved_surface_alias_terminal(
+                ctx,
+                record.object_id,
+                &terminals,
+                surfaces,
+            )?
+            else {
+                continue;
+            };
+            changed |= super::super::merge_surface_from(
+                ctx,
+                surfaces,
+                (&mut *conflicts, &mut scratch),
+                record.object_id,
+                terminal,
+            )?
+            .unwrap_or(false);
+        }
+        Ok::<_, cadmpeg_core::CodecError>(changed)
     })
     .expect("service budget")
 }
