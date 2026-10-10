@@ -472,7 +472,10 @@ pub(super) fn project<'ctx>(
             }
         };
         let control_count = segment_count * 3 + 1;
-        let mut control_points = ctx.collection_vec(control_count, "iges spline curve controls")?;
+        let mut candidate_storage = ctx.reserve_scoped(0, "iges spline curve candidate")?;
+        let mut control_points = candidate_storage.with_storage(|| {
+            ctx.collection_vec(control_count, "iges spline curve controls")
+        })?;
         let mut continuous = true;
         let precision = global.real_precision();
         let resolution = global.minimum_resolution_mm();
@@ -727,7 +730,9 @@ pub(super) fn project<'ctx>(
                 ),
             )?;
         }
-        let mut knots = ctx.collection_vec(segment_count * 3 + 5, "iges spline curve knots")?;
+        let mut knots = candidate_storage.with_storage(|| {
+            ctx.collection_vec(segment_count * 3 + 5, "iges spline curve knots")
+        })?;
         knots.extend([breakpoints[0].get(); 4]);
         for breakpoint in ctx.admit_iter(
             &breakpoints[1..segment_count],
@@ -736,12 +741,12 @@ pub(super) fn project<'ctx>(
             knots.extend([breakpoint.get(); 3]);
         }
         knots.extend([breakpoints[segment_count].get(); 4]);
-        let construction = match KnotVector::new(ctx, knots)? {
-            Err(error) => Err(error),
-            Ok(knots) => {
-                NurbsCurve::from_checked_lanes(ctx, 3, knots, control_points, None, false)?
+        let construction = candidate_storage.with_storage(|| {
+            match KnotVector::new(ctx, knots)? {
+                Err(error) => Ok(Err(error)),
+                Ok(knots) => NurbsCurve::from_checked_lanes(ctx, 3, knots, control_points, None, false),
             }
-        };
+        })?;
         let nurbs = match construction {
             Ok(nurbs) => nurbs,
             Err(error) => {
@@ -773,6 +778,7 @@ pub(super) fn project<'ctx>(
             )?;
             continue;
         };
+        candidate_storage.commit()?;
         ctx.reserve_scoped_vec(&mut wire_slots_storage, &mut wire_edges, 1, "iges spline wire edge slots")?;
         wire_edges.push(edge);
         super::push_attributed_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, IgesLossCode::SplineHeaderNotTransferred,

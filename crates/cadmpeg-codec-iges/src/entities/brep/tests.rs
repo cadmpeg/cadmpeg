@@ -279,11 +279,12 @@ fn brep_projected_pcurve_uses_refuse_before_both_vector_allocations() {
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_collection_items = cap;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let mut draft_slots = ctx.reserve_scoped(0, "test draft slots").unwrap();
                 let mut candidate = ModelDraft::new();
                 let result = super::project_pcurve_uses(
-                    &mut candidate,
+                    (&mut candidate, &mut draft_slots),
                     &uses,
-                    resolved(),
+                    (resolved(), ctx.reserve_scoped(0, "test resolved slots").unwrap()),
                     None,
                     &stem,
                     &ctx,
@@ -305,8 +306,9 @@ fn brep_projected_pcurve_uses_refuse_before_both_vector_allocations() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let mut candidate = ModelDraft::new();
-    let projected =
-        super::project_pcurve_uses(&mut candidate, &uses, resolved(), None, &stem, &ctx).unwrap();
+    let mut draft_slots = ctx.reserve_scoped(0, "test draft slots").unwrap();
+    let projected = super::project_pcurve_uses((&mut candidate, &mut draft_slots), &uses,
+        (resolved(), ctx.reserve_scoped(0, "test resolved slots").unwrap()), None, &stem, &ctx).unwrap();
     assert_eq!(projected.len(), 1);
     assert_eq!(candidate.model().pcurves.len(), 1);
 }
@@ -327,13 +329,16 @@ fn invalid_first_brep_pcurve_range_does_not_admit_the_tail() {
     policy.limits.max_work_units = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut candidate = ModelDraft::new();
+    let mut draft_slots = ctx.reserve_scoped(0, "test draft slots").unwrap();
     let result = super::project_pcurve_uses(
-        &mut candidate, &uses, resolved, None, &crate::ids::Stem::directory(9_u32), &ctx,
+        (&mut candidate, &mut draft_slots), &uses,
+        (resolved, ctx.reserve_scoped(0, "test resolved slots").unwrap()), None, &crate::ids::Stem::directory(9_u32), &ctx,
     );
     assert!(matches!(result, Err(super::PcurveProjectionError::Invalid(
         cadmpeg_ir::geometry::pcurve::PcurveMetadata::NON_FINITE_PARAMETER_RANGE
     ))));
     assert!(candidate.model().pcurves.is_empty());
+    drop(draft_slots);
     ctx.finish_session().unwrap();
 }
 
@@ -500,7 +505,7 @@ fn brep_topology_identity_copies_refuse_before_retaining_text() {
     let bytes = explicit_vertex_loop_file();
     cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::RetainedBytes,
-        "iges B-rep identity copy",
+        "iges B-rep candidate storage",
         |cap| {
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = cap;
@@ -1171,3 +1176,5 @@ mod body_storage;
 mod invalid_loop_storage;
 mod directory_visits;
 mod counted_sources;
+
+mod candidate_storage;
