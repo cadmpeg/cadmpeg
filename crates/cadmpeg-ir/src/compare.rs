@@ -589,7 +589,7 @@ impl JsonPreview {
                 '\u{c}' => self.write_str("\\f")?,
                 '\r' => self.write_str("\\r")?,
                 character if character <= '\u{1f}' => {
-                    write!(self, "\\u{:04x}", u32::from(character))?
+                    write!(self, "\\u{:04x}", u32::from(character))?;
                 }
                 character => self.write_char(character)?,
             }
