@@ -5,9 +5,11 @@ use super::super::super::geometry::SourceSequences;
 use crate::parameter::{ParameterRecord, Token, TokenValue};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::ids::{EdgeId, VertexId};
+use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::ids::{EdgeId, PointId, VertexId};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::topology::{Point, Vertex};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 use std::mem::{align_of, size_of};
@@ -209,4 +211,110 @@ fn copious_decoded_target_node_refuses_materialization_before_insertion() {
     drop(decoded);
     drop(decoded_storage);
     assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+}
+
+fn point_projection_prefix_bytes() -> usize {
+    let sequence_node = 11 * (size_of::<PointId>() + size_of::<u32>())
+        + 16 * size_of::<usize>()
+        + 2 * align_of::<PointId>().max(align_of::<u32>()).max(align_of::<usize>());
+    // Each output Vec grows from zero to four slots. Three point strings
+    // survive in the point, vertex and source index; two vertex strings
+    // survive in the vertex and free-vertex outcome. The consumed position
+    // iterator has no reader when the decoded sequence is inserted.
+    4 * (size_of::<Point>() + size_of::<Vertex>() + size_of::<VertexId>())
+        + sequence_node + 3 * "iges:model:point#D1-1".len()
+        + 2 * "iges:model:vertex#D1-1".len()
+}
+
+fn point_projection_final_allocation(exact: bool) {
+    let bytes = crate::test_support::test_owned::owned_test_file(&[]);
+    let global = crate::test_support::with_service_context(&bytes, |setup| {
+        let scan = crate::card::scan_with_context(&bytes, setup).unwrap();
+        let (global, _, _) = crate::global::parse(&scan, setup).unwrap();
+        global.length_context().unwrap()
+    });
+    assert_eq!(global.length_factor_mm(), 1.0);
+    let mut entry = crate::test_support::directory_target(1, 106);
+    entry.form = 1;
+    let directory = [entry];
+    let entries = BTreeMap::from([(1, &directory[0])]);
+    let record = ParameterRecord::from_test_tokens(1, 1..2, Vec::new(), POINT_VALUES.len(),
+        POINT_VALUES.iter().map(|value| Token {
+            value: TokenValue::Integer(*value), span: 0..0,
+        }).collect(), Vec::new());
+    let records = BTreeMap::from([(1, &record)]);
+    let point = PointId::mint("iges:model:point#D1-1").unwrap();
+    let vertex = VertexId::mint("iges:model:vertex#D1-1").unwrap();
+    let mut expected = CadIr::empty();
+    expected.model.points.push(Point::new(point.clone(),
+        FinitePoint3::new(Point3::new(2.0, 3.0, 0.0)).unwrap(), None));
+    expected.model.vertices.push(Vertex {
+        id: vertex.clone(), point, tolerance: None,
+    });
+    let prefix = u64::try_from(point_projection_prefix_bytes()).unwrap();
+    let node = u64::try_from(decoded_node_bytes()).unwrap();
+    // The earlier live position buffer has four scalar triples. Its peak
+    // fits below this cap, so the cap isolates the final decoded insertion.
+    assert!(4 * size_of::<FinitePoint3>() < decoded_node_bytes() - 1);
+    let cap = prefix + node - u64::from(!exact);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = cap;
+    policy.limits.max_retained_bytes = 0;
+    // One position, source-index node, point, vertex, free-vertex slot and
+    // decoded sequence; two neutral entities.
+    policy.limits.max_collection_items = 6;
+    policy.limits.max_entities = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut output = ctx.reserve_scoped(0, "test copious point output").unwrap();
+    let mut sequences = SourceSequences::new(&ctx).unwrap();
+    let mut ir = CadIr::empty();
+    let result = output.with_storage(||
+        project(&mut ir, &directory, &entries, &records, &global, &ctx, &mut sequences));
+    if exact {
+        let outcome = result.unwrap();
+        assert_eq!(ir, expected);
+        assert_eq!(outcome.decoded, BTreeSet::from([1]));
+        assert_eq!(outcome.free_vertices, [vertex]);
+        assert!(outcome.losses.is_empty());
+        assert!(outcome.wire_edges.is_empty());
+        drop(outcome);
+        drop(ir);
+        drop(sequences);
+        drop(output);
+        let released = ctx.reserve_scoped(cap, "test copious point backing released").unwrap();
+        drop(released);
+        ctx.finish_session().unwrap();
+    } else {
+        let first = match result.as_ref() {
+            Err(CodecError::ResourceLimit(first)) => *first,
+            _ => panic!("expected final copious decoded-node refusal"),
+        };
+        drop(result);
+        assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
+        assert_eq!(first.operation, "iges copious decoded sequences");
+        assert_eq!((first.limit, first.used, first.additional), (cap, prefix, node));
+        assert_eq!(ir, expected);
+        for _ in 0..64 {
+            for source in [&directory[..], &[][..]] {
+                assert!(matches!(project(&mut ir, source, &entries, &records, &global,
+                    &ctx, &mut sequences), Err(CodecError::ResourceLimit(last)) if last == first));
+                assert_eq!(ir, expected);
+            }
+        }
+        drop(ir);
+        drop(sequences);
+        drop(output);
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+    }
+}
+
+#[test]
+fn copious_point_final_decoded_node_refuses_one_byte_short_after_source_release() {
+    point_projection_final_allocation(false);
+}
+
+#[test]
+fn copious_point_final_decoded_node_accepts_exact_after_source_release() {
+    point_projection_final_allocation(true);
 }
