@@ -900,6 +900,32 @@ fn first_scalars_by_id<'a>(
     Ok(index)
 }
 
+/// The last scalar of the lane with each identity.
+fn last_scalars_by_id<'a>(
+    ctx: &DecodeContext<'_>,
+    scalars: &'a [FeatureInputScalar],
+) -> Result<HashMap<&'a str, &'a FeatureInputScalar>, CodecError> {
+    const OPERATION: &str = "index SLDPRT relation records";
+    let mut index = HashMap::new();
+    for scalar in ctx.admit_iter(scalars, OPERATION)? {
+        ctx.insert_hash_map(&mut index, scalar.id.as_str(), scalar, OPERATION)?;
+    }
+    Ok(index)
+}
+
+/// The last name value of the lane with each identity.
+fn last_name_values<'a>(
+    ctx: &DecodeContext<'_>,
+    lane: &'a FeatureInputLane,
+) -> Result<HashMap<&'a str, &'a str>, CodecError> {
+    const OPERATION: &str = "index SLDPRT relation records";
+    let mut index = HashMap::new();
+    for name in ctx.admit_iter(&lane.names, OPERATION)? {
+        ctx.insert_hash_map(&mut index, name.id.as_str(), name.value.as_str(), OPERATION)?;
+    }
+    Ok(index)
+}
+
 /// The first position of each scalar identity in the lane.
 fn scalar_positions<'a>(
     ctx: &DecodeContext<'_>,
@@ -951,28 +977,8 @@ pub(super) fn bind_circle_dimension_centers(
     let mut temporary_storage =
         ctx.reserve_scoped(0, "SLDPRT relation_records temporary storage")?;
 
-    let mut scalars = HashMap::new();
-    for scalar in ctx.admit_iter(&lane.scalars, "index SLDPRT relation records")? {
-        temporary_storage.with_storage(|| {
-            ctx.insert_hash_map(
-                &mut scalars,
-                scalar.id.as_str(),
-                scalar,
-                "index SLDPRT relation records",
-            )
-        })?;
-    }
-    let mut names = HashMap::new();
-    for name in ctx.admit_iter(&lane.names, "index SLDPRT relation records")? {
-        temporary_storage.with_storage(|| {
-            ctx.insert_hash_map(
-                &mut names,
-                name.id.as_str(),
-                name.value.as_str(),
-                "index SLDPRT relation records",
-            )
-        })?;
-    }
+    let mut scalars: Option<HashMap<&str, &FeatureInputScalar>> = None;
+    let mut names: Option<HashMap<&str, &str>> = None;
     // Built when the first circle relation needs them: each scalar's lane
     // position, and the two-operand scalars grouped by feature, name and first
     // operand, in lane order.
@@ -987,14 +993,26 @@ pub(super) fn bind_circle_dimension_centers(
         let Some(display_id) = relation.display_scalar_ref() else {
             continue;
         };
+        let scalars = match &mut scalars {
+            Some(index) => index,
+            slot @ None => slot.insert(
+                temporary_storage.with_storage(|| last_scalars_by_id(ctx, &lane.scalars))?,
+            ),
+        };
         let Some(display) = ctx
-            .get_hash_map(&scalars, display_id, "find SLDPRT display scalar")?
+            .get_hash_map(scalars, display_id, "find SLDPRT display scalar")?
             .copied()
         else {
             continue;
         };
+        let names = match &mut names {
+            Some(index) => index,
+            slot @ None => slot.insert(
+                temporary_storage.with_storage(|| last_name_values(ctx, lane))?,
+            ),
+        };
         let Some(display_name) = ctx.get_hash_map(
-            &names,
+            names,
             display.name.as_str(),
             "find SLDPRT display scalar name",
         )?
@@ -1020,7 +1038,7 @@ pub(super) fn bind_circle_dimension_centers(
         if center_groups.is_none() {
             center_groups = Some(
                 temporary_storage
-                    .with_storage(|| center_scalar_groups(ctx, &lane.scalars, &names))?,
+                    .with_storage(|| center_scalar_groups(ctx, &lane.scalars, names))?,
             );
         }
         let first = &relation.operands[0];
@@ -1222,17 +1240,7 @@ pub(super) fn circle_dimension_handle_driver<'a>(
         Ord::cmp,
         "sort SLDPRT relation scalars",
     )?;
-    let mut names = HashMap::new();
-    for name in ctx.admit_iter(&lane.names, "index SLDPRT relation records")? {
-        temporary_storage.with_storage(|| {
-            ctx.insert_hash_map(
-                &mut names,
-                name.id.as_str(),
-                name.value.as_str(),
-                "index SLDPRT relation records",
-            )
-        })?;
-    }
+    let mut names: Option<HashMap<&str, &str>> = None;
     let Some(first_id) = relation.scalar_refs().first() else {
         return Ok(None);
     };
@@ -1308,13 +1316,19 @@ pub(super) fn circle_dimension_handle_driver<'a>(
             && display.role == FeatureInputScalarRole::Display
             && driving.role == FeatureInputScalarRole::Driving
         {
+            let names = match &mut names {
+                Some(index) => index,
+                slot @ None => slot.insert(
+                    temporary_storage.with_storage(|| last_name_values(ctx, lane))?,
+                ),
+            };
             let left_name = ctx.get_hash_map(
-                &names,
+                names,
                 display.name.as_str(),
                 "find SLDPRT circle display name",
             )?;
             let right_name = ctx.get_hash_map(
-                &names,
+                names,
                 driving.name.as_str(),
                 "find SLDPRT circle driving name",
             )?;
@@ -1346,49 +1360,8 @@ pub(super) fn bind_detached_relation_drivers(
 ) -> Result<(), CodecError> {
     const INDEX: &str = "index SLDPRT relation records";
     let mut temporary = ctx.reserve_scoped(0, INDEX)?;
-    let mut scalars = HashMap::new();
-    for scalar in ctx.admit_iter(&lane.scalars, INDEX)? {
-        temporary.with_storage(|| {
-            ctx.insert_hash_map(&mut scalars, scalar.id.as_str(), scalar, INDEX)
-        })?;
-    }
-    let mut names = HashMap::new();
-    for name in ctx.admit_iter(&lane.names, INDEX)? {
-        temporary.with_storage(|| {
-            ctx.insert_hash_map(&mut names, name.id.as_str(), name.value.as_str(), INDEX)
-        })?;
-    }
-    let mut claimed = HashSet::new();
-    for relation in ctx.admit_iter(&*relations, INDEX)? {
-        for id in ctx.admit_iter(relation.scalar_refs(), INDEX)? {
-            temporary.with_storage(|| ctx.insert_hash_set(&mut claimed, id.as_str(), INDEX))?;
-        }
-    }
-    let mut drivers = HashMap::<(&str, &str), Vec<&FeatureInputScalar>>::new();
-    for scalar in ctx.admit_iter(&lane.scalars, "match SLDPRT detached relation drivers")? {
-        if scalar.role != FeatureInputScalarRole::Driving
-            || !scalar.operands.is_empty()
-            || ctx.contains_hash_set(&claimed, scalar.id.as_str(), INDEX)?
-        {
-            continue;
-        }
-        let feature = scalar.feature_ref.as_deref();
-        let name = ctx
-            .get_hash_map(&names, scalar.name.as_str(), INDEX)?
-            .copied();
-        let (Some(feature), Some(name)) = (feature, name) else {
-            continue;
-        };
-        temporary.with_storage(|| {
-            ctx.push_hash_group(
-                &mut drivers,
-                (feature, name),
-                scalar,
-                INDEX,
-                "collect SLDPRT detached relation drivers",
-            )
-        })?;
-    }
+    let mut scalars: Option<HashMap<&str, &FeatureInputScalar>> = None;
+    let mut names: Option<HashMap<&str, &str>> = None;
     let mut candidates = BTreeMap::<(String, String), Vec<usize>>::new();
     for (index, relation) in ctx
         .admit_iter(&*relations, "match SLDPRT detached relation candidates")?
@@ -1397,18 +1370,30 @@ pub(super) fn bind_detached_relation_drivers(
         if relation.parameter_scalar_ref().is_some() {
             continue;
         }
+        let scalars = match &mut scalars {
+            Some(index) => index,
+            slot @ None => slot.insert(
+                temporary.with_storage(|| last_scalars_by_id(ctx, &lane.scalars))?,
+            ),
+        };
         let mut first_name = None;
         let names_match = ctx.all_by(
             relation.scalar_refs(),
             |id| {
-                let Some(scalar) = ctx.get_hash_map(&scalars, id.as_str(), INDEX)? else {
+                let Some(scalar) = ctx.get_hash_map(scalars, id.as_str(), INDEX)? else {
                     return Ok(true);
                 };
                 if scalar.role != FeatureInputScalarRole::Display {
                     return Ok(true);
                 }
+                let names = match &mut names {
+                    Some(index) => index,
+                    slot @ None => slot.insert(
+                        temporary.with_storage(|| last_name_values(ctx, lane))?,
+                    ),
+                };
                 let Some(name) = ctx
-                    .get_hash_map(&names, scalar.name.as_str(), INDEX)?
+                    .get_hash_map(names, scalar.name.as_str(), INDEX)?
                     .copied()
                 else {
                     return Ok(true);
@@ -1446,14 +1431,60 @@ pub(super) fn bind_detached_relation_drivers(
             )
         })?;
     }
+    let mut drivers: Option<HashMap<(&str, &str), Vec<&FeatureInputScalar>>> = None;
     for (key, relation_indices) in
         ctx.admit_iter(&candidates, "attach SLDPRT detached relation drivers")?
     {
         let [relation_index] = relation_indices.as_slice() else {
             continue;
         };
+        let drivers = match &mut drivers {
+            Some(index) => index,
+            slot @ None => {
+                let Some(names) = names.as_ref() else {
+                    continue;
+                };
+                // Claim membership is needed only while building the driver
+                // table. It must die before any relation membership changes.
+                let mut claimed_storage = ctx.reserve_scoped(0, INDEX)?;
+                let mut claimed = HashSet::new();
+                for relation in ctx.admit_iter(&*relations, INDEX)? {
+                    for id in ctx.admit_iter(relation.scalar_refs(), INDEX)? {
+                        claimed_storage.with_storage(|| {
+                            ctx.insert_hash_set(&mut claimed, id.as_str(), INDEX)
+                        })?;
+                    }
+                }
+                let mut built = HashMap::new();
+                for scalar in ctx.admit_iter(&lane.scalars, "match SLDPRT detached relation drivers")? {
+                    if scalar.role != FeatureInputScalarRole::Driving
+                        || !scalar.operands.is_empty()
+                        || ctx.contains_hash_set(&claimed, scalar.id.as_str(), INDEX)?
+                    {
+                        continue;
+                    }
+                    let feature = scalar.feature_ref.as_deref();
+                    let name = ctx.get_hash_map(names, scalar.name.as_str(), INDEX)?.copied();
+                    let (Some(feature), Some(name)) = (feature, name) else {
+                        continue;
+                    };
+                    temporary.with_storage(|| {
+                        ctx.push_hash_group(
+                            &mut built,
+                            (feature, name),
+                            scalar,
+                            INDEX,
+                            "collect SLDPRT detached relation drivers",
+                        )
+                    })?;
+                }
+                drop(claimed);
+                drop(claimed_storage);
+                slot.insert(built)
+            }
+        };
         let Some([driver]) = ctx
-            .get_hash_map(&drivers, &(key.0.as_str(), key.1.as_str()), INDEX)?
+            .get_hash_map(drivers, &(key.0.as_str(), key.1.as_str()), INDEX)?
             .map(Vec::as_slice)
         else {
             continue;
@@ -3565,6 +3596,155 @@ mod relation_records_tests {
             operands: Vec::new(),
         };
         (input, relation)
+    }
+
+    #[test]
+    fn empty_relation_bindings_do_not_build_lane_indexes() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        let (input, _) = detached_driver_with_duplicate_index_key(false);
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_work_units = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        super::bind_circle_dimension_centers(&ctx, &mut [], &input).unwrap();
+        super::bind_detached_relation_drivers(&ctx, &mut [], &input).unwrap();
+        assert_eq!(ctx.resource_refusal(), None);
+
+        policy.limits.max_work_units = u64::MAX;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            ResourceDimension::WorkUnits, "index SLDPRT relation records", None,
+        );
+        super::bind_circle_dimension_centers(&ctx, &mut [], &input).unwrap();
+        super::bind_detached_relation_drivers(&ctx, &mut [], &input).unwrap();
+        assert_eq!(ctx.resource_refusal(), None);
+        let Err(CodecError::ResourceLimit(limit)) =
+            ctx.charge_work(1, "index SLDPRT relation records")
+        else { panic!("unused indexes must leave their probe armed"); };
+        assert_eq!(limit.used, 0);
+        assert_eq!(limit.additional, 1);
+        assert_eq!(limit.operation, "index SLDPRT relation records");
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        drop(probe);
+    }
+
+    #[test]
+    fn ineligible_relation_bindings_visit_only_relations() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        let (input, mut relation) = detached_driver_with_duplicate_index_key(false);
+        relation.scalars = crate::records::relation_scalars::RelationScalars::from_refs(
+            vec!["scalar-20".into(), "scalar-40".into()],
+            Some("scalar-40".into()), Some("scalar-20".into()),
+        ).unwrap();
+        let before = relation.clone();
+        let mut relations = [relation];
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        // One relation visit in each binding pass, repeated sixty-four times.
+        policy.limits.max_work_units = 2 * 64;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        for _ in 0..64 {
+            super::bind_circle_dimension_centers(&ctx, &mut relations, &input).unwrap();
+            super::bind_detached_relation_drivers(&ctx, &mut relations, &input).unwrap();
+            assert_eq!(relations[0], before);
+        }
+        assert_eq!(ctx.resource_refusal(), None);
+        policy.limits.max_work_units = 1;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        super::bind_circle_dimension_centers(&ctx, &mut relations, &input).unwrap();
+        let Err(CodecError::ResourceLimit(limit)) =
+            super::bind_detached_relation_drivers(&ctx, &mut relations, &input)
+        else { panic!("second actual relation visit must refuse"); };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "match SLDPRT detached relation candidates");
+        assert_eq!(limit.limit, 1);
+        assert_eq!(limit.used, 1);
+        assert_eq!(limit.additional, 1);
+        assert_eq!(relations[0], before);
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    }
+
+    #[test]
+    fn circle_center_missing_display_keeps_name_index_unbuilt() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        let (input, mut relation) = detached_driver_with_duplicate_index_key(false);
+        relation.operands.push(input.scalars[0].operands[0].clone());
+        relation.scalars = crate::records::relation_scalars::RelationScalars::from_refs(
+            vec!["absent".into()], None, Some("absent".into()),
+        ).unwrap();
+        let before = relation.clone();
+        let mut relations = [relation];
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        // Four (&str, borrowed scalar) buckets plus alignment and controls.
+        policy.limits.max_materialized_bytes = 4 * 24 + 15 + 20;
+        policy.limits.max_collection_items = 2 * 64;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        for _ in 0..64 {
+            super::bind_circle_dimension_centers(&ctx, &mut relations, &input).unwrap();
+            assert_eq!(relations[0], before);
+            let released = ctx.reserve_scoped(131, "released missing-display lookup").unwrap();
+            drop(released);
+        }
+        assert_eq!(ctx.resource_refusal(), None);
+        policy.limits.max_materialized_bytes = 130;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let Err(CodecError::ResourceLimit(limit)) =
+            super::bind_circle_dimension_centers(&ctx, &mut relations, &input)
+        else { panic!("scalar table backing must be admitted before growth"); };
+        assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+        assert_eq!(limit.operation, "index SLDPRT relation records");
+        assert_eq!(limit.limit, 130);
+        assert_eq!(limit.used, 0);
+        assert_eq!(limit.additional, 131);
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    }
+
+    #[test]
+    fn ambiguous_detached_candidates_keep_driver_index_probe_armed() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        let (input, relation) = detached_driver_with_duplicate_index_key(false);
+        let mut other = relation.clone();
+        other.id = "other-relation".into();
+        let before = [relation, other];
+        let mut relations = before.clone();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            ResourceDimension::WorkUnits, "match SLDPRT detached relation drivers", None,
+        );
+        super::bind_detached_relation_drivers(&ctx, &mut relations, &input).unwrap();
+        assert_eq!(relations, before);
+        assert_eq!(ctx.resource_refusal(), None);
+        let Err(CodecError::ResourceLimit(limit)) =
+            ctx.charge_work(1, "match SLDPRT detached relation drivers")
+        else { panic!("ambiguous candidates must leave the driver probe armed"); };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "match SLDPRT detached relation drivers");
+        assert_eq!(limit.additional, 1);
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        drop(probe);
     }
 
     #[test]
