@@ -15,7 +15,6 @@ fuzz_target!(|data: &[u8]| {
         if let (Some(protein), Some(instance)) =
             (root.child(0, split), root.child(split, data.len()))
         {
-            let _schema_probe = cadmpeg_protein::has_schemas(&ctx, protein.window());
             let _decode = cadmpeg_protein::decode_detailed(&ctx, protein, instance);
         }
     }

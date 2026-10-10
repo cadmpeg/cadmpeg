@@ -17,8 +17,7 @@ pub fn full(
         container_only: false,
     };
     let result = codec.decode_with_context(&ctx, root, &options);
-    ctx.finish_session()?;
-    result
+    ctx.finish(result)
 }
 
 /// Backing bytes of the arena registry's initial four-buffer capacity.

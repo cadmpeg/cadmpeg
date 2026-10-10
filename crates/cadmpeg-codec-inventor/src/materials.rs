@@ -578,7 +578,7 @@ mod tests {
     }
 
     #[test]
-    fn inventor_connection_refuses_before_texture_copy() {
+    fn inventor_connected_texture_slot_refuses_collection_limit() {
         let instances = one_connected_texture();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -589,7 +589,7 @@ mod tests {
             project_catalog(&ctx, &instances, &mut 0),
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "Protein appearance texture"
+                    && limit.operation == "Inventor appearance connected textures"
         ));
         assert_eq!(
             project_fixture(&instances)

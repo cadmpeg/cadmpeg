@@ -177,10 +177,11 @@ fn an_unverified_acis_binary_band_is_decoded_and_marked() {
     assert!(result.report().geometry_transferred());
     assert_eq!(result.ir().model.bodies.len(), 1);
     assert!((sphere_radius(&result) - 25.0).abs() < 1.0e-9);
-    assert!(result.report().losses.iter().any(|loss| loss.code
-        == SatLossCode::SourceDialectUnverified
-            .kind(&cadmpeg_test_support::service_decode_context())
-            .expect("service loss code")));
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == SatLossCode::SourceDialectUnverified.kind()));
     let source = result.ir().source.as_ref().expect("source metadata");
     assert_eq!(source.attributes["kernel_family"], "acis");
     assert_eq!(
@@ -195,10 +196,11 @@ fn an_unverified_acis_text_band_is_decoded_and_marked() {
     assert!(result.report().geometry_transferred());
     assert_eq!(result.ir().model.bodies.len(), 1);
     assert!((sphere_radius(&result) - 25.0).abs() < 1.0e-9);
-    assert!(result.report().losses.iter().any(|loss| loss.code
-        == SatLossCode::SourceDialectUnverified
-            .kind(&cadmpeg_test_support::service_decode_context())
-            .expect("service loss code")));
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == SatLossCode::SourceDialectUnverified.kind()));
     let source = result.ir().source.as_ref().expect("source metadata");
     assert_eq!(source.attributes["kernel_family"], "acis");
     assert_eq!(source.dialect().unwrap().declared()["encoding"], "text");
@@ -226,16 +228,8 @@ fn an_unverified_band_that_decodes_nothing_reports_honest_coverage() {
         .iter()
         .map(|loss| loss.code.clone())
         .collect::<Vec<_>>();
-    assert!(codes.contains(
-        &SatLossCode::SourceDialectUnverified
-            .kind(&cadmpeg_test_support::service_decode_context())
-            .expect("service loss code")
-    ));
-    assert!(codes.contains(
-        &SatLossCode::GeometryFramedWithoutCarriers
-            .kind(&cadmpeg_test_support::service_decode_context())
-            .expect("service loss code")
-    ));
+    assert!(codes.contains(&SatLossCode::SourceDialectUnverified.kind()));
+    assert!(codes.contains(&SatLossCode::GeometryFramedWithoutCarriers.kind()));
 }
 
 #[test]
@@ -343,12 +337,7 @@ fn a_geometry_less_text_stream_reports_uncovered_coverage() {
         .report()
         .losses
         .iter()
-        .find(|loss| {
-            loss.code
-                == SatLossCode::GeometryFramedWithoutCarriers
-                    .kind(&cadmpeg_test_support::service_decode_context())
-                    .expect("service loss code")
-        })
+        .find(|loss| loss.code == SatLossCode::GeometryFramedWithoutCarriers.kind())
         .expect("coverage loss");
     assert!(loss.message.contains("End-of-ACIS-data"));
 }
@@ -420,7 +409,7 @@ fn unknown_record_retention_preserves_its_resource_refusal() {
             &header,
             None,
             matched,
-            &kernel,
+            kernel,
         )
     })
     .expect_err("unknown link exceeds the remaining collection allowance");
@@ -485,13 +474,133 @@ fn sat_annotation_storage_uses_the_callers_collection_budget() {
             &header,
             None,
             matched,
-            &kernel,
+            kernel,
         )
     })
     .expect_err("annotation stream handle exceeds the preceding collection slots");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "allocate annotation stream handle"));
+}
+
+fn annotation_stream_result(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    streams: [&str; 2],
+) -> Result<cadmpeg_ir::codec::Decoded, CodecError> {
+    let source = text_sphere_stream(1.0);
+    let header = crate::test_support::with_context(
+        &source,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+        |fixture_context| {
+            cadmpeg_asm::sat::parse(fixture_context, &source)
+                .expect("text fixture")
+                .header
+                .as_kernel_header(fixture_context)
+                .expect("kernel header")
+        },
+    );
+    let mut brep = cadmpeg_asm::brep::AsmBrep::default();
+    for (id, stream, offset) in [
+        ("sat:brep:entity#1", streams[0], 11),
+        ("sat:brep:entity#2", streams[1], 23),
+    ] {
+        brep.annotation_records
+            .push(cadmpeg_asm::brep::annotations::AnnotationRecord {
+                id: id.into(),
+                stream: stream.into(),
+                offset,
+                tag: cadmpeg_asm::brep::annotations::AnnotationTag::Record("sphere-surface".into()),
+                derived_fields: Vec::new(),
+            });
+    }
+    let (matched, kernel) =
+        crate::dialect::layers(ctx, &crate::dialect::StreamEvidence::Text(None))?;
+    super::build_result(
+        ctx,
+        Some(brep),
+        std::collections::BTreeMap::new(),
+        &header,
+        None,
+        matched,
+        kernel,
+    )
+}
+
+#[test]
+fn sat_annotation_stream_comparison_admits_each_visited_byte() {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+
+    let streams = [
+        format!("a{}", "x".repeat(4096)),
+        format!("b{}", "x".repeat(4096)),
+    ];
+    let run = |limit| {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = limit;
+        crate::test_support::with_context(&[], &policy, |ctx| {
+            let result = annotation_stream_result(ctx, [&streams[0], &streams[1]]);
+            if let Err(CodecError::ResourceLimit(ref refusal)) = result {
+                assert_eq!(ctx.resource_refusal(), Some(*refusal));
+                assert!(
+                    matches!(ctx.charge_work(0, "after annotation comparison refusal"),
+                    Err(CodecError::ResourceLimit(original)) if original == *refusal)
+                );
+            }
+            result
+        })
+    };
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "compare SAT annotation stream",
+        run,
+    );
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("comparison refusal");
+    };
+    assert_eq!(
+        limit.additional, 1,
+        "admission precedes the first compared pair"
+    );
+    let decoded = run(DecodePolicy::service().limits.max_work_units).expect("first-byte mismatch");
+    let provenance = decoded.source_fidelity.annotations.provenance;
+    assert_eq!(provenance.len(), 2);
+    for (id, stream, offset) in [
+        ("sat:brep:entity#1", &streams[0], 11),
+        ("sat:brep:entity#2", &streams[1], 23),
+    ] {
+        let record = &provenance[id];
+        assert_eq!(record.stream(), format!("sat:{stream}"));
+        assert_eq!(record.offset, offset);
+        assert_eq!(record.tag.as_deref(), Some("sphere-surface"));
+    }
+}
+
+#[test]
+fn sat_annotation_stream_length_mismatch_does_no_byte_work() {
+    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, DecodePolicy, ResourceDimension};
+
+    let long = "x".repeat(4096);
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let _probe = RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "compare SAT annotation stream",
+        None,
+    );
+    let decoded = crate::test_support::with_context(&[], &policy, |ctx| {
+        let decoded = annotation_stream_result(ctx, [&long, "short"])
+            .expect("different lengths execute no byte comparison");
+        assert!(ctx.resource_refusal().is_none());
+        decoded
+    });
+    let provenance = decoded.source_fidelity.annotations.provenance;
+    assert_eq!(
+        provenance["sat:brep:entity#1"].stream(),
+        format!("sat:{long}")
+    );
+    assert_eq!(provenance["sat:brep:entity#2"].stream(), "sat:short");
+    assert_eq!(provenance["sat:brep:entity#1"].offset, 11);
+    assert_eq!(provenance["sat:brep:entity#2"].offset, 23);
 }
 
 #[test]
