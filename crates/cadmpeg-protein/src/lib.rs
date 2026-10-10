@@ -172,12 +172,10 @@ where
         admission
             .get_hash_map(&self.properties, name, "Protein resolved schema lookup")?
             .ok_or_else(|| {
-                admission
-                    .format_text(
-                        format_args!("Protein instance references absent schema {name}"),
-                        "Protein rejected record detail",
-                    )
-                    .map_or_else(Into::into, CodecError::Malformed)
+                rejection(
+                    admission,
+                    format_args!("Protein instance references absent schema {name}"),
+                )
             })
     }
 }
@@ -207,22 +205,18 @@ where
             break;
         }
         if admission.contains_name(&active, current, "Protein inheritance cycle lookup")? {
-            return Err(admission
-                .format_text(
-                    format_args!("Protein schema inheritance contains a cycle at {current}"),
-                    "Protein rejected record detail",
-                )
-                .map_or_else(Into::into, CodecError::Malformed));
+            return Err(rejection(
+                admission,
+                format_args!("Protein schema inheritance contains a cycle at {current}"),
+            ));
         }
         let schema = admission
             .get_hash_map(schemas, current, "Protein inherited schema lookup")?
             .ok_or_else(|| {
-                admission
-                    .format_text(
-                        format_args!("Protein instance references absent schema {current}"),
-                        "Protein rejected record detail",
-                    )
-                    .map_or_else(Into::into, CodecError::Malformed)
+                rejection(
+                    admission,
+                    format_args!("Protein instance references absent schema {current}"),
+                )
             })?;
         let depth = admission.enter_nested("Protein schema inheritance")?;
         admission.scoped(&mut guard_storage, || {
@@ -374,46 +368,63 @@ where
         .enumerate()
     {
         let ordinal = cadmpeg_core::decode::u64_from_index(ordinal);
-        match decode_record(
-            admission,
-            frame.bytes(),
-            catalog,
-            ordinal,
-            frame.logical_offset(),
-        ) {
+        // The record's strings, maps and diagnostics are candidate storage:
+        // kept as retained output when the record is accepted, released with
+        // it when the record is rejected.
+        let mut candidate = admission.candidate("Protein candidate record")?;
+        let decoded = admission.build_candidate(&mut candidate, || {
+            decode_record(
+                admission,
+                frame.bytes(),
+                catalog,
+                ordinal,
+                frame.logical_offset(),
+            )
+        });
+        let detail = match decoded {
             Ok(Some(record)) => {
+                let record = admission.accept(candidate, record)?;
                 admission.push(&mut outcome.records, record, "Protein record outcome")?;
+                continue;
             }
             Ok(None) => {
                 const DETAIL: &str = "Protein instance record header is malformed";
-                let detail = admission.copy_text(DETAIL, "Protein rejected record detail")?;
-                admission.push(
-                    &mut outcome.rejected,
-                    RejectedRecord { ordinal, detail },
-                    "Protein record outcome",
-                )?;
+                admission.copy_text(DETAIL, "Protein rejected record detail")?
             }
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => {
-                let detail = admission
-                    .format_text(format_args!("{error}"), "Protein rejected record detail")?;
-                admission.push(
-                    &mut outcome.rejected,
-                    RejectedRecord { ordinal, detail },
-                    "Protein record outcome",
-                )?;
+                admission.format_text(format_args!("{error}"), "Protein rejected record detail")?
             }
-        }
+        };
+        // The rejected record's storage is gone; only its detail is kept.
+        drop(candidate);
+        admission.push(
+            &mut outcome.rejected,
+            RejectedRecord { ordinal, detail },
+            "Protein record outcome",
+        )?;
     }
     Ok(outcome)
 }
 
+/// A malformed schema diagnostic, formatted under the admission.
 fn malformed_detail<A: ProteinAdmission>(admission: A, args: fmt::Arguments<'_>) -> CodecError
 where
     CodecError: From<A::Error>,
 {
     admission
         .format_text(args, "Protein malformed detail")
+        .map_or_else(Into::into, CodecError::Malformed)
+}
+
+/// A malformed record diagnostic, formatted under the admission. A rejected
+/// record's candidate storage, this text included, is released with it.
+fn rejection<A: ProteinAdmission>(admission: A, args: fmt::Arguments<'_>) -> CodecError
+where
+    CodecError: From<A::Error>,
+{
+    admission
+        .format_text(args, "Protein rejected record detail")
         .map_or_else(Into::into, CodecError::Malformed)
 }
 
@@ -654,14 +665,12 @@ where
             }
         ) {
             property_at.checked_add(4).ok_or_else(|| {
-                admission
-                    .format_text(
-                        format_args!(
-                            "Protein {schema} instance {guid} property {id} offset overflows usize"
-                        ),
-                        "Protein rejected record detail",
-                    )
-                    .map_or_else(Into::into, CodecError::Malformed)
+                rejection(
+                    admission,
+                    format_args!(
+                        "Protein {schema} instance {guid} property {id} offset overflows usize"
+                    ),
+                )
             })?
         } else {
             property_at
@@ -670,29 +679,25 @@ where
             if matches!(&error, CodecError::ResourceLimit(_)) {
                 return error;
             }
-            admission
-                .format_text(
-                    format_args!(
+            rejection(
+                admission,
+                format_args!(
                 "Protein {schema} instance {guid} property {id} at {property_at}..{at}/{}: {error}",
                 record.len()
             ),
-                    "Protein rejected record detail",
-                )
-                .map_or_else(Into::into, CodecError::Malformed)
+            )
         };
         let connection_error = |error: CodecError, at: usize| {
             if matches!(&error, CodecError::ResourceLimit(_)) {
                 return error;
             }
-            admission
-                .format_text(
-                    format_args!(
-                "Protein {schema} instance {guid} property {id} connection at {at}/{}: {error}",
-                record.len()
-            ),
-                    "Protein rejected record detail",
-                )
-                .map_or_else(Into::into, CodecError::Malformed)
+            rejection(
+                admission,
+                format_args!(
+                    "Protein {schema} instance {guid} property {id} connection at {at}/{}: {error}",
+                    record.len()
+                ),
+            )
         };
         let content = match property {
             Property::Reference { multiple } => {
@@ -738,15 +743,13 @@ where
         )?;
     }
     if at != record.len() {
-        return Err(admission
-            .format_text(
-                format_args!(
-                    "Protein {schema} instance {guid} consumed {at} of {} record bytes",
-                    record.len()
-                ),
-                "Protein rejected record detail",
-            )
-            .map_or_else(Into::into, CodecError::Malformed));
+        return Err(rejection(
+            admission,
+            format_args!(
+                "Protein {schema} instance {guid} consumed {at} of {} record bytes",
+                record.len()
+            ),
+        ));
     }
     Ok(Some(DecodedRecord {
         ordinal,
@@ -817,12 +820,10 @@ where
     CodecError: From<A::Error>,
 {
     let malformed = || {
-        admission
-            .format_text(
-                format_args!("Protein property {id} is truncated"),
-                "Protein rejected record detail",
-            )
-            .map_or_else(Into::into, CodecError::Malformed)
+        rejection(
+            admission,
+            format_args!("Protein property {id} is truncated"),
+        )
     };
     let kind = take::<1>(bytes, at).ok_or_else(malformed)?[0];
     if kind == 1 {
@@ -837,12 +838,10 @@ where
         )?));
     }
     if kind != 0 {
-        return Err(admission
-            .format_text(
-                format_args!("Protein TextureURI property {id} has invalid kind {kind}"),
-                "Protein rejected record detail",
-            )
-            .map_or_else(Into::into, CodecError::Malformed));
+        return Err(rejection(
+            admission,
+            format_args!("Protein TextureURI property {id} has invalid kind {kind}"),
+        ));
     }
     let count = read_count(admission, bytes, at, id)?;
     let paths = admission.collect_indexed(count, "Protein texture URI paths", |_| {
@@ -862,12 +861,10 @@ where
     CodecError: From<A::Error>,
 {
     let count = usize::try_from(read_u32_le(bytes, at).ok_or_else(|| {
-        admission
-            .format_text(
-                format_args!("Protein property {id} is truncated"),
-                "Protein rejected record detail",
-            )
-            .map_or_else(Into::into, CodecError::Malformed)
+        rejection(
+            admission,
+            format_args!("Protein property {id} is truncated"),
+        )
     })?)
     .map_err(|_| CodecError::Malformed("Protein value count exceeds usize".into()))?;
     let population = cadmpeg_core::decode::u64_from_index(count);
@@ -904,12 +901,10 @@ where
     CodecError: From<A::Error>,
 {
     let malformed = || {
-        admission
-            .format_text(
-                format_args!("Protein property {id} is truncated"),
-                "Protein rejected record detail",
-            )
-            .map_or_else(Into::into, CodecError::Malformed)
+        rejection(
+            admission,
+            format_args!("Protein property {id} is truncated"),
+        )
     };
     Ok(match carrier {
         ValueCarrier::Boolean => {
@@ -960,12 +955,10 @@ where
     CodecError: From<A::Error>,
 {
     FiniteReal::new(value).ok_or_else(|| {
-        admission
-            .format_text(
-                format_args!("Protein property {id} is not finite"),
-                "Protein rejected record detail",
-            )
-            .map_or_else(Into::into, CodecError::Malformed)
+        rejection(
+            admission,
+            format_args!("Protein property {id} is not finite"),
+        )
     })
 }
 
@@ -2503,6 +2496,76 @@ mod tests {
                 if limit.dimension == ResourceDimension::CollectionItems
                     && limit.operation == "Protein multiple property members"
         ));
+    }
+
+    #[test]
+    fn a_rejected_record_releases_its_candidate_storage() {
+        const LONG: usize = 64 * 1024;
+        // `a_text` is a long string and `b_count` an integer. The rejected
+        // record omits `b_count`; the accepted one carries it.
+        let record = |complete: bool| {
+            let mut record = Vec::new();
+            for value in ["Simple", "guid", "base", ""] {
+                push_lp(&mut record, value);
+            }
+            push_lp(&mut record, &"x".repeat(LONG));
+            if complete {
+                record.extend_from_slice(&7_u32.to_le_bytes());
+            }
+            record
+        };
+        let retained_after = |complete: bool| {
+            let stream = paged_stream(&[&record(complete)]);
+            let frames = frames_of(&stream).expect("fixture framing is valid");
+            let arena = DecodeArena::new();
+            let policy = DecodePolicy::service();
+            let (ctx, _) = DecodeContext::from_root_bytes(&stream, &arena, &policy)
+                .expect("stream fits input limit");
+            let mut catalog = catalog_of(
+                &ctx,
+                HashMap::new(),
+                HashMap::from([(
+                    "Simple".into(),
+                    BTreeMap::from([
+                        (
+                            "a_text".into(),
+                            super::Property::Value {
+                                layout: super::ValueLayout::Single(ValueCarrier::String),
+                                connectable: false,
+                            },
+                        ),
+                        (
+                            "b_count".into(),
+                            super::Property::Value {
+                                layout: super::ValueLayout::Single(ValueCarrier::Integer),
+                                connectable: false,
+                            },
+                        ),
+                    ]),
+                )]),
+            );
+            let outcome = super::decode_frames_admitted(&ctx, &mut catalog, &frames)
+                .expect("the record decodes or is rejected");
+            assert_eq!(outcome.records.len(), usize::from(complete));
+            assert_eq!(outcome.rejected.len(), usize::from(!complete));
+            // A probe above the whole allowance reports the retained bytes in use.
+            let probe = ctx
+                .charge_retained(policy.limits.max_retained_bytes + 1, "probe retained use")
+                .expect_err("the probe exceeds the allowance");
+            let CodecError::ResourceLimit(limit) = probe else {
+                panic!("retained refusal expected");
+            };
+            limit.used
+        };
+        let long = cadmpeg_core::decode::u64_from_index(LONG);
+        assert!(
+            retained_after(false) < long,
+            "the rejected string is released"
+        );
+        assert!(
+            retained_after(true) >= long,
+            "the accepted string stays retained"
+        );
     }
 
     #[test]

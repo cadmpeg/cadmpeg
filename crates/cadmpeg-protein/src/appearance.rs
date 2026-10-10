@@ -29,9 +29,6 @@ impl TextureAsset {
         other: &Self,
         operation: &'static str,
     ) -> Result<bool, CodecError> {
-        // Observe the original refusal even when a fixed-size comparison can
-        // decide the result without visiting text or paths.
-        ctx.charge_work(0, operation)?;
         if self.mapping != other.mapping
             || self.bump != other.bump
             || self.paths.len() != other.paths.len()
@@ -129,7 +126,6 @@ pub fn texture_asset(
         "bumpmap_Type",
         "bumpmap_NormalScale",
     ];
-    ctx.charge_work(0, "Protein texture property selection")?;
     if !matches!(
         record.schema.as_str(),
         "UnifiedBitmapSchema" | "BumpMapSchema"
