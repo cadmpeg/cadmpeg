@@ -103,11 +103,7 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
 
 #[test]
 fn seeded_link_flush_queue_deduplicates_rollback_rows() {
-    let scan = scan_with_objects(&[object_record(
-        ArchiveVersion::V5,
-        1,
-        POINT_CLASS,
-    )]);
+    let scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, POINT_CLASS)]);
     with_expand(&scan, |expand| {
         let mut context = DecodeContext::new(&scan, expand).expect("test transaction");
         context
@@ -132,10 +128,7 @@ fn seeded_link_flush_queue_deduplicates_rollback_rows() {
             .expect("journal rollback succeeds");
         assert_eq!(context.pending_seeded_link_rows, [0]);
         assert_eq!(
-            context
-                .unknown(0)
-                .expect("retained source row")
-                .links(),
+            context.unknown(0).expect("retained source row").links(),
             ["rhino:curve#a", "rhino:curve#z", "rhino:curve#0"]
         );
 
@@ -143,10 +136,7 @@ fn seeded_link_flush_queue_deduplicates_rollback_rows() {
             .flush_seeded_source_links()
             .expect("seeded links return to canonical order");
         assert_eq!(
-            context
-                .unknown(0)
-                .expect("retained source row")
-                .links(),
+            context.unknown(0).expect("retained source row").links(),
             ["rhino:curve#0", "rhino:curve#a", "rhino:curve#z"]
         );
     });
@@ -154,11 +144,7 @@ fn seeded_link_flush_queue_deduplicates_rollback_rows() {
 
 #[test]
 fn seeded_malformed_links_keep_canonical_validation_order_after_append() {
-    let scan = scan_with_objects(&[object_record(
-        ArchiveVersion::V5,
-        1,
-        POINT_CLASS,
-    )]);
+    let scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, POINT_CLASS)]);
     with_expand(&scan, |expand| {
         let mut context = DecodeContext::new(&scan, expand).expect("test transaction");
         context
@@ -174,10 +160,9 @@ fn seeded_malformed_links_keep_canonical_validation_order_after_append() {
             ["bad-a", "bad-z", "rhino:test:curve#generated"]
         );
 
-        let expected = NativeUnknownRecord::try_from(
-            context.unknown(0).expect("retained source row"),
-        )
-        .expect_err("seeded malformed links remain invalid");
+        let expected =
+            NativeUnknownRecord::try_from(context.unknown(0).expect("retained source row"))
+                .expect_err("seeded malformed links remain invalid");
         let actual = cadmpeg_ir::validate::admit::validate_native_unknowns(
             context.expand.ctx(),
             context.session.unknowns(),
@@ -188,25 +173,28 @@ fn seeded_malformed_links_keep_canonical_validation_order_after_append() {
     });
 }
 
-
 #[test]
 fn unknown_record_link_insertion_refuses_collection_limit() {
     let scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, POINT_CLASS)]);
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         cadmpeg_core::decode::ResourceDimension::CollectionItems,
         "Rhino unknown record links",
-        |cap| with_transaction_limits(&scan, cap, None, None, |expand| {
-            let mut transaction = DecodeContext::new(&scan, expand)?;
-            let result = transaction.append_link(0, "rhino:curve#1");
-            assert!(transaction.unknown(0).unwrap().links().is_empty());
-            if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result {
-                assert_eq!(expand.ctx().resource_refusal(), Some(*refusal));
-            }
-            result
-        }),
+        |cap| {
+            with_transaction_limits(&scan, cap, None, None, |expand| {
+                let mut transaction = DecodeContext::new(&scan, expand)?;
+                let result = transaction.append_link(0, "rhino:curve#1");
+                assert!(transaction.unknown(0).unwrap().links().is_empty());
+                if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result {
+                    assert_eq!(expand.ctx().resource_refusal(), Some(*refusal));
+                }
+                result
+            })
+        },
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-        if refusal.operation == "Rhino unknown record links"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+        if refusal.operation == "Rhino unknown record links")
+    );
 }
 
 #[test]
@@ -215,16 +203,20 @@ fn unknown_record_link_copy_refuses_retained_limit() {
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         cadmpeg_core::decode::ResourceDimension::RetainedBytes,
         "Rhino unknown record link copy",
-        |cap| with_transaction_limits(&scan, u64::MAX, Some(cap), None, |expand| {
-            let mut transaction = DecodeContext::new(&scan, expand)?;
-            let result = transaction.append_link(0, "rhino:curve#1");
-            assert!(transaction.unknown(0).unwrap().links().is_empty());
-            if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result {
-                assert_eq!(expand.ctx().resource_refusal(), Some(*refusal));
-            }
-            result
-        }),
+        |cap| {
+            with_transaction_limits(&scan, u64::MAX, Some(cap), None, |expand| {
+                let mut transaction = DecodeContext::new(&scan, expand)?;
+                let result = transaction.append_link(0, "rhino:curve#1");
+                assert!(transaction.unknown(0).unwrap().links().is_empty());
+                if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result {
+                    assert_eq!(expand.ctx().resource_refusal(), Some(*refusal));
+                }
+                result
+            })
+        },
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-        if refusal.operation == "Rhino unknown record link copy"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+        if refusal.operation == "Rhino unknown record link copy")
+    );
 }

@@ -1246,41 +1246,69 @@ fn brep_fallback_releases_discarded_topology_fields() {
     raw.trims.clear();
     raw.loops.clear();
     raw.faces.clear();
-    raw.vertices = (0..128_i32).map(|index| crate::brep::RawBrepVertex {
-        index,
-        point: crate::settings::CoordinateLane::Admitted(crate::test_support::point3([f64::from(index), 0.0, 0.0]).0),
-        edges: Vec::new(), tolerance: 0.0, source_range: 0..0,
-    }).collect();
-    let brep = with_expand_bytes(&data, |expand| crate::brep::ValidatedRawBrep::try_new(expand.ctx(), raw)).unwrap();
+    raw.vertices = (0..128_i32)
+        .map(|index| crate::brep::RawBrepVertex {
+            index,
+            point: crate::settings::CoordinateLane::Admitted(
+                crate::test_support::point3([f64::from(index), 0.0, 0.0]).0,
+            ),
+            edges: Vec::new(),
+            tolerance: 0.0,
+            source_range: 0..0,
+        })
+        .collect();
+    let brep = with_expand_bytes(&data, |expand| {
+        crate::brep::ValidatedRawBrep::try_new(expand.ctx(), raw)
+    })
+    .unwrap();
     let run = |cap| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = cap;
-        let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)?;
+        let (ctx, root) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)?;
         let mut backing = ctx.reserve_scoped(0, "fallback fixture arenas")?;
         let mut metadata = ctx.reserve_scoped(0, "fallback fixture metadata")?;
         let association = super::test_association();
         let unknown = super::DecodeContext::mint_unknown_id(0);
-        let staged = stage_brep(BrepTransferInput {
-            expand: crate::mesh::MeshExpand::new(&ctx, root), data: &data,
-            archive: ArchiveVersion::V5, writer_version: Some(200_206_180),
-            brep: &brep, key: "fallback", association: &association, unknown: &unknown,
-            scale: MillimeterScale::IDENTITY, mesh_budget: &mut crate::mesh::MeshBudget::new(),
-        }, &mut backing, &mut metadata).map_err(|error| match error {
+        let staged = stage_brep(
+            BrepTransferInput {
+                expand: crate::mesh::MeshExpand::new(&ctx, root),
+                data: &data,
+                archive: ArchiveVersion::V5,
+                writer_version: Some(200_206_180),
+                brep: &brep,
+                key: "fallback",
+                association: &association,
+                unknown: &unknown,
+                scale: MillimeterScale::IDENTITY,
+                mesh_budget: &mut crate::mesh::MeshBudget::new(),
+            },
+            &mut backing,
+            &mut metadata,
+        )
+        .map_err(|error| match error {
             crate::curves::GeometryError::Codec(error) => error,
             other => cadmpeg_core::CodecError::malformed(other),
         })?;
         assert_eq!(staged.kind, BrepTransferKind::FreeCarrierFallback);
         assert_eq!(staged.draft.entity_count(), 0);
-        assert!(staged.warnings.iter().any(|warning| warning.message == "Brep topology fallback: Brep free vertices have no unique shell membership"));
+        assert!(staged.warnings.iter().any(|warning| warning.message
+            == "Brep topology fallback: Brep free vertices have no unique shell membership"));
         ctx.copy_retained_text("x", "Brep fallback retained checkpoint")?;
         drop(staged);
         drop(metadata);
         drop(backing);
         ctx.finish_session()
     };
-    let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::RetainedBytes, "Brep fallback retained checkpoint", run);
-    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("retained checkpoint refusal"); };
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "Brep fallback retained checkpoint",
+        run,
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("retained checkpoint refusal");
+    };
     assert_eq!(limit.used, 0, "all staged topology fields were discarded");
     assert_eq!(limit.additional, 1);
     run(1).unwrap();

@@ -2083,9 +2083,11 @@ impl<'a> DecodeContext<'a> {
                         ),
                     )?;
                 }
-                let mut source_tag = ctx.retained_string("RhinoHatch".len(), "Rhino feature source tag")?;
+                let mut source_tag =
+                    ctx.retained_string("RhinoHatch".len(), "Rhino feature source tag")?;
                 source_tag.push_str("RhinoHatch");
-                let mut native_kind = ctx.retained_string("hatch".len(), "Rhino feature native kind")?;
+                let mut native_kind =
+                    ctx.retained_string("hatch".len(), "Rhino feature native kind")?;
                 native_kind.push_str("hatch");
                 let feature = Feature {
                     id: feature_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
@@ -2277,9 +2279,11 @@ impl<'a> DecodeContext<'a> {
             let name = (!identity.name.is_empty())
                 .then(|| ctx.copy_retained_text(&identity.name, "Rhino decode_polyedge text copy"))
                 .transpose()?;
-            let mut source_tag = ctx.retained_string("RhinoPolyEdgeReference".len(), "Rhino feature source tag")?;
+            let mut source_tag =
+                ctx.retained_string("RhinoPolyEdgeReference".len(), "Rhino feature source tag")?;
             source_tag.push_str("RhinoPolyEdgeReference");
-            let mut native_kind = ctx.retained_string("polyedge_reference".len(), "Rhino feature native kind")?;
+            let mut native_kind =
+                ctx.retained_string("polyedge_reference".len(), "Rhino feature native kind")?;
             native_kind.push_str("polyedge_reference");
             let feature = Feature {
                 id: id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
@@ -2419,9 +2423,11 @@ impl<'a> DecodeContext<'a> {
                     format_args!("page_per_model_ratio"),
                     format_args!("{}", detail.page_per_model_ratio.get()),
                 )?;
-                let mut source_tag = ctx.retained_string("RhinoDetailView".len(), "Rhino feature source tag")?;
+                let mut source_tag =
+                    ctx.retained_string("RhinoDetailView".len(), "Rhino feature source tag")?;
                 source_tag.push_str("RhinoDetailView");
-                let mut native_kind = ctx.retained_string("detail_view".len(), "Rhino feature native kind")?;
+                let mut native_kind =
+                    ctx.retained_string("detail_view".len(), "Rhino feature native kind")?;
                 native_kind.push_str("detail_view");
                 let feature = Feature {
                     id: feature_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
@@ -2644,9 +2650,11 @@ impl<'a> DecodeContext<'a> {
                     format_args!("counts"),
                     format_args!("{},{},{}", cage.counts[0], cage.counts[1], cage.counts[2]),
                 )?;
-                let mut source_tag = ctx.retained_string("RhinoNurbsCage".len(), "Rhino feature source tag")?;
+                let mut source_tag =
+                    ctx.retained_string("RhinoNurbsCage".len(), "Rhino feature source tag")?;
                 source_tag.push_str("RhinoNurbsCage");
-                let mut native_kind = ctx.retained_string("nurbs_cage".len(), "Rhino feature native kind")?;
+                let mut native_kind =
+                    ctx.retained_string("nurbs_cage".len(), "Rhino feature native kind")?;
                 native_kind.push_str("nurbs_cage");
                 let feature = Feature {
                     id: feature_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
@@ -2914,9 +2922,11 @@ impl<'a> DecodeContext<'a> {
                     format_args!("support_surface"),
                     format_args!("{surface_id}"),
                 )?;
-                let mut source_tag = ctx.retained_string("RhinoCurveOnSurface".len(), "Rhino feature source tag")?;
+                let mut source_tag =
+                    ctx.retained_string("RhinoCurveOnSurface".len(), "Rhino feature source tag")?;
                 source_tag.push_str("RhinoCurveOnSurface");
-                let mut native_kind = ctx.retained_string("curve_on_surface".len(), "Rhino feature native kind")?;
+                let mut native_kind =
+                    ctx.retained_string("curve_on_surface".len(), "Rhino feature native kind")?;
                 native_kind.push_str("curve_on_surface");
                 let feature = Feature {
                     id: feature_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
