@@ -116,7 +116,7 @@ pub(super) fn decode<'ctx>(
             )?;
         }
         let mut body_candidate_bytes =
-            { ctx.reserve_scoped(0, "step_tessellation_body_candidates") }?;
+            ctx.reserve_scoped(0, "step_tessellation_body_candidates")?;
         let body_candidates = body_candidate_bytes.with_storage(|| {
             ctx.collect_vec(
                 candidates.iter().copied(),
@@ -543,7 +543,7 @@ pub(super) fn decode<'ctx>(
                 })?;
             }
             let mut local_vertex_bytes =
-                { ctx.reserve_scoped(0, "step_tessellation_local_vertices") }?;
+                ctx.reserve_scoped(0, "step_tessellation_local_vertices")?;
             let local_vertices = local_vertex_bytes.with_storage(|| {
                 ctx.collect_vec(
                     coordinate_indices
@@ -553,7 +553,7 @@ pub(super) fn decode<'ctx>(
                 )
             })?;
             let mut local_triangle_bytes =
-                { ctx.reserve_scoped(0, "step_tessellation_local_triangles") }?;
+                ctx.reserve_scoped(0, "step_tessellation_local_triangles")?;
             let local_triangles = local_triangle_bytes.with_storage(|| {
                 ctx.try_collect_vec(
                     triangles.iter().map(|triangle| {
@@ -611,9 +611,9 @@ pub(super) fn decode<'ctx>(
                 continue;
             }
             let mut local_vertex_bytes =
-                { ctx.reserve_scoped(0, "step_tessellation_pn_vertices") }?;
+                ctx.reserve_scoped(0, "step_tessellation_pn_vertices")?;
             let mut local_triangle_bytes =
-                { ctx.reserve_scoped(0, "step_tessellation_pn_triangles") }?;
+                ctx.reserve_scoped(0, "step_tessellation_pn_triangles")?;
             (
                 local_vertex_bytes.with_storage(|| {
                     ctx.collect_vec(
@@ -1554,7 +1554,7 @@ fn index_list<'a>(
     let Some(values) = value.and_then(ValueExt::list) else {
         return Ok(None);
     };
-    let mut bytes = { ctx.reserve_scoped(0, "step_tessellation_pnindex") }?;
+    let mut bytes = ctx.reserve_scoped(0, "step_tessellation_pnindex")?;
     Ok(bytes
         .with_storage(|| {
             ctx.collect_options(
@@ -1573,7 +1573,7 @@ fn container_item_ids<'a>(
     id: u64,
     ctx: &'a DecodeContext<'_>,
 ) -> Result<(Vec<u64>, ScopedReservation<'a>), CodecError> {
-    let mut bytes = { ctx.reserve_scoped(0, "step_tessellation_container_items") }?;
+    let mut bytes = ctx.reserve_scoped(0, "step_tessellation_container_items")?;
     let ids = bytes.with_storage(|| {
         ctx.try_collect_vec(
             items.iter().enumerate().map(|(index, item)| {
@@ -1776,7 +1776,7 @@ fn triangle_rows<'a>(
     let Some(rows) = value.list() else {
         return Ok(None);
     };
-    let mut bytes = { ctx.reserve_scoped(0, "step_tessellation_triangle_rows") }?;
+    let mut bytes = ctx.reserve_scoped(0, "step_tessellation_triangle_rows")?;
     Ok(bytes
         .with_storage(|| {
             ctx.collect_options(
@@ -1848,7 +1848,7 @@ fn index_rows<'a>(
             ctx.reserve_scoped(0, "step_complex_tessellation_indices")?,
         ));
     };
-    let mut row_bytes = { ctx.reserve_scoped(0, "step_complex_tessellation_rows") }?;
+    let mut row_bytes = ctx.reserve_scoped(0, "step_complex_tessellation_rows")?;
     let mut index_bytes = ctx.reserve_scoped(0, "step_complex_tessellation_indices")?;
     let indices = row_bytes.with_storage(|| {
         ctx.try_collect_vec(
@@ -1896,7 +1896,7 @@ fn normal_rows<'a>(
     let Some(rows) = value.and_then(ValueExt::list) else {
         return Ok(None);
     };
-    let mut bytes = { ctx.reserve_scoped(0, "step_tessellation_normal_rows") }?;
+    let mut bytes = ctx.reserve_scoped(0, "step_tessellation_normal_rows")?;
     Ok(bytes
         .with_storage(|| {
             ctx.collect_options(

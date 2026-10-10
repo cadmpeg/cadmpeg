@@ -655,7 +655,7 @@ fn decode_exchange_mode(
             }
         }
     }
-    let accounting = { byte_accounting(input, exchange, &session.typed_records, session.ctx)? };
+    let accounting = byte_accounting(input, exchange, &session.typed_records, session.ctx)?;
     if matches!(mode, DecodeMode::Decode(_)) {
         let signature_spans = exchange.release_source_graph();
         // Records and signatures occupy disjoint source spans.
@@ -1209,8 +1209,7 @@ fn associate_unowned_direct_carriers(
     ids: &BTreeSet<u64>,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    {
-        for point in ctx.admit_iter(&mut ir.model.points, "STEP direct carrier association traversal")? {
+    for point in ctx.admit_iter(&mut ir.model.points, "STEP direct carrier association traversal")? {
             let Some(id) = step_instance_id(ctx, point.id.as_str())? else {
                 continue;
             };
@@ -1220,9 +1219,7 @@ fn associate_unowned_direct_carriers(
                 point.source_object = Some(step_source_association(ctx, id, None)?);
             }
         }
-    }
-    {
-        for curve in ctx.admit_iter(&mut ir.model.curves, "STEP direct carrier association traversal")? {
+    for curve in ctx.admit_iter(&mut ir.model.curves, "STEP direct carrier association traversal")? {
             let Some(id) = step_instance_id(ctx, curve.id.as_str())? else {
                 continue;
             };
@@ -1232,9 +1229,7 @@ fn associate_unowned_direct_carriers(
                 curve.source_object = Some(step_source_association(ctx, id, None)?);
             }
         }
-    }
-    {
-        for surface in ctx.admit_iter(&mut ir.model.surfaces, "STEP direct carrier association traversal")? {
+    for surface in ctx.admit_iter(&mut ir.model.surfaces, "STEP direct carrier association traversal")? {
             let Some(id) = step_instance_id(ctx, surface.id.as_str())? else {
                 continue;
             };
@@ -1244,7 +1239,6 @@ fn associate_unowned_direct_carriers(
                 surface.source_object = Some(step_source_association(ctx, id, None)?);
             }
         }
-    }
     Ok(())
 }
 
@@ -1373,14 +1367,15 @@ fn record_type_text(
     ctx: &DecodeContext<'_>,
     operation: &'static str,
 ) -> Result<String, CodecError> {
-    let (names_buffer, _storage) =
-        ctx.temporary_vec(record.partials.len(), "STEP record type fragments")?;
-    let mut names = names_buffer;
-    names.extend(
-        ctx.admit_iter(&record.partials[..], "STEP record type traversal")?
-            .map(|partial| partial.name.as_str()),
-    );
-    ctx.join_retained(&names, "+", operation)
+    let mut text = String::new();
+    ctx.fold(&record.partials, false, |has_name, partial| {
+        if has_name {
+            ctx.append_retained(&mut text, "+", operation)?;
+        }
+        ctx.append_retained(&mut text, partial.name.as_str(), operation)?;
+        Ok(true)
+    }, "STEP record type traversal")?;
+    Ok(text)
 }
 
 fn count_unknown_kind(

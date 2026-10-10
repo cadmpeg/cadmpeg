@@ -4,6 +4,19 @@ use crate::reader::RecordExt;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
+#[test]
+fn record_type_join_keeps_source_order_without_fragment_slots() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=(BETA() ALPHA());ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_work_units = 256;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+    assert_eq!(super::super::record_type_text(&exchange.records()[&1], &ctx, "record type fixture").unwrap(), "BETA+ALPHA");
+    ctx.finish_session().unwrap();
+}
+
 /// A successful partial lookup pays for each visited partial.
 #[test]
 fn partial_record_search_charges_each_visited_partial() {

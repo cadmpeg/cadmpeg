@@ -380,9 +380,9 @@ pub(super) fn decode<'ctx>(
                 .transpose()?
                 .flatten()
                 .unwrap_or_default();
-            let (missing_buffer, mut missing_storage) =
-                ctx.temporary_vec(0, "STEP missing shape body fragments")?;
-            let mut missing = missing_buffer;
+            let mut missing_storage =
+                ctx.reserve_scoped(0, "STEP missing shape body text scratch")?;
+            let mut missing = String::new();
             let mut selected_storage = ctx.reserve_scoped(0, "STEP product selected body index")?;
             let mut selected_bodies = BTreeSet::new();
             ctx.charge_work(0, "STEP product shape batch traversal")?;
@@ -402,12 +402,12 @@ pub(super) fn decode<'ctx>(
                             )
                         })?;
                     } else {
-                        ctx.push_scoped_vec(
-                            &mut missing_storage,
-                            &mut missing,
-                            body.as_str(),
-                            "STEP missing shape body fragments",
-                        )?;
+                        missing_storage.with_storage(|| {
+                            if !missing.is_empty() {
+                                ctx.append_retained(&mut missing, ", ", "step_missing_shape_body_text")?;
+                            }
+                            ctx.append_retained(&mut missing, body.as_str(), "step_missing_shape_body_text")
+                        })?;
                     }
 
                     Ok(())
@@ -431,11 +431,6 @@ pub(super) fn decode<'ctx>(
                 ("PRODUCT", step_id), |id| ("PRODUCT_DEFINITION", id),
             );
             if !missing.is_empty() {
-                let (missing_buffer, _missing_text_storage) = ctx
-                    .with_scoped_storage("STEP missing shape body text scratch", || {
-                        ctx.join_retained(&missing, ", ", "step_missing_shape_body_text")
-                    })?;
-                let missing = missing_buffer;
                 slot_storage
                     .borrow_mut()
                     .with_storage(|| ctx.reserve_vec(&mut losses, 1, "step_product_losses"))?;
@@ -444,6 +439,8 @@ pub(super) fn decode<'ctx>(
                     "step_missing_shape_body_loss_text",
                 )?));
             }
+            drop(missing);
+            drop(missing_storage);
             if has_shape_binding && bodies.is_empty() {
                 slot_storage
                     .borrow_mut()
@@ -1044,11 +1041,9 @@ pub(super) fn decode<'ctx>(
     }
     apply_body_placements(
         exchange,
-        BodyPlacementSources {
-            geometry,
-            topology,
-            usages: &usages,
-        },
+        geometry,
+        topology,
+        &usages,
         ir,
         (&mut losses, &slot_storage),
         ctx,
@@ -1138,16 +1133,11 @@ fn assembly_depth_limit(ctx: &DecodeContext<'_>) -> usize {
         .map_or(MAX_ASSEMBLY_DEPTH, |policy| policy.min(MAX_ASSEMBLY_DEPTH))
 }
 
-#[derive(Clone, Copy)]
-struct BodyPlacementSources<'a> {
-    geometry: &'a GeometryData<'a>,
-    topology: &'a TopologyData<'a>,
-    usages: &'a BTreeMap<u64, Usage>,
-}
-
 fn apply_body_placements(
     exchange: &Exchange,
-    sources: BodyPlacementSources<'_>,
+    geometry: &GeometryData<'_>,
+    topology: &TopologyData<'_>,
+    usages: &BTreeMap<u64, Usage>,
     ir: &mut CadIr,
     (losses, slot_storage): (
         &mut Vec<LossNote>,
@@ -1156,11 +1146,6 @@ fn apply_body_placements(
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     let mut scratch_storage = ctx.reserve_scoped(0, "STEP apply_body_placements scratch")?;
-    let BodyPlacementSources {
-        geometry,
-        topology,
-        usages,
-    } = sources;
     let mut pds = BTreeMap::new();
     for indexed_entity in exchange.entities(ctx, "PRODUCT_DEFINITION_SHAPE")? {
         let (id, record) = indexed_entity?;

@@ -21,21 +21,20 @@ const PREFIX_WORK: u64 = 4096;
 fn distinct_tessellation_placement_refuses_first_insert_before_large_suffix() {
     let placements = vec![Transform::identity(); MEMBERS];
     let mut limited = DecodePolicy::service();
-    limited.limits.max_work_units = PREFIX_WORK;
+    limited.limits.max_work_units = 8192;
     limited.limits.max_collection_items = 0;
-    // The first 4x4 key's three node passes exceed 4096 work units.
-    // The source visit fits; the untouched 8192-placement suffix is not admitted.
+    // The first insertion fits this work range; all 8193 source visits do not.
     with_policy_context(&[], &limited, |_, ctx| {
         let error = super::super::distinct_placement_count(&placements, ctx)
             .expect_err("first insertion refuses");
         assert!(matches!(&error, CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::WorkUnits
+            if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "step_tessellation_distinct_placements"));
         let CodecError::ResourceLimit(limit) = error else {
             unreachable!()
         };
         assert_eq!(ctx.resource_refusal(), Some(limit));
-        assert_eq!(limit.used, 1);
+        assert_eq!((limit.used, limit.additional), (0, 1));
     });
     with_service_context(&[], |_, ctx| {
         assert_eq!(
