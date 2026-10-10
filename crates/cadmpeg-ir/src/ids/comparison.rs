@@ -3,7 +3,6 @@
 
 use std::cmp::Ordering;
 
-use cadmpeg_core::decode::admission::Admission;
 use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
 
 pub(crate) mod sealed {
@@ -73,14 +72,14 @@ pub fn equal<P: TextWork>(
 /// Arenas are usually stored in identity order already, so the common case
 /// costs core's charged neighbour pass, and an out-of-order input pays for that
 /// pass and the charged sort.
-pub(crate) fn stable_sort_by_identity<A: Admission, T>(
-    admission: &A,
+pub(crate) fn stable_sort_by_identity<T>(
+    ctx: &DecodeContext<'_>,
     values: &mut [T],
     identity: impl Fn(&T) -> &str,
     operation: &'static str,
-) -> Result<(), A::Error> {
-    if !admission.is_sorted_by(values, &identity, Ord::cmp, operation)? {
-        admission.stable_sort_by(values, identity, Ord::cmp, operation)?;
+) -> Result<(), cadmpeg_core::CodecError> {
+    if !ctx.is_sorted_by(values, &identity, Ord::cmp, operation)? {
+        ctx.stable_sort_by(values, identity, Ord::cmp, operation)?;
     }
     Ok(())
 }

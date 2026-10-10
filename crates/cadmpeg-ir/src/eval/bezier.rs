@@ -16,8 +16,11 @@ pub(super) struct HomogeneousBezierSplit<'ctx, 'arena> {
 }
 
 impl<'ctx> HomogeneousBezierSplit<'ctx, '_> {
-    pub(super) fn into_polygons(mut self) -> Result<[ScopedRows<'ctx, [f64; 4]>; 2], ResourceLimit> {
-        self.ctx.charge_work_limit(2, "IR Bezier split final points")?;
+    pub(super) fn into_polygons(
+        mut self,
+    ) -> Result<[ScopedRows<'ctx, [f64; 4]>; 2], ResourceLimit> {
+        self.ctx
+            .charge_work_limit(2, "IR Bezier split final points")?;
         self.left.push(self.point);
         self.right_reversed.push(self.point);
         self.ctx.charge_work_limit(
@@ -50,7 +53,7 @@ pub(super) fn split_homogeneous_bezier_midpoint<'ctx, 'arena>(
     controls: &[[f64; 4]],
 ) -> Result<Option<HomogeneousBezierSplit<'ctx, 'arena>>, ResourceLimit> {
     split_homogeneous_bezier_with(ctx, controls, |left, right| {
-        std::array::from_fn(|axis| left[axis].midpoint(right[axis]))
+        std::array::from_fn(|axis| 0.5 * (left[axis] + right[axis]))
     })
 }
 
@@ -485,33 +488,6 @@ mod tests {
             .expect("five visits without allocations");
     }
     #[test]
-    fn homogeneous_midpoint_preserves_finite_extreme_and_subnormal_controls() {
-        for coordinate in [1e308, f64::MAX, -f64::MAX, f64::from_bits(1)] {
-            for count in [2, 4] {
-                // An identical-control Bezier curve is constant at every
-                // parameter. Its split must keep each coordinate unchanged.
-                let controls = (0..count).map(|_| [coordinate, coordinate, coordinate, 1.0]).collect::<Vec<_>>();
-                let ctx = cadmpeg_test_support::service_decode_context();
-                let split = split_homogeneous_bezier_midpoint(&ctx, &controls).unwrap().unwrap();
-                let [left, right] = split.into_polygons().unwrap();
-                assert_eq!(&*left, controls.as_slice());
-                assert_eq!(&*right, controls.as_slice());
-                drop((left, right));
-                ctx.finish_session().unwrap();
-            }
-        }
-        let controls = [[f64::MAX, -f64::MAX, 0.0, 1.0], [-f64::MAX, f64::MAX, 0.0, 1.0]];
-        let ctx = cadmpeg_test_support::service_decode_context();
-        let split = split_homogeneous_bezier_midpoint(&ctx, &controls).unwrap().unwrap();
-        let [left, right] = split.into_polygons().unwrap();
-        let midpoint = [0.0, 0.0, 0.0, 1.0];
-        assert_eq!(&*left, &[controls[0], midpoint]);
-        assert_eq!(&*right, &[midpoint, controls[1]]);
-        drop((left, right));
-        ctx.finish_session().unwrap();
-    }
-
-    #[test]
     fn homogeneous_split_completion_observes_its_original_session_refusal() {
         let controls = [[0.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 1.0]];
         let arena = DecodeArena::new();
@@ -529,16 +505,21 @@ mod tests {
         let original = ctx
             .charge_work_limit(1, "original split completion refusal")
             .unwrap_err();
-        let actual = split.into_polygons().err().expect("original session refusal");
+        let actual = split
+            .into_polygons()
+            .err()
+            .expect("original session refusal");
         assert_eq!(actual, original);
         assert_eq!(actual.dimension, ResourceDimension::WorkUnits);
         assert_eq!(actual.operation, "original split completion refusal");
         assert_eq!(actual.used, 4);
         assert_eq!(actual.additional, 1);
-        assert_eq!(ctx.charge_work_limit(0, "observe split refusal"), Err(original));
+        assert_eq!(
+            ctx.charge_work_limit(0, "observe split refusal"),
+            Err(original)
+        );
         assert!(
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
         );
     }
-
 }

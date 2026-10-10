@@ -710,8 +710,8 @@ fn canonical_native_key_comparisons_admit_the_complete_key_bound() {
             super::super::copy::insert(&ctx, &mut entries, String::new(), Value::Null).unwrap_err()
         } else {
             let mut map = super::CanonMap {
-                ctx: super::account::Account::Decode(&ctx),
-                _nested: Some(ctx.enter_nested(super::WORK).unwrap()),
+                ctx: &ctx,
+                _nested: ctx.enter_nested(super::WORK).unwrap(),
                 entries,
                 key: None,
                 depth: super::MAX_NATIVE_NESTING_DEPTH,

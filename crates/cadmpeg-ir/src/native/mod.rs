@@ -209,25 +209,6 @@ impl NativeConvertError {
             _ => None,
         }
     }
-
-    /// Converts this error to a decode error without allocating its diagnostic
-    /// outside the caller's retained-storage budget.
-    pub fn into_codec_error_for_decode(
-        self,
-        ctx: &DecodeContext<'_>,
-        operation: &'static str,
-    ) -> cadmpeg_core::CodecError {
-        if let Some(limit) = ctx.resource_refusal() {
-            return cadmpeg_core::CodecError::ResourceLimit(limit);
-        }
-        if let Some(limit) = self.resource_limit() {
-            return cadmpeg_core::CodecError::ResourceLimit(*limit);
-        }
-        match ctx.format_retained(format_args!("{self}"), operation) {
-            Ok(message) => cadmpeg_core::CodecError::Malformed(message),
-            Err(error) => error,
-        }
-    }
 }
 
 /// Schema descriptor for a native record's identity and open field map.
@@ -268,11 +249,11 @@ impl NativeField {
 
 /// One source-native record with a stable identity and codec-owned fields.
 ///
-/// Every field is at most [`MAX_NATIVE_NESTING_DEPTH`] containers deep:
-/// [`NativeRecord::new`] measures the caller's map, `Deserialize` calls it,
-/// [`NativeNamespace::set_arena`] and [`NativeNamespace::set_arena_standard`]
-/// use a serializer that counts the containers it enters, and
-/// [`NativeRecord::from_identity`] accepts fields that cannot nest. Readers of a
+/// Every field is at most [`MAX_NATIVE_NESTING_DEPTH`] containers deep: the
+/// four ways to build one are [`NativeRecord::new`], which measures the
+/// caller's map, `Deserialize`, which calls it, [`NativeNamespace::set_arena`],
+/// whose serializer counts the containers it enters, and
+/// [`NativeRecord::from_identity`], whose fields cannot nest. Readers of a
 /// stored record therefore descend a bounded value and measure nothing.
 ///
 /// The record holds the value it was constructed from. `serde_json::Map` is
@@ -339,33 +320,28 @@ impl NativeRecord {
     /// one-container replay rather than a recursion-limited parse.
     #[cfg(test)]
     pub(crate) fn from_typed<T: Serialize>(record: &T) -> Result<Self, NativeConvertError> {
-        Self::from_typed_with(canon::account::Account::Standard, record)
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        // Format-boundary fixtures admit the record root and every allowed field container.
+        policy.limits.max_recursion_depth = u64_from_index(MAX_NATIVE_NESTING_DEPTH + 1);
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+        Self::from_typed_for_decode(&ctx, record)
     }
 
     fn from_typed_for_decode<T: Serialize>(
         ctx: &DecodeContext<'_>,
         record: &T,
     ) -> Result<Self, NativeConvertError> {
-        Self::from_typed_with(canon::account::Account::Decode(ctx), record)
-    }
-
-    fn from_typed_with<T: Serialize>(
-        account: canon::account::Account<'_>,
-        record: &T,
-    ) -> Result<Self, NativeConvertError> {
-        let serialized = match account {
-            canon::account::Account::Decode(ctx) => record.serialize(canon::CanonValue::for_record(ctx)),
-            canon::account::Account::Standard => record.serialize(canon::CanonValue::for_standard_record()),
-        };
-        account.charge_work(0, "construct canonical native value")?;
-        let serialized = serialized.map_err(|error| error.into_native(account))?;
+        let serialized = record.serialize(canon::CanonValue::for_record(ctx));
+        ctx.charge_work(0, "construct canonical native value")?;
+        let serialized = serialized.map_err(|error| error.into_native(ctx))?;
         let canon::Node::Object(mut fields) = serialized else {
             return Err(NativeConvertError::NonObject);
         };
         let Some(Value::String(id)) = fields.remove("id") else {
             return Err(NativeConvertError::MissingId);
         };
-        account.charge_work(u64_from_index(id.len()), "admit canonical native identity")?;
+        ctx.charge_work(u64_from_index(id.len()), "admit canonical native identity")?;
         Ok(Self {
             id: crate::ids::Identity::new(id)?,
             fields,
@@ -506,23 +482,6 @@ impl NativeRecord {
     #[must_use]
     pub fn field(&self, name: &str) -> Option<Value> {
         self.fields.get(name).cloned()
-    }
-
-    fn to_typed_standard<T: DeserializeOwned>(&self) -> Result<T, NativeConvertError> {
-        let id = Value::String(self.id.as_str().to_owned());
-        #[cfg(test)]
-        TYPED_RECORD_READ_COUNT.with(|count| count.set(count.get() + 1));
-        let members = std::iter::once(("id", &id))
-            .chain(self.fields.iter().map(|(key, value)| (key.as_str(), value)));
-        T::deserialize(read::Record {
-            account: read::Account::Standard,
-            members,
-            len: self.fields.len() + 1,
-        })
-        .map_err(|source| NativeConvertError::ReadRecord {
-            id: self.id.clone(),
-            source,
-        })
     }
 
     /// Read the record as a codec-owned type.
@@ -725,56 +684,6 @@ impl NativeNamespace {
         &mut self.arenas
     }
 
-    /// Replace typed records with Standard allocation and canonical value rules.
-    pub fn set_arena_standard<T: Serialize>(
-        &mut self,
-        name: impl AsRef<str>,
-        records: &[T],
-    ) -> Result<(), NativeConvertError> {
-        self.set_arena_from_standard(name, records.iter())
-    }
-
-    /// Replace typed records from a Standard iterator, preserving equal-id order.
-    pub fn set_arena_from_standard<T: Serialize, I: IntoIterator<Item = T>>(
-        &mut self,
-        name: impl AsRef<str>,
-        records: I,
-    ) -> Result<(), NativeConvertError> {
-        use cadmpeg_core::decode::admission::{Admission, StandardAdmission};
-
-        let name = name.as_ref().to_owned();
-        let convert = || {
-            let mut converted = Vec::new();
-            for (ordinal, record) in records.into_iter().enumerate() {
-                let record = NativeRecord::from_typed_with(canon::account::Account::Standard, &record)
-                    .map_err(|source| NativeConvertError::WriteRecord {
-                        ordinal,
-                        source: Box::new(source),
-                    })?;
-                converted.push(record);
-            }
-            match StandardAdmission.stable_sort_by(
-                &mut converted,
-                NativeRecord::id,
-                str::cmp,
-                "sort native records",
-            ) {
-                Ok(()) => {},
-                Err(never) => match never {},
-            }
-            Ok::<_, NativeConvertError>(converted)
-        };
-        let converted = match convert() {
-            Ok(converted) => converted,
-            Err(source) => return Err(NativeConvertError::Arena {
-                arena: name,
-                source: Box::new(source),
-            }),
-        };
-        self.arenas.insert(name, converted);
-        Ok(())
-    }
-
     /// Replace an arena by serializing codec-owned typed records.
     pub fn set_arena<T: Serialize>(
         &mut self,
@@ -823,7 +732,10 @@ impl NativeNamespace {
         T: DeserializeOwned,
         C: TryFrom<Vec<T>, Error = NativeConvertError>,
     {
-        C::try_from(self.arena_as(name)?)
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+        self.arena_as_collection_for_decode(&ctx, name)
     }
 
     /// Admits a typed collection using the caller's decode budget.
@@ -841,7 +753,10 @@ impl NativeNamespace {
 
     /// Deserialize an arena into codec-owned typed records.
     pub fn arena_as<T: DeserializeOwned>(&self, name: &str) -> Result<Vec<T>, NativeConvertError> {
-        self.arena_iter_as(name).collect()
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+        self.arena_as_for_decode(&ctx, name)
     }
 
     /// Deserialize one arena with admission before each retained typed copy.
@@ -877,10 +792,10 @@ impl NativeNamespace {
             .into_iter()
             .flat_map(|(name, records)| {
                 records.iter().map(move |record| {
-                    record.to_typed_standard().map_err(|source| NativeConvertError::Arena {
-                        arena: name.clone(),
-                        source: Box::new(source),
-                    })
+                    let arena = cadmpeg_core::decode::DecodeArena::new();
+                    let policy = cadmpeg_core::decode::DecodePolicy::default();
+                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                    read_record(&ctx, name, record)
                 })
             })
     }
@@ -928,14 +843,14 @@ impl Native {
     }
 
     /// Sort every arena into canonical identity order.
-    pub(crate) fn finalize_with<A: cadmpeg_core::decode::admission::Admission>(
+    pub(crate) fn finalize(
         &mut self,
-        admission: &A,
-    ) -> Result<(), A::Error> {
+        ctx: &DecodeContext<'_>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
         for namespace in self.0.values_mut() {
             for records in namespace.arenas.values_mut() {
                 crate::ids::comparison::stable_sort_by_identity(
-                    admission,
+                    ctx,
                     records,
                     NativeRecord::id,
                     "finalize native arena",
@@ -965,8 +880,3 @@ impl Native {
 
 #[cfg(test)]
 mod tests;
-#[cfg(test)]
-mod standard_read_tests;
-
-#[cfg(test)]
-mod standard_write_tests;

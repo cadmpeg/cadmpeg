@@ -2,46 +2,31 @@
 //! Coordinate scaling of owned, admitted pcurve carriers.
 
 use super::{
-    HarmonicPcurve, HyperbolicPcurve, LinePcurve, ParabolaPcurve, PcurveCoordinateScaleError,
-    PcurveGeometry, PcurveNurbsPoles,
+    HarmonicPcurve, HyperbolicPcurve, LinePcurve, ParabolaPcurve, PcurveGeometry, PcurveNurbsPoles,
 };
 use crate::math::Point2;
 use crate::scalar::{FiniteReal, NonZeroReal};
 use crate::transform::Transform2;
 use crate::units::FinitePoint2;
-use cadmpeg_core::decode::admission::{Admission, StandardAdmission};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
-enum ScalingError<E> {
-    Resource(E),
+enum ScalingError {
+    Resource(CodecError),
     Geometry(&'static str),
 }
-impl<E> From<&'static str> for ScalingError<E> {
+impl From<CodecError> for ScalingError {
+    fn from(error: CodecError) -> Self {
+        Self::Resource(error)
+    }
+}
+impl From<&'static str> for ScalingError {
     fn from(error: &'static str) -> Self {
         Self::Geometry(error)
     }
 }
 
 impl PcurveGeometry {
-    /// Scale chart coordinates atomically without changing the curve parameterization.
-    pub fn try_scale_coordinates(
-        &mut self,
-        scales: [f64; 2],
-    ) -> Result<(), PcurveCoordinateScaleError> {
-        let mut candidate = self.clone();
-        match scale_in_place(&StandardAdmission, &mut candidate, scales) {
-            Ok(()) => {
-                *self = candidate;
-                Ok(())
-            }
-            Err(ScalingError::Geometry(error)) => {
-                Err(PcurveCoordinateScaleError::Invalid(error.to_owned()))
-            }
-            Err(ScalingError::Resource(error)) => match error {},
-        }
-    }
-
     /// Scale owned chart coordinates without copying basis boxes or pole rows.
     /// Resource refusals stay separate from geometric refusals. Refused candidates are consumed.
     pub fn scaled_coordinates_owned(
@@ -64,13 +49,12 @@ fn scale_pole(point: &mut FinitePoint2, [u_scale, v_scale]: [f64; 2]) -> Result<
     Ok(())
 }
 
-fn scale_in_place<A: Admission>(
-    admission: &A,
+fn scale_in_place(
+    ctx: &DecodeContext<'_>,
     geometry: &mut PcurveGeometry,
     scales: [f64; 2],
-) -> Result<(), ScalingError<A::Error>> {
-    admission.charge_work(0, "IR pcurve coordinate scaling work")
-        .map_err(ScalingError::Resource)?;
+) -> Result<(), ScalingError> {
+    ctx.charge_work(0, "IR pcurve coordinate scaling work")?;
     let [u_scale, v_scale] = scales;
     let scale = |point: Point2| Point2::new(point.u * u_scale, point.v * v_scale);
     let isotropic = u_scale == v_scale;
@@ -142,34 +126,27 @@ fn scale_in_place<A: Admission>(
             )?)
         }
         PcurveGeometry::Nurbs { nurbs } => {
-            match &mut nurbs.poles {
-                PcurveNurbsPoles::Polynomial { points } => {
-                    let mut points = points.iter_mut();
-                    loop {
-                        admission.charge_work(1, "IR pcurve pole coordinate scaling work")
-                            .map_err(ScalingError::Resource)?;
-                        let Some(point) = points.next() else { break; };
-                        scale_pole(point, scales)?;
-                    }
-                }
-                PcurveNurbsPoles::Rational { points } => {
-                    let mut points = points.iter_mut();
-                    loop {
-                        admission.charge_work(1, "IR pcurve pole coordinate scaling work")
-                            .map_err(ScalingError::Resource)?;
-                        let Some(pole) = points.next() else { break; };
-                        scale_pole(&mut pole.point, scales)?;
-                    }
-                }
+            let refusal = match &mut nurbs.poles {
+                PcurveNurbsPoles::Polynomial { points } => ctx.find_map(
+                    points.iter_mut(),
+                    |point| Ok(scale_pole(point, scales).err()),
+                    "IR pcurve pole coordinate scaling work",
+                )?,
+                PcurveNurbsPoles::Rational { points } => ctx.find_map(
+                    points.iter_mut(),
+                    |pole| Ok(scale_pole(&mut pole.point, scales).err()),
+                    "IR pcurve pole coordinate scaling work",
+                )?,
+            };
+            if let Some(error) = refusal {
+                return Err(error.into());
             }
             return Ok(());
         }
         PcurveGeometry::Trimmed(trimmed) => {
-            admission.charge_work(1, "IR pcurve coordinate scaling work")
-                .map_err(ScalingError::Resource)?;
-            let _depth = admission.enter_nested("IR pcurve coordinate scaling nesting")
-                .map_err(ScalingError::Resource)?;
-            scale_in_place(admission, &mut trimmed.basis, scales)?;
+            ctx.charge_work(1, "IR pcurve coordinate scaling work")?;
+            let _depth = ctx.enter_nested("IR pcurve coordinate scaling nesting")?;
+            scale_in_place(ctx, &mut trimmed.basis, scales)?;
             return Ok(());
         }
         PcurveGeometry::Offset(offset) => {
@@ -178,11 +155,9 @@ fn scale_in_place<A: Admission>(
                     "offset coordinate scaling must be isotropic",
                 ));
             }
-            admission.charge_work(1, "IR pcurve coordinate scaling work")
-                .map_err(ScalingError::Resource)?;
-            let _depth = admission.enter_nested("IR pcurve coordinate scaling nesting")
-                .map_err(ScalingError::Resource)?;
-            scale_in_place(admission, &mut offset.basis, scales)?;
+            ctx.charge_work(1, "IR pcurve coordinate scaling work")?;
+            let _depth = ctx.enter_nested("IR pcurve coordinate scaling nesting")?;
+            scale_in_place(ctx, &mut offset.basis, scales)?;
             offset.distance = FiniteReal::new(offset.distance.get() * u_scale)
                 .ok_or("OffsetPcurve.distance must be finite")?;
             return Ok(());
@@ -198,11 +173,9 @@ fn scale_in_place<A: Admission>(
             rows[1][0] *= v_scale.get() / u_scale.get();
             rows[1][2] *= v_scale.get();
             let transform = Transform2::affine(rows).ok_or("scaled pcurve transform is invalid")?;
-            admission.charge_work(1, "IR pcurve coordinate scaling work")
-                .map_err(ScalingError::Resource)?;
-            let _depth = admission.enter_nested("IR pcurve coordinate scaling nesting")
-                .map_err(ScalingError::Resource)?;
-            scale_in_place(admission, &mut placed.basis, scales)?;
+            ctx.charge_work(1, "IR pcurve coordinate scaling work")?;
+            let _depth = ctx.enter_nested("IR pcurve coordinate scaling nesting")?;
+            scale_in_place(ctx, &mut placed.basis, scales)?;
             placed.transform = transform;
             return Ok(());
         }

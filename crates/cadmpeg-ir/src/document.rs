@@ -14,7 +14,6 @@ use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
 };
 
-use cadmpeg_core::decode::admission::{Admission, StandardAdmission};
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::dialect::{DialectLayers, DialectMatch, FormatIdentity};
 use cadmpeg_core::CodecError;
@@ -642,12 +641,8 @@ macro_rules! declare_model {
 
             /// Sort each arena lexicographically by its entity identity.
             pub fn finalize(&mut self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
-                self.finalize_with(ctx)
-            }
-
-            fn finalize_with<A: Admission>(&mut self, admission: &A) -> Result<(), A::Error> {
                 $(crate::ids::comparison::stable_sort_by_identity(
-                    admission,
+                    ctx,
                     &mut self.$field,
                     crate::schema::EntitySchema::identity,
                     "finalize model arena",
@@ -2095,10 +2090,13 @@ impl CadIr {
     /// Refuses a document holding a non-finite float.
     pub fn to_canonical_json(&self) -> Result<String, CanonicalJsonError> {
         let mut canonical = self.clone();
-        match canonical.finalize_with(&StandardAdmission) {
-            Ok(()) => {}
-            Err(never) => match never {},
-        }
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::default(),
+        )?;
+        canonical.finalize(&ctx)?;
         crate::hash::finite_json::to_canonical_json_string(&canonical)
     }
 
@@ -2120,12 +2118,8 @@ impl CadIr {
 
     /// Sort model, native, and unknown-record arenas by identity.
     pub fn finalize(&mut self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
-        self.finalize_with(ctx)
-    }
-
-    fn finalize_with<A: Admission>(&mut self, admission: &A) -> Result<(), A::Error> {
-        self.model.finalize_with(admission)?;
-        self.native.finalize_with(admission)
+        self.model.finalize(ctx)?;
+        self.native.finalize(ctx)
     }
 
     /// Count arena rows and native loss tallies without running validation.
