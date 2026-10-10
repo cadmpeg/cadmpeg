@@ -97,3 +97,5 @@ mod history_lookup_lifetimes;
 mod merged_edge_lifetimes;
 
 mod selected_plane_lifetimes;
+
+mod body_selection_lifetimes;
