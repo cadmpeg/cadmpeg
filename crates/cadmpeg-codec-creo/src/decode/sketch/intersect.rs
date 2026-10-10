@@ -12,7 +12,7 @@ use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
 
 use super::geometry::{
     resolved_section_segment_geometry_with_missing_line, saved_section_arc_carrier,
-    saved_section_arc_record, saved_section_missing_line_geometry,
+    saved_section_arc_record, saved_section_missing_line_geometry, SectionArcCarrier,
 };
 use super::radii::{
     section_arc_carrier, section_segment_intersection_carrier_with_missing_line, trim_segment_ids,
@@ -321,13 +321,13 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
             let Some(segment) = segments.unique_segment(external_id) else {
                 continue;
             };
-            let Some(carrier) = saved_section_arc_carrier(ctx, definition, segment)? else {
-                continue;
-            };
-            let ([center_u, center_v], radius) = carrier.raw();
             let Some(arc) = saved_section_arc_record(ctx, definition, segment)? else {
                 continue;
             };
+            let Some(carrier) = SectionArcCarrier::from_saved_record(arc) else {
+                continue;
+            };
+            let ([center_u, center_v], radius) = carrier.raw();
             for (vertex, endpoint) in trim.vertices.into_iter().zip(arc.endpoints) {
                 let [Some(u), Some(v), _] = endpoint else {
                     continue;
