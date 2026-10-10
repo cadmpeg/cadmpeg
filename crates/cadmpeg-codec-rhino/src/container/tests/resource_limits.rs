@@ -205,7 +205,11 @@ fn malformed_plugin_child_does_not_admit_unvisited_range_slots() {
     let archive = ArchiveVersion::V5;
     let mut body = vec![0x10];
     body.extend(256_i32.to_le_bytes());
-    body.extend(crate::test_support::test_dump::long_chunk(archive, 0x7000_0001, &[]));
+    body.extend(crate::test_support::test_dump::long_chunk(
+        archive,
+        0x7000_0001,
+        &[],
+    ));
     for _ in 1..256 {
         body.extend(anonymous_chunk(archive, 0, &[]));
     }
@@ -215,13 +219,15 @@ fn malformed_plugin_child_does_not_admit_unvisited_range_slots() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     policy.limits.max_work_units = 1;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let error = super::super::plugin_list_checksum_children(&ctx, &bytes, &chunk, archive)
         .expect_err("the first child has a non-anonymous typecode");
-    assert!(matches!(error, crate::chunks::FramingError::Structural { offset, message }
+    assert!(
+        matches!(error, crate::chunks::FramingError::Structural { offset, message }
         if offset == chunk.body().start + 1 + std::mem::size_of::<i32>()
-            && message == "plugin-list child must be an anonymous long chunk"));
+            && message == "plugin-list child must be an anonymous long chunk")
+    );
     assert_eq!(ctx.resource_refusal(), None);
 }
 
@@ -238,8 +244,8 @@ fn plugin_checksum_first_range_refuses_one_collection_slot() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let error = super::super::plugin_list_checksum_children(&ctx, &bytes, &chunk, archive)
         .expect_err("the first validated child needs one range slot");
     assert!(matches!(error, crate::chunks::FramingError::Resource(limit)
@@ -264,8 +270,8 @@ fn plugin_checksum_valid_children_keep_exact_source_ranges() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 2;
     policy.limits.max_work_units = 2;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let start = chunk.body().start + 1 + std::mem::size_of::<i32>();
     let first_end = start + first.len();
     let second_end = first_end + second.len();
@@ -283,14 +289,16 @@ fn summary_admits_only_the_first_table_before_refusal() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_work_units = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy).unwrap();
     let error = super::super::summarize(&ctx, &scan).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
             && limit.operation == "Rhino summarize traversal"
             && limit.used == 0 && limit.additional == 1
-            && ctx.resource_refusal() == Some(limit)));
+            && ctx.resource_refusal() == Some(limit))
+    );
 }
 
 #[test]
@@ -306,12 +314,67 @@ fn summary_admits_only_the_first_object_before_refusal() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_work_units = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy).unwrap();
     let error = super::super::summarize(&ctx, &scan).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
             && limit.operation == "Rhino summarize traversal"
             && limit.used == 0 && limit.additional == 1
-            && ctx.resource_refusal() == Some(limit)));
+            && ctx.resource_refusal() == Some(limit))
+    );
+}
+
+#[test]
+fn scan_descriptor_backings_are_released_with_the_scan() {
+    let bytes = crate::test_support::test_archive::archive(&[
+        crate::test_support::test_archive::object_record(
+            1,
+            crate::test_support::test_dump::POINT_CLASS,
+            &crate::test_support::test_dump::point_payload([0.0, 0.0, 0.0]),
+        ),
+    ]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 64 * 1024;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let scan = crate::container::scan(&ctx, &bytes).unwrap();
+    assert_eq!(scan.objects.len(), 1);
+    assert!(scan
+        .tables
+        .iter()
+        .any(|table| !table.object_typecodes.is_empty()));
+    drop(scan);
+    let reclaimed = ctx
+        .reserve_scoped(64 * 1024, "reclaimed scan storage")
+        .expect("descriptor and candidate storage is released when the scan drops");
+    drop(reclaimed);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn scan_tables_and_typecode_maps_consume_materialized_budget() {
+    let bytes = crate::test_support::test_archive::archive(&[
+        crate::test_support::test_archive::object_record(
+            1,
+            crate::test_support::test_dump::POINT_CLASS,
+            &crate::test_support::test_dump::point_payload([0.0, 0.0, 0.0]),
+        ),
+    ]);
+    for operation in ["Rhino scanned tables", "Rhino object typecode counts"] {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+            operation,
+            |cap| {
+                let arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                policy.limits.max_materialized_bytes = cap;
+                let (ctx, _) =
+                    cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)?;
+                crate::container::scan(&ctx, &bytes).map(drop)
+            },
+        );
+    }
 }
