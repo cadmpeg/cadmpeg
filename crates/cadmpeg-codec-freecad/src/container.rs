@@ -715,7 +715,7 @@ pub(crate) fn logical_ledger(
     ctx: &DecodeContext<'_>,
     entries: &[EntryRecord],
     properties: &[PropertyRecord],
-    gui: &gui::Graph,
+    gui: &gui::Graph<'_>,
     shape_payloads: &[ShapePayloadRecord],
     string_tables: &[StringTableRecord],
     element_maps: &[ElementMapRecord],
