@@ -784,11 +784,7 @@ pub(super) fn field_value(
                 ctx.copy_retained(payload, "creo feature raw field")?,
             ));
         };
-        let scratch = ctx.with_scoped_storage("creo feature scalar cache scratch", || {
-            scalar::ScalarCache::from_section_checked(ctx, payload)
-        })?;
-        let _scratch_storage = scratch.1;
-        let cache = scratch.0;
+        let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
         let decoded_values = decode_exact_scalars(ctx, remaining, slot_count, &cache)?;
         return Ok(FeatureFieldValue::ScalarArray {
             dimensions,

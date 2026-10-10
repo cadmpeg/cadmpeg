@@ -9522,8 +9522,7 @@ pub(crate) fn prototype_pcurve_endpoints(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<Vec<PrototypePcurveEndpoints>, cadmpeg_core::CodecError> {
-    let mut scratch = ctx.reserve_scoped(0, "creo curve parser scratch")?;
-    let cache = scratch.with_storage(|| scalar::ScalarCache::from_section_checked(ctx, payload))?;
+    let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
     let mut result = Vec::new();
     let mut namespaces = ctx.find_bytes_iter(payload, b"crv_array\0", "find Creo curve marker")?;
     let mut current = namespaces.next();

@@ -833,11 +833,7 @@ pub(crate) fn named_conics(
 ) -> Result<Vec<ReferenceConic>, CodecError> {
     const LIST: &[u8] = b"ent_list(conic)\0";
     const NEXT_LIST: &[u8] = b"\xe0\x00ent_list(";
-    let scratch = ctx.with_scoped_storage("creo reference scalar cache scratch", || {
-        ScalarCache::from_section_checked(ctx, payload)
-    })?;
-    let _scratch_storage = scratch.1;
-    let cache = scratch.0;
+    let cache = ScalarCache::from_section_checked(ctx, payload)?;
     let mut result = Vec::new();
     let mut search = 0;
     while payload.len().saturating_sub(search) >= LIST.len() {
@@ -1152,11 +1148,7 @@ pub(crate) fn positional_conics(
 ) -> Result<Vec<ReferenceConic>, CodecError> {
     const LIST: &[u8] = b"ent_list(conic)\0";
     const NEXT_LIST: &[u8] = b"\xe0\x00ent_list(";
-    let scratch = ctx.with_scoped_storage("creo reference scalar cache scratch", || {
-        ScalarCache::from_section_checked(ctx, payload)
-    })?;
-    let _scratch_storage = scratch.1;
-    let cache = scratch.0;
+    let cache = ScalarCache::from_section_checked(ctx, payload)?;
     let mut result = Vec::new();
     let mut search = 0;
     while payload.len().saturating_sub(search) >= LIST.len() {
@@ -1249,11 +1241,7 @@ pub(crate) fn lines(
     const ENTITY: &[u8] = b"\xe0\x00entity(";
     const ROW_START: &[u8] = b"\xf6\xe2";
 
-    let scratch = ctx.with_scoped_storage("creo reference scalar cache scratch", || {
-        ScalarCache::from_section_checked(ctx, payload)
-    })?;
-    let _scratch_storage = scratch.1;
-    let cache = scratch.0;
+    let cache = ScalarCache::from_section_checked(ctx, payload)?;
     let mut result = Vec::new();
     let mut search = 0;
     while payload.len().saturating_sub(search) >= PROTOTYPE.len() {
@@ -1460,11 +1448,7 @@ pub(crate) fn line3d_lines(
     const PROTOTYPE: &[u8] = b"ent_list(line3d)\0";
     const LIST: &[u8] = b"\xe0\x00ent_list(";
 
-    let scratch = ctx.with_scoped_storage("creo reference scalar cache scratch", || {
-        ScalarCache::from_section_checked(ctx, payload)
-    })?;
-    let _scratch_storage = scratch.1;
-    let cache = scratch.0;
+    let cache = ScalarCache::from_section_checked(ctx, payload)?;
     let mut result = Vec::new();
     let mut search = 0;
     while payload.len().saturating_sub(search) >= PROTOTYPE.len() {
@@ -1677,11 +1661,7 @@ pub(crate) fn arc_z_circles(
     const PROTOTYPE: &[u8] = b"ent_list(arc_z)\0";
     const LIST: &[u8] = b"\xe0\x00ent_list(";
 
-    let scratch = ctx.with_scoped_storage("creo reference scalar cache scratch", || {
-        ScalarCache::from_section_checked(ctx, payload)
-    })?;
-    let _scratch_storage = scratch.1;
-    let cache = scratch.0;
+    let cache = ScalarCache::from_section_checked(ctx, payload)?;
     let mut result = Vec::new();
     let mut search = 0;
     while payload.len().saturating_sub(search) >= PROTOTYPE.len() {
