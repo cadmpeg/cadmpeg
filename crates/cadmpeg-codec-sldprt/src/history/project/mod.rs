@@ -56,6 +56,8 @@ mod spin;
 #[cfg(test)]
 mod split_and_identity_tests;
 mod surface;
+#[cfg(test)]
+mod zero_offset_roots_tests;
 
 use self::datum::{
     project_composite_curve, project_datum_axis, project_datum_coordinate_system,
@@ -851,12 +853,12 @@ fn zero_offset_roots(
     parents: &[Option<usize>],
 ) -> Result<Vec<usize>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT zero offset plane chains";
-    let (mut roots, mut path_index) = scratch.with_storage(|| {
-        Ok::<_, CodecError>((
-            ctx.alloc_filled(parents.len(), None, OPERATION)?,
-            ctx.alloc_filled(parents.len(), None, OPERATION)?,
-        ))
-    })?;
+    let mut roots_storage = ctx.reserve_scoped(0, OPERATION)?;
+    let mut roots =
+        roots_storage.with_storage(|| ctx.alloc_filled(parents.len(), None, OPERATION))?;
+    let mut path_storage = ctx.reserve_scoped(0, OPERATION)?;
+    let mut path_index =
+        path_storage.with_storage(|| ctx.alloc_filled(parents.len(), None, OPERATION))?;
     let mut path = Vec::new();
     for start in ctx.admit_iter(0..parents.len(), OPERATION)? {
         if roots[start].is_some() {
@@ -878,7 +880,7 @@ fn zero_offset_roots(
                 break current;
             }
             path_index[current] = Some(path.len());
-            ctx.push_scoped_vec(scratch, &mut path, current, OPERATION)?;
+            ctx.push_scoped_vec(&mut path_storage, &mut path, current, OPERATION)?;
             match parents[current] {
                 Some(parent) => current = parent,
                 None => break current,
@@ -890,10 +892,12 @@ fn zero_offset_roots(
         }
         ctx.clear_vec(&mut path, OPERATION)?;
     }
+    drop((path_index, path, path_storage));
     let mut resolved = Vec::new();
     for (node, root) in ctx.admit_iter(roots, OPERATION)?.enumerate() {
         ctx.push_scoped_vec(scratch, &mut resolved, root.unwrap_or(node), OPERATION)?;
     }
+    drop(roots_storage);
     Ok(resolved)
 }
 
