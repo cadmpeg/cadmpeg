@@ -338,3 +338,31 @@ fn legacy_element_attribute_error_precedes_final_count() {
         "legacy Element has no value"
     );
 }
+
+#[test]
+fn string_table_validation_refuses_through_the_production_parser() {
+    let document = b"<Document><StringHasher count=\"2\">1.c first\n2.c.1 second\n</StringHasher></Document>";
+    let (tables, maps) = test_parse(document, 1, &[], &[]).unwrap();
+    assert!(maps.is_empty());
+    let entries = tables.as_slice()[0].entries();
+    assert_eq!(entries.len(), 2);
+    assert_eq!(entries[0].payload, "first");
+    assert_eq!(entries[1].payload, "second");
+    assert_eq!(entries[1].components, vec![1]);
+    let xml = roxmltree::Document::parse(std::str::from_utf8(document).unwrap()).unwrap();
+    for operation in [
+        "FreeCAD string table entry visits",
+        "FreeCAD string table component visits",
+        "FreeCAD string table component lookup",
+        "FreeCAD string table index",
+    ] {
+        crate::test_support::refusal_at(ResourceDimension::WorkUnits, document, operation, |ctx| {
+            super::parse_bytes(ctx, document, 1, &[], &[])
+        });
+    }
+    for dimension in [ResourceDimension::MaterializedBytes, ResourceDimension::CollectionItems] {
+        crate::test_support::refusal_at(dimension, document, "FreeCAD string table index", |ctx| {
+            parse(ctx, &xml, 1, &[], &[])
+        });
+    }
+}
