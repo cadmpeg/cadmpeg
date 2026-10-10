@@ -1210,8 +1210,9 @@ pub(crate) fn expression_records_with_model_name(
         let mut lines = Vec::new();
         let mut slots = 0..count;
         while slots.start < slots.end
-            && ctx.next_charged(&mut slots, "creo expression line traversal")?
-            .is_some()
+            && ctx
+                .next_charged(&mut slots, "creo expression line traversal")?
+                .is_some()
         {
             let Some(relative_end) = ctx.position_by(
                 &payload[cursor..end],
@@ -1649,7 +1650,8 @@ fn expression_assignment(
             let Some(argument) = ctx.next_charged(
                 &mut argument_steps,
                 "creo function target dependency traversal",
-            )? else {
+            )?
+            else {
                 break;
             };
             if extend_expression_dependencies(
@@ -2449,7 +2451,8 @@ fn split_assignment_target_arguments<'a>(
     let mut delimiter = None;
     let mut input = source.bytes().enumerate();
     while input.len() != 0 {
-        let Some((offset, byte)) = ctx.next_charged(&mut input, "creo target argument scan")? else {
+        let Some((offset, byte)) = ctx.next_charged(&mut input, "creo target argument scan")?
+        else {
             break;
         };
         if let Some(quote) = delimiter {
@@ -4088,7 +4091,8 @@ impl SimultaneousAffineValue {
                     &mut self.coefficients,
                     &variable,
                     "creo affine combined coefficient nodes",
-                )? else {
+                )?
+                else {
                     ctx.insert_btree_map(
                         &mut self.coefficients,
                         variable,
@@ -4762,9 +4766,9 @@ impl DimensionForm {
                     &mut self.variables,
                     &name,
                     "creo dimension difference variable nodes",
-                )? else {
-                    let Some(value) =
-                        DimensionRational::default().combine(coefficient, subtract)
+                )?
+                else {
+                    let Some(value) = DimensionRational::default().combine(coefficient, subtract)
                     else {
                         return Ok(None);
                     };
@@ -7820,8 +7824,7 @@ pub(crate) fn expression_helix(
     let mut present = [false; 3];
     let mut assignments = record.assignments.iter();
     while assignments.len() != 0 {
-        let Some(assignment) =
-            ctx.next_charged(&mut assignments, "creo helix output scan work")?
+        let Some(assignment) = ctx.next_charged(&mut assignments, "creo helix output scan work")?
         else {
             break;
         };
@@ -7995,7 +7998,8 @@ pub(crate) fn depdb_cross_section_rows(
             let Some((end, length)) = ctx.next_charged(
                 &mut candidates,
                 "creo cross-section boundary candidate traversal",
-            )? else {
+            )?
+            else {
                 break;
             };
             if let Some(row) = row_storage.with_storage(|| {
@@ -8334,8 +8338,7 @@ fn framed_segment_with_face_ids(
     )?;
     let mut closes = segment.iter().enumerate().rev();
     while closes.len() != 0 {
-        let Some((close, &byte)) =
-            ctx.next_charged(&mut closes, "creo framed curve close scan")?
+        let Some((close, &byte)) = ctx.next_charged(&mut closes, "creo framed curve close scan")?
         else {
             break;
         };
@@ -8430,8 +8433,9 @@ fn complete_curve_row_linkage(
         cursor = next;
         let mut links = 0..count;
         while links.start < links.end
-            && ctx.next_charged(&mut links, "creo counted curve row linkage")?
-            .is_some()
+            && ctx
+                .next_charged(&mut links, "creo counted curve row linkage")?
+                .is_some()
         {
             let Some((_, next)) = generic_compact_at(bytes, cursor) else {
                 return Ok(false);
@@ -8520,36 +8524,36 @@ fn curve_scalar_lane(
         }
         let next = match selected {
             SelectedToken::Reference(entity_id, next) => {
-            ctx.push_vec(
-                &mut references,
-                CurveParameterReference {
-                    entity_id,
-                    offset: cursor,
-                    length: next - cursor,
-                },
-                "creo curve parameter references",
-            )?;
-            next
+                ctx.push_vec(
+                    &mut references,
+                    CurveParameterReference {
+                        entity_id,
+                        offset: cursor,
+                        length: next - cursor,
+                    },
+                    "creo curve parameter references",
+                )?;
+                next
             }
             SelectedToken::Scalar(value, next) => {
-            let raw = ctx.copy_retained(
-                &body[cursor..next],
-                if zero {
-                    "creo curve zero raw token"
-                } else {
-                    "creo curve scalar raw token"
-                },
-            )?;
-            ctx.push_vec(
-                &mut scalars,
-                CurveParameterScalar {
-                    value,
-                    raw,
-                    offset: cursor,
-                },
-                "creo curve parameter scalars",
-            )?;
-            next
+                let raw = ctx.copy_retained(
+                    &body[cursor..next],
+                    if zero {
+                        "creo curve zero raw token"
+                    } else {
+                        "creo curve scalar raw token"
+                    },
+                )?;
+                ctx.push_vec(
+                    &mut scalars,
+                    CurveParameterScalar {
+                        value,
+                        raw,
+                        offset: cursor,
+                    },
+                    "creo curve parameter scalars",
+                )?;
+                next
             }
         };
         cursor = next;
@@ -8827,9 +8831,8 @@ pub(crate) fn two_chart_pcurve_samples(
         if start <= 1 {
             continue;
         }
-        let (samples, storage) = ctx.with_scoped_storage(
-            "creo two-chart counted sample points",
-            || {
+        let (samples, storage) =
+            ctx.with_scoped_storage("creo two-chart counted sample points", || {
                 complete_two_chart_samples(
                     ctx,
                     body,
@@ -8838,8 +8841,7 @@ pub(crate) fn two_chart_pcurve_samples(
                     "creo two-chart counted sample points",
                     &cache,
                 )
-            },
-        )?;
+            })?;
         let Some(samples) = samples else {
             continue;
         };
@@ -8886,9 +8888,8 @@ pub(crate) fn two_chart_pcurve_samples(
         else {
             continue;
         };
-        let (samples, storage) = ctx.with_scoped_storage(
-            "creo two-chart replay sample points",
-            || {
+        let (samples, storage) =
+            ctx.with_scoped_storage("creo two-chart replay sample points", || {
                 complete_two_chart_samples(
                     ctx,
                     body,
@@ -8897,8 +8898,7 @@ pub(crate) fn two_chart_pcurve_samples(
                     "creo two-chart replay sample points",
                     &cache,
                 )
-            },
-        )?;
+            })?;
         let Some(samples) = samples else {
             continue;
         };

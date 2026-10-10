@@ -379,7 +379,10 @@ fn relation_argument_storage_is_scoped_and_released() {
     assert_eq!(ctx.resource_refusal().as_ref(), Some(&resource));
     assert_eq!(resource.used, 0);
     assert!(resource.additional > 0);
-    let slots = resource.used.checked_add(resource.additional).expect("argument storage boundary");
+    let slots = resource
+        .used
+        .checked_add(resource.additional)
+        .expect("argument storage boundary");
     policy.limits.max_materialized_bytes = slots;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     assert_eq!(

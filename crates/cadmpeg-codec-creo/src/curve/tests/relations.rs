@@ -631,7 +631,8 @@ fn relation_symbol_error(
         "creo relation dimension symbol formatting",
     ) {
         Ok((name, _reservation)) => symbols.observe(
-            &ctx, name,
+            &ctx,
+            name,
             Some(CurveExpressionValue::Number(
                 cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite relation fixture"),
             )),

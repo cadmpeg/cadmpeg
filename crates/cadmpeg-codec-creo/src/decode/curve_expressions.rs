@@ -194,7 +194,8 @@ fn expression_dependency_components(
             let Some((index, expanded)) = ctx.next_charged(
                 &mut std::iter::from_fn(|| pending.pop()),
                 "walk Creo curve-expression dependencies",
-            )? else {
+            )?
+            else {
                 break;
             };
             if expanded {
@@ -261,7 +262,8 @@ fn expression_dependency_components(
             let Some((index, _)) = ctx.next_charged(
                 &mut std::iter::from_fn(|| pending.pop()),
                 "walk Creo curve-expression reverse dependencies",
-            )? else {
+            )?
+            else {
                 break;
             };
             if visited[index] {
@@ -394,7 +396,8 @@ fn curve_expression_parameter_order(
         let Some(ordinal) = ctx.next_charged(
             &mut ordinal_steps,
             "creo curve-expression ordinal traversal",
-        )? else {
+        )?
+        else {
             break;
         };
         let Some(index) = ctx
