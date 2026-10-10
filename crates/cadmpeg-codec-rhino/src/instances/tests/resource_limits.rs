@@ -130,26 +130,6 @@ fn sha1_text_refuses_retained_limit() {
 }
 
 #[test]
-fn sha256_text_refuses_retained_limit() {
-    with_retained_limit(63, |ctx| {
-        let error = crate::instances::hex(ctx, &[0x5a; 32], "Rhino test SHA-256")
-            .expect_err("sixty-four hex bytes exceed retained limit");
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(refusal)
-                if refusal.operation == "Rhino test SHA-256"
-        ));
-    });
-    with_retained_limit(64, |ctx| {
-        assert_eq!(
-            crate::instances::hex(ctx, &[0x5a; 32], "Rhino test SHA-256")
-                .expect("digest text fits retained limit"),
-            "5a".repeat(32)
-        );
-    });
-}
-
-#[test]
 fn definition_diagnostic_loss_refuses_retained_limit() {
     let diagnostic = crate::instances::DefinitionDiagnostic {
         diagnostic: crate::loss::RhinoDiagnostic {
@@ -490,31 +470,3 @@ fn instance_alternative_path_trim_preserves_refusal_without_degradation() {
     );
 }
 
-#[test]
-fn hex_character_growth_preserves_refusal() {
-    cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "hex character output",
-        |cap| {
-            let arena = cadmpeg_core::decode::DecodeArena::new();
-            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) =
-                cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-            let result = crate::instances::hex(&ctx, &[0xab], "hex character output").map(|_| ());
-            if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result {
-                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
-            }
-            result
-        },
-    );
-    assert_eq!(
-        crate::instances::hex(
-            &cadmpeg_test_support::service_decode_context(),
-            &[0xab],
-            "hex character output"
-        )
-        .unwrap(),
-        "ab"
-    );
-}

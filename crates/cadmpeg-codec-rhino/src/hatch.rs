@@ -355,11 +355,7 @@ pub(crate) fn apply_userdata<'ctx>(
         if extra.class_uuid != V5_HATCH_EXTRA || extra.item_uuid != V5_HATCH_EXTRA {
             continue;
         }
-        let mut storage = ctx.reserve_scoped(0, "Rhino hatch extra parse")?;
-        let parsed = storage.with_storage(|| {
-            Ok::<_, CodecError>(parse_userdata(data, extra, archive, scale))
-        })?;
-        match parsed {
+        match parse_userdata(data, extra, archive, scale) {
             Ok(basepoint) => last_basepoint = Some(basepoint),
             Err(GeometryError::Codec(error)) => return Err(error),
             Err(error) => {
