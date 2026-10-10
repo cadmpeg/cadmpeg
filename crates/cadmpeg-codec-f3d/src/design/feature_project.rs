@@ -4905,81 +4905,97 @@ fn merge_edge_selections(
             "f3d merged edge native id",
         )?))
     };
-    {
-        let count = u64::try_from(selections.len())
-            .map_err(|_| ctx.refuse_codec_limit("f3d merged edge selection scan", 0, 1))?;
-        ctx.charge_work(count, "f3d merged edge selection scan")?;
-    }
-    if selections.iter().all(|selection| {
-        matches!(
+    if ctx.all_by_limit(selections, |selection| {
+        Ok(matches!(
             selection,
             EdgeSelection::Edges(_) | EdgeSelection::Resolved { .. }
-        )
-    }) {
+        ))
+    }, "f3d merged edge selection scan")? {
+        let mut candidate_storage = ctx.provisional_retained("F3D merged direct edge candidate")?;
         let mut resolved = Vec::new();
         for selection in selections {
             let (EdgeSelection::Edges(edges) | EdgeSelection::Resolved { edges, .. }) = selection
             else {
+                drop(resolved);
+                drop(candidate_storage);
                 return native();
             };
             for edge in edges {
-                {
-                    let work = u64::try_from(resolved.len()).map_err(|_| {
-                        ctx.refuse_codec_limit("f3d merged edge duplicate scan", 0, 1)
-                    })?;
-                    ctx.charge_work(work, "f3d merged edge duplicate scan")?;
-                }
-                if resolved.contains(edge) {
+                if !ctx.all_by_limit(&resolved, |candidate: &cadmpeg_ir::ids::EdgeId| {
+                    Ok(!ctx.equal_bytes_limit(candidate.as_str().as_bytes(), edge.as_str().as_bytes(),
+                        "f3d merged direct edge identity comparison")?)
+                }, "f3d merged edge duplicate scan")? {
+                    drop(resolved);
+                    drop(candidate_storage);
                     return native();
                 }
-                let edge = (edge).try_clone_for_decode(ctx, "f3d merged direct edge id")?;
-                ctx.push_vec(&mut resolved, edge, "f3d merged direct edge")?;
+                let edge = candidate_storage.with_storage(|| {
+                    edge.try_clone_for_decode(ctx, "f3d merged direct edge id")
+                })?;
+                candidate_storage.with_storage(|| {
+                    ctx.push_vec(&mut resolved, edge, "f3d merged direct edge")
+                })?;
             }
         }
-        return Ok(EdgeSelection::Resolved {
+        let selected_native = candidate_storage.with_storage(|| {
+            ctx.copy_retained_text(&scope.id, "f3d merged direct native id")
+        })?;
+        return candidate_storage.commit_value(EdgeSelection::Resolved {
             edges: resolved,
-            native: ctx.copy_retained_text(&scope.id, "f3d merged direct native id")?,
+            native: selected_native,
         });
     }
     if let Some(EdgeSelection::Historical { state, .. }) = selections.first() {
-        if selections.iter().all(|selection| {
-            matches!(selection,
-            EdgeSelection::Historical { state: candidate, .. } if candidate == state)
-        }) {
-            let state = (state).try_clone_for_decode(ctx, "f3d merged historical edge state id")?;
+        if ctx.all_by_limit(selections, |selection| {
+            match selection {
+                EdgeSelection::Historical { state: candidate, .. } => ctx.equal_bytes_limit(
+                    candidate.as_str().as_bytes(), state.as_str().as_bytes(),
+                    "f3d merged historical state identity comparison"),
+                _ => Ok(false),
+            }
+        }, "f3d merged historical state scan")? {
+            let mut candidate_storage = ctx.provisional_retained("F3D merged historical edge candidate")?;
+            let state = candidate_storage.with_storage(|| {
+                state.try_clone_for_decode(ctx, "f3d merged historical edge state id")
+            })?;
             let mut resolved = Vec::new();
             for selection in selections {
                 let EdgeSelection::Historical { edges, .. } = selection else {
+                    drop(resolved);
+                    drop(state);
+                    drop(candidate_storage);
                     return native();
                 };
                 for edge in edges {
-                    {
-                        let work = u64::try_from(resolved.len()).map_err(|_| {
-                            ctx.refuse_codec_limit(
-                                "f3d merged historical edge duplicate scan",
-                                0,
-                                1,
-                            )
-                        })?;
-                        ctx.charge_work(work, "f3d merged historical edge duplicate scan")?;
-                    }
-                    if resolved.contains(edge) {
+                    if !ctx.all_by_limit(&resolved, |candidate: &cadmpeg_ir::ids::HistoricalEdgeId| {
+                        Ok(!ctx.equal_bytes_limit(candidate.as_str().as_bytes(), edge.as_str().as_bytes(),
+                            "f3d merged historical edge identity comparison")?)
+                    }, "f3d merged historical edge duplicate scan")? {
+                        drop(resolved);
+                        drop(state);
+                        drop(candidate_storage);
                         return native();
                     }
-                    let edge = (edge).try_clone_for_decode(ctx, "f3d merged historical edge id")?;
-                    ctx.push_vec(&mut resolved, edge, "f3d merged historical edge")?;
+                    let edge = candidate_storage.with_storage(|| {
+                        edge.try_clone_for_decode(ctx, "f3d merged historical edge id")
+                    })?;
+                    candidate_storage.with_storage(|| {
+                        ctx.push_vec(&mut resolved, edge, "f3d merged historical edge")
+                    })?;
                 }
             }
-            let selected_native =
-                ctx.copy_retained_text(&scope.id, "f3d merged historical native id")?;
-            return match cadmpeg_ir::features::EdgeSelection::historical(
-                state,
-                resolved,
-                selected_native,
-                ctx,
-            )? {
-                Ok(selection) => Ok(selection),
-                Err(_) => native(),
+            let selected_native = candidate_storage.with_storage(|| {
+                ctx.copy_retained_text(&scope.id, "f3d merged historical native id")
+            })?;
+            let selected = candidate_storage.with_storage(|| -> Result<_, CodecError> {
+                Ok(EdgeSelection::historical(state, resolved, selected_native, ctx)?)
+            })?;
+            return match selected {
+                Ok(selection) => candidate_storage.commit_value(selection),
+                Err(_) => {
+                    drop(candidate_storage);
+                    native()
+                }
             };
         }
     }
