@@ -118,18 +118,20 @@ pub(super) fn decode<'ctx>(
     let mut records = exchange.records().iter();
     ctx.charge_work(0, "STEP decode traversal")?;
     for _ in 0..records.len() {
-        let (&id, record) = ctx.next_charged(&mut records, "STEP decode traversal")?
+        let (&id, record) = ctx
+            .next_charged(&mut records, "STEP decode traversal")?
             .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
         let Some(invisibility) = record.partial(ctx, "INVISIBILITY")? else {
             continue;
         };
-        let Some(items) = invisibility.parameters.first()
-            .and_then(ValueExt::list)
-        else {
+        let Some(items) = invisibility.parameters.first().and_then(ValueExt::list) else {
             ctx.push_scoped_vec(
                 &mut slot_storage.borrow_mut(),
                 &mut losses,
-                StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!("INVISIBILITY #{id} has no item set"), "step_presentation_loss_text")?),
+                StepLossCode::DecodeWarning.note(ctx.format_retained(
+                    format_args!("INVISIBILITY #{id} has no item set"),
+                    "step_presentation_loss_text",
+                )?),
                 "step_presentation_losses",
             )?;
             continue;
@@ -140,14 +142,14 @@ pub(super) fn decode<'ctx>(
         let mut items = items.iter();
         ctx.charge_work(0, "STEP invisibility item traversal")?;
         for _ in 0..items.len() {
-            let value = ctx.next_charged(&mut items, "STEP invisibility item traversal")?
+            let value = ctx
+                .next_charged(&mut items, "STEP invisibility item traversal")?
                 .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
             let Some(target) = ValueExt::reference(value) else {
                 continue;
             };
-            let target_record = ctx.get_btree_map(
-                exchange.records(), &target, "STEP presentation record get",
-            )?;
+            let target_record =
+                ctx.get_btree_map(exchange.records(), &target, "STEP presentation record get")?;
             if target_record
                 .map(|record| record.partial(ctx, "PRESENTATION_LAYER_ASSIGNMENT"))
                 .transpose()?
@@ -202,11 +204,13 @@ pub(super) fn decode<'ctx>(
                     continue;
                 }
             }
-            let (summary, body_ids, _body_storage) = invisible.resolve(target, exchange, topology, &body_indices)?;
+            let (summary, body_ids, _body_storage) =
+                invisible.resolve(target, exchange, topology, &body_indices)?;
             let mut body_ids = body_ids.into_iter();
             ctx.charge_work(0, "STEP presentation body_ids traversal")?;
             for _ in 0..body_ids.len() {
-                let (_body_id, index) = ctx.next_charged(&mut body_ids, "STEP presentation body_ids traversal")?
+                let (_body_id, index) = ctx
+                    .next_charged(&mut body_ids, "STEP presentation body_ids traversal")?
                     .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
                 if let Some(index) = index {
                     ir.model.bodies[index].visible = Some(false);
@@ -216,9 +220,10 @@ pub(super) fn decode<'ctx>(
                 ctx.push_scoped_vec(
                     &mut slot_storage.borrow_mut(),
                     &mut losses,
-                    StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!(
-                        "INVISIBILITY #{id} targets unsupported item #{target}"
-                    ), "step_presentation_loss_text")?),
+                    StepLossCode::DecodeWarning.note(ctx.format_retained(
+                        format_args!("INVISIBILITY #{id} targets unsupported item #{target}"),
+                        "step_presentation_loss_text",
+                    )?),
                     "step_presentation_losses",
                 )?;
                 supported = false;
@@ -242,20 +247,22 @@ pub(super) fn decode<'ctx>(
     let mut records = exchange.records().iter();
     ctx.charge_work(0, "STEP decode traversal")?;
     for _ in 0..records.len() {
-        let (&layer_id, layer) = ctx.next_charged(&mut records, "STEP decode traversal")?
+        let (&layer_id, layer) = ctx
+            .next_charged(&mut records, "STEP decode traversal")?
             .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
         let Some(assignment) = layer.partial(ctx, "PRESENTATION_LAYER_ASSIGNMENT")? else {
             continue;
         };
-        let Some(assigned_items) = assignment.parameters.get(2)
-            .and_then(ValueExt::list)
-        else {
+        let Some(assigned_items) = assignment.parameters.get(2).and_then(ValueExt::list) else {
             ctx.push_scoped_vec(
                 &mut slot_storage.borrow_mut(),
                 &mut losses,
-                StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!(
-                    "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has no assigned item set"
-                ), "step_presentation_loss_text")?),
+                StepLossCode::DecodeWarning.note(ctx.format_retained(
+                    format_args!(
+                        "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has no assigned item set"
+                    ),
+                    "step_presentation_loss_text",
+                )?),
                 "step_presentation_losses",
             )?;
             continue;
@@ -264,14 +271,19 @@ pub(super) fn decode<'ctx>(
             ctx.push_scoped_vec(
                 &mut slot_storage.borrow_mut(),
                 &mut losses,
-                StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!(
-                    "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has an empty assigned item set"
-                ), "step_presentation_loss_text")?),
+                StepLossCode::DecodeWarning.note(ctx.format_retained(
+                    format_args!(
+                        "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has an empty assigned item set"
+                    ),
+                    "step_presentation_loss_text",
+                )?),
                 "step_presentation_losses",
             )?;
             continue;
         }
-        let Some(name) = assignment.parameters.first()
+        let Some(name) = assignment
+            .parameters
+            .first()
             .map(|value| {
                 decode_output_text(
                     exchange,
@@ -289,14 +301,17 @@ pub(super) fn decode<'ctx>(
             ctx.push_scoped_vec(
                 &mut slot_storage.borrow_mut(),
                 &mut losses,
-                StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!(
-                    "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has no name"
-                ), "step_presentation_loss_text")?),
+                StepLossCode::DecodeWarning.note(ctx.format_retained(
+                    format_args!("PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has no name"),
+                    "step_presentation_loss_text",
+                )?),
                 "step_presentation_losses",
             )?;
             continue;
         };
-        let description = assignment.parameters.get(1)
+        let description = assignment
+            .parameters
+            .get(1)
             .map(|value| {
                 decode_output_text(
                     exchange,
@@ -315,7 +330,8 @@ pub(super) fn decode<'ctx>(
         let mut assigned_items = assigned_items.iter();
         ctx.charge_work(0, "STEP layer assigned item traversal")?;
         for _ in 0..assigned_items.len() {
-            let value = ctx.next_charged(&mut assigned_items, "STEP layer assigned item traversal")?
+            let value = ctx
+                .next_charged(&mut assigned_items, "STEP layer assigned item traversal")?
                 .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
             let Some(id) = ValueExt::reference(value) else {
                 continue;
@@ -360,7 +376,8 @@ pub(super) fn decode<'ctx>(
     let mut records = exchange.records().iter();
     ctx.charge_work(0, "STEP decode traversal")?;
     for _ in 0..records.len() {
-        let (&id, record) = ctx.next_charged(&mut records, "STEP decode traversal")?
+        let (&id, record) = ctx
+            .next_charged(&mut records, "STEP decode traversal")?
             .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
         if styled_item_parts(ctx, record)?.is_some() {
             let order = style_application_order(
@@ -380,7 +397,8 @@ pub(super) fn decode<'ctx>(
     let mut styles_to_check = styles.iter();
     ctx.charge_work(0, "STEP decode traversal")?;
     for _ in 0..styles_to_check.len() {
-        let &(id, _) = ctx.next_charged(&mut styles_to_check, "STEP decode traversal")?
+        let &(id, _) = ctx
+            .next_charged(&mut styles_to_check, "STEP decode traversal")?
             .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
         if let Some(overridden) = overridden_style(
             ctx,
@@ -421,7 +439,8 @@ pub(super) fn decode<'ctx>(
     let mut styles = styles.into_iter();
     ctx.charge_work(0, "STEP presentation styles traversal")?;
     for _ in 0..styles.len() {
-        let (style_id, _) = ctx.next_charged(&mut styles, "STEP presentation styles traversal")?
+        let (style_id, _) = ctx
+            .next_charged(&mut styles, "STEP presentation styles traversal")?
             .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
         if ctx.contains_btree_set(
             &overridden_styles,
@@ -447,8 +466,10 @@ pub(super) fn decode<'ctx>(
             ctx.push_scoped_vec(
                 &mut slot_storage.borrow_mut(),
                 &mut losses,
-                StepLossCode::DecodeWarning
-                    .note(ctx.format_retained(format_args!("STYLED_ITEM #{style_id} has no resolved target"), "step_presentation_loss_text")?),
+                StepLossCode::DecodeWarning.note(ctx.format_retained(
+                    format_args!("STYLED_ITEM #{style_id} has no resolved target"),
+                    "step_presentation_loss_text",
+                )?),
                 "step_presentation_losses",
             )?;
             continue;
@@ -467,7 +488,8 @@ pub(super) fn decode<'ctx>(
         let mut values = parts.styles.list().unwrap_or_default().iter();
         ctx.charge_work(0, "STEP style value traversal")?;
         for _ in 0..values.len() {
-            let value = ctx.next_charged(&mut values, "STEP style value traversal")?
+            let value = ctx
+                .next_charged(&mut values, "STEP style value traversal")?
                 .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
             for reference in references(value, ctx) {
                 let reference = reference?;
@@ -484,7 +506,8 @@ pub(super) fn decode<'ctx>(
         let mut references = style_references.iter();
         ctx.charge_work(0, "STEP decode traversal")?;
         for _ in 0..references.len() {
-            let reference = ctx.next_charged(&mut references, "STEP decode traversal")?
+            let reference = ctx
+                .next_charged(&mut references, "STEP decode traversal")?
                 .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
             if ctx
                 .get_btree_map(
@@ -537,9 +560,10 @@ pub(super) fn decode<'ctx>(
                     ctx.push_scoped_vec(
                         &mut slot_storage.borrow_mut(),
                         &mut losses,
-                        StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!(
-                            "STYLED_ITEM #{style_id} has no resolved surface color"
-                        ), "step_presentation_loss_text")?),
+                        StepLossCode::DecodeWarning.note(ctx.format_retained(
+                            format_args!("STYLED_ITEM #{style_id} has no resolved surface color"),
+                            "step_presentation_loss_text",
+                        )?),
                         "step_presentation_losses",
                     )?;
                 }
@@ -579,7 +603,10 @@ pub(super) fn decode<'ctx>(
                         library_id: None,
                         visual_guid: None,
                         physical_token: None,
-                        schema: Some(ctx.copy_retained_text("step_surface_style", "step_presentation_schema_text")?),
+                        schema: Some(ctx.copy_retained_text(
+                            "step_surface_style",
+                            "step_presentation_schema_text",
+                        )?),
                         category: None,
                         base_color: Some(color),
                         textures: Vec::new(),
@@ -599,84 +626,104 @@ pub(super) fn decode<'ctx>(
         let mut active_storage = ctx.reserve_scoped(0, "STEP style target active scratch")?;
         let mut active = BTreeSet::new();
         expand_style_targets(
-            target_step, exchange, (&mut typed, &mut claim_storage),
-            (&mut active, &mut active_storage), (0, graph_limit),
-            &mut |target| ctx.push_scoped_vec(&mut target_storage, &mut target_steps, target, "step_presentation_expanded_targets"), ctx,
+            target_step,
+            exchange,
+            (&mut typed, &mut claim_storage),
+            (&mut active, &mut active_storage),
+            (0, graph_limit),
+            &mut |target| {
+                ctx.push_scoped_vec(
+                    &mut target_storage,
+                    &mut target_steps,
+                    target,
+                    "step_presentation_expanded_targets",
+                )
+            },
+            ctx,
         )?;
         drop(active);
         drop(active_storage);
         let mut target_steps = target_steps.into_iter().enumerate();
         for _ in 0..target_steps.len() {
-            let (target_ordinal, target_step) = ctx.next_charged(&mut target_steps, "STEP expanded style target traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP expanded style target source ended early"))?;
-                let mut appearance_target_storage =
-                    ctx.reserve_scoped(0, "STEP appearance target slots")?;
-                let targets = appearance_targets(
-                    target_step,
-                    exchange,
-                    topology,
-                    &entity_ids,
-                    indices,
-                    &mut appearance_target_storage,
-                    ctx,
+            let (target_ordinal, target_step) = ctx
+                .next_charged(&mut target_steps, "STEP expanded style target traversal")?
+                .ok_or_else(|| {
+                    CodecError::malformed("STEP expanded style target source ended early")
+                })?;
+            let mut appearance_target_storage =
+                ctx.reserve_scoped(0, "STEP appearance target slots")?;
+            let targets = appearance_targets(
+                target_step,
+                exchange,
+                topology,
+                &entity_ids,
+                indices,
+                &mut appearance_target_storage,
+                ctx,
+            )?;
+            if targets.is_empty() {
+                let message = ctx.format_retained(
+                    format_args!("STYLED_ITEM #{style_id} targets unsupported item #{target_step}"),
+                    "step_presentation_unsupported_target_text",
                 )?;
-                if targets.is_empty() {
-                    let message = ctx.format_retained(
-                        format_args!(
-                            "STYLED_ITEM #{style_id} targets unsupported item #{target_step}"
-                        ),
-                        "step_presentation_unsupported_target_text",
-                    )?;
-                    ctx.push_scoped_vec(
-                        &mut slot_storage.borrow_mut(),
-                        &mut losses,
-                        StepLossCode::DecodeWarning.note(message),
-                        "step_presentation_losses",
-                    )?;
-                    continue;
-                }
-                let mut targets = targets.into_iter().enumerate();
-                ctx.charge_work(0, "STEP appearance target traversal")?;
-                for _ in 0..targets.len() {
-                    let (target_index, target) = ctx.next_charged(&mut targets, "STEP appearance target traversal")?
-                        .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
-                    scratch_storage.with_storage(|| {
-                        push_scalar_candidate(
-                            &mut scalar_color_candidates,
-                            &target,
-                            style_id,
-                            color,
-                            ctx,
-                        )
-                    })?;
-                    emitted = true;
-                    ctx.reserve_vec(
-                        &mut ir.model.appearance_bindings,
-                        1,
-                        "step_presentation_appearance_bindings",
-                    )?;
-                    let binding = AppearanceBinding {
-                        id: ids::presentation(
-                            kind!("binding"),
-                            IdentityKey::from(style_id)
-                                .colon(target_ordinal)
-                                .dash(target_index),
-                        )
-                        .into(),
-                        target,
-                        appearance: appearance_id
-                            .try_clone_for_decode(ctx, "step_presentation_identity_copy")?,
-                        source_entity_id: Some(ctx.format_retained(
-                            format_args!("#{style_id}"),
-                            "step_presentation_source_entity_id",
-                        )?),
-                        object_type: None,
-                        visible: style_is_hidden(style_id, &hidden_style_ids, exchange,
-                            &mut style_visibility, &mut scratch_storage, ctx)?.then_some(false),
-                        channels: BTreeMap::new(),
-                    };
-                    ir.model.appearance_bindings.push(binding);
-                }
+                ctx.push_scoped_vec(
+                    &mut slot_storage.borrow_mut(),
+                    &mut losses,
+                    StepLossCode::DecodeWarning.note(message),
+                    "step_presentation_losses",
+                )?;
+                continue;
+            }
+            let mut targets = targets.into_iter().enumerate();
+            ctx.charge_work(0, "STEP appearance target traversal")?;
+            for _ in 0..targets.len() {
+                let (target_index, target) = ctx
+                    .next_charged(&mut targets, "STEP appearance target traversal")?
+                    .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
+                scratch_storage.with_storage(|| {
+                    push_scalar_candidate(
+                        &mut scalar_color_candidates,
+                        &target,
+                        style_id,
+                        color,
+                        ctx,
+                    )
+                })?;
+                emitted = true;
+                ctx.reserve_vec(
+                    &mut ir.model.appearance_bindings,
+                    1,
+                    "step_presentation_appearance_bindings",
+                )?;
+                let binding = AppearanceBinding {
+                    id: ids::presentation(
+                        kind!("binding"),
+                        IdentityKey::from(style_id)
+                            .colon(target_ordinal)
+                            .dash(target_index),
+                    )
+                    .into(),
+                    target,
+                    appearance: appearance_id
+                        .try_clone_for_decode(ctx, "step_presentation_identity_copy")?,
+                    source_entity_id: Some(ctx.format_retained(
+                        format_args!("#{style_id}"),
+                        "step_presentation_source_entity_id",
+                    )?),
+                    object_type: None,
+                    visible: style_is_hidden(
+                        style_id,
+                        &hidden_style_ids,
+                        exchange,
+                        &mut style_visibility,
+                        &mut scratch_storage,
+                        ctx,
+                    )?
+                    .then_some(false),
+                    channels: BTreeMap::new(),
+                };
+                ir.model.appearance_bindings.push(binding);
+            }
         }
         if emitted && !deferred_invisibility.is_empty() {
             let mut ancestor = Some(style_id);
@@ -718,12 +765,20 @@ pub(super) fn decode<'ctx>(
     let mut deferred_invisibility = deferred_invisibility.into_iter();
     ctx.charge_work(0, "STEP deferred invisibility traversal")?;
     for _ in 0..deferred_invisibility.len() {
-        let (invisibility_id, (mut supported, style_targets, layer_targets)) = ctx.next_charged(&mut deferred_invisibility, "STEP deferred invisibility traversal")?
+        let (invisibility_id, (mut supported, style_targets, layer_targets)) = ctx
+            .next_charged(
+                &mut deferred_invisibility,
+                "STEP deferred invisibility traversal",
+            )?
             .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
         let mut style_targets = style_targets.into_iter();
         ctx.charge_work(0, "STEP deferred invisible style traversal")?;
         for _ in 0..style_targets.len() {
-            let style_id = ctx.next_charged(&mut style_targets, "STEP deferred invisible style traversal")?
+            let style_id = ctx
+                .next_charged(
+                    &mut style_targets,
+                    "STEP deferred invisible style traversal",
+                )?
                 .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
             if !ctx.contains_btree_set(
                 &emitted_style_ancestors,
@@ -733,9 +788,12 @@ pub(super) fn decode<'ctx>(
                 ctx.push_scoped_vec(
                     &mut slot_storage.borrow_mut(),
                     &mut losses,
-                    StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!(
-                        "INVISIBILITY #{invisibility_id} targets unsupported item #{style_id}"
-                    ), "step_presentation_loss_text")?),
+                    StepLossCode::DecodeWarning.note(ctx.format_retained(
+                        format_args!(
+                            "INVISIBILITY #{invisibility_id} targets unsupported item #{style_id}"
+                        ),
+                        "step_presentation_loss_text",
+                    )?),
                     "step_presentation_losses",
                 )?;
                 supported = false;
@@ -744,7 +802,11 @@ pub(super) fn decode<'ctx>(
         let mut layer_targets = layer_targets.into_iter();
         ctx.charge_work(0, "STEP deferred invisible layer traversal")?;
         for _ in 0..layer_targets.len() {
-            let layer_id = ctx.next_charged(&mut layer_targets, "STEP deferred invisible layer traversal")?
+            let layer_id = ctx
+                .next_charged(
+                    &mut layer_targets,
+                    "STEP deferred invisible layer traversal",
+                )?
                 .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
             if !ctx.contains_btree_set(
                 &emitted_layer_ids,
@@ -754,9 +816,12 @@ pub(super) fn decode<'ctx>(
                 ctx.push_scoped_vec(
                     &mut slot_storage.borrow_mut(),
                     &mut losses,
-                    StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!(
-                        "INVISIBILITY #{invisibility_id} targets unsupported item #{layer_id}"
-                    ), "step_presentation_loss_text")?),
+                    StepLossCode::DecodeWarning.note(ctx.format_retained(
+                        format_args!(
+                            "INVISIBILITY #{invisibility_id} targets unsupported item #{layer_id}"
+                        ),
+                        "step_presentation_loss_text",
+                    )?),
                     "step_presentation_losses",
                 )?;
                 supported = false;
@@ -776,13 +841,16 @@ pub(super) fn decode<'ctx>(
         let mut groups = lane.into_iter();
         ctx.charge_work(0, "STEP scalar color group traversal")?;
         for _ in 0..groups.len() {
-            let (_, (target, candidates)) = ctx.next_charged(&mut groups, "STEP scalar color group traversal")?
+            let (_, (target, candidates)) = ctx
+                .next_charged(&mut groups, "STEP scalar color group traversal")?
                 .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
             let mut selected = None::<Color>;
             let mut conflicting = false;
             // The candidate vector is a complete, infallible reduction. It is
             // fully consumed before any lookup, formatting, or output admission.
-            for (_, color) in ctx.admit_iter(&candidates, "STEP scalar color candidate traversal")? {
+            for (_, color) in
+                ctx.admit_iter(&candidates, "STEP scalar color candidate traversal")?
+            {
                 match selected {
                     None => selected = Some(*color),
                     Some(existing)
@@ -870,7 +938,14 @@ impl<'ctx, 'arena> InvisibleIndex<'ctx, 'arena> {
         exchange: &Exchange,
         topology: &TopologyData,
         body_indices: &BTreeMap<String, usize>,
-    ) -> Result<(InvisibleSummary, BTreeMap<BodyId, Option<usize>>, ScopedReservation<'ctx>), CodecError> {
+    ) -> Result<
+        (
+            InvisibleSummary,
+            BTreeMap<BodyId, Option<usize>>,
+            ScopedReservation<'ctx>,
+        ),
+        CodecError,
+    > {
         let ctx = self.ctx;
         let mut body_storage = ctx.reserve_scoped(0, "STEP invisible body selection scratch")?;
         let mut body_ids = BTreeMap::new();
@@ -882,8 +957,13 @@ impl<'ctx, 'arena> InvisibleIndex<'ctx, 'arena> {
         };
         let summary = body_storage.with_storage(|| {
             collect_invisible_body_ids(
-                id, exchange, topology, body_indices, &mut walk,
-                &mut body_ids, ctx,
+                id,
+                exchange,
+                topology,
+                body_indices,
+                &mut walk,
+                &mut body_ids,
+                ctx,
             )
         })?;
         Ok((summary, body_ids, body_storage))
@@ -940,7 +1020,11 @@ fn collect_invisible_body_ids_uncached(
 ) -> Result<InvisibleSummary, CodecError> {
     let _nested = ctx.enter_nested("step_presentation_invisible_body_walk")?;
     walk.active_storage.with_storage(|| {
-        ctx.insert_btree_set(&mut walk.active, id, "step_presentation_invisible_body_active")
+        ctx.insert_btree_set(
+            &mut walk.active,
+            id,
+            "step_presentation_invisible_body_active",
+        )
     })?;
     if let Some(ids) = ctx.get_btree_map(
         &topology.body_by_root,
@@ -951,28 +1035,55 @@ fn collect_invisible_body_ids_uncached(
         let mut source_body_ids = ids.iter();
         ctx.charge_work(0, "STEP presentation ids traversal")?;
         for _ in 0..source_body_ids.len() {
-            let body = ctx.next_charged(&mut source_body_ids, "STEP presentation ids traversal")?
+            let body = ctx
+                .next_charged(&mut source_body_ids, "STEP presentation ids traversal")?
                 .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
-            let index = if let Some(index) = ctx.get_btree_map(body_ids, body, "STEP body ids membership")? {
+            let index = if let Some(index) =
+                ctx.get_btree_map(body_ids, body, "STEP body ids membership")?
+            {
                 *index
             } else {
-                let body = body.try_clone_for_decode(ctx, "step_presentation_invisible_body_identity")?;
-                let index = ctx.get_btree_map(body_indices, body.as_str(), "STEP presentation body_indices get")?.copied();
-                ctx.insert_btree_map(body_ids, body, index, "step_presentation_invisible_body_ids")?;
+                let body =
+                    body.try_clone_for_decode(ctx, "step_presentation_invisible_body_identity")?;
+                let index = ctx
+                    .get_btree_map(
+                        body_indices,
+                        body.as_str(),
+                        "STEP presentation body_indices get",
+                    )?
+                    .copied();
+                ctx.insert_btree_map(
+                    body_ids,
+                    body,
+                    index,
+                    "step_presentation_invisible_body_ids",
+                )?;
                 index
             };
             hidden |= index.is_some();
         }
         ctx.remove_btree_set(&mut walk.active, &id, "STEP presentation active remove")?;
-        return Ok(if ids.is_empty() { InvisibleSummary::Unsupported } else { InvisibleSummary::Supported { hidden } });
+        return Ok(if ids.is_empty() {
+            InvisibleSummary::Unsupported
+        } else {
+            InvisibleSummary::Supported { hidden }
+        });
     }
     let fallback = BodyId::from(ids::data(kind!("body"), id));
-    if let Some(index) = ctx.get_btree_map(
-        body_indices,
-        fallback.as_str(),
-        "STEP presentation body_indices contains_key",
-    )?.copied() {
-        ctx.insert_btree_map(body_ids, fallback, Some(index), "step_presentation_invisible_body_ids")?;
+    if let Some(index) = ctx
+        .get_btree_map(
+            body_indices,
+            fallback.as_str(),
+            "STEP presentation body_indices contains_key",
+        )?
+        .copied()
+    {
+        ctx.insert_btree_map(
+            body_ids,
+            fallback,
+            Some(index),
+            "step_presentation_invisible_body_ids",
+        )?;
         ctx.remove_btree_set(&mut walk.active, &id, "STEP presentation active remove")?;
         return Ok(InvisibleSummary::Supported { hidden: true });
     }
@@ -1004,7 +1115,9 @@ fn collect_invisible_body_ids_uncached(
             )?;
             match child {
                 InvisibleSummary::Unsupported => supported = false,
-                InvisibleSummary::Supported { hidden: child_hidden } => hidden |= child_hidden,
+                InvisibleSummary::Supported {
+                    hidden: child_hidden,
+                } => hidden |= child_hidden,
             }
         }
     } else if ctx.any_by(
@@ -1016,7 +1129,8 @@ fn collect_invisible_body_ids_uncached(
             let mut values = values.iter();
             ctx.charge_work(0, "STEP representation item traversal")?;
             for _ in 0..values.len() {
-                let value = ctx.next_charged(&mut values, "STEP representation item traversal")?
+                let value = ctx
+                    .next_charged(&mut values, "STEP representation item traversal")?
                     .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
                 for reference in references(value, ctx) {
                     found_reference = true;
@@ -1031,14 +1145,20 @@ fn collect_invisible_body_ids_uncached(
                     )?;
                     match child {
                         InvisibleSummary::Unsupported => supported = false,
-                        InvisibleSummary::Supported { hidden: child_hidden } => hidden |= child_hidden,
+                        InvisibleSummary::Supported {
+                            hidden: child_hidden,
+                        } => hidden |= child_hidden,
                     }
                 }
             }
         }
     }
     ctx.remove_btree_set(&mut walk.active, &id, "STEP presentation active remove")?;
-    Ok(if found_reference && supported { InvisibleSummary::Supported { hidden } } else { InvisibleSummary::Unsupported })
+    Ok(if found_reference && supported {
+        InvisibleSummary::Supported { hidden }
+    } else {
+        InvisibleSummary::Unsupported
+    })
 }
 
 fn expand_style_targets<F: FnMut(u64) -> Result<(), CodecError>>(
@@ -1092,7 +1212,8 @@ fn expand_style_targets<F: FnMut(u64) -> Result<(), CodecError>>(
     let mut values = values.iter();
     ctx.charge_work(0, "STEP geometric style set traversal")?;
     for _ in 0..values.len() {
-        let value = ctx.next_charged(&mut values, "STEP geometric style set traversal")?
+        let value = ctx
+            .next_charged(&mut values, "STEP geometric style set traversal")?
             .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
         if let Some(item) = ValueExt::reference(value) {
             ctx.charge_work(1, "STEP style target edge")?;
@@ -1129,7 +1250,8 @@ fn appearance_targets(
         let mut bodies = bodies.iter();
         ctx.charge_work(0, "STEP presentation bodies traversal")?;
         for _ in 0..bodies.len() {
-            let body = ctx.next_charged(&mut bodies, "STEP presentation bodies traversal")?
+            let body = ctx
+                .next_charged(&mut bodies, "STEP presentation bodies traversal")?
                 .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
             if ctx.contains_key_btree_map(
                 indices.bodies,
@@ -1156,7 +1278,8 @@ fn appearance_targets(
         let mut faces = faces.iter();
         ctx.charge_work(0, "STEP presentation faces traversal")?;
         for _ in 0..faces.len() {
-            let face = ctx.next_charged(&mut faces, "STEP presentation faces traversal")?
+            let face = ctx
+                .next_charged(&mut faces, "STEP presentation faces traversal")?
                 .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
             if ctx.contains_key_btree_map(
                 indices.faces,
@@ -1183,7 +1306,8 @@ fn appearance_targets(
         let mut edges = edges.iter();
         ctx.charge_work(0, "STEP presentation edges traversal")?;
         for _ in 0..edges.len() {
-            let edge = ctx.next_charged(&mut edges, "STEP presentation edges traversal")?
+            let edge = ctx
+                .next_charged(&mut edges, "STEP presentation edges traversal")?
                 .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
             if ctx.contains_btree_set(&entity_ids.edges, edge.as_str(), "STEP edges membership")? {
                 let edge =
@@ -1206,7 +1330,8 @@ fn appearance_targets(
         let mut vertices = vertices.iter();
         ctx.charge_work(0, "STEP presentation vertices traversal")?;
         for _ in 0..vertices.len() {
-            let vertex = ctx.next_charged(&mut vertices, "STEP presentation vertices traversal")?
+            let vertex = ctx
+                .next_charged(&mut vertices, "STEP presentation vertices traversal")?
                 .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
             if ctx.contains_btree_set(
                 &entity_ids.vertices,
@@ -1282,7 +1407,10 @@ fn appearance_targets(
         "STEP presentation record contains_key",
     )? {
         Some(AppearanceTarget::Source {
-            source_id: ctx.format_retained(format_args!("#{id}"), "step_presentation_source_target_text")?,
+            source_id: ctx.format_retained(
+                format_args!("#{id}"),
+                "step_presentation_source_target_text",
+            )?,
         })
     } else {
         None
@@ -1315,7 +1443,8 @@ fn append_presentation_items(
         let mut bodies = bodies.iter();
         ctx.charge_work(0, "STEP presentation bodies traversal")?;
         for _ in 0..bodies.len() {
-            let body = ctx.next_charged(&mut bodies, "STEP presentation bodies traversal")?
+            let body = ctx
+                .next_charged(&mut bodies, "STEP presentation bodies traversal")?
                 .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
             if ctx.contains_key_btree_map(
                 indices.bodies,
@@ -1341,7 +1470,8 @@ fn append_presentation_items(
         let mut faces = faces.iter();
         ctx.charge_work(0, "STEP presentation faces traversal")?;
         for _ in 0..faces.len() {
-            let face = ctx.next_charged(&mut faces, "STEP presentation faces traversal")?
+            let face = ctx
+                .next_charged(&mut faces, "STEP presentation faces traversal")?
                 .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
             if ctx.contains_key_btree_map(
                 indices.faces,
@@ -1367,7 +1497,8 @@ fn append_presentation_items(
         let mut edges = edges.iter();
         ctx.charge_work(0, "STEP presentation edges traversal")?;
         for _ in 0..edges.len() {
-            let edge = ctx.next_charged(&mut edges, "STEP presentation edges traversal")?
+            let edge = ctx
+                .next_charged(&mut edges, "STEP presentation edges traversal")?
                 .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
             if ctx.contains_btree_set(&entity_ids.edges, edge.as_str(), "STEP edges membership")? {
                 let edge =
@@ -1389,7 +1520,8 @@ fn append_presentation_items(
         let mut vertices = vertices.iter();
         ctx.charge_work(0, "STEP presentation vertices traversal")?;
         for _ in 0..vertices.len() {
-            let vertex = ctx.next_charged(&mut vertices, "STEP presentation vertices traversal")?
+            let vertex = ctx
+                .next_charged(&mut vertices, "STEP presentation vertices traversal")?
                 .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
             if ctx.contains_btree_set(
                 &entity_ids.vertices,
@@ -1415,7 +1547,8 @@ fn append_presentation_items(
         let mut products = products.iter();
         ctx.charge_work(0, "STEP presentation products traversal")?;
         for _ in 0..products.len() {
-            let product = ctx.next_charged(&mut products, "STEP presentation products traversal")?
+            let product = ctx
+                .next_charged(&mut products, "STEP presentation products traversal")?
                 .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
             let product =
                 product.try_clone_for_decode(ctx, "step_presentation_layer_product_identity")?;
@@ -1632,7 +1765,8 @@ fn collect_identity_indices<'a>(
     let mut identities = identities.into_iter().enumerate();
     ctx.charge_work(0, operation)?;
     for _ in 0..identities.len() {
-        let (index, identity) = ctx.next_charged(&mut identities, operation)?
+        let (index, identity) = ctx
+            .next_charged(&mut identities, operation)?
             .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
         if let Some(existing) =
             ctx.get_mut_btree_map(&mut result, identity, "STEP presentation result get_mut")?
@@ -1710,7 +1844,8 @@ fn context_style_message(
     let mut ids = ids.iter();
     ctx.charge_work(0, "STEP context style detail traversal")?;
     for _ in 0..ids.len() {
-        let context_style_id = ctx.next_charged(&mut ids, "STEP context style detail traversal")?
+        let context_style_id = ctx
+            .next_charged(&mut ids, "STEP context style detail traversal")?
             .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
         let context = ctx
             .get_btree_map(
@@ -1755,7 +1890,8 @@ fn scalar_conflict_message(
     let mut candidates = candidates.iter();
     ctx.charge_work(0, "STEP scalar style detail traversal")?;
     for _ in 0..candidates.len() {
-        let (style_id, _) = ctx.next_charged(&mut candidates, "STEP scalar style detail traversal")?
+        let (style_id, _) = ctx
+            .next_charged(&mut candidates, "STEP scalar style detail traversal")?
             .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
         let part = storage.with_storage(|| {
             ctx.format_retained(format_args!("#{style_id}"), "STEP scalar style details")
@@ -1841,7 +1977,8 @@ fn style_application_order(
     let mut path = path.iter().rev();
     ctx.charge_work(0, "STEP style depth path result traversal")?;
     for _ in 0..path.len() {
-        let style = ctx.next_charged(&mut path, "STEP style depth path result traversal")?
+        let style = ctx
+            .next_charged(&mut path, "STEP style depth path result traversal")?
             .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
         if !first {
             depth = depth.and_then(|depth| depth.checked_add(1));
@@ -1989,7 +2126,11 @@ struct ColorResult {
 // Explicitly visited completions keep local claims. Shared hits also
 // claim their completed descendants.
 #[derive(Clone, Copy)]
-enum ColorCacheSource { Local, Completed, Shared }
+enum ColorCacheSource {
+    Local,
+    Completed,
+    Shared,
+}
 
 struct ColorCacheEntry {
     color: usize,
@@ -2034,34 +2175,63 @@ impl<'ctx> ColorCompletions<'ctx> {
     ) -> Result<(), CodecError> {
         let mut walk_storage = ctx.reserve_scoped(0, "STEP shared color claim walk")?;
         let mut pending = Vec::new();
-        ctx.push_scoped_vec(&mut walk_storage, &mut pending, root, "STEP shared color claim pending")?;
+        ctx.push_scoped_vec(
+            &mut walk_storage,
+            &mut pending,
+            root,
+            "STEP shared color claim pending",
+        )?;
         while !pending.is_empty() {
             ctx.charge_work(1, "STEP shared color claim step")?;
-            let key = pending.pop().ok_or_else(|| CodecError::malformed("STEP shared color claim node missing"))?;
+            let key = pending
+                .pop()
+                .ok_or_else(|| CodecError::malformed("STEP shared color claim node missing"))?;
             if ctx.contains_btree_set(&self.claimed, &key, "STEP shared color claimed lookup")? {
                 continue;
             }
             // Missing records and context styles have no completion or claim.
-            let Some(node) = ctx.get_btree_map(&self.values, &key, "STEP shared color claim lookup")? else {
+            let Some(node) =
+                ctx.get_btree_map(&self.values, &key, "STEP shared color claim lookup")?
+            else {
                 continue;
             };
-            self.storage.with_storage(|| ctx.insert_btree_set(&mut self.claimed, key, "STEP shared color claimed"))?;
-            storage.with_storage(|| ctx.insert_btree_set(claims, key.0, "step_presentation_typed_claims"))?;
+            self.storage.with_storage(|| {
+                ctx.insert_btree_set(&mut self.claimed, key, "STEP shared color claimed")
+            })?;
+            storage.with_storage(|| {
+                ctx.insert_btree_set(claims, key.0, "step_presentation_typed_claims")
+            })?;
             if node.height == 0 {
                 continue;
             }
-            let record = ctx.get_btree_map(exchange.records(), &key.0, "STEP shared color claim record lookup")?
+            let record = ctx
+                .get_btree_map(
+                    exchange.records(),
+                    &key.0,
+                    "STEP shared color claim record lookup",
+                )?
                 .ok_or_else(|| CodecError::malformed("STEP shared color claim record missing"))?;
             let mut partials = record.partials.iter();
             for _ in 0..partials.len() {
-                let partial = ctx.next_charged(&mut partials, "STEP shared color claim partials")?
-                    .ok_or_else(|| CodecError::malformed("STEP shared color claim partial missing"))?;
+                let partial = ctx
+                    .next_charged(&mut partials, "STEP shared color claim partials")?
+                    .ok_or_else(|| {
+                        CodecError::malformed("STEP shared color claim partial missing")
+                    })?;
                 let mut parameters = partial.parameters.iter();
                 for _ in 0..parameters.len() {
-                    let value = ctx.next_charged(&mut parameters, "STEP shared color claim parameters")?
-                        .ok_or_else(|| CodecError::malformed("STEP shared color claim parameter missing"))?;
+                    let value = ctx
+                        .next_charged(&mut parameters, "STEP shared color claim parameters")?
+                        .ok_or_else(|| {
+                            CodecError::malformed("STEP shared color claim parameter missing")
+                        })?;
                     for child in references(value, ctx) {
-                        ctx.push_scoped_vec(&mut walk_storage, &mut pending, (child?, key.1), "STEP shared color claim pending")?;
+                        ctx.push_scoped_vec(
+                            &mut walk_storage,
+                            &mut pending,
+                            (child?, key.1),
+                            "STEP shared color claim pending",
+                        )?;
                     }
                 }
             }
@@ -2121,7 +2291,8 @@ impl<'source, 'ctx, 'arena> StyleColors<'source, 'ctx, 'arena> {
         let mut reference_prefix = references.iter();
         ctx.charge_work(0, "STEP style color query references")?;
         for _ in 0..reference_prefix.len() {
-            let &reference = ctx.next_charged(&mut reference_prefix, "STEP style color query references")?
+            let &reference = ctx
+                .next_charged(&mut reference_prefix, "STEP style color query references")?
                 .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
             let next = self.prefixes.len() + 1;
             prefix = match self.storage.with_storage(|| {
@@ -2151,10 +2322,11 @@ impl<'source, 'ctx, 'arena> StyleColors<'source, 'ctx, 'arena> {
                 let mut references = references.iter().copied();
                 ctx.charge_work(0, "STEP color reference traversal")?;
                 let resolutions = (0..references.len()).map(|_| {
-                    let reference = ctx.next_charged(
-                        &mut references,
-                        "STEP color reference traversal",
-                    )?.ok_or_else(|| CodecError::malformed("STEP color reference source ended early"))?;
+                    let reference = ctx
+                        .next_charged(&mut references, "STEP color reference traversal")?
+                        .ok_or_else(|| {
+                            CodecError::malformed("STEP color reference source ended early")
+                        })?;
                     find_color(
                         reference,
                         exchange,
@@ -2168,7 +2340,7 @@ impl<'source, 'ctx, 'arena> StyleColors<'source, 'ctx, 'arena> {
                             invalid_surface_sides: &mut invalid_surface_sides,
                         },
                         0,
-                    Some((&mut self.frames, &mut self.frame_storage)),
+                        Some((&mut self.frames, &mut self.frame_storage)),
                         ctx,
                     )
                 });
@@ -2186,14 +2358,21 @@ impl<'source, 'ctx, 'arena> StyleColors<'source, 'ctx, 'arena> {
                 let mut cache_entries = cache.values.iter();
                 ctx.charge_work(0, "STEP color claim cache traversal")?;
                 for _ in 0..cache_entries.len() {
-                    let (&key, entry) = ctx.next_charged(&mut cache_entries, "STEP color claim cache traversal")?
-                        .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
+                    let (&key, entry) = ctx
+                        .next_charged(&mut cache_entries, "STEP color claim cache traversal")?
+                        .ok_or_else(|| {
+                            CodecError::malformed("STEP presentation source ended early")
+                        })?;
                     if !ctx.contains_btree_set(
                         &invalid_surface_sides,
                         &key.0,
                         "STEP presentation invalid_surface_sides contains",
                     )? {
-                        ctx.push_vec(&mut claims, (key, matches!(entry.source, ColorCacheSource::Shared)), "step_style_color_claims")?;
+                        ctx.push_vec(
+                            &mut claims,
+                            (key, matches!(entry.source, ColorCacheSource::Shared)),
+                            "step_style_color_claims",
+                        )?;
                     }
                 }
                 let cached = CachedStyleColors {
@@ -2229,7 +2408,8 @@ impl<'source, 'ctx, 'arena> StyleColors<'source, 'ctx, 'arena> {
             let mut cached_losses = cached.losses.iter();
             ctx.charge_work(0, "STEP cached color loss traversal")?;
             for _ in 0..cached_losses.len() {
-                let loss = ctx.next_charged(&mut cached_losses, "STEP cached color loss traversal")?
+                let loss = ctx
+                    .next_charged(&mut cached_losses, "STEP cached color loss traversal")?
                     .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
                 let loss = loss.try_clone_for_decode(ctx, "step_style_color_loss_copy")?;
                 ctx.push_scoped_vec(
@@ -2262,12 +2442,16 @@ impl<'source, 'ctx, 'arena> StyleColors<'source, 'ctx, 'arena> {
             let mut cached_claims = cached.claims.iter();
             ctx.charge_work(0, "STEP style color claim traversal")?;
             for _ in 0..cached_claims.len() {
-                let &(key, shared) = ctx.next_charged(&mut cached_claims, "STEP style color claim traversal")?
+                let &(key, shared) = ctx
+                    .next_charged(&mut cached_claims, "STEP style color claim traversal")?
                     .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
                 if shared {
-                    self.completed.claim(key, (claims, storage), self.exchange, ctx)?;
+                    self.completed
+                        .claim(key, (claims, storage), self.exchange, ctx)?;
                 } else {
-                    storage.with_storage(|| ctx.insert_btree_set(claims, key.0, "step_presentation_typed_claims"))?;
+                    storage.with_storage(|| {
+                        ctx.insert_btree_set(claims, key.0, "step_presentation_typed_claims")
+                    })?;
                 }
             }
             cached.claims_applied = true;
@@ -2318,7 +2502,10 @@ fn find_color<'exchange, 'ctx, 'arena>(
     domain: StyleDomain,
     state: ColorSearchState<'_, '_>,
     depth: usize,
-    walk: Option<(&mut Vec<ColorFrame<'exchange, 'ctx, 'arena>>, &mut ScopedReservation<'ctx>)>,
+    walk: Option<(
+        &mut Vec<ColorFrame<'exchange, 'ctx, 'arena>>,
+        &mut ScopedReservation<'ctx>,
+    )>,
     ctx: &'ctx DecodeContext<'arena>,
 ) -> Result<CachedColor, CodecError> {
     let ColorSearchState {
@@ -2359,18 +2546,15 @@ fn find_color<'exchange, 'ctx, 'arena>(
 
     loop {
         let child_id = next_color_reference(
-            frames.last_mut().ok_or_else(|| {
-                CodecError::malformed("STEP color traversal has no active frame")
-            })?,
+            frames
+                .last_mut()
+                .ok_or_else(|| CodecError::malformed("STEP color traversal has no active frame"))?,
             ctx,
         )?;
         if let Some(child_id) = child_id {
-            let child_depth = frames
-                .last()
-                .map(|frame| frame.depth + 1)
-                .ok_or_else(|| {
-                    CodecError::malformed("STEP color traversal lost its parent frame")
-                })?;
+            let child_depth = frames.last().map(|frame| frame.depth + 1).ok_or_else(|| {
+                CodecError::malformed("STEP color traversal lost its parent frame")
+            })?;
             let child = begin_color_visit(
                 child_id,
                 exchange,
@@ -2391,11 +2575,18 @@ fn find_color<'exchange, 'ctx, 'arena>(
                     let parent = frames.last_mut().ok_or_else(|| {
                         CodecError::malformed("STEP color traversal lost its parent frame")
                     })?;
-                    parent.result.height = parent.result.height.zip(result.height).and_then(|(height, child)| child.checked_add(1).map(|child| height.max(child)));
+                    parent.result.height =
+                        parent
+                            .result
+                            .height
+                            .zip(result.height)
+                            .and_then(|(height, child)| {
+                                child.checked_add(1).map(|child| height.max(child))
+                            });
                     if parent.combine_children {
-                        let result = result.color.map(|candidate| {
-                            candidate.with_min_rank(parent.side_rank)
-                        });
+                        let result = result
+                            .color
+                            .map(|candidate| candidate.with_min_rank(parent.side_rank));
                         parent.result.color = combine_color_resolutions([
                             Ok(std::mem::take(&mut parent.result.color)),
                             Ok(result),
@@ -2412,9 +2603,9 @@ fn find_color<'exchange, 'ctx, 'arena>(
             continue;
         }
 
-        let frame = frames.pop().ok_or_else(|| {
-            CodecError::malformed("STEP color traversal ended without a frame")
-        })?;
+        let frame = frames
+            .pop()
+            .ok_or_else(|| CodecError::malformed("STEP color traversal ended without a frame"))?;
         let ColorFrame {
             id,
             transparency,
@@ -2444,9 +2635,15 @@ fn find_color<'exchange, 'ctx, 'arena>(
         let Some(parent) = frames.last_mut() else {
             return Ok(result.color);
         };
-        parent.result.height = parent.result.height.zip(result.height).and_then(|(height, child)| child.checked_add(1).map(|child| height.max(child)));
+        parent.result.height = parent
+            .result
+            .height
+            .zip(result.height)
+            .and_then(|(height, child)| child.checked_add(1).map(|child| height.max(child)));
         if parent.combine_children {
-            let result = result.color.map(|candidate| candidate.with_min_rank(parent.side_rank));
+            let result = result
+                .color
+                .map(|candidate| candidate.with_min_rank(parent.side_rank));
             parent.result.color = combine_color_resolutions([
                 Ok(std::mem::take(&mut parent.result.color)),
                 Ok(result),
@@ -2472,13 +2669,21 @@ fn begin_color_visit<'exchange, 'ctx, 'arena>(
         invalid_surface_sides,
     } = state;
     if depth >= 256 {
-        return Ok(ColorVisit::Complete(ColorResult { color: None, height: None }));
+        return Ok(ColorVisit::Complete(ColorResult {
+            color: None,
+            height: None,
+        }));
     }
-    if let Some(result) = ctx.get_btree_map(&cache.values, &(id, domain), "STEP presentation cache get")? {
+    if let Some(result) =
+        ctx.get_btree_map(&cache.values, &(id, domain), "STEP presentation cache get")?
+    {
         let color = match result.source {
             ColorCacheSource::Local => cache.colors.get(result.color),
-            ColorCacheSource::Completed | ColorCacheSource::Shared => completed.as_ref().and_then(|completed| completed.colors.get(result.color)),
-        }.ok_or_else(|| CodecError::malformed("STEP color cache value missing"))?;
+            ColorCacheSource::Completed | ColorCacheSource::Shared => completed
+                .as_ref()
+                .and_then(|completed| completed.colors.get(result.color)),
+        }
+        .ok_or_else(|| CodecError::malformed("STEP color cache value missing"))?;
         let result = storage.borrow_mut().with_storage(|| {
             Ok::<_, CodecError>(ColorResult {
                 color: clone_color_resolution(color, ctx, "step_presentation_color_cache_copy")?,
@@ -2488,14 +2693,29 @@ fn begin_color_visit<'exchange, 'ctx, 'arena>(
         return Ok(ColorVisit::Complete(result));
     }
     if let Some(completed) = completed.as_deref_mut() {
-        if let Some(result) = ctx.get_btree_map(&completed.values, &(id, domain), "STEP completed color lookup")? {
+        if let Some(result) = ctx.get_btree_map(
+            &completed.values,
+            &(id, domain),
+            "STEP completed color lookup",
+        )? {
             if depth + usize::from(result.height) < 256 {
                 let result = storage.borrow_mut().with_storage(|| {
-                    let color = completed.colors.get(result.color)
-                        .ok_or_else(|| CodecError::malformed("STEP completed color value missing"))?;
-                    let color = clone_color_resolution(color, ctx, "step_presentation_color_cache_copy")?;
+                    let color = completed.colors.get(result.color).ok_or_else(|| {
+                        CodecError::malformed("STEP completed color value missing")
+                    })?;
+                    let color =
+                        clone_color_resolution(color, ctx, "step_presentation_color_cache_copy")?;
                     let height = Some(result.height);
-                    ctx.insert_btree_map(&mut cache.values, (id, domain), ColorCacheEntry { color: result.color, source: ColorCacheSource::Shared, height }, "step_presentation_color_cache_entries")?;
+                    ctx.insert_btree_map(
+                        &mut cache.values,
+                        (id, domain),
+                        ColorCacheEntry {
+                            color: result.color,
+                            source: ColorCacheSource::Shared,
+                            height,
+                        },
+                        "step_presentation_color_cache_entries",
+                    )?;
                     Ok::<_, CodecError>(ColorResult { color, height })
                 })?;
                 return Ok(ColorVisit::Complete(result));
@@ -2505,13 +2725,22 @@ fn begin_color_visit<'exchange, 'ctx, 'arena>(
     let Some(record) =
         ctx.get_btree_map(exchange.records(), &id, "STEP presentation record get")?
     else {
-        return Ok(ColorVisit::Complete(ColorResult { color: None, height: Some(0) }));
+        return Ok(ColorVisit::Complete(ColorResult {
+            color: None,
+            height: Some(0),
+        }));
     };
     if is_presentation_style_by_context(ctx, record)? {
-        return Ok(ColorVisit::Complete(ColorResult { color: None, height: Some(0) }));
+        return Ok(ColorVisit::Complete(ColorResult {
+            color: None,
+            height: Some(0),
+        }));
     }
     if ctx.contains_btree_set(active, &id, "STEP presentation active contains")? {
-        return Ok(ColorVisit::Complete(ColorResult { color: None, height: None }));
+        return Ok(ColorVisit::Complete(ColorResult {
+            color: None,
+            height: None,
+        }));
     }
     let depth_guard = ctx.enter_nested("step_presentation_color_walk")?;
     storage
@@ -2521,11 +2750,18 @@ fn begin_color_visit<'exchange, 'ctx, 'arena>(
     // Surface fallback can exclude an invalid usage from claims even when
     // another partial selects this record's non-surface domain.
     let height = if matches!(domain, StyleDomain::Curve | StyleDomain::Point) {
-        record.partial(ctx, "SURFACE_STYLE_USAGE")?.is_none_or(|usage| matches!(
-            usage.parameters.first().and_then(ValueExt::enumeration),
-            Some("BOTH" | "POSITIVE" | "NEGATIVE")
-        )).then_some(0)
-    } else { Some(0) };
+        record
+            .partial(ctx, "SURFACE_STYLE_USAGE")?
+            .is_none_or(|usage| {
+                matches!(
+                    usage.parameters.first().and_then(ValueExt::enumeration),
+                    Some("BOTH" | "POSITIVE" | "NEGATIVE")
+                )
+            })
+            .then_some(0)
+    } else {
+        Some(0)
+    };
     let body = (|| -> Result<ColorBody<'exchange>, CodecError> {
         let transparency = if domain == StyleDomain::Surface {
             surface_transparency(id, record, exchange, (losses, slot_storage), ctx)?
@@ -2716,7 +2952,10 @@ fn begin_color_visit<'exchange, 'ctx, 'arena>(
                 });
             }
         };
-        Ok(ColorBody::Ready { transparency, result })
+        Ok(ColorBody::Ready {
+            transparency,
+            result,
+        })
     })()?;
     match body {
         ColorBody::Ready {
@@ -2727,7 +2966,10 @@ fn begin_color_visit<'exchange, 'ctx, 'arena>(
                 id,
                 domain,
                 transparency,
-                ColorResult { color: result, height },
+                ColorResult {
+                    color: result,
+                    height,
+                },
                 ColorSearchState {
                     storage,
                     active,
@@ -2761,7 +3003,10 @@ fn begin_color_visit<'exchange, 'ctx, 'arena>(
             parameter_operation,
             parameters: None,
             references: None,
-            result: ColorResult { color: None, height },
+            result: ColorResult {
+                color: None,
+                height,
+            },
             _depth: depth_guard,
         })),
     }
@@ -2796,7 +3041,8 @@ fn next_color_reference<'exchange, 'ctx, 'arena>(
         if frame.partials.as_slice().is_empty() {
             return Ok(None);
         }
-        let partial = ctx.next_charged(&mut frame.partials, frame.partial_operation)?
+        let partial = ctx
+            .next_charged(&mut frame.partials, frame.partial_operation)?
             .ok_or_else(|| CodecError::malformed("STEP color partial source ended early"))?;
         frame.parameters = Some(partial.parameters.iter());
     }
@@ -2837,14 +3083,27 @@ fn finish_color(
     let mut shared = None;
     if let (Some(completed), Some(height)) = (completed, result.height) {
         if depth + usize::from(height) < 256 {
-            if let Some(cached) = ctx.get_btree_map(&completed.values, &(id, domain), "STEP completed color lookup")? {
+            if let Some(cached) = ctx.get_btree_map(
+                &completed.values,
+                &(id, domain),
+                "STEP completed color lookup",
+            )? {
                 shared = Some(cached.color);
             } else {
                 let index = completed.colors.len();
                 completed.storage.with_storage(|| {
-                    let color = clone_color_resolution(&result.color, ctx, "STEP completed color value")?;
+                    let color =
+                        clone_color_resolution(&result.color, ctx, "STEP completed color value")?;
                     ctx.push_vec(&mut completed.colors, color, "STEP completed color values")?;
-                    ctx.insert_btree_map(&mut completed.values, (id, domain), CompletedColor { color: index, height }, "STEP completed color entries")
+                    ctx.insert_btree_map(
+                        &mut completed.values,
+                        (id, domain),
+                        CompletedColor {
+                            color: index,
+                            height,
+                        },
+                        "STEP completed color entries",
+                    )
                 })?;
                 shared = Some(index);
             }
@@ -2855,7 +3114,8 @@ fn finish_color(
     } else {
         let index = cache.colors.len();
         storage.borrow_mut().with_storage(|| {
-            let color = clone_color_resolution(&result.color, ctx, "step_presentation_color_cache_value")?;
+            let color =
+                clone_color_resolution(&result.color, ctx, "step_presentation_color_cache_value")?;
             ctx.push_vec(&mut cache.colors, color, "STEP local color values")
         })?;
         (index, ColorCacheSource::Local)
@@ -2864,7 +3124,11 @@ fn finish_color(
         ctx.insert_btree_map(
             &mut cache.values,
             (id, domain),
-            ColorCacheEntry { color, source, height: result.height },
+            ColorCacheEntry {
+                color,
+                source,
+                height: result.height,
+            },
             "step_presentation_color_cache_entries",
         )
     })?;
@@ -2888,7 +3152,11 @@ fn surface_transparency(
         let mut parameters = partial.parameters.iter();
         ctx.charge_work(0, "STEP surface transparency parameter traversal")?;
         for _ in 0..parameters.len() {
-            let value = ctx.next_charged(&mut parameters, "STEP surface transparency parameter traversal")?
+            let value = ctx
+                .next_charged(
+                    &mut parameters,
+                    "STEP surface transparency parameter traversal",
+                )?
                 .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
             for property_id in references(value, ctx) {
                 let property_id = property_id?;
@@ -2927,7 +3195,8 @@ fn surface_transparency(
             let mut candidates = candidates.iter();
             ctx.charge_work(0, "STEP transparency detail traversal")?;
             for _ in 0..candidates.len() {
-                let &(property_id, transparency) = ctx.next_charged(&mut candidates, "STEP transparency detail traversal")?
+                let &(property_id, transparency) = ctx
+                    .next_charged(&mut candidates, "STEP transparency detail traversal")?
                     .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
                 let part = detail_storage.with_storage(|| {
                     ctx.format_retained(
@@ -2981,9 +3250,10 @@ fn surface_side_rank(
         ctx.push_scoped_vec(
             &mut slot_storage.borrow_mut(),
             losses,
-            StepLossCode::SurfaceSideInvalid.note(ctx.format_retained(format_args!(
-                "SURFACE_STYLE_USAGE #{id} has no valid surface_side; style omitted"
-            ), "step_presentation_loss_text")?),
+            StepLossCode::SurfaceSideInvalid.note(ctx.format_retained(
+                format_args!("SURFACE_STYLE_USAGE #{id} has no valid surface_side; style omitted"),
+                "step_presentation_loss_text",
+            )?),
             "step_presentation_losses",
         )?;
         return Ok(None);
@@ -3057,10 +3327,19 @@ impl<'ctx, 'arena> StyleDomainIndex<'ctx, 'arena> {
     }
 
     fn domain(&mut self, id: u64, exchange: &Exchange) -> Result<StyleDomain, CodecError> {
-        let mut active_storage = self.ctx.reserve_scoped(0, "STEP style domain active scratch")?;
+        let mut active_storage = self
+            .ctx
+            .reserve_scoped(0, "STEP style domain active scratch")?;
         let mut active = BTreeSet::new();
         self.storage.with_storage(|| {
-            style_domain_at(id, exchange, &mut active, &mut self.complete, &mut active_storage, self.ctx)
+            style_domain_at(
+                id,
+                exchange,
+                &mut active,
+                &mut self.complete,
+                &mut active_storage,
+                self.ctx,
+            )
         })
     }
 }
@@ -3126,7 +3405,8 @@ fn style_domain_uncached(
         let mut members = members.iter();
         ctx.charge_work(0, "STEP style domain member traversal")?;
         for _ in 0..members.len() {
-            let value = ctx.next_charged(&mut members, "STEP style domain member traversal")?
+            let value = ctx
+                .next_charged(&mut members, "STEP style domain member traversal")?
                 .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
             let Some(member) = ValueExt::reference(value) else {
                 continue;
@@ -3149,23 +3429,21 @@ fn style_domain_uncached(
             &record.partials[..],
             |partial| -> Result<Option<()>, CodecError> {
                 let name = partial.name.as_str();
-                Ok(
-                    (ctx
+                Ok((ctx
+                    .position_by(
+                        name.as_bytes().windows(b"POINT".len()),
+                        |window| Ok(window == &b"POINT"[..]),
+                        "STEP style domain point containment",
+                    )?
+                    .is_some()
+                    || ctx
                         .position_by(
-                            name.as_bytes().windows(b"POINT".len()),
-                            |window| Ok(window == &b"POINT"[..]),
-                            "STEP style domain point containment",
+                            name.as_bytes().windows(b"VERTEX".len()),
+                            |window| Ok(window == &b"VERTEX"[..]),
+                            "STEP style domain vertex containment",
                         )?
-                        .is_some()
-                        || ctx
-                            .position_by(
-                                name.as_bytes().windows(b"VERTEX".len()),
-                                |window| Ok(window == &b"VERTEX"[..]),
-                                "STEP style domain vertex containment",
-                            )?
-                            .is_some())
-                    .then_some(()),
-                )
+                        .is_some())
+                .then_some(()))
             },
             "STEP style domain at traversal",
         )?
@@ -3179,34 +3457,32 @@ fn style_domain_uncached(
             &record.partials[..],
             |partial| -> Result<Option<()>, CodecError> {
                 let name = partial.name.as_str();
-                Ok(
-                    (ctx
+                Ok((ctx
+                    .position_by(
+                        name.as_bytes().windows(b"CURVE".len()),
+                        |window| Ok(window == &b"CURVE"[..]),
+                        "STEP style domain curve containment",
+                    )?
+                    .is_some()
+                    || ctx
                         .position_by(
-                            name.as_bytes().windows(b"CURVE".len()),
-                            |window| Ok(window == &b"CURVE"[..]),
-                            "STEP style domain curve containment",
+                            name.as_bytes().windows(b"EDGE".len()),
+                            |window| Ok(window == &b"EDGE"[..]),
+                            "STEP style domain edge containment",
                         )?
                         .is_some()
-                        || ctx
-                            .position_by(
-                                name.as_bytes().windows(b"EDGE".len()),
-                                |window| Ok(window == &b"EDGE"[..]),
-                                "STEP style domain edge containment",
-                            )?
-                            .is_some()
-                        || ctx
-                            .position_by(
-                                name.as_bytes().windows(b"_LINE".len()),
-                                |window| Ok(window == &b"_LINE"[..]),
-                                "STEP style domain line containment",
-                            )?
-                            .is_some()
-                        || matches!(
-                            name,
-                            "LINE" | "POLYLINE" | "CIRCLE" | "ELLIPSE" | "HYPERBOLA" | "PARABOLA"
-                        ))
-                    .then_some(()),
-                )
+                    || ctx
+                        .position_by(
+                            name.as_bytes().windows(b"_LINE".len()),
+                            |window| Ok(window == &b"_LINE"[..]),
+                            "STEP style domain line containment",
+                        )?
+                        .is_some()
+                    || matches!(
+                        name,
+                        "LINE" | "POLYLINE" | "CIRCLE" | "ELLIPSE" | "HYPERBOLA" | "PARABOLA"
+                    ))
+                .then_some(()))
             },
             "STEP style domain at traversal",
         )?
@@ -3220,41 +3496,39 @@ fn style_domain_uncached(
             &record.partials[..],
             |partial| -> Result<Option<()>, CodecError> {
                 let name = partial.name.as_str();
-                Ok(
-                    (ctx
+                Ok((ctx
+                    .position_by(
+                        name.as_bytes().windows(b"FACE".len()),
+                        |window| Ok(window == &b"FACE"[..]),
+                        "STEP style domain face containment",
+                    )?
+                    .is_some()
+                    || ctx
                         .position_by(
-                            name.as_bytes().windows(b"FACE".len()),
-                            |window| Ok(window == &b"FACE"[..]),
-                            "STEP style domain face containment",
+                            name.as_bytes().windows(b"SURFACE".len()),
+                            |window| Ok(window == &b"SURFACE"[..]),
+                            "STEP style domain surface containment",
                         )?
                         .is_some()
-                        || ctx
-                            .position_by(
-                                name.as_bytes().windows(b"SURFACE".len()),
-                                |window| Ok(window == &b"SURFACE"[..]),
-                                "STEP style domain surface containment",
-                            )?
-                            .is_some()
-                        || ctx
-                            .position_by(
-                                name.as_bytes().windows(b"SOLID".len()),
-                                |window| Ok(window == &b"SOLID"[..]),
-                                "STEP style domain solid containment",
-                            )?
-                            .is_some()
-                        || ctx
-                            .position_by(
-                                name.as_bytes().windows(b"SHELL".len()),
-                                |window| Ok(window == &b"SHELL"[..]),
-                                "STEP style domain shell containment",
-                            )?
-                            .is_some()
-                        || matches!(
-                            name,
-                            "PLANE" | "CYLINDER" | "CONE" | "SPHERE" | "TORUS" | "DEGENERATE_TORUS"
-                        ))
-                    .then_some(()),
-                )
+                    || ctx
+                        .position_by(
+                            name.as_bytes().windows(b"SOLID".len()),
+                            |window| Ok(window == &b"SOLID"[..]),
+                            "STEP style domain solid containment",
+                        )?
+                        .is_some()
+                    || ctx
+                        .position_by(
+                            name.as_bytes().windows(b"SHELL".len()),
+                            |window| Ok(window == &b"SHELL"[..]),
+                            "STEP style domain shell containment",
+                        )?
+                        .is_some()
+                    || matches!(
+                        name,
+                        "PLANE" | "CYLINDER" | "CONE" | "SPHERE" | "TORUS" | "DEGENERATE_TORUS"
+                    ))
+                .then_some(()))
             },
             "STEP style domain at traversal",
         )?
@@ -3333,7 +3607,8 @@ fn style_is_hidden(
     let mut path = path.into_iter();
     ctx.charge_work(0, "STEP hidden style path result traversal")?;
     for _ in 0..path.len() {
-        let style = ctx.next_charged(&mut path, "STEP hidden style path result traversal")?
+        let style = ctx
+            .next_charged(&mut path, "STEP hidden style path result traversal")?
             .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
         storage.with_storage(|| {
             ctx.insert_btree_map(cache, style, hidden, "STEP hidden style cache entries")

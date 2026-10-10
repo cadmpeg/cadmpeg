@@ -11,7 +11,7 @@ fn style_target_expansion_keeps_order_duplicates_cycles_and_depth_bound() {
     crate::test_support::with_service_context(source, |_, ctx| {
         for (graph_limit, expected) in [(64, vec![4, 4, 5]), (2, vec![5])] {
             let mut active_storage = ctx.reserve_scoped(0, "test active targets").expect("scope");
-        let mut claim_storage = ctx.reserve_scoped(0, "claim fixture").expect("scope");
+            let mut claim_storage = ctx.reserve_scoped(0, "claim fixture").expect("scope");
             let mut typed = BTreeSet::new();
             let mut active = BTreeSet::new();
             let mut targets = Vec::new();
