@@ -2275,10 +2275,10 @@ impl SurfaceParameterRecord {
                     Some([0x15] | [0x00, 0x15, 0x1c])
                 ) =>
             {
-                let end = contiguous_slots_end(frame)?;
                 let [first, _, second, a0, a1, a2, b0, b1, b2] = frame.slots.as_slice() else {
                     return None;
                 };
+                let end = contiguous_slots_end(frame)?;
                 frame_reaches_body_end(end).then_some(())?;
                 (
                     [first.value?, second.value?],
@@ -2289,14 +2289,14 @@ impl SurfaceParameterRecord {
                 )
             }
             [leading, trailing] if leading.slots.len() == 1 => {
-                let leading_end = contiguous_slots_end(leading)?;
                 let [first] = leading.slots.as_slice() else {
                     return None;
                 };
-                let trailing_end = contiguous_slots_end(trailing)?;
                 let [second, a0, a1, a2, b0, b1, b2] = trailing.slots.as_slice() else {
                     return None;
                 };
+                let leading_end = contiguous_slots_end(leading)?;
+                let trailing_end = contiguous_slots_end(trailing)?;
                 let controls_match = (leading.offset == 1
                     && matches!(self.body.first(), Some(0x11..=0x14))
                     && trailing.offset == leading_end + 1
@@ -2325,14 +2325,14 @@ impl SurfaceParameterRecord {
                 )
             }
             [leading, trailing] => {
-                let leading_end = contiguous_slots_end(leading)?;
                 let [_, first] = leading.slots.as_slice() else {
                     return None;
                 };
-                let trailing_end = contiguous_slots_end(trailing)?;
                 let [second, a0, a1, a2, b0, b1, b2] = trailing.slots.as_slice() else {
                     return None;
                 };
+                let leading_end = contiguous_slots_end(leading)?;
+                let trailing_end = contiguous_slots_end(trailing)?;
                 ((leading.offset == 0
                     || (leading.offset == 1 && matches!(self.body.first(), Some(0x19 | 0x32))))
                     && self.body.get(leading_end..trailing.offset) == Some(&[0x12])
@@ -2757,6 +2757,7 @@ pub(crate) fn positional_frame_planes(
             let [_, corners @ ..] = terminal.slots.as_slice() else {
                 return None;
             };
+            (corners.len() == 6).then_some(())?;
             let leading_end = leading_slot.offset.checked_add(leading_slot.raw.len())?;
             let terminal_end = terminal
                 .slots
@@ -2767,7 +2768,6 @@ pub(crate) fn positional_frame_planes(
             (leading.offset == 3
                 && leading_end == 10
                 && terminal.offset == 18
-                && corners.len() == 6
                 && terminal_end == record.body.len()
                 && record.opaque_spans.len() == 2
                 && record.opaque_spans[0].offset == 0
