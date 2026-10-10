@@ -36,5 +36,8 @@ fn pcurve_root_indexes_do_not_rebuild_all_carriers() {
     let small = root_index_work(32);
     let large = root_index_work(64);
     // Carrier count and root count double; one shared index grows with n log n.
-    assert!(large < 3 * small, "root index work grew from {small} to {large}");
+    assert!(
+        large < 3 * small,
+        "root index work grew from {small} to {large}"
+    );
 }
