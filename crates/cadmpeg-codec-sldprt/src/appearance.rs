@@ -428,10 +428,18 @@ pub(crate) fn resolve_display_appearances(
         }
     }
 
+    let _feature_records_storage;
+    let feature_records;
+    (feature_records, _feature_records_storage) =
+        ctx.with_scoped_storage("SLDPRT feature appearance workspace", || {
+            feature_assignments(ctx, scan)
+        })?;
+    let mut feature_index_storage =
+        ctx.reserve_scoped(0, "SLDPRT feature appearance index workspace")?;
     let mut feature_by_source =
-        HashMap::<FeatureSourceId, Option<FeatureAppearanceAssignment>>::new();
+        HashMap::<FeatureSourceId, Option<&FeatureAppearanceAssignment>>::new();
     for assignment in ctx.admit_iter(
-        feature_assignments(ctx, scan)?,
+        &feature_records,
         "scan SLDPRT feature appearance assignments",
     )? {
         if let Some(existing) = ctx.get_mut_hash_map(
@@ -446,28 +454,34 @@ pub(crate) fn resolve_display_appearances(
                 *existing = None;
             }
         } else {
-            ctx.insert_hash_map(
-                &mut feature_by_source,
-                assignment.feature_source_id,
-                Some(assignment),
-                "index SLDPRT feature appearances",
-            )?;
+            feature_index_storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut feature_by_source,
+                    assignment.feature_source_id,
+                    Some(assignment),
+                    "index SLDPRT feature appearances",
+                )
+            })?;
         }
     }
     let mut matched_feature_sources = BTreeSet::new();
+    let mut face_sources_storage =
+        ctx.reserve_scoped(0, "SLDPRT appearance face source workspace")?;
     let mut faces_by_source = BTreeMap::<FeatureSourceId, Vec<usize>>::new();
     for (table_index, face) in ctx
         .admit_iter(faces, "scan SLDPRT resolve_display_appearances values")?
         .enumerate()
     {
         if let Some(source_id) = face.feature_source_id(ctx)? {
-            ctx.push_btree_group(
-                &mut faces_by_source,
-                source_id,
-                table_index,
-                "index SLDPRT appearance face sources",
-                "collect SLDPRT appearance source faces",
-            )?;
+            face_sources_storage.with_storage(|| {
+                ctx.push_btree_group(
+                    &mut faces_by_source,
+                    source_id,
+                    table_index,
+                    "index SLDPRT appearance face sources",
+                    "collect SLDPRT appearance source faces",
+                )
+            })?;
         }
     }
     for (&source_id, face_indexes) in ctx.admit_iter(
