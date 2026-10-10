@@ -879,10 +879,17 @@ fn split_neutral_component_shells(
     }
     let mut shell_specs = Vec::new();
     while !remaining_faces.is_empty() {
-        ctx.charge_work(1, "creo B-rep shell component face visits")?;
-        let Some(start) = remaining_faces.pop_first() else {
+        let Some(start) = ctx.next_charged(
+            &mut remaining_faces.iter(),
+            "creo B-rep shell component face visits",
+        )?.copied() else {
             break;
         };
+        ctx.remove_btree_set(
+            &mut remaining_faces,
+            &start,
+            "creo B-rep shell component face removal",
+        )?;
         let mut group_storage = ctx.reserve_scoped(0, "creo shell group workspace")?;
         let mut group = BTreeSet::new();
         group_storage.with_storage(|| {
