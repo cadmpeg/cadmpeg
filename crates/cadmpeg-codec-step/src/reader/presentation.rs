@@ -129,7 +129,7 @@ pub(super) fn decode<'ctx>(
             ctx.push_scoped_vec(
                 &mut slot_storage.borrow_mut(),
                 &mut losses,
-                StepLossCode::DecodeWarning.note(format!("INVISIBILITY #{id} has no item set")),
+                StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!("INVISIBILITY #{id} has no item set"), "step_presentation_loss_text")?),
                 "step_presentation_losses",
             )?;
             continue;
@@ -216,9 +216,9 @@ pub(super) fn decode<'ctx>(
                 ctx.push_scoped_vec(
                     &mut slot_storage.borrow_mut(),
                     &mut losses,
-                    StepLossCode::DecodeWarning.note(format!(
+                    StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!(
                         "INVISIBILITY #{id} targets unsupported item #{target}"
-                    )),
+                    ), "step_presentation_loss_text")?),
                     "step_presentation_losses",
                 )?;
                 supported = false;
@@ -257,9 +257,9 @@ pub(super) fn decode<'ctx>(
             ctx.push_scoped_vec(
                 &mut slot_storage.borrow_mut(),
                 &mut losses,
-                StepLossCode::DecodeWarning.note(format!(
+                StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!(
                     "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has no assigned item set"
-                )),
+                ), "step_presentation_loss_text")?),
                 "step_presentation_losses",
             )?;
             continue;
@@ -268,9 +268,9 @@ pub(super) fn decode<'ctx>(
             ctx.push_scoped_vec(
                 &mut slot_storage.borrow_mut(),
                 &mut losses,
-                StepLossCode::DecodeWarning.note(format!(
+                StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!(
                     "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has an empty assigned item set"
-                )),
+                ), "step_presentation_loss_text")?),
                 "step_presentation_losses",
             )?;
             continue;
@@ -293,9 +293,9 @@ pub(super) fn decode<'ctx>(
             ctx.push_scoped_vec(
                 &mut slot_storage.borrow_mut(),
                 &mut losses,
-                StepLossCode::DecodeWarning.note(format!(
+                StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!(
                     "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has no name"
-                )),
+                ), "step_presentation_loss_text")?),
                 "step_presentation_losses",
             )?;
             continue;
@@ -447,7 +447,7 @@ pub(super) fn decode<'ctx>(
                 &mut slot_storage.borrow_mut(),
                 &mut losses,
                 StepLossCode::DecodeWarning
-                    .note(format!("STYLED_ITEM #{style_id} has no resolved target")),
+                    .note(ctx.format_retained(format_args!("STYLED_ITEM #{style_id} has no resolved target"), "step_presentation_loss_text")?),
                 "step_presentation_losses",
             )?;
             continue;
@@ -524,9 +524,9 @@ pub(super) fn decode<'ctx>(
         let color = match &resolved.color {
             Some(ColorResolution::Candidate(candidate)) => candidate,
             Some(ColorResolution::Ambiguous { .. }) => {
-                ctx.push_scoped_vec(&mut slot_storage.borrow_mut(), &mut losses, StepLossCode::ConflictingScalarColors.note(format!(
+                ctx.push_scoped_vec(&mut slot_storage.borrow_mut(), &mut losses, StepLossCode::ConflictingScalarColors.note(ctx.format_retained(format_args!(
                     "STYLED_ITEM #{style_id} has distinct equal-precedence colors; no scalar color is selected and the source style graph remains retained"
-                )), "step_presentation_losses")?;
+                ), "step_presentation_loss_text")?), "step_presentation_losses")?;
                 continue;
             }
             None => {
@@ -537,9 +537,9 @@ pub(super) fn decode<'ctx>(
                     ctx.push_scoped_vec(
                         &mut slot_storage.borrow_mut(),
                         &mut losses,
-                        StepLossCode::DecodeWarning.note(format!(
+                        StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!(
                             "STYLED_ITEM #{style_id} has no resolved surface color"
-                        )),
+                        ), "step_presentation_loss_text")?),
                         "step_presentation_losses",
                     )?;
                 }
@@ -579,7 +579,7 @@ pub(super) fn decode<'ctx>(
                         library_id: None,
                         visual_guid: None,
                         physical_token: None,
-                        schema: Some("step_surface_style".into()),
+                        schema: Some(ctx.copy_retained_text("step_surface_style", "step_presentation_schema_text")?),
                         category: None,
                         base_color: Some(color),
                         textures: Vec::new(),
@@ -741,9 +741,9 @@ pub(super) fn decode<'ctx>(
                 ctx.push_scoped_vec(
                     &mut slot_storage.borrow_mut(),
                     &mut losses,
-                    StepLossCode::DecodeWarning.note(format!(
+                    StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!(
                         "INVISIBILITY #{invisibility_id} targets unsupported item #{style_id}"
-                    )),
+                    ), "step_presentation_loss_text")?),
                     "step_presentation_losses",
                 )?;
                 supported = false;
@@ -762,9 +762,9 @@ pub(super) fn decode<'ctx>(
                 ctx.push_scoped_vec(
                     &mut slot_storage.borrow_mut(),
                     &mut losses,
-                    StepLossCode::DecodeWarning.note(format!(
+                    StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!(
                         "INVISIBILITY #{invisibility_id} targets unsupported item #{layer_id}"
-                    )),
+                    ), "step_presentation_loss_text")?),
                     "step_presentation_losses",
                 )?;
                 supported = false;
@@ -1349,7 +1349,7 @@ fn appearance_targets(
         "STEP presentation record contains_key",
     )? {
         Some(AppearanceTarget::Source {
-            source_id: format!("#{id}"),
+            source_id: ctx.format_retained(format_args!("#{id}"), "step_presentation_source_target_text")?,
         })
     } else {
         None
@@ -2916,9 +2916,9 @@ fn surface_side_rank(
         ctx.push_scoped_vec(
             &mut slot_storage.borrow_mut(),
             losses,
-            StepLossCode::SurfaceSideInvalid.note(format!(
+            StepLossCode::SurfaceSideInvalid.note(ctx.format_retained(format_args!(
                 "SURFACE_STYLE_USAGE #{id} has no valid surface_side; style omitted"
-            )),
+            ), "step_presentation_loss_text")?),
             "step_presentation_losses",
         )?;
         return Ok(None);

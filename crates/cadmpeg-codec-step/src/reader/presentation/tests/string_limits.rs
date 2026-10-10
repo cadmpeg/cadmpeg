@@ -104,7 +104,7 @@ fn predefined_colour_name_refuses_materialized_limit() {
 }
 
 #[test]
-fn repeated_colour_retains_only_output_appearance_identities() {
+fn repeated_colour_retains_output_text_and_appearance_identities() {
     const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=COLOUR_RGB('',1.,0.,0.);#2=PRESENTATION_STYLE_ASSIGNMENT((#1));#10=STYLED_ITEM('',(#2),#20);#11=STYLED_ITEM('',(#2),#21);#20=SOURCE_ITEM();#21=SOURCE_ITEM();ENDSEC;END-ISO-10303-21;";
     let (exchange, _) =
         crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner)
@@ -132,14 +132,16 @@ fn repeated_colour_retains_only_output_appearance_identities() {
             for binding in &ir.model.appearance_bindings {
                 assert_eq!(binding.appearance.as_str(), identity);
             }
-            // Retain the output arena slots and three identity copies: one
-            // appearance plus two bindings. The lookup index is scoped.
+            // Retain arena slots, three appearance identity copies, the schema,
+            // two source target IDs and two source entity IDs. Minted binding
+            // identities need an admission-backed IR composition operation.
+            // The appearance lookup index and color-query text are scoped.
             let output_slots = ir.model.appearances.capacity()
                 * std::mem::size_of::<cadmpeg_ir::appearance::Appearance>()
                 + ir.model.appearance_bindings.capacity()
                     * std::mem::size_of::<cadmpeg_ir::appearance::AppearanceBinding>();
             expected_retained =
-                Some(u64::try_from(output_slots + 3 * identity.len()).expect("fixture size"));
+                Some(u64::try_from(output_slots + 3 * identity.len() + "step_surface_style".len() + "#20".len() + "#21".len() + "#10".len() + "#11".len()).expect("fixture size"));
             ctx.charge_retained(1, "appearance retained probe")
         },
     );

@@ -391,7 +391,7 @@ pub(super) fn decode<'ctx>(
         ctx.insert_btree_map(
             &mut stored_parameters,
             cadmpeg_core::nonblank_literal!("source_id"),
-            format!("#{id}"),
+            ctx.format_retained(format_args!("#{id}"), "step_drawing_source_id_text")?,
             "step_drawing_stored_parameters",
         )?;
         ctx.insert_btree_map(
@@ -435,9 +435,9 @@ pub(super) fn decode<'ctx>(
             slot_storage
                 .borrow_mut()
                 .with_storage(|| ctx.reserve_vec(&mut losses, 1, "step_drawing_losses"))?;
-            losses.push(StepLossCode::DrawingOrderUnstatable.note(format!(
+            losses.push(StepLossCode::DrawingOrderUnstatable.note(ctx.format_retained(format_args!(
                 "drawing #{id} position in the stored order exceeds the stated order width"
-            )));
+            ), "step_drawing_loss_text")?));
             continue;
         };
 
@@ -676,8 +676,8 @@ fn add_source_typed_targets(
         native_targets.push(NativeRecord::from_identity(
             identity,
             [
-                ("source_id".to_owned(), NativeField::Text(format!("#{id}"))),
-                ("source_type".to_owned(), NativeField::Text(source_type)),
+                (ctx.copy_retained_text("source_id", "step_drawing_native_field_name")?, NativeField::Text(ctx.format_retained(format_args!("#{id}"), "step_drawing_native_source_id")?)),
+                (ctx.copy_retained_text("source_type", "step_drawing_native_field_name")?, NativeField::Text(source_type)),
             ],
         ));
 
@@ -703,7 +703,7 @@ fn add_source_typed_targets(
     }
     let namespace = ir.native.namespace_mut("step");
     let arenas = namespace.arenas_mut();
-    let arena_key = String::from("drawing_targets");
+    let arena_key = ctx.copy_retained_text("drawing_targets", "step_drawing_native_arena_name")?;
 
     let target_arena = ctx
         .entry_btree_map(arenas, arena_key, "step_drawing_native_arena")?
@@ -981,9 +981,9 @@ fn add_sheet_revision_usages(
                             .wrappers.ctx
                             .reserve_vec(losses, 1, "step_drawing_losses")
                     })?;
-                    losses.push(StepLossCode::DrawingSheetRevisionUnresolved.note(format!(
+                    losses.push(StepLossCode::DrawingSheetRevisionUnresolved.note(ctx.format_retained(format_args!(
                         "STEP drawing sheet #{sheet_id} usage #{usage_id} has no resolvable drawing revision #{revision_id}"
-                    )));
+                    ), "step_drawing_loss_text")?));
                 }
             }
             if let Some(sequence) = parameters
@@ -1038,9 +1038,9 @@ fn add_sheet_revision_usages(
                             .wrappers.ctx
                             .reserve_vec(losses, 1, "step_drawing_losses")
                     })?;
-                    losses.push(StepLossCode::DrawingRevisionSheetUnresolved.note(format!(
+                    losses.push(StepLossCode::DrawingRevisionSheetUnresolved.note(ctx.format_retained(format_args!(
                         "STEP drawing revision #{revision_id} usage #{usage_id} has no resolvable sheet revision #{sheet_id}"
-                    )));
+                    ), "step_drawing_loss_text")?));
                 }
             }
         }
@@ -1108,9 +1108,9 @@ fn add_draughting_model_associations(
                             .reserve_vec(losses, 1, "step_drawing_losses")
                     })?;
                     losses.push(StepLossCode::DraughtingSemanticDefinitionUntyped.note(
-                        format!(
+                        ctx.format_retained(format_args!(
                             "STEP draughting model #{model_id} association #{association_id} references a typed semantic definition without a neutral identity; the raw source parameter is retained"
-                        ),
+                        ), "step_drawing_loss_text")?,
                     ));
                     complete = false;
                     None
@@ -1159,9 +1159,9 @@ fn add_draughting_model_associations(
                                 .reserve_vec(losses, 1, "step_drawing_losses")
                         })?;
                         losses.push(StepLossCode::DraughtingAssociatedItemUntyped.note(
-                            format!(
+                            ctx.format_retained(format_args!(
                                 "STEP draughting model #{model_id} association #{association_id} references source-typed item #{item_id} without a neutral identity; the raw source parameter is retained"
-                            ),
+                            ), "step_drawing_loss_text")?,
                         ));
                         complete = false;
                     }
@@ -1199,9 +1199,9 @@ fn add_draughting_model_associations(
                                 .wrappers.ctx
                                 .reserve_vec(losses, 1, "step_drawing_losses")
                         })?;
-                        losses.push(StepLossCode::DrawingRelationshipUntypedTarget.note(format!(
+                        losses.push(StepLossCode::DrawingRelationshipUntypedTarget.note(ctx.format_retained(format_args!(
                             "STEP draughting model #{model_id} association #{association_id} relationship annotation_placeholder references source-typed record #{placeholder_id} without a neutral identity"
-                        )));
+                        ), "step_drawing_loss_text")?));
                         complete = false;
                         None
                     }
@@ -1312,7 +1312,7 @@ fn target_resolution<'ctx>(
         return Ok(TargetResolution::Resolved(ReferenceSelection::new(
             ReferenceTarget::External {
                 document: ctx.copy_retained_text(uri, "step_drawing_external_target_text")?,
-                object: format!("#{id}"),
+                object: ctx.format_retained(format_args!("#{id}"), "step_drawing_external_object_text")?,
             },
             Vec::new(),
         )));
