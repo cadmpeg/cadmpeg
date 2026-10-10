@@ -1684,7 +1684,8 @@ fn profile_roster_construction_axis_in(
         if !marker_is_selected_construction_line(&lane.native_payload, offset) {
             return Ok(None);
         }
-        let (endpoints, _endpoint_storage) = ctx.with_scoped_storage(OPERATION, || {
+        let (_endpoints_storage, endpoints);
+        (endpoints, _endpoints_storage) = ctx.with_scoped_storage(OPERATION, || {
             roster_curve_endpoint_markers_lazy(
                 ctx,
                 &lane.native_payload,
@@ -1995,21 +1996,32 @@ fn profile_curve_endpoint_ids<'a>(
     markers: &[&'a SketchInputEntity],
     indexed_only: bool,
 ) -> Result<BTreeSet<&'a str>, CodecError> {
-    const OPERATION: &str = "scan SLDPRT profile curve endpoints";
     let mut geometry = None;
     let curve_markers = super::typed_relations::CurveMarkers::new(ctx, markers)?;
+    profile_curve_endpoint_ids_with(ctx, storage, owned, indexed_only, |curve| {
+        roster_curve_endpoint_markers_lazy(
+            ctx,
+            &lane.native_payload,
+            curve,
+            markers,
+            &mut geometry,
+            Some(&curve_markers),
+        )
+    })
+}
+
+fn profile_curve_endpoint_ids_with<'a>(
+    ctx: &DecodeContext<'_>,
+    storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    owned: &[&SketchInputEntity],
+    indexed_only: bool,
+    mut resolve: impl FnMut(&SketchInputEntity) -> Result<Vec<&'a SketchInputEntity>, CodecError>,
+) -> Result<BTreeSet<&'a str>, CodecError> {
+    const OPERATION: &str = "scan SLDPRT profile curve endpoints";
     let mut ids = BTreeSet::new();
     for curve in ctx.admit_iter(owned, OPERATION)? {
-        let (endpoints, _endpoint_storage) = ctx.with_scoped_storage(OPERATION, || {
-            roster_curve_endpoint_markers_lazy(
-                ctx,
-                &lane.native_payload,
-                curve,
-                markers,
-                &mut geometry,
-                Some(&curve_markers),
-            )
-        })?;
+        let (endpoints_storage, endpoints);
+        (endpoints, endpoints_storage) = ctx.with_scoped_storage(OPERATION, || resolve(curve))?;
         for endpoint in ctx.admit_iter(endpoints, OPERATION)? {
             if indexed_only && endpoint.object_index().is_none() {
                 continue;
@@ -2022,6 +2034,7 @@ fn profile_curve_endpoint_ids<'a>(
                 )
             })?;
         }
+        drop(endpoints_storage);
     }
     Ok(ids)
 }
@@ -2274,8 +2287,22 @@ fn profile_roster_implicit_axis_endpoints<'a>(
         Some(_) => ctx.find_by(&mut remaining, is_curve, OPERATION)?.copied(),
         None => None,
     };
-    let curve_endpoints =
-        profile_curve_endpoint_ids(ctx, &mut storage, lane, owned, markers, false)?;
+    let curve_endpoints = profile_curve_endpoint_ids_with(
+        ctx,
+        &mut storage,
+        owned,
+        false,
+        |curve| {
+            roster_curve_endpoint_markers_lazy(
+                ctx,
+                &lane.native_payload,
+                curve,
+                markers,
+                &mut geometry,
+                Some(&curve_markers),
+            )
+        },
+    )?;
     let bounding = profile_bounding_points(ctx, &mut storage, owned, &curve_endpoints)?;
     let bounded = |endpoints: [&SketchInputEntity; 2]| {
         let [Some(start), Some(end)] = endpoints.map(|endpoint| {
@@ -2419,7 +2446,8 @@ fn profile_roster_implicit_axis_endpoints<'a>(
     let (Some(candidate), None) = (first_curve, second_curve) else {
         return Ok(None);
     };
-    let (endpoints, _endpoint_storage) = ctx.with_scoped_storage(OPERATION, || {
+    let (_endpoints_storage, endpoints);
+    (endpoints, _endpoints_storage) = ctx.with_scoped_storage(OPERATION, || {
         roster_curve_endpoint_markers_lazy(
             ctx,
             &lane.native_payload,
@@ -2499,3 +2527,6 @@ fn bounded_profile_axis_coordinates(
 
 #[cfg(test)]
 mod axes_tests;
+
+#[cfg(test)]
+mod profile_endpoint_cache_tests;
