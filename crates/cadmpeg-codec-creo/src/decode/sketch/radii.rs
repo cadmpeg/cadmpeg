@@ -603,6 +603,9 @@ pub(in crate::decode) fn section_radius_relation_arc<'a>(
     definition: &'a crate::feature::definitions::FeatureDefinition,
     relation: &crate::feature::definitions::FeatureRelation,
 ) -> Result<Option<&'a crate::feature::definitions::FeatureSegment>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     match relation.relation_type {
         5 => section_type5_radius_arc(ctx, definition, relation),
         6 => section_type6_radius_arc(ctx, definition, relation),
@@ -690,6 +693,9 @@ pub(super) fn section_arc_carrier(
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::definitions::FeatureSegment,
 ) -> Result<Option<SectionArcCarrier>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if !matches!(
         segment.kind,
         crate::feature::definitions::FeatureSegmentKind::Arc(_)
@@ -731,6 +737,9 @@ pub(in crate::decode) fn section_axis_line_carrier_with_points(
     variable_points: &BTreeMap<u32, [Option<f64>; 2]>,
     segment: &crate::feature::definitions::FeatureSegment,
 ) -> Result<Option<SketchGeometry>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if !matches!(
         segment.kind,
         crate::feature::definitions::FeatureSegmentKind::Line(_)
@@ -892,6 +901,9 @@ pub(in crate::decode) fn trim_segment_ids(
     definition: &crate::feature::definitions::FeatureDefinition,
 ) -> Result<Vec<Option<u32>>, cadmpeg_core::CodecError> {
     const OPERATION: &str = "creo trim segment IDs";
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(trim_table) = definition.trim_entities.as_ref() else {
         return Ok(Vec::new());
     };
