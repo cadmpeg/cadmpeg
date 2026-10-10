@@ -3510,15 +3510,16 @@ pub(crate) fn project_geometry<'ctx>(
         ctx,
     )?;
 
-    let (structure_projection, placement_rejections, placement_rejections_storage) = super::structure::project(
-        ir,
-        directory,
-        (&entries, &records),
-        trailing_pointer_analysis,
-        global,
-        ctx,
-        &mut sequences,
-    )?;
+    let (structure_projection, placement_rejections, placement_rejections_storage) =
+        super::structure::project(
+            ir,
+            directory,
+            (&entries, &records),
+            trailing_pointer_analysis,
+            global,
+            ctx,
+            &mut sequences,
+        )?;
     structure_projection.merge_into(&mut decoded, &mut decoded_storage, &mut losses, ctx)?;
 
     super::presentation::project(

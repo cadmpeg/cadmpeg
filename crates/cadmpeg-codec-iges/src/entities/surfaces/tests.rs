@@ -1611,11 +1611,19 @@ fn surface_projection_refuses_variable_work_and_scratch() {
                 .unwrap();
             if operation == "iges ruled linear interval controls" {
                 assert_eq!(decoded.ir().model.curves.len(), 2);
-                assert_eq!(decoded.ir().model.procedural_surfaces.len(), 1,
-                    "{:?}", decoded.report().losses);
-                assert!(decoded.ir().model.surfaces.iter().any(|surface|
-                    surface.id.as_str() == "iges:model:surface#D5"
-                    && surface.geometry.solved().is_some()));
+                assert_eq!(
+                    decoded.ir().model.procedural_surfaces.len(),
+                    1,
+                    "{:?}",
+                    decoded.report().losses
+                );
+                assert!(decoded
+                    .ir()
+                    .model
+                    .surfaces
+                    .iter()
+                    .any(|surface| surface.id.as_str() == "iges:model:surface#D5"
+                        && surface.geometry.solved().is_some()));
             }
             crate::test_support::with_service_context(&bytes, |ctx| {
                 let scan = crate::card::scan_with_context(&bytes, ctx).unwrap();
@@ -1657,7 +1665,8 @@ fn surface_projection_refuses_variable_work_and_scratch() {
                         global,
                         ctx,
                         &mut super::super::geometry::SourceSequences::default(),
-                    ).map(|_| ())
+                    )
+                    .map(|_| ())
                 })
             } else {
                 IgesCodec

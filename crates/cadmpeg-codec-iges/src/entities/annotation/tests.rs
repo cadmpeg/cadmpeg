@@ -717,9 +717,7 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
             let mut geometry = super::SectionedAreaGeometryCache::new(&ir, decode_ctx).unwrap();
             decode_ctx.all_by(
                 [1, 3],
-                |sequence| {
-                    geometry.curve_coplanar(sequence, pattern_plane, 0.001, decode_ctx)
-                },
+                |sequence| geometry.curve_coplanar(sequence, pattern_plane, 0.001, decode_ctx),
                 "test section boundary traversal",
             )
         }
@@ -745,9 +743,7 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
             let mut geometry = super::SectionedAreaGeometryCache::new(&ir, decode_ctx).unwrap();
             decode_ctx.all_by(
                 [1, 3],
-                |sequence| {
-                    geometry.curve_coplanar(sequence, pattern_plane, 0.001, decode_ctx)
-                },
+                |sequence| geometry.curve_coplanar(sequence, pattern_plane, 0.001, decode_ctx),
                 "test section boundary traversal",
             )
         }
@@ -810,7 +806,7 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
                     global_table: GlobalTable::V4_0,
                     transform: Transform::identity(),
                     length_factor: 1.0,
-                    resolution: 0.001
+                    resolution: 0.001,
                 },
                 decode_ctx,
             )
@@ -827,7 +823,7 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
                     global_table: GlobalTable::V5_0,
                     transform: Transform::identity(),
                     length_factor: 1.0,
-                    resolution: 0.001
+                    resolution: 0.001,
                 },
                 decode_ctx,
             )
@@ -867,7 +863,7 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
                     global_table: GlobalTable::V5_0,
                     transform: translated_pattern_plane,
                     length_factor: 1.0,
-                    resolution: 0.001
+                    resolution: 0.001,
                 },
                 decode_ctx,
             )
@@ -909,20 +905,27 @@ fn sectioned_area_coplanarity_cache_uses_curve_plane_and_resolution_identity() {
             );
             assert!(geometry.curve_coplanar(1, plane, 0.001, ctx).unwrap());
             for origin in [Point3::new(1.0, 0.0, 0.0), Point3::new(0.0, -2.0, -0.0)] {
-                assert!(geometry.curve_coplanar(1, (origin, plane.1), 0.001, ctx).unwrap());
-                assert!(geometry.curve_coplanar(1, (origin, plane.1.scale(-1.0)), 0.001, ctx).unwrap());
+                assert!(geometry
+                    .curve_coplanar(1, (origin, plane.1), 0.001, ctx)
+                    .unwrap());
+                assert!(geometry
+                    .curve_coplanar(1, (origin, plane.1.scale(-1.0)), 0.001, ctx)
+                    .unwrap());
             }
         }
         assert!(!geometry.curve_coplanar(3, plane, 0.001, ctx).unwrap());
 
-        let offset_plane = (
-            Point3::new(0.0, 0.0, 0.0005),
-            Vector3::new(0.0, 0.0, 1.0),
-        );
-        assert!(geometry.curve_coplanar(1, offset_plane, 0.001, ctx).unwrap());
-        assert!(!geometry.curve_coplanar(1, offset_plane, 0.0001, ctx).unwrap());
+        let offset_plane = (Point3::new(0.0, 0.0, 0.0005), Vector3::new(0.0, 0.0, 1.0));
+        assert!(geometry
+            .curve_coplanar(1, offset_plane, 0.001, ctx)
+            .unwrap());
+        assert!(!geometry
+            .curve_coplanar(1, offset_plane, 0.0001, ctx)
+            .unwrap());
         let orthogonal_plane = (plane.0, Vector3::new(1.0, 0.0, 0.0));
-        assert!(!geometry.curve_coplanar(1, orthogonal_plane, 0.001, ctx).unwrap());
+        assert!(!geometry
+            .curve_coplanar(1, orthogonal_plane, 0.001, ctx)
+            .unwrap());
     });
 }
 
@@ -956,9 +959,12 @@ fn sectioned_area_coplanarity_cache_lookup_propagates_work_refusal() {
             geometry.curve_coplanar(1, plane, 0.001, &ctx).map(|_| ())
         },
     );
-    let key_work = u64::try_from(std::mem::size_of::<u32>() + 6 * std::mem::size_of::<u64>()).unwrap();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "iges section coplanarity proof lookup" && limit.additional == key_work));
+    let key_work =
+        u64::try_from(std::mem::size_of::<u32>() + 6 * std::mem::size_of::<u64>()).unwrap();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "iges section coplanarity proof lookup" && limit.additional == key_work)
+    );
 }
 
 #[test]
@@ -1162,7 +1168,10 @@ fn annotation_pointer_lookup_checks_odd_directory_entries_under_context() {
         )
     };
     crate::test_support::with_service_context(&[], |ctx| {
-        assert_eq!(super::pointer(&record(3), 1, &entries, ctx).unwrap(), Some(3));
+        assert_eq!(
+            super::pointer(&record(3), 1, &entries, ctx).unwrap(),
+            Some(3)
+        );
         assert_eq!(super::pointer(&record(4), 1, &entries, ctx).unwrap(), None);
         assert_eq!(super::pointer(&record(5), 1, &entries, ctx).unwrap(), None);
     });
@@ -1781,9 +1790,9 @@ fn sectioned_area_shared_geometry_index_stays_linear() {
     let mut geometry = super::SectionedAreaGeometryCache::new(&ir, &ctx).unwrap();
     let plane = (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0));
     for sequence in (1..=2_000_u32).map(|index| index * 2 - 1) {
-        assert!(
-            geometry.curve_coplanar(sequence, plane, 0.001, &ctx).unwrap()
-        );
+        assert!(geometry
+            .curve_coplanar(sequence, plane, 0.001, &ctx)
+            .unwrap());
     }
     drop(geometry);
     ctx.finish_session().unwrap();
