@@ -208,7 +208,10 @@ fn directory_entity_refuses_entity_limit_before_storage() {
 fn directory_fixed_fields_need_only_the_record_step() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let bytes = owned_test_file(&[OwnedTestEntity {
-        entity_type: 116, form: 0, label: "POINT".into(), status: "00000000",
+        entity_type: 116,
+        form: 0,
+        label: "POINT".into(),
+        status: "00000000",
         parameters: "116,1,2,3,0;".into(),
     }]);
     let scan = crate::test_support::scan(&bytes).unwrap();

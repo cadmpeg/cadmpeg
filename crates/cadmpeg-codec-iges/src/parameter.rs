@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parameter Data assembly and count-driven token spans.
 
-use crate::card::{Card, CardScan, FramingDefect, FramingRecoveries, FramingValue, PhysicalLine, Section};
+use crate::card::{
+    Card, CardScan, FramingDefect, FramingRecoveries, FramingValue, PhysicalLine, Section,
+};
 
 use crate::directory::{DirectoryEntry, QuarantinedDirectoryRecord};
 use crate::global::{GlobalTable, NumericLimits, RealPrecision, ResolvedGlobal};
@@ -587,11 +589,13 @@ fn analyze_trailing_pointer_groups_for_global_table_with_context(
     global_table: GlobalTable,
     ctx: &DecodeContext<'_>,
 ) -> Result<TrailingPointerAnalysis, CodecError> {
-    let entry = ctx.get_btree_map(
-        directory,
-        &record.directory_sequence,
-        "iges parameter primary layout directory lookup",
-    )?.copied();
+    let entry = ctx
+        .get_btree_map(
+            directory,
+            &record.directory_sequence,
+            "iges parameter primary layout directory lookup",
+        )?
+        .copied();
     if entry.is_some_and(|entry| entry.entity_type == 306) {
         return Ok(TrailingPointerAnalysis::Macro);
     }
@@ -610,17 +614,25 @@ fn analyze_trailing_pointer_groups_with_records_for_global_table(
     widths: &mut AttributeDefinitionWidths<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<TrailingPointerAnalysis, CodecError> {
-    let entry = ctx.get_btree_map(
-        directory,
-        &record.directory_sequence,
-        "iges parameter primary layout directory lookup",
-    )?.copied();
+    let entry = ctx
+        .get_btree_map(
+            directory,
+            &record.directory_sequence,
+            "iges parameter primary layout directory lookup",
+        )?
+        .copied();
     if entry.is_some_and(|entry| entry.entity_type == 306) {
         return Ok(TrailingPointerAnalysis::Macro);
     }
     let primary_end = match entry {
         Some(entry) => entity_primary_end_with_records_for_entry(
-            record, entry, directory, records, global_table, widths, ctx,
+            record,
+            entry,
+            directory,
+            records,
+            global_table,
+            widths,
+            ctx,
         )?,
         None => None,
     };
@@ -654,11 +666,10 @@ fn analyze_trailing_pointer_groups_from_end(
         None => structural_pointer_group_candidates_with_context(record, ctx),
     })?;
     if candidates.len() > 1 {
-        let prefix_count = record
-            .tokens
-            .len()
-            .checked_add(1)
-            .ok_or_else(|| ctx.refuse_codec_limit("iges pointer class prefixes", u64::MAX, 1))?;
+        let prefix_count =
+            record.tokens.len().checked_add(1).ok_or_else(|| {
+                ctx.refuse_codec_limit("iges pointer class prefixes", u64::MAX, 1)
+            })?;
         let mut prefix_storage = ctx.reserve_scoped(0, "iges pointer class prefixes")?;
         let mut prefix = prefix_storage
             .with_storage(|| ctx.collection_vec(prefix_count, "iges pointer class prefixes"))?;
@@ -666,17 +677,19 @@ fn analyze_trailing_pointer_groups_from_end(
         prefix.push(invalid);
         let mut token_indices = 0..record.tokens.len();
         while !token_indices.is_empty() || ctx.resource_refusal().is_some() {
-            let Some(index) = ctx.next_charged(&mut token_indices, "iges pointer class classification")? else { break; };
+            let Some(index) =
+                ctx.next_charged(&mut token_indices, "iges pointer class classification")?
+            else {
+                break;
+            };
             let sequence = record
                 .raw_integer(index)
                 .and_then(|value| u32::try_from(value).ok())
                 .filter(|sequence| sequence % 2 == 1);
             let kind = match sequence {
-                Some(sequence) => ctx.get_btree_map(
-                    directory,
-                    &sequence,
-                    "iges pointer class directory lookup",
-                )?.map(|entry| entry.entity_type),
+                Some(sequence) => ctx
+                    .get_btree_map(directory, &sequence, "iges pointer class directory lookup")?
+                    .map(|entry| entry.entity_type),
                 None => None,
             };
             invalid[0] += usize::from(!matches!(kind, Some(212 | 312 | 402)));
@@ -728,9 +741,9 @@ fn analyze_trailing_pointer_groups_from_end(
     drop(candidates);
     drop(scratch);
     let mut group_storage = ctx.reserve_scoped(0, "iges trailing pointer source groups")?;
-    match group_storage.with_storage(||
-        groups_for_candidate_with_context(record, directory, candidate, ctx)
-    )? {
+    match group_storage
+        .with_storage(|| groups_for_candidate_with_context(record, directory, candidate, ctx))?
+    {
         Some(groups) => match groups.fully_valid_with_context(ctx)? {
             Some(resolved) => Ok(TrailingPointerAnalysis::Unambiguous(resolved)),
             None => Ok(TrailingPointerAnalysis::SingleInvalid(
@@ -1168,7 +1181,8 @@ pub(crate) fn entity_primary_end_for_global_table(
         directory,
         &record.directory_sequence,
         "iges parameter primary layout directory lookup",
-    )? else {
+    )?
+    else {
         return Ok(None);
     };
     entity_primary_end_for_entry(record, entry, global_table, ctx)
@@ -1355,11 +1369,20 @@ fn entity_primary_end_with_records_for_global_table(
         directory,
         &record.directory_sequence,
         "iges parameter primary layout directory lookup",
-    )? else {
+    )?
+    else {
         return Ok(None);
     };
     let mut widths = AttributeDefinitionWidths::new(ctx)?;
-    entity_primary_end_with_records_for_entry(record, entry, directory, records, global_table, &mut widths, ctx)
+    entity_primary_end_with_records_for_entry(
+        record,
+        entry,
+        directory,
+        records,
+        global_table,
+        &mut widths,
+        ctx,
+    )
 }
 
 fn entity_primary_end_with_records_for_entry(
@@ -1523,9 +1546,11 @@ fn fem_result_primary_end(
     }
     let mut cursor = item_start;
     let mut steps = 0..item_count;
-    while (!steps.is_empty() || ctx.resource_refusal().is_some()) && ctx
-        .next_charged(&mut steps, "iges parameter primary layout")?
-        .is_some() {
+    while (!steps.is_empty() || ctx.resource_refusal().is_some())
+        && ctx
+            .next_charged(&mut steps, "iges parameter primary layout")?
+            .is_some()
+    {
         let Some(report_location_count_index) = cursor.checked_add(5) else {
             return Ok(record.tokens.len());
         };
@@ -1591,9 +1616,11 @@ fn text_font_primary_end(
 
     let mut cursor = 6_usize;
     let mut steps = 0..character_count;
-    while (!steps.is_empty() || ctx.resource_refusal().is_some()) && ctx
-        .next_charged(&mut steps, "iges parameter primary layout")?
-        .is_some() {
+    while (!steps.is_empty() || ctx.resource_refusal().is_some())
+        && ctx
+            .next_charged(&mut steps, "iges parameter primary layout")?
+            .is_some()
+    {
         let Some(motion_count) = cursor
             .checked_add(3)
             .and_then(|index| record.integer(index))
@@ -1695,7 +1722,9 @@ fn tabular_data_primary_end(
     let mut point_count = 1_usize;
     let mut steps = 0..independent_count;
     while !steps.is_empty() || ctx.resource_refusal().is_some() {
-        let Some(offset) = ctx.next_charged(&mut steps, "iges parameter primary layout")? else { break; };
+        let Some(offset) = ctx.next_charged(&mut steps, "iges parameter primary layout")? else {
+            break;
+        };
         let Some(count_index) = count_start.checked_add(offset) else {
             return Ok(record.tokens.len());
         };
@@ -2067,9 +2096,11 @@ fn associativity_definition_primary_end(
 
     let mut cursor = 2_usize;
     let mut steps = 0..class_count;
-    while (!steps.is_empty() || ctx.resource_refusal().is_some()) && ctx
-        .next_charged(&mut steps, "iges parameter primary layout")?
-        .is_some() {
+    while (!steps.is_empty() || ctx.resource_refusal().is_some())
+        && ctx
+            .next_charged(&mut steps, "iges parameter primary layout")?
+            .is_some()
+    {
         let Some(item_count_index) = cursor.checked_add(2) else {
             return Ok(record.tokens.len());
         };
@@ -2159,9 +2190,11 @@ fn attribute_table_definition_primary_end(
     };
     let mut cursor = 4_usize;
     let mut steps = 0..attribute_count;
-    while (!steps.is_empty() || ctx.resource_refusal().is_some()) && ctx
-        .next_charged(&mut steps, "iges parameter primary layout")?
-        .is_some() {
+    while (!steps.is_empty() || ctx.resource_refusal().is_some())
+        && ctx
+            .next_charged(&mut steps, "iges parameter primary layout")?
+            .is_some()
+    {
         let Some(value_count) = record
             .integer_or(cursor + 2, 1)
             .and_then(|value| usize::try_from(value).ok())
@@ -2201,7 +2234,9 @@ pub(crate) fn attribute_table_definition_width(
     let refusal = ctx.find_map(
         0..attribute_count,
         |attribute| {
-            let descriptor = attribute.checked_mul(3).and_then(|span| span.checked_add(4));
+            let descriptor = attribute
+                .checked_mul(3)
+                .and_then(|span| span.checked_add(4));
             let declared = descriptor.and_then(|cursor| {
                 record.tokens.get(cursor)?;
                 record.tokens.get(cursor + 1)?;
@@ -2210,7 +2245,8 @@ pub(crate) fn attribute_table_definition_width(
                     Some(_) => record.integer_or(count_index, 1),
                     None if attribute + 1 == attribute_count => Some(1),
                     None => None,
-                }.and_then(|value| usize::try_from(value).ok())
+                }
+                .and_then(|value| usize::try_from(value).ok())
             });
             let Some(declared) = declared else {
                 return Ok(Some(AttributeWidthDefect::ValueCount { attribute }));
@@ -2231,10 +2267,20 @@ fn attribute_table_definition_values_per_row(
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<usize>, CodecError> {
     ctx.charge_work(0, "iges parameter primary layout")?;
-    let Some(attribute_count) = record.integer(3)
-        .and_then(|value| usize::try_from(value).ok()).filter(|count| *count > 0)
-    else { return Ok(None); };
-    Ok(attribute_table_definition_width(record, attribute_count, ctx, "iges parameter primary layout")?.ok())
+    let Some(attribute_count) = record
+        .integer(3)
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|count| *count > 0)
+    else {
+        return Ok(None);
+    };
+    Ok(attribute_table_definition_width(
+        record,
+        attribute_count,
+        ctx,
+        "iges parameter primary layout",
+    )?
+    .ok())
 }
 
 /// Scoped row widths, including malformed definitions, shared by all primary-layout instances.
@@ -2251,14 +2297,27 @@ impl<'ctx> AttributeDefinitionWidths<'ctx> {
         })
     }
 
-    fn width(&mut self, record: &ParameterRecord, ctx: &DecodeContext<'_>) -> Result<Option<usize>, CodecError> {
-        if let Some(width) = ctx.get_btree_map(&self.values, &record.directory_sequence, "iges parameter attribute width lookup")? {
+    fn width(
+        &mut self,
+        record: &ParameterRecord,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Option<usize>, CodecError> {
+        if let Some(width) = ctx.get_btree_map(
+            &self.values,
+            &record.directory_sequence,
+            "iges parameter attribute width lookup",
+        )? {
             return Ok(*width);
         }
         let width = attribute_table_definition_values_per_row(record, ctx)?;
-        self.storage.with_storage(|| ctx.insert_btree_map(
-            &mut self.values, record.directory_sequence, width, "iges parameter attribute width nodes",
-        ))?;
+        self.storage.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut self.values,
+                record.directory_sequence,
+                width,
+                "iges parameter attribute width nodes",
+            )
+        })?;
         Ok(width)
     }
 }
@@ -2282,11 +2341,13 @@ fn attribute_table_instance_primary_end(
     else {
         return Ok(record.tokens.len());
     };
-    let Some(definition_entry) = ctx.get_btree_map(
-        directory,
-        &definition_sequence,
-        "iges attribute definition directory lookup",
-    )?.filter(|entry| entry.entity_type == 322 && entry.form == 0)
+    let Some(definition_entry) = ctx
+        .get_btree_map(
+            directory,
+            &definition_sequence,
+            "iges attribute definition directory lookup",
+        )?
+        .filter(|entry| entry.entity_type == 322 && entry.form == 0)
     else {
         return Ok(record.tokens.len());
     };
@@ -2294,11 +2355,11 @@ fn attribute_table_instance_primary_end(
         records,
         &definition_entry.sequence,
         "iges attribute definition record lookup",
-    )? else {
+    )?
+    else {
         return Ok(record.tokens.len());
     };
-    let Some(values_per_row) = widths.width(definition_record, ctx)?
-    else {
+    let Some(values_per_row) = widths.width(definition_record, ctx)? else {
         return Ok(record.tokens.len());
     };
     let (value_start, row_count) = if entry.form == 0 {
@@ -2461,9 +2522,11 @@ fn loop_primary_end(
     };
     let mut index: usize = 2;
     let mut steps = 0..use_count;
-    while (!steps.is_empty() || ctx.resource_refusal().is_some()) && ctx
-        .next_charged(&mut steps, "iges parameter primary layout")?
-        .is_some() {
+    while (!steps.is_empty() || ctx.resource_refusal().is_some())
+        && ctx
+            .next_charged(&mut steps, "iges parameter primary layout")?
+            .is_some()
+    {
         let Some(parameter_curve_count_index) = index.checked_add(4) else {
             return Ok(record.tokens.len());
         };
@@ -2650,9 +2713,11 @@ fn boundary_primary_end(
     };
     let mut index = 5;
     let mut steps = 0..segment_count;
-    while (!steps.is_empty() || ctx.resource_refusal().is_some()) && ctx
-        .next_charged(&mut steps, "iges parameter primary layout")?
-        .is_some() {
+    while (!steps.is_empty() || ctx.resource_refusal().is_some())
+        && ctx
+            .next_charged(&mut steps, "iges parameter primary layout")?
+            .is_some()
+    {
         let Some(pcurve_count) = record
             .integer(index + 2)
             .and_then(|value| usize::try_from(value).ok())
@@ -2762,7 +2827,11 @@ fn structural_pointer_group_candidates_with_context(
     let mut candidates = Vec::new();
     let mut candidate_starts = 1..record.tokens.len();
     while !candidate_starts.is_empty() || ctx.resource_refusal().is_some() {
-        let Some(association_count_index) = ctx.next_charged(&mut candidate_starts, "iges pointer candidate starts")? else { break; };
+        let Some(association_count_index) =
+            ctx.next_charged(&mut candidate_starts, "iges pointer candidate starts")?
+        else {
+            break;
+        };
         if let Some(candidate) = pointer_group_candidate_with_prefix(
             record,
             association_count_index,
@@ -2811,7 +2880,11 @@ fn groups_for_candidate_with_context(
             let mut pointers = ctx.collection_vec(range.len(), "iges trailing pointer entries")?;
             let mut pointer_indices = range;
             while pointer_indices.len() != 0 || ctx.resource_refusal().is_some() {
-                let Some(token_index) = ctx.next_charged(&mut pointer_indices, "iges trailing pointer entries")? else { break; };
+                let Some(token_index) =
+                    ctx.next_charged(&mut pointer_indices, "iges trailing pointer entries")?
+                else {
+                    break;
+                };
                 let Some(raw_pointer) = record.raw_integer(token_index) else {
                     return Ok(None);
                 };
@@ -2819,11 +2892,14 @@ fn groups_for_candidate_with_context(
                     .ok()
                     .filter(|sequence| sequence % 2 == 1);
                 let resolved = match sequence {
-                    Some(sequence) => ctx.get_btree_map(
-                        directory,
-                        &sequence,
-                        "iges trailing pointer directory lookup",
-                    )?.filter(|entry| admitted(entry.entity_type)).map(|_| sequence),
+                    Some(sequence) => ctx
+                        .get_btree_map(
+                            directory,
+                            &sequence,
+                            "iges trailing pointer directory lookup",
+                        )?
+                        .filter(|entry| admitted(entry.entity_type))
+                        .map(|_| sequence),
                     None => None,
                 };
                 pointers.push(TrailingPointer {
@@ -3031,7 +3107,10 @@ impl QuarantinedParameterRecord {
                 let last = range.end.checked_sub(1).ok_or_else(|| {
                     CodecError::Malformed("IGES owned Parameter Data range ends at zero".into())
                 })?;
-                ParameterCardDescription::Owned { first: range.start, last }
+                ParameterCardDescription::Owned {
+                    first: range.start,
+                    last,
+                }
             }
             QuarantinedCards::None { .. } => ParameterCardDescription::None,
         };
@@ -3134,7 +3213,9 @@ pub(crate) fn layout_parameter_cards(
     let mut cursor = 0_usize;
     loop {
         if cursor >= bytes.len() {
-            return Err(CodecError::Malformed("IGES Parameter Data delimiter is missing".into()));
+            return Err(CodecError::Malformed(
+                "IGES Parameter Data delimiter is missing".into(),
+            ));
         }
         ctx.charge_work(1, "iges parameter layout fields")?;
         let start = cursor;
@@ -3166,7 +3247,10 @@ pub(crate) fn layout_parameter_cards(
     let mut card = ctx.vector_storage(64, "iges parameter layout card bytes")?;
     let mut source_fields = fields.iter();
     while source_fields.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some(range) = ctx.next_charged(&mut source_fields, "iges parameter layout fields")? else { break; };
+        let Some(range) = ctx.next_charged(&mut source_fields, "iges parameter layout fields")?
+        else {
+            break;
+        };
         let field = &bytes[range.clone()];
         let leading = ctx
             .position_by(
@@ -3194,7 +3278,11 @@ pub(crate) fn layout_parameter_cards(
         }
         let mut field_bytes = field.iter();
         while field_bytes.len() != 0 || ctx.resource_refusal().is_some() {
-            let Some(byte) = ctx.next_charged(&mut field_bytes, "iges parameter layout card bytes")? else { break; };
+            let Some(byte) =
+                ctx.next_charged(&mut field_bytes, "iges parameter layout card bytes")?
+            else {
+                break;
+            };
             if card.len() == 64 {
                 ctx.reserve_vec(&mut cards, 1, "iges parameter layout cards")?;
                 cards.push(std::mem::take(&mut card));
@@ -3206,7 +3294,11 @@ pub(crate) fn layout_parameter_cards(
 
     let mut comment_bytes = bytes[cursor..].iter();
     while comment_bytes.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some(byte) = ctx.next_charged(&mut comment_bytes, "iges parameter layout comment bytes")? else { break; };
+        let Some(byte) =
+            ctx.next_charged(&mut comment_bytes, "iges parameter layout comment bytes")?
+        else {
+            break;
+        };
         if card.len() == 64 {
             ctx.reserve_vec(&mut cards, 1, "iges parameter layout cards")?;
             cards.push(std::mem::take(&mut card));
@@ -3533,7 +3625,9 @@ fn macro_keyword(
     let mut expected = keyword.iter();
     let mut value = value.iter();
     while value.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some(byte) = ctx.next_charged(&mut value, "iges macro keyword")? else { break; };
+        let Some(byte) = ctx.next_charged(&mut value, "iges macro keyword")? else {
+            break;
+        };
         if matches!(byte, b' ' | b'\t') {
             continue;
         }
@@ -3708,11 +3802,13 @@ fn tokenize_macro(
     record_delimiter: u8,
     ctx: &DecodeContext<'_>,
 ) -> Result<(Vec<Token>, usize), TokenizeFailure> {
-    let mut macro_storage = ctx.reserve_scoped(0, "iges macro tokenization spans")
+    let mut macro_storage = ctx
+        .reserve_scoped(0, "iges macro tokenization spans")
         .map_err(TokenizeFailure::Refusal)?;
-    let data = macro_storage.with_storage(||
-        macro_parameter_data_with_context(bytes, parameter_delimiter, record_delimiter, ctx)
-    )
+    let data = macro_storage
+        .with_storage(|| {
+            macro_parameter_data_with_context(bytes, parameter_delimiter, record_delimiter, ctx)
+        })
         .map_err(|error| match error {
             MacroDataError::Defect(defect, offset) => TokenizeFailure::Defect(defect, offset),
             MacroDataError::Refusal(error) => TokenizeFailure::Refusal(error),
@@ -3742,8 +3838,12 @@ fn tokenize_macro(
     }
     let mut statement_spans = data.statement_spans.iter().enumerate();
     while statement_spans.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some((index, span)) = ctx.next_charged(&mut statement_spans, "iges macro statement tokens")
-        .map_err(TokenizeFailure::Refusal)? else { break; };
+        let Some((index, span)) = ctx
+            .next_charged(&mut statement_spans, "iges macro statement tokens")
+            .map_err(TokenizeFailure::Refusal)?
+        else {
+            break;
+        };
         if index == 0 {
             continue;
         }
@@ -3789,7 +3889,9 @@ fn decimal_shape(text: &[u8], ctx: &DecodeContext<'_>) -> Result<Option<DecimalS
     let mut double_precision = false;
     let mut numeric_bytes = digits.iter();
     while numeric_bytes.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some(byte) = ctx.next_charged(&mut numeric_bytes, "iges numeric real shape")? else { break; };
+        let Some(byte) = ctx.next_charged(&mut numeric_bytes, "iges numeric real shape")? else {
+            break;
+        };
         if let Some((sign, value, count)) = exponent.as_mut() {
             match byte {
                 b'+' | b'-' if *count == 0 && *sign == 0 => {
@@ -4008,7 +4110,10 @@ fn tokenize_with_limits(
     let mut cursor = 0_usize;
     loop {
         if cursor >= bytes.len() {
-            return Err(TokenizeFailure::Defect(ParameterDefect::DelimiterMissing, cursor));
+            return Err(TokenizeFailure::Defect(
+                ParameterDefect::DelimiterMissing,
+                cursor,
+            ));
         }
         ctx.charge_work(1, "iges parameter token scan")
             .map_err(TokenizeFailure::Refusal)?;
@@ -4021,7 +4126,10 @@ fn tokenize_with_limits(
             cursor += 1;
         }
         if cursor >= bytes.len() {
-            return Err(TokenizeFailure::Defect(ParameterDefect::DelimiterMissing, cursor));
+            return Err(TokenizeFailure::Defect(
+                ParameterDefect::DelimiterMissing,
+                cursor,
+            ));
         }
         if bytes.get(cursor) == Some(&record_delimiter) {
             return Ok((tokens, cursor + 1, double_precision_reals));
@@ -4170,7 +4278,10 @@ fn contiguous_run(cards: &[u32], ctx: &DecodeContext<'_>) -> Result<Vec<u32>, Co
     let mut run = Vec::<u32>::new();
     let mut cards = cards.iter();
     while cards.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some(sequence) = ctx.next_charged(&mut cards, "iges contiguous parameter cards")? else { break; };
+        let Some(sequence) = ctx.next_charged(&mut cards, "iges contiguous parameter cards")?
+        else {
+            break;
+        };
         if run
             .last()
             .is_some_and(|last| last.checked_add(1) != Some(*sequence))
@@ -4210,7 +4321,11 @@ fn overlapping_ranges(
     let mut highest_owner = None;
     let mut ordered_ranges = ordered.into_iter();
     while ordered_ranges.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some((start, end, sequence)) = ctx.next_charged(&mut ordered_ranges, "iges declared parameter range sweep")? else { break; };
+        let Some((start, end, sequence)) =
+            ctx.next_charged(&mut ordered_ranges, "iges declared parameter range sweep")?
+        else {
+            break;
+        };
         if start < highest_end {
             ctx.insert_btree_set(
                 &mut overlapping,
@@ -4246,7 +4361,10 @@ fn owned_bytes<'ctx>(
     let mut card_count = 0_usize;
     let mut source_cards = cards.iter();
     while source_cards.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some(sequence) = ctx.next_charged(&mut source_cards, "iges owned parameter cards")? else { break; };
+        let Some(sequence) = ctx.next_charged(&mut source_cards, "iges owned parameter cards")?
+        else {
+            break;
+        };
         let Some(line) = lines.line(*sequence) else {
             continue;
         };
@@ -4258,9 +4376,8 @@ fn owned_bytes<'ctx>(
     let mut bytes = ctx.vector_storage(byte_count, "iges owned parameter bytes")?;
 
     let mut boundary_storage = ctx.reserve_scoped(0, "iges parameter card boundaries")?;
-    let mut card_boundaries = boundary_storage.with_storage(||
-        ctx.collection_vec(card_count, "iges parameter card boundaries")
-    )?;
+    let mut card_boundaries = boundary_storage
+        .with_storage(|| ctx.collection_vec(card_count, "iges parameter card boundaries"))?;
     for line in ctx
         .admit_iter(cards, "iges owned parameter bytes")?
         .filter_map(|sequence| lines.line(*sequence))
@@ -4293,17 +4410,23 @@ fn quarantine(
     let mut byte_count = 0_usize;
     let mut source_cards = cards.iter();
     while source_cards.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some(sequence) = ctx.next_charged(&mut source_cards, "iges quarantined parameter cards")? else { break; };
+        let Some(sequence) =
+            ctx.next_charged(&mut source_cards, "iges quarantined parameter cards")?
+        else {
+            break;
+        };
         let Some(line) = lines.line(*sequence) else {
             continue;
         };
-        byte_count = byte_count
-            .checked_add(line.payload.len())
-            .ok_or_else(|| ctx.refuse_codec_limit("iges quarantined parameter bytes", u64::MAX, 1))?;
+        byte_count = byte_count.checked_add(line.payload.len()).ok_or_else(|| {
+            ctx.refuse_codec_limit("iges quarantined parameter bytes", u64::MAX, 1)
+        })?;
     }
     let mut source_cards = cards.iter();
     let first = loop {
-        if source_cards.len() == 0 && ctx.resource_refusal().is_none() { break None; }
+        if source_cards.len() == 0 && ctx.resource_refusal().is_none() {
+            break None;
+        }
         match ctx.next_charged(&mut source_cards, "iges quarantined parameter bytes")? {
             Some(sequence) => {
                 if let Some(line) = lines.line(*sequence) {
@@ -4324,7 +4447,11 @@ fn quarantine(
 
             bytes.extend_from_slice(line.payload);
             while source_cards.len() != 0 || ctx.resource_refusal().is_some() {
-                let Some(sequence) = ctx.next_charged(&mut source_cards, "iges quarantined parameter bytes")? else { break; };
+                let Some(sequence) =
+                    ctx.next_charged(&mut source_cards, "iges quarantined parameter bytes")?
+                else {
+                    break;
+                };
                 let Some(line) = lines.line(*sequence) else {
                     continue;
                 };
@@ -4428,10 +4555,18 @@ fn resolve_ownership<'a, 'ctx>(
     let mut candidates = Vec::new();
     let mut owner_candidates = directory.iter();
     while owner_candidates.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some(entry) = ctx.next_charged(&mut owner_candidates, "iges parameter owner candidates")? else { break; };
-        phase_storage.with_storage(|| ctx.insert_btree_set(&mut typed, entry.sequence, "iges typed parameter owners"))?;
+        let Some(entry) =
+            ctx.next_charged(&mut owner_candidates, "iges parameter owner candidates")?
+        else {
+            break;
+        };
+        phase_storage.with_storage(|| {
+            ctx.insert_btree_set(&mut typed, entry.sequence, "iges typed parameter owners")
+        })?;
         if !(entry.entity_type == 0 && entry.parameter_line_count == 0) {
-            phase_storage.with_storage(|| ctx.reserve_vec(&mut candidates, 1, "iges parameter owner candidates"))?;
+            phase_storage.with_storage(|| {
+                ctx.reserve_vec(&mut candidates, 1, "iges parameter owner candidates")
+            })?;
             candidates.push(entry);
         }
     }
@@ -4439,39 +4574,53 @@ fn resolve_ownership<'a, 'ctx>(
     let mut named_by = BTreeMap::<u32, Vec<u32>>::new();
     let mut named_cards = lines.cards.iter().enumerate();
     while named_cards.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some((index, card)) = ctx.next_charged(&mut named_cards, "iges named parameter owners")? else { break; };
+        let Some((index, card)) =
+            ctx.next_charged(&mut named_cards, "iges named parameter owners")?
+        else {
+            break;
+        };
         let sequence = card.sequence;
         let pointer = &lines.back_pointers[index];
         if let Some(owner) = pointer {
-            phase_storage.with_storage(|| ctx.push_btree_group(
-                &mut named_by,
-                *owner,
-                sequence,
-                "iges named parameter owners",
-                "iges named parameter owner cards",
-            ))?;
+            phase_storage.with_storage(|| {
+                ctx.push_btree_group(
+                    &mut named_by,
+                    *owner,
+                    sequence,
+                    "iges named parameter owners",
+                    "iges named parameter owner cards",
+                )
+            })?;
         }
     }
     let mut declared = BTreeMap::<u32, Range<u32>>::new();
     let mut card_missing = BTreeSet::<u32>::new();
     let mut declared_candidates = candidates.iter();
     while declared_candidates.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some(entry) = ctx.next_charged(&mut declared_candidates, "iges declared parameter owners")? else { break; };
+        let Some(entry) =
+            ctx.next_charged(&mut declared_candidates, "iges declared parameter owners")?
+        else {
+            break;
+        };
         match declared_range(entry, &census) {
             DeclaredRange::Usable(range) => {
-                phase_storage.with_storage(|| ctx.insert_btree_map(
-                    &mut declared,
-                    entry.sequence,
-                    range,
-                    "iges declared parameter owners",
-                ))?;
+                phase_storage.with_storage(|| {
+                    ctx.insert_btree_map(
+                        &mut declared,
+                        entry.sequence,
+                        range,
+                        "iges declared parameter owners",
+                    )
+                })?;
             }
             DeclaredRange::CardMissing => {
-                phase_storage.with_storage(|| ctx.insert_btree_set(
-                    &mut card_missing,
-                    entry.sequence,
-                    "iges missing parameter cards",
-                ))?;
+                phase_storage.with_storage(|| {
+                    ctx.insert_btree_set(
+                        &mut card_missing,
+                        entry.sequence,
+                        "iges missing parameter cards",
+                    )
+                })?;
             }
             DeclaredRange::Unusable => {}
         }
@@ -4482,41 +4631,82 @@ fn resolve_ownership<'a, 'ctx>(
     // claims visit each card at most once.
     let mut declared_owners = declared.iter();
     while declared_owners.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some((sequence, range)) = ctx.next_charged(&mut declared_owners, "iges claimed parameter cards")? else { break; };
-        if ctx.contains_btree_set(&conflicted, sequence, "iges conflicting parameter owner lookup")? {
+        let Some((sequence, range)) =
+            ctx.next_charged(&mut declared_owners, "iges claimed parameter cards")?
+        else {
+            break;
+        };
+        if ctx.contains_btree_set(
+            &conflicted,
+            sequence,
+            "iges conflicting parameter owner lookup",
+        )? {
             continue;
         }
         let mut claimed_cards = range.clone();
         while claimed_cards.len() != 0 || ctx.resource_refusal().is_some() {
-            let Some(card) = ctx.next_charged(&mut claimed_cards, "iges claimed parameter cards")? else { break; };
-            phase_storage.with_storage(|| ctx.insert_btree_map(
-                &mut claimed,
-                card,
-                *sequence,
-                "iges claimed parameter cards",
-            ))?;
+            let Some(card) =
+                ctx.next_charged(&mut claimed_cards, "iges claimed parameter cards")?
+            else {
+                break;
+            };
+            phase_storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut claimed,
+                    card,
+                    *sequence,
+                    "iges claimed parameter cards",
+                )
+            })?;
         }
     }
     let mut claimed_owners = claimed.iter();
     while claimed_owners.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some((card, owner)) = ctx.next_charged(&mut claimed_owners, "iges claimed parameter owners")? else { break; };
+        let Some((card, owner)) =
+            ctx.next_charged(&mut claimed_owners, "iges claimed parameter owners")?
+        else {
+            break;
+        };
         match lines.back_pointer(*card) {
             Some(pointer) if pointer == *owner => {}
-            Some(pointer) if pointer % 2 == 1 && ctx.contains_btree_set(&typed, &pointer, "iges typed parameter owner lookup")? => {
-                phase_storage.with_storage(|| ctx.insert_btree_set(&mut conflicted, *owner, "iges conflicting parameter owners"))?;
-                phase_storage.with_storage(|| ctx.insert_btree_set(
-                    &mut conflicted,
-                    pointer,
-                    "iges conflicting parameter owners",
-                ))?;
+            Some(pointer)
+                if pointer % 2 == 1
+                    && ctx.contains_btree_set(
+                        &typed,
+                        &pointer,
+                        "iges typed parameter owner lookup",
+                    )? =>
+            {
+                phase_storage.with_storage(|| {
+                    ctx.insert_btree_set(
+                        &mut conflicted,
+                        *owner,
+                        "iges conflicting parameter owners",
+                    )
+                })?;
+                phase_storage.with_storage(|| {
+                    ctx.insert_btree_set(
+                        &mut conflicted,
+                        pointer,
+                        "iges conflicting parameter owners",
+                    )
+                })?;
             }
             _ => {}
         }
     }
     let mut claimed_owners = claimed.iter();
     while claimed_owners.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some((card, owner)) = ctx.next_charged(&mut claimed_owners, "iges claimed parameter owners")? else { break; };
-        if ctx.contains_btree_set(&conflicted, owner, "iges conflicting parameter owner lookup")? {
+        let Some((card, owner)) =
+            ctx.next_charged(&mut claimed_owners, "iges claimed parameter owners")?
+        else {
+            break;
+        };
+        if ctx.contains_btree_set(
+            &conflicted,
+            owner,
+            "iges conflicting parameter owner lookup",
+        )? {
             continue;
         }
         let pointer = lines.back_pointer(*card);
@@ -4536,8 +4726,20 @@ fn resolve_ownership<'a, 'ctx>(
     let mut resolved = Vec::new();
     let mut resolved_candidates = candidates.into_iter();
     while resolved_candidates.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some(entry) = ctx.next_charged(&mut resolved_candidates, "iges resolved parameter ownership")? else { break; };
-        let range = ctx.get_btree_map(&declared, &entry.sequence, "iges declared parameter owner lookup")?.cloned();
+        let Some(entry) = ctx.next_charged(
+            &mut resolved_candidates,
+            "iges resolved parameter ownership",
+        )?
+        else {
+            break;
+        };
+        let range = ctx
+            .get_btree_map(
+                &declared,
+                &entry.sequence,
+                "iges declared parameter owner lookup",
+            )?
+            .cloned();
         let run = || {
             let cards = ctx.get_btree_map(
                 &named_by,
@@ -4546,12 +4748,18 @@ fn resolve_ownership<'a, 'ctx>(
             )?;
             contiguous_run(cards.map_or(&[][..], Vec::as_slice), ctx)
         };
-        if ctx.contains_btree_set(&conflicted, &entry.sequence, "iges conflicting parameter owner lookup")? {
+        if ctx.contains_btree_set(
+            &conflicted,
+            &entry.sequence,
+            "iges conflicting parameter owner lookup",
+        )? {
             let cards = output_storage.with_storage(|| match range {
                 Some(range) => range_to_cards(range, ctx),
                 None => run(),
             })?;
-            output_storage.with_storage(|| ctx.reserve_vec(&mut resolved, 1, "iges resolved parameter ownership"))?;
+            output_storage.with_storage(|| {
+                ctx.reserve_vec(&mut resolved, 1, "iges resolved parameter ownership")
+            })?;
             resolved.push(Ownership {
                 entry,
                 cards,
@@ -4561,7 +4769,9 @@ fn resolve_ownership<'a, 'ctx>(
         }
         if let Some(range) = range {
             let cards = output_storage.with_storage(|| range_to_cards(range, ctx))?;
-            output_storage.with_storage(|| ctx.reserve_vec(&mut resolved, 1, "iges resolved parameter ownership"))?;
+            output_storage.with_storage(|| {
+                ctx.reserve_vec(&mut resolved, 1, "iges resolved parameter ownership")
+            })?;
             resolved.push(Ownership {
                 entry,
                 cards,
@@ -4585,7 +4795,9 @@ fn resolve_ownership<'a, 'ctx>(
                 },
                 FramingValue::CensusRun(run.len()),
             )?;
-            output_storage.with_storage(|| ctx.reserve_vec(&mut resolved, 1, "iges resolved parameter ownership"))?;
+            output_storage.with_storage(|| {
+                ctx.reserve_vec(&mut resolved, 1, "iges resolved parameter ownership")
+            })?;
             resolved.push(Ownership {
                 entry,
                 cards: run,
@@ -4595,19 +4807,28 @@ fn resolve_ownership<'a, 'ctx>(
         }
         let defect = if entry.parameter_line_count == 0 {
             ParameterDefect::DeclaredCountZero
-        } else if ctx.contains_btree_set(&card_missing, &entry.sequence, "iges missing parameter card lookup")? {
+        } else if ctx.contains_btree_set(
+            &card_missing,
+            &entry.sequence,
+            "iges missing parameter card lookup",
+        )? {
             ParameterDefect::DeclaredCardMissing
         } else {
             ParameterDefect::NoOwnedCards
         };
-        output_storage.with_storage(|| ctx.reserve_vec(&mut resolved, 1, "iges resolved parameter ownership"))?;
+        output_storage.with_storage(|| {
+            ctx.reserve_vec(&mut resolved, 1, "iges resolved parameter ownership")
+        })?;
         resolved.push(Ownership {
             entry,
             cards: Vec::new(),
             quarantine: Some(defect),
         });
     }
-    Ok(ResolvedOwnership { records: resolved, _storage: output_storage })
+    Ok(ResolvedOwnership {
+        records: resolved,
+        _storage: output_storage,
+    })
 }
 
 fn range_to_cards(range: Range<u32>, ctx: &DecodeContext<'_>) -> Result<Vec<u32>, CodecError> {
@@ -4632,16 +4853,22 @@ pub(crate) fn assemble_with_context<'ctx>(
     let mut entries = BTreeMap::new();
     let mut source_entries = directory.iter();
     while source_entries.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some(entry) = ctx.next_charged(&mut source_entries, "iges parameter directory entries")? else { break; };
+        let Some(entry) =
+            ctx.next_charged(&mut source_entries, "iges parameter directory entries")?
+        else {
+            break;
+        };
         if entry.entity_type == 0 && entry.parameter_line_count == 0 {
             continue;
         }
-        index_storage.with_storage(|| ctx.insert_btree_map(
-            &mut entries,
-            entry.sequence,
-            entry,
-            "iges parameter directory entries",
-        ))?;
+        index_storage.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut entries,
+                entry.sequence,
+                entry,
+                "iges parameter directory entries",
+            )
+        })?;
     }
     let mut recoveries = FramingRecoveries::default();
     let ownership = resolve_ownership(directory, &lines, &mut recoveries, ctx)?;
@@ -4653,33 +4880,43 @@ pub(crate) fn assemble_with_context<'ctx>(
     let mut quarantined = Vec::new();
     let mut owned_records = ownership.records.iter();
     while owned_records.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some(owned) = ctx.next_charged(&mut owned_records, "iges parameter records")? else { break; };
+        let Some(owned) = ctx.next_charged(&mut owned_records, "iges parameter records")? else {
+            break;
+        };
         let entry = owned.entry;
         if let Some(defect) = owned.quarantine {
-            quarantine_storage.with_storage(|| ctx.reserve_vec(&mut quarantined, 1, "iges quarantined parameter records"))?;
-            quarantined.push(quarantine_storage.with_storage(|| quarantine(entry, &owned.cards, &lines, defect, None, ctx))?);
+            quarantine_storage.with_storage(|| {
+                ctx.reserve_vec(&mut quarantined, 1, "iges quarantined parameter records")
+            })?;
+            quarantined.push(
+                quarantine_storage
+                    .with_storage(|| quarantine(entry, &owned.cards, &lines, defect, None, ctx))?,
+            );
             continue;
         }
         let mut record_storage = ctx.reserve_scoped(0, "iges parameter source record")?;
-        let mut owned_bytes = record_storage.with_storage(|| owned_bytes(&owned.cards, &lines, ctx))?;
-        let tokenized = record_storage.with_storage(|| if entry.entity_type == 306 {
-            tokenize_macro(
-                &owned_bytes.bytes,
-                global.parameter_delimiter,
-                global.record_delimiter,
-                ctx,
-            )
-            .map(|(tokens, end)| (tokens, end, Vec::new()))
-        } else {
-            tokenize_with_limits(
-                &owned_bytes.bytes,
-                &owned_bytes.card_boundaries,
-                global.parameter_delimiter,
-                global.record_delimiter,
-                global_table,
-                global.numeric_limits(),
-                ctx,
-            )
+        let mut owned_bytes =
+            record_storage.with_storage(|| owned_bytes(&owned.cards, &lines, ctx))?;
+        let tokenized = record_storage.with_storage(|| {
+            if entry.entity_type == 306 {
+                tokenize_macro(
+                    &owned_bytes.bytes,
+                    global.parameter_delimiter,
+                    global.record_delimiter,
+                    ctx,
+                )
+                .map(|(tokens, end)| (tokens, end, Vec::new()))
+            } else {
+                tokenize_with_limits(
+                    &owned_bytes.bytes,
+                    &owned_bytes.card_boundaries,
+                    global.parameter_delimiter,
+                    global.record_delimiter,
+                    global_table,
+                    global.numeric_limits(),
+                    ctx,
+                )
+            }
         });
         drop(std::mem::take(&mut owned_bytes.card_boundaries));
         drop(owned_bytes.boundary_storage);
@@ -4689,15 +4926,12 @@ pub(crate) fn assemble_with_context<'ctx>(
             Err(TokenizeFailure::Defect(defect, offset)) => {
                 drop(owned_bytes.bytes);
                 drop(record_storage);
-                quarantine_storage.with_storage(|| ctx.reserve_vec(&mut quarantined, 1, "iges quarantined parameter records"))?;
-                quarantined.push(quarantine_storage.with_storage(|| quarantine(
-                    entry,
-                    &owned.cards,
-                    &lines,
-                    defect,
-                    Some(offset),
-                    ctx,
-                ))?);
+                quarantine_storage.with_storage(|| {
+                    ctx.reserve_vec(&mut quarantined, 1, "iges quarantined parameter records")
+                })?;
+                quarantined.push(quarantine_storage.with_storage(|| {
+                    quarantine(entry, &owned.cards, &lines, defect, Some(offset), ctx)
+                })?);
                 continue;
             }
         };
@@ -4708,15 +4942,19 @@ pub(crate) fn assemble_with_context<'ctx>(
             drop(double_precision_reals);
             drop(owned_bytes.bytes);
             drop(record_storage);
-            quarantine_storage.with_storage(|| ctx.reserve_vec(&mut quarantined, 1, "iges quarantined parameter records"))?;
-            quarantined.push(quarantine_storage.with_storage(|| quarantine(
-                entry,
-                &owned.cards,
-                &lines,
-                ParameterDefect::EntityTypeTokenMismatch,
-                failing_offset,
-                ctx,
-            ))?);
+            quarantine_storage.with_storage(|| {
+                ctx.reserve_vec(&mut quarantined, 1, "iges quarantined parameter records")
+            })?;
+            quarantined.push(quarantine_storage.with_storage(|| {
+                quarantine(
+                    entry,
+                    &owned.cards,
+                    &lines,
+                    ParameterDefect::EntityTypeTokenMismatch,
+                    failing_offset,
+                    ctx,
+                )
+            })?);
             continue;
         }
         let line_start = owned.cards.first().copied().unwrap_or_default();
@@ -4730,16 +4968,19 @@ pub(crate) fn assemble_with_context<'ctx>(
         let record = ParameterRecord {
             directory_sequence: entry.sequence,
             line_range: line_start..line_end,
-            comment: record_storage.with_storage(|| ctx.copy_retained(
-                owned_bytes.bytes.get(record_end..).unwrap_or_default(),
-                "iges parameter comment",
-            ))?,
+            comment: record_storage.with_storage(|| {
+                ctx.copy_retained(
+                    owned_bytes.bytes.get(record_end..).unwrap_or_default(),
+                    "iges parameter comment",
+                )
+            })?,
             bytes: owned_bytes.bytes,
             tokens,
             parameter_end,
             double_precision_reals,
         };
-        records_storage.with_storage(|| ctx.reserve_vec(&mut records, 1, "iges parameter records"))?;
+        records_storage
+            .with_storage(|| ctx.reserve_vec(&mut records, 1, "iges parameter records"))?;
         let record = records_storage.with_storage(|| record_storage.commit_value(record))?;
         records.push(record);
     }
@@ -4748,44 +4989,63 @@ pub(crate) fn assemble_with_context<'ctx>(
         let mut record_by_directory = BTreeMap::new();
         let mut indexed_records = records.iter();
         while indexed_records.len() != 0 || ctx.resource_refusal().is_some() {
-            let Some(record) = ctx.next_charged(&mut indexed_records, "iges parameter record index")? else { break; };
-            record_index_storage.with_storage(|| ctx.insert_btree_map(
-                &mut record_by_directory,
-                record.directory_sequence,
-                record,
-                "iges parameter record index",
-            ))?;
+            let Some(record) =
+                ctx.next_charged(&mut indexed_records, "iges parameter record index")?
+            else {
+                break;
+            };
+            record_index_storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut record_by_directory,
+                    record.directory_sequence,
+                    record,
+                    "iges parameter record index",
+                )
+            })?;
         }
         let mut widths = AttributeDefinitionWidths::new(ctx)?;
         let mut analyzed_records = records.iter();
         while analyzed_records.len() != 0 || ctx.resource_refusal().is_some() {
-            let Some(record) = ctx.next_charged(&mut analyzed_records, "iges trailing parameter pointers")? else { break; };
-            let analysis = analysis_storage.with_storage(|| analyze_trailing_pointer_groups_with_records_for_global_table(
-                record,
-                &entries,
-                &record_by_directory,
-                global_table,
-                &mut widths,
-                ctx,
-            ))?;
-            analysis_storage.with_storage(|| ctx.insert_btree_map(
-                &mut trailing_pointer_analysis,
-                record.directory_sequence,
-                analysis,
-                "iges trailing parameter pointers",
-            ))?;
+            let Some(record) =
+                ctx.next_charged(&mut analyzed_records, "iges trailing parameter pointers")?
+            else {
+                break;
+            };
+            let analysis = analysis_storage.with_storage(|| {
+                analyze_trailing_pointer_groups_with_records_for_global_table(
+                    record,
+                    &entries,
+                    &record_by_directory,
+                    global_table,
+                    &mut widths,
+                    ctx,
+                )
+            })?;
+            analysis_storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut trailing_pointer_analysis,
+                    record.directory_sequence,
+                    analysis,
+                    "iges trailing parameter pointers",
+                )
+            })?;
         }
     }
     drop(entries);
     drop(index_storage);
     let mut finalized_records = records.iter_mut();
     while finalized_records.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some(record) = ctx.next_charged(&mut finalized_records, "iges parameter record ends")? else { break; };
-        record.parameter_end = ctx.get_btree_map(
-            &trailing_pointer_analysis,
-            &record.directory_sequence,
-            "iges parameter record end lookup",
-        )?
+        let Some(record) =
+            ctx.next_charged(&mut finalized_records, "iges parameter record ends")?
+        else {
+            break;
+        };
+        record.parameter_end = ctx
+            .get_btree_map(
+                &trailing_pointer_analysis,
+                &record.directory_sequence,
+                "iges parameter record end lookup",
+            )?
             .and_then(|analysis| match analysis {
                 TrailingPointerAnalysis::Unambiguous(groups) => Some(groups),
                 _ => None,
@@ -4796,10 +5056,18 @@ pub(crate) fn assemble_with_context<'ctx>(
     let mut accounted = BTreeSet::new();
     let mut accounted_owners = ownership.records.iter();
     while accounted_owners.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some(owned) = ctx.next_charged(&mut accounted_owners, "iges accounted parameter cards")? else { break; };
+        let Some(owned) =
+            ctx.next_charged(&mut accounted_owners, "iges accounted parameter cards")?
+        else {
+            break;
+        };
         let mut owned_cards = owned.cards.iter();
         while owned_cards.len() != 0 || ctx.resource_refusal().is_some() {
-            let Some(sequence) = ctx.next_charged(&mut owned_cards, "iges accounted parameter cards")? else { break; };
+            let Some(sequence) =
+                ctx.next_charged(&mut owned_cards, "iges accounted parameter cards")?
+            else {
+                break;
+            };
             accounting_storage.with_storage(|| {
                 ctx.insert_btree_set(&mut accounted, *sequence, "iges accounted parameter cards")
             })?;
@@ -4814,7 +5082,11 @@ pub(crate) fn assemble_with_context<'ctx>(
     })?;
     let mut unclaimed_cards = lines.cards.iter().enumerate();
     while unclaimed_cards.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some((index, card)) = ctx.next_charged(&mut unclaimed_cards, "iges unclaimed parameter cards")? else { break; };
+        let Some((index, card)) =
+            ctx.next_charged(&mut unclaimed_cards, "iges unclaimed parameter cards")?
+        else {
+            break;
+        };
         let (sequence, line, pointer) = (&card.sequence, &card.line, lines.back_pointers[index]);
         if ctx.contains_btree_set(&accounted, sequence, "iges accounted parameter card lookup")? {
             continue;
