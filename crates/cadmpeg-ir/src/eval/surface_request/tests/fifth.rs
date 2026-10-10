@@ -179,19 +179,15 @@ fn actual_polynomial_fifth_zero_supplies_nonzero_fourth_normal() {
             let source = crate::eval::surface_requested_jet_solved(&scratch, &geometry, 0.0, 0.0, SurfaceRequest::Fifth).unwrap();
             assert_eq!(source.higher.third().unwrap(), [FiniteVector3::ZERO; 4]);
             assert_eq!(source.higher.fourth().unwrap(), [FiniteVector3::ZERO; 5]);
-            if rational { assert_eq!(source.higher.fifth(), Err(EvaluationFailure::NoValue)); }
-            else { assert_eq!(source.higher.fifth().unwrap(), [FiniteVector3::ZERO; 6]); }
+            assert_eq!(source.higher.fifth().unwrap(), [FiniteVector3::ZERO; 6]);
             let result = super::super::offset(source, 1.0, SurfaceRequest::Fourth).unwrap();
             assert_eq!(result.jet.point.get(), Point3::new(0.0, 0.0, 1.0));
             assert_eq!(result.jet.first.unwrap()[0].get(), Vector3::new(-1.0, 0.0, 0.0));
             assert_eq!(result.jet.second.unwrap()[0].get(), Vector3::new(0.0, 0.0, -2.0));
             assert_eq!(result.higher.third().unwrap()[0].get(), Vector3::new(24.0, 0.0, 0.0));
-            if rational { assert_eq!(result.higher.fourth(), Err(EvaluationFailure::NoValue)); }
-            else {
-                let fourth = result.higher.fourth().unwrap();
-                assert_eq!(fourth[0].get(), Vector3::new(0.0, 0.0, 144.0));
-                assert_eq!(&fourth[1..], &[FiniteVector3::ZERO; 4]);
-            }
+            let fourth = result.higher.fourth().unwrap();
+            assert_eq!(fourth[0].get(), Vector3::new(0.0, 0.0, 144.0));
+            assert_eq!(&fourth[1..], &[FiniteVector3::ZERO; 4]);
         }
         ctx.finish_session().unwrap();
     }
