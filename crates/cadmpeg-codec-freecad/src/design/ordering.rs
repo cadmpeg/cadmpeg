@@ -352,6 +352,39 @@ pub(super) fn bind_parameter_dependencies<'ctx>(
     if parameters.is_empty() {
         return Ok((BTreeSet::new(), dependency_storage));
     }
+    let mut needs_local = false;
+    let mut needs_qualified = false;
+    let mut consumers = parameters.iter();
+    while consumers.len() != 0 && !(needs_local && needs_qualified) {
+        let Some(parameter) = ctx.next_charged(&mut consumers, "fcstd dependency consumers")? else {
+            break;
+        };
+        if let Some(owner) = parameter.owner.as_ref() {
+            if ctx.contains_btree_set(
+                cycle_affected_features,
+                owner,
+                "fcstd dependency consumer cycle",
+            )? {
+                continue;
+            }
+        }
+        expression_identifiers_until(
+            ctx,
+            &parameter.expression,
+            "fcstd dependency consumer identifiers",
+            |identifier| {
+                needs_local |= parameter.owner.is_some();
+                if !needs_qualified {
+                    needs_qualified = ctx.position_by(
+                        identifier.bytes(),
+                        |byte| Ok(byte == b'.'),
+                        "fcstd qualified dependency demand",
+                    )?.is_some();
+                }
+                Ok(!(needs_local && needs_qualified))
+            },
+        )?;
+    }
     let (candidate_storage, dependencies);
     (dependencies, candidate_storage) =
         ctx.with_scoped_storage("fcstd parameter dependency candidates", || {
@@ -361,7 +394,7 @@ pub(super) fn bind_parameter_dependencies<'ctx>(
             let mut local = HashMap::<(&FeatureId, &str), Option<&ParameterId>>::new();
             let mut qualified = HashMap::<String, Option<&ParameterId>>::new();
             let mut source = parameters.iter();
-            while source.len() != 0 {
+            while (needs_local || needs_qualified) && source.len() != 0 {
                 let Some(parameter) =
                     ctx.next_charged(&mut source, "fcstd dependency parameters")?
                 else {
@@ -370,7 +403,8 @@ pub(super) fn bind_parameter_dependencies<'ctx>(
                 let Some(owner) = parameter.owner.as_ref() else {
                     continue;
                 };
-                let object_names = match &mut object_names {
+                let object_names = if needs_qualified {
+                    Some(match &mut object_names {
                     Some(names) => names,
                     slot @ None => {
                         let mut names = HashMap::new();
@@ -390,6 +424,9 @@ pub(super) fn bind_parameter_dependencies<'ctx>(
                         }
                         slot.insert(names)
                     }
+                    })
+                } else {
+                    None
                 };
                 let source_name = match ctx.get_btree_map(
                     &parameter.properties,
@@ -407,6 +444,7 @@ pub(super) fn bind_parameter_dependencies<'ctx>(
                     .into_iter()
                     .flatten()
                 {
+                    if needs_local {
                     let key = (owner, name);
                     if let Some(candidate) =
                         ctx.get_mut_hash_map(&mut local, &key, "fcstd unique local candidates")?
@@ -420,6 +458,8 @@ pub(super) fn bind_parameter_dependencies<'ctx>(
                             "fcstd unique local candidates",
                         )?;
                     }
+                    }
+                    if let Some(object_names) = object_names.as_ref() {
                     if let Some(object) =
                         ctx.get_hash_map(object_names, owner, "fcstd qualified candidate owner")?
                     {
@@ -443,6 +483,7 @@ pub(super) fn bind_parameter_dependencies<'ctx>(
                                 "fcstd unique qualified candidates",
                             )?;
                         }
+                    }
                     }
                 }
             }
