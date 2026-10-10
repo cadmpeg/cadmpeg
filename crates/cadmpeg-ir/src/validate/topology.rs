@@ -642,8 +642,12 @@ pub(super) fn check_references(
             ProceduralSurfaceDefinition::Loft(definition_payload) => {
                 let sections = definition_payload.sections();
 
-                for section in ctx.admit_iter(sections, "loft section scan")? {
-                    for entry in ctx.admit_iter(&section.entries, "topology validation scan")? {
+                let mut section_visits = sections.iter();
+                while !section_visits.as_slice().is_empty() {
+                    let Some(section) = ctx.next_charged(&mut section_visits, "loft section scan")? else { break; };
+                    let mut entry_visits = section.entries.iter();
+                    while !entry_visits.as_slice().is_empty() {
+                        let Some(entry) = ctx.next_charged(&mut entry_visits, "topology validation scan")? else { break; };
                         for curve in entry
                             .path
                             .path
@@ -722,10 +726,14 @@ pub(super) fn check_references(
                 for scale in construction.scales.as_slice().iter().chain(tail_scales.into_iter().flatten()) {
                     // Leading and tail slots have fixed native capacities.
                     check_curve(&scale.path, findings)?;
-                    for curve in ctx.admit_iter(scale.auxiliaries.as_slice(), "topology validation scan")? {
+                    let mut curve_visits = scale.auxiliaries.as_slice().iter();
+                    while !curve_visits.as_slice().is_empty() {
+                        let Some(curve) = ctx.next_charged(&mut curve_visits, "topology validation scan")? else { break; };
                         check_curve(curve, findings)?;
                     }
-                    for member in ctx.admit_iter(scale.members.as_slice(), "topology validation scan")? {
+                    let mut member_visits = scale.members.as_slice().iter();
+                    while !member_visits.as_slice().is_empty() {
+                        let Some(member) = ctx.next_charged(&mut member_visits, "topology validation scan")? else { break; };
                         check_curve(&member.curve, findings)?;
                         let surface = &member.data.surface;
                         if ids.surfaces(surface.as_str(), ctx)?.is_none() {
@@ -787,10 +795,14 @@ pub(super) fn check_references(
                 for scale in construction.scales.as_slice().iter().chain(tail_scales.into_iter().flatten()) {
                     // Leading and tail slots have fixed native capacities.
                     check_curve(&scale.path, findings)?;
-                    for curve in ctx.admit_iter(scale.auxiliaries.as_slice(), "topology validation scan")? {
+                    let mut curve_visits = scale.auxiliaries.as_slice().iter();
+                    while !curve_visits.as_slice().is_empty() {
+                        let Some(curve) = ctx.next_charged(&mut curve_visits, "topology validation scan")? else { break; };
                         check_curve(curve, findings)?;
                     }
-                    for member in ctx.admit_iter(scale.members.as_slice(), "topology validation scan")? {
+                    let mut member_visits = scale.members.as_slice().iter();
+                    while !member_visits.as_slice().is_empty() {
+                        let Some(member) = ctx.next_charged(&mut member_visits, "topology validation scan")? else { break; };
                         check_curve(&member.curve, findings)?;
                         let surface = &member.data.surface;
                         if ids.surfaces(surface.as_str(), ctx)?.is_none() {
@@ -849,17 +861,25 @@ pub(super) fn check_references(
                     }
                 }
                 check_curve(&construction.parameter_curve, findings)?;
-                for variable in ctx.admit_iter(construction.formula.variables(), "topology validation scan")? {
+                let mut variable_visits = construction.formula.variables().iter();
+                while !variable_visits.as_slice().is_empty() {
+                    let Some(variable) = ctx.next_charged(&mut variable_visits, "topology validation scan")? else { break; };
                     check_law_curves(ctx, variable, ids, procedural, findings)?;
                 }
             }
             ProceduralSurfaceDefinition::Law(definition_payload) => {
                 let construction = definition_payload.construction();
-                for variable in ctx.admit_iter(construction.primary.variables(), "topology validation scan")? {
+                let mut variable_visits = construction.primary.variables().iter();
+                while !variable_visits.as_slice().is_empty() {
+                    let Some(variable) = ctx.next_charged(&mut variable_visits, "topology validation scan")? else { break; };
                     check_law_curves(ctx, variable, ids, procedural, findings)?;
                 }
-                for formula in ctx.admit_iter(&construction.additional, "topology validation scan")? {
-                    for variable in ctx.admit_iter(formula.variables(), "topology validation scan")? {
+                let mut formula_visits = construction.additional.iter();
+                while !formula_visits.as_slice().is_empty() {
+                    let Some(formula) = ctx.next_charged(&mut formula_visits, "topology validation scan")? else { break; };
+                    let mut variable_visits = formula.variables().iter();
+                    while !variable_visits.as_slice().is_empty() {
+                        let Some(variable) = ctx.next_charged(&mut variable_visits, "topology validation scan")? else { break; };
                         check_law_curves(ctx, variable, ids, procedural, findings)?;
                     }
                 }
@@ -867,7 +887,9 @@ pub(super) fn check_references(
             ProceduralSurfaceDefinition::Net(definition_payload) => {
                 let construction = definition_payload.construction();
                 for section in construction.sections.iter() {
-                    for entry in ctx.admit_iter(&section.entries, "topology validation scan")? {
+                    let mut entry_visits = section.entries.iter();
+                    while !entry_visits.as_slice().is_empty() {
+                        let Some(entry) = ctx.next_charged(&mut entry_visits, "topology validation scan")? else { break; };
                         for curve in entry
                             .path
                             .path
@@ -904,7 +926,9 @@ pub(super) fn check_references(
                     }
                 }
                 for formula in construction.formulas.iter() {
-                    for variable in ctx.admit_iter(formula.variables(), "topology validation scan")? {
+                    let mut variable_visits = formula.variables().iter();
+                    while !variable_visits.as_slice().is_empty() {
+                        let Some(variable) = ctx.next_charged(&mut variable_visits, "topology validation scan")? else { break; };
                         check_law_curves(ctx, variable, ids, procedural, findings)?;
                     }
                 }
@@ -1039,9 +1063,9 @@ pub(super) fn check_references(
                     }
                 }
                 let base_path = construction.base_path();
-                for curve in
-                    ctx.admit_iter(base_path.path.as_slice(), "topology validation scan")?
-                {
+                let mut curve_visits = base_path.path.as_slice().iter();
+                while !curve_visits.as_slice().is_empty() {
+                    let Some(curve) = ctx.next_charged(&mut curve_visits, "topology validation scan")? else { break; };
                     if ids.curves(curve.id.as_str(), ctx)?.is_none() {
                         ref_error(
                             ctx,
@@ -1052,7 +1076,9 @@ pub(super) fn check_references(
                         )?;
                     }
                 }
-                for curve in ctx.admit_iter(&base_path.auxiliaries, "topology validation scan")? {
+                let mut curve_visits = base_path.auxiliaries.iter();
+                while !curve_visits.as_slice().is_empty() {
+                    let Some(curve) = ctx.next_charged(&mut curve_visits, "topology validation scan")? else { break; };
                     if ids.curves(curve.as_str(), ctx)?.is_none() {
                         ref_error(
                             ctx,
@@ -1063,12 +1089,12 @@ pub(super) fn check_references(
                         )?;
                     }
                 }
-                for entry in
-                    ctx.admit_iter(construction.entries(), "compound loft path entry scan")?
-                {
-                    for curve in
-                        ctx.admit_iter(entry.path.path.as_slice(), "topology validation scan")?
-                    {
+                let mut entry_visits = construction.entries().iter();
+                while !entry_visits.as_slice().is_empty() {
+                    let Some(entry) = ctx.next_charged(&mut entry_visits, "compound loft path entry scan")? else { break; };
+                    let mut curve_visits = entry.path.path.as_slice().iter();
+                while !curve_visits.as_slice().is_empty() {
+                    let Some(curve) = ctx.next_charged(&mut curve_visits, "topology validation scan")? else { break; };
                         if ids.curves(curve.id.as_str(), ctx)?.is_none() {
                             ref_error(
                                 ctx,
@@ -1079,9 +1105,9 @@ pub(super) fn check_references(
                             )?;
                         }
                     }
-                    for curve in
-                        ctx.admit_iter(&entry.path.auxiliaries, "topology validation scan")?
-                    {
+                    let mut curve_visits = entry.path.auxiliaries.iter();
+                while !curve_visits.as_slice().is_empty() {
+                    let Some(curve) = ctx.next_charged(&mut curve_visits, "topology validation scan")? else { break; };
                         if ids.curves(curve.as_str(), ctx)?.is_none() {
                             ref_error(
                                 ctx,
@@ -1316,7 +1342,9 @@ pub(super) fn check_references(
                         }
                     };
                     for formula in formulas {
-                        for variable in ctx.admit_iter(formula.variables(), "topology validation scan")? {
+                        let mut variable_visits = formula.variables().iter();
+                        while !variable_visits.as_slice().is_empty() {
+                            let Some(variable) = ctx.next_charged(&mut variable_visits, "topology validation scan")? else { break; };
                             check_law_curves(ctx, variable, ids, procedural, findings)?;
                         }
                     }
@@ -1614,11 +1642,17 @@ pub(super) fn check_references(
                         }
                     }
                 }
-                for variable in ctx.admit_iter(primary.formula().variables(), "topology validation scan")? {
+                let mut variable_visits = primary.formula().variables().iter();
+                while !variable_visits.as_slice().is_empty() {
+                    let Some(variable) = ctx.next_charged(&mut variable_visits, "topology validation scan")? else { break; };
                     check(ctx, variable, ids, procedural, findings)?;
                 }
-                for formula in ctx.admit_iter(additional, "topology validation scan")? {
-                    for variable in ctx.admit_iter(formula.formula().variables(), "topology validation scan")? {
+                let mut formula_visits = additional.iter();
+                while !formula_visits.as_slice().is_empty() {
+                    let Some(formula) = ctx.next_charged(&mut formula_visits, "topology validation scan")? else { break; };
+                    let mut variable_visits = formula.formula().variables().iter();
+                    while !variable_visits.as_slice().is_empty() {
+                        let Some(variable) = ctx.next_charged(&mut variable_visits, "topology validation scan")? else { break; };
                         check(ctx, variable, ids, procedural, findings)?;
                     }
                 }

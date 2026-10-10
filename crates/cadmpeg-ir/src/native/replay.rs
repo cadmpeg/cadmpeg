@@ -9,6 +9,8 @@
 use std::borrow::Cow;
 use std::fmt;
 
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+
 use serde::{de, ser};
 use serde_json::value::RawValue;
 
@@ -24,9 +26,10 @@ pub(super) fn emit<S: ser::Serializer>(
     json: &str,
     serializer: S,
     depth: usize,
+    ctx: &DecodeContext<'_>,
 ) -> Result<S::Ok, S::Error> {
     let mut deserializer = serde_json::Deserializer::from_str(json);
-    let emitted = de::Deserializer::deserialize_any(&mut deserializer, Emit { serializer, depth })
+    let emitted = de::Deserializer::deserialize_any(&mut deserializer, Emit { serializer, depth, ctx, bytes: json.len() })
         .map_err(de_to_ser)?;
     deserializer.end().map_err(de_to_ser)?;
     Ok(emitted)
@@ -46,14 +49,16 @@ fn de_to_ser<D: de::Error, S: ser::Error>(error: D) -> S {
 }
 
 /// Writes whatever it is handed straight into a serializer.
-struct Emit<S> {
+struct Emit<'a, S> {
     /// Where the value is written.
     serializer: S,
     /// Containers this value may still enter.
     depth: usize,
+    ctx: &'a DecodeContext<'a>,
+    bytes: usize,
 }
 
-impl<'de, S: ser::Serializer> de::Visitor<'de> for Emit<S> {
+impl<'de, S: ser::Serializer> de::Visitor<'de> for Emit<'_, S> {
     type Value = S::Ok;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
@@ -96,6 +101,8 @@ impl<'de, S: ser::Serializer> de::Visitor<'de> for Emit<S> {
         let Some(depth) = self.depth.checked_sub(1) else {
             return Err(nests_too_deep());
         };
+        self.ctx.charge_work(u64_from_index(self.bytes), "construct canonical native value")
+            .map_err(de::Error::custom)?;
         let mut sequence = self
             .serializer
             .serialize_seq(access.size_hint())
@@ -104,6 +111,7 @@ impl<'de, S: ser::Serializer> de::Visitor<'de> for Emit<S> {
             let child = Replay {
                 json: value.get(),
                 depth,
+                ctx: self.ctx,
             };
             ser::SerializeSeq::serialize_element(&mut sequence, &child).map_err(ser_to_de)?;
         }
@@ -114,6 +122,8 @@ impl<'de, S: ser::Serializer> de::Visitor<'de> for Emit<S> {
         let Some(depth) = self.depth.checked_sub(1) else {
             return Err(nests_too_deep());
         };
+        self.ctx.charge_work(u64_from_index(self.bytes), "construct canonical native value")
+            .map_err(de::Error::custom)?;
         let mut map = self
             .serializer
             .serialize_map(access.size_hint())
@@ -124,6 +134,7 @@ impl<'de, S: ser::Serializer> de::Visitor<'de> for Emit<S> {
             let child = Replay {
                 json: value.get(),
                 depth,
+                ctx: self.ctx,
             };
             ser::SerializeMap::serialize_value(&mut map, &child).map_err(ser_to_de)?;
         }
@@ -144,11 +155,12 @@ struct Replay<'a> {
     json: &'a str,
     /// Containers this child may still enter.
     depth: usize,
+    ctx: &'a DecodeContext<'a>,
 }
 
 impl ser::Serialize for Replay<'_> {
     fn serialize<S: ser::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        emit(self.json, serializer, self.depth)
+        emit(self.json, serializer, self.depth, self.ctx)
     }
 }
 
@@ -195,9 +207,34 @@ mod tests {
     use crate::native::MAX_NATIVE_NESTING_DEPTH;
     use serde_json::Value;
 
+    #[test]
+    fn raw_replay_charges_only_text_passes_that_run() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        use super::u64_from_index;
+        for (json, work) in [("7", 1), ("[[7]]", 5 + 5 + 3)] {
+            let run = |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                ctx.charge_work(u64_from_index(json.len()), "construct canonical native value")?;
+                let result = emit(json, serde_json::value::Serializer, MAX_NATIVE_NESTING_DEPTH, &ctx);
+                ctx.finish_session()?;
+                result.map_err(|error| CodecError::malformed(error.to_string()))
+            };
+            cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::WorkUnits, "construct canonical native value", run,
+            );
+            // One text pass, plus each entered container: 1 byte, or 5 + 5 + 3 bytes.
+            assert_eq!(run(work).unwrap(), serde_json::from_str::<Value>(json).unwrap());
+        }
+    }
+
     /// Replay one whole native record field.
     fn emit_field<S: serde::ser::Serializer>(json: &str, serializer: S) -> Result<S::Ok, S::Error> {
-        emit(json, serializer, MAX_NATIVE_NESTING_DEPTH)
+        let ctx = cadmpeg_test_support::service_decode_context();
+        emit(json, serializer, MAX_NATIVE_NESTING_DEPTH, &ctx)
     }
 
     const TEXT: &str = concat!(
@@ -221,9 +258,11 @@ mod tests {
 
     #[test]
     fn a_borrowed_member_can_be_serialized_more_than_once() {
+        let ctx = cadmpeg_test_support::service_decode_context();
         let member = super::Replay {
             json: TEXT,
             depth: MAX_NATIVE_NESTING_DEPTH,
+            ctx: &ctx,
         };
         let expected = serde_json::from_str::<Value>(TEXT).unwrap();
         assert_eq!(serde_json::to_value(&member).unwrap(), expected);

@@ -446,7 +446,9 @@ pub(in crate::validate) fn check_shell_connectivity(
                 break;
             };
             if let Some(face_groups) = groups_by_face.get(ctx, face)? {
-                for &group_index in ctx.admit_iter(face_groups, "shell connectivity incidence scan")? {
+                let mut group_visits = face_groups.iter();
+                while !group_visits.as_slice().is_empty() {
+                    let Some(&group_index) = ctx.next_charged(&mut group_visits, "shell connectivity incidence scan")? else { break; };
                     if visited_groups[group_index] == Some(shell_index) {
                         continue;
                     }
