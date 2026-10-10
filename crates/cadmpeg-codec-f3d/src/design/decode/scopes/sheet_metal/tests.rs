@@ -391,7 +391,12 @@ mod to_object {
         write_marked_reference(&mut bytes, COMMON + to_object::EDGE_GROUP_REFERENCE, 108);
 
         let Some(operation) =
-            super::super::edge_flange_to_object_operation_at(&bytes, 0, 576, &REFERENCES, 0)
+            crate::test_support::with_decode_context(|ctx| {
+                match super::super::edge_flange_to_object_operation_at(&bytes, 0, 576, &REFERENCES, 0) {
+                    Some(frame) => frame.retain(ctx),
+                    None => Ok(None),
+                }
+            }).expect("ToObject storage admission")
         else {
             panic!("valid ToObject frame must produce an operation");
         };
@@ -572,3 +577,5 @@ mod binding {
 }
 
 mod callback_refusal;
+
+mod flange_storage;
