@@ -2428,9 +2428,7 @@ fn transfer_primitive_appearance(
             provider_identity_key(ctx, provider_name)
         })
         .map(|(key, storage)| (storage, key))?;
-    let (_id_storage, (appearance_id, label, property, size, binding_key, object_type, precedence)) =
-        ctx.with_scoped_storage("FCStd GUI primitive identity storage", || {
-            Ok::<_, CodecError>(match style {
+    let (appearance_id, label, property, size, binding_key, object_type, precedence) = match style {
                 PrimitiveStyle::Line(width) => (
                     edge_appearance_id(ctx, &provider_key)?,
                     "line",
@@ -2449,9 +2447,7 @@ fn transfer_primitive_appearance(
                     "ViewProvider Vertex",
                     "vertex_over_object",
                 ),
-            })
-        })
-        .map(|(identity, storage)| (storage, identity))?;
+    };
     let admitted_size = match size {
         PrimitiveSize::Admitted(value) if value.get() >= 0.0 => Some(value),
         PrimitiveSize::Absent | PrimitiveSize::Admitted(_) | PrimitiveSize::NonFinite => None,
@@ -2474,8 +2470,8 @@ fn transfer_primitive_appearance(
     plan.appearance_storage.with_storage(|| {
         ctx.reserve_vec(&mut plan.appearances, 1, "FCStd GUI planned appearances")
     })?;
-    plan.appearances.push(Appearance {
-        id: appearance_id.try_clone_for_decode(ctx, "FCStd GUI appearance identity copy")?,
+    let appearance = Appearance {
+        id: appearance_id,
         name: Some(ctx.format_retained(
             format_args!("{provider_name} {label} appearance"),
             "FCStd GUI appearance name",
@@ -2516,7 +2512,7 @@ fn transfer_primitive_appearance(
             }
             properties
         },
-    });
+     };
     let mut binding_sources = targets.into_iter().enumerate();
     while binding_sources.len() != 0 {
         let Some((index, target)) =
@@ -2533,7 +2529,7 @@ fn transfer_primitive_appearance(
                 format_args!("fcstd:appearance:binding#{binding_key}:{provider_key}:{index}"),
             )?,
             target,
-            appearance: appearance_id
+            appearance: appearance.id
                 .try_clone_for_decode(ctx, "FCStd GUI binding appearance identity")?,
             source_entity_id: Some(
                 ctx.copy_retained_text(object_id, "FCStd GUI binding source identity")?,
@@ -2555,6 +2551,7 @@ fn transfer_primitive_appearance(
         });
     }
     drop(binding_sources);
+    plan.appearances.push(appearance);
     drop(target_storage);
     Ok(())
 }
@@ -2688,14 +2685,10 @@ fn append_native_provider(
     let name = ctx
         .xml_attribute(provider, "name", "FCStd GUI provider attribute")?
         .ok_or_else(|| CodecError::Malformed("ViewProvider has no name".into()))?;
-    let (_id_storage, id) = ctx
-        .with_scoped_storage("FCStd GUI provider identity storage", || {
-            crate::native::native_id_charged(ctx, "gui-view-provider", name)
-        })
-        .map(|(id, storage)| (storage, id))?;
+    let id = crate::native::native_id_charged(ctx, "gui-view-provider", name)?;
     ctx.reserve_vec(providers, 1, "FCStd GUI provider records")?;
-    providers.push(GuiViewProviderRecord {
-        id: ctx.copy_retained_text(&id, "FCStd GUI provider record identity")?,
+    let record = GuiViewProviderRecord {
+        id,
         object: object
             .map(|object| {
                 cadmpeg_core::text::NonBlankString::for_decode(
@@ -2714,7 +2707,8 @@ fn append_native_provider(
             .and_then(parse_bool),
         order,
         raw_xml: ctx.copy_retained_text(&text[provider.range()], "FCStd GUI provider XML")?,
-    });
+    };
+    let id = &record.id;
     let Some(container) = unique_child(ctx, provider, "Properties")? else {
         return Err(gui_malformed(
             ctx,
@@ -2857,8 +2851,8 @@ fn append_native_provider(
         }
         ctx.reserve_vec(properties, 1, "FCStd GUI property records")?;
         properties.push(GuiPropertyRecord {
-            id: crate::native::native_child_id_charged(ctx, "gui-property", &id, property_name)?,
-            owner: ctx.copy_retained_text(&id, "FCStd GUI property owner")?,
+            id: crate::native::native_child_id_charged(ctx, "gui-property", id, property_name)?,
+            owner: ctx.copy_retained_text(id, "FCStd GUI property owner")?,
             name: ctx.copy_retained_text(property_name, "FCStd GUI property name")?,
             type_name: ctx.copy_retained_text(type_name, "FCStd GUI property type")?,
             status: ctx
@@ -2882,6 +2876,9 @@ fn append_native_provider(
     }
     drop(property_nodes);
     drop(_node_storage);
+    drop(names);
+    drop(name_storage);
+    providers.push(record);
     Ok(())
 }
 
@@ -6200,95 +6197,8 @@ fn transfer_shape_appearances<'source, 'ir, 'ctx>(
             })?;
         }
     }
-    let (legacy_id_storage, legacy_ids_by_provider) = ctx
-        .with_scoped_storage("FCStd GUI legacy appearance identities", || {
-            let mut ids = HashMap::new();
-            let mut providers = graph.providers.iter();
-            while providers.len() != 0 {
-                let Some(provider) =
-                    ctx.next_charged(&mut providers, "FCStd GUI legacy appearance providers")?
-                else {
-                    break;
-                };
-                if provider.object.is_none() {
-                    continue;
-                }
-                let Some(property) = ctx.get_btree_map(
-                    &appearance_properties,
-                    provider.id.as_str(),
-                    "FCStd GUI ShapeAppearance lookup",
-                )?
-                else {
-                    continue;
-                };
-                let Some(materials) = ctx.get_hash_map(
-                    material_lists,
-                    property.id.as_str(),
-                    "FCStd GUI material list lookup",
-                )?
-                else {
-                    continue;
-                };
-                if materials.len() != 1 {
-                    continue;
-                }
-                let (_key_storage, provider_key) = ctx
-                    .with_scoped_storage("FCStd GUI provider key storage", || {
-                        provider_identity_key(ctx, &provider.name)
-                    })
-                    .map(|(key, storage)| (storage, key))?;
-                let appearance = object_appearance_id(ctx, &provider_key)?;
-                ctx.insert_hash_map(
-                    &mut ids,
-                    provider.id.as_str(),
-                    appearance,
-                    "FCStd GUI legacy appearance identities",
-                )?;
-            }
-            Ok::<_, CodecError>(ids)
-        })
-        .map(|(ids, storage)| (storage, ids))?;
-    let mut binding_count_storage = ctx.reserve_scoped(0, "FCStd GUI legacy binding counts")?;
-    let mut binding_counts = BTreeMap::<&str, usize>::new();
-    if !legacy_ids_by_provider.is_empty() {
-        let mut providers = graph.providers.iter();
-        while providers.len() != 0 {
-            let Some(provider) =
-                ctx.next_charged(&mut providers, "FCStd GUI legacy binding count identities")?
-            else {
-                break;
-            };
-            if let Some(appearance) = ctx.get_hash_map(
-                &legacy_ids_by_provider,
-                provider.id.as_str(),
-                "FCStd GUI legacy binding count appearance lookup",
-            )? {
-                binding_count_storage.with_storage(|| {
-                    ctx.insert_btree_map(
-                        &mut binding_counts,
-                        appearance.as_str(),
-                        0,
-                        "FCStd GUI legacy binding counts",
-                    )
-                })?;
-            }
-        }
-        let mut bindings = plan.bindings.iter();
-        while bindings.len() != 0 {
-            let Some(binding) =
-                ctx.next_charged(&mut bindings, "FCStd GUI legacy binding count sources")?
-            else {
-                break;
-            };
-            if let Some(count) = ctx.get_mut_btree_map(
-                &mut binding_counts,
-                binding.appearance.as_str(),
-                "FCStd GUI legacy binding count lookup",
-            )? {
-                *count += 1;
-            }
-        }
-    }
+    let mut binding_count_storage = None;
+    let mut binding_counts: Option<BTreeMap<String, usize>> = None;
     let mut providers = graph.providers.iter();
     while providers.len() != 0 {
         let Some(provider) = ctx.next_charged(&mut providers, "FCStd GUI material providers")?
@@ -6345,11 +6255,7 @@ fn transfer_shape_appearances<'source, 'ir, 'ctx>(
                 }
             })
             .map(|(body_ids, storage)| (storage, body_ids))?;
-        let group = if materials.len() == 1 {
-            None
-        } else {
-            displayed_shape_group(ctx, object_id, shape_index, "Face")?
-        };
+        let group = displayed_shape_group(ctx, object_id, shape_index, "Face")?;
         let mapped_count = match group {
             None => 0,
             Some(group) => match group.names.len() {
@@ -6358,19 +6264,36 @@ fn transfer_shape_appearances<'source, 'ir, 'ctx>(
             },
         };
         if materials.len() == 1 {
-            let legacy_id = match ctx.get_hash_map(
-                &legacy_ids_by_provider,
-                provider.id.as_str(),
-                "FCStd GUI legacy appearance lookup",
-            )? {
-                Some(appearance) => {
-                    appearance.try_clone_for_decode(ctx, "FCStd GUI legacy appearance identity")?
+            let counts = match &mut binding_counts {
+                Some(counts) => counts,
+                slot @ None => {
+                    let (counts, storage) = ctx.with_scoped_storage("FCStd GUI legacy binding counts", || {
+                        let mut counts = BTreeMap::<String, usize>::new();
+                        let mut bindings = plan.bindings.iter();
+                        while bindings.len() != 0 {
+                            let Some(binding) = ctx.next_charged(&mut bindings, "FCStd GUI legacy binding count sources")? else {
+                                break;
+                            };
+                            if !binding.appearance.as_str().starts_with(OBJECT_APPEARANCE_ID_PREFIX) {
+                                continue;
+                            }
+                            if let Some(count) = ctx.get_mut_btree_map(&mut counts, binding.appearance.as_str(), "FCStd GUI legacy binding count lookup")? {
+                                *count += 1;
+                            } else {
+                                let key = ctx.copy_retained_text(binding.appearance.as_str(), "FCStd GUI legacy binding count identity")?;
+                                ctx.insert_btree_map(&mut counts, key, 1, "FCStd GUI legacy binding counts")?;
+                            }
+                        }
+                        Ok::<_, CodecError>(counts)
+                    })?;
+                    binding_count_storage = Some(storage);
+                    slot.insert(counts)
                 }
-                None => object_appearance_id(ctx, &provider_key)?,
             };
+            let legacy_id = plan.remove_appearance_storage.with_storage(|| object_appearance_id(ctx, &provider_key))?;
             let removed_count = ctx
                 .get_btree_map(
-                    &binding_counts,
+                    counts,
                     legacy_id.as_str(),
                     "FCStd GUI removed binding count lookup",
                 )?
@@ -6424,21 +6347,11 @@ fn transfer_shape_appearances<'source, 'ir, 'ctx>(
             else {
                 break;
             };
-            let (_id_storage, appearance_id) = ctx
-                .with_scoped_storage("FCStd GUI appearance identity storage", || {
-                    shape_material_appearance_id(ctx, &provider_key, index)
-                })
-                .map(|(id, storage)| (storage, id))?;
+            let appearance_id = shape_material_appearance_id(ctx, &provider_key, index)?;
             plan.appearance_storage.with_storage(|| {
                 ctx.reserve_vec(&mut plan.appearances, 1, "FCStd GUI planned appearances")
             })?;
-            plan.appearances.push(material_appearance(
-                ctx,
-                appearance_id.try_clone_for_decode(ctx, "FCStd GUI appearance identity copy")?,
-                &provider.name,
-                index,
-                material,
-            )?);
+            let appearance = material_appearance(ctx, appearance_id, &provider.name, index, material)?;
             if materials.len() == 1 {
                 let mut bodies = body_ids.iter().enumerate();
                 while bodies.len() != 0 {
@@ -6467,7 +6380,7 @@ fn transfer_shape_appearances<'source, 'ir, 'ctx>(
                         target: AppearanceTarget::Body(
                             body.try_clone_for_decode(ctx, "FCStd GUI binding body identity")?,
                         ),
-                        appearance: appearance_id
+                        appearance: appearance.id
                             .try_clone_for_decode(ctx, "FCStd GUI binding appearance identity")?,
                         source_entity_id: Some(
                             ctx.copy_retained_text(object_id, "FCStd GUI binding source identity")?,
@@ -6484,18 +6397,17 @@ fn transfer_shape_appearances<'source, 'ir, 'ctx>(
                     plan,
                     group,
                     index,
-                    &appearance_id,
+                    &appearance.id,
                     (&provider_key, object_id),
                 )?;
             }
+            plan.appearances.push(appearance);
         }
     }
     drop(appearance_properties);
     drop(appearance_property_storage);
     drop(binding_counts);
     drop(binding_count_storage);
-    drop(legacy_ids_by_provider);
-    drop(legacy_id_storage);
     Ok(())
 }
 
@@ -7359,6 +7271,140 @@ mod shape_association_tests {
             assert_eq!(ir.model.bodies[0].color, None);
         });
     }
+
+    fn material_graph() -> super::Graph {
+        super::Graph {
+            providers: vec![crate::native::GuiViewProviderRecord {
+                id: "fcstd:native:gui-view-provider#P".into(),
+                object: Some(cadmpeg_core::text::NonBlankString::try_from("object").expect("object identity")),
+                name: "P".into(),
+                expanded: None,
+                order: 0,
+                raw_xml: "<ViewProvider/>".into(),
+            }],
+            properties: vec![crate::native::GuiPropertyRecord {
+                id: "material-property".into(),
+                owner: "fcstd:native:gui-view-provider#P".into(),
+                name: "ShapeAppearance".into(),
+                type_name: "App::PropertyMaterialList".into(),
+                status: None,
+                order: 0,
+                values: Vec::new(),
+                side_entries: Vec::new(),
+                xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0).expect("property XML"),
+            }],
+            ..Default::default()
+        }
+    }
+
+    fn material() -> super::GuiMaterial<'static> {
+        let zero = cadmpeg_ir::scalar::FiniteBinary32::new(0.0).expect("finite zero");
+        super::GuiMaterial {
+            ambient: 0,
+            diffuse: 0x1122_33ff,
+            specular: 0,
+            emissive: 0,
+            shininess: zero,
+            transparency: zero,
+            uuid: "",
+        }
+    }
+
+    fn assert_single_material_ambiguity(maps: &[ElementMapRecord], expected: &str) {
+        let ir = shape_ir();
+        let properties = [shape_property("property")];
+        let payloads = [shape_payload("payload", "property")];
+        let entries = std::collections::BTreeMap::new();
+        let graph = material_graph();
+        let materials = std::collections::HashMap::from([("material-property", vec![material()])]);
+        let sources = super::GuiSources {
+            entries: &entries,
+            objects: &[],
+            properties: &properties,
+            payloads: &payloads,
+            element_maps: maps,
+            requires_alpha_conversion: false,
+        };
+        crate::test_support::with_service_context(&[], |ctx| {
+            let mut plan = super::AppearancePlan::new(ctx).expect("plan storage");
+            let error = super::transfer_shape_appearances(ctx, &mut plan, &graph, &materials, &sources, &ir, &mut None, &mut None, &mut Vec::new())
+                .expect_err("ambiguous single-material shape");
+            assert!(matches!(error, cadmpeg_core::CodecError::Malformed(message) if message == expected));
+            assert!(plan.appearances.is_empty());
+            assert!(plan.bindings.is_empty());
+            assert!(plan.remove_appearances.is_empty());
+        });
+    }
+
+    #[test]
+    fn single_material_rejects_duplicate_face_groups() {
+        assert_single_material_ambiguity(
+            &[element_map("property", vec![group("Face"), group("Face")])],
+            "Shape property property has multiple Face groups",
+        );
+    }
+
+    #[test]
+    fn single_material_rejects_duplicate_element_maps() {
+        let map = element_map("property", vec![group("Face")]);
+        assert_single_material_ambiguity(
+            &[map.clone(), ElementMapRecord { id: "map-2".into(), ..map }],
+            "Shape property property has multiple element maps",
+        );
+    }
+
+    #[test]
+    fn single_material_removes_legacy_bindings_without_building_faces() {
+        let mut ir = shape_ir();
+        let properties = [shape_property("property")];
+        let payloads = [shape_payload("payload", "property")];
+        let maps = [element_map("property", vec![group("Face")])];
+        let entries = std::collections::BTreeMap::new();
+        let graph = material_graph();
+        let materials = std::collections::HashMap::from([("material-property", vec![material()])]);
+        let sources = super::GuiSources {
+            entries: &entries,
+            objects: &[],
+            properties: &properties,
+            payloads: &payloads,
+            element_maps: &maps,
+            requires_alpha_conversion: false,
+        };
+        crate::test_support::with_service_context(&[], |ctx| {
+            let mut plan = super::AppearancePlan::new(ctx).expect("plan storage");
+            let key = super::provider_identity_key(ctx, "P").expect("provider key");
+            let legacy_id = super::object_appearance_id(ctx, &key).expect("legacy identity");
+            plan.appearances.push(super::material_appearance(ctx, legacy_id.clone(), "P", 0, &material()).expect("legacy appearance"));
+            for index in 0..2 {
+                plan.bindings.push(cadmpeg_ir::appearance::AppearanceBinding {
+                    id: cadmpeg_ir::ids::AppearanceBindingId::mint(format!("fcstd:appearance:binding#legacy:{index}")).expect("binding identity"),
+                    target: cadmpeg_ir::appearance::AppearanceTarget::Body(ir.model.bodies[0].id.clone()),
+                    appearance: legacy_id.clone(),
+                    source_entity_id: None,
+                    object_type: None,
+                    visible: None,
+                    channels: std::collections::BTreeMap::new(),
+                });
+            }
+            let mut shape = None;
+            let mut topology = None;
+            super::transfer_shape_appearances(ctx, &mut plan, &graph, &materials, &sources, &ir, &mut shape, &mut topology, &mut Vec::new())
+                .expect("single-material transfer");
+            assert_eq!(plan.removed_binding_count, 2);
+            assert!(!topology.as_ref().expect("body demand").face_built);
+            assert!(!topology.as_ref().expect("body demand").edge_built);
+            assert!(!topology.as_ref().expect("body demand").vertex_built);
+            drop(shape);
+            drop(topology);
+            plan.apply(ctx, &mut ir).expect("material replacement");
+            assert_eq!(ir.model.appearances.len(), 1);
+            assert_eq!(ir.model.appearances[0].id.as_str(), "fcstd:appearance:shape-material#P:1");
+            assert_eq!(ir.model.appearance_bindings.len(), 1);
+            assert_eq!(ir.model.appearance_bindings[0].appearance, ir.model.appearances[0].id);
+            assert_eq!(ir.model.bodies[0].color, ir.model.appearances[0].base_color);
+        });
+    }
+
 
     #[test]
     fn source_indexes_build_only_for_requested_channels() {
