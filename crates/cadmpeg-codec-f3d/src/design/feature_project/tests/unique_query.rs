@@ -246,3 +246,5 @@ mod remaining;
 mod operand_groups;
 
 mod callback_refusal;
+
+mod entity_membership;
