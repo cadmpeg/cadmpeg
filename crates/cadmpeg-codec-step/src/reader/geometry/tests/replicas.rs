@@ -1097,8 +1097,7 @@ fn composite_over_forward_replicas_preserves_dependency_storage_bound() {
 
 #[test]
 fn composite_curves_preserve_first_producer_wake_order() {
-    let records =
-        "#1=COMPOSITE_CURVE('',(#101,#102),.F.);
+    let records = "#1=COMPOSITE_CURVE('',(#101,#102),.F.);
 #2=COMPOSITE_CURVE('',(#103,#104),.F.);
 #3=CURVE_REPLICA('',#10,#20);
 #4=CURVE_REPLICA('',#10,#20);
@@ -1116,11 +1115,27 @@ fn composite_curves_preserve_first_producer_wake_order() {
 #104=COMPOSITE_CURVE_SEGMENT(.CONTINUOUS.,.T.,#5);";
     let source = format!("ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;{records}#9000=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));#9001=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));ENDSEC;END-ISO-10303-21;");
     crate::test_support::with_service_context(source.as_bytes(), |bytes, ctx| {
-        let (exchange, _) = crate::parse::parse_inner(bytes, ctx).expect("complete geometry fixture");
+        let (exchange, _) =
+            crate::parse::parse_inner(bytes, ctx).expect("complete geometry fixture");
         let mut ir = CadIr::empty();
-        let _stage = super::super::decode(&exchange, &mut ir, ctx).expect("geometry stage admission");
-        let order: Vec<_> = ir.model.curves.iter().map(|curve| curve.id.as_str()).collect();
-    assert_eq!(order, ["step:data:curve#10", "step:data:curve#3", "step:data:curve#4",
-        "step:data:curve#5", "step:data:curve#2", "step:data:curve#1"]);
+        let _stage =
+            super::super::decode(&exchange, &mut ir, ctx).expect("geometry stage admission");
+        let order: Vec<_> = ir
+            .model
+            .curves
+            .iter()
+            .map(|curve| curve.id.as_str())
+            .collect();
+        assert_eq!(
+            order,
+            [
+                "step:data:curve#10",
+                "step:data:curve#3",
+                "step:data:curve#4",
+                "step:data:curve#5",
+                "step:data:curve#2",
+                "step:data:curve#1"
+            ]
+        );
     });
 }

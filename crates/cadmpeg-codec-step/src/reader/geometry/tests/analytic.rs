@@ -82,8 +82,12 @@ fn tessellated_curve_name_refuses_materialized_limit() {
                 length: std::collections::BTreeMap::new(),
                 angle: std::collections::BTreeMap::new(),
             };
-            let mut loss_storage = ctx.reserve_scoped(0, "test geometry report backing").expect("report owner");
-            let mut claim_storage = ctx.reserve_scoped(0, "test geometry claims").expect("claim owner");
+            let mut loss_storage = ctx
+                .reserve_scoped(0, "test geometry report backing")
+                .expect("report owner");
+            let mut claim_storage = ctx
+                .reserve_scoped(0, "test geometry claims")
+                .expect("claim owner");
             // The geometry-wide index peak does not define the local name boundary.
             super::super::decode_tessellated_curve_sets(
                 &exchange,
@@ -109,7 +113,10 @@ fn assert_association_name_refuses(
         &mut cadmpeg_ir::document::CadIr,
         &crate::reader::index::CarrierIndex,
         &super::super::OwnedCarriers,
-        (&mut Vec<cadmpeg_ir::report::loss::LossNote>, &mut cadmpeg_core::decode::ScopedReservation<'_>),
+        (
+            &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+            &mut cadmpeg_core::decode::ScopedReservation<'_>,
+        ),
         &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<(), cadmpeg_core::CodecError>,
 ) {
@@ -133,9 +140,18 @@ fn assert_association_name_refuses(
                 .expect("empty model has no carrier index entries");
             let owned = super::super::topology_owned_carriers(&ir, &index, &ctx)
                 .expect("empty model has no owned carriers");
-            let mut loss_storage = ctx.reserve_scoped(0, "test geometry report backing").expect("report owner");
-    let mut losses = Vec::new();
-            run(&exchange, &mut ir, &index, &owned, (&mut losses, &mut loss_storage), &ctx)
+            let mut loss_storage = ctx
+                .reserve_scoped(0, "test geometry report backing")
+                .expect("report owner");
+            let mut losses = Vec::new();
+            run(
+                &exchange,
+                &mut ir,
+                &index,
+                &owned,
+                (&mut losses, &mut loss_storage),
+                &ctx,
+            )
         },
     );
     assert!(matches!(error,
