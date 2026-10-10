@@ -169,3 +169,89 @@ fn ruled_same_basis_weights_refuse_first_actual_source_visit() {
 fn ruled_same_basis_weights_refuse_last_actual_source_visit() {
     same_basis_source_refusal(4, "iges ruled weight row traversal");
 }
+
+fn closure_source_refusal(curve: &NurbsCurve, cap: u64, additional: u64, operation: &'static str) {
+    let before = serde_json::to_value(curve).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = cap;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let Err(CodecError::ResourceLimit(original)) =
+        super::super::homogeneous_bezier_spans(&ctx, curve)
+    else {
+        panic!("expected closure source or first conversion refusal");
+    };
+    assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(original.operation, operation);
+    assert_eq!((original.limit, original.used, original.additional), (cap, cap, additional));
+    for _ in 0..64 {
+        assert!(matches!(super::super::homogeneous_bezier_spans(&ctx, curve),
+            Err(CodecError::ResourceLimit(last)) if last == original));
+    }
+    assert_eq!(serde_json::to_value(curve).unwrap(), before);
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == original));
+}
+
+#[test]
+fn closure_polynomial_poles_refuse_before_complete_infallible_scan() {
+    // Both immutable positions exist at indices0..pole_count. The complete
+    // infallible pole scan admits two visits together before its first read.
+    closure_source_refusal(&rail(0.0, None), 0, 2, "iges surface closure pole traversal");
+}
+
+#[test]
+fn closure_polynomial_poles_complete_before_first_control_conversion() {
+    closure_source_refusal(&rail(0.0, None), 2, 1, "Bezier positive control conversion");
+}
+
+#[test]
+fn closure_rational_weights_refuse_first_actual_source_visit() {
+    closure_source_refusal(&rail(0.0, Some(vec![1.0, 0.5])), 0, 1,
+        "iges surface closure weight traversal");
+}
+
+#[test]
+fn closure_rational_weights_refuse_last_actual_source_visit() {
+    closure_source_refusal(&rail(0.0, Some(vec![1.0, 0.5])), 1, 1,
+        "iges surface closure weight traversal");
+}
+
+#[test]
+fn closure_relative_weight_underflow_accepts_exact_work_and_releases_scratch() {
+    let curve = rail(0.0, Some(vec![f64::MIN_POSITIVE, f64::MAX]));
+    assert_eq!(f64::MIN_POSITIVE / f64::MAX, 0.0);
+    let before = serde_json::to_value(&curve).unwrap();
+    // Two extracted weights, two extracted poles, two weight validations,
+    // two scale visits, then one conversion rejects the vanished weight.
+    let work = 2 + 2 + 2 + 2 + 1;
+    let source = 2 * size_of::<f64>() + 2 * size_of::<FinitePoint3>();
+    let controls = 2 * size_of::<[f64; 4]>();
+    let peak = u64_from_index(source + controls);
+    for cap in [peak - 1, peak] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = work;
+        policy.limits.max_materialized_bytes = cap;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 6;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = super::super::homogeneous_bezier_spans(&ctx, &curve);
+        if cap < peak {
+            let CodecError::ResourceLimit(original) = result.unwrap_err() else {
+                panic!("expected homogeneous control backing refusal");
+            };
+            assert_eq!(original.dimension, ResourceDimension::MaterializedBytes);
+            assert_eq!(original.operation, "iges_surface_closure_controls");
+            assert_eq!((original.limit, original.used, original.additional),
+                (cap, u64_from_index(source), u64_from_index(controls)));
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == original));
+        } else {
+            assert!(result.unwrap().is_none());
+            let released = ctx.reserve_scoped(peak, "test released closure scratch").unwrap();
+            drop(released);
+            assert!(ctx.resource_refusal().is_none());
+            ctx.finish_session().unwrap();
+        }
+        assert_eq!(serde_json::to_value(&curve).unwrap(), before);
+    }
+}
