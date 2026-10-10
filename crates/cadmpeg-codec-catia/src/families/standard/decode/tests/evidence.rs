@@ -258,6 +258,7 @@ fn targeted_face_surface_evidence_follows_an_analytic_offset() {
             &std::collections::BTreeSet::from([10]),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
+            &mut crate::families::standard::decode::LimitCurveIndex::new(ctx).expect("empty index"),
         )
     })
     .expect("service resource budget");
@@ -279,6 +280,7 @@ fn targeted_face_surface_evidence_follows_an_analytic_offset() {
             &std::collections::BTreeSet::from([10]),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
+            &mut crate::families::standard::decode::LimitCurveIndex::new(ctx).expect("empty index"),
         )
     })
     .expect("service resource budget");
@@ -404,6 +406,7 @@ fn object_evidence_exports_revolution_cache_and_construction() {
             &std::collections::BTreeSet::from([120]),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
+            &mut crate::families::standard::decode::LimitCurveIndex::new(ctx).expect("empty index"),
         )
     })
     .expect("service resource budget");

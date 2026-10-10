@@ -1285,7 +1285,8 @@ struct GeometryBinding {
 pub(super) struct NativeSurfaceIndex<'ctx> {
     source: HashMap<String, Option<usize>>,
     geometry: HashMap<u64, Vec<GeometryBinding>>,
-    indexed_len: usize,
+    source_indexed_len: usize,
+    geometry_indexed_len: usize,
     storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
@@ -1294,7 +1295,8 @@ impl<'ctx> NativeSurfaceIndex<'ctx> {
         Ok(Self {
             source: HashMap::new(),
             geometry: HashMap::new(),
-            indexed_len: 0,
+            source_indexed_len: 0,
+            geometry_indexed_len: 0,
             storage: ctx.reserve_scoped(0, "catia_native_surface_index")?,
         })
     }
@@ -1305,9 +1307,9 @@ impl<'ctx> NativeSurfaceIndex<'ctx> {
         surfaces: &[Surface],
     ) -> Result<(), CodecError> {
         const OP: &str = "catia_native_surface_index";
-        let mut tail = surfaces[self.indexed_len..].iter().enumerate();
+        let mut tail = surfaces[self.source_indexed_len..].iter().enumerate();
         while let Some((relative, surface)) = ctx.next_charged(&mut tail, OP)? {
-            let index = self.indexed_len + relative;
+            let index = self.source_indexed_len + relative;
             if let Some(source) = surface.source_object.as_ref().filter(|source| {
                 source.format == cadmpeg_ir::codec_format!(crate::dialect::FORMAT)
                     && source.name.is_none()
@@ -1331,13 +1333,33 @@ impl<'ctx> NativeSurfaceIndex<'ctx> {
                     })?;
                 }
             }
+        }
+        self.source_indexed_len = surfaces.len();
+        Ok(())
+    }
+
+    fn synchronize_geometry(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        surfaces: &[Surface],
+    ) -> Result<(), CodecError> {
+        const OP: &str = "catia_native_surface_index";
+        let mut tail = surfaces[self.geometry_indexed_len..].iter().enumerate();
+        while let Some((relative, surface)) = ctx.next_charged(&mut tail, OP)? {
+            let index = self.geometry_indexed_len + relative;
             let key = surface_fingerprint(ctx, &surface.geometry)?;
             let mut matched = false;
             if let Some(bucket) = ctx.get_mut_hash_map(&mut self.geometry, &key, OP)? {
-                // SurfaceGeometry has no DecodeCost; collision equality is unpriced.
                 if let Some(binding) = ctx.find_by(
                     bucket,
-                    |binding| Ok(surfaces[binding.representative].geometry == surface.geometry),
+                    |binding| {
+                        super::equality::surfaces_equal(
+                            ctx,
+                            &surfaces[binding.representative].geometry,
+                            &surface.geometry,
+                            OP,
+                        )
+                    },
                     OP,
                 )? {
                     if let Some(previous) = binding.unique {
@@ -1363,7 +1385,7 @@ impl<'ctx> NativeSurfaceIndex<'ctx> {
                 })?;
             }
         }
-        self.indexed_len = surfaces.len();
+        self.geometry_indexed_len = surfaces.len();
         Ok(())
     }
 }
@@ -1935,16 +1957,23 @@ pub(super) fn ensure_native_edge_support_surface(
     }
     if source_match.is_none() {
         if let crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(geometry) = carrier {
+            index.synchronize_geometry(ctx, &ir.model.surfaces)?;
             let key = surface_fingerprint(ctx, geometry)?;
             if let Some(bucket) = ctx.get_hash_map(
                 &index.geometry,
                 &key,
                 "catia_native_edge_support_geometry_scan",
             )? {
-                // SurfaceGeometry has no DecodeCost; collision equality is unpriced.
                 if let Some(binding) = ctx.find_by(
                     bucket,
-                    |binding| Ok(ir.model.surfaces[binding.representative].geometry == *geometry),
+                    |binding| {
+                        super::equality::surfaces_equal(
+                            ctx,
+                            &ir.model.surfaces[binding.representative].geometry,
+                            geometry,
+                            "catia_native_edge_support_geometry_scan",
+                        )
+                    },
                     "catia_native_edge_support_geometry_scan",
                 )? {
                     if let Some(surface) = binding.unique {
@@ -3600,18 +3629,22 @@ impl<'ctx> BoundsIndex<'ctx> {
             if entries.is_empty() {
                 return Ok(());
             }
-            let bounds = ctx.fold(
-                entries,
-                [[f64::INFINITY, f64::NEG_INFINITY]; 3],
-                |mut bounds, entry| {
-                    for (axis, interval) in bounds.iter_mut().enumerate() {
-                        interval[0] = interval[0].min(entry.bounds[axis][0]);
-                        interval[1] = interval[1].max(entry.bounds[axis][1]);
-                    }
-                    Ok(bounds)
-                },
-                operation,
-            )?;
+            let bounds = if entries.len() == 1 {
+                entries[0].bounds
+            } else {
+                ctx.fold(
+                    entries,
+                    [[f64::INFINITY, f64::NEG_INFINITY]; 3],
+                    |mut bounds, entry| {
+                        for (axis, interval) in bounds.iter_mut().enumerate() {
+                            interval[0] = interval[0].min(entry.bounds[axis][0]);
+                            interval[1] = interval[1].max(entry.bounds[axis][1]);
+                        }
+                        Ok(bounds)
+                    },
+                    operation,
+                )?
+            };
             let at = nodes.len();
             ctx.push_scoped_vec(
                 storage,
@@ -3764,12 +3797,16 @@ pub(super) fn same_cone_generator_pair(
     start: Point3,
     end: Point3,
 ) -> bool {
-    if left != right {
-        return false;
-    }
-    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) = left else {
+    let (
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(other)),
+    ) = (left, right)
+    else {
         return false;
     };
+    if cone_surface != other {
+        return false;
+    }
     let origin = cone_surface.origin().get();
     let axis = cone_surface.frame().axis().as_raw();
     let radius = cone_surface.radius().get();
@@ -4169,6 +4206,7 @@ impl AsRef<[[f64; 2]]> for CircleRangeChoices {
 pub(super) struct StandardCirclePairConstraint<'a, 'ctx> {
     ctx: &'a DecodeContext<'ctx>,
     ranges_by_face: RefCell<BTreeMap<CircleFaceKey, Vec<CircleRangeChoices>>>,
+    storage: RefCell<cadmpeg_core::decode::ScopedReservation<'a>>,
 }
 
 impl<'a, 'ctx> StandardCirclePairConstraint<'a, 'ctx> {
@@ -4177,58 +4215,67 @@ impl<'a, 'ctx> StandardCirclePairConstraint<'a, 'ctx> {
         supports: &[crate::families::standard::records::StandardCurveSupport],
         endpoint_options: &[Vec<[usize; 2]>],
     ) -> Result<Self, CodecError> {
-        // Each face key holds one prepaid slot per circle that can reach it,
-        // so a solution check fills the rows without growing them.
-        let mut ranges_by_face = BTreeMap::<CircleFaceKey, Vec<CircleRangeChoices>>::new();
-        for (support, options) in ctx
-            .admit_iter(supports, "catia_standard_circle_constraint_supports")?
-            .zip(ctx.admit_iter(endpoint_options, "catia_standard_circle_constraint_options")?)
-        {
-            if options.len() <= 1 {
-                continue;
-            }
-            let crate::families::standard::records::StandardCurveGeometry::Circle {
-                center,
-                radius,
-            } = &support.geometry
-            else {
-                continue;
-            };
-            let center = center.get();
-            let radius = radius.get();
-            for &face in &support.faces {
-                let key = (
-                    center.x.to_bits(),
-                    center.y.to_bits(),
-                    center.z.to_bits(),
-                    radius.to_bits(),
-                    face,
-                );
-                let ranges = ctx
-                    .entry_btree_map(
-                        &mut ranges_by_face,
+        let mut counts_storage =
+            ctx.reserve_scoped(0, "catia_standard_circle_constraint_counts")?;
+        let counts = counts_storage.with_storage(|| {
+            let mut counts = BTreeMap::<CircleFaceKey, usize>::new();
+            let mut visits = supports.iter().zip(endpoint_options);
+            while let Some((support, options)) =
+                ctx.next_charged(&mut visits, "catia_standard_circle_constraint_supports")?
+            {
+                if options.len() <= 1 {
+                    continue;
+                }
+                let crate::families::standard::records::StandardCurveGeometry::Circle {
+                    center,
+                    radius,
+                } = &support.geometry
+                else {
+                    continue;
+                };
+                let center = center.get();
+                let radius = radius.get();
+                for &face in &support.faces {
+                    let key = (
+                        center.x.to_bits(),
+                        center.y.to_bits(),
+                        center.z.to_bits(),
+                        radius.to_bits(),
+                        face,
+                    );
+                    *ctx.entry_btree_map(
+                        &mut counts,
                         key,
                         "catia_standard_circle_constraint_faces",
                     )?
-                    .or_default();
-                ctx.push_vec(
-                    ranges,
-                    CircleRangeChoices {
-                        ranges: [[0.0; 2]; 2],
-                        len: 0,
-                    },
+                    .or_default() += 1;
+                }
+            }
+            Ok::<_, CodecError>(counts)
+        })?;
+        let mut storage = ctx.reserve_scoped(0, "catia_standard_circle_constraint_storage")?;
+        let ranges_by_face = storage.with_storage(|| {
+            let mut ranges_by_face = BTreeMap::new();
+            for (key, count) in ctx.admit_iter(counts, "catia_standard_circle_constraint_counts")? {
+                let mut ranges = Vec::new();
+                ctx.reserve_capacity(
+                    &mut ranges,
+                    count,
                     "catia_standard_circle_constraint_ranges",
                 )?;
+                ctx.insert_btree_map(
+                    &mut ranges_by_face,
+                    key,
+                    ranges,
+                    "catia_standard_circle_constraint_faces",
+                )?;
             }
-        }
-        for (_, ranges) in
-            ctx.admit_iter(&mut ranges_by_face, "catia_standard_circle_range_reset")?
-        {
-            ranges.clear();
-        }
+            Ok::<_, CodecError>(ranges_by_face)
+        })?;
         Ok(Self {
             ctx,
             ranges_by_face: RefCell::new(ranges_by_face),
+            storage: RefCell::new(storage),
         })
     }
 
@@ -4326,11 +4373,13 @@ impl<'a, 'ctx> StandardCirclePairConstraint<'a, 'ctx> {
                     else {
                         return Ok(false);
                     };
-                    self.ctx.push_vec(
-                        ranges,
-                        choices,
-                        "catia_standard_circle_constraint_ranges",
-                    )?;
+                    self.storage.borrow_mut().with_storage(|| {
+                        self.ctx.push_vec(
+                            ranges,
+                            choices,
+                            "catia_standard_circle_constraint_ranges",
+                        )
+                    })?;
                 }
             }
         }
