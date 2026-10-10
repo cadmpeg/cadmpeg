@@ -1994,3 +1994,5 @@ mod transition_proof_reuse;
 mod fixed_fillet_temporary_lifetimes;
 
 mod fixed_variable_radius_lifetimes;
+
+mod main_query_lifetimes;
