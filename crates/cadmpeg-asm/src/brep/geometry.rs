@@ -20,7 +20,7 @@ use cadmpeg_ir::ids::EdgeId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::{Angle, NonNegativeLength, NonZeroLength, PositiveLength, PositiveReal};
 use cadmpeg_ir::topology::Sense;
-use cadmpeg_ir::units::{FiniteVector, OrthonormalFrame3, UnitVector3};
+use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 use std::collections::{HashMap, HashSet};
 
 use super::AsmBrep;
@@ -1211,10 +1211,10 @@ pub(super) fn clamp_edge_ranges_to_carrier_domains(
         let Some(edge) = ctx.next_charged(&mut source_values, "ASM edge range clamp")? else {
             break;
         };
-        let Some([mut start, mut end]) = edge.param_range().map(FiniteVector::get) else {
+        let cadmpeg_ir::topology::EdgeCarrier::Bounded(curve, interval) = &mut edge.carrier else {
             continue;
         };
-        let Some(curve) = edge.curve() else { continue };
+        let [mut start, mut end] = interval.endpoints();
         let Some([first, last]) =
             ctx.get_hash_map(&domains, curve.as_str(), "ASM edge domain lookup")?
         else {
@@ -1227,13 +1227,9 @@ pub(super) fn clamp_edge_ranges_to_carrier_domains(
         if end > *last && end - *last <= tolerance {
             end = *last;
         }
-        edge.carrier = cadmpeg_ir::topology::EdgeCarrier::new(
-            edge.curve()
-                .map(|curve| curve.try_clone_for_decode(ctx, "ASM edge carrier identity"))
-                .transpose()?,
-            Some([start, end]),
-        )
-        .map_err(cadmpeg_core::CodecError::malformed)?;
+        *interval = cadmpeg_ir::topology::ParameterInterval::new([start, end])
+            .map_err(|_| cadmpeg_core::CodecError::malformed(
+                "edge param_range must be finite and ordered"))?;
     }
     Ok(())
 }
@@ -1574,6 +1570,7 @@ mod tests {
     mod source_visits;
     mod quadratic_storage;
     mod numerical_ranges;
+    mod edge_clamping;
     use super::Point3;
     const SMALL_CURVED_SPINE_EXTENT: f64 = 1.0e-10;
 
