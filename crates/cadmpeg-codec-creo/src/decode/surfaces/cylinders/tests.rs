@@ -86,6 +86,8 @@ fn hole_cylinder_feature_id_nodes_refuse_collection_limit() {
             &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
     };
+    assert_eq!(run(1).expect("two identical hole rows consume one feature ID node"), 0);
+
     assert_eq!(
         run(crate::test_support::allocation_limit_at(
             cadmpeg_core::decode::ResourceDimension::CollectionItems,

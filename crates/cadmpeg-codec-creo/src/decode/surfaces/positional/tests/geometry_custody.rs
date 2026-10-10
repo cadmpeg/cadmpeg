@@ -13,7 +13,21 @@ fn tabulated_geometry_transfer_admits_only_surviving_directrix_and_surface_backi
     // eight cloned U knots and four V knots. Temporary raw controls are scoped.
     let bytes = u64::try_from(20 * size_of::<f64>() + 20 * size_of::<FinitePoint3>()
         + 4 * size_of::<Vec<FinitePoint3>>()).expect("fixed geometry backing");
-    for cap in 0..=bytes {
+    let run = |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        super::super::transfer_tabulated_cylinder_spline_extrusions(
+            &ctx, &scan, &mut cadmpeg_ir::document::CadIr::empty(),
+            &mut cadmpeg_ir::AnnotationBuilder::new(), &mut Vec::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+    };
+    let below = crate::test_support::allocation_limit_at(
+        ResourceDimension::RetainedBytes, Some("creo tabulated extrusion geometry"), run,
+    );
+    for cap in [below, bytes] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = cap;

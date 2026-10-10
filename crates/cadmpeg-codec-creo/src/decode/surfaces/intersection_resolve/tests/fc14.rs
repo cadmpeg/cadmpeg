@@ -21,7 +21,28 @@ fn record() -> crate::curve::FcCurveCoordinates {
 #[test]
 fn fc14_fixed_token_comparison_uses_four_visits_and_no_storage() {
     let record = record();
-    for cap in [3, 4] {
+    let run = |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        super::super::fc14_held_coordinate(&ctx, Some(&record))
+    };
+    crate::test_support::assert_refusal_order(
+        ResourceDimension::WorkUnits, &["creo FC14 coordinate tokens"; 4], run,
+    );
+    let error = crate::test_support::last_refusal_at(
+        &[], ResourceDimension::WorkUnits, "creo FC14 coordinate tokens",
+        |ctx| super::super::fc14_held_coordinate(ctx, Some(&record)),
+    );
+    let CodecError::ResourceLimit(last) = error else { panic!("work refusal"); };
+    assert_eq!((last.used, last.additional), (3, 1));
+    let below = last.limit;
+    // Refusal location comes from the walker; four present visits remain the exact success bound.
+    for cap in [below, 4] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = cap;
