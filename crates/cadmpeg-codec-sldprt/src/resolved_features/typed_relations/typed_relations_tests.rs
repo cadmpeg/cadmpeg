@@ -697,3 +697,5 @@ mod deduplication;
 mod indexes;
 
 mod scoped_endpoints;
+
+mod terminal_cache;
