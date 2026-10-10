@@ -127,20 +127,24 @@ pub(crate) fn parse(
         };
         let entries = parse_string_table(ctx, bytes, declared_count, source_entry.is_some())?;
         ctx.reserve_vec(&mut tables, 1, "FreeCAD string table records")?;
+        let mut table_index_storage = ctx.reserve_scoped(0, "FreeCAD string table index")?;
         tables.push(
-            StringTableRecord::try_new(
-                index,
-                owner_property,
-                save_all,
-                threshold,
+            StringTableRecord::from_parts_with_admission(
+                (index, owner_property, save_all, threshold,
                 source_entry
                     .map(|name| {
                         ctx.copy_retained_text(name, "FreeCAD string table side-entry name")
                     })
                     .transpose()?,
+                ),
                 entries,
-            )
-            .map_err(CodecError::Malformed)?,
+                |length, operation| ctx.charge_work(cadmpeg_core::decode::u64_from_index(length), operation),
+                |seen, id| ctx.contains_btree_set(seen, &id, "FreeCAD string table component lookup"),
+                |seen, id| table_index_storage.with_storage(|| {
+                    ctx.insert_btree_set(seen, id, "FreeCAD string table index")
+                }),
+            )?
+            .map_err(CodecError::malformed)?,
         );
     }
     drop(hashers_iter);
