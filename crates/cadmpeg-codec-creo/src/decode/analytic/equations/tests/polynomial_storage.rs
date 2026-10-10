@@ -133,7 +133,6 @@ fn conic_quartic_work_is_free_before_output_admission() {
     }
 }
 
-
 #[test]
 fn plane_quadric_parameter_conversion_needs_no_work() {
     use super::super::{intersect_plane_with_two_quadrics, CarrierEquation, SphereEquation};

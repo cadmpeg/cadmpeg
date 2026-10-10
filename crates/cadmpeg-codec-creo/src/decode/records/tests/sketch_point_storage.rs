@@ -80,7 +80,6 @@ fn expected_points() -> serde_json::Value {
     ])
 }
 
-
 #[test]
 fn sketch_point_indices_release_while_projection_backing_stays_live() {
     for point_count in [1, 5] {

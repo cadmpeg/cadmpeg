@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::super::{
-      polygon_strictly_contains,
-    polygon_strictly_contains_polygon, 
-};
+use super::super::{polygon_strictly_contains, polygon_strictly_contains_polygon};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
@@ -15,7 +12,6 @@ fn visit_policy(work: u64) -> DecodePolicy {
     policy.limits.max_recursion_depth = 0;
     policy
 }
-
 
 fn assert_visits(
     operations: &[&'static str],
@@ -62,8 +58,8 @@ fn assert_visits(
         };
         if visits != 0 {
             assert!(
-            matches!(query(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == original)
-        );
+                matches!(query(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == original)
+            );
         }
         assert_eq!(ctx.resource_refusal(), Some(original));
         if cap == visits {

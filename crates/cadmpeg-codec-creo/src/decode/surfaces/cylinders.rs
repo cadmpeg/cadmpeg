@@ -253,7 +253,8 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
         let mut planes = Vec::new();
         let mut visits = affected.iter();
         while visits.len() != 0 {
-            let Some(id) = ctx.next_charged(&mut visits, "creo constrained slot affected IDs")? else {
+            let Some(id) = ctx.next_charged(&mut visits, "creo constrained slot affected IDs")?
+            else {
                 break;
             };
             let Some(plane) = reconciled_model_plane(ctx, local_planes, ir, source_carriers, *id)?
@@ -280,7 +281,8 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
         let mut ambiguous_row = false;
         let mut visits = scan.surfaces.rows.iter();
         while visits.len() != 0 {
-            let Some(row) = ctx.next_charged(&mut visits, "creo constrained slot cylinder rows")? else {
+            let Some(row) = ctx.next_charged(&mut visits, "creo constrained slot cylinder rows")?
+            else {
                 break;
             };
             if row.feature_id != *feature_id || row.kind != crate::surface::SurfaceKind::Cylinder {
@@ -426,8 +428,10 @@ pub(in super::super) fn transfer_rowless_round_cylinders(
             )?
             .unique_position()
             .map(|index| &ir.model.surfaces[index]);
-        let Some(cylinder_surface) =
-            selected_surface.map(|surface| source_carriers.surface_geometry(surface)).transpose()?.and_then(|geometry| match geometry {
+        let Some(cylinder_surface) = selected_surface
+            .map(|surface| source_carriers.surface_geometry(surface))
+            .transpose()?
+            .and_then(|geometry| match geometry {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder)) => {
                     Some(*cylinder)
                 }
@@ -632,9 +636,11 @@ pub(in super::super) fn transfer_split_outline_cylinders(
     let mut surfaces_index = super::model_ids::ModelIdentityIndex::new(ctx)?;
     let local_planes = workspace.with_storage(|| placed_planes(ctx, scan))?;
     let mut cylinders_by_plane = BTreeMap::<(u32, u32), BTreeSet<u32>>::new();
-    let unique_topologies_parts = crate::identity::uniquely_identified_rows_checked(ctx, &scan.curves.topology_rows, |row| {
-            row.id
-        })?;
+    let unique_topologies_parts = crate::identity::uniquely_identified_rows_checked(
+        ctx,
+        &scan.curves.topology_rows,
+        |row| row.id,
+    )?;
     let _unique_topologies_storage = unique_topologies_parts.1;
     let unique_topologies = unique_topologies_parts.0;
     for edge in ctx.admit_iter(&unique_topologies, "creo split outline unique topologies")? {
@@ -828,7 +834,9 @@ fn round_edge_cylinder_frame(
     let mut candidate: Option<crate::surface::PositionalCylinderFrame> = None;
     let mut first_planes = support_planes.iter().copied().enumerate();
     while first_planes.len() != 0 {
-        let Some((first_index, first_support)) = ctx.next_charged(&mut first_planes, "creo round-edge first support planes")? else {
+        let Some((first_index, first_support)) =
+            ctx.next_charged(&mut first_planes, "creo round-edge first support planes")?
+        else {
             break;
         };
         let Some(first_normal) = normalize(first_support.normal) else {
@@ -840,7 +848,9 @@ fn round_edge_cylinder_frame(
         };
         let mut second_planes = support_planes[first_index + 1..].iter().copied();
         while second_planes.len() != 0 {
-            let Some(second_support) = ctx.next_charged(&mut second_planes, "creo round-edge second support planes")? else {
+            let Some(second_support) =
+                ctx.next_charged(&mut second_planes, "creo round-edge second support planes")?
+            else {
                 break;
             };
             let Some(second_normal) = normalize(second_support.normal) else {
@@ -995,7 +1005,8 @@ fn unique_support_tangent_cylinder_frame(
     let mut witnessed_planes = Vec::new();
     let mut visits = support_planes.iter();
     while visits.len() != 0 {
-        let Some(plane) = ctx.next_charged(&mut visits, "creo support tangent support planes")? else {
+        let Some(plane) = ctx.next_charged(&mut visits, "creo support tangent support planes")?
+        else {
             break;
         };
         let Some(normal) = normalize(plane.normal) else {
@@ -1086,7 +1097,9 @@ fn unique_support_tangent_cylinder_frame(
     let mut frame = None;
     let mut visits = origins.iter();
     while visits.len() != 0 {
-        let Some(origin) = ctx.next_charged(&mut visits, "creo support tangent resolved origins")? else {
+        let Some(origin) =
+            ctx.next_charged(&mut visits, "creo support tangent resolved origins")?
+        else {
             break;
         };
         let tangent_to_all = ctx.all_by(
@@ -1154,9 +1167,10 @@ fn perpendicular_round_edge_cylinder_frame(
     let mut first_planes = support_planes.iter().copied().enumerate();
     while first_planes.len() != 0 {
         let Some((first_index, first_support)) = ctx.next_charged(
-        &mut first_planes,
-        "creo perpendicular round-edge first support planes",
-    )? else {
+            &mut first_planes,
+            "creo perpendicular round-edge first support planes",
+        )?
+        else {
             break;
         };
         let Some(first_normal) = normalize(first_support.normal) else {
@@ -1169,9 +1183,10 @@ fn perpendicular_round_edge_cylinder_frame(
         let mut second_planes = support_planes[first_index + 1..].iter().copied();
         while second_planes.len() != 0 {
             let Some(second_support) = ctx.next_charged(
-            &mut second_planes,
-            "creo perpendicular round-edge second support planes",
-        )? else {
+                &mut second_planes,
+                "creo perpendicular round-edge second support planes",
+            )?
+            else {
                 break;
             };
             let Some(second_normal) = normalize(second_support.normal) else {
@@ -1271,9 +1286,11 @@ pub(in super::super) fn transfer_positional_cylinders(
     }
     let local_planes = workspace.with_storage(|| placed_planes(ctx, scan))?;
     let mut adjacent_plane_ids = BTreeMap::<u32, BTreeSet<u32>>::new();
-    let unique_topologies_parts = crate::identity::uniquely_identified_rows_checked(ctx, &scan.curves.topology_rows, |row| {
-            row.id
-        })?;
+    let unique_topologies_parts = crate::identity::uniquely_identified_rows_checked(
+        ctx,
+        &scan.curves.topology_rows,
+        |row| row.id,
+    )?;
     let _unique_topologies_storage = unique_topologies_parts.1;
     let unique_topologies = unique_topologies_parts.0;
     for edge in ctx.admit_iter(&unique_topologies, "creo positional unique topologies")? {
@@ -1687,7 +1704,10 @@ fn reference_bound_cylinder_frame(
         )?
         .filter(|table| table.feature_id == feature_id)
     {
-        for entry in ctx.admit_iter(table.entries.as_slice(), "creo reference cylinder entity entries")? {
+        for entry in ctx.admit_iter(
+            table.entries.as_slice(),
+            "creo reference cylinder entity entries",
+        )? {
             reference_storage.with_storage(|| {
                 ctx.insert_btree_set(
                     &mut entity_ids,

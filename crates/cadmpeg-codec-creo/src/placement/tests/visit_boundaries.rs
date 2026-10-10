@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
-use cadmpeg_core::decode::{   ResourceDimension};
+use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_core::CodecError;
 
 fn section(reference_planes: ReferencePlanes) -> FeatureSection3d {
@@ -27,7 +27,6 @@ fn empty_sources(rows: &crate::surface::SurfaceRows) -> PlacementSources<'_> {
         affected_ids: &[],
     }
 }
-
 
 #[test]
 fn carrier_reference_selection_admits_present_ids_and_stops_at_first_conflict() {
@@ -87,8 +86,6 @@ fn carrier_reference_selection_admits_present_ids_and_stops_at_first_conflict() 
         }
     }
 }
-
-
 
 #[test]
 fn generated_parent_admits_each_present_datum_plane_and_envelope_without_terminal_fee() {
@@ -150,4 +147,3 @@ fn generated_parent_admits_each_present_datum_plane_and_envelope_without_termina
         assert_eq!(actual, expected);
     }
 }
-

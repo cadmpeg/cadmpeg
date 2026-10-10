@@ -1280,7 +1280,6 @@ mod tests {
         );
     }
 
-
     #[test]
     fn family_array_rows_keep_then_release_their_scoped_backing() {
         let persistence = complete_table();

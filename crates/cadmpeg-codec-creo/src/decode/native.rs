@@ -294,7 +294,6 @@ pub(super) fn emit_uniform<T: Serialize>(
 mod tests {
     use super::CreoArena;
 
-
     #[test]
     fn closed_arena_variants_preserve_unique_wire_names() {
         let arenas = [

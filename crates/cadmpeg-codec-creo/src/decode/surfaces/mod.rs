@@ -127,10 +127,7 @@ pub(super) fn unique_native_surface_row<'a>(
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        native_surface_id, native_surface_namespace,
-        transfer_part_product,
-    };
+    use super::{native_surface_id, native_surface_namespace, transfer_part_product};
     use crate::surface::{SurfaceKind, SurfaceRow};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
@@ -471,11 +468,11 @@ pub(super) fn transfer_part_product(
     let model_name_offset = model_name.offset;
     let model_name = &model_name.name;
     let product_id_parts = crate::identity::compose_scoped::<ProductDefinitionId>(
-            ctx,
-            &crate::identity::MODEL_PRODUCT_DEFINITION,
-            "root",
-            "creo product identity",
-        )?;
+        ctx,
+        &crate::identity::MODEL_PRODUCT_DEFINITION,
+        "root",
+        "creo product identity",
+    )?;
     let product_id_reservation = product_id_parts.1;
     let product_id = product_id_parts.0;
     let occurrence_id = crate::identity::compose_checked::<OccurrenceId>(
@@ -654,7 +651,9 @@ impl Fc05CapPairFrame {
         };
         let mut disagreement = offsets(last_cap, last_ordinate);
         while !placed_caps.as_slice().is_empty() {
-            let Some(edge) = ctx.next_charged(&mut placed_caps, "creo cap pair placed edge traversal")? else {
+            let Some(edge) =
+                ctx.next_charged(&mut placed_caps, "creo cap pair placed edge traversal")?
+            else {
                 break;
             };
             let Some(plane) = outlines.unique(edge.cap_plane_id) else {

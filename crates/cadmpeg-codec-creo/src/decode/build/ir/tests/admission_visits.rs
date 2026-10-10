@@ -32,7 +32,6 @@ fn fixed_work_policy(work: u64) -> DecodePolicy {
     policy
 }
 
-
 #[test]
 fn composite_pattern_coverage_visits_present_stages_until_first_unresolved() {
     let mut first = vec![StagePatternKind::UNRESOLVED];
@@ -114,7 +113,6 @@ fn composite_pattern_coverage_visits_present_stages_until_first_unresolved() {
         );
     }
 }
-
 
 #[test]
 fn unavailable_display_span_stops_before_unneeded_tail() {

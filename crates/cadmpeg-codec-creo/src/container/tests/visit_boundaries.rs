@@ -3,7 +3,6 @@
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
-
 #[test]
 fn section_framing_admits_two_present_pairs_and_no_terminal_visit() {
     let sections =
@@ -120,9 +119,6 @@ fn absent_parent_feature_entry_keeps_original_malformed_route() {
         .contains("incomplete parent-feature entry"));
 }
 
-
-
-
 #[test]
 fn singleton_section_aggregate_admits_source_and_relocation_without_ordering() {
     let source = b"body";
@@ -198,5 +194,4 @@ fn singleton_topology_and_pcurve_ordering_executes_no_scan_or_move() {
         .expect("no witness append or ordering work");
     assert_eq!(rows, [row]);
     assert_eq!(pcurves, [pcurve]);
-
 }

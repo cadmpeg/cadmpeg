@@ -602,14 +602,9 @@ fn arc_z_coordinate(data: &[u8], offset: usize, cache: &ScalarCache) -> Option<(
         .or_else(|| scalar::decode_model_reference_coordinate(data, offset, cache))
 }
 
-fn scalar_suffix<const COUNT: usize>(
-    row: &[u8],
-    cache: &ScalarCache,
-) -> Option<[f64; COUNT]> {
+fn scalar_suffix<const COUNT: usize>(row: &[u8], cache: &ScalarCache) -> Option<[f64; COUNT]> {
     let mut candidate = None;
-    let Some(max_span) = COUNT.checked_mul(9) else {
-        return None;
-    };
+    let max_span = COUNT.checked_mul(9)?;
     let suffix_span = row.len().min(max_span);
     for start in row.len() - suffix_span..row.len() {
         let mut cursor = crate::psb::Cursor::at(row, start);
@@ -1053,18 +1048,12 @@ fn positional_conic_local_system(
     cache: &ScalarCache,
 ) -> Option<(usize, cadmpeg_ir::units::FiniteVector<12>)> {
     const MAX_FRAME_BYTES: usize = 12 * 9;
-    let Some(first_end) = local_start.checked_add(1) else {
-        return None;
-    };
-    let Some(last_end) = local_start.checked_add(MAX_FRAME_BYTES) else {
-        return None;
-    };
+    let first_end = local_start.checked_add(1)?;
+    let last_end = local_start.checked_add(MAX_FRAME_BYTES)?;
     let last_end = last_end.min(body.len());
     let mut candidate = None;
     for end in first_end..=last_end {
-        let Some(tail) = body.get(end..) else {
-            return None;
-        };
+        let tail = body.get(end..)?;
         if !(tail.is_empty() || tail.first() == Some(&0xe2)) {
             continue;
         }
@@ -1403,11 +1392,7 @@ fn line3d_fields(
         .then_some((first, second, stored_length)))
 }
 
-fn matching_row_id(
-    payload: &[u8],
-    close: usize,
-    id: u32,
-) -> bool {
+fn matching_row_id(payload: &[u8], close: usize, id: u32) -> bool {
     let Some(prefix) = payload.get(..close) else {
         return false;
     };

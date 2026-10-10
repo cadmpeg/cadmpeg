@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::super::{
-    agreed_generated_cylinder_extent, feature_outline_plane, 
-      generated_cap_plane_extent,
-    
+    agreed_generated_cylinder_extent, feature_outline_plane, generated_cap_plane_extent,
 };
 use super::{plane_outline, plane_row};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -30,7 +28,6 @@ fn transform() -> crate::placement::FeatureSectionTransform {
     )
     .expect("section transform")
 }
-
 
 #[test]
 fn outline_plane_queries_visit_present_carriers_and_stop_at_second_match() {

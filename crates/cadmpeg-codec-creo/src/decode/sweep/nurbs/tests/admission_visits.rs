@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::super::{
-      interpolation_knots,
-      
-     saved_spline_off_plane_input, 
-     solve_vector_system,  OffPlaneInput,
+    interpolation_knots, saved_spline_off_plane_input, solve_vector_system, OffPlaneInput,
 };
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
@@ -15,7 +12,6 @@ fn work_policy(work: u64) -> DecodePolicy {
     policy.limits.max_collection_items = 0;
     policy
 }
-
 
 #[test]
 fn dense_solver_admits_only_present_rows_columns_and_elimination() {

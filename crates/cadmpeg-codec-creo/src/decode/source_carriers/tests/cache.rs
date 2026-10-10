@@ -93,45 +93,36 @@ fn source_surface_removal_releases_key_geometry_and_node_storage() {
 fn source_surface_node_storage_stays_live_until_last_removal() {
     const PROBE_OPERATION: &str = "test source surface live storage probe";
 
-    let surface_a = cached_surface(
-        "creo:test:cache-surface-a#1",
-        "creo:test:cache-record-a#1",
-    );
-    let surface_b = cached_surface(
-        "creo:test:cache-surface-b#1",
-        "creo:test:cache-record-b#1",
-    );
-    let run = |cap: u64,
-               include_a: bool,
-               remove_a: bool,
-               remove_b: bool,
-               probe_bytes: Option<u64>| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let mut carriers = SourceUnitCarriers::for_decode(&ctx, None);
-        let mut ir = CadIr::empty();
-        if include_a {
-            carriers.admit_surface(&ctx, &mut ir, surface_a.clone())?;
-            assert_eq!(carriers.surface_geometry(&surface_a)?, &surface_a.geometry);
-        }
-        carriers.admit_surface(&ctx, &mut ir, surface_b.clone())?;
-        assert_eq!(carriers.surface_geometry(&surface_b)?, &surface_b.geometry);
-        if remove_a {
-            carriers.remove_surface(&surface_a.id)?;
-        }
-        if !remove_b {
+    let surface_a = cached_surface("creo:test:cache-surface-a#1", "creo:test:cache-record-a#1");
+    let surface_b = cached_surface("creo:test:cache-surface-b#1", "creo:test:cache-record-b#1");
+    let run =
+        |cap: u64, include_a: bool, remove_a: bool, remove_b: bool, probe_bytes: Option<u64>| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let mut carriers = SourceUnitCarriers::for_decode(&ctx, None);
+            let mut ir = CadIr::empty();
+            if include_a {
+                carriers.admit_surface(&ctx, &mut ir, surface_a.clone())?;
+                assert_eq!(carriers.surface_geometry(&surface_a)?, &surface_a.geometry);
+            }
+            carriers.admit_surface(&ctx, &mut ir, surface_b.clone())?;
             assert_eq!(carriers.surface_geometry(&surface_b)?, &surface_b.geometry);
-        }
-        if remove_b {
-            carriers.remove_surface(&surface_b.id)?;
-        }
-        if let Some(probe_bytes) = probe_bytes {
-            let _probe = ctx.reserve_scoped(probe_bytes, PROBE_OPERATION)?;
-        }
-        Ok::<_, CodecError>(())
-    };
+            if remove_a {
+                carriers.remove_surface(&surface_a.id)?;
+            }
+            if !remove_b {
+                assert_eq!(carriers.surface_geometry(&surface_b)?, &surface_b.geometry);
+            }
+            if remove_b {
+                carriers.remove_surface(&surface_b.id)?;
+            }
+            if let Some(probe_bytes) = probe_bytes {
+                let _probe = ctx.reserve_scoped(probe_bytes, PROBE_OPERATION)?;
+            }
+            Ok::<_, CodecError>(())
+        };
 
     let two_entry_peak = crate::test_support::allocation_limit_at(
         ResourceDimension::MaterializedBytes,
@@ -324,7 +315,8 @@ fn owned_sketch_nurbs_scaling_preserves_source_and_refuses_overflow_before_inser
         for x in [1.0, f64::MAX] {
             let source = geometry(x, rational);
             let entity = SketchEntity::new(
-                cadmpeg_ir::sketches::SketchEntityId::mint("creo:test:owned-nurbs#1").expect("entity ID"),
+                cadmpeg_ir::sketches::SketchEntityId::mint("creo:test:owned-nurbs#1")
+                    .expect("entity ID"),
                 cadmpeg_ir::sketches::SketchId::mint("creo:test:sketch#1").expect("sketch ID"),
                 source.clone(),
             );
@@ -341,7 +333,10 @@ fn owned_sketch_nurbs_scaling_preserves_source_and_refuses_overflow_before_inser
                 let actual = &ir.model.sketch_entities[0];
                 assert_eq!(actual.id(), &expected_id);
                 assert_eq!(actual.geometry, geometry(2.0, rational));
-                assert_eq!(carriers.sketch_geometry(actual).expect("source lookup"), &source);
+                assert_eq!(
+                    carriers.sketch_geometry(actual).expect("source lookup"),
+                    &source
+                );
             } else {
                 assert!(matches!(result, Err(CodecError::NotImplemented(_))));
                 assert!(ir.model.sketch_entities.is_empty());
@@ -351,4 +346,3 @@ fn owned_sketch_nurbs_scaling_preserves_source_and_refuses_overflow_before_inser
         }
     }
 }
-

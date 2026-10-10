@@ -87,9 +87,11 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
         )
     })?;
     let mut unique_curve_ids = BTreeSet::new();
-    let unique_curve_rows_parts = crate::identity::uniquely_identified_rows_checked(ctx, &scan.curves.topology_rows, |row| {
-            row.id
-        })?;
+    let unique_curve_rows_parts = crate::identity::uniquely_identified_rows_checked(
+        ctx,
+        &scan.curves.topology_rows,
+        |row| row.id,
+    )?;
     let _unique_curve_rows_storage = unique_curve_rows_parts.1;
     let unique_curve_rows = unique_curve_rows_parts.0;
     for row in ctx.admit_iter(&unique_curve_rows, "creo topology-bound unique curve rows")? {
@@ -314,7 +316,8 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
     ] {
         let mut traversal = rows.iter();
         while traversal.len() != 0 {
-            let Some(row) = ctx.next_charged(&mut traversal, "creo unresolved surface rows")? else {
+            let Some(row) = ctx.next_charged(&mut traversal, "creo unresolved surface rows")?
+            else {
                 break;
             };
             if rows.unique(row.id).is_none() {
@@ -382,9 +385,11 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
             )?;
         }
     }
-    let unique_curve_rows_parts = crate::identity::uniquely_identified_rows_checked(ctx, &scan.curves.topology_rows, |row| {
-            row.id
-        })?;
+    let unique_curve_rows_parts = crate::identity::uniquely_identified_rows_checked(
+        ctx,
+        &scan.curves.topology_rows,
+        |row| row.id,
+    )?;
     let _unique_curve_rows_storage = unique_curve_rows_parts.1;
     let unique_curve_rows = unique_curve_rows_parts.0;
     let mut traversal = unique_curve_rows.iter();
@@ -467,7 +472,8 @@ pub(in crate::decode) fn placed_carriers(
         let mut traversal = namespace_rows.iter();
         while traversal.len() != 0 {
             let Some(row) =
-                ctx.next_charged(&mut traversal, "creo placed carrier namespace rows")? else {
+                ctx.next_charged(&mut traversal, "creo placed carrier namespace rows")?
+            else {
                 break;
             };
             if crate::decode::surfaces::unique_native_surface_row(scan, row.id).is_none() {
@@ -523,7 +529,8 @@ pub(in crate::decode) fn placed_carriers(
                 } else {
                     ctx.remove_btree_map(&mut carriers, &row.id, "creo analytic carriers lookup")?;
                 }
-            } else if let Some(carrier) = surface_carrier(source_carriers.surface_geometry(surface)?)
+            } else if let Some(carrier) =
+                surface_carrier(source_carriers.surface_geometry(surface)?)
             {
                 ctx.insert_btree_map(&mut carriers, row.id, carrier, "creo placed carrier nodes")?;
             }
@@ -532,7 +539,8 @@ pub(in crate::decode) fn placed_carriers(
     let mut traversal = scan.planes.datum_cylinders.iter();
     while traversal.len() != 0 {
         let Some(datum) =
-            ctx.next_charged(&mut traversal, "creo placed carrier datum cylinders")? else {
+            ctx.next_charged(&mut traversal, "creo placed carrier datum cylinders")?
+        else {
             break;
         };
         let namespace = if scan.surfaces.rows.contains_id(datum.id) {
@@ -726,7 +734,8 @@ pub(in crate::decode) fn geometry_section_record(
             &namespace,
             section.offset(),
             "creo geometry section record identity",
-        ).map(Some);
+        )
+        .map(Some);
     }
     Ok(None)
 }
@@ -752,7 +761,8 @@ fn projected_loop_polygon(
     let mut half_edges = lp.half_edges().iter();
     while half_edges.len() != 0 {
         let Some(half_edge) =
-            ctx.next_charged(&mut half_edges, "creo projected loop half edges")? else {
+            ctx.next_charged(&mut half_edges, "creo projected loop half edges")?
+        else {
             break;
         };
         let Some(binding) =
@@ -798,7 +808,8 @@ fn polygon_strictly_contains(
     let mut traversal = (polygon).iter().enumerate();
     while traversal.len() != 0 {
         let Some((index, first)) =
-            ctx.next_charged(&mut traversal, "creo polygon containment points")? else {
+            ctx.next_charged(&mut traversal, "creo polygon containment points")?
+        else {
             break;
         };
         let first = *first;
@@ -854,7 +865,8 @@ fn polygon_strictly_contains_polygon(
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let mut traversal = (inner).iter();
     while traversal.len() != 0 {
-        let Some(point) = ctx.next_charged(&mut traversal, "creo contained polygon vertices")? else {
+        let Some(point) = ctx.next_charged(&mut traversal, "creo contained polygon vertices")?
+        else {
             break;
         };
         if !polygon_strictly_contains(ctx, outer, *point)? {
@@ -864,14 +876,16 @@ fn polygon_strictly_contains_polygon(
     let mut traversal = (inner).iter().enumerate();
     while traversal.len() != 0 {
         let Some((index, first)) =
-            ctx.next_charged(&mut traversal, "creo contained polygon edges")? else {
+            ctx.next_charged(&mut traversal, "creo contained polygon edges")?
+        else {
             break;
         };
         let inner_edge = [*first, inner[(index + 1) % inner.len()]];
         let mut traversal = (outer).iter().enumerate();
         while traversal.len() != 0 {
             let Some((outer_index, first)) =
-                ctx.next_charged(&mut traversal, "creo containing polygon edges")? else {
+                ctx.next_charged(&mut traversal, "creo containing polygon edges")?
+            else {
                 break;
             };
             let outer_edge = [*first, outer[(outer_index + 1) % outer.len()]];
@@ -901,7 +915,8 @@ fn valid_parameter_polygon(
             let Some(point) = ctx.next_charged(
                 &mut traversal,
                 "creo parameter polygon finite-coordinate scan",
-            )? else {
+            )?
+            else {
                 break;
             };
             for value in point {
@@ -950,7 +965,8 @@ fn ordered_contained_face_loops<'a>(
     }
     let mut traversal = (polygons).iter();
     while traversal.len() != 0 {
-        let Some(polygon) = ctx.next_charged(&mut traversal, "creo face parameter polygons")? else {
+        let Some(polygon) = ctx.next_charged(&mut traversal, "creo face parameter polygons")?
+        else {
             break;
         };
         if !valid_parameter_polygon(ctx, polygon)? {
@@ -963,7 +979,8 @@ fn ordered_contained_face_loops<'a>(
         let Some((candidate, polygon)) = ctx.next_charged(
             &mut traversal,
             "creo outer face parameter polygon candidates",
-        )? else {
+        )?
+        else {
             break;
         };
         let mut contains_all = true;
@@ -972,7 +989,8 @@ fn ordered_contained_face_loops<'a>(
             let Some((index, inner)) = ctx.next_charged(
                 &mut traversal,
                 "creo nested face parameter polygon candidates",
-            )? else {
+            )?
+            else {
                 break;
             };
             if index != candidate && !polygon_strictly_contains_polygon(ctx, polygon, inner)? {
@@ -1010,7 +1028,8 @@ pub(in crate::decode) fn ordered_planar_face_loops<'a>(
         let Some(lp) = ctx.next_charged(
             &mut traversal,
             "creo ordered planar face loops loops traversal",
-        )? else {
+        )?
+        else {
             break;
         };
         let Some(polygon) = scratch

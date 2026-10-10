@@ -958,9 +958,7 @@ fn pcurve_endpoint_evidence_from_mapped(
     mapped: &MappedPaths,
     authoritative: bool,
 ) -> Option<PcurveEndpointEvidence> {
-    let Some(first) = mapped.iter().flatten().next().map(|path| path.endpoints) else {
-        return None;
-    };
+    let first = mapped.iter().flatten().next().map(|path| path.endpoints)?;
     // An endpoint outside the finite range agrees with no endpoint, so a
     // path that reaches one forms no evidence.
     let admitted = first.map(finite_model_point);
@@ -1007,10 +1005,7 @@ fn endpoint_pair_error(first: [[f64; 3]; 2], second: [[f64; 3]; 2], reverse: boo
     }
 }
 
-fn pcurve_mismatch_detail(
-    curve_id: u32,
-    mapped: &MappedPaths,
-) -> Option<PcurveMismatchDetail> {
+fn pcurve_mismatch_detail(curve_id: u32, mapped: &MappedPaths) -> Option<PcurveMismatchDetail> {
     let mut paths = mapped.iter().flatten();
     let (Some(first), Some(second)) = (paths.next(), paths.next()) else {
         return None;
@@ -3502,8 +3497,7 @@ mod tests {
             }),
         ];
 
-        let detail = pcurve_mismatch_detail(11, &mapped)
-            .expect("two mapped paths");
+        let detail = pcurve_mismatch_detail(11, &mapped).expect("two mapped paths");
         assert_eq!(detail.curve_id, 11);
         assert_eq!(detail.faces, [7, 8]);
         assert!((detail.same_order_error - 1.0).abs() < EPS_TEST_ERROR);
@@ -4451,7 +4445,6 @@ mod tests {
 
 #[cfg(test)]
 mod evaluation_tests;
-
 
 #[cfg(test)]
 mod work_and_custody;

@@ -2,8 +2,6 @@
 use super::super::arc_z_fields;
 use crate::scalar::ScalarCache;
 
-
-
 #[test]
 fn arc_trials_admit_two_present_offset_passes_without_a_terminal_visit() {
     let valid = b"\x01\xe4\xe4\x0f\x0f\x43\xf0\x00\x0f\x0f".as_slice();
@@ -27,7 +25,6 @@ fn arc_trials_admit_two_present_offset_passes_without_a_terminal_visit() {
         }
     }
 }
-
 
 #[test]
 fn singleton_reference_ellipse_admits_only_its_source_visit() {
