@@ -23,7 +23,7 @@ fn curve(periodic: bool) -> NurbsCurve {
     .expect("valid degree-one spline")
 }
 
-fn unavailable<T>(result: &Option<Result<T, CodecError>>, original: Option<ResourceLimit>) {
+fn unavailable<T>(result: Option<&Result<T, CodecError>>, original: Option<ResourceLimit>) {
     match original {
         Some(first) => {
             assert!(matches!(result, Some(Err(CodecError::ResourceLimit(last))) if *last == first));
@@ -37,7 +37,7 @@ fn asm_polynomial_circle_recognition_preserves_original_refusal() {
     let curve = curve(false);
     crate::test_support::with_entry_context(|ctx, original| {
         unavailable(
-            &super::super::rational_four_arc_circle(ctx, &curve),
+            super::super::rational_four_arc_circle(ctx, &curve).as_ref(),
             original,
         );
     });
@@ -47,7 +47,10 @@ fn asm_polynomial_circle_recognition_preserves_original_refusal() {
 fn asm_periodic_spine_recognition_preserves_original_refusal() {
     let curve = curve(true);
     crate::test_support::with_entry_context(|ctx, original| {
-        unavailable(&super::super::linear_nurbs_spine(ctx, &curve), original);
+        unavailable(
+            super::super::linear_nurbs_spine(ctx, &curve).as_ref(),
+            original,
+        );
     });
 }
 
@@ -55,13 +58,14 @@ fn asm_periodic_spine_recognition_preserves_original_refusal() {
 fn asm_empty_spine_points_preserve_original_refusal() {
     crate::test_support::with_entry_context(|ctx, original| {
         unavailable(
-            &super::super::linear_spine_points(
+            super::super::linear_spine_points(
                 ctx,
                 &[],
                 |_: &cadmpeg_ir::features::FinitePoint3| {
                     panic!("empty spine must execute no point callback")
                 },
-            ),
+            )
+            .as_ref(),
             original,
         );
     });
@@ -78,7 +82,7 @@ fn asm_polynomial_extrusion_recognition_preserves_original_refusal() {
     };
     crate::test_support::with_entry_context(|ctx, original| {
         unavailable(
-            &super::super::analytic_procedural_surface(ctx, &definition),
+            super::super::analytic_procedural_surface(ctx, &definition).as_ref(),
             original,
         );
     });
@@ -88,7 +92,8 @@ fn rolling_ball(radius: f64) {
     let spine = curve(false);
     crate::test_support::with_entry_context(|ctx, original| {
         unavailable(
-            &super::super::analytic_rolling_ball_surface(ctx, &[None, None], None, &spine, radius),
+            super::super::analytic_rolling_ball_surface(ctx, &[None, None], None, &spine, radius)
+                .as_ref(),
             original,
         );
     });
