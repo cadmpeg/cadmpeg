@@ -149,18 +149,12 @@ fn admitted_body_clone<'a>(
     ctx: &'a DecodeContext<'_>,
     operation: &'static str,
 ) -> Result<AdmittedRepresentationBodies<'a>, cadmpeg_core::CodecError> {
-    ctx.charge_collection_items(u64_from_index(bodies.len()), operation)?;
     let mut bytes = ctx.reserve_scoped(0, operation)?;
-    let mut values = Vec::new();
-
-    bytes.with_storage(|| ctx.reserve_capacity(&mut values, bodies.len(), operation))?;
-    ctx.charge_work(0, "STEP admitted body clone traversal")?;
-    let mut source_steps = (bodies).iter();
-    for _ in 0..source_steps.len() {
-        let body = ctx.next_charged(&mut source_steps, "STEP admitted body clone traversal")?
-            .ok_or_else(|| CodecError::malformed("STEP topology source ended early"))?;
-        values.push(bytes.with_storage(|| body.try_clone_for_decode(ctx, operation))?);
-    }
+    let values = bytes.with_storage(|| {
+        ctx.collect_indexed_vec(bodies.len(), operation, |index| {
+            bodies[index].try_clone_for_decode(ctx, operation)
+        })
+    })?;
     Ok(AdmittedRepresentationBodies {
         values,
         reservation: bytes,
@@ -3922,7 +3916,6 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
         let mut shell_scratch = ctx.reserve_scoped(0, "STEP shell scratch")?;
         let mut shell_edges = BTreeSet::new();
         let mut shell_poly_edges = Vec::new();
-        let face_start = faces.len();
         let loop_start = loops.len();
         let coedge_start = coedges.len();
         let mut face_ids = vec![];
@@ -4975,7 +4968,7 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
                             .ok_or_else(|| CodecError::malformed("STEP topology source ended early"))?;
                         let face_id =
                             face_ids[face_index].try_clone_for_decode(ctx, "step_brep_component_faces")?;
-                        faces[face_start + face_index].shell =
+                        faces[face_index].shell =
                             component_shell.try_clone_for_decode(ctx, "step_topology_identity_copy")?;
                         ctx.push_vec(&mut component_faces, face_id, "step_brep_component_faces")?;
                     }
