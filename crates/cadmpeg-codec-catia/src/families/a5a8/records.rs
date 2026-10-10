@@ -17,7 +17,7 @@ use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::{
-    nurbs::{knots_strictly_increasing, NurbsCurve, NurbsSurface},
+    nurbs::{NurbsCurve, NurbsSurface},
     ProceduralSurfaceDefinition, RollingBallJetDerivative, RollingBallJetSite,
 };
 use cadmpeg_ir::math::Point3;
@@ -1652,14 +1652,16 @@ pub(crate) fn a8_surfaces(
 ) -> Result<Vec<FreeformSurface>, CodecError> {
     let mut surfaces = Vec::new();
     for frame in a8_frames(ctx, data, 0x34)? {
-        let (parsed, _header_storage) = ctx
+        let (parsed, header_storage) = ctx
             .with_scoped_storage("catia_a8_surface_header", || {
                 parse_a8_surface_header(ctx, data, frame)
             })?;
         let Some(parsed) = parsed else {
             continue;
         };
-        if let Some(surface) = a8_surface_from_parsed(ctx, data, parsed, refusal)? {
+        let surface = a8_surface_from_parsed(ctx, data, parsed, refusal)?;
+        drop(header_storage);
+        if let Some(surface) = surface {
             ctx.push_vec(&mut surfaces, surface, "catia_a8_inline_surfaces")?;
         }
     }
@@ -1839,8 +1841,8 @@ fn a8_surface_from_external_grid<'ctx>(
     let (geometry, storage) = ctx.with_scoped_storage(
         "catia_a8_external_surface_candidate",
         || -> Result<_, CodecError> {
-            let Some((control_points, weights)) =
-                retain_built(ctx, "catia_a8_external_grid", || {
+            let (grid, grid_storage) =
+                ctx.with_scoped_storage("catia_a8_external_grid", || -> Result<_, CodecError> {
                     let Some(control_points) = read_point_rows(
                         ctx,
                         data,
@@ -1869,18 +1871,19 @@ fn a8_surface_from_external_grid<'ctx>(
                         None
                     };
                     Ok(Some((control_points, weights)))
-                })?
-            else {
+                })?;
+            let Some((control_points, weights)) = grid else {
                 return Ok(None);
             };
             let u_knots = header.u_knots.expanded(ctx)?;
             let v_knots = header.v_knots.expanded(ctx)?;
-            Ok(Some(NurbsSurface::from_checked_lanes(
+            Ok(Some(surface_from_grid(
                 ctx,
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(header.u_degree, u_knots, false),
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(header.v_degree, v_knots, false),
-                cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_points, weights),
-                false,
+                control_points,
+                weights,
+                grid_storage,
             )?))
         },
     )?;
@@ -2061,6 +2064,36 @@ fn nonzero_weight(data: &[u8], at: usize) -> Option<NonZeroReal> {
     NonZeroReal::new(f64_le(data, at)?.get())
 }
 
+/// Pair weighted source grids outside their input lease. Polynomial grids
+/// keep their backing; rational grids release the consumed source backing.
+fn surface_from_grid(
+    ctx: &DecodeContext<'_>,
+    u: cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis,
+    v: cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis,
+    control_points: Vec<Vec<FinitePoint3>>,
+    weights: Option<Vec<Vec<NonZeroReal>>>,
+    grid_storage: ScopedReservation<'_>,
+) -> Result<Result<NurbsSurface, cadmpeg_ir::geometry::nurbs::NurbsError>, CodecError> {
+    use cadmpeg_ir::geometry::nurbs::NurbsPoleGrid;
+    let poles = match weights {
+        Some(weights) => {
+            let poles = NurbsPoleGrid::from_checked_lanes(ctx, control_points, Some(weights))?;
+            drop(grid_storage);
+            match poles {
+                Ok(poles) => poles,
+                Err(error) => return Ok(Err(error)),
+            }
+        }
+        None => {
+            grid_storage.commit()?;
+            NurbsPoleGrid::Polynomial {
+                rows: control_points,
+            }
+        }
+    };
+    NurbsSurface::new(ctx, u, v, poles, false)
+}
+
 /// Read `rows` rows of `columns` finite points from consecutive 24-byte records.
 fn read_point_rows(
     ctx: &DecodeContext<'_>,
@@ -2219,11 +2252,15 @@ fn a5_surface(
         return Ok(None);
     };
     at += 1;
-    if !knots_strictly_increasing(&u_distinct, |count| {
-        ctx.charge_work(count, "catia_a5_surface_knot_order_scan")
-    })? || !knots_strictly_increasing(&v_distinct, |count| {
-        ctx.charge_work(count, "catia_a5_surface_knot_order_scan")
-    })? {
+    if !ctx.all_by(
+        u_distinct.windows(2),
+        |pair| Ok(pair[0] < pair[1]),
+        "catia_a5_surface_knot_order_scan",
+    )? || !ctx.all_by(
+        v_distinct.windows(2),
+        |pair| Ok(pair[0] < pair[1]),
+        "catia_a5_surface_knot_order_scan",
+    )? {
         return Ok(None);
     }
     let (geometry, storage) =
@@ -2249,8 +2286,8 @@ fn a5_surface(
             else {
                 return Ok(None);
             };
-            let Some((control_points, weights)) =
-                retain_built(ctx, "catia_a5_surface_grid", || {
+            let (grid, grid_storage) =
+                ctx.with_scoped_storage("catia_a5_surface_grid", || -> Result<_, CodecError> {
                     let Some(control_points) =
                         read_point_rows(ctx, data, at, u_count, v_count, "catia_a5_surface_poles")?
                     else {
@@ -2270,16 +2307,17 @@ fn a5_surface(
                         return Ok(None);
                     }
                     Ok(Some((control_points, weights)))
-                })?
-            else {
+                })?;
+            let Some((control_points, weights)) = grid else {
                 return Ok(None);
             };
-            Ok(Some(NurbsSurface::from_checked_lanes(
+            Ok(Some(surface_from_grid(
                 ctx,
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(u_degree, u_knots, false),
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(v_degree, v_knots, false),
-                cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_points, weights),
-                false,
+                control_points,
+                weights,
+                grid_storage,
             )?))
         })?;
     let Some(geometry) = geometry else {
@@ -2653,8 +2691,8 @@ fn a8_surface_from_parsed(
     let (geometry, storage) = ctx.with_scoped_storage(
         "catia_a8_inline_surface_candidate",
         || -> Result<_, CodecError> {
-            let Some((control_points, weights)) =
-                retain_built(ctx, "catia_a8_inline_grid", || {
+            let (grid, grid_storage) =
+                ctx.with_scoped_storage("catia_a8_inline_grid", || -> Result<_, CodecError> {
                     let Some(control_points) = read_point_rows(
                         ctx,
                         data,
@@ -2683,18 +2721,19 @@ fn a8_surface_from_parsed(
                         None
                     };
                     Ok(Some((control_points, weights)))
-                })?
-            else {
+                })?;
+            let Some((control_points, weights)) = grid else {
                 return Ok(None);
             };
             let u_knots = u_knots.expanded(ctx)?;
             let v_knots = v_knots.expanded(ctx)?;
-            Ok(Some(NurbsSurface::from_checked_lanes(
+            Ok(Some(surface_from_grid(
                 ctx,
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(u_degree, u_knots, false),
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(v_degree, v_knots, false),
-                cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_points, weights),
-                false,
+                control_points,
+                weights,
+                grid_storage,
             )?))
         },
     )?;

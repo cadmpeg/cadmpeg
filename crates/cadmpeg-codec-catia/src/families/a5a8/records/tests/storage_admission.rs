@@ -197,3 +197,95 @@ fn b5_object_pcurve_admits_source_knots_controls_and_multiplicities() {
             && limit.used == 112 && limit.additional == 8)
     );
 }
+
+#[test]
+fn rational_a5_surface_releases_consumed_point_and_weight_grids() {
+    let bytes = crate::test_support::test_a5a8::a5_rational_surface_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let record = &records[0];
+    let frame = crate::wire::records::ConsolidatedFrame {
+        pos: record.byte_offset(),
+        payload: record.payload().expect("payload").start,
+        end: record.range().expect("range").end,
+        header_token: record.header_token(),
+    };
+    // Pairing reserves four row slots and four weighted-pole slots per row.
+    // Eight knots + four row headers + two four-slot pole rows retain 416 bytes.
+    let surface = crate::test_support::with_retained_limit(8 * 8 + 4 * 24 + 2 * 4 * 32, |ctx| {
+        super::super::a5_surface(ctx, &bytes, frame, &mut crate::nurbs::LaneRefusals::new())
+    })
+    .expect("only the paired grid is retained")
+    .expect("weighted surface");
+    assert_eq!(
+        (surface.geometry.u_count(), surface.geometry.v_count()),
+        (2, 2)
+    );
+    assert_eq!(
+        surface.geometry.pole_grid().weights(),
+        Some(vec![vec![2.0; 2]; 2])
+    );
+}
+
+#[test]
+fn rational_a8_surface_releases_consumed_point_and_weight_grids() {
+    let bytes = crate::test_support::test_a5a8::a8_rational_surface_stream();
+    // Twelve knots + four row headers + three four-slot pole rows retain 576 bytes.
+    let surface = crate::test_support::with_retained_limit(12 * 8 + 4 * 24 + 3 * 4 * 32, |ctx| {
+        super::super::resolved_a8_surface_from_object_frame(
+            ctx,
+            &bytes,
+            0,
+            bytes.len(),
+            0xdeca_fbad,
+            &mut super::super::A8ExternalGridSites::default(),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    })
+    .expect("only the paired grid is retained")
+    .expect("weighted surface");
+    assert_eq!(
+        (surface.geometry.u_count(), surface.geometry.v_count()),
+        (3, 3)
+    );
+    assert_eq!(
+        surface.geometry.pole_grid().weights(),
+        Some(vec![vec![2.0; 3]; 3])
+    );
+}
+
+#[test]
+fn rational_external_a8_surface_releases_consumed_point_and_weight_grids() {
+    let mut bytes = crate::test_support::test_a5a8::a8_elided_surface_stream();
+    bytes[58] = 0x05;
+    let next_frame = bytes.len() - 10;
+    bytes.splice(
+        next_frame..next_frame,
+        std::iter::repeat_n(2.0_f64, 9).flat_map(f64::to_le_bytes),
+    );
+    let frame = crate::test_support::with_service_context(|ctx| {
+        super::super::a8_frames(ctx, &bytes, 0x34).map(|mut frames| frames.next())
+    })
+    .expect("surface frame scan")
+    .expect("one external-grid surface frame");
+    let surface = crate::test_support::with_retained_limit(12 * 8 + 4 * 24 + 3 * 4 * 32, |ctx| {
+        super::super::resolved_a8_surface_from_object_frame(
+            ctx,
+            &bytes,
+            frame.pos,
+            frame.end,
+            frame.object_id,
+            &mut super::super::A8ExternalGridSites::default(),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    })
+    .expect("only the paired grid is retained")
+    .expect("external weighted surface");
+    assert_eq!(
+        (surface.geometry.u_count(), surface.geometry.v_count()),
+        (3, 3)
+    );
+    assert_eq!(
+        surface.geometry.pole_grid().weights(),
+        Some(vec![vec![2.0; 3]; 3])
+    );
+}
