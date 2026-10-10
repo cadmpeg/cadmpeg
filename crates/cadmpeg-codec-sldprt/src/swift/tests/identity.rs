@@ -216,6 +216,7 @@ fn cad_identifier_binds_unique_primary_topology_and_preserves_fallback() {
         .push(reference("A10", "GdtDatum"));
     root.annotations.entities.push(datum);
 
+    let sequence_face = FaceId::mint("sldprt:brep:face#42").expect("identity grammar");
     let mut index = TopologyIdentityIndex::from_model(
         &ctx,
         crate::swift::PrimaryTopology {
@@ -240,13 +241,11 @@ fn cad_identifier_binds_unique_primary_topology_and_preserves_fallback() {
                 &ctx,
                 sequence_targets,
                 42,
-                Some(PmiTarget::Face {
-                    face: FaceId::mint("sldprt:brep:face#42").expect("identity grammar"),
-                }),
+                Some(crate::swift::TopologyTarget::Face(&sequence_face)),
             )
         })
         .expect("sequence fixture uses the index storage admission");
-    let projected = project_with_topology(&ctx, &root, Some(&index), &[], None)
+    let projected = project_with_topology(&ctx, &root, Some(&index), &[], None, None)
         .expect("test projection fits policy")
         .annotations;
     let first = projected.first().expect("projected datum");
@@ -271,7 +270,7 @@ fn cad_identifier_binds_unique_primary_topology_and_preserves_fallback() {
         .entity
         .strings
         .insert("CadIdentifier".into(), "125:99".into());
-    let projected = project_with_topology(&ctx, &root, Some(&index), &[], None)
+    let projected = project_with_topology(&ctx, &root, Some(&index), &[], None, None)
         .expect("test projection fits policy")
         .annotations;
     let first = projected.first().expect("projected datum");
@@ -345,14 +344,18 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
         );
         let no_sequences = TopologyIdentityIndex::from_model(&probe_ctx, topology, &[], &[], &[])
             .expect("primary identities do not need attribute joins");
-        assert!(no_sequences
-            .resolve(&probe_ctx, "schema:22")
-            .unwrap()
-            .is_none());
-        assert!(no_sequences
-            .resolve(&probe_ctx, "schema:11")
-            .unwrap()
-            .is_some());
+        assert!(
+            crate::swift::ProjectionGeometry::new(&probe_ctx, Some(&no_sequences), None, None)
+                .resolve("schema:22")
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            crate::swift::ProjectionGeometry::new(&probe_ctx, Some(&no_sequences), None, None)
+                .resolve("schema:11")
+                .unwrap()
+                .is_some()
+        );
         drop((no_sequences, skipped_probe));
         assert!(probe_ctx.resource_refusal().is_none());
 
@@ -389,42 +392,62 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
     .expect("topology index");
 
     assert_eq!(
-        index.resolve(&ctx, "schema-a:11").unwrap().cloned(),
+        crate::swift::ProjectionGeometry::new(&ctx, Some(&index), None, None)
+            .resolve("schema-a:11")
+            .unwrap()
+            .map(owned_topology_target),
         Some(PmiTarget::Body {
             body: body.id.clone(),
         })
     );
     assert_eq!(
-        index.resolve(&ctx, "schema-b:222").unwrap().cloned(),
+        crate::swift::ProjectionGeometry::new(&ctx, Some(&index), None, None)
+            .resolve("schema-b:222")
+            .unwrap()
+            .map(owned_topology_target),
         Some(PmiTarget::Face {
             face: face.id.clone(),
         })
     );
-    assert!(index
-        .resolve(&ctx, "schema-b:22")
-        .unwrap()
-        .cloned()
-        .is_none());
+    assert!(
+        crate::swift::ProjectionGeometry::new(&ctx, Some(&index), None, None)
+            .resolve("schema-b:22")
+            .unwrap()
+            .map(owned_topology_target)
+            .is_none()
+    );
     assert_eq!(
-        index.resolve(&ctx, "schema-c:33").unwrap().cloned(),
+        crate::swift::ProjectionGeometry::new(&ctx, Some(&index), None, None)
+            .resolve("schema-c:33")
+            .unwrap()
+            .map(owned_topology_target),
         Some(PmiTarget::Edge {
             edge: edge.id.clone(),
         })
     );
     assert_eq!(
-        index.resolve(&ctx, "schema-d:44").unwrap().cloned(),
+        crate::swift::ProjectionGeometry::new(&ctx, Some(&index), None, None)
+            .resolve("schema-d:44")
+            .unwrap()
+            .map(owned_topology_target),
         Some(PmiTarget::Vertex {
             vertex: vertex.id.clone(),
         })
     );
     assert_eq!(
-        index.resolve(&ctx, "schema-e:333").unwrap().cloned(),
+        crate::swift::ProjectionGeometry::new(&ctx, Some(&index), None, None)
+            .resolve("schema-e:333")
+            .unwrap()
+            .map(owned_topology_target),
         Some(PmiTarget::Edge {
             edge: edge.id.clone(),
         })
     );
     assert_eq!(
-        index.resolve(&ctx, "schema-f:444").unwrap().cloned(),
+        crate::swift::ProjectionGeometry::new(&ctx, Some(&index), None, None)
+            .resolve("schema-f:444")
+            .unwrap()
+            .map(owned_topology_target),
         Some(PmiTarget::Vertex {
             vertex: vertex.id.clone(),
         })
@@ -434,11 +457,12 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
         id: FaceId::mint("sldprt:brep:face#22@alternate").expect("identity grammar"),
         ..face.clone()
     };
+    let alternate_faces = [face.clone(), qualified_alternate];
     let active_with_alternate = TopologyIdentityIndex::from_model(
         &ctx,
         crate::swift::PrimaryTopology {
             bodies: std::slice::from_ref(&body),
-            faces: &[face.clone(), qualified_alternate],
+            faces: &alternate_faces,
             edges: std::slice::from_ref(&edge),
             vertices: std::slice::from_ref(&vertex),
         },
@@ -448,20 +472,27 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
     )
     .expect("topology index");
     assert_eq!(
-        active_with_alternate
-            .resolve(&ctx, "schema-g:222")
+        crate::swift::ProjectionGeometry::new(&ctx, Some(&active_with_alternate), None, None)
+            .resolve("schema-g:222")
             .unwrap()
-            .cloned(),
+            .map(owned_topology_target),
         Some(PmiTarget::Face {
             face: face.id.clone(),
         })
     );
-    assert!(index
-        .resolve(&ctx, "schema-e:not-a-number")
-        .unwrap()
-        .cloned()
-        .is_none());
-    assert!(index.resolve(&ctx, "11").unwrap().is_none());
+    assert!(
+        crate::swift::ProjectionGeometry::new(&ctx, Some(&index), None, None)
+            .resolve("schema-e:not-a-number")
+            .unwrap()
+            .map(owned_topology_target)
+            .is_none()
+    );
+    assert!(
+        crate::swift::ProjectionGeometry::new(&ctx, Some(&index), None, None)
+            .resolve("11")
+            .unwrap()
+            .is_none()
+    );
 
     let collision = Face {
         id: FaceId::mint("sldprt:brep:face#11").expect("identity grammar"),
@@ -471,7 +502,7 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
         &ctx,
         crate::swift::PrimaryTopology {
             bodies: std::slice::from_ref(&body),
-            faces: &[collision],
+            faces: std::slice::from_ref(&collision),
             edges: std::slice::from_ref(&edge),
             vertices: std::slice::from_ref(&vertex),
         },
@@ -481,7 +512,10 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
     )
     .expect("topology index");
     assert_eq!(
-        index.resolve(&ctx, "schema-g:11").unwrap().cloned(),
+        crate::swift::ProjectionGeometry::new(&ctx, Some(&index), None, None)
+            .resolve("schema-g:11")
+            .unwrap()
+            .map(owned_topology_target),
         Some(PmiTarget::Body {
             body: body.id.clone(),
         })
@@ -501,7 +535,10 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
     )
     .expect("topology index");
     assert_eq!(
-        sequence_wins.resolve(&ctx, "schema-h:11").unwrap().cloned(),
+        crate::swift::ProjectionGeometry::new(&ctx, Some(&sequence_wins), None, None)
+            .resolve("schema-h:11")
+            .unwrap()
+            .map(owned_topology_target),
         Some(PmiTarget::Edge {
             edge: edge.id.clone(),
         })
@@ -520,23 +557,26 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
         &[],
     )
     .expect("topology index");
-    assert!(unresolved
-        .resolve(&ctx, "schema-i:11")
-        .unwrap()
-        .cloned()
-        .is_none());
+    assert!(
+        crate::swift::ProjectionGeometry::new(&ctx, Some(&unresolved), None, None)
+            .resolve("schema-i:11")
+            .unwrap()
+            .map(owned_topology_target)
+            .is_none()
+    );
 
+    let conflicting_faces = [
+        face.clone(),
+        Face {
+            id: FaceId::mint("sldprt:brep:face#23").expect("identity grammar"),
+            ..face.clone()
+        },
+    ];
     let conflicting = TopologyIdentityIndex::from_model(
         &ctx,
         crate::swift::PrimaryTopology {
             bodies: std::slice::from_ref(&body),
-            faces: &[
-                face.clone(),
-                Face {
-                    id: FaceId::mint("sldprt:brep:face#23").expect("identity grammar"),
-                    ..face.clone()
-                },
-            ],
+            faces: &conflicting_faces,
             edges: std::slice::from_ref(&edge),
             vertices: std::slice::from_ref(&vertex),
         },
@@ -545,11 +585,13 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
         &[],
     )
     .expect("topology index");
-    assert!(conflicting
-        .resolve(&ctx, "schema-j:77")
-        .unwrap()
-        .cloned()
-        .is_none());
+    assert!(
+        crate::swift::ProjectionGeometry::new(&ctx, Some(&conflicting), None, None)
+            .resolve("schema-j:77")
+            .unwrap()
+            .map(owned_topology_target)
+            .is_none()
+    );
 
     let conflicting_families = TopologyIdentityIndex::from_model(
         &ctx,
@@ -564,11 +606,13 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
         &[],
     )
     .expect("topology index");
-    assert!(conflicting_families
-        .resolve(&ctx, "schema-k:88")
-        .unwrap()
-        .cloned()
-        .is_none());
+    assert!(
+        crate::swift::ProjectionGeometry::new(&ctx, Some(&conflicting_families), None, None)
+            .resolve("schema-k:88")
+            .unwrap()
+            .map(owned_topology_target)
+            .is_none()
+    );
 }
 
 fn topology_index_limit_error(
@@ -618,13 +662,19 @@ fn swift_topology_index_refuses_work_limit() {
 
 #[test]
 fn swift_topology_index_refuses_materialized_limit() {
-    let CodecError::ResourceLimit(limit) =
-        topology_index_limit_error(|limits| limits.max_materialized_bytes = 0)
-    else {
+    let CodecError::ResourceLimit(limit) = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        "collect SWIFT primary topology targets",
+        |cap| {
+            Err::<(), _>(topology_index_limit_error(|limits| {
+                limits.max_materialized_bytes = cap
+            }))
+        },
+    ) else {
         panic!("expected materialized refusal")
     };
     assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
-    assert_eq!(limit.operation, "copy SWIFT topology identity");
+    assert_eq!(limit.operation, "collect SWIFT primary topology targets");
 }
 
 #[test]
@@ -660,13 +710,17 @@ fn swift_topology_index_scratch_does_not_consume_retained_budget() {
     )
     .expect("scratch identity index uses the materialized budget");
     assert_eq!(
-        index.resolve(&ctx, "schema:11").unwrap().cloned(),
+        crate::swift::ProjectionGeometry::new(&ctx, Some(&index), None, None)
+            .resolve("schema:11")
+            .unwrap()
+            .map(owned_topology_target),
         Some(PmiTarget::Body {
             body: body.id.clone()
         })
     );
 
-    let error = crate::swift::copy_pmi_target(&ctx, &PmiTarget::Body { body: body.id })
+    let error = crate::swift::TopologyTarget::Body(&body.id)
+        .copy_for_decode(&ctx)
         .expect_err("final PMI output identity remains retained");
     let CodecError::ResourceLimit(limit) = error else {
         panic!("expected retained refusal")
@@ -683,4 +737,109 @@ fn swift_topology_index_refuses_collection_limit() {
         panic!("expected collection refusal")
     };
     assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn pattern_hole_ambiguity_skips_unvisited_dependents() {
+    use cadmpeg_core::decode::refusal_probe::RefusalProbe;
+    for tail in [1, 128] {
+        let mut features = pattern_hole_features();
+        let hole = features[2].clone();
+        for ordinal in 4..=4 + tail {
+            let mut additional = hole.clone();
+            additional.id =
+                FeatureId::mint(format!("sldprt:model:feature#hole-{ordinal}")).unwrap();
+            additional.ordinal = ordinal;
+            features.push(additional);
+        }
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let _probe = RefusalProbe::arm(
+            ResourceDimension::WorkUnits,
+            "swift pattern hole search",
+            Some(u64::from(tail + 2)),
+        );
+        assert!(pattern_hole_nominal_context(&ctx, &features)
+            .unwrap()
+            .is_empty());
+        ctx.finish_session().unwrap();
+    }
+}
+
+fn owned_topology_target(target: &crate::swift::TopologyTarget<'_>) -> PmiTarget {
+    match target {
+        crate::swift::TopologyTarget::Body(id) => PmiTarget::Body {
+            body: (*id).clone(),
+        },
+        crate::swift::TopologyTarget::Face(id) => PmiTarget::Face {
+            face: (*id).clone(),
+        },
+        crate::swift::TopologyTarget::Edge(id) => PmiTarget::Edge {
+            edge: (*id).clone(),
+        },
+        crate::swift::TopologyTarget::Vertex(id) => PmiTarget::Vertex {
+            vertex: (*id).clone(),
+        },
+    }
+}
+
+#[test]
+fn swift_topology_index_never_copies_rejected_or_duplicate_identities() {
+    use cadmpeg_core::decode::refusal_probe::RefusalProbe;
+    use cadmpeg_ir::ids::BodyId;
+    use cadmpeg_ir::topology::Body;
+    let body = Body {
+        id: BodyId::mint("sldprt:brep:body#11").unwrap(),
+        kind: Default::default(),
+        regions: Vec::new(),
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    };
+    let mut bodies = vec![body.clone(); 64];
+    bodies.push(Body {
+        id: BodyId::mint(format!("sldprt:brep:body#77@{}", "qualified".repeat(64))).unwrap(),
+        ..body
+    });
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let _probe = RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "copy SWIFT topology identity",
+        None,
+    );
+    let index = TopologyIdentityIndex::from_model(
+        &ctx,
+        crate::swift::PrimaryTopology {
+            bodies: &bodies,
+            faces: &[],
+            edges: &[],
+            vertices: &[],
+        },
+        &[],
+        &[],
+        &[],
+    )
+    .unwrap();
+    assert_eq!(index.entries.len(), 1);
+    assert_eq!(index.entries.get(&11).unwrap().len(), 1);
+    assert!(
+        crate::swift::ProjectionGeometry::new(&ctx, Some(&index), None, None)
+            .resolve("schema:11")
+            .unwrap()
+            .is_some()
+    );
+    assert!(
+        crate::swift::ProjectionGeometry::new(&ctx, Some(&index), None, None)
+            .resolve("schema:77")
+            .unwrap()
+            .is_none()
+    );
+    drop(index);
+    ctx.finish_session().unwrap();
 }

@@ -1508,16 +1508,16 @@ fn parse_string<'a>(
     start: usize,
 ) -> Result<Option<SpannedValue<'a>>, CodecError> {
     let data_offset = *cursor;
-    let Some(value) = cursor
-        .checked_add(len)
-        .and_then(|end| bytes.get(*cursor..end))
-    else {
+    let Some(end) = cursor.checked_add(len) else {
+        return Ok(None);
+    };
+    let Some(value) = bytes.get(*cursor..end) else {
         return Ok(None);
     };
     let kind = ctx
         .validate_utf8(value, "validate SLDPRT PMI MessagePack text")?
         .map_or(ValueKind::Opaque, ValueKind::String);
-    *cursor = data_offset.saturating_add(len);
+    *cursor = end;
     Ok(Some(SpannedValue {
         kind,
         start,

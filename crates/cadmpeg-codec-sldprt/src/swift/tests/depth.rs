@@ -586,8 +586,8 @@ fn measurement_cache_preserves_child_disagreement() {
             .and_then(crate::swift::PositiveReal::new))
     })
     .unwrap();
-    assert_eq!(traversal.visit("root", 0).unwrap().value, None);
-    assert_eq!(traversal.visit("root", 0).unwrap().value, None);
+    assert_eq!(traversal.visit("root", 1).unwrap().value, None);
+    assert_eq!(traversal.visit("root", 1).unwrap().value, None);
     assert_eq!(
         calls.get(),
         3,
@@ -692,4 +692,154 @@ fn cached_list_depth_does_not_bypass_policy_nesting() {
     assert!(matches!((refusal, repeated),
         (CodecError::ResourceLimit(first), CodecError::ResourceLimit(repeated))
             if first == repeated));
+}
+
+#[test]
+fn swift_terminal_queries_skip_top_level_cache_publication() {
+    use cadmpeg_core::decode::{
+        refusal_probe::RefusalProbe, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
+    };
+    let feature = marker(4.0);
+    let index = BTreeMap::from([("leaf", &feature)]);
+    for operation in [
+        "look up SWIFT feature traversal result",
+        "copy SWIFT feature traversal result",
+        "cache SWIFT feature traversal result",
+        "look up SWIFT feature measurement",
+        "cache SWIFT feature measurement",
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
+        let value = crate::swift::PositiveReal::new(4.0).unwrap();
+        let mut list = crate::swift::FeatureListTraversal::new(
+            &ctx,
+            &index,
+            "test list",
+            "test path",
+            "test output",
+            |_| Ok(Some(value)),
+        )
+        .unwrap();
+        let mut values = Vec::new();
+        assert!(list.collect("leaf", 0, &mut values).unwrap());
+        assert_eq!(values, [value]);
+        let mut scalar =
+            crate::swift::FeatureMeasurementTraversal::new(&ctx, &index, |_| Ok(Some(value)))
+                .unwrap();
+        assert_eq!(scalar.visit("leaf", 0).unwrap().value, Some(value));
+        drop((list, scalar));
+        ctx.finish_session().unwrap();
+    }
+}
+
+#[test]
+fn swift_measurement_disagreement_defers_subfeature_validation() {
+    use cadmpeg_core::decode::{
+        refusal_probe::RefusalProbe, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
+    };
+    let mut root = entity("GdtCompoundHole");
+    root.features.references = vec![reference("low", "Leaf"), reference("high", "Leaf")];
+    let mut collection = entity("GdtAppliedFeatureCollection");
+    for index in 0..128 {
+        let mut applied = entity("GdtAppliedFeature");
+        applied
+            .features
+            .references
+            .push(reference(&format!("child-{index}"), "Leaf"));
+        collection.related.push(RelatedObject {
+            name: format!("child-{index}"),
+            class: applied.class.clone(),
+            entity: applied,
+        });
+    }
+    root.related.push(RelatedObject {
+        name: "SubFeatures".into(),
+        class: collection.class.clone(),
+        entity: collection,
+    });
+    let low = marker(1.0);
+    let high = marker(2.0);
+    let index = BTreeMap::from([("root", &root), ("low", &low), ("high", &high)]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let _probe = RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "validate SWIFT direct subfeatures",
+        None,
+    );
+    let mut traversal = crate::swift::FeatureMeasurementTraversal::new(&ctx, &index, |feature| {
+        Ok(feature
+            .doubles
+            .get("value")
+            .copied()
+            .and_then(crate::swift::PositiveReal::new))
+    })
+    .unwrap();
+    assert_eq!(traversal.visit("root", 0).unwrap().value, None);
+    drop(traversal);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn swift_disagreement_scans_do_not_admit_unused_reference_tails() {
+    use cadmpeg_core::decode::{
+        refusal_probe::RefusalProbe, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
+    };
+    for tail in [1, 128] {
+        let mut annotation = entity("GdtDepth");
+        annotation.features.references = vec![reference("low", "Leaf"), reference("high", "Leaf")];
+        annotation
+            .features
+            .references
+            .extend((0..tail).map(|index| reference(&format!("unused-{index}"), "Leaf")));
+        let low = marker(1.0);
+        let high = marker(2.0);
+        let index = BTreeMap::from([("low", &low), ("high", &high)]);
+        for operation in [
+            "scan SWIFT applied measurement features",
+            "scan SWIFT direct measurement features",
+        ] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = u64::MAX;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let _probe = RefusalProbe::arm(
+                ResourceDimension::WorkUnits,
+                operation,
+                Some(u64::try_from(annotation.features.references.len()).unwrap()),
+            );
+            let value = if operation == "scan SWIFT applied measurement features" {
+                crate::swift::measurement_from_applied_geometry(&ctx, &annotation, |id| {
+                    assert!(id == "low" || id == "high");
+                    Ok(crate::swift::PositiveReal::new(if id == "low" {
+                        1.0
+                    } else {
+                        2.0
+                    }))
+                })
+            } else {
+                crate::swift::measurement_from_direct_features(
+                    &ctx,
+                    &annotation,
+                    &index,
+                    "Leaf",
+                    |feature| {
+                        Ok(feature
+                            .doubles
+                            .get("value")
+                            .copied()
+                            .and_then(crate::swift::PositiveReal::new))
+                    },
+                )
+            }
+            .unwrap();
+            assert_eq!(value, None);
+            ctx.finish_session().unwrap();
+        }
+    }
 }
