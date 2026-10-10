@@ -44,13 +44,7 @@ fn indexed_occurrences_preserve_single_handles_pairs_and_precedence() {
     })
     .expect("indexed single and palindrome")
     .expect("one occurrence per cycle");
-    assert_eq!(
-        occurrences
-            .iter()
-            .map(|runs| runs.len())
-            .collect::<Vec<_>>(),
-        [1, 1]
-    );
+    assert_eq!(occurrences.iter().map(Vec::len).collect::<Vec<_>>(), [1, 1]);
     assert!(occurrences.iter().all(|runs| !runs[0].reversed));
     assert_eq!(occurrences[0][0].start, 1);
     assert_eq!(occurrences[1][0].start, 0);

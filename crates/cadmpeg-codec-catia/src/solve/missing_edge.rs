@@ -10,7 +10,7 @@ type MissingEdgeDomainsOutput =
 use crate::families::standard::fbb::{
     boundary_cycles, largest_fbb_run, parse_edge_tables, parse_fbb_edge_tables,
     parse_standard_edge_tables_scoped, parse_standard_edge_tables_with_width, parse_trim_chain,
-    parse_vertex_table, selected_standard_run,
+    selected_standard_run,
 };
 #[cfg(test)]
 use crate::families::standard::topology::{reconstruct_mesh_selection, StandardTopologyDraft};
@@ -4408,7 +4408,9 @@ fn parse_standard_mesh_selection(
     let Some((edge_rows, vertex_header)) = parse_edge_tables(ctx, bytes, after_faces)? else {
         return Ok(None);
     };
-    let Some(vertex_points) = parse_vertex_table(ctx, bytes, vertex_header)? else {
+    let Some(vertex_points) =
+        crate::families::standard::fbb::parse_vertex_table(ctx, bytes, vertex_header)?
+    else {
         return Ok(None);
     };
     let Some(assignments) = standard_mesh_boundary_assignments(ctx, bytes, edge_faces, None)?
@@ -5922,13 +5924,11 @@ impl PortCandidateSearch<'_, '_> {
         ctx.charge_work(1, OPERATION)?;
         let mut propagated_storage = ctx.reserve_scoped(0, "catia_port_search_propagated")?;
         let mut propagated = Vec::new();
-        let branch = if !ctx.any_by(
+        let branch = if ctx.any_by(
             &self.edge_pairs,
             |pair| Ok(pair.is_none()),
             "catia_port_search_dependencies",
         )? {
-            None
-        } else {
             // Revisit a row only when a port or a reverse point binding used by
             // that row changes. Keep the final branch tie order by edge ordinal.
             let (dependencies, _dependency_storage) =
@@ -6073,6 +6073,8 @@ impl PortCandidateSearch<'_, '_> {
                 }
             }
             best.map(|(_, edge)| edge)
+        } else {
+            None
         };
         let Some(edge) = branch else {
             // No branch remains only when every edge is assigned.
