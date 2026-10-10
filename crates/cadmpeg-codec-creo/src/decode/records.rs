@@ -32,7 +32,7 @@ use super::native_records::{
     CreoPositionalConeFrame, CreoPositionalCylinderFrame, CreoPositionalTorusFrame,
     CreoSketchBoundedCurveSegment, CreoSketchCenteredLineSegment, CreoSketchCircleSegment,
     CreoSketchConicSegment, CreoSketchDimension, CreoSketchDimensionReference,
-    CreoSketchDimensionReferenceTable, CreoSketchEquation, CreoSketchOpaqueSegment,
+    CreoSketchDimensionReferenceTable, serialize_sketch_equations, CreoSketchOpaqueSegment,
     CreoSketchOrderRow, CreoSketchPointSegment, CreoSketchPointState,
     CreoSketchReferenceLineSegment, CreoSketchRelation, CreoSketchRelationTriple,
     CreoSketchSavedEntity, CreoSketchSection3d, CreoSketchSectionOrientation,
@@ -60,7 +60,8 @@ pub(super) struct CreoSketchRecord<'a> {
     section_points: Vec<CreoSketchSectionPoint>,
     solved_external_ids: Vec<u32>,
     variables: Vec<CreoSketchVariable>,
-    equations: Vec<CreoSketchEquation>,
+    #[serde(serialize_with = "serialize_sketch_equations")]
+    equations: Option<crate::feature::definitions::FeatureEquationTable>,
     segments: Vec<CreoSketchSegment>,
     circle_segments: Vec<CreoSketchCircleSegment>,
     point_segments: Vec<CreoSketchPointSegment>,
@@ -3760,33 +3761,19 @@ pub(super) fn sketch_records<'a, 'ctx>(
                 )
             })?
         };
-        let equations = {
-            let table = crate::feature::definitions::equation_table(
+        let mut equations = storage.with_storage(|| {
+            crate::feature::definitions::equation_table(
                 ctx,
                 &definition.body,
                 0,
                 definition.body.len(),
-            )?;
-            let rows = table.map_or_else(Vec::new, |table| table.rows);
-            let _rows = ctx.admit_iter(&rows, "creo native sketch equation traversal")?;
-            storage.with_storage(|| {
-                ctx.try_collect_vec(
-                    rows.into_iter().map(|equation| {
-                        Ok::<_, CodecError>(CreoSketchEquation {
-                            equation_id: equation.equation_id,
-                            function_id: equation.function_id,
-                            explicit_argument_count: equation.explicit_argument_count,
-                            arguments: equation.arguments,
-                            arguments_body: equation.arguments_body,
-                            auxiliary_body: equation.auxiliary_body,
-                            body: equation.body,
-                            offset: definition.body_position(equation.offset)?.source()?.get(),
-                        })
-                    }),
-                    "creo native sketch equations",
-                )
-            })?
-        };
+            )
+        })?;
+        if let Some(table) = &mut equations {
+            for equation in ctx.admit_iter(&mut table.rows, "creo native sketch equation traversal")? {
+                equation.offset = definition.body_position(equation.offset)?.source()?.get();
+            }
+        }
         let record = storage.with_storage(|| Ok::<_, CodecError>(CreoSketchRecord {
             id,
             definition_id: definition.identity.id(),
