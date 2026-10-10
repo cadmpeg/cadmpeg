@@ -3124,6 +3124,8 @@ fn project_with_type_130_policy<'ctx>(
                 "iges composite child curve ids",
             )?;
         }
+        drop(child_sequences);
+        drop(_pointer_storage);
         if curve_ids.is_empty() && !missing_curve {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
@@ -3193,6 +3195,10 @@ fn project_with_type_130_policy<'ctx>(
                 sequences,
                 (&mut loss_slots_storage, &mut losses),
             )?;
+            drop(curve_ids);
+            drop(curve_id_storage);
+            drop(curve_carriers);
+            drop(carrier_storage);
             if let Some(edge) = edge {
                 ctx.reserve_scoped_vec(&mut wire_slots_storage, &mut wire_edges, 1, "iges composite wire edge ids")?;
                 wire_edges.push(edge);
@@ -3231,6 +3237,10 @@ fn project_with_type_130_policy<'ctx>(
                     sequences,
                     (&mut loss_slots_storage, &mut losses),
                 )?;
+                drop(curve_ids);
+                drop(curve_id_storage);
+                drop(curve_carriers);
+                drop(carrier_storage);
                 if let Some(edge) = edge {
                     ctx.reserve_scoped_vec(&mut wire_slots_storage, &mut wire_edges, 1, "iges composite wire edge ids")?;
                     wire_edges.push(edge);
@@ -3260,6 +3270,10 @@ fn project_with_type_130_policy<'ctx>(
                 sequences,
                 (&mut loss_slots_storage, &mut losses),
             )?;
+            drop(curve_ids);
+            drop(curve_id_storage);
+            drop(curve_carriers);
+            drop(carrier_storage);
             if let Some(edge) = edge {
                 ctx.reserve_scoped_vec(&mut wire_slots_storage, &mut wire_edges, 1, "iges composite wire edge ids")?;
                 wire_edges.push(edge);
@@ -3274,6 +3288,10 @@ fn project_with_type_130_policy<'ctx>(
             }
             continue;
         };
+        drop(curve_ids);
+        drop(curve_id_storage);
+        drop(curve_carriers);
+        drop(carrier_storage);
         let cursor = segments.end();
         let stem = crate::ids::Stem::directory(entry.sequence);
         let start_point = crate::ids::point_admitted(&stem.tail(crate::ids::Word::Start), ctx)?;
