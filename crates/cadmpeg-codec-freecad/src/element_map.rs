@@ -76,14 +76,18 @@ pub(crate) fn parse(
                 .unwrap_or("0"),
             "threshold",
         )?;
-        let owner_property = owning_property(
+        let owner_property = if node.parent() == Some(root) {
+            None
+        } else {
+            owning_property(
             ctx,
             node,
             match &mut owners {
                 Some(owners) => owners,
                 missing @ None => missing.insert(PropertyOwners::new(ctx, properties)?),
             },
-        )?;
+        )?
+        };
         let new_layout = ctx
             .xml_attribute(node, "new", "FreeCAD element-map XML attribute")?
             .is_some_and(|value| value != "0");
@@ -317,13 +321,23 @@ fn string_table_header_count(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<us
     Ok(count)
 }
 
+/// Whether any owning map can consume source topology bindings.
+pub(crate) fn has_topology_consumers(ctx: &DecodeContext<'_>, maps: &[ElementMapRecord]) -> Result<bool, CodecError> {
+    let mut maps = maps.iter();
+    while maps.len() != 0 {
+        let Some(map) = ctx.next_charged(&mut maps, "FreeCAD element topology consumers")? else { break; };
+        if map.maps.has_topology_names(ctx)? { return Ok(true); }
+    }
+    Ok(false)
+}
+
 /// Connect kernel indexed-map positions to every neutral placed occurrence.
 pub(crate) fn bind_topology(
     ctx: &DecodeContext<'_>,
     maps: &mut [ElementMapRecord],
     occurrences: &[TopologyOccurrence],
 ) -> Result<(), CodecError> {
-    if maps.is_empty() || occurrences.is_empty() {
+    if maps.is_empty() || occurrences.is_empty() || !has_topology_consumers(ctx, maps)? {
         return Ok(());
     }
     let (data, storage) = ctx.collect_scoped_btree_groups(
@@ -342,6 +356,9 @@ pub(crate) fn bind_topology(
         else {
             break;
         };
+        if !map.maps.has_topology_names(ctx)? {
+            continue;
+        }
         let Some(occurrences) = ctx.get_btree_map(
             &by_property.data,
             map.property.as_str(),

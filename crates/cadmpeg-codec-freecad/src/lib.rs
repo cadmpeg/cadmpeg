@@ -1744,7 +1744,7 @@ impl CodecBackend for FcstdCodec {
                 &shape_payloads,
                 &graph.properties,
                 &mut topology_losses,
-                !element_maps.is_empty(),
+                element_map::has_topology_consumers(ctx, &element_maps)?,
             )?;
             (cycle_affected_design_objects, cycle_affected_design_storage) = design::transfer(
                 ctx,

@@ -280,6 +280,20 @@ impl ElementMapNodes {
         &self.0[self.0.len() - 1]
     }
 
+    /// Whether the owning map has a name that can receive a topology identity.
+    pub(crate) fn has_topology_names(&self, ctx: &DecodeContext<'_>) -> Result<bool, CodecError> {
+        let mut groups = self.root().groups.iter();
+        while groups.len() != 0 {
+            let Some(group) = ctx.next_charged(&mut groups, "FreeCAD element topology consumer groups")? else { break; };
+            let mut chains = group.names.iter();
+            while chains.len() != 0 {
+                let Some(chain) = ctx.next_charged(&mut chains, "FreeCAD element topology consumer names")? else { break; };
+                if !chain.is_empty() { return Ok(true); }
+            }
+        }
+        Ok(false)
+    }
+
     /// Add a topology binding without exposing child-map descriptors for mutation.
     pub(crate) fn bind_root_topology<'a>(
         &mut self,
