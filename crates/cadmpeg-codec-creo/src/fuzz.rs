@@ -43,11 +43,7 @@ pub fn scalar(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let scratch = ctx.with_scoped_storage("creo fuzz scalar cache scratch", || {
-        ScalarCache::from_section_checked(ctx, data)
-    })?;
-    let _scratch_storage = scratch.1;
-    let cache = scratch.0;
+    let cache = ScalarCache::from_section_checked(ctx, data)?;
     let mut offsets = 0usize..data.len();
     while !offsets.is_empty() {
         let Some(offset) = ctx.next_charged(&mut offsets, "creo fuzz scalar traversal")? else {
