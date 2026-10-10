@@ -275,3 +275,65 @@ fn law_curve_missing_domain_executes_no_identity_or_output_work() {
     assert!(out.curves.is_empty() && out.surfaces.is_empty());
     ctx.finish_session().unwrap();
 }
+
+fn revision_profiles(present: bool) {
+    use crate::nurbs::proc_surface::{EmbeddedLoftPath, EmbeddedLoftProfileMember,
+        EmbeddedLoftSectionEntry, EmbeddedRevisionCompoundLoft};
+    use cadmpeg_ir::geometry::{RevisionCacheForm, RevisionCompoundLoftTail};
+    let profile = || if present {
+        vec![EmbeddedLoftProfileMember { curve: curve(),
+            data: LoftProfileData::RevisionPcurvePair { endpoints: [Some(0.0), Some(1.0)],
+                pcurve: None, secondary_pcurve: None, asm_extension: None,
+                subdata: LoftSubdata::Type211 { dimensions: [0, 0], row: [0.0, 1.0] },
+                direction: None } }]
+    } else { Vec::new() };
+    let path = || EmbeddedLoftPath { layout: EmbeddedLoftPathLayout::Revision(None),
+        auxiliaries: Vec::new(), flag: 0 };
+    let embedded = Box::new(EmbeddedRevisionCompoundLoft {
+        revision: cadmpeg_ir::scalar::PositiveI64::new(23_100).unwrap(),
+        cache: RevisionCacheForm::SolvedCache {
+            fit_tolerance: cadmpeg_ir::geometry::FitTolerance::try_new(0.0).unwrap() },
+        discontinuities: std::array::from_fn(|_| Vec::new()), tail_flag: false,
+        base_profile: profile(), base_path: path(),
+        entries: vec![EmbeddedLoftSectionEntry { parameter: 1.0, profile: profile(), path: path() }],
+        flags: [false; 2], kind_flags: [false; 2],
+        direction: EmbeddedCompoundLoftDirection::Vector(Vector3::new(0.0, 0.0, 1.0)),
+        tail: RevisionCompoundLoftTail::Unbounded {},
+    });
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let mut out = AsmBrep::default();
+    let definition = super::super::emit_revision_compound_loft_surface(&ctx, &mut out, 7,
+        embedded, crate::asm_format!("sat")).unwrap();
+    let ProceduralSurfaceDefinition::RevisionCompoundLoft { construction } = definition else {
+        panic!("revision compound loft");
+    };
+    assert_eq!(construction.base_profile().len(), usize::from(present));
+    assert!(construction.base_path().path.is_none());
+    assert_eq!(construction.entries().len(), 1);
+    assert_eq!(construction.entries()[0].profile.len(), usize::from(present));
+    assert!(construction.entries()[0].path.path.is_none());
+    assert!(out.surfaces.is_empty());
+    assert_eq!(out.curves.len(), if present { 2 } else { 0 });
+    if present {
+        for (profile, expected, curve) in [
+            (&construction.base_profile()[0], "sat:brep:procedural_surface#7:cloft:base:profile:0", &out.curves[0]),
+            (&construction.entries()[0].profile[0], "sat:brep:procedural_surface#7:cloft:0:profile:0", &out.curves[1]),
+        ] {
+            assert_eq!(profile.profile.id.as_str(), expected);
+            assert_eq!(curve.id.as_str(), expected);
+            assert_eq!(profile.profile.endpoints.map(|endpoints|
+                endpoints.map(|endpoint| endpoint.map(|value| value.get()))),
+                Some([Some(0.0), Some(1.0)]));
+            assert!(matches!(profile.form, LoftMemberForm::PcurvePair { pcurve: None,
+                secondary_pcurve: None, asm_extension: None, direction: None, .. }));
+        }
+    }
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn revision_compound_empty_profiles_keep_absent_paths() { revision_profiles(false); }
+
+#[test]
+fn revision_compound_borrowed_profile_scopes_keep_native_identities() { revision_profiles(true); }
