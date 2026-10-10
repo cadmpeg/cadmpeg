@@ -3403,6 +3403,8 @@ fn project_with_type_130_policy<'ctx>(
                 ),
             ),
         )?;
+        drop(curve_id);
+        drop(curve_identity_storage);
         ctx.reserve_scoped_vec(&mut wire_slots_storage, &mut wire_edges, 1, "iges composite wire edge ids")?;
         wire_edges.push(edge);
         decoded_storage.with_storage(|| {
