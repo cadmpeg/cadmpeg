@@ -1,4 +1,4 @@
-//! Fixed class grammar keeps only actual lane visits in the work budget.
+//! Class filtering admits traversal and text comparisons.
 
 use crate::records::{FeatureInputClass, FeatureInputLane};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -34,14 +34,13 @@ fn lane(classes: &[(&str, u64)]) -> FeatureInputLane {
 }
 
 #[test]
-fn unmatched_fixed_class_filter_pays_only_the_source_visits() {
+fn unmatched_class_filter_charges_operand_comparisons() {
     const OPERATION: &str = "test fixed SLDPRT class filter";
-    const VISITS: u64 = 3;
     const REPEATS: u64 = 64;
     let lane = lane(&[("moLineRef_x", 0), ("moLineRef_y", 1), ("moLineRef_z", 2)]);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = VISITS * REPEATS;
+    policy.limits.max_work_units = u64::MAX;
     policy.limits.max_materialized_bytes = 0;
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_collection_items = 0;
@@ -54,20 +53,27 @@ fn unmatched_fixed_class_filter_pays_only_the_source_visits() {
                 .is_empty()
         );
     }
-    let arena = DecodeArena::new();
-    policy.limits.max_work_units = VISITS - 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut storage = ctx.reserve_scoped(0, OPERATION).unwrap();
-    let CodecError::ResourceLimit(limit) =
-        super::sorted_classes(&ctx, &mut storage, &lane, "moLineRef_w", OPERATION).unwrap_err()
-    else {
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "compare SLDPRT filtered class name",
+        |cap| {
+            let arena = DecodeArena::new();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut storage = ctx.reserve_scoped(0, OPERATION)?;
+            let result = super::sorted_classes(&ctx, &mut storage, &lane, "moLineRef_w", OPERATION);
+            if let Err(CodecError::ResourceLimit(limit)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+            }
+            result
+        },
+    );
+    let CodecError::ResourceLimit(limit) = error else {
         panic!("work refusal");
     };
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-    assert_eq!(limit.operation, OPERATION);
-    assert_eq!(limit.used, 0);
-    assert_eq!(limit.additional, VISITS);
-    assert_eq!(ctx.resource_refusal(), Some(limit));
+    assert_eq!(limit.operation, "compare SLDPRT filtered class name");
+    assert!(limit.additional > 1);
 }
 
 #[test]

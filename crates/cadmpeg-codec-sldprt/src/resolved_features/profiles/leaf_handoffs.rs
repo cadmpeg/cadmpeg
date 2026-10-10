@@ -13,18 +13,19 @@ use cadmpeg_ir::transform::Transform;
 
 // The first u32 HashSet growth uses four buckets, 16-byte alignment and
 // 16 trailing control bytes: 4 * sizeof(u32) + 15 + 4 + 16.
-const CHILD_BYTES: u64 = 4 * std::mem::size_of::<u32>() as u64 + 15 + 4 + 16;
+const CHILD_BYTES: u64 =
+    4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>()) + 15 + 4 + 16;
 // Amortized Vec growth starts with four slots for an f64 element.
-const ROTATION_BYTES: u64 = 4 * std::mem::size_of::<f64>() as u64;
+const ROTATION_BYTES: u64 = 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<f64>());
 const TEXT: &str = "label";
 const FONT: &str = "font";
-const TEXT_BYTES: u64 = (TEXT.len() + FONT.len()) as u64;
+const TEXT_BYTES: u64 = cadmpeg_core::decode::u64_from_index(TEXT.len() + FONT.len());
 const CANDIDATE: &str = "build SLDPRT profile candidate";
 const CHILD_SOURCES: &str = "collect SLDPRT dissectable child sources";
 
 fn assert_refusal(
     ctx: &DecodeContext<'_>,
-    error: CodecError,
+    error: &CodecError,
     dimension: ResourceDimension,
     operation: &str,
     used: u64,
@@ -39,7 +40,7 @@ fn assert_refusal(
     assert_eq!(original.used, used);
     assert_eq!(original.additional, additional);
     assert_eq!(original.limit, limit);
-    assert_eq!(ctx.resource_refusal().as_ref(), Some(&original));
+    assert_eq!(ctx.resource_refusal().as_ref(), Some(original));
 }
 
 fn instance() -> SketchBlockInstancePlacement {
@@ -124,7 +125,7 @@ fn profile_child_sources_refuse_exact_storage_limit() {
         let error = dissectable_child_sources(&ctx, "7,9").unwrap_err();
         assert_refusal(
             &ctx,
-            error,
+            &error,
             dimension,
             CHILD_SOURCES,
             0,
@@ -195,7 +196,7 @@ fn sketch_block_rotation_output_preserves_original_refusal() {
         let error = sketch_block_assembly_frame(&ctx, &instances).err().unwrap();
         assert_refusal(
             &ctx,
-            error,
+            &error,
             dimension,
             operation,
             0,
@@ -266,8 +267,8 @@ fn sketch_block_text_output_preserves_original_refusal() {
             policy.limits.max_materialized_bytes -= 1;
             (
                 "transform SLDPRT sketch block geometry",
-                TEXT.len() as u64,
-                FONT.len() as u64,
+                cadmpeg_core::decode::u64_from_index(TEXT.len()),
+                cadmpeg_core::decode::u64_from_index(FONT.len()),
             )
         };
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
@@ -276,7 +277,7 @@ fn sketch_block_text_output_preserves_original_refusal() {
                 .unwrap_err();
         assert_refusal(
             &ctx,
-            error,
+            &error,
             dimension,
             operation,
             used,

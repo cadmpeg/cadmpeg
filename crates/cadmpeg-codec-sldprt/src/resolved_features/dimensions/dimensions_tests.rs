@@ -1354,7 +1354,7 @@ fn transformed_dimensioned_arc_swaps_endpoint_identity_with_minor_geometry() {
         center: [0.0, 0.0],
         start: [0.001, 0.0],
         end: [0.0, -0.001],
-        endpoints: Some(["start".into(), "end".into()]),
+        endpoints: Some(["start", "end"]),
     };
 
     let arc = super::transformed_dimensioned_arc(

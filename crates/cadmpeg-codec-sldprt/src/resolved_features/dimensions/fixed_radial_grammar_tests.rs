@@ -24,7 +24,7 @@ fn malformed_radial_record_does_not_execute_a_fallible_fixed_comparison() {
     policy.limits.max_collection_items = 0;
     policy.limits.max_work_units = u64::MAX;
     let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
-    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+    let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
         ResourceDimension::WorkUnits,
         OLD_COMPARISON,
         None,
@@ -44,7 +44,7 @@ fn malformed_radial_record_does_not_execute_a_fallible_fixed_comparison() {
     assert_eq!(limit.operation, OLD_COMPARISON);
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
     assert_eq!(ctx.resource_refusal(), Some(limit));
-    drop(_probe);
+    drop(probe);
     crate::test_support::work_refusal_at("scan SLDPRT radial circle records", |ctx| {
         super::radial_circle_records(ctx, &payload).map(Iterator::count)
     });

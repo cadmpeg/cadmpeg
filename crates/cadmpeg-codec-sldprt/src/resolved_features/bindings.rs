@@ -322,8 +322,8 @@ pub(crate) fn bind_pattern_inputs(
                 let mut seed_storage = ctx.reserve_scoped(0, PATTERN_INPUTS)?;
                 let mut seeds = Vec::<cadmpeg_ir::features::FeatureId>::new();
                 let scan_end = object
-                    .len()
-                    .saturating_sub(COMPACT_EDGE_VECTOR_MARKER.len());
+                    .get(COMPACT_EDGE_VECTOR_MARKER.len()..)
+                    .map_or(0, <[u8]>::len);
                 for offset in
                     ctx.admit_iter(&(0..scan_end), "scan SLDPRT mirror pattern seed paths")?
                 {
@@ -2135,7 +2135,7 @@ pub(super) fn bind_detached_legacy_sketch_objects(
     let limit = ctx
         .find_by(
             &lane.classes,
-            |class| Ok(class.name == "moFeatureDimHandle_c"),
+            |class| ctx.equal(class.name.as_str(), "moFeatureDimHandle_c", OPERATION),
             "find SLDPRT feature dimension handle",
         )?
         .map_or_else(
@@ -2229,7 +2229,11 @@ pub(super) fn spatial_relation_manager_ranges_charged(
     let lists = sorted_classes(ctx, &mut storage, lane, "suObList", OPERATION)?;
     let mut ranges = Vec::new();
     for plane in ctx.admit_iter(&lane.classes, OPERATION)? {
-        if plane.name != "sg3DPlaneHandle" {
+        if !ctx.equal(
+            plane.name.as_str(),
+            "sg3DPlaneHandle",
+            "compare SLDPRT spatial plane class name",
+        )? {
             continue;
         }
         // The last manager before the plane and the first list after it.
@@ -2655,7 +2659,7 @@ fn bind_resolved_curve_vertices(
                     curve,
                     &markers_by_id,
                     &curve_markers,
-                    &geometry,
+                    geometry,
                 )
             })?;
             for marker in ctx.admit_iter(endpoints, SELECTED)? {
@@ -2708,7 +2712,7 @@ fn bind_resolved_curve_vertices(
                         curve,
                         &markers_by_id,
                         &curve_markers,
-                        &geometry,
+                        geometry,
                     )
                 })?;
                 if endpoints.len() == 2 {

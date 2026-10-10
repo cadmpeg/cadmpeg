@@ -109,8 +109,8 @@ fn hole_position_axes_refuse_work_limit() {
 
 #[test]
 fn hole_position_native_feature_index_refuses_second_key_work() {
-    let (history, lane, surfaces) = hole_axis_position_consumer();
     const OPERATION: &str = "index SLDPRT hole position native features";
+    let (history, lane, surfaces) = hole_axis_position_consumer();
     let error = work_refusal_at_additional(
         OPERATION,
         u64::try_from(SECOND_NATIVE_INDEX_FEATURE_ID.len()).unwrap(),

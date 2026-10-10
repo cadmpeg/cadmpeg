@@ -33,7 +33,7 @@ fn only_actual_axis_slots_and_backing_survive_planar_publication() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let dependency = dependency();
     let mut value = PlanarHolePlacements::new(&ctx, &dependency).unwrap();
-    let (_, allocations) = crate::test_support::allocation::count_allocations(|| {
+    let ((), allocations) = crate::test_support::allocation::count_allocations(|| {
         value.push_axis(origin(2.0), axis()).unwrap();
         value.push_axis(origin(1.0), axis()).unwrap();
     });
@@ -44,7 +44,7 @@ fn only_actual_axis_slots_and_backing_survive_planar_publication() {
     assert_eq!(allocations, 0);
     let (placements, actual_dependency) = result.unwrap();
     assert_eq!(placements.as_ptr(), pointer);
-    assert!(std::ptr::eq(actual_dependency, &dependency));
+    assert!(std::ptr::eq(actual_dependency, &raw const dependency));
     assert!(
         matches!(placements.as_slice(), [HolePlacement::Axis { origin: first, .. }, HolePlacement::Axis { origin: second, .. }] if first.x == 2.0 && second.x == 1.0)
     );
@@ -119,11 +119,11 @@ fn planar_retained_handoff_keeps_original_exact_refusal_and_native_dependency() 
         if accepted {
             let (placements, actual_dependency) = result.unwrap();
             assert_eq!(placements.as_ptr(), pointer);
-            assert!(std::ptr::eq(actual_dependency, &dependency));
+            assert!(std::ptr::eq(actual_dependency, &raw const dependency));
             drop(placements);
             ctx.finish_session().unwrap();
         } else {
-            let error = result.err().expect("planar retained refusal");
+            let error = result.expect_err("planar retained refusal");
             let CodecError::ResourceLimit(limit) = error else {
                 panic!("planar retained resource limit");
             };
@@ -184,7 +184,7 @@ fn planar_scoped_parent_receives_only_the_surviving_vector() {
             value.into_output()
         })
         .unwrap();
-    assert!(std::ptr::eq(actual_dependency, &dependency));
+    assert!(std::ptr::eq(actual_dependency, &raw const dependency));
     drop(
         ctx.reserve_scoped(64, "test planar parent excludes input scratch")
             .unwrap(),

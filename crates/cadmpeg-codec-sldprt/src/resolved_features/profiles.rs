@@ -2,6 +2,7 @@
 
 use super::assembly::is_supplemental_config_lane;
 use super::bindings::history_metadata_ids;
+use super::classes::is_sketch_block_object;
 use super::compact_reference_planes::CompactReferencePlaneIndex;
 use super::curves::{
     closed_marker_profiles, closed_marker_profiles_allowing_shared_endpoints,
@@ -265,7 +266,7 @@ pub(super) fn class_offsets<'ctx>(
     let mut storage = ctx.reserve_scoped(0, operation)?;
     let mut offsets = Vec::new();
     for class in ctx.admit_iter(&lane.classes, operation)? {
-        if class.name == name {
+        if ctx.equal(class.name.as_str(), name, operation)? {
             storage.with_storage(|| ctx.push_vec(&mut offsets, class.offset, operation))?;
         }
     }
@@ -3885,27 +3886,14 @@ fn dissectable_child_sources(
     (result, storage) = ctx.with_scoped_storage(OPERATION, || {
         let mut values = HashSet::new();
         let mut parts = 0_usize;
-        let mut start = 0_usize;
-        let mut visited = value
-            .char_indices()
-            .map(|(at, ch)| (at, Some(ch)))
-            .chain(std::iter::once((value.len(), None)));
-        while let Some((position, character)) = ctx.next_charged(&mut visited, OPERATION)? {
-            if character.is_some_and(|character| character != ',') {
-                continue;
-            }
-            let Some(part) = value.get(start..position) else {
-                return Err(CodecError::malformed(
-                    "invalid SLDPRT child source text boundary",
-                ));
-            };
+        for part in super::child_sources::child_tokens(ctx, value, OPERATION) {
+            let part = part?;
             let Ok(source) = ctx.parse_text::<u32>(ctx.trim_text(part, OPERATION)?, OPERATION)?
             else {
                 return Ok(None);
             };
             ctx.insert_hash_set(&mut values, source, OPERATION)?;
             parts += 1;
-            start = position + 1;
         }
         if values.is_empty() || ctx.contains_hash_set(&values, &0, OPERATION)? {
             return Ok(None);
@@ -3916,13 +3904,6 @@ fn dissectable_child_sources(
         Some(value) => storage.commit_value(value).map(Some),
         None => Ok(None),
     }
-}
-
-fn is_sketch_block_object(feature: &crate::records::Feature) -> bool {
-    matches!(
-        native_object_class(feature.input_class.as_deref().unwrap_or_default()),
-        NativeClassKind::SketchBlockDefinition | NativeClassKind::SketchBlockInstance
-    )
 }
 
 fn assemble_sketch_block_profile<'ctx>(

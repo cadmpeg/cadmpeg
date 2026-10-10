@@ -66,9 +66,9 @@ impl<'features, 'ctx, 'arena> ThreadHistoryLookups<'features, 'ctx, 'arena> {
 
     pub(super) fn profile(
         &mut self,
-        key: HoleProfileKey<'_>,
+        key: &HoleProfileKey<'_>,
     ) -> Result<Option<&'features Feature>, CodecError> {
-        match key {
+        match *key {
             HoleProfileKey::Source(source) => {
                 if let Some(entries) = &self.by_source {
                     return Ok(self

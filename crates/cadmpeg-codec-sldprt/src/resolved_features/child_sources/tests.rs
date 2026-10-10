@@ -1,4 +1,4 @@
-use super::super::hole_child_tokens;
+use super::child_tokens;
 use cadmpeg_core::decode::{
     DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, ResourceFailure,
 };
@@ -12,7 +12,7 @@ fn hole_child_tokens_preserve_unicode_and_empty_parts() {
         ("", vec![""]),
         ("α,", vec!["α", ""]),
     ] {
-        let tokens = hole_child_tokens(&ctx, text)
+        let tokens = child_tokens(&ctx, text, "scan SLDPRT hole child references")
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
         assert_eq!(tokens, expected);
@@ -29,7 +29,7 @@ fn hole_child_tokens_refuse_on_first_text_visit() {
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let mut children = hole_child_tokens(&ctx, "α,β");
+            let mut children = child_tokens(&ctx, "α,β", "scan SLDPRT hole child references");
             children.next().unwrap()
         },
     );
@@ -40,4 +40,14 @@ fn hole_child_tokens_refuse_on_first_text_visit() {
             && limit.used == 0
             && limit.additional == 1
             && limit.limit == 0));
+}
+
+#[test]
+fn child_tokens_preserve_leading_repeated_and_trailing_delimiters() {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let tokens = super::child_tokens(&ctx, ",7,,9,", "test SLDPRT child delimiters")
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(tokens, ["", "7", "", "9", ""]);
+    ctx.finish_session().unwrap();
 }
