@@ -239,6 +239,9 @@ fn missing_shape_body_loss_text_refuses_retained_limit() {
         let index = crate::reader::index::CarrierIndex::from_ir(&ir, owner).unwrap();
         let mut topology = crate::reader::topology::decode(&exchange, &mut ir, &index, owner).unwrap();
         topology.value.body_by_root.insert(7, vec![BodyId::mint("step:data:body#7").unwrap()]);
+        let stage = super::super::decode(&exchange, &geometry.value, &topology.value, &mut ir.clone(), owner, &mut 0).unwrap();
+        assert!(stage.losses.iter().any(|loss| loss.message == "PRODUCT_DEFINITION #3 omitted uncommitted shape body reference(s): step:data:body#7"));
+        drop(stage);
         cadmpeg_test_support::refusal::resource_limit_at(
             ResourceDimension::RetainedBytes,
             "step_missing_shape_body_loss_text",

@@ -91,3 +91,20 @@ fn support_surface_index_is_admitted_at_the_first_lookup() {
 #3=CARTESIAN_POINT('',(0.,0.,0.));#4=AXIS2_PLACEMENT_3D('',#3,$,$);#5=PLANE('',#4);";
     super::assert_tessellation_collection_refusal(records, "step tessellation surface index");
 }
+
+#[test]
+fn cycle_cut_tessellation_items_remain_visitable_from_another_active_path() {
+    let records = format!("{}\n#3=TESSELLATED_SOLID('',(#4,#6),$);
+#4=(GEOMETRIC_REPRESENTATION_ITEM() REPOSITIONED_TESSELLATED_ITEM(#9) REPRESENTATION_ITEM('') TESSELLATED_GEOMETRIC_SET((#5,#2)) TESSELLATED_ITEM());
+#5=TESSELLATED_GEOMETRIC_SET('',(#4));
+#6=(GEOMETRIC_REPRESENTATION_ITEM() REPOSITIONED_TESSELLATED_ITEM(#9) REPRESENTATION_ITEM('') TESSELLATED_GEOMETRIC_SET((#5)) TESSELLATED_ITEM());
+#7=CARTESIAN_POINT('',(1.,0.,0.));
+#9=AXIS2_PLACEMENT_3D('',#7,$,$);", super::ONE_TRIANGLE);
+    let decoded = crate::test_support::exchange::decode_inline(&records);
+    assert_eq!(decoded.ir().model.tessellations.len(), 1);
+    assert!(decoded.report().losses.iter().any(|loss| loss.message.contains("tessellation item #2 has 2 distinct repositioning placements")));
+    super::assert_point3_close(
+        decoded.ir().model.tessellations[0].vertices()[0].get(),
+        cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+    );
+}

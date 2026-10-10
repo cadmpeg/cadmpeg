@@ -481,11 +481,9 @@ fn standalone_mapped_body_resolution_retains_no_scratch_nodes() {
             std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"));
         product::apply_body_placements(
             &exchange,
-            product::BodyPlacementSources {
-                geometry: &geometry.value,
-                topology: &topology.value,
-                usages: &BTreeMap::new(),
-            },
+            &geometry.value,
+            &topology.value,
+            &BTreeMap::new(),
             &mut ir,
             (&mut losses, &reports),
             ctx,
