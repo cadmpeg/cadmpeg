@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Admitted native element-map nodes and persistent-name bindings.
 
+use cadmpeg_core::decode::admission::{Admission, StandardAdmission};
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 
@@ -47,40 +48,39 @@ pub(crate) struct ElementMapRecord {
 pub(crate) struct ElementMapNodes(Vec<ElementMapNode>);
 
 impl ElementMapNodes {
-    pub(crate) fn from_nodes<E>(
+    pub(crate) fn from_nodes<A: Admission>(
         nodes: Vec<ElementMapNode>,
-        mut admit: impl FnMut(usize, &'static str) -> Result<(), E>,
-        mut diagnostic: impl FnMut(std::fmt::Arguments<'_>) -> Result<String, E>,
-    ) -> Result<Result<Self, String>, E> {
+        admission: &A,
+    ) -> Result<Result<Self, String>, A::Error> {
         if nodes.is_empty() {
-            return Ok(Err(diagnostic(format_args!(
+            return Ok(Err(admission.format_retained(format_args!(
                 "maps must contain a root node"
-            ))?));
+            ), "FreeCAD element-map validation diagnostic")?));
         }
         for (position, node) in nodes.iter().enumerate() {
-            admit(1, "FreeCAD element-map validation nodes")?;
+            admission.charge_work(1, "FreeCAD element-map validation nodes")?;
             let node_index = position + 1;
             for group in &node.groups {
-                admit(1, "FreeCAD element-map validation groups")?;
+                admission.charge_work(1, "FreeCAD element-map validation groups")?;
                 for (child_index, descriptor) in group.children.iter().enumerate() {
-                    admit(1, "FreeCAD element-map validation children")?;
+                    admission.charge_work(1, "FreeCAD element-map validation children")?;
                     let group_name = group.indexed_name.as_str();
                     let mut field_offset = 0;
                     let mut words = [None; 7];
                     for word in &mut words {
-                        *word = descriptor_word(descriptor, &mut field_offset, &mut admit)?;
+                        *word = descriptor_word(descriptor, &mut field_offset, admission)?;
                     }
                     let [Some(index), Some(offset), Some(count), Some(tag), Some(map), Some(_), Some(string_ids)] =
                         words
                     else {
-                        return Ok(Err(diagnostic(format_args!(
+                        return Ok(Err(admission.format_retained(format_args!(
                             "element-map node {node_index} group {group_name} child {child_index} descriptor must contain seven fields"
-                        ))?));
+                        ), "FreeCAD element-map validation diagnostic")?));
                     };
-                    if descriptor_word(descriptor, &mut field_offset, &mut admit)?.is_some() {
-                        return Ok(Err(diagnostic(format_args!(
+                    if descriptor_word(descriptor, &mut field_offset, admission)?.is_some() {
+                        return Ok(Err(admission.format_retained(format_args!(
                             "element-map node {node_index} group {group_name} child {child_index} descriptor must contain seven fields"
-                        ))?));
+                        ), "FreeCAD element-map validation diagnostic")?));
                     }
                     let mut ids = string_ids.as_bytes().iter().enumerate();
                     let mut id_start = 0;
@@ -90,7 +90,7 @@ impl ElementMapNodes {
                         let next = if ids.len() == 0 {
                             None
                         } else {
-                            admit(1, "FreeCAD element-map child string-id scan")?;
+                            admission.charge_work(1, "FreeCAD element-map child string-id scan")?;
                             ids.next()
                         };
                         let (end, done) = match next {
@@ -106,7 +106,7 @@ impl ElementMapNodes {
                             }
                             first_id = false;
                         } else {
-                            admit(id.len(), "FreeCAD element-map child string-id number")?;
+                            admission.charge_work(cadmpeg_core::decode::u64_from_index(id.len()), "FreeCAD element-map child string-id number")?;
                             if id.parse::<i64>().is_err() {
                                 valid_ids = false;
                                 break;
@@ -118,9 +118,9 @@ impl ElementMapNodes {
                         }
                     }
                     if !valid_ids {
-                        return Ok(Err(diagnostic(format_args!(
+                        return Ok(Err(admission.format_retained(format_args!(
                             "element-map node {node_index} group {group_name} child {child_index} has an invalid child string-id list"
-                        ))?));
+                        ), "FreeCAD element-map validation diagnostic")?));
                     }
                     for (name, word) in [
                         ("index", index),
@@ -129,28 +129,28 @@ impl ElementMapNodes {
                         ("tag", tag),
                         ("mapIndex", map),
                     ] {
-                        admit(word.len(), "FreeCAD element-map child number")?;
+                        admission.charge_work(cadmpeg_core::decode::u64_from_index(word.len()), "FreeCAD element-map child number")?;
                         let Ok(value) = word.parse::<i64>() else {
-                            return Ok(Err(diagnostic(format_args!(
+                            return Ok(Err(admission.format_retained(format_args!(
                                     "element-map node {node_index} group {group_name} child {child_index} has an invalid {name}"
-                                ))?));
+                                ), "FreeCAD element-map validation diagnostic")?));
                         };
                         if name != "tag" && i32::try_from(value).is_err() {
-                            return Ok(Err(diagnostic(format_args!(
+                            return Ok(Err(admission.format_retained(format_args!(
                                 "element-map node {node_index} group {group_name} child {child_index} {name} exceeds signed 32-bit range"
-                            ))?));
+                            ), "FreeCAD element-map validation diagnostic")?));
                         }
                         if matches!(name, "index" | "offset") && value < 0 {
-                            return Ok(Err(diagnostic(format_args!(
+                            return Ok(Err(admission.format_retained(format_args!(
                                 "element-map node {node_index} group {group_name} child {child_index} has a negative {name}"
-                            ))?));
+                            ), "FreeCAD element-map validation diagnostic")?));
                         }
                         if name == "mapIndex"
                             && usize::try_from(value).map_or(true, |index| index >= node_index)
                         {
-                            return Ok(Err(diagnostic(format_args!(
+                            return Ok(Err(admission.format_retained(format_args!(
                                 "element-map node {node_index} group {group_name} child {child_index} mapIndex {value} does not name a prior map"
-                            ))?));
+                            ), "FreeCAD element-map validation diagnostic")?));
                         }
                     }
                 }
@@ -163,25 +163,21 @@ impl ElementMapNodes {
 impl TryFrom<Vec<ElementMapNode>> for ElementMapNodes {
     type Error = String;
     fn try_from(nodes: Vec<ElementMapNode>) -> Result<Self, Self::Error> {
-        match Self::from_nodes(
-            nodes,
-            |_, _| Ok::<(), std::convert::Infallible>(()),
-            |message| Ok(message.to_string()),
-        ) {
+        match Self::from_nodes(nodes, &StandardAdmission) {
             Ok(result) => result,
             Err(error) => match error {},
         }
     }
 }
 
-fn descriptor_word<'a, E>(
+fn descriptor_word<'a, A: Admission>(
     text: &'a str,
     offset: &mut usize,
-    admit: &mut impl FnMut(usize, &'static str) -> Result<(), E>,
-) -> Result<Option<&'a str>, E> {
+    admission: &A,
+) -> Result<Option<&'a str>, A::Error> {
     let bytes = text.as_bytes();
     while *offset < bytes.len() {
-        admit(1, "FreeCAD element-map child descriptor scan")?;
+        admission.charge_work(1, "FreeCAD element-map child descriptor scan")?;
         if !bytes[*offset].is_ascii_whitespace() {
             break;
         }
@@ -189,7 +185,7 @@ fn descriptor_word<'a, E>(
     }
     let start = *offset;
     while *offset < bytes.len() {
-        admit(1, "FreeCAD element-map child descriptor scan")?;
+        admission.charge_work(1, "FreeCAD element-map child descriptor scan")?;
         if bytes[*offset].is_ascii_whitespace() {
             break;
         }
