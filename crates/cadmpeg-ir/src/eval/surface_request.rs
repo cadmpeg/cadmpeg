@@ -21,6 +21,8 @@ pub(super) enum SurfaceRequest {
     Third,
     // An offset's requested third needs fourth support partials.
     Fourth,
+    // An offset's requested fourth needs fifth support partials.
+    Fifth,
 }
 
 impl SurfaceRequest {
@@ -28,7 +30,8 @@ impl SurfaceRequest {
         match self {
             Self::First => Self::Second,
             Self::Second => Self::Third,
-            Self::Third | Self::Fourth => Self::Fourth,
+            Self::Third => Self::Fourth,
+            Self::Fourth | Self::Fifth => Self::Fifth,
         }
     }
 
@@ -37,7 +40,11 @@ impl SurfaceRequest {
     }
 
     pub(super) fn needs_third(self) -> bool {
-        matches!(self, Self::Third | Self::Fourth)
+        matches!(self, Self::Third | Self::Fourth | Self::Fifth)
+    }
+
+    pub(super) fn needs_fourth(self) -> bool {
+        matches!(self, Self::Fourth | Self::Fifth)
     }
 }
 
@@ -57,6 +64,11 @@ pub(super) enum HigherPartials {
         third: Result<[FiniteVector3; 4], EvaluationFailure<()>>,
         fourth: Result<[FiniteVector3; 5], EvaluationFailure<()>>,
     },
+    Fifth {
+        third: Result<[FiniteVector3; 4], EvaluationFailure<()>>,
+        fourth: Result<[FiniteVector3; 5], EvaluationFailure<()>>,
+        fifth: Result<[FiniteVector3; 6], EvaluationFailure<()>>,
+    },
 }
 
 impl HigherPartials {
@@ -64,7 +76,7 @@ impl HigherPartials {
         match self {
             Self::Affine => Ok([FiniteVector3::ZERO; 4]),
             Self::Third(result) => result,
-            Self::Fourth { third, .. } => third,
+            Self::Fourth { third, .. } | Self::Fifth { third, .. } => third,
         }
     }
 
@@ -72,7 +84,15 @@ impl HigherPartials {
         match self {
             Self::Affine => Ok([FiniteVector3::ZERO; 5]),
             Self::Third(_) => Err(EvaluationFailure::NoValue),
-            Self::Fourth { fourth, .. } => fourth,
+            Self::Fourth { fourth, .. } | Self::Fifth { fourth, .. } => fourth,
+        }
+    }
+
+    pub(super) fn fifth(self) -> Result<[FiniteVector3; 6], EvaluationFailure<()>> {
+        match self {
+            Self::Affine => Ok([FiniteVector3::ZERO; 6]),
+            Self::Fifth { fifth, .. } => fifth,
+            Self::Third(_) | Self::Fourth { .. } => Err(EvaluationFailure::NoValue),
         }
     }
 
@@ -83,6 +103,11 @@ impl HigherPartials {
             Self::Fourth { third, fourth } => Self::Fourth {
                 third: third.and_then(|lanes| super::placed_vectors(transform, lanes)),
                 fourth: fourth.and_then(|lanes| super::placed_vectors(transform, lanes)),
+            },
+            Self::Fifth { third, fourth, fifth } => Self::Fifth {
+                third: third.and_then(|lanes| super::placed_vectors(transform, lanes)),
+                fourth: fourth.and_then(|lanes| super::placed_vectors(transform, lanes)),
+                fifth: fifth.and_then(|lanes| super::placed_vectors(transform, lanes)),
             },
         }
     }
@@ -294,12 +319,21 @@ fn offset(
         (Err(EvaluationFailure::NoValue), HigherPartials::Third(Err(EvaluationFailure::NoValue)))
     } else {
         let orders = differentials::offset_second(base, source.higher.third(), distance, normal, magnitude);
-        let third = if request.needs_third() {
+        let third_orders = if request.needs_third() {
             orders.and_then(|orders| differentials::normal_third::offset_third(
                 base, source.higher.third(), source.higher.fourth(), distance, orders.normal,
             ))
         } else { Err(EvaluationFailure::NoValue) };
-        (orders.and_then(|orders| orders.offset), HigherPartials::Third(third))
+        let third = third_orders.as_ref().map_err(|failure| *failure).and_then(|orders| orders.offset);
+        let higher = if request.needs_fourth() {
+            let fourth = third_orders.and_then(|orders| differentials::normal_fourth::offset_fourth(
+                base, source.higher, distance, orders.normal?,
+            ));
+            if request == SurfaceRequest::Fifth {
+                HigherPartials::Fifth { third, fourth, fifth: Err(EvaluationFailure::NoValue) }
+            } else { HigherPartials::Fourth { third, fourth } }
+        } else { HigherPartials::Third(third) };
+        (orders.and_then(|orders| orders.offset), higher)
     };
     Ok(RequestedJet { jet: SurfaceJet { point, first, second }, higher })
 }
