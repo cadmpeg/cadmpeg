@@ -2239,7 +2239,8 @@ impl<'source, 'ctx> PrimitiveIndex<'source, 'ctx> {
             let first = ctx.partition_point(
                 &self.candidates,
                 |candidate| {
-                    Ok(ctx.compare(
+                    Ok(cadmpeg_ir::ids::comparison::compare(
+                        ctx,
                         candidate.key,
                         *prefix,
                         "FCStd GUI primitive prefix lower bound",
