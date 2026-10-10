@@ -41,9 +41,11 @@ pub(in super::super) fn resolved_revolution_axis(
     let points = scratch.with_storage(|| resolved_section_points(ctx, definition))?;
     let mut axis = None;
     let mut rows = segments.rows.as_slice().iter();
-    while let Some(row) =
-        ctx.next_charged(&mut rows, "creo revolution axis section segment rows")?
-    {
+    while rows.len() != 0 {
+        let Some(row) = ctx.next_charged(&mut rows, "creo revolution axis section segment rows")?
+        else {
+            break;
+        };
         let crate::feature::segment_rows::SegmentRow::Ordinary(segment) = row else {
             continue;
         };
@@ -121,7 +123,11 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
     let mut plane_normals = Vec::new();
     let mut sphere_centers = Vec::new();
     let mut saw_row = false;
-    while let Some(row) = ctx.next_charged(&mut rows, "creo full-turn revolution surface rows")? {
+    while rows.len() != 0 {
+        let Some(row) = ctx.next_charged(&mut rows, "creo full-turn revolution surface rows")?
+        else {
+            break;
+        };
         if row.feature_id != feature_id {
             continue;
         }
@@ -224,9 +230,12 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
         .map(f64::abs)
         .fold(1.0, f64::max);
     let mut items = rest.iter();
-    while let Some((candidate_origin, candidate_direction)) =
-        ctx.next_charged(&mut items, "creo full-turn revolution remaining axes")?
-    {
+    while items.len() != 0 {
+        let Some((candidate_origin, candidate_direction)) =
+            ctx.next_charged(&mut items, "creo full-turn revolution remaining axes")?
+        else {
+            break;
+        };
         let candidate_direction = unit_length(*candidate_direction);
         if !matches!(
             ((dot(direction, candidate_direction).abs() - 1.0).abs())
@@ -249,9 +258,12 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
         }
     }
     let mut normal_iter = plane_normals.iter();
-    while let Some(normal) =
-        ctx.next_charged(&mut normal_iter, "creo full-turn revolution plane normals")?
-    {
+    while normal_iter.len() != 0 {
+        let Some(normal) =
+            ctx.next_charged(&mut normal_iter, "creo full-turn revolution plane normals")?
+        else {
+            break;
+        };
         let normal = unit_length(*normal);
         if !matches!(
             ((dot(direction, normal).abs() - 1.0).abs()).partial_cmp(&(EPS_AXIS_ALIGNMENT)),
@@ -261,9 +273,12 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
         }
     }
     let mut center_iter = sphere_centers.iter();
-    while let Some(center) =
-        ctx.next_charged(&mut center_iter, "creo full-turn revolution sphere centers")?
-    {
+    while center_iter.len() != 0 {
+        let Some(center) =
+            ctx.next_charged(&mut center_iter, "creo full-turn revolution sphere centers")?
+        else {
+            break;
+        };
         let displacement = [
             center.x - origin[0],
             center.y - origin[1],
@@ -720,10 +735,6 @@ pub(in super::super) fn model_feature_ids(
             format_args!("creo:model:feature#{feature_id}"),
             "creo model feature identity text",
         )?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(text.len()),
-            "creo model feature identity validation",
-        )?;
         let id = IrFeatureId::mint(text)
             .map_err(|_| CodecError::Malformed("constructed Creo feature ID is invalid".into()))?;
         ctx.insert_btree_set(&mut ids, id, "creo model feature identity nodes")?;
@@ -782,51 +793,6 @@ mod allocation_tests {
                 && resource.operation == operation),
             "{error:?}"
         );
-    }
-
-    fn feature_set_limit_error(operation: &'static str) {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::CollectionItems,
-            Some(operation),
-            |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = policy;
-                policy.limits.max_collection_items = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-                    .expect("empty root is admitted");
-                let mut ids = BTreeSet::new();
-                ctx.insert_btree_set(&mut ids, 50, operation).map(|_| ())
-            },
-        );
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-        let mut ids = BTreeSet::new();
-        let error = ctx
-            .insert_btree_set(&mut ids, 50, operation)
-            .expect_err("one source feature exceeds the collection limit");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == operation),
-            "{error:?}"
-        );
-    }
-
-    #[test]
-    fn generator_operation_feature_nodes_refuse_collection_limit() {
-        feature_set_limit_error("creo generator operation feature nodes");
-    }
-
-    #[test]
-    fn generator_row_feature_nodes_refuse_collection_limit() {
-        feature_set_limit_error("creo generator row feature nodes");
-    }
-
-    #[test]
-    fn generator_datum_feature_nodes_refuse_collection_limit() {
-        feature_set_limit_error("creo generator datum feature nodes");
     }
 
     #[test]
@@ -945,10 +911,10 @@ mod allocation_tests {
     }
 
     #[test]
-    fn model_feature_identity_validation_refuses_at_work_boundary() {
+    fn model_feature_ids_admit_text_and_preserve_bounded_identity() {
         let scan = generator_scan();
         let ids = crate::test_support::assert_work_boundaries(
-            &["creo model feature identity validation"],
+            &["creo model feature identity text"],
             |ctx| model_feature_ids(ctx, &scan),
         );
         assert_eq!(

@@ -33,13 +33,16 @@ pub(in super::super) fn filled_surface_feature_definition(
     ir: &CadIr,
     feature_id: u32,
 ) -> Result<IrFeatureDefinition, CodecError> {
+    let mut sketch_storage = ctx.reserve_scoped(0, "creo filled surface sketch lookup")?;
     let sketch = match unique_feature_profile_definition(
         ctx,
         &scan.features.definitions,
         &scan.features.section_transforms,
         feature_id,
     )? {
-        Some(definition) => model_sketch_id(ctx, scan, definition)?,
+        Some(definition) => {
+            sketch_storage.with_storage(|| model_sketch_id(ctx, scan, definition))?
+        }
         None => None,
     };
     let boundary = match sketch {
@@ -56,7 +59,7 @@ pub(in super::super) fn filled_surface_feature_definition(
                 "creo model sketch lookup",
             )?;
             if sketch_found {
-                SurfaceBoundary::Path(PathRef::Sketch(sketch))
+                SurfaceBoundary::Path(PathRef::Sketch(sketch_storage.commit_value(sketch)?))
             } else {
                 SurfaceBoundary::Edges(EdgeSelection::Unresolved)
             }
@@ -80,21 +83,27 @@ pub(in super::super) fn knit_class_100_operand_entity_ids(
     feature_id: u32,
     tables: &[crate::feature::entity::FeatureEntityTable],
 ) -> Result<Option<Vec<u32>>, CodecError> {
+    let mut output_storage = ctx.reserve_scoped(0, "creo knit class 100 operand IDs")?;
     let mut ids = Vec::new();
     let mut scratch = ctx.reserve_scoped(0, "creo knit consumer identities")?;
     let mut producers = None;
     let mut seen = BTreeSet::new();
     let mut items = tables.iter().enumerate();
-    while let Some((table_index, table)) =
-        ctx.next_charged(&mut items, "creo knit entity tables")?
-    {
+    while items.len() != 0 {
+        let Some((table_index, table)) = ctx.next_charged(&mut items, "creo knit entity tables")?
+        else {
+            break;
+        };
         if table.feature_id != feature_id || table.table_class_id != 100 {
             continue;
         }
         let mut items = table.entries.iter().enumerate();
-        while let Some((entry_index, entry)) =
-            ctx.next_charged(&mut items, "creo knit table entries")?
-        {
+        while items.len() != 0 {
+            let Some((entry_index, entry)) =
+                ctx.next_charged(&mut items, "creo knit table entries")?
+            else {
+                break;
+            };
             if ctx.contains_btree_set(
                 &seen,
                 &entry.entity_id,
@@ -119,11 +128,15 @@ pub(in super::super) fn knit_class_100_operand_entity_ids(
             if !index.has_prior_producer(ctx, entry.entity_id, feature_id, consumer_position)? {
                 return Ok(None);
             }
-            ctx.reserve_vec(&mut ids, 1, "creo knit class 100 operand IDs")?;
+            output_storage
+                .with_storage(|| ctx.reserve_vec(&mut ids, 1, "creo knit class 100 operand IDs"))?;
             ids.push(entry.entity_id);
         }
     }
-    Ok((!ids.is_empty()).then_some(ids))
+    if ids.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(output_storage.commit_value(ids)?))
 }
 
 fn knit_operand_entity_ids(
@@ -138,20 +151,28 @@ fn knit_operand_entity_ids(
         &scan.features.surface_merge_replay_affected_ids,
         feature_id,
     )? {
+        let mut copied_storage = ctx.reserve_scoped(0, "creo knit quilt IDs")?;
         let mut copied = Vec::new();
         let mut seen = BTreeSet::new();
         let mut quilt_ids = ids.iter();
-        while let Some(&id) = ctx.next_charged(&mut quilt_ids, "creo knit quilt source IDs")? {
+        while quilt_ids.len() != 0 {
+            let Some(&id) = ctx.next_charged(&mut quilt_ids, "creo knit quilt source IDs")? else {
+                break;
+            };
             if ctx.contains_btree_set(&seen, &id, "creo knit quilt identity lookup")? {
                 return Ok(None);
             }
             local_storage.with_storage(|| {
                 ctx.insert_btree_set(&mut seen, id, "creo knit quilt identity nodes")
             })?;
-            ctx.reserve_vec(&mut copied, 1, "creo knit quilt IDs")?;
+            copied_storage
+                .with_storage(|| ctx.reserve_vec(&mut copied, 1, "creo knit quilt IDs"))?;
             copied.push(id);
         }
-        return Ok(Some((copied, "surface_merge_quilts")));
+        return Ok(Some((
+            copied_storage.commit_value(copied)?,
+            "surface_merge_quilts",
+        )));
     }
     Ok(
         knit_class_100_operand_entity_ids(ctx, feature_id, &scan.features.entity_tables)?
@@ -178,10 +199,14 @@ pub(in super::super) fn knit_operand_surface_ids(
     let mut scratch = ctx.reserve_scoped(0, "creo knit operand surface identities")?;
     let producers = super::producers::ProducerRows::new(ctx, &scan.features.entity_tables)?;
     let bindings = super::producers::SurfaceBindings::new(ctx, &scan.features.entity_tables)?;
+    let mut output_storage = ctx.reserve_scoped(0, "creo knit surface IDs")?;
     let mut surface_ids = Vec::new();
     let mut seen = BTreeSet::new();
     let mut quilt_id_iter = quilt_ids.iter();
-    while let Some(quilt_id) = ctx.next_charged(&mut quilt_id_iter, "creo knit quilt IDs")? {
+    while quilt_id_iter.len() != 0 {
+        let Some(quilt_id) = ctx.next_charged(&mut quilt_id_iter, "creo knit quilt IDs")? else {
+            break;
+        };
         let Some(producer) = producers
             .preceding_owner(ctx, *quilt_id, consumer_offset)?
             .filter(|owner| *owner != feature_id)
@@ -205,10 +230,11 @@ pub(in super::super) fn knit_operand_surface_ids(
         scratch.with_storage(|| {
             ctx.insert_btree_set(&mut seen, surface_id, "creo knit surface identity nodes")
         })?;
-        ctx.reserve_vec(&mut surface_ids, 1, "creo knit surface IDs")?;
+        output_storage
+            .with_storage(|| ctx.reserve_vec(&mut surface_ids, 1, "creo knit surface IDs"))?;
         surface_ids.push(surface_id);
     }
-    Ok(Some(surface_ids))
+    Ok(Some(output_storage.commit_value(surface_ids)?))
 }
 
 pub(super) fn knit_surface_feature_definition(
@@ -281,12 +307,18 @@ pub(in super::super) fn draft_neutral_plane_selection(
 ) -> Result<FaceSelection, CodecError> {
     let mut match_entry = None;
     let mut table_iter = scan.features.entity_tables.iter();
-    while let Some(table) = ctx.next_charged(&mut table_iter, "creo draft entity tables")? {
+    while table_iter.len() != 0 {
+        let Some(table) = ctx.next_charged(&mut table_iter, "creo draft entity tables")? else {
+            break;
+        };
         if table.feature_id != feature_id {
             continue;
         }
         let mut entry_iter = table.entries.iter();
-        while let Some(entry) = ctx.next_charged(&mut entry_iter, "creo draft table entries")? {
+        while entry_iter.len() != 0 {
+            let Some(entry) = ctx.next_charged(&mut entry_iter, "creo draft table entries")? else {
+                break;
+            };
             if entry.class_id() != 209 {
                 continue;
             }
@@ -364,18 +396,25 @@ pub(in super::super) fn feature_surface_transitions(
     let mut output_ids = BTreeSet::new();
     let mut intermediate_ids = BTreeSet::new();
     let mut source_ids = BTreeSet::new();
+    let mut output_storage = ctx.reserve_scoped(0, "creo surface transitions")?;
     let mut transitions = Vec::new();
     let mut output_table_iter = tables.iter();
-    while let Some(output_table) =
-        ctx.next_charged(&mut output_table_iter, "creo transition output tables")?
-    {
+    while output_table_iter.len() != 0 {
+        let Some(output_table) =
+            ctx.next_charged(&mut output_table_iter, "creo transition output tables")?
+        else {
+            break;
+        };
         if output_table.feature_id != feature_id {
             continue;
         }
         let mut output_iter = output_table.entries.iter();
-        while let Some(output) =
-            ctx.next_charged(&mut output_iter, "creo transition output entries")?
-        {
+        while output_iter.len() != 0 {
+            let Some(output) =
+                ctx.next_charged(&mut output_iter, "creo transition output entries")?
+            else {
+                break;
+            };
             if output.class_id() != 210 {
                 continue;
             }
@@ -458,11 +497,13 @@ pub(in super::super) fn feature_surface_transitions(
                     "creo transition source identity nodes",
                 )
             })?;
-            ctx.reserve_vec(&mut transitions, 1, "creo surface transitions")?;
+            output_storage.with_storage(|| {
+                ctx.reserve_vec(&mut transitions, 1, "creo surface transitions")
+            })?;
             transitions.push((source_id, output.entity_id));
         }
     }
-    Ok((!ctx.any_by(
+    if ctx.any_by(
         &output_ids,
         |id| {
             ctx.contains_btree_set(
@@ -472,8 +513,10 @@ pub(in super::super) fn feature_surface_transitions(
             )
         },
         "creo transition identity separation",
-    )?)
-    .then_some(transitions))
+    )? {
+        return Ok(None);
+    }
+    Ok(Some(output_storage.commit_value(transitions)?))
 }
 
 pub(in super::super) fn surface_transition_dependencies(
@@ -515,9 +558,12 @@ pub(in super::super) fn thicken_plane_offset(
     let mut forward_difference: f64 = 0.0;
     let mut reverse_difference: f64 = 0.0;
     let mut items = transitions.iter();
-    while let Some(&(source_id, output_id)) =
-        ctx.next_charged(&mut items, "creo thicken surface transitions")?
-    {
+    while items.len() != 0 {
+        let Some(&(source_id, output_id)) =
+            ctx.next_charged(&mut items, "creo thicken surface transitions")?
+        else {
+            break;
+        };
         let (Some(source), Some(output)) = (
             ctx.get_btree_map(planes, &source_id, "creo thicken source plane lookup")?,
             ctx.get_btree_map(planes, &output_id, "creo thicken output plane lookup")?,
@@ -595,19 +641,25 @@ pub(in super::super) fn feature_result_surface_ids(
     feature_id: u32,
 ) -> Result<Option<Vec<u32>>, CodecError> {
     let mut local_storage = ctx.reserve_scoped(0, "Creo feature selection workspace")?;
+    let mut output_storage = ctx.reserve_scoped(0, "creo feature result surface IDs")?;
     let mut surface_ids = Vec::new();
     let mut seen = BTreeSet::new();
     let mut table_iter = tables.iter();
-    while let Some(table) =
-        ctx.next_charged(&mut table_iter, "creo feature result entity tables")?
-    {
+    while table_iter.len() != 0 {
+        let Some(table) = ctx.next_charged(&mut table_iter, "creo feature result entity tables")?
+        else {
+            break;
+        };
         if table.feature_id != feature_id {
             continue;
         }
         let mut entries = table.entries.iter();
-        while let Some(entry) =
-            ctx.next_charged(&mut entries, "creo feature result surface entries")?
-        {
+        while entries.len() != 0 {
+            let Some(entry) =
+                ctx.next_charged(&mut entries, "creo feature result surface entries")?
+            else {
+                break;
+            };
             if !table.contains_surface_id(entry.entity_id) {
                 continue;
             }
@@ -631,11 +683,16 @@ pub(in super::super) fn feature_result_surface_ids(
                     "creo feature result surface identity nodes",
                 )
             })?;
-            ctx.reserve_vec(&mut surface_ids, 1, "creo feature result surface IDs")?;
+            output_storage.with_storage(|| {
+                ctx.reserve_vec(&mut surface_ids, 1, "creo feature result surface IDs")
+            })?;
             surface_ids.push(surface_id);
         }
     }
-    Ok((!surface_ids.is_empty()).then_some(surface_ids))
+    if surface_ids.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(output_storage.commit_value(surface_ids)?))
 }
 
 pub(super) fn feature_result_surface_ids_by_feature(
@@ -647,7 +704,10 @@ pub(super) fn feature_result_surface_ids_by_feature(
     let mut seen = std::collections::HashSet::new();
     let mut invalid = std::collections::HashSet::new();
     for table in ctx.admit_iter(tables, "creo feature result entity tables")? {
-        for entry in ctx.admit_iter(table.entries.as_slice(), "creo feature result surface entries")? {
+        for entry in ctx.admit_iter(
+            table.entries.as_slice(),
+            "creo feature result surface entries",
+        )? {
             if !table.contains_surface_id(entry.entity_id) {
                 continue;
             }
@@ -679,7 +739,10 @@ pub(super) fn feature_result_surface_ids_by_feature(
         if invalid.contains(&table.feature_id) {
             continue;
         }
-        for entry in ctx.admit_iter(table.entries.as_slice(), "creo feature result surface roster entries")? {
+        for entry in ctx.admit_iter(
+            table.entries.as_slice(),
+            "creo feature result surface roster entries",
+        )? {
             if !table.contains_surface_id(entry.entity_id) {
                 continue;
             }
@@ -750,19 +813,11 @@ pub(in super::super) fn feature_result_topology(
         format_args!("creo:model:feature-result-topology#{feature_id}"),
         "creo feature result topology ID",
     )?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(id_text.len()),
-        "creo feature result topology identity validation",
-    )?;
     let id = FeatureResultTopologyId::mint(id_text)
         .map_err(|_| CodecError::Malformed("constructed result topology ID is invalid".into()))?;
     let output_of_text = ctx.format_retained(
         format_args!("creo:model:feature#{feature_id}"),
         "creo feature result owner ID",
-    )?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(output_of_text.len()),
-        "creo feature result owner identity validation",
     )?;
     let output_of = IrFeatureId::mint(output_of_text)
         .map_err(|_| CodecError::Malformed("constructed result owner ID is invalid".into()))?;
@@ -778,22 +833,26 @@ pub(in super::super) fn generated_surface_face_refs(
     result_surface_ids: &BTreeMap<u32, Vec<u32>>,
     available_features: &BTreeSet<IrFeatureId>,
 ) -> Result<Option<Vec<GeneratedFaceRef>>, CodecError> {
+    let mut feature_storage = ctx.reserve_scoped(0, "creo generated surface feature IDs")?;
+    let mut local_id_storage = ctx.reserve_scoped(0, "creo generated surface local IDs")?;
+    let mut output_storage = ctx.reserve_scoped(0, "creo generated surface face references")?;
     let mut generated = Vec::new();
     let mut surface_id_iter = source_ids.iter();
-    while let Some(surface_id) =
-        ctx.next_charged(&mut surface_id_iter, "creo generated surface IDs")?
-    {
+    while surface_id_iter.len() != 0 {
+        let Some(surface_id) =
+            ctx.next_charged(&mut surface_id_iter, "creo generated surface IDs")?
+        else {
+            break;
+        };
         let Some(row) = crate::surface::unique_surface_row(rows, *surface_id) else {
             return Ok(None);
         };
-        let feature_text = ctx.format_retained(
-            format_args!("creo:model:feature#{}", row.feature_id),
-            "creo generated surface feature IDs",
-        )?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(feature_text.len()),
-            "creo generated surface feature identity validation",
-        )?;
+        let feature_text = feature_storage.with_storage(|| {
+            ctx.format_retained(
+                format_args!("creo:model:feature#{}", row.feature_id),
+                "creo generated surface feature IDs",
+            )
+        })?;
         let feature = IrFeatureId::mint(feature_text)
             .map_err(|_| CodecError::Malformed("constructed Creo feature ID is invalid".into()))?;
         if !ctx.contains_btree_set(
@@ -814,17 +873,24 @@ pub(in super::super) fn generated_surface_face_refs(
         if !ctx.contains(ids, surface_id, "creo generated surface result ID lookup")? {
             return Ok(None);
         }
-        let local_id = ctx.format_retained(
-            format_args!("surface#{surface_id}"),
-            "creo generated surface local IDs",
-        )?;
-        let Some(face) = GeneratedFaceRef::new(feature, local_id, ctx)?.ok() else {
+        let local_id = local_id_storage.with_storage(|| {
+            ctx.format_retained(
+                format_args!("surface#{surface_id}"),
+                "creo generated surface local IDs",
+            )
+        })?;
+        let Ok(local_id) = local_id.try_into() else {
             return Ok(None);
         };
-        ctx.reserve_vec(&mut generated, 1, "creo generated surface face references")?;
+        let face = GeneratedFaceRef { feature, local_id };
+        output_storage.with_storage(|| {
+            ctx.reserve_vec(&mut generated, 1, "creo generated surface face references")
+        })?;
         generated.push(face);
     }
-    Ok(Some(generated))
+    let generated = feature_storage.commit_value(generated)?;
+    let generated = local_id_storage.commit_value(generated)?;
+    Ok(Some(output_storage.commit_value(generated)?))
 }
 
 pub(in super::super) fn emit_feature_result_topologies(
@@ -834,12 +900,7 @@ pub(in super::super) fn emit_feature_result_topologies(
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut emitted = 0;
     for feature in ctx.admit_iter(&ir.model.features, "creo model features")? {
-        let Some(suffix) = ctx.strip_prefix(
-            feature.id.as_str(),
-            "creo:model:feature#",
-            "creo result topology feature identity prefix",
-        )?
-        else {
+        let Some(suffix) = feature.id.as_str().strip_prefix("creo:model:feature#") else {
             continue;
         };
         let Ok(feature_id) =

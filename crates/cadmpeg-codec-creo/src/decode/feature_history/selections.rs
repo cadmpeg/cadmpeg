@@ -2,12 +2,12 @@
 //! Feature edge selection and generated result-edge identity.
 
 use super::axes::model_feature_ids;
-use crate::feature::rows::agreed_feature_affected_ids;
 use super::dependencies::{
     agreed_feature_replay_edge_ids, agreed_feature_replay_geometry_ids, has_feature_affected_ids,
 };
 use super::outputs::CommaList;
 use crate::container::ContainerScan;
+use crate::feature::rows::agreed_feature_affected_ids;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -95,7 +95,10 @@ pub(in super::super) fn feature_edge_selection(
     let mut scratch = ctx.reserve_scoped(0, "creo selected edge identity workspace")?;
     let mut seen = std::collections::HashSet::new();
     let mut identities = ids.iter();
-    while let Some(id) = ctx.next_charged(&mut identities, "creo feature selection IDs")? {
+    while identities.len() != 0 {
+        let Some(id) = ctx.next_charged(&mut identities, "creo feature selection IDs")? else {
+            break;
+        };
         if !scratch.with_storage(|| {
             ctx.insert_hash_set(&mut seen, *id, "creo selected edge identity nodes")
         })? {
@@ -106,9 +109,11 @@ pub(in super::super) fn feature_edge_selection(
     let mut any_model_edge_present = false;
     let mut resolved = Vec::new();
     let mut selected = ids.iter();
-    while let Some(id) =
-        ctx.next_charged(&mut selected, "creo feature selection edge references")?
-    {
+    while selected.len() != 0 {
+        let Some(id) = ctx.next_charged(&mut selected, "creo feature selection edge references")?
+        else {
+            break;
+        };
         let present = ctx.find_by(
             &ir.model.edges,
             |candidate| {
@@ -146,13 +151,10 @@ pub(in super::super) fn feature_edge_selection(
         // mixed identity, so retain the exact native selection.
         Ok(Some(EdgeSelection::Native(native)))
     } else {
-        let mut lookup_storage =
-            ctx.reserve_scoped(0, "creo generated edge selection lookup")?;
-        let result_edge_ids = lookup_storage.with_storage(|| {
-            feature_result_edge_ids_by_feature(ctx, &scan.curves.topology_rows)
-        })?;
-        let available_features =
-            lookup_storage.with_storage(|| model_feature_ids(ctx, scan))?;
+        let mut lookup_storage = ctx.reserve_scoped(0, "creo generated edge selection lookup")?;
+        let result_edge_ids = lookup_storage
+            .with_storage(|| feature_result_edge_ids_by_feature(ctx, &scan.curves.topology_rows))?;
+        let available_features = lookup_storage.with_storage(|| model_feature_ids(ctx, scan))?;
         if let Some(edges) = generated_curve_edge_refs(
             ctx,
             ids,
@@ -160,14 +162,13 @@ pub(in super::super) fn feature_edge_selection(
             &available_features,
             &result_edge_ids,
         )? {
-            Ok(Some(
-                EdgeSelection::generated(
-                    edges,
-                    ctx.copy_retained_text(&native, "creo generated edge selection native")?,
-                    ctx,
-                )?
-                .unwrap_or(EdgeSelection::Native(native)),
-            ))
+            let Ok(edges) = edges.try_into() else {
+                return Ok(Some(EdgeSelection::Native(native)));
+            };
+            let native = native.try_into().map_err(|_| {
+                CodecError::Malformed("constructed Creo edge selection is blank".into())
+            })?;
+            Ok(Some(EdgeSelection::Generated { edges, native }))
         } else {
             Ok(Some(EdgeSelection::Native(native)))
         }
@@ -187,7 +188,11 @@ pub(in super::super) fn generated_curve_edge_refs(
     let mut local_storage = ctx.reserve_scoped(0, "Creo feature selection workspace")?;
     let mut unique_curve_ids = BTreeSet::new();
     let mut curve_id_iter = curve_ids.iter();
-    while let Some(&curve_id) = ctx.next_charged(&mut curve_id_iter, "creo selected curve IDs")? {
+    while curve_id_iter.len() != 0 {
+        let Some(&curve_id) = ctx.next_charged(&mut curve_id_iter, "creo selected curve IDs")?
+        else {
+            break;
+        };
         if ctx.contains_btree_set(
             &unique_curve_ids,
             &curve_id,
@@ -220,20 +225,25 @@ pub(in super::super) fn generated_curve_edge_refs(
             }
         }
     }
+    let mut feature_storage = ctx.reserve_scoped(0, "creo generated curve feature IDs")?;
+    let mut local_id_storage = ctx.reserve_scoped(0, "creo generated curve local IDs")?;
+    let mut output_storage = ctx.reserve_scoped(0, "creo generated curve edge references")?;
     let mut generated = Vec::new();
     let mut curve_id_iter = curve_ids.iter();
-    while let Some(&curve_id) = ctx.next_charged(&mut curve_id_iter, "creo selected curve IDs")? {
+    while curve_id_iter.len() != 0 {
+        let Some(&curve_id) = ctx.next_charged(&mut curve_id_iter, "creo selected curve IDs")?
+        else {
+            break;
+        };
         let Some(row) = unique_rows.get(&curve_id).copied().flatten() else {
             return Ok(None);
         };
-        let feature_text = ctx.format_retained(
-            format_args!("creo:model:feature#{}", row.feature_id),
-            "creo generated curve feature IDs",
-        )?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(feature_text.len()),
-            "creo generated curve feature identity validation",
-        )?;
+        let feature_text = feature_storage.with_storage(|| {
+            ctx.format_retained(
+                format_args!("creo:model:feature#{}", row.feature_id),
+                "creo generated curve feature IDs",
+            )
+        })?;
         let feature = IrFeatureId::mint(feature_text)
             .map_err(|_| CodecError::Malformed("constructed Creo feature ID is invalid".into()))?;
         if !ctx.contains_btree_set(
@@ -254,17 +264,24 @@ pub(in super::super) fn generated_curve_edge_refs(
         if !ctx.contains(ids, &curve_id, "creo generated curve result ID lookup")? {
             return Ok(None);
         }
-        let local_id = ctx.format_retained(
-            format_args!("curve#{curve_id}"),
-            "creo generated curve local IDs",
-        )?;
-        let Some(edge) = GeneratedEdgeRef::new(feature, local_id, ctx)?.ok() else {
+        let local_id = local_id_storage.with_storage(|| {
+            ctx.format_retained(
+                format_args!("curve#{curve_id}"),
+                "creo generated curve local IDs",
+            )
+        })?;
+        let Ok(local_id) = local_id.try_into() else {
             return Ok(None);
         };
-        ctx.reserve_vec(&mut generated, 1, "creo generated curve edge references")?;
+        let edge = GeneratedEdgeRef { feature, local_id };
+        output_storage.with_storage(|| {
+            ctx.reserve_vec(&mut generated, 1, "creo generated curve edge references")
+        })?;
         generated.push(edge);
     }
-    Ok(Some(generated))
+    let generated = feature_storage.commit_value(generated)?;
+    let generated = local_id_storage.commit_value(generated)?;
+    Ok(Some(output_storage.commit_value(generated)?))
 }
 
 /// Return the complete feature-local edge roster proven by unique topology rows.
@@ -289,19 +306,27 @@ pub(in super::super) fn feature_result_edge_ids(
             ctx.refuse_codec_limit("creo feature result edge row counts", u64::MAX, u64::MAX)
         })?;
     }
+    let mut output_storage = ctx.reserve_scoped(0, "creo feature result edge IDs")?;
     let mut edge_ids = Vec::new();
     let mut row_iter = rows.iter();
-    while let Some(row) = ctx.next_charged(&mut row_iter, "creo curve topology rows")? {
+    while row_iter.len() != 0 {
+        let Some(row) = ctx.next_charged(&mut row_iter, "creo curve topology rows")? else {
+            break;
+        };
         if row.feature_id != feature_id {
             continue;
         }
         if ctx.get_btree_map(&counts, &row.id, "creo curve row count lookup")? != Some(&1) {
             return Ok(None);
         }
-        ctx.reserve_vec(&mut edge_ids, 1, "creo feature result edge IDs")?;
+        output_storage
+            .with_storage(|| ctx.reserve_vec(&mut edge_ids, 1, "creo feature result edge IDs"))?;
         edge_ids.push(row.id);
     }
-    Ok((!edge_ids.is_empty()).then_some(edge_ids))
+    if edge_ids.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(output_storage.commit_value(edge_ids)?))
 }
 
 fn feature_result_edge_ids_by_feature(
@@ -497,18 +522,18 @@ mod tests {
     }
 
     #[test]
-    fn generated_edge_selection_native_copy_refuses_retained_limit() {
+    fn generated_edge_selection_native_output_refuses_retained_limit() {
         let scan = one_generated_edge();
         let error = crate::test_support::last_refusal_at(
             &[],
             ResourceDimension::RetainedBytes,
-            "creo generated edge selection native",
+            "creo feature edge selection native",
             |ctx| feature_edge_selection(ctx, &scan, &cadmpeg_ir::document::CadIr::empty(), 10),
         );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo generated edge selection native"),
+                && resource.operation == "creo feature edge selection native"),
             "{error:?}"
         );
     }
@@ -702,7 +727,7 @@ mod tests {
     }
 
     #[test]
-    fn generated_curve_feature_identity_validation_refuses_at_work_boundary() {
+    fn generated_curve_feature_lookup_preserves_bounded_identity() {
         let rows = one_edge();
         let available =
             BTreeSet::from([
@@ -711,10 +736,7 @@ mod tests {
             ]);
         let results = std::collections::BTreeMap::from([(97, vec![77])]);
         let generated = crate::test_support::assert_work_boundaries(
-            &[
-                "creo generated curve feature identity validation",
-                "creo generated curve feature lookup",
-            ],
+            &["creo generated curve feature lookup"],
             |ctx| generated_curve_edge_refs(ctx, &[77], &rows, &available, &results),
         )
         .expect("the feature result contains the selected curve");
@@ -785,9 +807,8 @@ mod tests {
         scan.features.affected_ids[0].ids = vec![59, 59];
         let ir = resolved_selection_ir();
         let unnecessary_query = std::cell::Cell::new(false);
-        let selection = crate::test_support::assert_work_boundaries(
-            &["creo feature selection IDs"],
-            |ctx| {
+        let selection =
+            crate::test_support::assert_work_boundaries(&["creo feature selection IDs"], |ctx| {
                 let result = feature_edge_selection(ctx, &scan, &ir, 10);
                 if let Err(cadmpeg_core::CodecError::ResourceLimit(resource)) = &result {
                     if matches!(
@@ -798,8 +819,7 @@ mod tests {
                     }
                 }
                 result
-            },
-        );
+            });
         assert!(!unnecessary_query.get());
         assert!(matches!(
             selection,

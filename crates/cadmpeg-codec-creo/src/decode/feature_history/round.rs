@@ -29,51 +29,25 @@ const EPS_ROUND_CAP_PARALLEL: f64 = 1.0e-10;
 const EPS_ROUND_RADIUS_RECONCILIATION: f64 = 1.0e-9;
 const EPS_ROUND_SUPPORT_ORTHOGONAL: f64 = 1.0e-9;
 
-#[cfg(test)]
-pub(in super::super) fn parallel_support_radius<T>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    sources: &[T],
-    mut resolve_plane: impl FnMut(&T) -> Result<Option<PlaneEquation>, cadmpeg_core::CodecError>,
-) -> Result<Option<f64>, cadmpeg_core::CodecError> {
-    if sources.len() < 2 {
-        return Ok(None);
-    }
-    let mut scratch = ctx.reserve_scoped(0, "creo resolved support planes")?;
-    let mut planes = Vec::new();
-    let mut source_rows = sources.iter();
-    while let Some(source) =
-        ctx.next_charged(&mut source_rows, "creo round support plane resolution")?
-    {
-        let Some(plane) = resolve_plane(source)? else {
-            return Ok(None);
-        };
-        let Some(normal) = normalize(plane.normal) else {
-            return Ok(None);
-        };
-        scratch.with_storage(|| {
-            ctx.push_vec(
-                &mut planes,
-                (plane, normal),
-                "creo resolved support plane rows",
-            )
-        })?;
-    }
-    parallel_plane_radius(ctx, &planes)
-}
-
 fn parallel_plane_radius(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     planes: &[(PlaneEquation, [f64; 3])],
 ) -> Result<Option<f64>, cadmpeg_core::CodecError> {
     let mut first_radius: Option<f64> = None;
     let mut pairs = planes.iter().enumerate();
-    while let Some((first_index, (first_plane, first_normal))) =
-        ctx.next_charged(&mut pairs, "creo round support plane pairs")?
-    {
+    while pairs.len() != 0 {
+        let Some((first_index, (first_plane, first_normal))) =
+            ctx.next_charged(&mut pairs, "creo round support plane pairs")?
+        else {
+            break;
+        };
         let mut partners = planes[first_index + 1..].iter();
-        while let Some((second_plane, second_normal)) =
-            ctx.next_charged(&mut partners, "creo round support plane pairs")?
-        {
+        while partners.len() != 0 {
+            let Some((second_plane, second_normal)) =
+                ctx.next_charged(&mut partners, "creo round support plane pairs")?
+            else {
+                break;
+            };
             let alignment = first_normal
                 .iter()
                 .zip(*second_normal)
@@ -136,9 +110,12 @@ pub(in super::super) fn slot_fillet_cylinder(
     let mut scratch = ctx.reserve_scoped(0, "creo slot fillet evidence")?;
     let mut midplanes = Vec::<(PlaneEquation, f64)>::new();
     let mut items = support_planes.iter().enumerate();
-    while let Some((first_index, first_plane)) =
-        ctx.next_charged(&mut items, "creo slot fillet support plane pairs")?
-    {
+    while items.len() != 0 {
+        let Some((first_index, first_plane)) =
+            ctx.next_charged(&mut items, "creo slot fillet support plane pairs")?
+        else {
+            break;
+        };
         let Some(first_normal) = normalize(first_plane.normal) else {
             return Ok(None);
         };
@@ -146,10 +123,14 @@ pub(in super::super) fn slot_fillet_cylinder(
             return Ok(None);
         }
         let mut second_plane_iter = support_planes[first_index + 1..].iter();
-        while let Some(second_plane) = ctx.next_charged(
-            &mut second_plane_iter,
-            "creo slot fillet support plane pairs",
-        )? {
+        while second_plane_iter.len() != 0 {
+            let Some(second_plane) = ctx.next_charged(
+                &mut second_plane_iter,
+                "creo slot fillet support plane pairs",
+            )?
+            else {
+                break;
+            };
             let Some(second_normal) = normalize(second_plane.normal) else {
                 return Ok(None);
             };
@@ -180,13 +161,19 @@ pub(in super::super) fn slot_fillet_cylinder(
     }
     let mut first_candidate: Option<CylinderEquation> = None;
     let mut items = midplanes.iter().enumerate();
-    while let Some((first_index, first)) =
-        ctx.next_charged(&mut items, "creo slot fillet midplane pairs")?
-    {
+    while items.len() != 0 {
+        let Some((first_index, first)) =
+            ctx.next_charged(&mut items, "creo slot fillet midplane pairs")?
+        else {
+            break;
+        };
         let mut second_iter = midplanes[first_index + 1..].iter();
-        while let Some(second) =
-            ctx.next_charged(&mut second_iter, "creo slot fillet midplane pairs")?
-        {
+        while second_iter.len() != 0 {
+            let Some(second) =
+                ctx.next_charged(&mut second_iter, "creo slot fillet midplane pairs")?
+            else {
+                break;
+            };
             let radius = first.1;
             let scale = radius.max(second.1);
             if (second.1 - radius).abs() > EPS_GEOMETRY_AGREEMENT * scale
@@ -434,9 +421,12 @@ fn prototype_round_radius(
     let associations = scratch.with_storage(|| unique_surface_prototype_associations(ctx, scan))?;
     let mut radii = None;
     let mut items = associations.iter();
-    while let Some((record, row, _)) =
-        ctx.next_charged(&mut items, "creo round prototype associations")?
-    {
+    while items.len() != 0 {
+        let Some((record, row, _)) =
+            ctx.next_charged(&mut items, "creo round prototype associations")?
+        else {
+            break;
+        };
         if !matches!(
             record.record().family,
             crate::surface::SurfacePrototypeFamily::Torus(_)
@@ -469,7 +459,11 @@ fn prototype_round_radius(
         return Ok(None);
     }
     let mut row_iter = rows.iter();
-    while let Some(row) = ctx.next_charged(&mut row_iter, "creo round prototype surface rows")? {
+    while row_iter.len() != 0 {
+        let Some(row) = ctx.next_charged(&mut row_iter, "creo round prototype surface rows")?
+        else {
+            break;
+        };
         let Some(record) = unique_surface_parameter_record(ctx, scan, row)? else {
             return Ok(None);
         };
@@ -679,7 +673,11 @@ fn legacy_round_radius_agrees(
     let mut scale = radius.abs().max(1.0);
     let mut difference: f64 = 0.0;
     let mut samples = samples.iter().chain(&placed);
-    while let Some(&sample) = ctx.next_charged(&mut samples, "creo legacy round radius samples")? {
+    while samples.size_hint().1 != Some(0) {
+        let Some(&sample) = ctx.next_charged(&mut samples, "creo legacy round radius samples")?
+        else {
+            break;
+        };
         if !sample.is_finite() || sample <= 0.0 {
             return Ok(false);
         }
@@ -698,9 +696,11 @@ fn complete_direct_placed_cylinder_radius_agreement(
 ) -> Result<Option<bool>, cadmpeg_core::CodecError> {
     let mut agrees = true;
     let mut row_iter = scan.surfaces.rows.iter();
-    while let Some(row) =
-        ctx.next_charged(&mut row_iter, "creo direct placed round surface rows")?
-    {
+    while row_iter.len() != 0 {
+        let Some(row) = ctx.next_charged(&mut row_iter, "creo direct placed round surface rows")?
+        else {
+            break;
+        };
         if row.feature_id != feature_id || row.kind != crate::surface::SurfaceKind::Cylinder {
             continue;
         }
@@ -745,7 +745,10 @@ fn mixed_round_radius_samples(
 
     let mut cylinder_radii = Vec::new();
     let mut row_iter = rows.iter().copied();
-    while let Some(row) = ctx.next_charged(&mut row_iter, "creo mixed round surface rows")? {
+    while row_iter.len() != 0 {
+        let Some(row) = ctx.next_charged(&mut row_iter, "creo mixed round surface rows")? else {
+            break;
+        };
         if row.kind != crate::surface::SurfaceKind::Cylinder {
             continue;
         }
@@ -770,7 +773,10 @@ fn mixed_torus_radius_samples(
     let mut all_overrides = true;
     let mut any_overrides = false;
     let mut row_iter = rows.iter();
-    while let Some(row) = ctx.next_charged(&mut row_iter, "creo mixed torus surface rows")? {
+    while row_iter.len() != 0 {
+        let Some(row) = ctx.next_charged(&mut row_iter, "creo mixed torus surface rows")? else {
+            break;
+        };
         let Some(record) = unique_surface_parameter_record(ctx, scan, row)? else {
             return Ok(None);
         };
@@ -781,7 +787,11 @@ fn mixed_torus_radius_samples(
     if all_overrides {
         let mut radii = Vec::new();
         let mut row_iter = rows.iter();
-        while let Some(row) = ctx.next_charged(&mut row_iter, "creo mixed torus surface rows")? {
+        while row_iter.len() != 0 {
+            let Some(row) = ctx.next_charged(&mut row_iter, "creo mixed torus surface rows")?
+            else {
+                break;
+            };
             let Some(record) = unique_surface_parameter_record(ctx, scan, row)? else {
                 return Ok(None);
             };
@@ -874,7 +884,10 @@ pub(in super::super) fn round_support_radius(
         return Ok(None);
     }
     let mut id_iter = support_ids.iter();
-    while let Some(id) = ctx.next_charged(&mut id_iter, "creo round support plane IDs")? {
+    while id_iter.len() != 0 {
+        let Some(id) = ctx.next_charged(&mut id_iter, "creo round support plane IDs")? else {
+            break;
+        };
         let Some(plane) = reconciled_model_plane(ctx, &local_planes, ir, source_carriers, *id)?
         else {
             return Ok(None);
@@ -937,14 +950,20 @@ pub(in super::super) fn round_support_envelope_cylinder(
 
     let mut agreed_pair: Option<([f64; 3], f64, f64)> = None;
     let mut pairs = support_planes.iter().enumerate();
-    while let Some((first_index, (first, first_normal))) =
-        ctx.next_charged(&mut pairs, "creo round support plane pairs")?
-    {
+    while pairs.len() != 0 {
+        let Some((first_index, (first, first_normal))) =
+            ctx.next_charged(&mut pairs, "creo round support plane pairs")?
+        else {
+            break;
+        };
         let first_normal = *first_normal;
         let mut partners = support_planes[first_index + 1..].iter();
-        while let Some((second, second_normal)) =
-            ctx.next_charged(&mut partners, "creo round support plane pairs")?
-        {
+        while partners.len() != 0 {
+            let Some((second, second_normal)) =
+                ctx.next_charged(&mut partners, "creo round support plane pairs")?
+            else {
+                break;
+            };
             let second_normal = *second_normal;
             if (dot(first_normal, second_normal).abs() - 1.0).abs() > EPS_ROUND_CAP_PARALLEL {
                 continue;
@@ -1095,7 +1114,10 @@ fn resolved_round_support_planes(
     }
     let mut support_planes = Vec::new();
     let mut id_iter = support_ids.iter();
-    while let Some(id) = ctx.next_charged(&mut id_iter, "creo round support plane IDs")? {
+    while id_iter.len() != 0 {
+        let Some(id) = ctx.next_charged(&mut id_iter, "creo round support plane IDs")? else {
+            break;
+        };
         let Some(plane) = reconciled_model_plane(ctx, &local_planes, ir, source_carriers, *id)?
         else {
             continue;
@@ -1234,7 +1256,11 @@ fn positive_length_spread(
     let mut scale = reference.max(1.0);
     let mut difference: f64 = 0.0;
     let mut samples = values.iter().chain(additional);
-    while let Some(&sample) = ctx.next_charged(&mut samples, "creo positive length agreement")? {
+    while samples.size_hint().1 != Some(0) {
+        let Some(&sample) = ctx.next_charged(&mut samples, "creo positive length agreement")?
+        else {
+            break;
+        };
         if !sample.is_finite() || sample <= 0.0 {
             return Ok(None);
         }
@@ -1284,7 +1310,11 @@ fn equal_distance_chamfer_setback(
     let mut scale: f64 = 1.0;
     let mut max_difference: f64 = 0.0;
     let mut cone_iter = cones.iter();
-    while let Some(cone) = ctx.next_charged(&mut cone_iter, "creo chamfer cone support pairs")? {
+    while cone_iter.len() != 0 {
+        let Some(cone) = ctx.next_charged(&mut cone_iter, "creo chamfer cone support pairs")?
+        else {
+            break;
+        };
         let Some(axis) = normalize(cone.axis()) else {
             return Ok(None);
         };
@@ -1419,7 +1449,10 @@ pub(in super::super) fn chamfer_constant_distance(
     let mut scratch = ctx.reserve_scoped(0, "creo chamfer evidence")?;
     let mut cones = Vec::new();
     let mut rows = scan.surfaces.rows.iter();
-    while let Some(row) = ctx.next_charged(&mut rows, "creo chamfer generated surface rows")? {
+    while rows.len() != 0 {
+        let Some(row) = ctx.next_charged(&mut rows, "creo chamfer generated surface rows")? else {
+            break;
+        };
         if row.feature_id != feature_id {
             continue;
         }
@@ -1447,7 +1480,10 @@ pub(in super::super) fn chamfer_constant_distance(
     let mut support_planes = Vec::new();
     let mut support_plane_ids = BTreeSet::new();
     let mut id_iter = affected_ids.iter();
-    while let Some(id) = ctx.next_charged(&mut id_iter, "creo chamfer support plane IDs")? {
+    while id_iter.len() != 0 {
+        let Some(id) = ctx.next_charged(&mut id_iter, "creo chamfer support plane IDs")? else {
+            break;
+        };
         let is_support_plane = match scan.surfaces.rows.unique(*id) {
             Some(row) => row.kind == crate::surface::SurfaceKind::Plane,
             None if scan.surfaces.rows.contains_id(*id) => {
@@ -1524,4 +1560,4 @@ pub(in super::super) fn chamfer_constant_distance(
 }
 
 #[cfg(test)]
-mod tests;
+pub(in super::super) mod tests;

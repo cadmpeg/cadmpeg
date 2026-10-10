@@ -39,27 +39,6 @@ impl<'ir, 'ctx> FeatureOutputCandidates<'ir, 'ctx> {
             storage: ctx.reserve_scoped(0, "creo feature output candidate rows")?,
         })
     }
-
-    fn push(
-        &mut self,
-        ctx: &DecodeContext<'_>,
-        body: &'ir BodyId,
-        operation: &'static str,
-    ) -> Result<(), CodecError> {
-        self.storage
-            .with_storage(|| ctx.reserve_vec(&mut self.bodies, 1, operation))?;
-        self.bodies.push(body);
-        Ok(())
-    }
-
-    fn contains(
-        &self,
-        ctx: &DecodeContext<'_>,
-        body: &BodyId,
-        operation: &'static str,
-    ) -> Result<bool, CodecError> {
-        ctx.contains(&self.bodies, &body, operation)
-    }
 }
 
 pub(super) struct FeatureOutputHistory<'ir, 'ctx> {
@@ -144,7 +123,11 @@ fn feature_output_body_candidates_with_history<'ir, 'ctx>(
     )?;
     let mut outputs = FeatureOutputCandidates::new(ctx)?;
     append_evaluated_sweep_output_body_candidates(ctx, ir, feature_id, &mut outputs)?;
-    let edge_outputs = match feature_edge_selection(ctx, scan, ir, feature_id)? {
+    let mut edge_selection_storage =
+        ctx.reserve_scoped(0, "creo output edge selection evidence")?;
+    let edge_outputs = match edge_selection_storage
+        .with_storage(|| feature_edge_selection(ctx, scan, ir, feature_id))?
+    {
         Some(EdgeSelection::Resolved { edges, .. }) => bodies_containing_edges(ctx, ir, &edges)?,
         Some(EdgeSelection::Generated { edges, .. }) => {
             generated_edge_output_bodies(ctx, scan, ir, &edges, history)?
@@ -163,8 +146,10 @@ fn feature_output_body_candidates_with_history<'ir, 'ctx>(
             .bodies(ctx, &surface_storage.0)?
             .unwrap_or(&[]);
         for body in ctx.admit_iter(bodies, "creo generated surface body references")? {
-            if !outputs.contains(ctx, body, "creo feature output body lookup")? {
-                outputs.push(ctx, body, "creo feature output bodies")?;
+            if !ctx.contains(&outputs.bodies, body, "creo feature output body lookup")? {
+                outputs.storage.with_storage(|| {
+                    ctx.push_vec(&mut outputs.bodies, body, "creo feature output bodies")
+                })?;
             }
         }
         Ok(())
@@ -196,8 +181,10 @@ fn feature_output_body_candidates_with_history<'ir, 'ctx>(
         "creo feature edge output body candidates",
     )? {
         let body = *candidate;
-        if !outputs.contains(ctx, body, "creo feature output body lookup")? {
-            outputs.push(ctx, body, "creo feature output bodies")?;
+        if !ctx.contains(&outputs.bodies, &body, "creo feature output body lookup")? {
+            outputs.storage.with_storage(|| {
+                ctx.push_vec(&mut outputs.bodies, body, "creo feature output bodies")
+            })?;
         }
     }
     for candidate in ctx.admit_iter(
@@ -205,8 +192,10 @@ fn feature_output_body_candidates_with_history<'ir, 'ctx>(
         "creo feature input output body candidates",
     )? {
         let body = *candidate;
-        if !outputs.contains(ctx, body, "creo feature output body lookup")? {
-            outputs.push(ctx, body, "creo feature output bodies")?;
+        if !ctx.contains(&outputs.bodies, &body, "creo feature output body lookup")? {
+            outputs.storage.with_storage(|| {
+                ctx.push_vec(&mut outputs.bodies, body, "creo feature output bodies")
+            })?;
         }
     }
     ctx.remove_btree_set(
@@ -249,12 +238,7 @@ fn generated_input_output_bodies<'ir, 'ctx>(
     let producers = dependency_storage
         .with_storage(|| feature_generated_dependencies(ctx, feature.evaluation.definition()))?;
     for producer in ctx.admit_iter(&producers, "creo generated feature dependencies")? {
-        let Some(suffix) = ctx.strip_prefix(
-            producer.as_str(),
-            "creo:model:feature#",
-            "creo generated producer identity prefix",
-        )?
-        else {
+        let Some(suffix) = producer.as_str().strip_prefix("creo:model:feature#") else {
             continue;
         };
         let Ok(producer_id) =
@@ -269,8 +253,14 @@ fn generated_input_output_bodies<'ir, 'ctx>(
             "creo generated producer body candidates",
         )? {
             let body = *candidate;
-            if !outputs.contains(ctx, body, "creo output body membership")? {
-                outputs.push(ctx, body, "creo generated input output bodies")?;
+            if !ctx.contains(&outputs.bodies, &body, "creo output body membership")? {
+                outputs.storage.with_storage(|| {
+                    ctx.push_vec(
+                        &mut outputs.bodies,
+                        body,
+                        "creo generated input output bodies",
+                    )
+                })?;
             }
         }
     }
@@ -286,12 +276,7 @@ fn generated_edge_output_bodies<'ir, 'ctx>(
 ) -> Result<FeatureOutputCandidates<'ir, 'ctx>, CodecError> {
     let mut outputs = FeatureOutputCandidates::new(ctx)?;
     for edge in ctx.admit_iter(edges, "creo generated edge references")? {
-        let Some(suffix) = ctx.strip_prefix(
-            edge.feature.as_str(),
-            "creo:model:feature#",
-            "creo generated edge producer identity prefix",
-        )?
-        else {
+        let Some(suffix) = edge.feature.as_str().strip_prefix("creo:model:feature#") else {
             continue;
         };
         let Ok(producer_id) =
@@ -306,8 +291,14 @@ fn generated_edge_output_bodies<'ir, 'ctx>(
             "creo generated producer body candidates",
         )? {
             let body = *candidate;
-            if !outputs.contains(ctx, body, "creo output body membership")? {
-                outputs.push(ctx, body, "creo generated edge output bodies")?;
+            if !ctx.contains(&outputs.bodies, &body, "creo output body membership")? {
+                outputs.storage.with_storage(|| {
+                    ctx.push_vec(
+                        &mut outputs.bodies,
+                        body,
+                        "creo generated edge output bodies",
+                    )
+                })?;
             }
         }
     }
@@ -357,7 +348,8 @@ fn bodies_containing_edges<'ir, 'ctx>(
         let mut has_selected_wire_edge = false;
         let mut edge_iter = shell.wire_edges().iter();
         while edge_iter.len() != 0 {
-            let Some(edge) = ctx.next_charged(&mut edge_iter, "creo selected shell wire edges")? else {
+            let Some(edge) = ctx.next_charged(&mut edge_iter, "creo selected shell wire edges")?
+            else {
                 break;
             };
             if ctx.contains_btree_set(&selected, edge, "creo selected shell wire edge lookup")? {
@@ -406,8 +398,14 @@ fn bodies_containing_edges<'ir, 'ctx>(
         {
             continue;
         }
-        if !bodies.contains(ctx, body, "creo selected body membership")? {
-            bodies.push(ctx, body, "creo bodies containing selected edges")?;
+        if !ctx.contains(&bodies.bodies, &body, "creo selected body membership")? {
+            bodies.storage.with_storage(|| {
+                ctx.push_vec(
+                    &mut bodies.bodies,
+                    body,
+                    "creo bodies containing selected edges",
+                )
+            })?;
         }
     }
     Ok(bodies)
@@ -445,7 +443,13 @@ fn append_evaluated_sweep_output_body_candidates<'ir, 'ctx>(
             "creo evaluated sweep body lookup traversal",
         )?;
         if let Some(body) = matching_body {
-            outputs.push(ctx, &body.id, "creo evaluated sweep output bodies")?;
+            outputs.storage.with_storage(|| {
+                ctx.push_vec(
+                    &mut outputs.bodies,
+                    &body.id,
+                    "creo evaluated sweep output bodies",
+                )
+            })?;
         }
     }
     Ok(())
@@ -656,37 +660,36 @@ fn insert_feature_parameter(
         format_args!("{base}"),
         "creo feature parameter key candidate",
     )?;
-    let (key, key_reservation) =
-        if ctx.contains_key_btree_map(
-            parameters,
-            &base_storage.0,
-            "creo feature parameter key lookup",
-        )? {
-            let mut occurrence = 2usize;
-            loop {
-                let candidate = ctx.format_scoped(
-                    format_args!("{}#{occurrence}", base_storage.0),
-                    "creo feature parameter key candidate",
-                )?;
-                if !ctx.contains_key_btree_map(
-                    parameters,
-                    &candidate.0,
-                    "creo feature parameter key lookup",
-                )? {
-                    drop(base_storage);
-                    break candidate;
-                }
-                occurrence = occurrence.checked_add(1).ok_or_else(|| {
-                    ctx.refuse_codec_limit(
-                        "creo feature parameter collision ordinal",
-                        u64::MAX,
-                        u64::MAX,
-                    )
-                })?;
+    let (key, key_reservation) = if ctx.contains_key_btree_map(
+        parameters,
+        &base_storage.0,
+        "creo feature parameter key lookup",
+    )? {
+        let mut occurrence = 2usize;
+        loop {
+            let candidate = ctx.format_scoped(
+                format_args!("{}#{occurrence}", base_storage.0),
+                "creo feature parameter key candidate",
+            )?;
+            if !ctx.contains_key_btree_map(
+                parameters,
+                &candidate.0,
+                "creo feature parameter key lookup",
+            )? {
+                drop(base_storage);
+                break candidate;
             }
-        } else {
-            base_storage
-        };
+            occurrence = occurrence.checked_add(1).ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "creo feature parameter collision ordinal",
+                    u64::MAX,
+                    u64::MAX,
+                )
+            })?;
+        }
+    } else {
+        base_storage
+    };
     let key = text_storage.with_storage(|| key_reservation.commit_value(key))?;
     node_storage.with_storage(|| {
         ctx.insert_btree_map(parameters, key, value, "creo feature parameter nodes")
@@ -984,7 +987,10 @@ pub(in super::super) fn feature_parameters<'ctx>(
         else {
             continue;
         };
-        let Some(profile_sketch) = model_sketch_id(ctx, scan, definition)? else {
+        let mut sketch_storage = ctx.reserve_scoped(0, "creo history sketch lookup")?;
+        let Some(profile_sketch) =
+            sketch_storage.with_storage(|| model_sketch_id(ctx, scan, definition))?
+        else {
             continue;
         };
         insert_feature_parameter(
