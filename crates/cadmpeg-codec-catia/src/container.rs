@@ -558,8 +558,10 @@ fn jpeg_extent(
     let mut frame = None;
     let mut in_entropy = false;
     while at + 1 < data.len() {
-        ctx.charge_work(1, OPERATION)?;
-        if data[at] != 0xff {
+        let Some(&byte) = ctx.next_charged(&mut data[at..].iter(), OPERATION)? else {
+            return Ok(None);
+        };
+        if byte != 0xff {
             if !in_entropy {
                 return Ok(None);
             }
@@ -761,32 +763,35 @@ fn e5_record_walk_count(
 ) -> Result<(usize, usize), CodecError> {
     const OPERATION: &str = "catia_e5_stride_walk";
     let mut count = 0;
-    let mut position = start;
+    let position = std::cell::Cell::new(start);
+    let mut frames = std::iter::from_fn(|| E5Frame::at(data, position.get()));
     let mut consumed = start;
-    loop {
-        ctx.charge_work(1, OPERATION)?;
-        let Some(frame) = E5Frame::at(data, position) else {
-            break;
-        };
+    while let Some(frame) = ctx.next_charged(&mut frames, OPERATION)? {
         count += 1;
-        position = frame.end();
-        consumed = position;
-        if e5_marker_at(data, position) {
+        position.set(frame.end());
+        consumed = position.get();
+        if e5_marker_at(data, position.get()) {
             continue;
         }
-        let mut next = position;
+        let mut next = position.get();
+        let mut rows = data
+            .get(next..)
+            .unwrap_or_default()
+            .chunks_exact(VERTEX_ROW_BYTES);
         while vertex_row_at(data, next) {
-            ctx.charge_work(1, OPERATION)?;
-            next += VERTEX_ROW_BYTES;
+            let Some(row) = ctx.next_charged(&mut rows, OPERATION)? else {
+                break;
+            };
+            next += row.len();
         }
-        if next == position {
+        if next == position.get() {
             break;
         }
         consumed = next;
         if !e5_marker_at(data, next) {
             break;
         }
-        position = next;
+        position.set(next);
     }
     Ok((count, consumed))
 }
@@ -1104,18 +1109,27 @@ pub(crate) fn fbb_run_ranges(
 ) -> Result<Vec<Range<usize>>, CodecError> {
     let mut ranges = Vec::new();
     let mut position = 0;
+    let mut run_start = None;
     while position + fbb_row::LEN <= body.len() {
-        ctx.charge_work(1, "catia_fbb_scan")?;
-        if is_fbb_row(&body[position..]) {
-            let start = position;
-            while position + fbb_row::LEN <= body.len() && is_fbb_row(&body[position..]) {
-                ctx.charge_work(1, "catia_fbb_scan")?;
-                position += fbb_row::LEN;
-            }
-            ctx.push_vec(&mut ranges, start..position, "catia_fbb_run_ranges")?;
+        let Some(row) = ctx.next_charged(
+            &mut body[position..].chunks_exact(fbb_row::LEN),
+            "catia_fbb_scan",
+        )?
+        else {
+            break;
+        };
+        if is_fbb_row(row) {
+            run_start.get_or_insert(position);
+            position += row.len();
         } else {
+            if let Some(start) = run_start.take() {
+                ctx.push_vec(&mut ranges, start..position, "catia_fbb_run_ranges")?;
+            }
             position += 1;
         }
+    }
+    if let Some(start) = run_start {
+        ctx.push_vec(&mut ranges, start..position, "catia_fbb_run_ranges")?;
     }
     Ok(ranges)
 }
@@ -1259,9 +1273,10 @@ fn parse_directory_region(
     // At each candidate extent-count field, validate every extent and the
     // descriptor-header logical length; a candidate that validates fully is a
     // real descriptor. The extent count sits at `desc_offset + EXTENT_COUNT`.
-    let mut o = 0usize;
-    while o + 4 <= dirbuf.len() {
-        ctx.charge_work(1, "catia_directory_candidate_scan")?;
+    for o in ctx.admit_iter(
+        0..dirbuf.len().saturating_sub(3),
+        "catia_directory_candidate_scan",
+    )? {
         let Some(k) = View::u32_be_at(dirbuf, o).and_then(|value| usize::try_from(value).ok())
         else {
             break;
@@ -1296,7 +1311,6 @@ fn parse_directory_region(
                 }
             }
         }
-        o += 1;
     }
 
     if descriptors.is_empty() {
@@ -1329,33 +1343,36 @@ fn directory_region_has_descriptor(
     if dirbuf.len() < 4 {
         return Ok(false);
     }
-    for o in 0..=dirbuf.len() - 4 {
-        ctx.charge_work(1, "catia_directory_candidate_scan")?;
-        let Some(k) = View::u32_be_at(dirbuf, o).and_then(|value| usize::try_from(value).ok())
-        else {
-            continue;
-        };
-        let Some(extents_end) = k
-            .checked_mul(extent::LEN)
-            .and_then(|bytes| o.checked_add(4)?.checked_add(bytes))
-        else {
-            continue;
-        };
-        if k == 0 || extents_end > dirbuf.len() || o < stream_desc::EXTENT_COUNT {
-            continue;
-        }
-        let Some(cum) = validate_extents(ctx, dirbuf, o, k, physical_base, data.len())? else {
-            continue;
-        };
-        let ds = o - stream_desc::EXTENT_COUNT;
-        if cum > 0
-            && View::u32_be_at(dirbuf, ds + stream_desc::LOGICAL_STREAM_LENGTH)
-                .is_some_and(|length| index_from_u32(length) == cum)
-        {
-            return Ok(true);
-        }
-    }
-    Ok(false)
+    ctx.any_by(
+        0..=dirbuf.len() - 4,
+        |o| {
+            let Some(k) = View::u32_be_at(dirbuf, o).and_then(|value| usize::try_from(value).ok())
+            else {
+                return Ok(false);
+            };
+            let Some(extents_end) = k
+                .checked_mul(extent::LEN)
+                .and_then(|bytes| o.checked_add(4)?.checked_add(bytes))
+            else {
+                return Ok(false);
+            };
+            if k == 0 || extents_end > dirbuf.len() || o < stream_desc::EXTENT_COUNT {
+                return Ok(false);
+            }
+            let Some(cum) = validate_extents(ctx, dirbuf, o, k, physical_base, data.len())? else {
+                return Ok(false);
+            };
+            let ds = o - stream_desc::EXTENT_COUNT;
+            if cum > 0
+                && View::u32_be_at(dirbuf, ds + stream_desc::LOGICAL_STREAM_LENGTH)
+                    .is_some_and(|length| index_from_u32(length) == cum)
+            {
+                return Ok(true);
+            }
+            Ok(false)
+        },
+        "catia_directory_candidate_scan",
+    )
 }
 
 /// Validate the `k` 20-byte extent structs beginning at `o + 4`; returns the
@@ -1457,16 +1474,14 @@ fn descriptor_name(
     }
     if let Some(tail_start) = ds.checked_sub(3) {
         if dirbuf.get(tail_start..ds) == Some(&[0, 0, 0]) {
-            let mut name_start = tail_start;
-            while name_start >= 2 {
-                ctx.charge_work(1, "catia_container_iteration")?;
-                let pair_start = name_start - 2;
-                if (0x20..0x7f).contains(&dirbuf[pair_start]) && dirbuf[pair_start + 1] == 0 {
-                    name_start = pair_start;
-                } else {
-                    break;
-                }
-            }
+            let characters = ctx
+                .position_by(
+                    dirbuf[..tail_start].rchunks_exact(2),
+                    |pair| Ok(!(0x20..0x7f).contains(&pair[0]) || pair[1] != 0),
+                    "catia_container_iteration",
+                )?
+                .unwrap_or(tail_start / 2);
+            let name_start = tail_start - 2 * characters;
             let name_bytes = &dirbuf[name_start..tail_start];
             if name_bytes.len() >= 6 {
                 return ctx.format_retained(
@@ -2375,6 +2390,9 @@ pub(crate) fn notes(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Vec<String>, CodecError> {
+    const ENUMERATION_NOTE: &str =
+        "container-level enumeration; `decode` applies the identified storage family's \
+         standard, freeform, E5, zero-entity, or metadata-fallback route";
     let mut notes = Vec::new();
     let outer = ctx.format_retained(format_args!(
             "outer V5_CFV2 container: directory offset {} + length {} = {} (file size {}); variant: {}",
@@ -2406,10 +2424,10 @@ pub(crate) fn notes(
             ctx.push_vec(&mut notes, note, "catia_container_notes")?;
         }
         None => {
-            let note = ctx.copy_retained_text(
-                "no nested V5_CFV2 sub-container (outer-preamble record families only)",
-                "catia_container_note",
-            )?;
+            const NOTE: &str =
+                "no nested V5_CFV2 sub-container (outer-preamble record families only)";
+            let mut note = ctx.retained_string(NOTE.len(), "catia_container_note")?;
+            note.push_str(NOTE);
             ctx.push_vec(&mut notes, note, "catia_container_notes")?;
         }
     }
@@ -2451,11 +2469,8 @@ pub(crate) fn notes(
         )?;
         ctx.push_vec(&mut notes, note, "catia_container_notes")?;
     }
-    let note = ctx.copy_retained_text(
-        "container-level enumeration; `decode` applies the identified storage family's \
-         standard, freeform, E5, zero-entity, or metadata-fallback route",
-        "catia_container_note",
-    )?;
+    let mut note = ctx.retained_string(ENUMERATION_NOTE.len(), "catia_container_note")?;
+    note.push_str(ENUMERATION_NOTE);
     ctx.push_vec(&mut notes, note, "catia_container_notes")?;
     Ok(notes)
 }

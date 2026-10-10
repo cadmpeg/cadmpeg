@@ -1016,12 +1016,18 @@ pub(crate) fn consolidated_owner_packets(
             },
         ));
     }
-    ctx.stable_sort_by_key(
-        &mut packets,
-        |value| (value.0, value.1),
-        Ord::cmp,
-        "catia_native_owner_packet_sort",
-    )?;
+    if packets.len() == 2 {
+        if (packets[0].0, packets[0].1) > (packets[1].0, packets[1].1) {
+            packets.swap(0, 1);
+        }
+    } else if packets.len() > 2 {
+        ctx.stable_sort_by_key(
+            &mut packets,
+            |value| (value.0, value.1),
+            Ord::cmp,
+            "catia_native_owner_packet_sort",
+        )?;
+    }
     ctx.try_collect_vec(
         packets
             .into_iter()
@@ -1432,14 +1438,11 @@ pub(crate) fn consolidated_edge_nodes(
                 .remove_hash_map(&mut class25_descriptors, &node.pos, LOOKUP)?
                 .map(|descriptor| {
                     const VALUES: &str = "catia_native_class25_descriptor_values";
-                    let mut storage = ctx.reserve_scoped(0, VALUES)?;
-                    let values = storage
-                        .with_storage(|| ctx.copy_slice(descriptor.values.as_slice(), VALUES))?;
-                    storage.commit_value(CatiaConsolidatedClass25Descriptor {
+                    Ok::<_, CodecError>(CatiaConsolidatedClass25Descriptor {
                         byte_offset: u64_from_index(descriptor.pos),
                         record_id: descriptor.record_id,
                         control: descriptor.control,
-                        values,
+                        values: ctx.copy_slice(descriptor.values.as_slice(), VALUES)?,
                     })
                 })
                 .transpose()?,

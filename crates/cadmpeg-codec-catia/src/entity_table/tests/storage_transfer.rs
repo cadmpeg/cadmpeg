@@ -51,19 +51,57 @@ fn destination_precedes_candidate_promotion<T>(
 }
 
 #[test]
-fn materialized_run_reserves_its_destination_before_candidate_promotion() {
+fn materialized_run_promotes_records_before_destination_admission() {
     let bytes = super::record(&[0x11], 37);
-    destination_precedes_candidate_promotion(
-        &bytes,
-        "collect CATIA 7C05 materialized runs",
+    let destination = "collect CATIA 7C05 materialized runs";
+    let cap = {
+        let _probe = RefusalProbe::arm(ResourceDimension::CollectionItems, destination, None);
+        crate::test_support::with_collection_limit(u64::MAX, |ctx| {
+            let CodecError::ResourceLimit(limit) =
+                super::super::parse_runs(ctx, &bytes).expect_err("destination slot refuses")
+            else {
+                panic!("resource refusal");
+            };
+            assert_eq!(limit.operation, destination);
+            assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+            limit.used
+        })
+    };
+    let promotion_probe = RefusalProbe::arm(
+        ResourceDimension::RetainedBytes,
         "catia_entity_run_records",
-        |ctx| super::super::parse_runs(ctx, &bytes),
+        None,
     );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = cap;
+    policy.limits.max_retained_bytes = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("fixture root");
+    let CodecError::ResourceLimit(limit) = super::super::parse_runs(&ctx, &bytes)
+        .expect_err("record promotion precedes the refused destination")
+    else {
+        panic!("resource refusal");
+    };
+    assert_eq!(limit.operation, "catia_entity_run_records");
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(ctx.resource_refusal(), Some(limit));
+    drop(promotion_probe);
     let runs = super::parse_runs(&bytes);
     assert_eq!(runs.len(), 1);
     assert_eq!(runs[0].len(), 1);
     assert_eq!(runs[0][0].entity_id, 37);
     assert_eq!(super::nested_body(&runs[0][0]).1, [0x11]);
+    crate::test_support::with_retained_limit(0, |ctx| {
+        let (runs, storage) = ctx.with_scoped_storage("test materialized-run parent", || {
+            super::super::parse_runs(ctx, &bytes)
+        })?;
+        assert_eq!(runs[0][0].entity_id, 37);
+        assert_eq!(super::nested_body(&runs[0][0]).1, [0x11]);
+        drop(runs);
+        drop(storage);
+        Ok::<_, CodecError>(())
+    })
+    .expect("production-style parent captures the promoted record backing");
 }
 
 #[test]

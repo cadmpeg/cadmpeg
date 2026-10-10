@@ -8739,12 +8739,18 @@ fn consolidated_class61_records(
             )
         })?;
     }
-    ctx.stable_sort_by(
-        &mut class61_records,
-        |value| &value.0,
-        Ord::cmp,
-        "catia_native_class61_sort",
-    )?;
+    if class61_records.len() == 2 {
+        if class61_records[0].0 > class61_records[1].0 {
+            class61_records.swap(0, 1);
+        }
+    } else if class61_records.len() > 2 {
+        ctx.stable_sort_by(
+            &mut class61_records,
+            |value| &value.0,
+            Ord::cmp,
+            "catia_native_class61_sort",
+        )?;
+    }
     ctx.try_collect_vec(
         class61_records.into_iter().enumerate().map(
             |(index, (pos, header_token, payload))| -> Result<_, CodecError> {
@@ -8771,12 +8777,24 @@ fn consolidated_class5b5c_records(
     let mut control_records = ctx.with_scoped_storage("catia_native_class5b5c_scratch", || {
         crate::families::b2::records::b2_class5b5c_records_from_records(ctx, bytes, records)
     })?;
-    ctx.stable_sort_by_key(
-        &mut control_records.0,
-        |value| (value.source_index, value.source_offset),
-        Ord::cmp,
-        "catia_native_class5b5c_sort",
-    )?;
+    if control_records.0.len() == 2 {
+        if (
+            control_records.0[0].source_index,
+            control_records.0[0].source_offset,
+        ) > (
+            control_records.0[1].source_index,
+            control_records.0[1].source_offset,
+        ) {
+            control_records.0.swap(0, 1);
+        }
+    } else if control_records.0.len() > 2 {
+        ctx.stable_sort_by_key(
+            &mut control_records.0,
+            |value| (value.source_index, value.source_offset),
+            Ord::cmp,
+            "catia_native_class5b5c_sort",
+        )?;
+    }
     ctx.try_collect_vec(
         control_records
             .0
@@ -9271,12 +9289,18 @@ fn consolidated_pcurves(
             "catia_native_pcurve_ordering",
         )
     })?;
-    ctx.stable_sort_by(
-        &mut pcurves,
-        |value| &value.0.pos,
-        Ord::cmp,
-        "catia_native_pcurve_sort",
-    )?;
+    if pcurves.len() == 2 {
+        if pcurves[0].0.pos > pcurves[1].0.pos {
+            pcurves.swap(0, 1);
+        }
+    } else if pcurves.len() > 2 {
+        ctx.stable_sort_by(
+            &mut pcurves,
+            |value| &value.0.pos,
+            Ord::cmp,
+            "catia_native_pcurve_sort",
+        )?;
+    }
     ctx.try_collect_vec(
         pcurves
             .into_iter()

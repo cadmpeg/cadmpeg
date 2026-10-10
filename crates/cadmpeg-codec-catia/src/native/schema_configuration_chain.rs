@@ -198,7 +198,13 @@ fn entities_by_identity<'a>(
         Ok(())
     })?;
     for (_, group) in ctx.admit_iter(&mut groups, "catia_configuration_between_groups")? {
-        ctx.sort_unstable_by_key(group, |row| *row, Ord::cmp, OPERATION)?;
+        if group.len() == 2 {
+            if group[0] > group[1] {
+                group.swap(0, 1);
+            }
+        } else if group.len() > 2 {
+            ctx.sort_unstable_by_key(group, |row| *row, Ord::cmp, OPERATION)?;
+        }
     }
     Ok(groups)
 }
@@ -372,7 +378,13 @@ fn intervening_entities(
     let mut storage = ctx.reserve_scoped(0, OPERATION)?;
     let mut positions = storage
         .with_storage(|| ctx.copy_slice(group.get(first..last).unwrap_or_default(), OPERATION))?;
-    ctx.sort_unstable_by_key(&mut positions, |(_, index)| *index, Ord::cmp, OPERATION)?;
+    if positions.len() == 2 {
+        if positions[0].1 > positions[1].1 {
+            positions.swap(0, 1);
+        }
+    } else if positions.len() > 2 {
+        ctx.sort_unstable_by_key(&mut positions, |(_, index)| *index, Ord::cmp, OPERATION)?;
+    }
     let mut between = Vec::new();
     ctx.reserve_vec(&mut between, positions.len(), OPERATION)?;
     for &(_, index) in ctx.admit_iter(&positions, "catia_configuration_between_entity_rows")? {
