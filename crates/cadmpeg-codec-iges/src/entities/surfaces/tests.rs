@@ -1894,3 +1894,5 @@ mod nurbs_weight_lifetimes;
 mod carrier_lifetimes;
 
 mod weighted_source_visits;
+
+mod bernstein_source_visits;
