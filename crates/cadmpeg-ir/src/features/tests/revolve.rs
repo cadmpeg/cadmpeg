@@ -191,16 +191,29 @@ fn revolve_setters_preserve_every_required_input_and_selection_state() {
         "first": {"kind": "to_face", "face": {"kind": "native", "value": "test:face:🦀"}},
         "second": {"kind": "angle", "angle": 1.25}
     });
-    let wire = |profile: Option<&serde_json::Value>, axis: Option<&serde_json::Value>, extent: Option<&serde_json::Value>| {
+    let wire = |profile: Option<&serde_json::Value>,
+                axis: Option<&serde_json::Value>,
+                extent: Option<&serde_json::Value>| {
         let mut wire = serde_json::json!({"solid": false,
             "face_maker_class": "Extension::FaceMakeré", "fuse_order": "feature_first",
             "allow_multi_profile_faces": true});
-        wire["state"] = serde_json::json!(if profile.is_some() && axis.is_some() && extent.is_some() {"resolved"} else {"unresolved"});
-        if profile.is_none() { wire["missing"] = serde_json::json!("profile"); }
-        else if axis.is_none() { wire["missing"] = serde_json::json!("axis"); }
-        else if extent.is_none() { wire["missing"] = serde_json::json!("extent"); }
+        wire["state"] =
+            serde_json::json!(if profile.is_some() && axis.is_some() && extent.is_some() {
+                "resolved"
+            } else {
+                "unresolved"
+            });
+        if profile.is_none() {
+            wire["missing"] = serde_json::json!("profile");
+        } else if axis.is_none() {
+            wire["missing"] = serde_json::json!("axis");
+        } else if extent.is_none() {
+            wire["missing"] = serde_json::json!("extent");
+        }
         for (key, value) in [("profile", profile), ("axis", axis), ("extent", extent)] {
-            if let Some(value) = value { wire[key] = value.clone(); }
+            if let Some(value) = value {
+                wire[key] = value.clone();
+            }
         }
         wire
     };
@@ -210,14 +223,29 @@ fn revolve_setters_preserve_every_required_input_and_selection_state() {
         let original_extent = (mask & 4 != 0).then_some(&extent);
         let original = wire(original_profile, original_axis, original_extent);
         for present in [false, true] {
-            let mut construction: RevolveConstruction = serde_json::from_value(original.clone()).unwrap();
+            let mut construction: RevolveConstruction =
+                serde_json::from_value(original.clone()).unwrap();
             let new_profile = present.then_some(&replacement);
-            construction.set_profile(new_profile.map(|value| serde_json::from_value::<PlanarProfileRef>(value.clone()).unwrap()));
-            assert_eq!(serde_json::to_value(&construction).unwrap(), wire(new_profile, original_axis, original_extent));
-            let mut construction: RevolveConstruction = serde_json::from_value(original.clone()).unwrap();
+            construction.set_profile(
+                new_profile.map(|value| {
+                    serde_json::from_value::<PlanarProfileRef>(value.clone()).unwrap()
+                }),
+            );
+            assert_eq!(
+                serde_json::to_value(&construction).unwrap(),
+                wire(new_profile, original_axis, original_extent)
+            );
+            let mut construction: RevolveConstruction =
+                serde_json::from_value(original.clone()).unwrap();
             let new_axis = present.then_some(&axis);
-            construction.set_axis(new_axis.map(|value| serde_json::from_value::<RevolutionAxis>(value.clone()).unwrap()));
-            assert_eq!(serde_json::to_value(&construction).unwrap(), wire(original_profile, new_axis, original_extent));
+            construction.set_axis(
+                new_axis
+                    .map(|value| serde_json::from_value::<RevolutionAxis>(value.clone()).unwrap()),
+            );
+            assert_eq!(
+                serde_json::to_value(&construction).unwrap(),
+                wire(original_profile, new_axis, original_extent)
+            );
         }
     }
 }
@@ -228,23 +256,33 @@ fn revolve_setters_move_unchanged_native_backing() {
         AngularTermination, FaceSelection, PathRef, PlanarProfileRef, RevolveConstruction,
         RevolveExtent,
     };
-    let make = || serde_json::from_value::<RevolveConstruction>(serde_json::json!({
-        "state": "resolved",
-        "profile": {"kind": "native", "value": "test:profile:é"},
-        "axis": {
-            "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
-            "direction": {"x": 0.0, "y": 0.0, "z": 1.0},
-            "reference": {"kind": "native", "value": "test:axis:é"}
-        },
-        "extent": {"kind": "one_sided", "termination": {
-            "kind": "to_face", "face": {"kind": "native", "value": "test:face:🦀"}
-        }},
-        "face_maker_class": "Extension::FaceMakeré"
-    })).unwrap();
+    let make = || {
+        serde_json::from_value::<RevolveConstruction>(serde_json::json!({
+            "state": "resolved",
+            "profile": {"kind": "native", "value": "test:profile:é"},
+            "axis": {
+                "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
+                "direction": {"x": 0.0, "y": 0.0, "z": 1.0},
+                "reference": {"kind": "native", "value": "test:axis:é"}
+            },
+            "extent": {"kind": "one_sided", "termination": {
+                "kind": "to_face", "face": {"kind": "native", "value": "test:face:🦀"}
+            }},
+            "face_maker_class": "Extension::FaceMakeré"
+        }))
+        .unwrap()
+    };
     let extent_address = |construction: &RevolveConstruction| {
         let Some(RevolveExtent::OneSided {
-            termination: AngularTermination::ToFace { face: FaceSelection::Native(face), .. },
-        }) = construction.extent() else { panic!("native extent fixture"); };
+            termination:
+                AngularTermination::ToFace {
+                    face: FaceSelection::Native(face),
+                    ..
+                },
+        }) = construction.extent()
+        else {
+            panic!("native extent fixture");
+        };
         face.as_str().as_ptr()
     };
     let mut construction = make();
@@ -255,7 +293,10 @@ fn revolve_setters_move_unchanged_native_backing() {
     let axis = axis.as_str().as_ptr();
     let extent = extent_address(&construction);
     construction.set_profile(None);
-    assert_eq!(construction.face_maker().unwrap().as_str().as_ptr(), face_maker);
+    assert_eq!(
+        construction.face_maker().unwrap().as_str().as_ptr(),
+        face_maker
+    );
     let Some(PathRef::Native(after)) = construction.axis().unwrap().reference.as_ref() else {
         panic!("axis retained");
     };
@@ -270,7 +311,10 @@ fn revolve_setters_move_unchanged_native_backing() {
     let profile = profile.as_str().as_ptr();
     let extent = extent_address(&construction);
     construction.set_axis(None);
-    assert_eq!(construction.face_maker().unwrap().as_str().as_ptr(), face_maker);
+    assert_eq!(
+        construction.face_maker().unwrap().as_str().as_ptr(),
+        face_maker
+    );
     let Some(PlanarProfileRef::Native(after)) = construction.profile() else {
         panic!("profile retained");
     };

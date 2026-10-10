@@ -142,7 +142,9 @@ fn cycle_walk_keeps_byte_order_stops_at_first_cycle_and_releases_graph_storage()
 fn cycle_dependencies_borrow_fixed_slots_in_declared_order() {
     let (ir, _, _) = cyclic_model();
     let definition = ir.model.procedural_curves[0].definition();
-    let crate::geometry::ProceduralCurveDefinition::TolerantIntersection { construction, .. } = definition else {
+    let crate::geometry::ProceduralCurveDefinition::TolerantIntersection { construction, .. } =
+        definition
+    else {
         panic!("intersection fixture");
     };
     let dependencies = super::curve_dependencies(definition);
@@ -151,7 +153,10 @@ fn cycle_dependencies_borrow_fixed_slots_in_declared_order() {
     }
     assert_eq!(dependencies[2], None);
     let mut absent = definition.clone();
-    let crate::geometry::ProceduralCurveDefinition::TolerantIntersection { parameterization, .. } = &mut absent else {
+    let crate::geometry::ProceduralCurveDefinition::TolerantIntersection {
+        parameterization, ..
+    } = &mut absent
+    else {
         panic!("intersection fixture");
     };
     *parameterization = None;
@@ -161,8 +166,11 @@ fn cycle_dependencies_borrow_fixed_slots_in_declared_order() {
         panic!("axis-revolution fixture");
     };
     let dependencies = super::surface_dependencies(definition);
-    assert!(std::ptr::eq(dependencies[0].unwrap(), payload.directrix().as_str()));
-    assert_eq!(&dependencies[1..], &[None,None]);
+    assert!(std::ptr::eq(
+        dependencies[0].unwrap(),
+        payload.directrix().as_str()
+    ));
+    assert_eq!(&dependencies[1..], &[None, None]);
 }
 
 #[test]
@@ -174,48 +182,75 @@ fn cycle_blend_fixed_slots_skip_absent_sides_before_the_original_cycle() {
         RollingBallRadiusSelector, RollingBallSide, RollingBallSupportSurface,
         VariableBlendSupportKind,
     };
-    for (first_present, second_present) in [(false,false),(true,false),(false,true),(true,true)] {
+    for (first_present, second_present) in
+        [(false, false), (true, false), (false, true), (true, true)]
+    {
         let (mut ir, curve, support) = cyclic_model();
         let other = ir.model.surfaces[1].id.clone();
         let side = |surface: Option<crate::ids::SurfaceId>| RollingBallSide {
-            support_kind:VariableBlendSupportKind::Surface,
-            surface:surface.map(|surface| RollingBallSupportSurface {
-                surface, parameter_ranges:[[None,None];2],
+            support_kind: VariableBlendSupportKind::Surface,
+            surface: surface.map(|surface| RollingBallSupportSurface {
+                surface,
+                parameter_ranges: [[None, None]; 2],
             }),
-            curve:None, pcurve:None, location:crate::math::Point3::new(0.0,0.0,0.0),
-            secondary_pcurve:None, extension:None,
+            curve: None,
+            pcurve: None,
+            location: crate::math::Point3::new(0.0, 0.0, 0.0),
+            secondary_pcurve: None,
+            extension: None,
         };
         let native = RollingBallConstruction {
-            revision:crate::scalar::PositiveI64::new(1).unwrap(),
-            sides:[side(first_present.then_some(other)), side(second_present.then_some(support.clone()))],
-            slice:curve.clone(), slice_range:[None,None], offsets:[0.0,0.0],
-            radius_selector:RollingBallRadiusSelector::None {}, u_range:[None,None],v_range:[None,None],
-            shape_prefix:0,parameters:[0.0,0.0],tail:0,
-            cache:RevisionCacheForm::Parameterization(RevisionSurfaceParameterization::default()),
-            discontinuities:std::array::from_fn(|_| Vec::new()),tail_flag:false,third:None,
-            tail_extensions:[0;3],
+            revision: crate::scalar::PositiveI64::new(1).unwrap(),
+            sides: [
+                side(first_present.then_some(other)),
+                side(second_present.then_some(support.clone())),
+            ],
+            slice: curve.clone(),
+            slice_range: [None, None],
+            offsets: [0.0, 0.0],
+            radius_selector: RollingBallRadiusSelector::None {},
+            u_range: [None, None],
+            v_range: [None, None],
+            shape_prefix: 0,
+            parameters: [0.0, 0.0],
+            tail: 0,
+            cache: RevisionCacheForm::Parameterization(RevisionSurfaceParameterization::default()),
+            discontinuities: std::array::from_fn(|_| Vec::new()),
+            tail_flag: false,
+            third: None,
+            tail_extensions: [0; 3],
         };
-        let definition = ProceduralSurfaceDefinition::Blend(BlendSurfacePayload::try_new(
-            [None,None],None,BlendRadiusLaw::constant(1.0).unwrap(),BlendCrossSection::Circular,
-            CacheContract::from_form(Some(Box::new(native))),
-        ).unwrap());
-        let ProceduralSurfaceDefinition::Blend(payload) = &definition else { panic!("blend fixture"); };
+        let definition = ProceduralSurfaceDefinition::Blend(
+            BlendSurfacePayload::try_new(
+                [None, None],
+                None,
+                BlendRadiusLaw::constant(1.0).unwrap(),
+                BlendCrossSection::Circular,
+                CacheContract::from_form(Some(Box::new(native))),
+            )
+            .unwrap(),
+        );
+        let ProceduralSurfaceDefinition::Blend(payload) = &definition else {
+            panic!("blend fixture");
+        };
         let native = payload.native().unwrap();
         let slots = super::surface_dependencies(&definition);
         assert_eq!(slots[0].is_some(), first_present);
         assert_eq!(slots[1].is_some(), second_present);
         for (slot, side) in slots[..2].iter().zip(&native.sides) {
             if let Some(surface) = &side.surface {
-                assert!(std::ptr::eq(slot.unwrap(),surface.surface.as_str()));
+                assert!(std::ptr::eq(slot.unwrap(), surface.surface.as_str()));
             }
         }
-        assert!(std::ptr::eq(slots[2].unwrap(),native.slice.as_str()));
+        assert!(std::ptr::eq(slots[2].unwrap(), native.slice.as_str()));
         ir.model.procedural_surfaces[0].edit_definition(|current| *current = definition);
         let expected = if second_present {
             format!("malformed curve/surface reference cycle: {support} -> {support}")
         } else {
             format!("malformed curve/surface reference cycle: {curve} -> {support} -> {curve}")
         };
-        assert!(matches!(admit_evaluation_cycles(&cadmpeg_test_support::service_decode_context(),&ir), Err(CodecError::Malformed(message)) if message == expected));
+        assert!(
+            matches!(admit_evaluation_cycles(&cadmpeg_test_support::service_decode_context(),&ir), Err(CodecError::Malformed(message)) if message == expected)
+        );
     }
 }

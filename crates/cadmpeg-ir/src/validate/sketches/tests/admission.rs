@@ -29,7 +29,8 @@ fn sketch_constraint_loci_preserve_borrowed_order_and_release_storage() {
             loci[count] = Some(locus);
             count += 1;
             Ok(())
-        }).unwrap();
+        })
+        .unwrap();
         assert_eq!(count, elements.len());
         for (actual, expected) in loci.iter().zip(elements) {
             assert!(std::ptr::eq(actual.unwrap(), expected));
