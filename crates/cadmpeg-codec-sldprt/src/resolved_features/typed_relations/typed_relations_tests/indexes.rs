@@ -112,6 +112,16 @@ fn linked_curve_endpoints_skip_the_feature_join() {
         endpoints.iter().map(|marker| marker.id()).collect::<Vec<_>>(),
         ["first", "second"]
     );
+    assert_eq!(ctx.resource_refusal(), None);
+    // This test-only charge proves the successful route left its probe armed.
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = ctx
+        .charge_work(1, "index SLDPRT curve feature markers")
+        .expect_err("linked endpoints must leave the feature-join probe armed")
+    else { panic!("work refusal"); };
+    assert_eq!(limit.operation, "index SLDPRT curve feature markers");
+    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+    assert_eq!(limit.additional, 1);
+    assert_eq!(ctx.resource_refusal(), Some(limit));
 }
 
 #[test]
@@ -134,6 +144,16 @@ fn curve_marker_offset_index_sorts_only_the_queried_group() {
         None,
     );
     assert!(index.next_after(&ctx, &missing_curve).unwrap().is_none());
+    assert_eq!(ctx.resource_refusal(), None);
+    // This test-only charge proves the missing group left its probe armed.
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = ctx
+        .charge_work(1, SORT)
+        .expect_err("an unrelated group must leave the sort probe armed")
+    else { panic!("work refusal"); };
+    assert_eq!(limit.operation, SORT);
+    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+    assert_eq!(limit.additional, 1);
+    assert_eq!(ctx.resource_refusal(), Some(limit));
     drop(_unrelated_sort_probe);
 
     let curve = point("curve", 0, Some("feature"));
