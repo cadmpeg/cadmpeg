@@ -38,6 +38,9 @@ pub(in super::super) fn resolved_profile_chains(
     sketch: &SketchId,
     emitted: &BTreeSet<u32>,
 ) -> Result<Vec<Vec<SketchEntityUse>>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(table) = &definition.trim_entities else {
         return resolved_segment_profile_chains(ctx, definition, sketch, emitted);
     };
@@ -86,6 +89,9 @@ fn resolved_segment_profile_chains(
     sketch: &SketchId,
     emitted: &BTreeSet<u32>,
 ) -> Result<Vec<Vec<SketchEntityUse>>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(table) = definition
         .segments
         .as_ref()
@@ -153,11 +159,14 @@ fn profile_chains(
         .with_storage(|| ctx.alloc_filled(edges.len(), true, "creo profile remaining rows"))?;
     let mut cursor = 0;
     let mut profiles = Vec::new();
-    while let Some(offset) = ctx.position_by(
-        &remaining[cursor..],
-        |present| Ok(*present),
-        "creo profile components",
-    )? {
+    while cursor < remaining.len() {
+        let Some(offset) = ctx.position_by(
+            &remaining[cursor..],
+            |present| Ok(*present),
+            "creo profile components",
+        )? else {
+            break;
+        };
         let seed = cursor + offset;
         cursor = seed + 1;
         let mut component_storage = ctx.reserve_scoped(0, "creo profile component storage")?;
@@ -170,10 +179,13 @@ fn profile_chains(
         let mut vertices = BTreeSet::new();
         let mut endpoints = BTreeSet::new();
         let mut invalid_degree = false;
-        while let Some(index) = ctx.next_charged(
-            &mut std::iter::from_fn(|| frontier.pop()),
-            "creo profile frontier visits",
-        )? {
+        while !frontier.is_empty() {
+            let Some(index) = ctx.next_charged(
+                &mut std::iter::from_fn(|| frontier.pop()),
+                "creo profile frontier visits",
+            )? else {
+                break;
+            };
             remaining[index] = false;
             for vertex in edges[index].vertices {
                 if !component_storage.with_storage(|| {
@@ -339,6 +351,9 @@ pub(in super::super) fn solver_only_section_entity_offset(
     definition: &crate::feature::definitions::FeatureDefinition,
     entity_id: u32,
 ) -> Result<Option<usize>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let segment_id_exists = definition
         .segments
         .as_ref()
@@ -803,6 +818,8 @@ pub(in super::super) fn solver_only_section_entity_family(
 
 #[cfg(test)]
 mod tests {
+    mod admission_visits;
+
     use super::{
         resolved_profile_chains, solver_only_section_entities, solver_only_section_entity_family,
         unique_section_incidence_curve_family, SectionEntityIncidenceFamily,
