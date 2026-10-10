@@ -72,23 +72,46 @@ fn requested_cubic_mixed_third_and_offset_second_follow_polynomial_coefficients(
 fn requested_third_charges_only_real_additional_basis_and_pole_visits() {
     let surface = cubic();
     // Third adds two recurrence rows (2+3+4 each), then four exact
-    // sums with one visit per pole. No old homogeneous sum is changed.
+    // sums with one visit per pole. Lower derivatives also walk once.
     assert_eq!(crate::eval::surface_nurbs::nurbs_surface_third_evaluation_cost([3, 3]), Some(82));
     assert_eq!(crate::eval::surface_nurbs::nurbs_surface_third_evaluation_cost([1, 1]), Some(0));
-    // The initial five-pass estimate omitted product_sum replay and terminal
-    // iterator probes. Retain its 556 cap as a refusal, rather than raise it.
+    // Keep the same cubic input and556 cap after removing the repeated
+    // lower-order coordinate walks. Each requested order now fits.
     for request in [SurfaceRequest::Second, SurfaceRequest::Third] {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 556;
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let scratch = Scratch::new(&ctx);
+        let result = crate::eval::surface_nurbs::nurbs_surface_requested_jet(
+            &scratch, &surface, 0.0, 0.0, request,
+        ).unwrap();
+        assert!(result.jet.first.is_ok());
+        assert_eq!(result.jet.second.unwrap(), [crate::features::FiniteVector3::ZERO; 3]);
+        if request == SurfaceRequest::Third {
+            for (actual, expected) in result.higher.third().unwrap().into_iter().zip([6.0, 4.0, 6.0, 24.0]) {
+                assert!((actual.z - expected).abs() <= EPS_THIRD_QUOTIENT);
+            }
+        } else { assert_eq!(result.higher.third(), Err(EvaluationFailure::NoValue)); }
+        assert_eq!(ctx.resource_refusal(), None);
+        drop(scratch);
+        ctx.finish_session().unwrap();
+    }
+    // Two basis constructions:2*(4 initialization+1 first write+6 cells
+    // +3 row ends)=28; two finite inspections add8. Cap36 therefore refuses
+    // before the first actual homogeneous source advance, without replay.
+    for request in [SurfaceRequest::Second, SurfaceRequest::Third] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 36;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let scratch = Scratch::new(&ctx);
         let Err(EvaluationFailure::ResourceLimit(original)) = crate::eval::surface_nurbs::nurbs_surface_requested_jet(&scratch, &surface, 0.0, 0.0, request) else {
-            panic!("existing homogeneous pole traversal must refuse");
+            panic!("first actual homogeneous pole traversal must refuse");
         };
         assert_eq!(original.operation, "IR homogeneous pole traversal");
         assert_eq!(original.dimension, ResourceDimension::WorkUnits);
-        assert_eq!((original.limit, original.used, original.additional), (556, 556, 1));
+        assert_eq!((original.limit, original.used, original.additional), (36, 36, 1));
         assert!(matches!(crate::eval::surface_nurbs::nurbs_surface_requested_jet(&scratch, &surface, f64::NAN, 0.0, request), Err(EvaluationFailure::ResourceLimit(limit)) if limit == original));
         drop(scratch);
         assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original));
@@ -175,9 +198,9 @@ fn requested_nurbs_first_preserves_point_and_partials_below_second_work_refusal(
     let mut policy = DecodePolicy::service();
     // Two cubic basis rows use 28 advances and finite inspection uses eight.
     // Each first-derivative row uses nine lower-basis and four output
-    // advances: 36 + 2*13 = 62. Three sums each have at most nine passes
-    // of sixteen poles and one terminal probe: 62 + 3*9*17 = 521.
-    // Keep the existing 556 second-order refusal cap.
+    // advances:36+2*13=62. The point sum has at most nine passes of16
+    // poles and one terminal probe; each derivative has one16-pole walk.
+    // The bound is62+9*17+2*16=247. Keep the original556 cap.
     policy.limits.max_work_units = 556;
     policy.limits.max_retained_bytes = 0;
     let arena = DecodeArena::new();

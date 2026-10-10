@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
 
-fn small_span(rational: bool, fourth_amplitude: f64) -> NurbsSurface {
+pub(super) fn small_span(rational: bool, fourth_amplitude: f64) -> NurbsSurface {
     let width = 2.0_f64.powi(-260);
     let amplitude = 2.0_f64.powi(1000);
     let u = NurbsSurfaceAxis::new(4, vec![0.0, 0.0, 0.0, 0.0, 0.0, width, width, width, width, width], false);
@@ -51,8 +51,15 @@ fn missing_rational_raw_state_does_not_claim_nonfinite_fourth() {
     let scratch = Scratch::new(EvaluationAdmission::Standard);
     let fourth = nurbs_surface_requested_jet(&scratch, &surface, 0.0, 0.5, SurfaceRequest::Fourth).unwrap();
     assert_eq!(fourth.jet.first, Err(EvaluationFailure::NonFinite(())));
-    assert_eq!(fourth.higher.third(), Err(EvaluationFailure::NoValue));
-    assert_eq!(fourth.higher.fourth(), Err(EvaluationFailure::NoValue));
+    // The genuine normalized raw owner now supplies the missing data.
+    // S=(A*u/h,B*(u/h)^4,2*v/(1+v)); derive each higher order directly.
+    let third = fourth.higher.third().unwrap();
+    for actual in &third[..3] { assert_eq!(*actual, FiniteVector3::ZERO); }
+    close(third[3].get(), Vector3::new(0.0, 0.0, 12.0 / 1.5_f64.powi(4)));
+    let higher = fourth.higher.fourth().unwrap();
+    close(higher[0].get(), Vector3::new(0.0, 24.0 * 2.0_f64.powi(40), 0.0));
+    for actual in &higher[1..4] { assert_eq!(*actual, FiniteVector3::ZERO); }
+    close(higher[4].get(), Vector3::new(0.0, 0.0, -48.0 / 1.5_f64.powi(5)));
     let lower = nurbs_surface_requested_jet(&scratch, &surface, 0.0, 0.5, SurfaceRequest::Second).unwrap();
     assert_eq!(fourth.jet.point, lower.jet.point); assert_eq!(fourth.jet.first, lower.jet.first);
     assert_eq!(fourth.jet.second, lower.jet.second);
@@ -63,7 +70,7 @@ fn polynomial_fourth_normalized_stage_uses_real_38_visit_boundary() {
     let surface = small_span(false, 2.0_f64.powi(-1000));
     // Two support5 initializations10, four rows4, cells2+3+4+5=14,
     // and one ten-pole traversal:38. The other axis is fixed support2.
-    for (orders, cap) in [polynomial_higher::Orders::Fourth, polynomial_higher::Orders::ThirdAndFourth]
+    for (orders, cap) in [higher::Orders::Fourth, higher::Orders::ThirdAndFourth]
         .into_iter().flat_map(|orders| [37, 38].map(|cap| (orders, cap))) {
         let mut policy = DecodePolicy::service(); policy.limits.max_retained_bytes = 0;
         let arena = DecodeArena::new(); let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
@@ -72,19 +79,19 @@ fn polynomial_fourth_normalized_stage_uses_real_38_visit_boundary() {
         assert!(matches!(local.first(&scratch), Err(EvaluationFailure::NonFinite(()))));
         let budget = ctx.work_budget(cap);
         let actual = EvaluationAdmission::Decode(&ctx).within_work_slice(&budget, |admission|
-            polynomial_higher::evaluate(&Scratch::new(admission), &local, orders));
+            higher::evaluate(&Scratch::new(admission), &local, orders));
         assert_eq!(budget.consumed(), usize::try_from(cap).unwrap());
         let original = if cap == 37 {
             let Err(EvaluationFailure::ResourceLimit(limit)) = actual else { panic!("last real support visit must refuse"); };
             assert_eq!(limit.operation, "geometry evaluation work slice");
             assert_eq!(limit.dimension, ResourceDimension::Codec("geometry evaluation work slice"));
             assert_eq!((limit.limit, limit.used, limit.additional), (0, 0, 1));
-            assert!(matches!(polynomial_higher::evaluate(&scratch, &local, orders), Err(EvaluationFailure::ResourceLimit(sticky)) if sticky == limit));
+            assert!(matches!(higher::evaluate(&scratch, &local, orders), Err(EvaluationFailure::ResourceLimit(sticky)) if sticky == limit));
             Some(limit)
         } else {
             let actual = actual.unwrap();
             assert_eq!(actual.fourth().unwrap().map(|vector| vector.components()), expected_fourth());
-            if matches!(orders, polynomial_higher::Orders::ThirdAndFourth) {
+            if matches!(orders, higher::Orders::ThirdAndFourth) {
                 assert_eq!(actual.third().unwrap(), [FiniteVector3::ZERO; 4]);
             } else { assert_eq!(actual.third(), Err(EvaluationFailure::NoValue)); }
             None
@@ -119,14 +126,14 @@ fn normalized_polynomial_fourth_follows_all_tensor_coefficients_and_final_overfl
         for (u, v) in [(0.0, 0.0), (0.3, 0.4)] {
             let scratch = Scratch::new(admission);
             let local = nurbs_surface_local(&scratch, &surface, u, v).unwrap();
-            for orders in [polynomial_higher::Orders::Fourth, polynomial_higher::Orders::ThirdAndFourth] {
-                let actual = polynomial_higher::evaluate(&scratch, &local, orders).unwrap();
+            for orders in [higher::Orders::Fourth, higher::Orders::ThirdAndFourth] {
+                let actual = higher::evaluate(&scratch, &local, orders).unwrap();
                 let fourth = actual.fourth().unwrap().map(|vector| vector.components());
                 for (actual, expected) in fourth.into_iter().zip([24.0, 12.0, 12.0, 24.0, 120.0]) {
                     close(Vector3::new(actual[0].get(), actual[1].get(), actual[2].get()),
                         Vector3::new(0.0, 0.0, expected));
                 }
-                if matches!(orders, polynomial_higher::Orders::ThirdAndFourth) {
+                if matches!(orders, higher::Orders::ThirdAndFourth) {
                     // S.z=u^4+2*u^3*v+3*u^2*v^2+4*u*v^3+5*v^4.
                     for (actual, expected) in actual.third().unwrap().into_iter().zip([
                         24.0 * u + 12.0 * v, 12.0 * u + 12.0 * v,
@@ -140,7 +147,7 @@ fn normalized_polynomial_fourth_follows_all_tensor_coefficients_and_final_overfl
         let overflow = small_span(false, f64::MAX);
         let scratch = Scratch::new(admission);
         let local = nurbs_surface_local(&scratch, &overflow, 0.0, 0.5).unwrap();
-        let actual = polynomial_higher::evaluate(&scratch, &local, polynomial_higher::Orders::ThirdAndFourth).unwrap();
+        let actual = higher::evaluate(&scratch, &local, higher::Orders::ThirdAndFourth).unwrap();
         assert_eq!(actual.fourth(), Err(EvaluationFailure::NonFinite(())));
         assert_eq!(actual.third().unwrap(), [FiniteVector3::ZERO; 4]);
     }

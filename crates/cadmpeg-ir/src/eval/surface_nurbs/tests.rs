@@ -143,3 +143,4 @@ fn actual_fourth_reuses_third_state_with_exact_additional_pole_visits() {
 
 mod polynomial_zero;
 mod polynomial_extended;
+mod rational_higher;
