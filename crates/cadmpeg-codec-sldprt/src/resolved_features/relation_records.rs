@@ -2230,6 +2230,10 @@ fn bind_dynamic_line_relation(
     if first_valid || second_valid {
         return Ok(());
     }
+    if first_operand.entity_index == second_operand.entity_index {
+        clear_relation_operands(ctx, relation)?;
+        return Ok(());
+    }
     let (first_index, second_index) = (first_operand.entity_index, second_operand.entity_index);
     let Some(first_markers) = dynamic_solver_line(ctx, entities, first_index)? else {
         clear_relation_operands(ctx, relation)?;
@@ -2239,10 +2243,6 @@ fn bind_dynamic_line_relation(
         clear_relation_operands(ctx, relation)?;
         return Ok(());
     };
-    if first_operand.entity_index == second_operand.entity_index {
-        clear_relation_operands(ctx, relation)?;
-        return Ok(());
-    }
     let [Some(first_line_first), Some(first_line_second)] = first_markers.map(|marker| {
         marker
             .coordinates_m

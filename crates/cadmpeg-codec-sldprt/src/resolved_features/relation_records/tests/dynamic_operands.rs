@@ -600,3 +600,123 @@ fn strict_point_match_refuses_exact_storage_boundaries() {
         assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
     }
 }
+
+#[test]
+fn equal_line_indices_skip_solver_scans_and_keep_native_references() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let (points, mut expected) = explicit_point_relation();
+    expected.operands[1].entity_index = expected.operands[0].entity_index;
+    for operand in &mut expected.operands {
+        operand.kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x812a).unwrap());
+        operand.entity_ref = None;
+    }
+    let roster = [&points[0], &points[1]];
+    for angle in [false, true] {
+        expected.family = if angle { FeatureInputRelationFamily::Angle } else { FeatureInputRelationFamily::LineLineDistance };
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 2 * 64;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        for _ in 0..64 {
+            let mut relation = expected.clone();
+            super::super::bind_dynamic_line_relation(&ctx, &mut relation, &roster, 1.0, angle).unwrap();
+            assert_eq!(relation, expected);
+        }
+        assert_eq!(ctx.resource_refusal(), None);
+    }
+    let native = sketch_marker("a", 0, 0, crate::records::SketchInputKind::LineOrCircle, None);
+    expected.operands[0].entity_ref = Some("a".into());
+    for angle in [false, true] {
+        expected.family = if angle { FeatureInputRelationFamily::Angle } else { FeatureInputRelationFamily::LineLineDistance };
+        let mut policy = DecodePolicy::service();
+        // One visited native marker and both one-byte reference operands.
+        policy.limits.max_work_units = 3;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut relation = expected.clone();
+        super::super::bind_dynamic_line_relation(&ctx, &mut relation, &[&native], 1.0, angle).unwrap();
+        assert_eq!(relation, expected);
+        assert_eq!(ctx.resource_refusal(), None);
+    }
+}
+
+#[test]
+fn equal_line_indices_leave_solver_probe_armed() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let (points, mut expected) = explicit_point_relation();
+    expected.family = FeatureInputRelationFamily::LineLineDistance;
+    expected.operands[1].entity_index = expected.operands[0].entity_index;
+    for operand in &mut expected.operands {
+        operand.kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x812a).unwrap());
+        operand.entity_ref = None;
+    }
+    let roster = [&points[0], &points[1]];
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits, "select SLDPRT relation line points", None,
+    );
+    let mut relation = expected.clone();
+    super::super::bind_dynamic_line_relation(&ctx, &mut relation, &roster, 1.0, false).unwrap();
+    assert_eq!(relation, expected);
+    assert_eq!(ctx.resource_refusal(), None);
+    let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, "select SLDPRT relation line points")
+    else { panic!("equal line indices must leave solver probe armed"); };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(limit.operation, "select SLDPRT relation line points");
+    assert_eq!(limit.used, 2);
+    assert_eq!(limit.additional, 1);
+    assert_eq!(ctx.resource_refusal(), Some(limit));
+    assert!(matches!(ctx.charge_work(0, "after unused line solver probe"),
+        Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    drop(probe);
+}
+
+#[test]
+fn equal_line_index_clear_refusal_stays_fused() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let (points, mut expected) = explicit_point_relation();
+    expected.operands[1].entity_index = expected.operands[0].entity_index;
+    for operand in &mut expected.operands {
+        operand.kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x812a).unwrap());
+        operand.entity_ref = None;
+    }
+    for angle in [false, true] {
+        expected.family = if angle { FeatureInputRelationFamily::Angle } else { FeatureInputRelationFamily::LineLineDistance };
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 1;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut relation = expected.clone();
+        let Err(CodecError::ResourceLimit(limit)) = super::super::bind_dynamic_line_relation(
+            &ctx, &mut relation, &[&points[0], &points[1]], 1.0, angle,
+        ) else { panic!("equal line index clearing must refuse at one unit"); };
+        assert_eq!(relation, expected);
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "clear SLDPRT relation operands");
+        assert_eq!(limit.limit, 1);
+        assert_eq!(limit.used, 0);
+        assert_eq!(limit.additional, 2);
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+        assert!(matches!(ctx.charge_work(0, "after equal line index refusal"),
+            Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    }
+}
