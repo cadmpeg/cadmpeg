@@ -5,59 +5,31 @@ use super::super::{a5_knots, a5_nurbs_curves};
 use cadmpeg_core::decode::{DecodeContext, ResourceDimension};
 use cadmpeg_core::CodecError;
 
-fn work_refusals<T>(
-    run: impl Fn(&DecodeContext<'_>) -> Result<T, CodecError>,
-) -> std::collections::HashSet<&'static str> {
-    let mut operations = std::collections::HashSet::new();
-    let mut cap = 0;
-    for _ in 0..1024 {
-        match crate::test_support::with_work_limit(cap, &run) {
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::WorkUnits =>
-            {
-                operations.insert(limit.operation);
-                cap = limit
-                    .used
-                    .checked_add(limit.additional)
-                    .expect("finite fixture work");
-            }
-            Ok(_) => return operations,
-            Err(error) => panic!("unexpected refusal: {error}"),
-        }
-    }
-    panic!("fixture did not finish its admitted work");
-}
-
 fn require_sticky_work_refusal<T>(
     operation: &str,
     run: impl Fn(&DecodeContext<'_>) -> Result<T, CodecError>,
 ) {
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::WorkUnits,
-        operation,
-        |cap| {
-            crate::test_support::with_work_limit(cap, |ctx| {
-                let result = run(ctx);
-                if let Err(CodecError::ResourceLimit(limit)) = &result {
-                    assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
-                }
-                result
-            })
-        },
-    );
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
+    let error = crate::test_support::with_work_refusal(operation, |ctx| {
+        let result = run(ctx);
+        if let Err(CodecError::ResourceLimit(limit)) = &result {
+            assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+        }
+        result
+    });
+    assert!(matches!(error, Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::WorkUnits && limit.operation == operation));
 }
 
 #[test]
 fn a5_knots_refuse_knot_visit_and_expansion_work() {
-    let operations = work_refusals(|ctx| a5_knots(ctx, &[0.0, 1.0], 1));
-    for operation in ["catia_a5_knot_expansion_scan", "catia_a5_expanded_knots"] {
-        assert!(
-            operations.contains(operation),
-            "missing work refusal for {operation}"
-        );
-    }
+    require_sticky_work_refusal("catia_a5_knot_expansion_scan", |ctx| {
+        a5_knots(ctx, &[0.0, 1.0], 1)
+    });
+    assert_eq!(
+        crate::test_support::with_work_limit(2, |ctx| a5_knots(ctx, &[0.0, 1.0], 1))
+            .expect("two distinct-knot visits"),
+        Some((vec![0.0, 0.0, 1.0, 1.0], 2))
+    );
     assert_eq!(
         crate::test_support::with_service_context(|ctx| a5_knots(ctx, &[0.0, 1.0], 1))
             .expect("service work"),
@@ -68,16 +40,9 @@ fn a5_knots_refuse_knot_visit_and_expansion_work() {
 #[test]
 fn a5_nurbs_knots_refuse_distinct_knot_traversal_work() {
     let bytes = super::curve_and_guide_records::a5_nurbs_curve_stream();
-    let operations = work_refusals(|ctx| a5_nurbs_curves(ctx, &bytes));
-    for operation in [
-        "catia_a5_nurbs_knot_expansion_scan",
-        "catia_a5_nurbs_expanded_knots",
-    ] {
-        assert!(
-            operations.contains(operation),
-            "missing work refusal for {operation}"
-        );
-    }
+    require_sticky_work_refusal("catia_a5_nurbs_knot_expansion_scan", |ctx| {
+        a5_nurbs_curves(ctx, &bytes)
+    });
     assert_eq!(
         crate::test_support::with_service_context(|ctx| a5_nurbs_curves(ctx, &bytes))
             .expect("service work")
@@ -167,7 +132,12 @@ fn a5_jet_preflight_materialization_and_projection_refuse_caller_work() {
         &[
             "catia_a5_limit_jet_projection",
             "catia_a5_jet_knot_projection",
-            "catia_quintic_control_visits",
+            "catia_quintic_knot_finiteness",
+            "catia_quintic_points_finiteness",
+            "catia_quintic_first_finiteness",
+            "catia_quintic_second_finiteness",
+            "catia_quintic_span_visits",
+            "catia_quintic_knot_expansion",
         ],
     );
 }
