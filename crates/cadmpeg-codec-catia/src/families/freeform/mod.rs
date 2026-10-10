@@ -428,18 +428,25 @@ pub(super) fn try_decode_freeform_surfaces(
             Ok(records) => records,
             Err(error) => return Some(Err(error)),
         };
-        let mut b5_graph = match crate::families::b5::graph::parse_from_records_budgeted(
-            ctx,
-            object_source,
-            &selected_object_records,
-            &object_frames,
-            true,
-            Some(&selection_budget),
-            refusal,
-        ) {
-            Ok(graph) => graph,
-            Err(error) => return Some(Err(error)),
-        };
+        let (b5_graph_storage, mut b5_graph) =
+            match ctx.with_scoped_storage("catia_freeform_b5_graph_workspace", || {
+                crate::families::b5::graph::parse_from_records_budgeted(
+                    ctx,
+                    object_source,
+                    &selected_object_records,
+                    &object_frames,
+                    true,
+                    Some(&selection_budget),
+                    refusal,
+                )
+            }) {
+                Ok((Some(graph), storage)) => (Some(storage), Some(graph)),
+                Ok((None, storage)) => {
+                    drop(storage);
+                    (None, None)
+                }
+                Err(error) => return Some(Err(error)),
+            };
         let face_terminal_controls = admitted!(b5_graph
             .as_ref()
             .map(|graph| {
@@ -463,13 +470,16 @@ pub(super) fn try_decode_freeform_surfaces(
                 &graph.faces
             )))
         } else {
-            let records = match crate::families::b5::graph::typed_face_records_from_records(
-                ctx,
-                &census_object_records,
-            ) {
-                Ok(records) => records,
-                Err(error) => return Some(Err(error)),
-            };
+            let (_face_storage, records) =
+                match ctx.with_scoped_storage("catia_freeform_face_census_workspace", || {
+                    crate::families::b5::graph::typed_face_records_from_records(
+                        ctx,
+                        &census_object_records,
+                    )
+                }) {
+                    Ok((records, storage)) => (storage, records),
+                    Err(error) => return Some(Err(error)),
+                };
             if records.is_empty() {
                 None
             } else {
@@ -480,13 +490,16 @@ pub(super) fn try_decode_freeform_surfaces(
             Some(graph) => admitted!(typed_multi_surface_face_count(ctx, graph)),
             None => 0,
         };
-        let typed_edge_records = match crate::families::b5::graph::typed_edge_records_from_records(
-            ctx,
-            &census_object_records,
-        ) {
-            Ok(records) => records,
-            Err(error) => return Some(Err(error)),
-        };
+        let (typed_edge_records_storage, typed_edge_records) =
+            match ctx.with_scoped_storage("catia_freeform_edge_census_workspace", || {
+                crate::families::b5::graph::typed_edge_records_from_records(
+                    ctx,
+                    &census_object_records,
+                )
+            }) {
+                Ok((records, storage)) => (storage, records),
+                Err(error) => return Some(Err(error)),
+            };
         let edge_terminal_controls = admitted!((!typed_edge_records.is_empty())
             .then(|| {
                 Ok::<_, cadmpeg_core::CodecError>(
@@ -509,14 +522,18 @@ pub(super) fn try_decode_freeform_surfaces(
                 )
             })
             .transpose());
-        let typed_vertex_incidence_links =
-            match crate::families::b5::graph::typed_vertex_incidence_links_from_records(
-                ctx,
-                &census_object_records,
-            ) {
-                Ok(records) => records,
-                Err(error) => return Some(Err(error)),
-            };
+        drop(typed_edge_records);
+        drop(typed_edge_records_storage);
+        let (typed_vertex_incidence_links_storage, typed_vertex_incidence_links) = match ctx
+            .with_scoped_storage("catia_freeform_vertex_link_census_workspace", || {
+                crate::families::b5::graph::typed_vertex_incidence_links_from_records(
+                    ctx,
+                    &census_object_records,
+                )
+            }) {
+            Ok((records, storage)) => (storage, records),
+            Err(error) => return Some(Err(error)),
+        };
         let vertex_incidence_terminal_controls = admitted!((!typed_vertex_incidence_links
             .is_empty())
         .then(|| {
@@ -536,17 +553,22 @@ pub(super) fn try_decode_freeform_surfaces(
             )
         })
         .transpose());
+        drop(typed_vertex_incidence_links);
+        drop(typed_vertex_incidence_links_storage);
         let resolved_loop_metadata_counts = match b5_graph.as_ref() {
             Some(graph) => Some(admitted!(loop_metadata_counts(ctx, &graph.loops))),
             None => None,
         };
-        let typed_loop_records = match crate::families::b5::graph::typed_loop_records_from_records(
-            ctx,
-            &census_object_records,
-        ) {
-            Ok(records) => records,
-            Err(error) => return Some(Err(error)),
-        };
+        let (typed_loop_records_storage, typed_loop_records) =
+            match ctx.with_scoped_storage("catia_freeform_loop_census_workspace", || {
+                crate::families::b5::graph::typed_loop_records_from_records(
+                    ctx,
+                    &census_object_records,
+                )
+            }) {
+                Ok((records, storage)) => (storage, records),
+                Err(error) => return Some(Err(error)),
+            };
         let typed_loop_metadata_counts = admitted!((!typed_loop_records.is_empty())
             .then(|| {
                 let mut unresolved = 0usize;
@@ -569,6 +591,8 @@ pub(super) fn try_decode_freeform_surfaces(
                 ))
             })
             .transpose());
+        drop(typed_loop_records);
+        drop(typed_loop_records_storage);
         let class_21_suffix_scalar_count = admitted!(b5_graph
             .as_ref()
             .map(|graph| {
@@ -581,21 +605,25 @@ pub(super) fn try_decode_freeform_surfaces(
             })
             .transpose());
         let typed_class_21_pcurve_count =
-            match crate::families::b5::graph::typed_class_21_pcurves_from_records(
-                ctx,
-                &census_object_records,
-            ) {
-                Ok(pcurves) => pcurves.len(),
+            match ctx.with_scoped_storage("catia_freeform_class21_census_workspace", || {
+                crate::families::b5::graph::typed_class_21_pcurves_from_records(
+                    ctx,
+                    &census_object_records,
+                )
+            }) {
+                Ok(pcurves) => pcurves.0.len(),
                 Err(error) => return Some(Err(error)),
             };
-        let typed_parameter_incidences =
-            match crate::families::b5::graph::typed_parameter_incidences_from_records(
-                ctx,
-                &census_object_records,
-            ) {
-                Ok(records) => records,
-                Err(error) => return Some(Err(error)),
-            };
+        let (typed_parameter_incidences_storage, typed_parameter_incidences) = match ctx
+            .with_scoped_storage("catia_freeform_parameter_census_workspace", || {
+                crate::families::b5::graph::typed_parameter_incidences_from_records(
+                    ctx,
+                    &census_object_records,
+                )
+            }) {
+            Ok((records, storage)) => (storage, records),
+            Err(error) => return Some(Err(error)),
+        };
         let typed_parameter_incidence_member_count = admitted!(ctx
             .admit_iter(
                 &typed_parameter_incidences,
@@ -605,14 +633,19 @@ pub(super) fn try_decode_freeform_surfaces(
         .map(|(_, incidence)| incidence)
         .map(|incidence| incidence.lanes.len())
         .sum();
-        let typed_vertex_incidence_rosters =
-            match crate::families::b5::graph::typed_vertex_incidence_rosters_from_records(
-                ctx,
-                &census_object_records,
-            ) {
-                Ok(records) => records,
-                Err(error) => return Some(Err(error)),
-            };
+        let typed_parameter_incidence_count = typed_parameter_incidences.len();
+        drop(typed_parameter_incidences);
+        drop(typed_parameter_incidences_storage);
+        let (typed_vertex_incidence_rosters_storage, typed_vertex_incidence_rosters) = match ctx
+            .with_scoped_storage("catia_freeform_vertex_roster_census_workspace", || {
+                crate::families::b5::graph::typed_vertex_incidence_rosters_from_records(
+                    ctx,
+                    &census_object_records,
+                )
+            }) {
+            Ok((records, storage)) => (storage, records),
+            Err(error) => return Some(Err(error)),
+        };
         let typed_vertex_incidence_roster_member_count = admitted!(ctx
             .admit_iter(
                 &typed_vertex_incidence_rosters,
@@ -621,8 +654,15 @@ pub(super) fn try_decode_freeform_surfaces(
             .map_err(cadmpeg_core::CodecError::from))
         .map(|(_, roster)| roster.len())
         .sum();
+        let typed_vertex_incidence_roster_count = typed_vertex_incidence_rosters.len();
+        drop(typed_vertex_incidence_rosters);
+        drop(typed_vertex_incidence_rosters_storage);
+        let mut fallback_surface_storage =
+            admitted!(ctx.reserve_scoped(0, "catia_freeform_fallback_carrier_storage"));
         let mut fallback_surfaces = if b5_graph.is_none() {
-            match freeform_surface_carriers(ctx, &scan.data, &consolidated_records, refusal) {
+            match fallback_surface_storage.with_storage(|| {
+                freeform_surface_carriers(ctx, &scan.data, &consolidated_records, refusal)
+            }) {
                 Ok(surfaces) => Some(surfaces),
                 Err(error) => return Some(Err(error)),
             }
@@ -723,28 +763,39 @@ pub(super) fn try_decode_freeform_surfaces(
         let b5_faces = b5_graph
             .as_ref()
             .map_or(&[][..], |graph| graph.faces.as_slice());
-        let b5_face_object_ids = admitted!(ctx.collect_vec(
-            admitted!(ctx.admit_iter(b5_faces, "catia_freeform_b5_face_id_source_visits"))
-                .map(|face| face.object_id),
-            "catia_freeform_b5_face_ids"
+        let b5_face_object_ids = admitted!(ctx.with_scoped_storage(
+            "catia_freeform_b5_face_id_workspace",
+            || ctx.collect_vec(
+                ctx.admit_iter(b5_faces, "catia_freeform_b5_face_id_source_visits")?
+                    .map(|face| face.object_id),
+                "catia_freeform_b5_face_ids",
+            )
         ));
-        let b5_loop_object_ids = if let Some(graph) = &b5_graph {
-            admitted!(ctx.collect_vec(
-                admitted!(ctx.admit_iter(&graph.loops, "catia_freeform_b5_loop_id_source_visits"))
-                    .map(|(object_id, _)| *object_id),
-                "catia_freeform_b5_loop_ids"
-            ))
-        } else {
-            Vec::new()
-        };
-        let census_face_object_ids = admitted!(ctx.collect_vec(
-            admitted!(ctx.admit_iter(
-                &census_object_records,
-                "catia_freeform_census_face_id_source_visits"
-            ))
-            .filter(|record| record.class == B5_FACE_CLASS)
-            .map(|record| record.object_id),
-            "catia_freeform_census_face_ids"
+        let b5_loop_object_ids = admitted!(ctx.with_scoped_storage(
+            "catia_freeform_b5_loop_id_workspace",
+            || {
+                if let Some(graph) = &b5_graph {
+                    ctx.collect_vec(
+                        ctx.admit_iter(&graph.loops, "catia_freeform_b5_loop_id_source_visits")?
+                            .map(|(object_id, _)| *object_id),
+                        "catia_freeform_b5_loop_ids",
+                    )
+                } else {
+                    Ok(Vec::new())
+                }
+            }
+        ));
+        let census_face_object_ids = admitted!(ctx.with_scoped_storage(
+            "catia_freeform_census_face_id_workspace",
+            || ctx.collect_vec(
+                ctx.admit_iter(
+                    &census_object_records,
+                    "catia_freeform_census_face_id_source_visits"
+                )?
+                .filter(|record| record.class == B5_FACE_CLASS)
+                .map(|record| record.object_id),
+                "catia_freeform_census_face_ids",
+            )
         ));
         let mut topology_ir = CadIr::empty();
         let mut topology_annotations =
@@ -776,6 +827,7 @@ pub(super) fn try_decode_freeform_surfaces(
                 Ok(transferred) => transferred,
                 Err(error) => return Some(Err(error)),
             };
+            drop(b5_graph_storage);
             if transferred {
                 match neutral_model_is_admissible(ctx, &mut topology_ir, &unknowns) {
                     Ok(admissible) => admissible,
@@ -785,6 +837,7 @@ pub(super) fn try_decode_freeform_surfaces(
                 false
             }
         } else {
+            drop(b5_graph_storage);
             false
         };
         if topology_transferred {
@@ -795,8 +848,9 @@ pub(super) fn try_decode_freeform_surfaces(
             let surfaces = match fallback_surfaces.take() {
                 Some(surfaces) => surfaces,
                 None => {
-                    match freeform_surface_carriers(ctx, &scan.data, &consolidated_records, refusal)
-                    {
+                    match fallback_surface_storage.with_storage(|| {
+                        freeform_surface_carriers(ctx, &scan.data, &consolidated_records, refusal)
+                    }) {
                         Ok(surfaces) => surfaces,
                         Err(error) => return Some(Err(error)),
                     }
@@ -830,11 +884,17 @@ pub(super) fn try_decode_freeform_surfaces(
                 }
                 ir.model.surfaces.push(Surface {
                     id,
-                    geometry: surface.geometry,
-                    source_object: Some(surface.source_object),
+                    geometry: admitted!(surface
+                        .geometry
+                        .try_clone_for_decode(ctx, "catia_freeform_fallback_surface_geometry")),
+                    source_object: Some(admitted!(surface
+                        .source_object
+                        .try_clone_for_decode(ctx, "catia_freeform_fallback_surface_source"))),
                 });
             }
         }
+        drop(fallback_surfaces);
+        drop(fallback_surface_storage);
         // The bindings this call returns are read by the standard-family route
         // alone; here the call is made for the curves and surfaces it appends.
         if let Err(error) = append_consolidated_revolutions(
@@ -1043,8 +1103,8 @@ pub(super) fn try_decode_freeform_surfaces(
                 "The B5 reference graph is closed; face sense and body kind use a deterministic \
              topology gauge because their source fields remain unresolved. Gauged b5 03 5f face \
              records, by object id ({}): {}.",
-                b5_face_object_ids.len(),
-                identity_statement(&b5_face_object_ids)
+                b5_face_object_ids.0.len(),
+                identity_statement(&b5_face_object_ids.0)
             ),
                     "catia_freeform_topology_loss"
                 ));
@@ -1058,10 +1118,10 @@ pub(super) fn try_decode_freeform_surfaces(
              nodes and unresolved endpoint lifts remain outside the connected graph. Transferred \
              b5 03 5f face records, by object id ({}): {}. Transferred b5 03 62 loop records, by \
              object id ({}): {}.",
-            b5_face_object_ids.len(),
-            identity_statement(&b5_face_object_ids),
-            b5_loop_object_ids.len(),
-            identity_statement(&b5_loop_object_ids)
+            b5_face_object_ids.0.len(),
+            identity_statement(&b5_face_object_ids.0),
+            b5_loop_object_ids.0.len(),
+            identity_statement(&b5_loop_object_ids.0)
         ),
                     "catia_freeform_topology_loss"
                 ));
@@ -1086,13 +1146,16 @@ pub(super) fn try_decode_freeform_surfaces(
                         "Object-stream and consolidated NURBS carriers were decoded, but the \
              face/loop/pcurve/edge graph did not close. Unclosed b5 03 5f face records, by object \
              id ({}): {}. The records stay inside retained record {payload_id}.",
-                        census_face_object_ids.len(),
-                        identity_statement(&census_face_object_ids)
+                        census_face_object_ids.0.len(),
+                        identity_statement(&census_face_object_ids.0)
                     ),
                     "catia_freeform_topology_loss"
                 ));
             }
         }
+        drop(b5_face_object_ids);
+        drop(b5_loop_object_ids);
+        drop(census_face_object_ids);
         if let Err(error) = insert_unresolved_carrier_loss(ctx, &ir, &mut losses) {
             return Some(Err(error));
         }
@@ -1352,11 +1415,11 @@ pub(super) fn try_decode_freeform_surfaces(
                 return Some(Err(error));
             }
         }
-        if !typed_parameter_incidences.is_empty() {
+        if typed_parameter_incidence_count != 0 {
             if let Err(error) = coverage.record(
                 ctx,
                 crate::coverage::TYPED_OBJECT_STREAM_PARAMETER_INCIDENCE_COUNT,
-                typed_parameter_incidences.len(),
+                typed_parameter_incidence_count,
             ) {
                 return Some(Err(error));
             }
@@ -1368,11 +1431,11 @@ pub(super) fn try_decode_freeform_surfaces(
                 return Some(Err(error));
             }
         }
-        if !typed_vertex_incidence_rosters.is_empty() {
+        if typed_vertex_incidence_roster_count != 0 {
             if let Err(error) = coverage.record(
                 ctx,
                 crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_ROSTER_COUNT,
-                typed_vertex_incidence_rosters.len(),
+                typed_vertex_incidence_roster_count,
             ) {
                 return Some(Err(error));
             }
@@ -1407,6 +1470,9 @@ fn attach_standalone_wires(
     wires: &[(CurveId, [f64; 2], usize)],
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<bool, cadmpeg_core::CodecError> {
+    if wires.is_empty() {
+        return Ok(true);
+    }
     let positions =
         crate::families::ModelCurvePositions::new(admission.context(), &ir.model.curves, &[])?;
     let mut plans = admission
@@ -1668,11 +1734,8 @@ fn freeform_surface_carriers(
         .admit_iter(resolved, "catia_freeform_surface_carrier_visits")?
         .chain(ctx.admit_iter(a5, "catia_freeform_surface_carrier_visits")?)
     {
-        let (source_object, source_tag) = freeform_surface_source(ctx, &surface)?;
-        let source_tag = ctx.format_retained(
-            format_args!("freeform:{source_tag}"),
-            "catia_freeform_surface_source_tag",
-        )?;
+        let (source_object, source_tag) = freeform_surface_source(ctx, &surface, "freeform:")?;
+        let source_tag = source_tag.1.commit_value(source_tag.0)?;
         ctx.push_vec(
             &mut surfaces,
             FreeformSurfaceCarrier {
@@ -1780,22 +1843,29 @@ fn freeform_surface_carriers(
     Ok(surfaces)
 }
 
-fn freeform_surface_source(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+fn freeform_surface_source<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     surface: &crate::families::a5a8::records::FreeformSurface,
-) -> Result<(cadmpeg_ir::SourceObjectAssociation, String), cadmpeg_core::CodecError> {
+    prefix: &'static str,
+) -> Result<
+    (
+        cadmpeg_ir::SourceObjectAssociation,
+        (String, cadmpeg_core::decode::ScopedReservation<'ctx>),
+    ),
+    cadmpeg_core::CodecError,
+> {
     Ok(match surface.identity {
         Some(object_id) => (
             cgm_source(ctx, "surface", object_id)?,
-            ctx.format_retained(
-                format_args!("object_id:{object_id:08x}"),
+            ctx.format_scoped(
+                format_args!("{prefix}object_id:{object_id:08x}"),
                 "catia_freeform_surface_source_tag",
             )?,
         ),
         None => (
             cgm_source_key(ctx, "a5-surface-frame", format_args!("{:010}", surface.pos))?,
-            ctx.format_retained(
-                format_args!("frame_offset:{:010}", surface.pos),
+            ctx.format_scoped(
+                format_args!("{prefix}frame_offset:{:010}", surface.pos),
                 "catia_freeform_surface_source_tag",
             )?,
         ),
@@ -1820,12 +1890,7 @@ fn standard_carrier_surface_ids(
         if source.format != cadmpeg_ir::codec_format!(crate::dialect::FORMAT) {
             continue;
         }
-        let Some(value) = ctx.strip_prefix(
-            source.object_id.as_str(),
-            "cgm-carrier:",
-            "catia_freeform_standard_carrier_tag",
-        )?
-        else {
+        let Some(value) = source.object_id.as_str().strip_prefix("cgm-carrier:") else {
             continue;
         };
         let Ok(tag) = ctx.parse_radix::<u32>(value, 16, "catia_freeform_standard_carrier_tag")?
@@ -1982,27 +2047,58 @@ pub(super) fn append_freeform_surface_pools(
     refusal: &mut crate::nurbs::LaneRefusals,
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<ConsolidatedCurveBindingCounts, cadmpeg_core::CodecError> {
-    let mut surfaces =
-        crate::families::a5a8::records::resolved_a8_surfaces(admission.context(), data, refusal)?;
-    let a5 = crate::families::a5a8::records::a5_surfaces_from_records(
-        admission.context(),
-        data,
-        records,
-        refusal,
-    )?;
-    let mut a5 = a5;
-    admission
-        .context()
-        .append_vec(&mut surfaces, &mut a5, "catia_freeform_surface_pool")?;
+    let surface_pools =
+        admission
+            .context()
+            .with_scoped_storage("catia_freeform_surface_pool_workspace", || {
+                Ok::<_, cadmpeg_core::CodecError>([
+                    crate::families::a5a8::records::resolved_a8_surfaces(
+                        admission.context(),
+                        data,
+                        refusal,
+                    )?,
+                    crate::families::a5a8::records::a5_surfaces_from_records(
+                        admission.context(),
+                        data,
+                        records,
+                        refusal,
+                    )?,
+                ])
+            })?;
     let mut carrier_storage = admission
         .context()
         .reserve_scoped(0, "catia_freeform_surface_pool_id_workspace")?;
+    let surfaces = carrier_storage.with_storage(|| {
+        let count = surface_pools.0[0]
+            .len()
+            .checked_add(surface_pools.0[1].len())
+            .ok_or_else(|| {
+                admission.context().refuse_codec_limit(
+                    "catia_freeform_surface_pool",
+                    u64::MAX - 1,
+                    u64::MAX,
+                )
+            })?;
+        let mut surfaces = admission
+            .context()
+            .collection_vec(count, "catia_freeform_surface_pool")?;
+        for pool in &surface_pools.0 {
+            for surface in admission
+                .context()
+                .admit_iter(pool, "catia_freeform_surface_pool")?
+            {
+                surfaces.push(surface);
+            }
+        }
+        Ok::<_, cadmpeg_core::CodecError>(surfaces)
+    })?;
     let mut carrier_ids = Vec::new();
     for surface in admission
         .context()
         .admit_iter(&surfaces, "catia_freeform_support_surfaces")?
     {
-        let (source_object, source_tag) = freeform_surface_source(admission.context(), surface)?;
+        let (source_object, source_tag) =
+            freeform_surface_source(admission.context(), surface, "")?;
         let index = ir.model.surfaces.len();
         let id = crate::resource::compose_index_id(
             admission.context(),
@@ -2027,9 +2123,10 @@ pub(super) fn append_freeform_surface_pools(
             &id,
             "object_stream_a8_03_or_consolidated_a5_03",
             u64_from_index(surface.pos),
-            source_tag,
+            &source_tag.0,
             Exactness::ByteExact,
         )?;
+        drop(source_tag);
         admission.reserve_entity(&mut ir.model.surfaces, "catia_family_emit_surfaces")?;
         ir.model.surfaces.push(Surface {
             id,
@@ -2489,7 +2586,7 @@ fn consolidated_jet_pcurve(
 #[derive(Clone, Copy)]
 struct FreeformSurfacePool<'a> {
     /// Decoded freeform surfaces in emission order.
-    surfaces: &'a [crate::families::a5a8::records::FreeformSurface],
+    surfaces: &'a [&'a crate::families::a5a8::records::FreeformSurface],
     /// Ids the surfaces were emitted under, index-aligned with `surfaces`.
     surface_ids: &'a [SurfaceId],
     /// Support alias tags that resolve a record's support onto the pool.
@@ -2511,6 +2608,16 @@ fn append_resolved_consolidated_surface_curves(
         surface_alias_tags,
     } = pool;
     let ctx = admission.context();
+    let resolved = ctx.with_scoped_storage("catia_freeform_resolved_block_workspace", || {
+        crate::families::consolidated::records::resolve_consolidated_edge_blocks_from_records(
+            ctx, data, records, refusal,
+        )
+    })?;
+    let _resolved_storage = resolved.1;
+    let mut resolved_blocks = resolved.0;
+    if resolved_blocks.is_empty() {
+        return Ok(ConsolidatedCurveBindingCounts::default());
+    }
     // Every carrier table, model index and pending queue below is scratch for
     // this pass; only the curves, surfaces and pcurves it emits are kept.
     let mut scratch = ctx.reserve_scoped(0, "catia_freeform_surface_curve_workspace")?;
@@ -2936,21 +3043,25 @@ fn append_resolved_consolidated_surface_curves(
     let mut binding_counts = ConsolidatedCurveBindingCounts::default();
     let mut partner_support_blocks = HashSet::new();
 
-    let resolved_blocks =
-        crate::families::consolidated::records::resolve_consolidated_edge_blocks_from_records(
-            ctx, data, records, refusal,
-        )?;
     let mut pending = scratch.with_storage(|| {
         let mut pending = VecDeque::new();
-        for resolved in ctx.admit_iter(resolved_blocks, "catia_freeform_pending_edges")? {
-            ctx.push_back(&mut pending, resolved, "catia_freeform_pending_edges")?;
+        for index in ctx.admit_iter(0..resolved_blocks.len(), "catia_freeform_pending_edges")? {
+            ctx.push_back(&mut pending, index, "catia_freeform_pending_edges")?;
         }
         Ok::<_, cadmpeg_core::CodecError>(pending)
     })?;
     // Positions of the freeform pool surfaces, indexed only when a partner
     // search needs them. Searches borrow geometry from the model arena.
     let mut partner_candidates = None::<Vec<(usize, usize)>>;
-    while let Some(mut resolved) = pending.pop_front() {
+    while !pending.is_empty() {
+        let Some(resolved_index) = ctx.next_charged(
+            &mut std::iter::from_fn(|| pending.pop_front()),
+            "catia_freeform_pending_edge_visits",
+        )?
+        else {
+            break;
+        };
+        let resolved = &mut resolved_blocks[resolved_index];
         let Some(run) = ctx.get_hash_map(
             &complete_runs,
             &resolved.block.pcurves[0].pos,
@@ -2959,6 +3070,10 @@ fn append_resolved_consolidated_surface_curves(
         else {
             continue;
         };
+        let mut side_ids: [Option<cadmpeg_core::decode::ScopedReservation<'_>>; 2] =
+            std::array::from_fn(|_| None);
+        let mut side_pcurves: [Option<cadmpeg_core::decode::ScopedReservation<'_>>; 2] =
+            std::array::from_fn(|_| None);
         let mut sides: [IntcurveSupportSide; 2] = std::array::from_fn(|_| IntcurveSupportSide {
             surface: None,
             pcurve: None,
@@ -2992,13 +3107,16 @@ fn append_resolved_consolidated_surface_curves(
                 else {
                     continue;
                 };
-                let Some(geometry) = consolidated_jet_pcurve(
-                    admission.context(),
-                    pcurve,
-                    &ConsolidatedCarrierChart::Identity,
-                    refusal,
-                )?
-                else {
+                let (geometry, geometry_storage) =
+                    ctx.with_scoped_storage("catia_freeform_side_pcurve_workspace", || {
+                        consolidated_jet_pcurve(
+                            ctx,
+                            pcurve,
+                            &ConsolidatedCarrierChart::Identity,
+                            refusal,
+                        )
+                    })?;
+                let Some(geometry) = geometry else {
                     continue;
                 };
                 if standard_endpoint_loci.is_none() {
@@ -3009,13 +3127,16 @@ fn append_resolved_consolidated_surface_curves(
                         resolved.block.parameters.range.endpoints(),
                     )?;
                 }
+                let (surface, id_storage) = ctx
+                    .with_scoped_storage("catia_freeform_side_id_workspace", || {
+                        surface_id.try_clone_for_decode(ctx, "catia_freeform_standard_support_id")
+                    })?;
                 sides[side] = IntcurveSupportSide {
-                    surface: Some(surface_id.try_clone_for_decode(
-                        admission.context(),
-                        "catia_freeform_standard_support_id",
-                    )?),
+                    surface: Some(surface),
                     pcurve: Some(geometry.into()),
                 };
+                side_ids[side] = Some(id_storage);
+                side_pcurves[side] = Some(geometry_storage);
                 continue;
             }
             if let Some(
@@ -3036,10 +3157,11 @@ fn append_resolved_consolidated_surface_curves(
                 let Some(support) = freeform_surface_ids.get(carrier_index) else {
                     continue;
                 };
-                let support = support
-                    .try_clone_for_decode(admission.context(), "catia_freeform_nurbs_support_id")?;
+                let mut id_storage = ctx.reserve_scoped(0, "catia_freeform_side_id_workspace")?;
                 let surface = if offset.get() == 0.0 {
-                    support
+                    id_storage.with_storage(|| {
+                        support.try_clone_for_decode(ctx, "catia_freeform_nurbs_support_id")
+                    })?
                 } else {
                     let key = (*pos, Some(offset.get().to_bits()));
                     if let Some(id) = ctx.get_hash_map(
@@ -3047,22 +3169,23 @@ fn append_resolved_consolidated_surface_curves(
                         &key,
                         "catia_freeform_carrier_surface_lookup",
                     )? {
-                        id.try_clone_for_decode(
-                            admission.context(),
-                            "catia_freeform_offset_surface_lookup_id",
-                        )?
+                        id_storage.with_storage(|| {
+                            id.try_clone_for_decode(ctx, "catia_freeform_offset_surface_lookup_id")
+                        })?
                     } else {
-                        let id = crate::resource::compose_index_id(
-                            admission.context(),
-                            &cadmpeg_ir::identity_namespace!(
-                                "catia",
-                                "consolidated",
-                                "nurbs-offset"
-                            ),
-                            ir.model.surfaces.len(),
-                            SurfaceId::mint,
-                            "catia_freeform_nurbs_offset_id",
-                        )?;
+                        let id = id_storage.with_storage(|| {
+                            crate::resource::compose_index_id(
+                                ctx,
+                                &cadmpeg_ir::identity_namespace!(
+                                    "catia",
+                                    "consolidated",
+                                    "nurbs-offset"
+                                ),
+                                ir.model.surfaces.len(),
+                                SurfaceId::mint,
+                                "catia_freeform_nurbs_offset_id",
+                            )
+                        })?;
                         annotate(
                             admission.context(),
                             annotations,
@@ -3117,7 +3240,7 @@ fn append_resolved_consolidated_surface_curves(
                                 procedural_id,
                                 ProceduralSurfaceDefinition::Offset(
                                     cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::legacy(
-                                        support,
+                                        support.try_clone_for_decode(ctx, "catia_freeform_nurbs_support_id")?,
                                         *offset,
                                         None,
                                         None,
@@ -3144,15 +3267,19 @@ fn append_resolved_consolidated_surface_curves(
                     }
                 };
                 let chart = ConsolidatedCarrierChart::Identity;
-                let Some(geometry) =
-                    consolidated_jet_pcurve(admission.context(), pcurve, &chart, refusal)?
-                else {
+                let (geometry, geometry_storage) = ctx
+                    .with_scoped_storage("catia_freeform_side_pcurve_workspace", || {
+                        consolidated_jet_pcurve(ctx, pcurve, &chart, refusal)
+                    })?;
+                let Some(geometry) = geometry else {
                     continue;
                 };
                 sides[side] = IntcurveSupportSide {
                     surface: Some(surface),
                     pcurve: Some(geometry.into()),
                 };
+                side_ids[side] = Some(id_storage);
+                side_pcurves[side] = Some(geometry_storage);
                 continue;
             }
             let (key, carrier, source_object, chart, annotation_kind, namespace) = match binding {
@@ -3186,7 +3313,7 @@ fn append_resolved_consolidated_surface_curves(
                 (
                     (*pos, None),
                     carrier,
-                    Some(cgm_source(admission.context(), "surface", value.object_id)?),
+                    Some(value.object_id),
                     ConsolidatedCarrierChart::Cylinder { radius },
                     "consolidated_b2_03_60_cylinder",
                     cadmpeg_ir::identity_namespace!("catia", "consolidated", "cylinder"),
@@ -3254,21 +3381,23 @@ fn append_resolved_consolidated_surface_curves(
             )
             | None => continue,
         };
+            let mut id_storage = ctx.reserve_scoped(0, "catia_freeform_side_id_workspace")?;
             let surface = if let Some(id) =
                 ctx.get_hash_map(&surface_ids, &key, "catia_freeform_carrier_surface_lookup")?
             {
-                id.try_clone_for_decode(
-                    admission.context(),
-                    "catia_freeform_carrier_surface_lookup_id",
-                )?
+                id_storage.with_storage(|| {
+                    id.try_clone_for_decode(ctx, "catia_freeform_carrier_surface_lookup_id")
+                })?
             } else {
-                let id = crate::resource::compose_index_id(
-                    admission.context(),
-                    &namespace,
-                    ir.model.surfaces.len(),
-                    SurfaceId::mint,
-                    "catia_freeform_carrier_surface_id",
-                )?;
+                let id = id_storage.with_storage(|| {
+                    crate::resource::compose_index_id(
+                        ctx,
+                        &namespace,
+                        ir.model.surfaces.len(),
+                        SurfaceId::mint,
+                        "catia_freeform_carrier_surface_id",
+                    )
+                })?;
                 annotate(
                     admission.context(),
                     annotations,
@@ -3288,7 +3417,9 @@ fn append_resolved_consolidated_surface_curves(
                 ir.model.surfaces.push(Surface {
                     id: surface_owner_id,
                     geometry: carrier,
-                    source_object,
+                    source_object: source_object
+                        .map(|object_id| cgm_source(ctx, "surface", object_id))
+                        .transpose()?,
                 });
                 scratch.with_storage(|| {
                     let stored_id =
@@ -3303,15 +3434,19 @@ fn append_resolved_consolidated_surface_curves(
                 id
             };
 
-            let Some(geometry) =
-                consolidated_jet_pcurve(admission.context(), pcurve, &chart, refusal)?
-            else {
+            let (geometry, geometry_storage) = ctx
+                .with_scoped_storage("catia_freeform_side_pcurve_workspace", || {
+                    consolidated_jet_pcurve(ctx, pcurve, &chart, refusal)
+                })?;
+            let Some(geometry) = geometry else {
                 continue;
             };
             sides[side] = IntcurveSupportSide {
                 surface: Some(surface),
                 pcurve: Some(geometry.into()),
             };
+            side_ids[side] = Some(id_storage);
+            side_pcurves[side] = Some(geometry_storage);
         }
         if resolved.endpoint_loci.is_none() {
             resolved.endpoint_loci = standard_endpoint_loci;
@@ -3335,12 +3470,16 @@ fn append_resolved_consolidated_surface_curves(
             if let (Some(resolved_geometry), Some(resolved_pcurve)) =
                 (resolved_geometry, sides[resolved_side].pcurve.as_ref())
             {
-                if let Some(partner_pcurve) = consolidated_jet_pcurve(
-                    admission.context(),
-                    &resolved.block.pcurves[partner],
-                    &ConsolidatedCarrierChart::Identity,
-                    refusal,
-                )? {
+                let (partner_pcurve, partner_storage) =
+                    ctx.with_scoped_storage("catia_freeform_partner_pcurve_workspace", || {
+                        consolidated_jet_pcurve(
+                            ctx,
+                            &resolved.block.pcurves[partner],
+                            &ConsolidatedCarrierChart::Identity,
+                            refusal,
+                        )
+                    })?;
+                if let Some(partner_pcurve) = partner_pcurve {
                     if partner_candidates.is_none() {
                         partner_candidates = Some(scratch.with_storage(|| {
                             let mut candidates = Vec::new();
@@ -3374,13 +3513,17 @@ fn append_resolved_consolidated_surface_curves(
                         }),
                     )?;
                     if let Some(carrier) = carrier {
+                        let (surface, id_storage) =
+                            ctx.with_scoped_storage("catia_freeform_side_id_workspace", || {
+                                freeform_surface_ids[carrier]
+                                    .try_clone_for_decode(ctx, "catia_freeform_partner_surface_id")
+                            })?;
                         sides[partner] = IntcurveSupportSide {
-                            surface: Some(freeform_surface_ids[carrier].try_clone_for_decode(
-                                admission.context(),
-                                "catia_freeform_partner_surface_id",
-                            )?),
+                            surface: Some(surface),
                             pcurve: Some(partner_pcurve.into()),
                         };
+                        side_ids[partner] = Some(id_storage);
+                        side_pcurves[partner] = Some(partner_storage);
                         scratch.with_storage(|| {
                             ctx.insert_hash_set(
                                 &mut partner_support_blocks,
@@ -3469,23 +3612,22 @@ fn append_resolved_consolidated_surface_curves(
                     let label = admission.context().format_scoped(format_args!(
                             "consolidated surface-curve pcurve of the edge block at byte {} reversed onto its edge",
                             resolved.block.pcurves[0].pos), "catia_freeform_reversed_surface_curve_label")?;
-                    let reversed_pcurves = sides.each_ref().map(|side| match &side.pcurve {
-                        Some(pcurve) => crate::nurbs::reverse_pcurve_geometry(
-                            admission.context(),
-                            &pcurve.geometry,
-                            resolved.block.parameters.range.endpoints(),
-                            refusal,
-                            &label.0,
-                        )
-                        .map(|geometry| geometry.map(Some)),
-                        None => Ok(Some(None)),
-                    });
-                    let [first, second] = reversed_pcurves;
-                    let [Some(first), Some(second)] = [first?, second?] else {
-                        return Ok(None);
-                    };
-                    for (side, pcurve) in sides.iter_mut().zip([first, second]) {
-                        side.pcurve = pcurve.map(Into::into);
+                    for side in 0..2 {
+                        if let Some(pcurve) = &sides[side].pcurve {
+                            let Some((geometry, storage)) =
+                                crate::nurbs::reverse_pcurve_geometry_scoped(
+                                    ctx,
+                                    &pcurve.geometry,
+                                    resolved.block.parameters.range.endpoints(),
+                                    refusal,
+                                    &label.0,
+                                )?
+                            else {
+                                return Ok(None);
+                            };
+                            sides[side].pcurve = Some(geometry.into());
+                            side_pcurves[side] = Some(storage);
+                        }
                     }
                 }
                 let (_, _, _, standard_surfaces) = &identity;
@@ -3507,12 +3649,14 @@ fn append_resolved_consolidated_surface_curves(
                     .geometry;
                     let matches = standard_surfaces.each_ref().map(
                         |id| -> Result<bool, cadmpeg_core::CodecError> {
-                            Ok(surface_positions.get(ctx, id)?.is_some_and(|position| {
-                                same_surface_locus(
+                            match surface_positions.get(ctx, id)? {
+                                Some(position) => same_surface_locus(
+                                    ctx,
                                     &ir.model.surfaces[position].geometry,
                                     resolved_geometry,
-                                )
-                            }))
+                                ),
+                                None => Ok(false),
+                            }
                         },
                     );
                     let [first, second] = matches;
@@ -3529,11 +3673,17 @@ fn append_resolved_consolidated_surface_curves(
                             let standard_partner_geometry = &ir.model.surfaces
                                 [option_or_none!(surface_positions.get(ctx, standard_partner)?)]
                             .geometry;
-                            let same_carrier = matches!(
-                                standard_partner_geometry,
-                                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs))
-                                    if *nurbs == freeform_surfaces[carrier].geometry
-                            );
+                            let same_carrier = match standard_partner_geometry {
+                                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
+                                    crate::nurbs::nurbs_surfaces_equal(
+                                        ctx,
+                                        nurbs,
+                                        &freeform_surfaces[carrier].geometry,
+                                        "catia_freeform_surface_comparison",
+                                    )?
+                                }
+                                _ => false,
+                            };
                             if !matches!(
                                 standard_partner_geometry,
                                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
@@ -3585,28 +3735,37 @@ fn append_resolved_consolidated_surface_curves(
                                     // to a non-planar or unresolved partner.
                                     return Ok(Some((identity, None)));
                                 };
-                                let Some(mut pcurve) = consolidated_jet_pcurve(
-                                    admission.context(),
-                                    &resolved.block.pcurves[partner],
-                                    &chart,
-                                    refusal,
-                                )?
-                                else {
+                                let (pcurve, mut pcurve_storage) = ctx.with_scoped_storage(
+                                    "catia_freeform_binding_source_pcurve_workspace",
+                                    || {
+                                        consolidated_jet_pcurve(
+                                            ctx,
+                                            &resolved.block.pcurves[partner],
+                                            &chart,
+                                            refusal,
+                                        )
+                                    },
+                                )?;
+                                let Some(mut pcurve) = pcurve else {
                                     return Ok(None);
                                 };
                                 if reversed {
                                     let label = admission.context().format_scoped(format_args!(
                                             "consolidated partner pcurve of the edge block at byte {} reversed onto its edge",
                                             resolved.block.pcurves[0].pos), "catia_freeform_reversed_partner_label")?;
-                                    pcurve =
-                                        option_or_none!(crate::nurbs::reverse_pcurve_geometry(
-                                            admission.context(),
+                                    let (reversed, storage) = option_or_none!(
+                                        crate::nurbs::reverse_pcurve_geometry_scoped(
+                                            ctx,
                                             &pcurve,
                                             resolved.block.parameters.range.endpoints(),
                                             refusal,
                                             &label.0,
-                                        )?);
+                                        )?
+                                    );
+                                    pcurve = reversed;
+                                    pcurve_storage = storage;
                                 }
+                                binding_storage.absorb(&mut pcurve_storage)?;
                                 pcurve
                             }
                         };
@@ -3850,7 +4009,19 @@ fn append_resolved_consolidated_surface_curves(
                                 ),
                             })
                         };
-                        sides = [copy_side(0)?, copy_side(1)?];
+                        let [(first, first_storage), (second, second_storage)] = [
+                            ctx.with_scoped_storage(
+                                "catia_freeform_replayed_side_workspace",
+                                || copy_side(0),
+                            )?,
+                            ctx.with_scoped_storage(
+                                "catia_freeform_replayed_side_workspace",
+                                || copy_side(1),
+                            )?,
+                        ];
+                        sides = [first, second];
+                        side_ids = [Some(first_storage), Some(second_storage)];
+                        side_pcurves = [None, None];
                     }
                 }
             }
@@ -3859,7 +4030,7 @@ fn append_resolved_consolidated_surface_curves(
             // The new carrier can make both coedge pcurves resolvable. Replay this
             // block after mutating the face geometry and emit only on that replay.
             scratch.with_storage(|| {
-                ctx.push_back(&mut pending, resolved, "catia_freeform_pending_edges")
+                ctx.push_back(&mut pending, resolved_index, "catia_freeform_pending_edges")
             })?;
             continue;
         }
@@ -3953,6 +4124,9 @@ fn append_resolved_consolidated_surface_curves(
                 cadmpeg_ir::topology::ParameterInterval::from(resolved.block.parameters.range),
             ));
             let procedural = &mut ir.model.procedural_curves[procedure_index];
+            for storage in side_ids.into_iter().chain(side_pcurves).flatten() {
+                storage.commit()?;
+            }
             procedural.replace_definition(definition);
             annotate(
                 admission.context(),
@@ -4031,6 +4205,9 @@ fn append_resolved_consolidated_surface_curves(
                 "definition",
             )?;
             admission.charge()?;
+            for storage in side_ids.into_iter().chain(side_pcurves).flatten() {
+                storage.commit()?;
+            }
             let _attached = ir.model.add_procedural_curve(
                 admission.context(),
                 &curve_id,
@@ -4399,16 +4576,121 @@ fn unique_paired_surface_lift_match<'surface, T: Copy>(
     Ok(winner)
 }
 
-fn same_surface_locus(left: &SurfaceGeometry, right: &SurfaceGeometry) -> bool {
-    if left == right {
-        return true;
+fn solved_surfaces_equal(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    left: &SolvedSurfaceGeometry,
+    right: &SolvedSurfaceGeometry,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "catia_freeform_surface_comparison";
+    match (left, right) {
+        (SolvedSurfaceGeometry::Nurbs(left), SolvedSurfaceGeometry::Nurbs(right)) => {
+            crate::nurbs::nurbs_surfaces_equal(ctx, left, right, OPERATION)
+        }
+        (SolvedSurfaceGeometry::Polygonal(left), SolvedSurfaceGeometry::Polygonal(right)) => {
+            if left.chordal_deflection() != right.chordal_deflection()
+                || left.vertices().len() != right.vertices().len()
+                || left.triangles().len() != right.triangles().len()
+            {
+                return Ok(false);
+            }
+            Ok(ctx.all_by(
+                left.vertices().iter().zip(right.vertices()),
+                |(left, right)| Ok(left == right),
+                OPERATION,
+            )? && ctx.all_by(
+                left.triangles().iter().zip(right.triangles()),
+                |(left, right)| Ok(left == right),
+                OPERATION,
+            )?)
+        }
+        (SolvedSurfaceGeometry::Transformed(left), SolvedSurfaceGeometry::Transformed(right)) => {
+            if left.transform() != right.transform() {
+                return Ok(false);
+            }
+            let _depth = ctx.enter_nested(OPERATION)?;
+            solved_surfaces_equal(ctx, left.basis(), right.basis())
+        }
+        (
+            SolvedSurfaceGeometry::Unknown { record: left },
+            SolvedSurfaceGeometry::Unknown { record: right },
+        ) => match (left, right) {
+            (Some(left), Some(right)) => ctx.equal_bytes(
+                left.as_str().as_bytes(),
+                right.as_str().as_bytes(),
+                OPERATION,
+            ),
+            (None, None) => Ok(true),
+            _ => Ok(false),
+        },
+        (SolvedSurfaceGeometry::Plane(left), SolvedSurfaceGeometry::Plane(right)) => {
+            Ok(left == right)
+        }
+        (SolvedSurfaceGeometry::Cylinder(left), SolvedSurfaceGeometry::Cylinder(right)) => {
+            Ok(left == right)
+        }
+        (SolvedSurfaceGeometry::Cone(left), SolvedSurfaceGeometry::Cone(right)) => {
+            Ok(left == right)
+        }
+        (SolvedSurfaceGeometry::Sphere(left), SolvedSurfaceGeometry::Sphere(right)) => {
+            Ok(left == right)
+        }
+        (SolvedSurfaceGeometry::Torus(left), SolvedSurfaceGeometry::Torus(right)) => {
+            Ok(left == right)
+        }
+        _ => Ok(false),
+    }
+}
+
+fn surface_geometries_equal(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    left: &SurfaceGeometry,
+    right: &SurfaceGeometry,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    match (left, right) {
+        (SurfaceGeometry::Solved(left), SurfaceGeometry::Solved(right)) => {
+            solved_surfaces_equal(ctx, left, right)
+        }
+        (
+            SurfaceGeometry::Procedural {
+                construction: left_id,
+                cache: left,
+            },
+            SurfaceGeometry::Procedural {
+                construction: right_id,
+                cache: right,
+            },
+        ) => {
+            if !ctx.equal_bytes(
+                left_id.as_str().as_bytes(),
+                right_id.as_str().as_bytes(),
+                "catia_freeform_surface_comparison",
+            )? {
+                return Ok(false);
+            }
+            match (left, right) {
+                (Some(left), Some(right)) => solved_surfaces_equal(ctx, left, right),
+                (None, None) => Ok(true),
+                _ => Ok(false),
+            }
+        }
+        _ => Ok(false),
+    }
+}
+
+fn same_surface_locus(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    left: &SurfaceGeometry,
+    right: &SurfaceGeometry,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    if surface_geometries_equal(ctx, left, right)? {
+        return Ok(true);
     }
     let (
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)),
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface_2)),
     ) = (left, right)
     else {
-        return false;
+        return Ok(false);
     };
     let left_origin = cone_surface.origin();
     let left_axis = cone_surface.frame().axis().as_raw();
@@ -4427,11 +4709,11 @@ fn same_surface_locus(left: &SurfaceGeometry, right: &SurfaceGeometry) -> bool {
         || left_ratio.to_bits() != right_ratio.to_bits()
         || left_angle.to_bits() != right_angle.to_bits()
     {
-        return false;
+        return Ok(false);
     }
     let tangent = left_angle.tan();
     if !tangent.is_finite() || tangent == 0.0 {
-        return false;
+        return Ok(false);
     }
     let apex = |origin: Point3, axis: Vector3, radius: f64| {
         Point3::new(
@@ -4453,10 +4735,10 @@ fn same_surface_locus(left: &SurfaceGeometry, right: &SurfaceGeometry) -> bool {
     .into_iter()
     .map(f64::abs)
     .fold(1.0f64, f64::max);
-    (left_apex.x - right_apex.x)
+    Ok((left_apex.x - right_apex.x)
         .hypot(left_apex.y - right_apex.y)
         .hypot(left_apex.z - right_apex.z)
-        <= EPS_APEX_ALIGNMENT * scale
+        <= EPS_APEX_ALIGNMENT * scale)
 }
 
 #[derive(Debug)]
@@ -4471,7 +4753,7 @@ fn rechart_equivalent_surface_pcurve(
     source: &SurfaceGeometry,
     target: &SurfaceGeometry,
 ) -> Result<Option<PcurveGeometry>, RechartFailure> {
-    if source == target {
+    if surface_geometries_equal(ctx, source, target).map_err(RechartFailure::Resource)? {
         return pcurve
             .try_clone_for_decode(ctx, "catia_freeform_equivalent_pcurve_copy")
             .map(Some)
@@ -4487,7 +4769,7 @@ fn rechart_equivalent_surface_pcurve(
     let source_origin = cone_surface.origin();
     let source_axis = cone_surface.frame().axis().as_raw();
     let target_origin = cone_surface_2.origin();
-    if !same_surface_locus(source, target) {
+    if !same_surface_locus(ctx, source, target).map_err(RechartFailure::Resource)? {
         return Ok(None);
     }
     let v_shift = (source_origin.x - target_origin.x) * source_axis.x
@@ -5470,34 +5752,26 @@ mod tests {
             )
             .map(|_| ir.model.curves.len())
         };
-        // The guide record sites and solver lanes are temporary storage. Every
-        // materialized boundary on the way to completion belongs to a guide
-        // workspace or one of the freeform identity indexes.
-        let mut cap = 0;
-        let mut refusals = std::collections::BTreeSet::new();
-        let curves = loop {
-            match crate::test_support::with_materialized_limit(cap, run) {
-                Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
-                    refusals.insert(limit.operation);
-                    let need = limit.used + limit.additional;
-                    assert!(need > cap, "materialized sweep must progress");
-                    cap = need;
-                }
-                other => break other.expect("the sweep ends in a decoded guide"),
-            }
-        };
-        assert_eq!(curves, 1);
-        assert!(refusals.contains("catia_a5_guide_sites"), "{refusals:?}");
-        assert!(
-            refusals
-                .iter()
-                .all(|operation| operation.starts_with("catia_a5_guide")
-                    || operation.starts_with("catia A5 guide")
-                    || operation.starts_with("catia_freeform")
-                    || *operation == "catia_zero_wire_curve_positions"
-                    || operation.starts_with("catia quintic")),
-            "{refusals:?}"
-        );
+        for operation in ["catia_a5_guide_sites", "catia A5 guide points"] {
+            let cadmpeg_core::CodecError::ResourceLimit(limit) =
+                cadmpeg_test_support::refusal::resource_limit_at(
+                    cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+                    operation,
+                    |cap| {
+                        crate::test_support::with_materialized_limit(cap, |ctx| {
+                            let result = run(ctx);
+                            if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+                                assert_eq!(ctx.resource_refusal(), Some(*limit));
+                            }
+                            result
+                        })
+                    },
+                )
+            else {
+                panic!("guide scratch refusal");
+            };
+            assert_eq!(limit.operation, operation);
+        }
         assert_eq!(
             crate::test_support::with_service_context(run)
                 .expect("service profile admits A5 guide curve"),
@@ -5757,8 +6031,18 @@ mod tests {
         let apex_form = cone(Point3::new(111.0, 0.0, 0.0), 0.0);
         let shifted = cone(Point3::new(107.5, 0.0, 0.0), 3.5);
         let other = cone(Point3::new(107.0, 0.0, 0.0), 3.5);
-        assert!(same_surface_locus(&apex_form, &shifted));
-        assert!(!same_surface_locus(&apex_form, &other));
+        assert!(
+            crate::test_support::with_service_context(|ctx| same_surface_locus(
+                ctx, &apex_form, &shifted
+            ))
+            .expect("locus comparison")
+        );
+        assert!(
+            !crate::test_support::with_service_context(|ctx| same_surface_locus(
+                ctx, &apex_form, &other
+            ))
+            .expect("locus comparison")
+        );
     }
 
     #[test]
@@ -5821,7 +6105,12 @@ mod tests {
             shift,
         );
         let target = cone(Point3::new(0.0, 0.0, 0.0), 0.0);
-        assert!(same_surface_locus(&source, &target));
+        assert!(
+            crate::test_support::with_service_context(|ctx| same_surface_locus(
+                ctx, &source, &target
+            ))
+            .expect("locus comparison")
+        );
         let pcurve = PcurveGeometry::Nurbs {
             nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
                 &cadmpeg_test_support::service_decode_context(),
@@ -6470,6 +6759,7 @@ mod tests {
         (SurfaceGeometry::Solved(target), stored, loci)
     }
 
+    mod budget_records;
     mod rechart_cases;
     mod wire_candidates;
 }

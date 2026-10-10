@@ -1887,10 +1887,16 @@ fn a8_pcurve_bspline_retains_only_final_lanes() {
         .expect("valid jet");
     assert_eq!(result.0.len(), 12);
     assert_eq!(result.1.len(), 6);
-    let result = crate::test_support::with_retained_limit(6 * 16, |ctx| jet.control_points(ctx))
-        .expect("controls-only output retains 96 bytes")
-        .expect("valid jet");
-    assert_eq!(result.len(), 6);
+    let result = crate::test_support::with_retained_limit(2 * 8 + 6 * 16, |ctx| {
+        jet.control_points_and_knots(ctx)
+    })
+    .expect("source knots and controls retain 112 bytes")
+    .expect("valid jet");
+    assert_eq!(
+        result.0,
+        jet.sites.iter().map(|site| site.knot).collect::<Vec<_>>()
+    );
+    assert_eq!(result.1.len(), 6);
 }
 
 #[test]
@@ -1953,3 +1959,5 @@ fn a5_surface_strict_knot_refusal_stays_in_the_outer_result() {
 }
 
 mod work_admission;
+
+mod storage_admission;
