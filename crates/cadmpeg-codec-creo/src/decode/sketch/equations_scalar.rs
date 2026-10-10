@@ -3,7 +3,7 @@
 
 use super::axis::SectionAxis;
 
-use crate::feature::definitions::VariableType;
+use crate::feature::definitions::{FeatureVariableRow, VariableType};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
@@ -85,7 +85,16 @@ fn section_equation_function_ten_axis_alignment(
     if equation.function_id != 10 || equation.arguments.len() != 7 {
         return Ok(None);
     }
-    let [Some(first_axis), Some(second_axis), Some(target_axis), Some(first_auxiliary), Some(first_ordinate), Some(second_ordinate), Some(second_auxiliary)] =
+    let [
+        // Coordinate and scalar argument lanes.
+        Some(first_axis),
+        Some(second_axis),
+        Some(target_axis),
+        Some(first_auxiliary),
+        Some(first_ordinate),
+        Some(second_ordinate),
+        Some(second_auxiliary),
+    ] =
         equation.arguments.as_slice()
     else {
         return Ok(None);
@@ -151,7 +160,7 @@ fn section_equation_function_ten_axis_alignment(
     }
 
     let auxiliary_is_zero =
-        |row: &crate::feature::definitions::FeatureVariableRow| -> Result<bool, CodecError> {
+        |row: &FeatureVariableRow| -> Result<bool, CodecError> {
             Ok(reconciled_scalar_row(ctx, row, scalar_equality_values)? == Ok(Some(0.0)))
         };
     if !auxiliary_is_zero(first_auxiliary)? || !auxiliary_is_zero(second_auxiliary)? {
@@ -1913,7 +1922,7 @@ fn section_equation_radial_constraint_rows_with_scalar_values(
         {
             continue;
         }
-        let scalar_value = |row: &crate::feature::definitions::FeatureVariableRow| -> Result<Option<Option<f64>>, CodecError> {
+        let scalar_value = |row: &FeatureVariableRow| -> Result<Option<Option<f64>>, CodecError> {
                 let equality = ctx.get_btree_map(&scalar_equality_values, &(row.variable_type, row.key), "creo section scalar equality lookup")?.copied().unwrap_or(Ok(None));
                 let Ok(equality) = equality else { return Ok(None); };
                 let Ok(resolved) = reconcile_equation_value(row.value.value(), equality) else { return Ok(None); };
@@ -2457,7 +2466,17 @@ pub(in crate::decode) fn section_equation_function_forty_three_axis_distance_row
         if equation.function_id != 43 || equation.arguments.len() != 8 {
             continue;
         }
-        let [Some(first_u), Some(first_v), Some(second_u), Some(second_v), Some(first_auxiliary), Some(second_auxiliary), Some(distance), Some(final_auxiliary)] =
+        let [
+            // Coordinate and scalar argument lanes.
+            Some(first_u),
+            Some(first_v),
+            Some(second_u),
+            Some(second_v),
+            Some(first_auxiliary),
+            Some(second_auxiliary),
+            Some(distance),
+            Some(final_auxiliary),
+        ] =
             equation.arguments.as_slice()
         else {
             continue;
@@ -2514,7 +2533,7 @@ pub(in crate::decode) fn section_equation_function_forty_three_axis_distance_row
         {
             continue;
         }
-        let auxiliary_value = |row: &crate::feature::definitions::FeatureVariableRow| -> Result<Option<Option<f64>>, CodecError> {
+        let auxiliary_value = |row: &FeatureVariableRow| -> Result<Option<Option<f64>>, CodecError> {
                 let equality = ctx.get_btree_map(&scalar_equality_values, &(row.variable_type, row.key), "creo section scalar equality lookup")?.copied().unwrap_or(Ok(None));
                 Ok(equality.ok().and_then(|value| reconcile_equation_value(row.value.value(), value).ok()))
             };

@@ -73,10 +73,11 @@ fn solve_matrix_with_limit(
 
 #[test]
 fn coordinate_equation_refuses_before_first_term_node() {
-    assert!(
-        matches!(crate::test_support::last_refusal_at(&[0], ResourceDimension::CollectionItems, "creo coordinate equation term nodes", |ctx| {
+    let error = crate::test_support::last_refusal_at(&[0], ResourceDimension::CollectionItems, "creo coordinate equation term nodes", |ctx| {
         super::SectionCoordinateEquation::point_value(ctx, 7, SectionAxis::U, 2.0)
-    }), cadmpeg_core::CodecError::ResourceLimit(limit)
+    });
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo coordinate equation term nodes")
     );
@@ -90,10 +91,11 @@ fn coordinate_equation_refuses_before_first_term_node() {
 
 #[test]
 fn coordinate_difference_refuses_before_second_term_node() {
-    assert!(
-        matches!(crate::test_support::last_refusal_at(&[0], ResourceDimension::CollectionItems, "creo coordinate equation term nodes", |ctx| {
+    let error = crate::test_support::last_refusal_at(&[0], ResourceDimension::CollectionItems, "creo coordinate equation term nodes", |ctx| {
         super::SectionCoordinateEquation::point_difference(ctx, 7, 8, SectionAxis::V, 3.0)
-    }), cadmpeg_core::CodecError::ResourceLimit(limit)
+    });
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo coordinate equation term nodes")
     );
@@ -750,10 +752,11 @@ fn equal_length_candidate_node_refuses_before_insertion() {
         offset: 0,
         active: true,
     }];
-    assert!(
-        matches!(crate::test_support::last_refusal_at(&[0], ResourceDimension::CollectionItems, "creo equal-length coordinate candidates", |ctx| {
+    let error = crate::test_support::last_refusal_at(&[0], ResourceDimension::CollectionItems, "creo equal-length coordinate candidates", |ctx| {
         super::section_equal_length_coordinate_values(ctx, &constraints, &coordinates)
-    }), cadmpeg_core::CodecError::ResourceLimit(limit)
+    });
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo equal-length coordinate candidates")
     );
