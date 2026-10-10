@@ -495,7 +495,10 @@ fn linked_colors<'ctx>(
     // The optional escape makes a record 32 or 33 bytes long. Its tag
     // excludes valid starts one byte apart, so each suffix has at most one
     // predecessor. Reduce each terminal chain without an outer summary map.
-    for (&tail, &record) in ctx.admit_iter(&records, "select Parasolid color run tails")?.rev() {
+    for (&tail, &record) in ctx
+        .admit_iter(&records, "select Parasolid color run tails")?
+        .rev()
+    {
         if ctx.contains_key_btree_map(&records, &record.2, INDEX)? {
             continue;
         }
@@ -506,57 +509,61 @@ fn linked_colors<'ctx>(
         loop {
             ctx.charge_work(1, "reduce Parasolid color runs")?;
             let (attr, color, _) = record;
-        summary_storage
-            .with_storage(|| ctx.entry_btree_map(&mut summary, attr, INDEX))?
-            .and_modify(|run| {
-                run.agreed &= run.color == color;
-                run.color = color;
-                run.offset = at;
-            })
-            .or_insert(RunColor {
-                color,
-                offset: at,
-                agreed: true,
-            });
-        if let Some(faces) = ctx.get_btree_map(&parents, &at, INDEX)? {
-            for (&face_attr, &(Reverse(parent_seq), parent_order)) in
-                ctx.admit_iter(faces, "frame Parasolid linked colors")?
-            {
-                if face_attr <= 1 {
-                    continue;
-                }
-                let Some(attributes) = ctx.get_btree_map(requested, &face_attr, INDEX)? else {
-                    continue;
-                };
-                for &color_attr in ctx.admit_iter(attributes, "frame Parasolid reduced colors")? {
-                    let Some(run) = ctx.get_btree_map(&summary, &color_attr, INDEX)? else {
+            summary_storage
+                .with_storage(|| ctx.entry_btree_map(&mut summary, attr, INDEX))?
+                .and_modify(|run| {
+                    run.agreed &= run.color == color;
+                    run.color = color;
+                    run.offset = at;
+                })
+                .or_insert(RunColor {
+                    color,
+                    offset: at,
+                    agreed: true,
+                });
+            if let Some(faces) = ctx.get_btree_map(&parents, &at, INDEX)? {
+                for (&face_attr, &(Reverse(parent_seq), parent_order)) in
+                    ctx.admit_iter(faces, "frame Parasolid linked colors")?
+                {
+                    if face_attr <= 1 {
+                        continue;
+                    }
+                    let Some(attributes) = ctx.get_btree_map(requested, &face_attr, INDEX)? else {
                         continue;
                     };
-                    let framed = FramedColor {
-                        color: run.color,
-                        offset: run.offset,
-                        parent_seq,
-                        parent_order,
-                    };
-                    storage
-                        .with_storage(|| {
-                            ctx.entry_hash_map(
-                                &mut colors,
-                                (face_attr, color_attr),
-                                "collect Parasolid linked colors",
-                            )
-                        })?
-                        .and_modify(|linked| linked.frame(framed, run.agreed))
-                        .or_insert(LinkedColor {
-                            current: framed,
-                            agreed: run.agreed,
-                        });
+                    for &color_attr in
+                        ctx.admit_iter(attributes, "frame Parasolid reduced colors")?
+                    {
+                        let Some(run) = ctx.get_btree_map(&summary, &color_attr, INDEX)? else {
+                            continue;
+                        };
+                        let framed = FramedColor {
+                            color: run.color,
+                            offset: run.offset,
+                            parent_seq,
+                            parent_order,
+                        };
+                        storage
+                            .with_storage(|| {
+                                ctx.entry_hash_map(
+                                    &mut colors,
+                                    (face_attr, color_attr),
+                                    "collect Parasolid linked colors",
+                                )
+                            })?
+                            .and_modify(|linked| linked.frame(framed, run.agreed))
+                            .or_insert(LinkedColor {
+                                current: framed,
+                                agreed: run.agreed,
+                            });
+                    }
                 }
             }
-        }
             let mut predecessor = None;
             for width in [32, 33] {
-                let Some(start) = at.checked_sub(width) else { continue; };
+                let Some(start) = at.checked_sub(width) else {
+                    continue;
+                };
                 if let Some(&candidate) = ctx.get_btree_map(&records, &start, INDEX)? {
                     if candidate.2 == at {
                         predecessor = Some((start, candidate));
@@ -564,7 +571,9 @@ fn linked_colors<'ctx>(
                     }
                 }
             }
-            let Some((start, next)) = predecessor else { break; };
+            let Some((start, next)) = predecessor else {
+                break;
+            };
             at = start;
             record = next;
         }
@@ -704,8 +713,6 @@ mod tests {
     };
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
-
-
     #[test]
     fn long_color_suffix_holds_one_reduction_and_releases_its_backing() {
         use super::Color;
@@ -713,19 +720,33 @@ mod tests {
         let mut bytes = Vec::new();
         for index in 0..4096 {
             bytes.extend_from_slice(&[0, 0x53]);
-            if index % 2 == 0 { bytes.push(0xff); }
+            if index % 2 == 0 {
+                bytes.push(0xff);
+            }
             bytes.extend_from_slice(&3_u32.to_be_bytes());
             bytes.extend_from_slice(&800_u16.to_be_bytes());
-            for value in [0.25_f64, 0.5, 0.75] { bytes.extend_from_slice(&value.to_be_bytes()); }
+            for value in [0.25_f64, 0.5, 0.75] {
+                bytes.extend_from_slice(&value.to_be_bytes());
+            }
         }
-        let parents = [EntityRecord { attr: 700, seq: 4, disc: 16,
-            refs: References { at: 0, count: 0, stride: 2 }, end: 0 }];
+        let parents = [EntityRecord {
+            attr: 700,
+            seq: 4,
+            disc: 16,
+            refs: References {
+                at: 0,
+                count: 0,
+                stride: 2,
+            },
+            end: 0,
+        }];
         let requested = BTreeMap::from([(700, BTreeSet::from([800]))]);
         type Record = (u16, Color, usize);
         // Core insertion bounds a tree by (n - 1) / 5 + 1 nodes. Source
         // parents, one reduction and the output index fit in the extra 4 KiB.
         let node = 11 * (std::mem::size_of::<usize>() + std::mem::size_of::<Record>())
-            + 16 * std::mem::size_of::<usize>() + 2 * std::mem::align_of::<Record>();
+            + 16 * std::mem::size_of::<usize>()
+            + 2 * std::mem::align_of::<Record>();
         let peak = u64::try_from(((4096 - 1) / 5 + 1) * node + 4096).unwrap();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_retained_bytes = 0;
@@ -739,9 +760,15 @@ mod tests {
         let color = &colors[&(700, 800)];
         assert!(color.agreed);
         assert_eq!((color.current.offset, color.current.parent_seq), (0, 4));
-        assert_eq!(color.current.color, super::color_record(&bytes, 0).unwrap().1);
+        assert_eq!(
+            color.current.color,
+            super::color_record(&bytes, 0).unwrap().1
+        );
         drop((colors, storage));
-        drop(ctx.reserve_scoped(peak, "test color suffix scratch release").unwrap());
+        drop(
+            ctx.reserve_scoped(peak, "test color suffix scratch release")
+                .unwrap(),
+        );
         ctx.finish_session().unwrap();
     }
     const FACE_COLOR_FAMILY: &str = "SDL/TYSA_COLOUR";
