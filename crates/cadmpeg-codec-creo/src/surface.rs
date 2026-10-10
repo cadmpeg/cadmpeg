@@ -4294,7 +4294,11 @@ fn first_coordinate_plane_corner_tokens(
     } else {
         body.len()
     };
-    let mut candidates = (0..frame_end).filter_map(|start| {
+    // Six scalar tokens end at `frame_end`. Both coordinate lanes consume
+    // at most eight bytes per token, so earlier starts cannot reach that end.
+    const MAX_CORNER_FRAME_BYTES: usize = 6 * 8;
+    let lower = frame_end.saturating_sub(MAX_CORNER_FRAME_BYTES);
+    let mut candidates = (lower..frame_end).filter_map(|start| {
         (start >= 3 && body.get(start - 3..start) == Some(&[0x00, 0x0c, 0x9a])).then_some(())?;
         let (stored_first_x, first_end) =
             scalar::decode_tabulated_cylinder_first_coordinate(body, start, cache)?;
