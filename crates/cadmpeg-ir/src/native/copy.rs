@@ -28,14 +28,7 @@ pub(super) fn insert(
 ) -> Result<(), CodecError> {
     // Map keeps its B-tree private. One entry search visits its search path.
     let len = fields.len();
-    let length = u64_from_index(len);
-    let half = length / 2 + length % 2;
-    let comparisons = if half == 0 {
-        0
-    } else {
-        11 * (u64::from(half.ilog(6)) + 1)
-    }
-    .min(length);
+    let (_, comparisons) = super::map_search_bound(len);
     let work = u64_from_index(key.len())
         .checked_mul(comparisons)
         .ok_or_else(|| {

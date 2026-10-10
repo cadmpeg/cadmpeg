@@ -1609,3 +1609,55 @@ fn canonical_record_identity_removal_admits_the_search_path() {
     assert_eq!(limit.additional, 2); // One comparison of the two-byte key.
     assert_eq!(run(u64::MAX).unwrap().id(), "test:native:record#0");
 }
+
+#[test]
+fn canonical_record_identity_removal_admits_node_mutation_before_removal() {
+    use cadmpeg_core::decode::refusal_probe::RefusalProbe;
+    use cadmpeg_core::decode::{u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use serde_json::{Map, Value};
+    use crate::native::NativeConvertError;
+
+    let node_bytes = 11 * (std::mem::size_of::<String>() + std::mem::size_of::<Value>())
+        + 16 * std::mem::size_of::<usize>()
+        + 2 * std::mem::align_of::<String>()
+            .max(std::mem::align_of::<Value>())
+            .max(std::mem::align_of::<usize>());
+    // Minimum entries for h levels: 2 * 6^(h-1) - 1.
+    for (len, passes) in [(1, 1), (10, 1), (11, 4 * 2 + 3), (71, 4 * 3 + 3), (1000, 4 * 4 + 3)] {
+        let entries = std::iter::once(("id".to_owned(), Value::String("test:native:record#0".into())))
+            .chain((1..len).map(|i| (format!("field-{i:04}"), Value::Null)))
+            .collect::<Map<_, _>>();
+        let run = |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            let record = NativeRecord::from_typed_for_decode(&ctx, &entries)?;
+            ctx.finish_session()?;
+            Ok::<_, NativeConvertError>(record)
+        };
+        let additional = u64_from_index(node_bytes) * passes;
+        let error = {
+            let _probe = RefusalProbe::arm(
+                ResourceDimension::WorkUnits,
+                "remove native record identity",
+                Some(additional),
+            );
+            run(u64::MAX).unwrap_err()
+        };
+        let CodecError::ResourceLimit(limit) = CodecError::from(error) else {
+            panic!("node mutation must refuse");
+        };
+        assert_eq!(limit.operation, "remove native record identity");
+        assert_eq!(limit.additional, additional);
+        let need = limit.used + additional;
+        assert!(matches!(CodecError::from(run(need - 1).unwrap_err()),
+            CodecError::ResourceLimit(ref refused)
+            if refused.dimension == ResourceDimension::WorkUnits
+                && refused.used == limit.used
+                && refused.additional == additional
+                && refused.operation == limit.operation));
+        assert_eq!(run(u64::MAX).unwrap().id(), "test:native:record#0");
+    }
+}
