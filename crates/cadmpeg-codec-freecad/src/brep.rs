@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bounded framing for text and binary exact-shape side entries.
 
+mod cost;
 pub(crate) mod triangulation;
 
 use triangulation::TextTriangulation;

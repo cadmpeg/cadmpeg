@@ -3803,7 +3803,7 @@ fn select_exact_curve_representation<'a>(
         |representation| {
             Ok(
                 !matches!(representation, TextEdgeRepresentation::Curve3d { .. })
-                    || equivalent_exact_curve_representation(first.1, representation, tables),
+                    || equivalent_exact_curve_representation(ctx, first.1, representation, tables)?,
             )
         },
         "FreeCAD exact curve representation comparison",
@@ -3816,10 +3816,11 @@ fn select_exact_curve_representation<'a>(
 }
 
 fn equivalent_exact_curve_representation(
+    ctx: &DecodeContext<'_>,
     left: &TextEdgeRepresentation,
     right: &TextEdgeRepresentation,
     tables: &Tables<'_>,
-) -> bool {
+) -> Result<bool, CodecError> {
     let (
         TextEdgeRepresentation::Curve3d {
             curve: left_curve,
@@ -3833,21 +3834,26 @@ fn equivalent_exact_curve_representation(
         },
     ) = (left, right)
     else {
-        return false;
+        return Ok(false);
     };
     let Some(left_curve) = left_curve.checked_sub(1) else {
-        return false;
+        return Ok(false);
     };
     let Some(right_curve) = right_curve.checked_sub(1) else {
-        return false;
+        return Ok(false);
     };
-    tables.curves.get(left_curve) == tables.curves.get(right_curve)
+    let curves_equal = match (tables.curves.get(left_curve), tables.curves.get(right_curve)) {
+        (Some(left), Some(right)) => ctx.equal(left, right, "FreeCAD exact curve equality")?,
+        (None, None) => true,
+        _ => false,
+    };
+    Ok(curves_equal
         && tables
             .location(*left_location)
             .ok()
             .zip(tables.location(*right_location).ok())
             .is_some_and(|(left, right)| left == right)
-        && left_range == right_range
+        && left_range == right_range)
 }
 
 fn unique_fallback_polygon_representation<'a>(
