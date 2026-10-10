@@ -247,8 +247,15 @@ fn tessellation_decode_skips_surface_index_without_support_lookup() {
         limited.limits.max_collection_items = 0;
         with_policy_context(&[], &limited, |_, ctx| {
             let mut admitted = u64_from_index(ir.model.entity_count());
-            let stage = super::super::decode(&exchange, &geometry.value, &topology.value, &mut ir, ctx, &mut admitted)
-                .expect("no support lookup builds no surface index");
+            let stage = super::super::decode(
+                &exchange,
+                &geometry.value,
+                &topology.value,
+                &mut ir,
+                ctx,
+                &mut admitted,
+            )
+            .expect("no support lookup builds no surface index");
             assert!(stage.claims.is_empty());
             assert!(stage.losses.is_empty());
             assert!(ir.model.tessellations.is_empty());
@@ -258,9 +265,15 @@ fn tessellation_decode_skips_surface_index_without_support_lookup() {
         allowed.limits.max_materialized_bytes = 1024;
         with_policy_context(&[], &allowed, |_, ctx| {
             let mut admitted = u64_from_index(ir.model.entity_count());
-            let stage =
-                super::super::decode(&exchange, &geometry.value, &topology.value, &mut ir, ctx, &mut admitted)
-                    .expect("no surface-index work required");
+            let stage = super::super::decode(
+                &exchange,
+                &geometry.value,
+                &topology.value,
+                &mut ir,
+                ctx,
+                &mut admitted,
+            )
+            .expect("no surface-index work required");
             assert!(stage.claims.is_empty());
             assert!(stage.losses.is_empty());
             assert!(ir.model.tessellations.is_empty());

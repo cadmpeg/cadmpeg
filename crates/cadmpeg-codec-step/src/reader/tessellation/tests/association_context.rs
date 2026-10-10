@@ -20,9 +20,17 @@ fn layered_tessellation_dag_work_is_bounded_by_graph_size() {
             };
             for id in [left, left + 1] {
                 if child_left == child_right {
-                    write!(records, "#{id}=TESSELLATED_GEOMETRIC_SET('',(#{child_left}));").unwrap();
+                    write!(
+                        records,
+                        "#{id}=TESSELLATED_GEOMETRIC_SET('',(#{child_left}));"
+                    )
+                    .unwrap();
                 } else {
-                    write!(records, "#{id}=TESSELLATED_GEOMETRIC_SET('',(#{child_left},#{child_right}));").unwrap();
+                    write!(
+                        records,
+                        "#{id}=TESSELLATED_GEOMETRIC_SET('',(#{child_left},#{child_right}));"
+                    )
+                    .unwrap();
                 }
             }
         }
@@ -47,15 +55,23 @@ fn shared_tessellation_items_keep_distinct_inherited_placements() {
 #10=TESSELLATED_ANNOTATION_OCCURRENCE('',(),#9);", super::ONE_TRIANGLE);
     let decoded = crate::test_support::exchange::decode_inline(&records);
     assert_eq!(decoded.ir().model.tessellations.len(), 1);
-    assert!(decoded.report().losses.iter().any(|loss| loss.message.contains("2 distinct repositioning placements")));
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("2 distinct repositioning placements")));
     let vertices = decoded.ir().model.tessellations[0].vertices();
-    super::assert_point3_close(vertices[0].get(), cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0));
+    super::assert_point3_close(
+        vertices[0].get(),
+        cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+    );
 }
 
 #[test]
 fn tessellation_claims_and_report_slots_release_without_retained_backing() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=TESSELLATED_SOLID('',(),$);ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).unwrap();
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner).unwrap();
     crate::test_support::with_service_context(source, |_, owner| {
         let mut ir = CadIr::empty();
         let geometry = crate::reader::geometry::decode(&exchange, &mut ir, owner).unwrap();
@@ -68,14 +84,24 @@ fn tessellation_claims_and_report_slots_release_without_retained_backing() {
             policy.limits.max_materialized_bytes = 8192;
             policy.limits.max_retained_bytes = u64::try_from(expected.len()).unwrap();
             let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-            let stage = super::super::decode(&exchange, &geometry.value, &topology.value, &mut ir, &ctx, &mut 0).unwrap();
+            let stage = super::super::decode(
+                &exchange,
+                &geometry.value,
+                &topology.value,
+                &mut ir,
+                &ctx,
+                &mut 0,
+            )
+            .unwrap();
             assert_eq!(stage.losses.len(), 1);
             assert_eq!(stage.losses[0].message, expected);
             assert_eq!(stage.claims, [1].into());
             let held = hold.then_some(stage);
             let probe = ctx.reserve_scoped(8192, "tessellation stage lifetime probe");
             if hold {
-                assert!(matches!(probe, Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::MaterializedBytes && limit.used > 0));
+                assert!(
+                    matches!(probe, Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::MaterializedBytes && limit.used > 0)
+                );
             } else {
                 probe.expect("claim nodes and report slots released");
             }
@@ -102,7 +128,9 @@ fn cycle_cut_tessellation_items_remain_visitable_from_another_active_path() {
 #9=AXIS2_PLACEMENT_3D('',#7,$,$);", super::ONE_TRIANGLE);
     let decoded = crate::test_support::exchange::decode_inline(&records);
     assert_eq!(decoded.ir().model.tessellations.len(), 1);
-    assert!(decoded.report().losses.iter().any(|loss| loss.message.contains("tessellation item #2 has 2 distinct repositioning placements")));
+    assert!(decoded.report().losses.iter().any(|loss| loss
+        .message
+        .contains("tessellation item #2 has 2 distinct repositioning placements")));
     super::assert_point3_close(
         decoded.ir().model.tessellations[0].vertices()[0].get(),
         cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),

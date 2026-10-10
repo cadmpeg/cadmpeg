@@ -113,7 +113,9 @@ fn protected_pcurve_deletion_warning_keeps_carrier_count() {
         assert_eq!(ir.model.procedural_surfaces.len(), 1);
         assert_eq!(typed_records, HashSet::from([2, 3, 4]));
         assert_eq!(losses.len(), 1);
-        assert!(losses[0].message.contains("opaque_pcurves=0, protected_pcurves=1"));
+        assert!(losses[0]
+            .message
+            .contains("opaque_pcurves=0, protected_pcurves=1"));
         assert!(losses[0].message.contains("deleted pcurves=0"));
     }
     ctx.finish_session().unwrap();
