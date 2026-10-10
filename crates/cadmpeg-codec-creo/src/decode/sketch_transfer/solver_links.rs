@@ -47,11 +47,15 @@ impl<'definition, 'ctx> IncidenceJoins<'definition, 'ctx> {
                 )?;
                 storage.absorb(&mut index_storage)?;
                 triples = index;
-                let has_join = !triples.is_empty() && ctx.any_by(
-                    relations.triples(),
-                    |row| Ok(key(row).is_some_and(|id| triples.get(&id).is_some_and(Option::is_some))),
-                    "creo solver usable join rows",
-                )?;
+                let has_join = !triples.is_empty()
+                    && ctx.any_by(
+                        relations.triples(),
+                        |row| {
+                            Ok(key(row)
+                                .is_some_and(|id| triples.get(&id).is_some_and(Option::is_some)))
+                        },
+                        "creo solver usable join rows",
+                    )?;
                 if has_join {
                     let (index, mut index_storage) = ctx.unique_index(
                         relations.skamps().iter().map(|row| (row.id, row)),
@@ -94,7 +98,11 @@ impl<'definition, 'ctx> RelationIncidences<'definition, 'ctx> {
         ctx: &'ctx DecodeContext<'_>,
         definition: &'definition FeatureDefinition,
     ) -> Result<Option<Self>, CodecError> {
-        let Some(table) = definition.relations.as_ref().filter(|table| !table.rows.is_empty()) else {
+        let Some(table) = definition
+            .relations
+            .as_ref()
+            .filter(|table| !table.rows.is_empty())
+        else {
             return Ok(None);
         };
         let mut storage = ctx.reserve_scoped(0, "creo dimension relation index storage")?;
@@ -108,22 +116,33 @@ impl<'definition, 'ctx> RelationIncidences<'definition, 'ctx> {
         } else {
             HashMap::new()
         };
-        let has_unique_relation = !relations.is_empty() && ctx.any_by(
-            &table.rows,
-            |row| Ok(relations.get(&row.relation_id).is_some_and(Option::is_some)),
-            "creo dimension relation join consumers",
-        )?;
+        let has_unique_relation = !relations.is_empty()
+            && ctx.any_by(
+                &table.rows,
+                |row| Ok(relations.get(&row.relation_id).is_some_and(Option::is_some)),
+                "creo dimension relation join consumers",
+            )?;
         let joins = if has_unique_relation {
             let mut joins = IncidenceJoins::new(
-                ctx, definition, |triple| triple.skamp_id.and(triple.relation_id),
+                ctx,
+                definition,
+                |triple| triple.skamp_id.and(triple.relation_id),
                 "creo solver relation join rows",
             )?;
             joins.storage.absorb(&mut storage)?;
             joins
         } else {
-            IncidenceJoins { triples: HashMap::new(), incidences: HashMap::new(), storage }
+            IncidenceJoins {
+                triples: HashMap::new(),
+                incidences: HashMap::new(),
+                storage,
+            }
         };
-        Ok(Some(Self { definition, relations, joins }))
+        Ok(Some(Self {
+            definition,
+            relations,
+            joins,
+        }))
     }
 
     pub(in super::super) fn new(
@@ -148,7 +167,7 @@ impl<'definition, 'ctx> RelationIncidences<'definition, 'ctx> {
                 )?;
                 joins.storage.absorb(&mut storage)?;
                 index
-            },
+            }
             _ => HashMap::new(),
         };
         Ok(Self {
@@ -233,8 +252,16 @@ impl<'definition, 'ctx> SkampEquations<'definition, 'ctx> {
                         .is_none_or(SolverSubtable::is_complete)
                 {
                     let (index, mut index_storage) = ctx.unique_index(
-                        ctx.admit_iter(relations.triples(), "creo solver SKAMP equation join rows")?
-                            .filter_map(|triple| triple.equation_id.and(triple.skamp_id).map(|id| (id, triple))),
+                        ctx.admit_iter(
+                            relations.triples(),
+                            "creo solver SKAMP equation join rows",
+                        )?
+                        .filter_map(|triple| {
+                            triple
+                                .equation_id
+                                .and(triple.skamp_id)
+                                .map(|id| (id, triple))
+                        }),
                         "creo solver SKAMP equation join rows",
                     )?;
                     storage.absorb(&mut index_storage)?;
