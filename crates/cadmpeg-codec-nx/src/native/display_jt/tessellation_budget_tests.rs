@@ -183,3 +183,15 @@ fn tessellation_path_rejection_admits_one_path_before_missing_vertex() {
     let CodecError::ResourceLimit(limit) = error else { panic!("path visit refusal"); };
     assert_eq!(limit.additional, 1);
 }
+
+#[test]
+fn missing_child_rejection_admits_one_reference_before_lookup() {
+    let mut fixture = Fixture::new();
+    fixture.groups.push(DisplayJtGroupNodeData { id: "group".into(), base_node: "base".into(), object_id: 1, version: 1, child_object_ids: vec![99; 129], family_data_byte_len: 0, family_data_sha256: Sha256Digest::digest(&[]), source_offset: 0 });
+    let error = crate::test_support::resource_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "nx JT parent references", |ctx| {
+        let inputs = fixture.inputs(); let index = JtTessellationIndex::new(ctx, &inputs)?;
+        JtSceneGraph::new(ctx, "scene", &inputs, &index).map(|value| { assert!(value.is_none()); })
+    });
+    let CodecError::ResourceLimit(limit) = error else { panic!("child visit refusal"); };
+    assert_eq!(limit.additional, 1);
+}

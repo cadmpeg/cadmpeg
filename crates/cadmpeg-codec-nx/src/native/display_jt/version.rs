@@ -15,7 +15,6 @@ impl JtVersionField {
     pub(super) fn new<S: AsRef<str>, E>(
         source: S,
         retain: impl FnOnce(S) -> Result<String, E>,
-        mut parse: impl FnMut(&str, &'static str) -> Result<Result<u16, std::num::ParseIntError>, E>,
     ) -> Result<Result<Self, &'static str>, E> {
         let field = source.as_ref();
         if field.len() != jt_document_header::BYTE_ORDER
@@ -36,10 +35,10 @@ impl JtVersionField {
         let Some((major, minor)) = token.split_once('.') else {
             return Ok(Err("JtVersionField.version_field lacks major.minor"));
         };
-        let Ok(major) = parse(major, "NX JT version major")? else {
+        let Ok(major) = major.parse::<u16>() else {
             return Ok(Err("JtVersionField.version_field major is not u16"));
         };
-        let Ok(minor) = parse(minor, "NX JT version minor")? else {
+        let Ok(minor) = minor.parse::<u16>() else {
             return Ok(Err("JtVersionField.version_field minor is not u16"));
         };
         let text = retain(source)?;
@@ -70,7 +69,7 @@ mod tests {
     use std::convert::Infallible;
 
     fn version_from_text(text: String) -> Result<JtVersionField, &'static str> {
-        match JtVersionField::new(text, Ok::<_, Infallible>, |text, _| Ok(text.parse())) {
+        match JtVersionField::new(text, Ok::<_, Infallible>) {
             Ok(value) => value,
             Err(error) => match error {},
         }
@@ -102,27 +101,21 @@ mod tests {
     }
 
     #[test]
-    fn version_major_and_minor_parse_refusals_propagate() {
-        use cadmpeg_core::decode::ResourceDimension;
-        for operation in ["NX JT version major", "NX JT version minor"] {
-            let text = format!("{:<80}", "Version +0009.+0010 metadata");
-            let error = crate::test_support::resource_refusal_at(
-                &[],
-                ResourceDimension::WorkUnits,
-                operation,
-                |ctx| {
-                    JtVersionField::new(
-                        text.as_str(),
-                        |text| ctx.copy_retained_text(text, "retain DisplayJT version text"),
-                        |text, operation| ctx.parse_text(text, operation),
-                    )
-                    .map(|_| ())
-                },
-            );
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == operation && limit.dimension == ResourceDimension::WorkUnits)
-            );
-        }
+    fn version_validation_needs_no_work_admission() {
+        let text = format!("{:<80}", "Version +0009.+0010 metadata");
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_work_units = 0,
+            |ctx| {
+                let version = JtVersionField::new(text.as_str(), |source| {
+                    let mut retained = ctx.retained_string(80, "retain DisplayJT version text")?;
+                    retained.push_str(source);
+                    Ok::<_, cadmpeg_core::CodecError>(retained)
+                }).unwrap().unwrap();
+                assert_eq!((version.major(), version.minor()), (9, 10));
+                assert_eq!(version.as_str(), text);
+                assert!(ctx.resource_refusal().is_none());
+            },
+        );
     }
 }
