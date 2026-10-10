@@ -1369,11 +1369,16 @@ fn swift_discarded_stream_roots_release_their_storage() {
 
 #[test]
 fn swift_second_root_skips_unused_descendant_index() {
-    let mut root = Entity { class: crate::swift::ROOT_CLASS.into(), ..Entity::default() };
+    let mut root = Entity {
+        class: crate::swift::ROOT_CLASS.into(),
+        ..Entity::default()
+    };
     let mut payload = Vec::new();
     encode_entity(&root, &mut payload);
     for index in 0..64 {
-        root.features.references.push(super::reference(&format!("F{index}"), "GdtPlane"));
+        root.features
+            .references
+            .push(super::reference(&format!("F{index}"), "GdtPlane"));
         root.features.entities.push(super::entity("GdtPlane"));
     }
     encode_entity(&root, &mut payload);
@@ -1381,7 +1386,11 @@ fn swift_second_root_skips_unused_descendant_index() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = u64::MAX;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(ResourceDimension::WorkUnits, "index validated SWIFT features", Some(64));
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "index validated SWIFT features",
+        Some(64),
+    );
     assert!(parse_unique_root(&ctx, &payload).unwrap().is_none());
     ctx.finish_session().unwrap();
 }
@@ -1389,31 +1398,47 @@ fn swift_second_root_skips_unused_descendant_index() {
 #[test]
 fn swift_rejected_annotation_gates_skip_populated_feature_index() {
     for class in ["GdtDatum", "GdtAngleBetween", "GdtUnrecognized"] {
-        let mut root = Entity { class: crate::swift::ROOT_CLASS.into(), ..Entity::default() };
+        let mut root = Entity {
+            class: crate::swift::ROOT_CLASS.into(),
+            ..Entity::default()
+        };
         for index in 0..64 {
-            root.features.references.push(super::reference(&format!("F{index}"), "GdtPlane"));
+            root.features
+                .references
+                .push(super::reference(&format!("F{index}"), "GdtPlane"));
             root.features.entities.push(super::entity("GdtPlane"));
         }
         let mut annotation = super::entity(class);
-        annotation.features.references.push(super::reference("F0", "GdtPlane"));
-        root.annotations.references.push(super::reference("A10", class));
+        annotation
+            .features
+            .references
+            .push(super::reference("F0", "GdtPlane"));
+        root.annotations
+            .references
+            .push(super::reference("A10", class));
         root.annotations.entities.push(annotation);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = u64::MAX;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(ResourceDimension::WorkUnits, "index SWIFT features", None);
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            ResourceDimension::WorkUnits,
+            "index SWIFT features",
+            None,
+        );
         {
-        let result = crate::swift::project_with_topology(&ctx, &root, None, &[], None, None);
-        if class == "GdtDatum" {
-            let Err(CodecError::Malformed(message)) = result else { panic!("missing datum identifier is malformed"); };
-            assert!(message.contains("missing or empty DatumIdentifier"));
-        } else {
-            let projection = result.unwrap();
-            assert!(projection.annotations.is_empty());
-            assert_eq!(projection.unsupported.get(class), Some(&1));
-            drop(projection);
-        }
+            let result = crate::swift::project_with_topology(&ctx, &root, None, &[], None, None);
+            if class == "GdtDatum" {
+                let Err(CodecError::Malformed(message)) = result else {
+                    panic!("missing datum identifier is malformed");
+                };
+                assert!(message.contains("missing or empty DatumIdentifier"));
+            } else {
+                let projection = result.unwrap();
+                assert!(projection.annotations.is_empty());
+                assert_eq!(projection.unsupported.get(class), Some(&1));
+                drop(projection);
+            }
         }
         ctx.finish_session().unwrap();
     }
@@ -1430,10 +1455,18 @@ fn swift_datum_reuses_its_admitted_pmi_identity() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let id = crate::swift::pmi_id_charged(&ctx, "A10").unwrap().unwrap();
     let geometry = crate::swift::ProjectionGeometry::new(&ctx, None, None, None);
-    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(ResourceDimension::WorkUnits, "format SWIFT PMI identity", None);
-    let annotation = crate::swift::project_datum(&ctx, id, &datum, || Ok(&features), &geometry).unwrap().unwrap();
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "format SWIFT PMI identity",
+        None,
+    );
+    let annotation = crate::swift::project_datum(&ctx, id, &datum, || Ok(&features), &geometry)
+        .unwrap()
+        .unwrap();
     assert_eq!(annotation.id, crate::swift::pmi_id("A10").unwrap());
-    assert!(matches!(annotation.definition, PmiDefinition::Datum { identification } if identification == "A"));
+    assert!(
+        matches!(annotation.definition, PmiDefinition::Datum { identification } if identification == "A")
+    );
     drop(geometry);
     ctx.finish_session().unwrap();
 }
@@ -1442,23 +1475,52 @@ fn swift_datum_reuses_its_admitted_pmi_identity() {
 fn swift_unbindable_cad_identifiers_skip_topology_indexes() {
     use cadmpeg_ir::ids::BodyId;
     use cadmpeg_ir::topology::Body;
-    let bodies = vec![Body {
-        id: BodyId::mint("sldprt:brep:body#11").unwrap(), kind: Default::default(),
-        regions: Vec::new(), transform: None, name: None, color: None, visible: None,
-    }; 64];
+    let bodies = vec![
+        Body {
+            id: BodyId::mint("sldprt:brep:body#11").unwrap(),
+            kind: Default::default(),
+            regions: Vec::new(),
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        };
+        64
+    ];
     let sequences = vec![(11, 1); 64];
-    for (identifier, empty) in [("invalid", false), (":11", false), ("schema:", false), ("schema:not-a-number", false), ("schema:11", true)] {
-        let mut root = Entity { class: crate::swift::ROOT_CLASS.into(), ..Entity::default() };
+    for (identifier, empty) in [
+        ("invalid", false),
+        (":11", false),
+        ("schema:", false),
+        ("schema:not-a-number", false),
+        ("schema:11", true),
+    ] {
+        let mut root = Entity {
+            class: crate::swift::ROOT_CLASS.into(),
+            ..Entity::default()
+        };
         let mut feature = super::entity("GdtCylinder");
         let mut cad = super::entity("CadRef");
-        cad.strings.insert("CadIdentifier".into(), identifier.into());
-        feature.related.push(RelatedObject { name: "Cad".into(), class: cad.class.clone(), entity: cad });
-        root.features.references.push(super::reference("F10", "GdtCylinder"));
+        cad.strings
+            .insert("CadIdentifier".into(), identifier.into());
+        feature.related.push(RelatedObject {
+            name: "Cad".into(),
+            class: cad.class.clone(),
+            entity: cad,
+        });
+        root.features
+            .references
+            .push(super::reference("F10", "GdtCylinder"));
         root.features.entities.push(feature);
         let mut annotation = super::entity("GdtDiameter");
         annotation.doubles.insert("Nominal".into(), 4.0);
-        annotation.features.references.push(super::reference("F10", "GdtCylinder"));
-        root.annotations.references.push(super::reference("A10", "GdtDiameter"));
+        annotation
+            .features
+            .references
+            .push(super::reference("F10", "GdtCylinder"));
+        root.annotations
+            .references
+            .push(super::reference("A10", "GdtDiameter"));
         root.annotations.entities.push(annotation);
         let source = source_with_swift_root(&root);
         let scan = crate::test_support::container::scan(&source);
@@ -1466,15 +1528,42 @@ fn swift_unbindable_cad_identifiers_skip_topology_indexes() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = u64::MAX;
         let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
-        let operation = if empty { "index SWIFT face sequence" } else { "index SWIFT body identities" };
-        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(ResourceDimension::WorkUnits, operation, Some(64));
-        let projection = annotations(&ctx, &scan, &mut Default::default(), Some(crate::swift::GeometryProjectionInputs {
-            topology: crate::swift::PrimaryTopology { bodies: if empty { &[] } else { &bodies }, faces: &[], edges: &[], vertices: &[] },
-            face_bridge_sequences: if empty { &sequences } else { &[] }, edge_use_sequences: &[], vertex_use_sequences: &[], features: &[],
-        })).unwrap();
+        let operation = if empty {
+            "index SWIFT face sequence"
+        } else {
+            "index SWIFT body identities"
+        };
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            ResourceDimension::WorkUnits,
+            operation,
+            Some(64),
+        );
+        let projection = annotations(
+            &ctx,
+            &scan,
+            &mut Default::default(),
+            Some(crate::swift::GeometryProjectionInputs {
+                topology: crate::swift::PrimaryTopology {
+                    bodies: if empty { &[] } else { &bodies },
+                    faces: &[],
+                    edges: &[],
+                    vertices: &[],
+                },
+                face_bridge_sequences: if empty { &sequences } else { &[] },
+                edge_use_sequences: &[],
+                vertex_use_sequences: &[],
+                features: &[],
+            }),
+        )
+        .unwrap();
         assert_eq!(projection.annotations.len(), 1);
-        assert_eq!(dimension_nominal(&projection.annotations, "A10"), length(4.0));
-        assert!(matches!(projection.annotations[0].targets.as_slice(), [PmiTarget::ShapeAspect { source_id }] if source_id.as_str() == "F10"));
+        assert_eq!(
+            dimension_nominal(&projection.annotations, "A10"),
+            length(4.0)
+        );
+        assert!(
+            matches!(projection.annotations[0].targets.as_slice(), [PmiTarget::ShapeAspect { source_id }] if source_id.as_str() == "F10")
+        );
         ctx.finish_session().unwrap();
     }
 }
