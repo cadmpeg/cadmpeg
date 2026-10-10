@@ -94,37 +94,6 @@ fn with_zero_resources<T>(run: impl FnOnce(DecodeContext<'_>) -> T) -> T {
 }
 
 #[test]
-fn empty_coordinate_component_seed_is_free_and_keeps_original_refusal() {
-    for refused in [false, true] {
-        with_zero_resources(|ctx| {
-            let original = refused.then(|| match ctx.charge_work(1, "seed component refusal") {
-                Err(CodecError::ResourceLimit(limit)) => limit,
-                other => panic!("expected seed refusal: {other:?}"),
-            });
-            let mut remaining = BTreeSet::new();
-            for _ in 0..2 {
-                let result = super::super::next_section_component(&ctx, &mut remaining, &[]);
-                if let Some(original) = original {
-                    assert!(
-                        matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original)
-                    );
-                } else {
-                    assert_eq!(result.expect("no component seed"), None);
-                }
-                assert!(remaining.is_empty());
-            }
-            if let Some(original) = original {
-                assert!(
-                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original)
-                );
-            } else {
-                ctx.finish_session().expect("active session");
-            }
-        });
-    }
-}
-
-#[test]
 fn coordinate_solver_without_equations_is_free_and_keeps_original_refusal() {
     for refused in [false, true] {
         with_zero_resources(|ctx| {

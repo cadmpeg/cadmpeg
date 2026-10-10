@@ -32,7 +32,7 @@ struct FeatureOutputCandidates<'ir, 'ctx> {
     storage: ScopedReservation<'ctx>,
 }
 
-impl<'ir, 'ctx> FeatureOutputCandidates<'ir, 'ctx> {
+impl<'ctx> FeatureOutputCandidates<'_, 'ctx> {
     fn new(ctx: &'ctx DecodeContext<'_>) -> Result<Self, CodecError> {
         Ok(Self {
             bodies: Vec::new(),
@@ -461,9 +461,6 @@ pub(in super::super) fn evaluated_sweep_body_kind(
     family: &str,
     feature_id: u32,
 ) -> Result<Option<BodyKind>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let prefix = match family {
         "extrusion" => "creo:feature:extrusion#",
         "revolution" => "creo:feature:revolution#",
@@ -492,9 +489,6 @@ pub(in super::super) fn new_sheet_output_surface_id(
     tables: &[crate::feature::entity::FeatureEntityTable],
     surface_rows: &[crate::surface::SurfaceRow],
 ) -> Result<Option<u32>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut selected = [None; 3];
     let mut rows = tables.iter();
     while rows.len() != 0 {

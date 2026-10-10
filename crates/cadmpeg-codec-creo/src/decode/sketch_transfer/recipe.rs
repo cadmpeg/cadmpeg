@@ -195,9 +195,6 @@ pub(in super::super) fn current_feature_operation<'operations>(
     operations: &'operations [crate::feature::operations::FeatureOperation],
     feature_id: u32,
 ) -> Result<Option<&'operations crate::feature::operations::FeatureOperation>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(CodecError::ResourceLimit(refusal));
-    }
     let mut selected = None;
     let mut operations = operations.iter();
     while operations.len() != 0 {
@@ -231,9 +228,6 @@ fn feature_schema_class_with_operation(
     feature_id: u32,
     operation: Option<&crate::feature::operations::FeatureOperation>,
 ) -> Result<Option<SchemaClass>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     resolved_feature_schema_class_from_classes(
         operation,
         |visit_class| {
@@ -373,9 +367,6 @@ pub(in super::super) fn unique_feature_revolution_extent<'records>(
     feature_id: u32,
 ) -> Result<Option<&'records crate::feature::rows::FeatureRevolutionExtent>, cadmpeg_core::CodecError>
 {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut records = records.iter();
     while records.len() != 0 {
         let Some(record) = ctx.next_charged(&mut records, "creo feature revolution extent rows")?

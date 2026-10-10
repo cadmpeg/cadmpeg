@@ -53,9 +53,6 @@ pub(in crate::decode) fn section_line_geometry(
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::definitions::FeatureSegment,
 ) -> Result<Option<SketchGeometry>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let crate::feature::definitions::FeatureSegmentKind::Line([start, end]) = segment.kind else {
         return Ok(None);
     };
@@ -85,9 +82,6 @@ pub(in crate::decode) fn section_point_geometry(
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::definitions::FeatureSegment,
 ) -> Result<Option<SketchGeometry>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let crate::feature::definitions::FeatureSegmentKind::Point(point) = segment.kind else {
         return Ok(None);
     };
@@ -105,9 +99,6 @@ pub(in crate::decode) fn section_arc_geometry(
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::definitions::FeatureSegment,
 ) -> Result<Option<SketchGeometry>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if !matches!(
         segment.kind,
         crate::feature::definitions::FeatureSegmentKind::Arc(_)
@@ -238,9 +229,6 @@ pub(in crate::decode) fn section_reference_line_geometry(
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::definitions::FeatureReferenceLineSegment,
 ) -> Result<Option<SketchGeometry>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let [Some(start_id), Some(end_id)] = segment.point_ids else {
         return Ok(None);
     };
@@ -540,9 +528,6 @@ pub(super) fn saved_section_arc_record<'a>(
     definition: &'a crate::feature::definitions::FeatureDefinition,
     segment: &crate::feature::definitions::FeatureSegment,
 ) -> Result<Option<&'a crate::feature::definitions::FeatureSavedArc>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if !matches!(
         segment.kind,
         crate::feature::definitions::FeatureSegmentKind::Arc(_)
@@ -735,9 +720,6 @@ pub(in crate::decode) fn saved_section_segment_point_coordinates(
     definition: &crate::feature::definitions::FeatureDefinition,
     segment: &crate::feature::definitions::FeatureSegment,
 ) -> Result<Option<SavedSegmentPointCoordinates>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let coordinates = match segment.kind {
         crate::feature::definitions::FeatureSegmentKind::Line(_) => {
             let Some(geometry) = saved_section_line_geometry(ctx, definition, segment)? else {
@@ -787,9 +769,6 @@ pub(in crate::decode) fn saved_section_circle_values(
     definition: &crate::feature::definitions::FeatureDefinition,
     segment: &crate::feature::definitions::FeatureCircleSegment,
 ) -> Result<Option<([f64; 2], f64)>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(segments) = definition.segments.as_ref() else {
         return Ok(None);
     };

@@ -273,9 +273,6 @@ fn admitted_hole_placements(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     candidates: [Option<HolePlacement>; 3],
 ) -> Result<Vec<HolePlacement>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut placements = Vec::new();
     for placement in candidates.into_iter().flatten() {
         ctx.reserve_vec(&mut placements, 1, "creo hole placements")?;
@@ -324,7 +321,10 @@ pub(super) fn linear_extrusion_extent_and_direction(
                     ctx,
                     transform.origin(),
                     transform.normal(),
-                    plane_storage.0.iter().map(|plane| (plane.origin, plane.normal)),
+                    plane_storage
+                        .0
+                        .iter()
+                        .map(|plane| (plane.origin, plane.normal)),
                 )?;
             }
         }
@@ -1212,7 +1212,10 @@ fn reconciled_datum_plane_definition(
             },
             "creo datum model surface lookup",
         )?;
-        match surface.map(|surface| source_carriers.surface_geometry(surface)).transpose()? {
+        match surface
+            .map(|surface| source_carriers.surface_geometry(surface))
+            .transpose()?
+        {
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane))) => {
                 *plane.frame().reference().as_raw()
             }
@@ -1257,9 +1260,6 @@ pub(in super::super) fn numbered_feature_name_has_family(
     name: &str,
     family: &str,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(ordinal) = name
         .strip_prefix(family)
         .and_then(|suffix| suffix.strip_prefix(' '))
@@ -1408,7 +1408,8 @@ pub(in super::super) fn class_942_boundary_surface_entity_graph(
     let mut selected = [None; 4];
     let mut rows = tables.iter();
     while rows.len() != 0 {
-        let Some(table) = ctx.next_charged(&mut rows, "creo boundary surface entity tables")? else {
+        let Some(table) = ctx.next_charged(&mut rows, "creo boundary surface entity tables")?
+        else {
             break;
         };
         if table.feature_id != feature_id {

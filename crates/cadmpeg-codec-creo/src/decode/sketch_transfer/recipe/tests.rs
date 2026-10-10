@@ -2,40 +2,6 @@
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
-#[test]
-fn empty_feature_operation_routes_preserve_original_refusal_without_work() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    assert!(super::current_feature_operation(&ctx, &[], 40)
-        .expect("empty selection")
-        .is_none());
-    assert!(super::current_feature_recipe(&ctx, &[], 40)
-        .expect("empty recipe")
-        .is_none());
-    assert!(super::current_additive_feature_recipe(&ctx, &[], 40)
-        .expect("empty additive recipe")
-        .is_none());
-    assert!(super::current_feature_recipe_parent(&ctx, &[], 40)
-        .expect("empty recipe parent")
-        .is_none());
-    let original = ctx
-        .charge_work_limit(1, "prior recipe refusal")
-        .expect_err("refusal");
-    for error in [
-        super::current_feature_operation(&ctx, &[], 40).map(|_| ()),
-        super::current_feature_recipe(&ctx, &[], 40).map(|_| ()),
-        super::current_additive_feature_recipe(&ctx, &[], 40).map(|_| ()),
-        super::current_feature_recipe_parent(&ctx, &[], 40).map(|_| ()),
-    ] {
-        assert!(
-            matches!(error, Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
-            if refusal == original)
-        );
-    }
-}
-
 use super::{
     feature_row_schema_classes, feature_schema_class, row_feature_schema_classes,
     unique_feature_revolution_extent,
@@ -221,8 +187,6 @@ fn feature_operation_selector_visits_each_present_record_once() {
             assert_eq!(refusal.operation, "creo current feature operation rows");
             assert_eq!(refusal.used, cap);
             assert_eq!(refusal.additional, 1);
-            assert!(matches!(super::current_feature_recipe(&ctx, &[], 40),
-                Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == *refusal));
         }
         result.map(|_| ())
     });
@@ -371,30 +335,6 @@ fn schema_legacy_round_fallback_stops_at_first_match() {
 }
 
 #[test]
-fn schema_fast_operation_class_preserves_original_refusal() {
-    let scan = crate::test_support::empty_container_scan();
-    let selected = operation(40);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    assert_eq!(
-        super::feature_schema_class_with_operation(&ctx, &scan, 40, Some(&selected))
-            .expect("fixed class"),
-        Some(crate::feature::schema::SchemaClass::Protrusion)
-    );
-    let original = ctx
-        .charge_work_limit(1, "prior schema refusal")
-        .expect_err("seed refusal");
-    for selected in [None, Some(&selected)] {
-        assert!(
-            matches!(super::feature_schema_class_with_operation(&ctx, &scan, 40, selected),
-            Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) if refusal == original)
-        );
-    }
-}
-
-#[test]
 fn revolution_extent_search_keeps_first_match_and_free_exhaustion() {
     let extent = |feature_id| crate::feature::rows::FeatureRevolutionExtent {
         feature_id,
@@ -423,11 +363,6 @@ fn revolution_extent_search_keeps_first_match_and_free_exhaustion() {
         .expect("first match")
         .expect("extent");
     assert!(std::ptr::eq(selected, &raw const records[0]));
-    let original = ctx
-        .charge_work_limit(1, "prior extent refusal")
-        .expect_err("seed refusal");
-    assert!(matches!(unique_feature_revolution_extent(&ctx, &[], 40),
-        Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) if refusal == original));
 }
 
 fn assert_first_material_without_unique_target(

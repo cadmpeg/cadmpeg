@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::super::{
-    entity_intersection_cached, named_trim_vertex_prototype_complete, trim_buckets, trim_carrier,
-    trim_radius, trim_vertex_entry, trim_vertex_entry_bounds, TrimEntryKind, TrimTableClasses,
-    TrimTableHeader,
+    entity_intersection_cached, named_trim_vertex_prototype_complete, trim_vertex_entry,
+    trim_vertex_entry_bounds, TrimTableClasses,
 };
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
@@ -46,9 +45,6 @@ fn counted_trim_bounds_admit_only_present_entities() {
                         .charge_work_limit(1, "after trim bounds")
                         .expect_err("present entity work consumed");
                     assert_eq!((original.used, original.additional), (visits, 1));
-                    assert!(
-                        matches!(run(), Err(CodecError::ResourceLimit(actual)) if actual == original)
-                    );
                 } else {
                     let original = ctx.resource_refusal().expect("present entity refusal");
                     assert_eq!(
@@ -67,9 +63,6 @@ fn counted_trim_bounds_admit_only_present_entities() {
                     );
                     assert!(
                         matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original)
-                    );
-                    assert!(
-                        matches!(run(), Err(CodecError::ResourceLimit(actual)) if actual == original)
                     );
                 }
 
@@ -225,60 +218,6 @@ fn counted_trim_prototype_stops_at_absent_entity_source() {
     }
 }
 
-#[test]
-fn empty_trim_buckets_keep_zero_work_and_original_refusal() {
-    let arena = DecodeArena::new();
-    let policy = zero_policy();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let header = TrimTableHeader {
-        declared_count: 0,
-        classes: TrimTableClasses {
-            table: 66,
-            bucket: 67,
-            entry: 68,
-        },
-    };
-    let run = || trim_buckets(&ctx, &[], 0, 0, header, TrimEntryKind::Vertex);
-    assert!(run().expect("empty table is free").is_empty());
-    let original = ctx
-        .charge_work_limit(1, "before empty trim buckets")
-        .expect_err("zero work");
-    assert!(matches!(run(), Err(CodecError::ResourceLimit(actual)) if actual == original));
-}
-
-#[test]
-fn fixed_trim_bounds_keep_zero_work_and_original_refusal() {
-    let arena = DecodeArena::new();
-    let policy = zero_policy();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let payload = b"\x09\x0a\x03\x00";
-    assert_eq!(
-        trim_vertex_entry_bounds(&ctx, payload, 0, payload.len()).expect("fixed grammar"),
-        Some((2, 3, payload.len(), 0))
-    );
-    let original = ctx
-        .charge_work_limit(1, "before fixed trim bounds")
-        .expect_err("zero work");
-    assert!(
-        matches!(trim_vertex_entry_bounds(&ctx, payload, 0, payload.len()),
-        Err(CodecError::ResourceLimit(actual)) if actual == original)
-    );
-}
-
-fn empty_geometry<'ctx>(
-    ctx: &'ctx DecodeContext<'_>,
-) -> super::super::super::points::CheckedTrimGeometry<'ctx> {
-    let variables = super::FeatureVariableTable {
-        declared_count: 0,
-        entity_ref: None,
-        rows: Vec::new(),
-        offset: 0,
-    };
-    variables
-        .reconciled_trim_geometry(ctx)
-        .expect("empty fixture geometry")
-}
-
 fn isolated_segment() -> super::FeatureSegment {
     super::FeatureSegment {
         kind: super::FeatureSegmentKind::Point(7),
@@ -292,66 +231,6 @@ fn isolated_segment() -> super::FeatureSegment {
         body: Vec::new(),
         offset: 0,
     }
-}
-
-#[test]
-fn absent_trim_radius_keeps_zero_work_and_original_refusal() {
-    let fixture_arena = DecodeArena::new();
-    let fixture_policy = DecodePolicy::service();
-    let (fixture_ctx, _) =
-        DecodeContext::from_root_bytes(&[], &fixture_arena, &fixture_policy).expect("fixture root");
-    let geometry = empty_geometry(&fixture_ctx);
-    let segment = isolated_segment();
-    let arena = DecodeArena::new();
-    let policy = zero_policy();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let run = || trim_radius(&ctx, &segment, [0.0; 2], &geometry);
-    assert!(run().expect("absent radius is free").is_none());
-    let original = ctx
-        .charge_work_limit(1, "before absent trim radius")
-        .expect_err("zero work");
-    assert!(matches!(run(), Err(CodecError::ResourceLimit(actual)) if actual == original));
-}
-
-#[test]
-fn isolated_trim_carrier_keeps_zero_work_and_original_refusal() {
-    let fixture_arena = DecodeArena::new();
-    let fixture_policy = DecodePolicy::service();
-    let (fixture_ctx, _) =
-        DecodeContext::from_root_bytes(&[], &fixture_arena, &fixture_policy).expect("fixture root");
-    let geometry = empty_geometry(&fixture_ctx);
-    let segment = isolated_segment();
-    let arena = DecodeArena::new();
-    let policy = zero_policy();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let run = || trim_carrier(&ctx, &segment, &geometry);
-    assert!(run().expect("isolated point has no carrier").is_none());
-    let original = ctx
-        .charge_work_limit(1, "before isolated trim carrier")
-        .expect_err("zero work");
-    assert!(matches!(run(), Err(CodecError::ResourceLimit(actual)) if actual == original));
-}
-
-#[test]
-fn missing_trim_intersection_inputs_keep_zero_work_and_original_refusal() {
-    let arena = DecodeArena::new();
-    let policy = zero_policy();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let mut geometry = None;
-    assert!(
-        entity_intersection_cached(&ctx, &[], None, None, &mut geometry)
-            .expect("absent inputs are free")
-            .is_none()
-    );
-    assert!(geometry.is_none());
-    let original = ctx
-        .charge_work_limit(1, "before missing trim intersection")
-        .expect_err("zero work");
-    assert!(
-        matches!(entity_intersection_cached(&ctx, &[], None, None, &mut geometry),
-        Err(CodecError::ResourceLimit(actual)) if actual == original)
-    );
-    assert!(geometry.is_none());
 }
 
 #[test]

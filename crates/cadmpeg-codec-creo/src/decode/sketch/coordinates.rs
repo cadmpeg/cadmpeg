@@ -48,9 +48,6 @@ pub(in crate::decode) fn saved_section_coordinate_witnesses(
     definition: &crate::feature::definitions::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Result<Vec<(u32, [f64; 2])>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(segment_tables) = definition.segments.as_ref() else {
         return Ok(Vec::new());
     };
@@ -182,9 +179,6 @@ impl<'ctx> CoordinateEquationIndex<'ctx> {
         ctx: &DecodeContext<'_>,
         equation: &SectionCoordinateEquation,
     ) -> Result<bool, CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let Some(rhs) = FiniteReal::new(equation.rhs) else {
             return Ok(false);
         };
@@ -210,9 +204,6 @@ impl<'ctx> CoordinateEquationIndex<'ctx> {
         ctx: &'ctx DecodeContext<'_>,
         equation: &SectionCoordinateEquation,
     ) -> Result<(), CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         if !equation.rhs.is_finite() {
             return Ok(());
         }

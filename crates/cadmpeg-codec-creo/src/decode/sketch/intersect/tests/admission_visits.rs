@@ -1,18 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::super::{
-    intersect_incident_section_carriers, trimmed_section_segment_geometry_with_missing_line,
-};
-use crate::feature::definitions::{
-    DefinitionIdentity, FeatureDefinition, FeatureSegment, FeatureSegmentKind,
-};
+use super::super::intersect_incident_section_carriers;
+
 use cadmpeg_core::decode::{
     DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, ResourceLimit,
 };
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
-use std::collections::BTreeMap;
 
 fn line(end: [f64; 2]) -> SketchGeometry {
     SketchGeometry::try_from(SketchGeometryDefinition::Line {
@@ -145,77 +140,4 @@ fn unsupported_first_carrier_pair_stops_before_other_rows() {
         },
     );
     assert_eq!(coordinate, None);
-}
-
-#[test]
-fn carrier_cardinality_and_missing_trim_routes_are_free_and_keep_original_refusal() {
-    let carriers = [line([1.0, 0.0])];
-    let definition = FeatureDefinition {
-        identity: DefinitionIdentity::Parsed {
-            schema_id: std::num::NonZeroU32::new(1),
-            owner_feature_id: None,
-        },
-        body: Vec::new(),
-        parameter_frames: Vec::new(),
-        outlines: Vec::new(),
-        variables: None,
-        segments: None,
-        trim_entities: None,
-        trim_vertices: None,
-        order_table: None,
-        section_3d: None,
-        dimensions: None,
-        relations: None,
-        saved_section: None,
-        offset: 0,
-    };
-    let segment = FeatureSegment {
-        kind: FeatureSegmentKind::Line([1, 2]),
-        directions: [None; 3],
-        center_id: None,
-        arc_orientation: None,
-        vertical_horizontal: None,
-        radius_ref: None,
-        radius2_ref: None,
-        external_id: 7,
-        body: Vec::new(),
-        offset: 0,
-    };
-    let points = BTreeMap::new();
-    let radii = BTreeMap::new();
-    for refused in [false, true] {
-        with_work(0, |ctx| {
-            let original = refused.then(|| {
-                ctx.charge_work_limit(1, "before empty carriers")
-                    .expect_err("zero work")
-            });
-            for _ in 0..2 {
-                for count in 0..=1 {
-                    let result = intersect_incident_section_carriers(&ctx, &carriers[..count]);
-                    if let Some(original) = original {
-                        assert!(matches!(result,
-                            Err(CodecError::ResourceLimit(actual)) if actual == original));
-                    } else {
-                        assert_eq!(result.expect("no pairs"), None);
-                    }
-                }
-                let result = trimmed_section_segment_geometry_with_missing_line(
-                    &ctx,
-                    &definition,
-                    &points,
-                    &radii,
-                    &points,
-                    &segment,
-                    None,
-                );
-                if let Some(original) = original {
-                    assert!(matches!(result,
-                        Err(CodecError::ResourceLimit(actual)) if actual == original));
-                } else {
-                    assert!(result.expect("missing trim table").is_none());
-                }
-            }
-            finish(ctx, original);
-        });
-    }
 }

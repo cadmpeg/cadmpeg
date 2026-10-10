@@ -192,9 +192,6 @@ pub(super) fn trim_buckets(
     header: TrimTableHeader,
     kind: TrimEntryKind,
 ) -> Result<Vec<FeatureTrimBucket>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if header.declared_count == 0 {
         return Ok(Vec::new());
     }
@@ -438,9 +435,6 @@ fn trim_vertex_entry_bounds(
     offset: usize,
     end: usize,
 ) -> Result<Option<(usize, u32, usize, usize)>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut cursor = offset;
     if payload.get(cursor) == Some(&psb::token::ARRAY_OPEN) {
         let (count, next) = psb::compact_int(payload, cursor + 1);
@@ -1323,9 +1317,6 @@ fn trim_radius(
     center: [f64; 2],
     geometry: &points::TrimGeometry,
 ) -> Result<Option<cadmpeg_ir::scalar::PositiveReal>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(radius_ref) = segment.radius_ref else {
         return Ok(None);
     };
@@ -1374,9 +1365,6 @@ fn trim_carrier(
     segment: &FeatureSegment,
     geometry: &points::TrimGeometry,
 ) -> Result<Option<TrimCarrier>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     Ok(match segment.kind {
         FeatureSegmentKind::Line(_) => {
             let Some(start) = trim_point(ctx, geometry, segment.point_ids()[0])? else {
@@ -1545,9 +1533,6 @@ fn entity_intersection_cached<'ctx>(
     variables: Option<&FeatureVariableTable>,
     geometry: &mut Option<points::CheckedTrimGeometry<'ctx>>,
 ) -> Result<Option<[f64; 2]>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let (Some(segments), Some(variables)) = (segments, variables) else {
         return Ok(None);
     };
