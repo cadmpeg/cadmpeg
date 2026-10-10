@@ -21,6 +21,7 @@ use crate::{StepCodec, StepSchema, StepWriteOptions};
 mod case_equality;
 mod collection_limits;
 mod known_length;
+mod scratch_lifetimes;
 mod string_limits;
 
 #[test]
@@ -1768,4 +1769,5 @@ fn typed_omitted_descent_refuses_work_limit() {
 
 mod typed_work;
 
+mod characteristic_analysis;
 mod characteristic_claims;
