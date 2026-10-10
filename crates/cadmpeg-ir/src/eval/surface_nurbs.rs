@@ -11,6 +11,8 @@ use crate::geometry::nurbs::{NurbsPoleGrid, NurbsSurface};
 use crate::math::Point3;
 use crate::scalar::{FiniteReal, NonZeroReal};
 
+mod polynomial_fourth;
+
 /// A tensor-product NURBS surface at a parameter: its spans, its bases and
 /// its homogeneous base sum, with its finite point.
 pub(super) struct NurbsSurfaceLocal<'a> {
@@ -420,20 +422,33 @@ pub(super) fn nurbs_surface_requested_jet(
                 .and_then(|first| local.second(scratch, first))
         } else { Err(EvaluationFailure::NoValue) };
         let third_state = if request.needs_third() && !polynomial_degree.is_some_and(|degree| degree < 3) {
-            first.as_ref().map_err(|failure| *failure).and_then(|first| {
-                second.as_ref().map_err(|failure| *failure)
+            first.as_ref().map_err(|failure| match *failure {
+                EvaluationFailure::ResourceLimit(limit) => EvaluationFailure::ResourceLimit(limit),
+                EvaluationFailure::NoValue | EvaluationFailure::NonFinite(()) => EvaluationFailure::NoValue,
+            }).and_then(|first| {
+                second.as_ref().map_err(|failure| match *failure {
+                    EvaluationFailure::ResourceLimit(limit) => EvaluationFailure::ResourceLimit(limit),
+                    EvaluationFailure::NoValue | EvaluationFailure::NonFinite(()) => EvaluationFailure::NoValue,
+                })
                     .and_then(|second| local.third(scratch, first, second))
             })
         } else { Err(EvaluationFailure::NoValue) };
         let fourth = if request == SurfaceRequest::Fourth && polynomial_degree.is_some_and(|degree| degree < 4) {
             Ok([FiniteVector3::ZERO; 5])
         } else if request == SurfaceRequest::Fourth {
-            first.as_ref().map_err(|failure| *failure).and_then(|first| {
-                second.as_ref().map_err(|failure| *failure).and_then(|second| {
-                    third_state.as_ref().map_err(|failure| *failure)
-                        .and_then(|third| local.fourth(scratch, first, second, third))
-                })
-            }).map(|lanes| lanes.map(finite_vector))
+            match (&first, &second, &third_state) {
+                (Ok(first), Ok(second), Ok(third)) => local.fourth(scratch, first, second, third),
+                (Err(EvaluationFailure::ResourceLimit(limit)), _, _)
+                | (_, Err(EvaluationFailure::ResourceLimit(limit)), _)
+                | (_, _, Err(EvaluationFailure::ResourceLimit(limit))) => Err(EvaluationFailure::ResourceLimit(*limit)),
+                _ if polynomial_degree.is_some() && (
+                    matches!(first, Err(EvaluationFailure::NonFinite(())))
+                    || matches!(second, Err(EvaluationFailure::NonFinite(())))
+                    || matches!(third_state, Err(EvaluationFailure::NonFinite(())))
+                ) => polynomial_fourth::evaluate(scratch, &local),
+                // Missing lower raw state does not prove this order overflowed.
+                _ => Err(EvaluationFailure::NoValue),
+            }.map(|lanes| lanes.map(finite_vector))
         } else { Err(EvaluationFailure::NoValue) };
         let third = if request.needs_third() && polynomial_degree.is_some_and(|degree| degree < 3) {
             Ok([FiniteVector3::ZERO; 4])
