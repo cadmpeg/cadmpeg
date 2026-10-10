@@ -92,3 +92,82 @@ fn object_names_text_index_preserves_original_refusal() {
     assert_eq!(ctx.resource_refusal(), Some(limit));
     assert!(matches!(names.of(&ctx, &feature(None)), Err(CodecError::ResourceLimit(repeated)) if repeated == limit));
 }
+
+fn source_name_table_storage(buckets: usize) -> u64 {
+    // Core admits typed buckets, one control byte per bucket, trailing control
+    // bytes and alignment padding. A new table holds three entries in four
+    // buckets; fourth-entry growth admits sixteen buckets beside the old four.
+    let lane = std::mem::size_of::<(u32, Option<&FeatureInputName>)>();
+    let padding = std::mem::align_of::<(u32, Option<&FeatureInputName>)>().max(16) - 1;
+    cadmpeg_core::decode::u64_from_index(buckets * lane + buckets + 16 + padding)
+}
+
+#[test]
+fn object_names_source_index_keeps_live_storage_and_releases_it_with_owner() {
+    let lane = lane(vec![
+        name("first", Some(42), "First"),
+        name("second", Some(43), "Second"),
+        name("third", Some(44), "Third"),
+    ]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    let need = source_name_table_storage(4);
+    policy.limits.max_materialized_bytes = need;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    for _ in 0..64 {
+        let names = ObjectNames::new(&ctx, &lane).unwrap();
+        assert_eq!(names.of(&ctx, &feature(Some(42))).unwrap(), Some(&lane.names[0]));
+        assert_eq!(names.of(&ctx, &feature(Some(43))).unwrap(), Some(&lane.names[1]));
+        assert_eq!(names.of(&ctx, &feature(Some(44))).unwrap(), Some(&lane.names[2]));
+        assert!(names.by_value.borrow().is_none());
+        drop(names);
+        let reuse = ctx.reserve_scoped(need, "reuse source name index storage").unwrap();
+        drop(reuse);
+    }
+    let names = ObjectNames::new(&ctx, &lane).unwrap();
+    assert_eq!(names.of(&ctx, &feature(Some(42))).unwrap(), Some(&lane.names[0]));
+    let error = ctx.reserve_scoped(need, "reuse while source name index lives").unwrap_err();
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected live index storage refusal");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+    assert_eq!(limit.operation, "reuse while source name index lives");
+    assert_eq!(limit.used, need);
+    assert_eq!(limit.additional, need);
+    drop(names);
+}
+
+#[test]
+fn object_names_source_growth_refusal_preserves_unpublished_state_and_original_fuse() {
+    let lane = lane(vec![
+        name("first", Some(42), "First"),
+        name("second", Some(43), "Second"),
+        name("third", Some(44), "Third"),
+        name("fourth", Some(45), "Fourth"),
+    ]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    let before = source_name_table_storage(4);
+    let growth = source_name_table_storage(16);
+    policy.limits.max_materialized_bytes = before + growth - 1;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let names = ObjectNames::new(&ctx, &lane).unwrap();
+    let error = names.lookup(&ctx, &feature(Some(42))).err().unwrap();
+    let CodecError::ResourceLimit(first) = error else {
+        panic!("expected source index growth refusal");
+    };
+    assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
+    assert_eq!(first.operation, "index SLDPRT object names by id");
+    assert_eq!(first.used, before);
+    assert_eq!(first.additional, growth);
+    assert_eq!(ctx.resource_refusal(), Some(first.clone()));
+    assert!(names.by_object.borrow().index.is_none());
+    assert!(names.by_value.borrow().is_none());
+    let error = names.of(&ctx, &feature(Some(42))).unwrap_err();
+    let CodecError::ResourceLimit(next) = error else {
+        panic!("expected original source index refusal");
+    };
+    assert_eq!(next, first);
+}
