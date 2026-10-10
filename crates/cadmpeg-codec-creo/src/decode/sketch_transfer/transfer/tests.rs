@@ -548,7 +548,7 @@ fn scalar_equality_candidates(
     crate::decode::with_test_decode_ctx(|ctx| {
         let sketch = SketchId::mint("creo:model:sketch#source-admission")
             .expect("valid source-admission sketch ID");
-        super::section_equation_function_five_scalar_equality_constraints(
+        crate::decode::sketch_transfer::constraints::section_equation_function_five_scalar_equality_constraints(
             ctx,
             &scan.features.definitions[0],
             &sketch,
@@ -611,7 +611,7 @@ fn equation_offset_source_admission_refuses_work_and_emits_typed_scalar_equality
             .expect("one typed source offset"),
     );
     let (scalar_equalities, equation_annotation_offsets) =
-        crate::test_support::assert_work_boundaries(&["creo equation offset source"], |ctx| {
+        crate::test_support::assert_work_boundaries(&["creo equation offset nodes"], |ctx| {
             scalar_equality_transfer_result(ctx, &scan)
         });
     assert_eq!(scalar_equalities, vec![(10, 11)]);
@@ -806,4 +806,96 @@ fn sketch_profile_entity_membership_refuses_work_and_preserves_resolved_chain() 
         .sketch_entities
         .iter()
         .all(|entity| !entity.construction));
+}
+
+#[test]
+fn empty_dimension_rows_do_not_build_relation_join_indexes() {
+    use crate::feature::definitions::{FeatureRelationTable, FeatureRelationTriple, FeatureSkamp, FeatureSkampItem, FeatureSolverTableHeader, SolverSubtable};
+    let mut scan = empty_section_scan();
+    scan.features.definitions[0].relations = Some(FeatureRelationTable {
+        declared_count: 1, entity_ref: None, rows: Vec::new(),
+        skamps: Some(SolverSubtable::Declared {
+            header: FeatureSolverTableHeader { declared_count: 1, entity_ref: 0, offset: 0 },
+            rows: vec![FeatureSkamp { id: 3, kind: 99, flags: 0, status: 1, items: vec![FeatureSkampItem { entity_id: 7, sense: 0 }], offset: 0 }],
+        }),
+        triples: Some(SolverSubtable::Declared {
+            header: FeatureSolverTableHeader { declared_count: 1, entity_ref: 0, offset: 0 },
+            rows: vec![FeatureRelationTriple { relation_id: Some(9), equation_id: None, skamp_id: Some(3), offset: 0 }],
+        }),
+        offset: 0,
+    });
+    let ir = crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, &[], |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let dimension_solver = super::RelationIncidences::for_dimension_rows(&ctx, &scan.features.definitions[0]);
+        if let Err(CodecError::ResourceLimit(resource)) = &dimension_solver {
+            assert_ne!(resource.operation, "creo solver relation join rows");
+            assert_ne!(resource.operation, "creo solver relation identity rows");
+        }
+        assert!(dimension_solver.expect("empty dimension route uses no work").is_none());
+        let mut ir = cadmpeg_ir::document::CadIr::empty();
+        super::transfer_sketches(&ctx, &scan, &mut ir,
+            &mut cadmpeg_ir::AnnotationBuilder::new(), &mut Vec::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default()).map(|_| ir)
+    });
+    assert_eq!(ir.model.sketches.len(), 1);
+    assert_eq!(ir.model.features.len(), 1);
+    assert_eq!(ir.model.sketch_constraints.len(), 1);
+    assert!(matches!(ir.model.sketch_constraints[0].definition.kind(), SketchConstraintDefinitionInput::Native { .. }));
+}
+
+#[test]
+fn rejected_orientation_candidates_do_not_consume_retained_storage() {
+    let sketch = SketchId::mint("creo:model:sketch#1").expect("sketch");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let mut constraints = Vec::new();
+    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+    for _ in 0..16 {
+        let mut storage = ctx.reserve_scoped(0, "test orientation candidate") .expect("scope");
+        let entity = storage.with_storage(|| crate::decode::sketch_ids::sketch_entity_id_admitted(&ctx, &sketch, 7)).expect("identity").expect("valid identity");
+        super::emit_verhor_constraint(&ctx, (&mut annotations, &mut constraints), &BTreeSet::new(), &sketch, "7", (SketchConstraintDefinitionInput::Vertical { entity }, storage), 0).expect("rejected candidate releases storage");
+    }
+    assert!(constraints.is_empty());
+    assert_eq!(ctx.copy_retained_text("x", "test surviving output").expect("discarded candidates retained no bytes"), "x");
+    ctx.finish_session().expect("active session");
+}
+
+#[test]
+fn duplicate_solver_only_entity_identity_is_not_retained() {
+    use crate::feature::definitions::{FeatureOrderRow, FeatureOrderTable, FeatureRelationTable, FeatureSavedEntity, FeatureSavedLine, FeatureSkamp, FeatureSkampItem, FeatureSolverTableHeader, SolverSubtable};
+    let mut scan = empty_section_scan();
+    let definition = &mut scan.features.definitions[0];
+    definition.order_table = Some(FeatureOrderTable {
+        declared_count: 1, has_prototype: false, entity_ref: None,
+        rows: vec![FeatureOrderRow { external_id: 7, internal_id: 3, bitmask: 0, offset: 0 }].into(), offset: 0,
+    });
+    definition.saved_section.as_mut().expect("saved section").entities = vec![FeatureSavedEntity::Line(FeatureSavedLine {
+        entity_id: 3, references: Vec::new(), attributes: Vec::new(), endpoints: [[Some(0.0), Some(0.0), None], [Some(1.0), Some(0.0), None]], body: Vec::new(), offset: 0,
+    })];
+    definition.relations = Some(FeatureRelationTable {
+        declared_count: 0, entity_ref: None, rows: Vec::new(),
+        skamps: Some(SolverSubtable::Declared {
+            header: FeatureSolverTableHeader { declared_count: 1, entity_ref: 0, offset: 0 },
+            rows: vec![FeatureSkamp { id: 3, kind: 99, flags: 0, status: 1, items: vec![FeatureSkampItem { entity_id: 7, sense: 0 }], offset: 0 }],
+        }), triples: None, offset: 0,
+    });
+    let ir = crate::test_support::assert_refusal_order(ResourceDimension::RetainedBytes, &[], |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let mut ir = cadmpeg_ir::document::CadIr::empty();
+        let result = super::transfer_sketches(&ctx, &scan, &mut ir, &mut cadmpeg_ir::AnnotationBuilder::new(), &mut Vec::new(), &mut crate::decode::source_carriers::SourceUnitCarriers::default());
+        if let Err(CodecError::ResourceLimit(resource)) = &result { assert_ne!(resource.operation, "creo sketch entity identity"); }
+        result.map(|_| ir)
+    });
+    assert_eq!(ir.model.sketch_entities.len(), 1);
+    assert_eq!(ir.model.sketch_entities[0].id().as_str(), "creo:featdefs:sketch_entity#7:7");
+    assert_eq!(ir.model.sketch_constraints.len(), 1);
+    assert!(matches!(ir.model.sketch_constraints[0].definition.kind(), SketchConstraintDefinitionInput::Native { .. }));
 }

@@ -185,7 +185,7 @@ fn operation(feature_id: u32) -> crate::feature::operations::FeatureOperation {
 #[test]
 fn feature_operation_selector_visits_each_present_record_once() {
     let records = [operation(11), operation(40), operation(12)];
-    for cap in [2, 3] {
+    crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, &[], |cap| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = cap;
@@ -194,20 +194,23 @@ fn feature_operation_selector_visits_each_present_record_once() {
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let result = super::current_feature_operation(&ctx, &records, 40);
-        if cap == 3 {
-            assert!(std::ptr::eq(result.expect("three visits").expect("unique"), &records[1]));
+        if let Ok(actual) = &result {
+            assert!(std::ptr::eq(actual.expect("unique"), &records[1]));
+            let probe = ctx.charge_work_limit(u64::MAX, "test completed operation visits").expect_err("work probe");
+            assert_eq!(probe.used, u64::try_from(records.len()).expect("fixture rows"));
         } else {
-            let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = result else {
+            let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result else {
                 panic!("third visit must refuse");
             };
             assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
             assert_eq!(refusal.operation, "creo current feature operation rows");
-            assert_eq!(refusal.used, 2);
+            assert_eq!(refusal.used, cap);
             assert_eq!(refusal.additional, 1);
             assert!(matches!(super::current_feature_recipe(&ctx, &[], 40),
-                Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == refusal));
+                Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == *refusal));
         }
-    }
+        result.map(|_| ())
+    });
     for count in 0..4 {
         let records = vec![operation(11); count];
         let arena = DecodeArena::new();
@@ -223,21 +226,24 @@ fn feature_operation_selector_visits_each_present_record_once() {
 fn feature_operation_selector_stops_at_the_second_match() {
     let mut records = vec![operation(40), operation(40)];
     records.extend((0..64).map(|_| operation(11)));
-    for cap in [1, 2] {
+    crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, &[], |cap| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let result = super::current_feature_operation(&ctx, &records, 40);
-        if cap == 2 {
-            assert!(result.expect("two matching visits").is_none());
+        if let Ok(actual) = &result {
+            assert!(actual.is_none());
+            let probe = ctx.charge_work_limit(u64::MAX, "test completed duplicate operation visits").expect_err("work probe");
+            assert_eq!(probe.used, 2);
         } else {
-            assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+            assert!(matches!(&result, Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::WorkUnits
                     && refusal.operation == "creo current feature operation rows"
-                    && refusal.used == 1 && refusal.additional == 1));
+                    && refusal.used == cap && refusal.additional == 1));
         }
-    }
+        result.map(|_| ())
+    });
 }
 
 #[test]
@@ -301,21 +307,24 @@ fn schema_legacy_round_fallback_stops_at_first_match() {
     let mut scan = crate::test_support::empty_container_scan();
     scan.features.legacy_rounds = vec![legacy(11), legacy(40)];
     scan.features.legacy_rounds.extend((0..64).map(|_| legacy(12)));
-    for cap in [1, 2] {
+    crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, &[], |cap| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let result = feature_schema_class(&ctx, &scan, 40);
-        if cap == 2 {
-            assert_eq!(result.expect("two visits"), Some(crate::feature::schema::SchemaClass::Round));
+        if let Ok(actual) = &result {
+            assert_eq!(*actual, Some(crate::feature::schema::SchemaClass::Round));
+            let probe = ctx.charge_work_limit(u64::MAX, "test completed legacy schema visits").expect_err("work probe");
+            assert_eq!(probe.used, 2);
         } else {
-            assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+            assert!(matches!(&result, Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::WorkUnits
                     && refusal.operation == "creo legacy round schema rows"
-                    && refusal.used == 1 && refusal.additional == 1));
+                    && refusal.used == cap && refusal.additional == 1));
         }
-    }
+        result.map(|_| ())
+    });
     scan.features.legacy_rounds.truncate(1);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();

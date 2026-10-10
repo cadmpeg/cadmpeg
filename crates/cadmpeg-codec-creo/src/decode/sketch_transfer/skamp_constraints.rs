@@ -60,20 +60,21 @@ fn native_skamp_nonblank(
         .ok_or_else(|| cadmpeg_core::CodecError::malformed("blank native SKAMP field"))
 }
 
-pub(in super::super) fn section_skamp_constraints_for_geometry(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(in super::super) fn section_skamp_candidates_for_geometry<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     geometry: Option<&BTreeMap<SketchEntityId, SketchGeometry>>,
-) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
+) -> Result<super::constraints::ScopedConstraints<'ctx>, cadmpeg_core::CodecError> {
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
     }
+    let (mut constraints, mut slots) = ctx.temporary_vec(0, "creo skamp constraints")?;
     let Some(relations) = &definition.relations else {
-        return Ok(Vec::new());
+        return Ok((constraints, slots));
     };
     if relations.skamps().is_empty() {
-        return Ok(Vec::new());
+        return Ok((constraints, slots));
     }
     let mut scratch_storage = ctx.reserve_scoped(0, "creo SKAMP scratch storage")?;
     let resolved_points = if ctx.any_by(
@@ -121,10 +122,10 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
             section_entity_external_ids(ctx, definition)?
         })
     })?;
-    let mut constraints = Vec::new();
     for skamp in ctx.admit_iter(relations.skamps(), "creo SKAMP constraint row traversal")? {
         let resource_error = Cell::new(None);
-        let candidate = (|| {
+        let mut storage = ctx.reserve_scoped(0, "creo SKAMP candidate storage")?;
+        let build_candidate = || {
             let unique_skamp_id = solver.is_unique(skamp.id);
             let joined_equation_id = solver.equation_id(skamp.id);
             let active = section_skamp_active(skamp.status);
@@ -1010,16 +1011,30 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                 },
                 skamp.offset,
             ))
-        })();
+        };
+        let candidate = storage.with_storage(|| Ok::<_, cadmpeg_core::CodecError>(build_candidate()))?;
         if let Some(error) = resource_error.into_inner() {
             return Err(error);
         }
-        if let Some(candidate) = candidate {
-            ctx.reserve_vec(&mut constraints, 1, "creo skamp constraints")?;
-            constraints.push(candidate);
+        if let Some((constraint, offset)) = candidate {
+            ctx.push_scoped_vec(&mut slots, &mut constraints, (constraint, offset, storage), "creo skamp constraints")?;
         }
     }
-    Ok(constraints)
+    Ok((constraints, slots))
+}
+
+#[cfg(test)]
+pub(in super::super) fn section_skamp_constraints_for_geometry(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    definition: &crate::feature::definitions::FeatureDefinition,
+    sketch: &SketchId,
+    geometry: Option<&BTreeMap<SketchEntityId, SketchGeometry>>,
+) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
+    let (rows, _slots) = section_skamp_candidates_for_geometry(ctx, definition, sketch, geometry)?;
+    ctx.try_collect_vec(
+        rows.into_iter().map(|(constraint, offset, storage)| storage.commit_value((constraint, offset))),
+        "creo skamp constraints",
+    )
 }
 
 #[cfg(test)]
@@ -1272,6 +1287,24 @@ mod tests {
             saved_section: None,
             offset: 0,
         }
+    }
+
+    #[test]
+    fn discarded_skamp_candidates_do_not_consume_retained_storage() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let definition = make_definition(false);
+        let sketch = cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#1").expect("sketch");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        for _ in 0..16 {
+            let (rows, _slots) = super::section_skamp_candidates_for_geometry(&ctx, &definition, &sketch, None).expect("candidate storage stays provisional");
+            assert_eq!(rows.len(), 1);
+            assert!(matches!(rows[0].0.definition.kind(), SketchConstraintDefinitionInput::Native { .. }));
+        }
+        assert_eq!(ctx.copy_retained_text("x", "test surviving output").expect("discarded candidates retained no bytes"), "x");
+        ctx.finish_session().expect("active session");
     }
 
     #[test]

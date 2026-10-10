@@ -65,27 +65,6 @@ fn with_work<T>(cap: u64, run: impl FnOnce(DecodeContext<'_>) -> T) -> T {
     run(ctx)
 }
 
-fn boundary<T: std::fmt::Debug + PartialEq>(
-    result: Result<T, CodecError>, cap: u64, visits: u64,
-    operation: &'static str, expected: T,
-) -> Option<ResourceLimit> {
-    match result {
-        Ok(actual) => {
-            assert_eq!(cap, visits);
-            assert_eq!(actual, expected);
-            None
-        }
-        Err(CodecError::ResourceLimit(original)) => {
-            assert!(cap < visits);
-            assert_eq!((original.dimension, original.used, original.additional, original.limit),
-                (ResourceDimension::WorkUnits, cap, 1, cap));
-            assert_eq!(original.operation, operation);
-            Some(original)
-        }
-        Err(error) => panic!("unexpected error: {error:?}"),
-    }
-}
-
 fn finish(ctx: DecodeContext<'_>, refusal: Option<ResourceLimit>) {
     if let Some(original) = refusal {
         assert!(matches!(ctx.finish_session(),
@@ -111,24 +90,39 @@ fn point_locus_visits_only_present_opaque_rows() {
             }),
             ..definition()
         };
-        for cap in 0..=u64::from(count) {
+        crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, &[], |cap| {
             with_work(cap, |ctx| {
-                let refusal = boundary(section_point_locus(&ctx, &definition, &sketch, 7),
-                    cap, u64::from(count), "creo point locus rows", None);
+                let result = section_point_locus(&ctx, &definition, &sketch, 7);
+                let refusal = match &result {
+                    Err(CodecError::ResourceLimit(resource)) => {
+                        assert_eq!((resource.used, resource.additional), (cap, 1));
+                        assert_eq!(resource.operation, "creo point locus rows");
+                        Some(*resource)
+                    }
+                    Ok(locus) => {
+                        assert!(locus.is_none());
+                        assert!(ctx.resource_refusal().is_none(), "successful traversal stays active");
+                        let probe = ctx.charge_work_limit(u64::MAX, "test completed locus visits").expect_err("work probe");
+                        assert_eq!(probe.used, u64::from(count));
+                        Some(probe)
+                    }
+                    Err(error) => panic!("unexpected locus error: {error:?}"),
+                };
                 if let Some(original) = refusal {
                     assert!(matches!(section_point_locus(&ctx, &definition, &sketch, 7),
                         Err(CodecError::ResourceLimit(actual)) if actual == original));
                 }
                 finish(ctx, refusal);
-            });
-        }
+                result
+            })
+        });
     }
 }
 
 fn skamp_walk(all_rows: bool) {
     for count in [0_u32, 1, 3] {
         let definition = skamp_definition(count);
-        for cap in 0..=u64::from(count) {
+        crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, &[], |cap| {
             with_work(cap, |ctx| {
                 let mut seen = [0_u32; 3];
                 let mut called = 0;
@@ -142,13 +136,27 @@ fn skamp_walk(all_rows: bool) {
                 } else {
                     visit_section_skamps(&ctx, &definition, true, &mut visit)
                 };
-                let refusal = boundary(result, cap, u64::from(count),
-                    "creo relation skamp rows", ControlFlow::Continue(()));
-                assert_eq!(called, usize::try_from(cap).expect("fixed cap"));
+                let refusal = match &result {
+                    Err(CodecError::ResourceLimit(resource)) => {
+                        assert_eq!(resource.operation, "creo relation skamp rows");
+                        assert_eq!((resource.used, resource.additional), (u64::try_from(called).expect("visits"), 1));
+                        Some(*resource)
+                    }
+                    Ok(value) => {
+                        assert_eq!(*value, ControlFlow::Continue(()));
+                        assert_eq!(called, usize::try_from(count).expect("rows"));
+                        assert!(ctx.resource_refusal().is_none(), "successful traversal stays active");
+                        let probe = ctx.charge_work_limit(u64::MAX, "test completed SKAMP visits").expect_err("work probe");
+                        assert_eq!(probe.used, u64::from(count));
+                        Some(probe)
+                    }
+                    Err(error) => panic!("unexpected SKAMP error: {error:?}"),
+                };
                 assert_eq!(&seen[..called], &[1, 2, 3][..called]);
                 finish(ctx, refusal);
-            });
-        }
+                result.map(|_| ())
+            })
+        });
     }
 }
 
@@ -163,26 +171,48 @@ fn inactive_skamps_still_consume_their_present_row_visit() {
     let mut definition = skamp_definition(3);
     definition.relations.as_mut().expect("relations").skamps.as_mut()
         .expect("SKAMP table").rows_mut()[0].status = 0;
-    for cap in 0..=3 {
+    crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, &["creo relation skamp rows"], |cap| {
         with_work(cap, |ctx| {
-            let mut called = 0;
+            let mut called = 0_u64;
             let result = visit_section_skamps::<()>(&ctx, &definition, true, |_| {
                 called += 1;
                 Ok(ControlFlow::Continue(()))
             });
-            let refusal = boundary(result, cap, 3, "creo relation skamp rows",
-                ControlFlow::Continue(()));
-            assert_eq!(called, cap.saturating_sub(1));
+            let visited = match &result {
+                Err(CodecError::ResourceLimit(resource)) => {
+                    assert_eq!(resource.operation, "creo relation skamp rows");
+                    assert_eq!(resource.additional, 1);
+                    resource.used
+                }
+                Ok(value) => { assert_eq!(*value, ControlFlow::Continue(())); 3 }
+                Err(error) => panic!("unexpected SKAMP error: {error:?}"),
+            };
+            if visited == 0 {
+                assert_eq!(called, 0);
+            } else {
+                assert_eq!(called.checked_add(1).expect("visited rows fit"), visited);
+            }
+            let refusal = match &result {
+                Err(CodecError::ResourceLimit(resource)) => Some(*resource),
+                Ok(_) => {
+                    assert!(ctx.resource_refusal().is_none(), "successful traversal stays active");
+                    let probe = ctx.charge_work_limit(u64::MAX, "test completed inactive SKAMP visits").expect_err("work probe");
+                    assert_eq!(probe.used, 3);
+                    Some(probe)
+                }
+                _ => None,
+            };
             finish(ctx, refusal);
-        });
-    }
+            result.map(|_| ())
+        })
+    });
 }
 
 #[test]
 fn skamp_callback_break_stops_before_remaining_rows() {
     let definition = skamp_definition(3);
     for all_rows in [false, true] {
-        for cap in 0..=1 {
+        crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, &["creo relation skamp rows"], |cap| {
             with_work(cap, |ctx| {
                 let mut called = 0;
                 let mut visit = |row: &FeatureSkamp| {
@@ -194,12 +224,27 @@ fn skamp_callback_break_stops_before_remaining_rows() {
                 } else {
                     visit_section_skamps(&ctx, &definition, false, &mut visit)
                 };
-                let refusal = boundary(result, cap, 1, "creo relation skamp rows",
-                    ControlFlow::Break(1));
-                assert_eq!(called, cap);
+                let refusal = match &result {
+                    Err(CodecError::ResourceLimit(resource)) => {
+                        assert_eq!(resource.operation, "creo relation skamp rows");
+                        assert_eq!((resource.used, resource.additional), (0, 1));
+                        assert_eq!(called, 0);
+                        Some(*resource)
+                    }
+                    Ok(value) => {
+                        assert_eq!(*value, ControlFlow::Break(1));
+                        assert_eq!(called, 1);
+                        assert!(ctx.resource_refusal().is_none(), "successful traversal stays active");
+                        let probe = ctx.charge_work_limit(u64::MAX, "test completed SKAMP callback visits").expect_err("work probe");
+                        assert_eq!(probe.used, 1);
+                        Some(probe)
+                    }
+                    Err(error) => panic!("unexpected callback error: {error:?}"),
+                };
                 finish(ctx, refusal);
-            });
-        }
+                result.map(|_| ())
+            })
+        });
     }
 }
 
