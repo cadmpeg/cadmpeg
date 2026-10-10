@@ -389,6 +389,32 @@ fn native_class25_final_values_transfer_to_live_parent() {
 }
 
 #[test]
+fn native_class25_final_values_have_no_unscoped_materialized_gate() {
+    let bytes = class25_edge_run();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::MaterializedBytes,
+        "catia_native_class25_descriptor_values",
+        None,
+    );
+    let nodes = crate::test_support::with_materialized_limit(u64::MAX, |ctx| {
+        let nodes = crate::native::projection::consolidated_edge_nodes(ctx, &bytes, &records, &[])?;
+        assert_eq!(ctx.resource_refusal(), None);
+        Ok::<_, CodecError>(nodes)
+    })
+    .expect("selected output uses retained storage directly");
+    let descriptor = nodes[0]
+        .class25_descriptor
+        .as_ref()
+        .expect("selected descriptor");
+    assert_eq!(descriptor.record_id, 0x1234);
+    assert_eq!(
+        cadmpeg_ir::scalar::FiniteReal::raw_lane(&descriptor.values),
+        [3.0, 7.0]
+    );
+}
+
+#[test]
 fn native_catalog_entries_collector_preserves_work_refusal() {
     let bytes = crate::test_support::test_object_graph::catalog_stream(&[
         "CATCatalogManager",

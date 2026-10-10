@@ -1716,17 +1716,40 @@ fn legacy_relation_evaluation<'a>(
                 .with_storage(|| crate::native::relation_symbols(ctx, &relation.expression))?,
         )
     };
+    let mut symbol_parameters = HashSet::new();
+    if let Some(symbols) = &symbols {
+        for (_, symbol) in ctx.admit_iter(symbols, "catia_legacy_formula_symbol_visits")? {
+            let Some(parameter) = crate::native::relation_symbol_parameter(ctx, symbol)? else {
+                continue;
+            };
+            if legacy_symbol_matches_input(ctx, symbol, parameter)? {
+                relation_scratch.with_storage(|| {
+                    ctx.insert_hash_set(
+                        &mut symbol_parameters,
+                        parameter,
+                        "catia_legacy_formula_symbol_index",
+                    )?;
+                    if symbol.len() != parameter.len() {
+                        ctx.insert_hash_set(
+                            &mut symbol_parameters,
+                            symbol.as_str(),
+                            "catia_legacy_formula_symbol_index",
+                        )?;
+                    }
+                    Ok::<_, cadmpeg_core::CodecError>(())
+                })?;
+            }
+        }
+    }
     let mut bindings = BTreeMap::new();
     let mut bound = HashSet::new();
     let mut dependencies = Vec::new();
-    for input in ctx.admit_iter(&relation.inputs, "catia_formula_legacy_input_visits")? {
-        let Some(symbols) = symbols.as_ref() else {
-            return Ok(None);
-        };
-        if !ctx.any_by(
-            symbols,
-            |(_, symbol)| legacy_symbol_matches_input(ctx, symbol, &input.parameter),
-            "catia_legacy_formula_symbol_visits",
+    let mut inputs = relation.inputs.iter();
+    while let Some(input) = ctx.next_charged(&mut inputs, "catia_formula_legacy_input_visits")? {
+        if !ctx.contains_hash_set(
+            &symbol_parameters,
+            input.parameter.as_str(),
+            "catia_legacy_formula_symbol_index",
         )? {
             return Ok(None);
         }

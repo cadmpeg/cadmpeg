@@ -1591,8 +1591,8 @@ pub(crate) fn parse_runs(
             records.push(record);
         }
         if complete {
-            ctx.reserve_vec(&mut runs, 1, "collect CATIA 7C05 materialized runs")?;
-            runs.push(record_storage.commit_value(records)?);
+            let records = record_storage.commit_value(records)?;
+            ctx.push_vec(&mut runs, records, "collect CATIA 7C05 materialized runs")?;
         }
     }
     Ok(runs)
