@@ -313,6 +313,7 @@ pub(crate) fn transfer_neutral(
             None
         };
         let position = position.map(FiniteVector::from);
+        let mut map_storage = ctx.reserve_scoped(0, "fcstd drawing neutral map nodes")?;
         let mut relationships = BTreeMap::new();
         let mut role_iter = record.relationships.iter();
         while role_iter.len() != 0 {
@@ -332,12 +333,15 @@ pub(crate) fn transfer_neutral(
                 };
                 selections.push(relationship(link)?);
             }
-            ctx.insert_btree_map(
-                &mut relationships,
-                ctx.copy_retained_text(role, "fcstd drawing relationship role")?,
-                selections,
-                "fcstd drawing relationship roles",
-            )?;
+            let role = ctx.copy_retained_text(role, "fcstd drawing relationship role")?;
+            map_storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut relationships,
+                    role,
+                    selections,
+                    "fcstd drawing relationship roles",
+                )
+            })?;
         }
         let template_id = if matches!(record.kind, TechDrawKind::Page { .. }) {
             let link = ctx
@@ -374,12 +378,16 @@ pub(crate) fn transfer_neutral(
             else {
                 break;
             };
-            ctx.insert_btree_map(
-                &mut parameters,
-                ctx.copy_retained_text(name, "fcstd drawing parameter name")?,
-                ctx.copy_retained_text(value, "fcstd drawing parameter value")?,
-                "fcstd drawing neutral parameters",
-            )?;
+            let name = ctx.copy_retained_text(name, "fcstd drawing parameter name")?;
+            let value = ctx.copy_retained_text(value, "fcstd drawing parameter value")?;
+            map_storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut parameters,
+                    name,
+                    value,
+                    "fcstd drawing neutral parameters",
+                )
+            })?;
         }
         let mut assets = ctx.collection_vec(record.side_entries.len(), "fcstd drawing assets")?;
         let mut asset_iter = record.side_entries.iter();

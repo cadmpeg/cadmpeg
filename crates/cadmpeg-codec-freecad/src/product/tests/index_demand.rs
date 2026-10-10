@@ -3,7 +3,7 @@
 
 use super::super::transfer;
 use crate::native::{self, ProductNodeRecord, PropertyBody, PropertyFamily, PropertyRecord};
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
 
@@ -127,23 +127,6 @@ fn product_transfer_admits_owner_index_for_a_real_product_consumer() {
         value("String", &[("value", "text")]),
     );
 
-    let refusal = crate::test_support::refusal_at(
-        ResourceDimension::CollectionItems,
-        &[],
-        "fcstd product owner index",
-        |ctx| {
-            transfer(
-                ctx,
-                std::slice::from_ref(&object),
-                std::slice::from_ref(&unused),
-                &BTreeMap::new(),
-            )
-        },
-    );
-    assert!(matches!(refusal, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "fcstd product owner index"));
-
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
     let (ctx, _) =
@@ -242,4 +225,131 @@ fn external_only_product_projection_keeps_occurrence_output_without_local_indexe
         occurrences[0].prototype,
         cadmpeg_ir::products::PrototypeReference::External { .. }
     ));
+}
+
+fn empty_projection_error(properties: &[PropertyRecord], expected: &str) {
+    let joint = crate::test_support::with_service_context(&[], |ctx| {
+        crate::native::joint::JointRecord::try_new(
+            ctx,
+            "fcstd:native:joint#Ground".into(),
+            "fcstd:native:object#Ground".into(),
+            crate::native::joint::JointBody::Grounded {
+                reference: None,
+                placement: crate::native::frame::FiniteFrame::default(),
+            },
+            BTreeMap::new(),
+        )
+        .expect("grounded joint")
+    });
+    for joints in [Vec::new(), vec![joint]] {
+        crate::test_support::with_service_context(&[], |ctx| {
+            let error =
+                super::super::transfer_neutral(ctx, &[], &joints, &[], properties, &[], &[])
+                    .expect_err("placement admission before empty output");
+            assert!(matches!(error, CodecError::Malformed(message) if message == expected));
+        });
+    }
+}
+
+fn valid_placement(name: &str) -> PropertyRecord {
+    property(
+        "Shape",
+        name,
+        "App::PropertyPlacement",
+        value(
+            "PropertyPlacement",
+            &[
+                ("Px", "0"),
+                ("Py", "0"),
+                ("Pz", "0"),
+                ("Q0", "0"),
+                ("Q1", "0"),
+                ("Q2", "0"),
+                ("Q3", "1"),
+            ],
+        ),
+    )
+}
+
+#[test]
+fn empty_product_projection_rejects_invalid_placement() {
+    let malformed = property(
+        "Shape",
+        "LinkPlacement",
+        "App::PropertyPlacement",
+        value(
+            "PropertyPlacement",
+            &[("Px", "0"), ("Py", "0"), ("Pz", "0")],
+        ),
+    );
+    empty_projection_error(&[malformed], "placement property fcstd:native:property#Shape:LinkPlacement has an invalid Q0 quaternion component");
+}
+
+#[test]
+fn empty_product_projection_rejects_duplicate_placement() {
+    let placement = valid_placement("LinkPlacement");
+    empty_projection_error(
+        &[placement.clone(), placement],
+        "product property LinkPlacement occurs more than once",
+    );
+}
+
+#[test]
+fn empty_product_projection_rejects_ambiguous_placement_policy() {
+    empty_projection_error(
+        &[
+            valid_placement("LinkPlacement"),
+            valid_placement("Placement"),
+        ],
+        "LinkPlacement and Placement require a valid LinkTransform policy",
+    );
+}
+
+#[test]
+fn non_product_link_placement_decode_preserves_malformed_message() {
+    use cadmpeg_ir::Codec;
+    let document = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Shape"/></Objects><ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="LinkPlacement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0"/></Property></Properties></Object></ObjectData></Document>"#;
+    let error = crate::FcstdCodec
+        .decode(
+            &mut std::io::Cursor::new(crate::test_support::test_archive::archive(document)),
+            &cadmpeg_ir::DecodeOptions::default(),
+        )
+        .expect_err("invalid placement on non-product object");
+    assert!(
+        matches!(error, cadmpeg_ir::DecodeFailure::Codec(CodecError::Malformed(message)) if message == "placement property fcstd:native:property#Shape:LinkPlacement has an invalid Q0 quaternion component")
+    );
+}
+
+#[test]
+fn product_parent_identity_retains_only_output_copies() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let measure = |width| {
+        let parent = format!("fcstd:native:object#Parent{}", "a".repeat(width));
+        let link = external_occurrence();
+        let records = [super::node(&parent, &[link.object.as_str()]), link];
+        crate::test_support::with_service_context(&[], |ctx| {
+            let (_, occurrences) =
+                super::super::transfer_neutral(ctx, &records, &[], &[], &[], &[], &[])
+                    .expect("parent projection");
+            let cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence } =
+                &occurrences[0].parent
+            else {
+                panic!("child parent")
+            };
+            assert_eq!(occurrence, &occurrences[1].id);
+            assert_eq!(occurrences[0].ordinal, 0);
+            assert_eq!(occurrences[1].ordinal, 0);
+            assert_eq!(ctx.resource_refusal(), None);
+            let CodecError::ResourceLimit(limit) = ctx
+                .charge_retained(u64::MAX, "retained projection measure")
+                .expect_err("retained overflow")
+            else {
+                panic!("resource refusal")
+            };
+            assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+            limit.used
+        })
+    };
+    // Definition id/native ref; container id/prototype/name/native ref; child parent id.
+    assert_eq!(measure(200) - measure(100), 7 * 100);
 }
