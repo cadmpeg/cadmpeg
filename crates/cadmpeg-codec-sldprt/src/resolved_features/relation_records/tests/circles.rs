@@ -589,3 +589,160 @@ fn circle_center_consensus_refusal_precedes_source_publication() {
     assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
     drop(probe);
 }
+
+#[test]
+fn scalar_reference_work_requires_matching_kind_and_index() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let left = circle_scalar(20, "name", FeatureInputScalarRole::Display, Some("a"));
+    for wrong_kind in [false, true] {
+        let mut right = left.clone();
+        if wrong_kind { right.operands[0].kind = FeatureInputOperandKind::E1; }
+        else { right.operands[0].entity_index = 1; }
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_work_units = 64;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        for _ in 0..64 {
+            assert!(!super::super::same_scalar_operands(&ctx, &left, &right).unwrap());
+        }
+        assert_eq!(ctx.resource_refusal(), None);
+        policy.limits.max_work_units = u64::MAX;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            ResourceDimension::WorkUnits, "compare SLDPRT relation scalar references", None,
+        );
+        assert!(!super::super::same_scalar_operands(&ctx, &left, &right).unwrap());
+        let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, "compare SLDPRT relation scalar references")
+        else { panic!("fixed operand mismatch must leave reference probe armed"); };
+        assert_eq!(limit.operation, "compare SLDPRT relation scalar references");
+        assert_eq!(limit.used, 1);
+        assert_eq!(limit.additional, 1);
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        drop(probe);
+        policy.limits.max_work_units = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let Err(CodecError::ResourceLimit(limit)) = super::super::same_scalar_operands(&ctx, &left, &right)
+        else { panic!("operand visit must still be admitted"); };
+        assert_eq!(limit.operation, "compare SLDPRT relation scalar operands");
+        assert_eq!(limit.used, 0);
+        assert_eq!(limit.additional, 1);
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+        assert!(matches!(ctx.charge_work(0, "after fixed operand refusal"),
+            Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    }
+}
+
+#[test]
+fn matching_scalar_references_keep_required_comparison_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let left = circle_scalar(20, "name", FeatureInputScalarRole::Display, Some("same"));
+    let right = left.clone();
+    assert!(super::super::same_scalar_operands(&cadmpeg_test_support::service_decode_context(), &left, &right).unwrap());
+    let mut policy = DecodePolicy::service();
+    // Visit one operand, then admit the first four-byte reference key.
+    policy.limits.max_work_units = 4;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let Err(CodecError::ResourceLimit(limit)) = super::super::same_scalar_operands(&ctx, &left, &right)
+    else { panic!("qualified reference comparison must refuse before execution"); };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(limit.operation, "compare SLDPRT relation scalar references");
+    assert_eq!(limit.limit, 4);
+    assert_eq!(limit.used, 1);
+    assert_eq!(limit.additional, 4);
+    assert_eq!(ctx.resource_refusal(), Some(limit));
+    assert!(matches!(ctx.charge_work(0, "after required scalar comparison"),
+        Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+}
+
+#[test]
+fn circle_center_fixed_mismatch_leaves_reference_probe_armed() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    for wrong_kind in [false, true] {
+        let (mut input, before, _) = center_source_fixture();
+        if wrong_kind { input.scalars[2].operands[1].kind = FeatureInputOperandKind::E1; }
+        else { input.scalars[2].operands[1].entity_index = 8; }
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            ResourceDimension::WorkUnits, "compare SLDPRT circle center references", None,
+        );
+        let mut relations = [before.clone()];
+        super::super::bind_circle_dimension_centers(&ctx, &mut relations, &input).unwrap();
+        assert_eq!(relations[0], before);
+        assert_eq!(ctx.resource_refusal(), None);
+        let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, "compare SLDPRT circle center references")
+        else { panic!("fixed center mismatch must leave reference probe armed"); };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "compare SLDPRT circle center references");
+        assert_eq!(limit.additional, 1);
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+        assert!(matches!(ctx.charge_work(0, "after unused center reference"),
+            Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        drop(probe);
+    }
+}
+
+#[test]
+fn circle_handle_fixed_qualification_skips_variable_matches() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    for trigger in 0..3 {
+        let first = circle_scalar(20, "name", FeatureInputScalarRole::Display, Some("a"));
+        let display = circle_scalar(40, "name", FeatureInputScalarRole::Display, Some("a"));
+        let mut driving = circle_scalar(50, "name", FeatureInputScalarRole::Driving, Some("a"));
+        let mut classes = vec![class(10, "sgCircleDim"), class(31, "sgEntHandle")];
+        match trigger {
+            0 => classes[1].name = "other".into(),
+            1 => driving.role = FeatureInputScalarRole::Native,
+            2 => classes.push(class(45, "sgPntPntDist")),
+            _ => unreachable!(),
+        }
+        let relation = crate::records::FeatureInputRelationInstance {
+            id: "relation".into(), parent: "lane".into(), ordinal: 0, offset: 20,
+            family: FeatureInputRelationFamily::CircleDiameter,
+            class_ref: "class".into(), feature_ref: "sketch".into(),
+            scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+                vec![first.id.clone()], None, Some(first.id.clone()),
+            ).unwrap(),
+            operands: first.operands.clone(),
+        };
+        let input = lane(classes, vec![first, display, driving]);
+        for operation in ["compare SLDPRT circle features", "compare SLDPRT relation scalar references", "index SLDPRT relation records"] {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = u64::MAX;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
+            assert!(circle_dimension_handle_driver(&ctx, &relation, &input).unwrap().is_none());
+            assert_eq!(ctx.resource_refusal(), None);
+            let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, operation)
+            else { panic!("ineligible circle handle pair must leave variable probe armed"); };
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(limit.operation, operation);
+            assert_eq!(limit.additional, 1);
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+            assert!(matches!(ctx.charge_work(0, "after unused handle match"),
+                Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+            drop(probe);
+        }
+    }
+}
