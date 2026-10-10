@@ -12,6 +12,10 @@ use crate::scalar::{FiniteReal, PositiveReal};
 use crate::units::FinitePoint2;
 use cadmpeg_core::decode::ResourceLimit;
 
+mod higher;
+
+pub(super) type HigherPcurve = [Result<FinitePoint2, EvaluationFailure<()>>; 3];
+
 /// The actual representations reached by the differential callers. A stored
 /// paired row retains its source weight; raw lanes admit only reached poles.
 #[derive(Clone, Copy)]
@@ -75,6 +79,7 @@ impl DifferentialPoles<'_> {
 }
 
 pub(super) struct PcurveDifferential {
+    pub(super) higher: HigherPcurve,
     pub(super) point: FinitePoint2,
     /// The first derivative, or why it has no finite value.
     pub(super) tangent: Result<FinitePoint2, EvaluationFailure<Point2>>,
@@ -98,8 +103,20 @@ pub(super) fn differential(
     t: FiniteReal,
 ) -> Result<PcurveDifferential, EvaluationFailure<Point2>> {
     scratch.settle(differential_unsettled(
-        scratch, degree, knots, poles, t,
+        scratch, degree, knots, poles, t, None,
     ))
+}
+
+/// Requested higher orders use the same selected span and point triangle.
+pub(super) fn differential_requested(
+    scratch: &decode::Scratch<'_, '_>,
+    degree: u32,
+    knots: &[f64],
+    poles: DifferentialPoles<'_>,
+    t: FiniteReal,
+    max_order: usize,
+) -> Result<PcurveDifferential, EvaluationFailure<Point2>> {
+    scratch.settle(differential_unsettled(scratch, degree, knots, poles, t, Some(max_order)))
 }
 
 fn differential_unsettled(
@@ -108,6 +125,7 @@ fn differential_unsettled(
     knots: &[f64],
     poles: DifferentialPoles<'_>,
     t: FiniteReal,
+    max_order: Option<usize>,
 ) -> Result<PcurveDifferential, EvaluationFailure<Point2>> {
     let t = t.get();
     let unreached = EvaluationFailure::NonFinite(Point2::new(f64::NAN, f64::NAN));
@@ -124,7 +142,14 @@ fn differential_unsettled(
         .ok_or(EvaluationFailure::NoValue)?;
     // At a finite parameter over finite knots, the basis is absent or not
     // finite only where one of its terms left the finite range.
-    let basis = basis::bspline_basis(scratch, knots, degree, span, t).ok_or(unreached)?;
+    let (basis, captured) = if max_order.is_some_and(|order| order >= 3) && !poles.has_weights() {
+        let (basis, captured) = basis::polynomial_higher::point_basis(scratch, knots, degree, span, t,
+            max_order.unwrap_or(2)).ok_or_else(|| scratch.failure(unreached))?;
+        (basis, Some(captured))
+    } else {
+        (basis::bspline_basis(scratch, knots, degree, span, t).ok_or(unreached)?, None)
+    };
+    let result = (|| {
     if !basis::all_finite(scratch, &basis).ok_or_else(|| scratch.failure(unreached))? {
         return Err(unreached);
     }
@@ -142,6 +167,7 @@ fn differential_unsettled(
         .map_err(|[u, v, _]| EvaluationFailure::NonFinite(Point2::new(u, v)))?;
     let uv = |p: [FiniteReal; 3]| FinitePoint2::from_coordinates(p[0], p[1]);
     let point_only = |tangent| PcurveDifferential {
+        higher: [Err(EvaluationFailure::NoValue); 3],
         point: uv(point),
         tangent: Err(tangent),
         acceleration: None,
@@ -200,6 +226,7 @@ fn differential_unsettled(
             // the derivative's coordinate or the signed infinity it reached.
             let lane = |lane: Result<FiniteReal, f64>| lane.map_err(EvaluationFailure::NonFinite);
             return Ok(PcurveDifferential {
+        higher: [Err(EvaluationFailure::NoValue); 3],
                 point: uv(point),
                 tangent: derivative(false).map_or(Err(EvaluationFailure::NoValue), |[x, y, _]| {
                     planar_value(lane(x), lane(y))
@@ -266,6 +293,7 @@ fn differential_unsettled(
         None => None,
     };
     Ok(PcurveDifferential {
+        higher: [Err(EvaluationFailure::NoValue); 3],
         point: uv(point),
         // A derivative sum or projection is absent only where the derivative
         // basis left the finite range.
@@ -274,6 +302,15 @@ fn differential_unsettled(
         }),
         acceleration,
     })
+    })()?;
+    let mut result = result;
+    if result.tangent.is_ok() {
+        if let Some(captured) = captured {
+            result.higher = higher::polynomial(scratch, knots, degree, span, poles, &captured,
+                max_order.unwrap_or(2));
+        }
+    }
+    Ok(result)
 }
 
 #[cfg(test)]

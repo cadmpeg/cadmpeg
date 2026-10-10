@@ -165,8 +165,11 @@ fn rounded_missing_pcurve_higher_keeps_completed_point_first_and_second() {
     let second = model_requested_jet(EvaluationAdmission::Standard, &index, &base, 0.5, 0.5, SurfaceRequest::Second).unwrap();
     let third = model_requested_jet(EvaluationAdmission::Standard, &index, &base, 0.5, 0.5, SurfaceRequest::Third).unwrap();
     assert_eq!(third.jet.point, second.jet.point); assert_eq!(third.jet.first, second.jet.first);
-    assert_eq!(third.jet.second, second.jet.second); assert_eq!(third.higher.third(), Err(EvaluationFailure::NoValue));
+    assert_eq!(third.jet.second, second.jet.second);
     let (s, c) = 0.5_f64.sin_cos();
+    // The same old quadratic source now supplies its exact polynomial jerk.
+    close(third.higher.third().unwrap(), [Vector3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 0.0),
+        Vector3::new(2.0 * c, 2.0 * s, -2.0), Vector3::new(s, -c, 0.0)]);
     close(second.jet.second.unwrap(), [Vector3::new(0.0, 0.0, 0.0), Vector3::new(2.0 * s, 1.0 - 2.0 * c, -1.0),
         Vector3::new(-c, -s, 1.0)]);
 }

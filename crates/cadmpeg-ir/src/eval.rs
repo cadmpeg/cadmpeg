@@ -6649,15 +6649,28 @@ fn variable_blend_contact_track(
     let geometry = side.pcurve.as_ref().ok_or(no_value)?;
     // The point owner already computes this actual pcurve differential.
     // Keep its scalar Results and release its scratch before support traversal.
-    let pcurve = {
+    let (pcurve, pcurve_higher) = {
         let scratch = decode::Scratch::new(admission);
         let result = (|| {
             let parameter = FiniteReal::new(parameter).ok_or(no_value)?;
-            let evaluated = pcurve_uv_differential(&scratch, geometry, parameter).ok_or(no_value)?;
+            let mut higher = [Err(no_value); 3];
+            let evaluated = if let (ContactRequest::Higher(order), PcurveGeometry::Nurbs { nurbs }) = (request, geometry) {
+                let _depth = scratch.enter().ok_or_else(|| scratch.failure(no_value))?;
+                let max_order = if order == SurfaceRequest::Fifth { 5 }
+                    else if order.needs_fourth() { 4 } else if order.needs_third() { 3 } else { 2 };
+                match pcurve_nurbs::differential_requested(&scratch, nurbs.degree(), nurbs.knots(),
+                    pcurve_nurbs::DifferentialPoles::Stored(nurbs.pole_rows()), parameter, max_order) {
+                    Ok(differential) => { higher = differential.higher; PcurveEvaluation::from(differential) }
+                    Err(EvaluationFailure::NonFinite(point)) => PcurveEvaluation::left_finite_range(point,
+                        Point2::new(f64::NAN, f64::NAN)),
+                    Err(EvaluationFailure::NoValue) => return Err(no_value),
+                    Err(EvaluationFailure::ResourceLimit(limit)) => return Err(EvaluationFailure::ResourceLimit(limit)),
+                }
+            } else { pcurve_uv_differential(&scratch, geometry, parameter).ok_or(no_value)? };
             if let Some(limit) = evaluated.resource {
                 return Err(EvaluationFailure::ResourceLimit(limit));
             }
-            Ok(evaluated)
+            Ok((evaluated, higher))
         })();
         scratch.settle(result)?
     };
@@ -6666,7 +6679,7 @@ fn variable_blend_contact_track(
     let (support, higher) = if let ContactRequest::Higher(order) = request {
         let requested = surface_request::model::requested(admission, index, surface, uv.u, uv.v, order)
             .map_err(|failure| failure.map(|_| ()))?;
-        let higher = contact_higher::evaluate(geometry, &pcurve, &requested, order);
+        let higher = contact_higher::evaluate(geometry, &pcurve, &pcurve_higher, &requested, order);
         if let Some(limit) = higher.iter().find_map(|result| match result {
             Err(EvaluationFailure::ResourceLimit(limit)) => Some(*limit),
             _ => None,
