@@ -892,7 +892,8 @@ fn fixed_line_conic_retention_needs_no_work_and_preserves_points() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let points = conic_conic_intersections(&ctx, &first, &transverse).expect("fixed root filtering");
+    let points =
+        conic_conic_intersections(&ctx, &first, &transverse).expect("fixed root filtering");
     assert_eq!(points.len(), 2);
     assert!(points.iter().any(|point| agree(*point, [0.0, 2.0, 0.0])));
     assert!(points.iter().any(|point| agree(*point, [0.0, -2.0, 0.0])));
