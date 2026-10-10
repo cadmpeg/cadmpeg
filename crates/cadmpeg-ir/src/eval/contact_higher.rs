@@ -14,20 +14,22 @@ type Derivative = Result<FiniteVector3, EvaluationFailure<()>>;
 pub(super) fn evaluate(
     geometry: &PcurveGeometry,
     pcurve: &PcurveEvaluation,
+    higher: &super::pcurve_nurbs::HigherPcurve,
     support: &RequestedJet,
     request: SurfaceRequest,
 ) -> [Derivative; 4] {
     let mut result = [Err(EvaluationFailure::NoValue); 4];
-    if request.needs_second() { result[0] = derivative::<2>(geometry, pcurve, support); }
-    if request.needs_third() { result[1] = derivative::<3>(geometry, pcurve, support); }
-    if request.needs_fourth() { result[2] = derivative::<4>(geometry, pcurve, support); }
-    if request == SurfaceRequest::Fifth { result[3] = derivative::<5>(geometry, pcurve, support); }
+    if request.needs_second() { result[0] = derivative::<2>(geometry, pcurve, higher, support); }
+    if request.needs_third() { result[1] = derivative::<3>(geometry, pcurve, higher, support); }
+    if request.needs_fourth() { result[2] = derivative::<4>(geometry, pcurve, higher, support); }
+    if request == SurfaceRequest::Fifth { result[3] = derivative::<5>(geometry, pcurve, higher, support); }
     result
 }
 
 fn derivative<const N: usize>(
     geometry: &PcurveGeometry,
     pcurve: &PcurveEvaluation,
+    higher: &super::pcurve_nurbs::HigherPcurve,
     support: &RequestedJet,
 ) -> Derivative {
     let lanes = if matches!(geometry, PcurveGeometry::Line(_)) {
@@ -39,7 +41,7 @@ fn derivative<const N: usize>(
         let mut uv = [[FiniteReal::ZERO; 2]; 5];
         let mut partials = [[FiniteVector3::ZERO; 6]; 5];
         for at in 0..N {
-            uv[at] = pcurve_order(geometry, pcurve, at + 1)?.coordinates();
+            uv[at] = pcurve_order(geometry, pcurve, higher, at + 1)?.coordinates();
             partials[at] = support_row(support, at + 1)?;
         }
         contact_derivative::<N>(partials, uv)
@@ -64,6 +66,7 @@ fn support_row(support: &RequestedJet, order: usize) -> Result<[FiniteVector3; 6
 fn pcurve_order(
     geometry: &PcurveGeometry,
     evaluated: &PcurveEvaluation,
+    higher: &super::pcurve_nurbs::HigherPcurve,
     order: usize,
 ) -> Result<FinitePoint2, EvaluationFailure<()>> {
     let first = || evaluated.tangent.map_err(|failure| failure.map(|_| ()));
@@ -80,6 +83,7 @@ fn pcurve_order(
         1 => first(),
         2 => second(),
         3..=5 => match geometry {
+            PcurveGeometry::Nurbs { .. } => higher[order - 3],
             PcurveGeometry::Line(_) | PcurveGeometry::Parabola(_) => {
                 Ok(FinitePoint2::from_coordinates(FiniteReal::ZERO, FiniteReal::ZERO))
             }

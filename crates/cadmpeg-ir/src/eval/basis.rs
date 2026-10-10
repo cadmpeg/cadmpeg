@@ -122,7 +122,7 @@ pub(super) fn fill_bspline_basis<'ctx, 'arena: 'ctx>(
     t: f64,
     values: &mut [f64],
 ) -> Result<Option<()>, ResourceLimit> {
-    fill_bspline_basis_rows(admission.into(), knots, degree, span, t, values, None, None)
+    fill_bspline_basis_rows(admission.into(), knots, degree, span, t, values, None, None, None)
 }
 
 fn fill_bspline_basis_rows(
@@ -134,6 +134,7 @@ fn fill_bspline_basis_rows(
     values: &mut [f64],
     mut previous: Option<&mut polynomial_higher::PreviousBasis<'_>>,
     mut second_previous: Option<&mut polynomial_higher::PreviousBasis<'_>>,
+    mut captured: Option<&mut polynomial_higher::CapturedBasis<'_>>,
 ) -> Result<Option<()>, ResourceLimit> {
     admission.work(0, "IR B-spline basis work")?;
     if Some(values.len()) != degree.checked_add(1) {
@@ -145,6 +146,9 @@ fn fill_bspline_basis_rows(
     }
     values[0] = 1.0;
     for j in 1..=degree {
+        if let Some(captured) = captured.as_mut() {
+            captured.capture(admission, j - 1, &values[..j])?;
+        }
         if j + 1 == degree {
             if let Some(previous) = second_previous.as_mut() {
                 previous.capture(admission, &values[..degree - 1])?;
@@ -179,6 +183,7 @@ fn fill_bspline_basis_rows(
                 };
                 if value.get() != 0.0 && ((right.get() != 0.0 && terms[0].get() == 0.0)
                     || (left.get() != 0.0 && terms[1].get() == 0.0)) {
+                    if let Some(captured) = captured.as_mut() { captured.lose_coefficients(j); }
                     if j < degree {
                         if let Some(previous) = previous.as_mut() { previous.lose_coefficients(); }
                     }
@@ -209,6 +214,7 @@ fn fill_bspline_basis_rows(
                 let terms = [value * right_quotient.get(), value * left_quotient.get()];
                 if value != 0.0 && ((right_knot != t && terms[0] == 0.0)
                     || (t != left_knot && terms[1] == 0.0)) {
+                    if let Some(captured) = captured.as_mut() { captured.lose_coefficients(j); }
                     if j < degree {
                         if let Some(previous) = previous.as_mut() { previous.lose_coefficients(); }
                     }
