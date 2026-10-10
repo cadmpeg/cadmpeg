@@ -8,7 +8,7 @@ use triangulation::TextTriangulation;
 use std::collections::{BTreeMap, HashMap};
 
 use cadmpeg_core::decode::admission::Admission;
-use cadmpeg_core::decode::{bounded_len, DecodeContext, View};
+use cadmpeg_core::decode::{bounded_len, DecodeContext, ScopedReservation, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::{
@@ -2470,6 +2470,8 @@ pub(crate) fn parse_payloads(
         let Some(name) = direct_shape_entry(ctx, property)? else {
             continue;
         };
+        let _name_storage = name.1;
+        let name = name.0;
         let entries_by_name = match &mut entries_by_name {
             Some(index) => index,
             slot @ None => {
@@ -2522,10 +2524,10 @@ pub(crate) fn parse_payloads(
     Ok(payloads)
 }
 
-fn direct_shape_entry(
-    ctx: &DecodeContext<'_>,
+fn direct_shape_entry<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     property: &PropertyRecord,
-) -> Result<Option<String>, CodecError> {
+) -> Result<Option<(String, ScopedReservation<'ctx>)>, CodecError> {
     let admitted_document = ctx
         .parse_xml(property.xml.text(), "FreeCAD XML tree")
         .or_else(|error| {
@@ -2569,7 +2571,7 @@ fn direct_shape_entry(
     };
     ctx.xml_attribute(part, "file", "FreeCAD shape property carriers")?
         .filter(|file| !file.is_empty())
-        .map(|file| ctx.copy_retained_text(file, "FreeCAD shape entry name"))
+        .map(|file| ctx.with_scoped_storage("FreeCAD shape entry name", || ctx.copy_retained_text(file, "FreeCAD shape entry name")))
         .transpose()
 }
 
