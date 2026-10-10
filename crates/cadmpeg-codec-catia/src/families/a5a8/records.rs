@@ -1678,10 +1678,23 @@ pub(in crate::families) fn resolved_a8_surfaces(
     data: &[u8],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Vec<FreeformSurface>, CodecError> {
-    let mut grids = A8ExternalGridSites::default();
     let mut surfaces = Vec::new();
-    for frame in a8_frames(ctx, data, 0x34)? {
-        if let Some(surface) = resolved_a8_surface_from_object_frame(
+    for surface in resolved_a8_surface_records(ctx, data, refusal)? {
+        ctx.push_vec(&mut surfaces, surface?, "catia_a8_resolved_surfaces")?;
+    }
+    Ok(surfaces)
+}
+
+/// Traverse complete A8 surfaces without allocating a source surface vector.
+/// The traversal owns its external-grid index until its last frame is read.
+pub(in crate::families) fn resolved_a8_surface_records<'a>(
+    ctx: &'a DecodeContext<'_>,
+    data: &'a [u8],
+    refusal: &'a mut crate::nurbs::LaneRefusals,
+) -> Result<impl Iterator<Item = Result<FreeformSurface, CodecError>> + 'a, CodecError> {
+    let mut grids = A8ExternalGridSites::default();
+    Ok(a8_frames(ctx, data, 0x34)?.filter_map(move |frame| {
+        resolved_a8_surface_from_object_frame(
             ctx,
             data,
             frame.pos,
@@ -1689,11 +1702,9 @@ pub(in crate::families) fn resolved_a8_surfaces(
             frame.object_id,
             &mut grids,
             refusal,
-        )? {
-            ctx.push_vec(&mut surfaces, surface, "catia_a8_resolved_surfaces")?;
-        }
-    }
-    Ok(surfaces)
+        )
+        .transpose()
+    }))
 }
 
 /// Decode every structurally complete `a8 <flag> 34` parameter lattice, including
@@ -2179,24 +2190,32 @@ pub(in crate::families) fn a5_surfaces_from_records(
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Vec<FreeformSurface>, CodecError> {
     let mut surfaces = Vec::new();
-    for record in ctx
-        .admit_iter(records, "catia_a5_surface_record_scan")?
-        .filter(|record| record.family() == ConsolidatedFamily::A && record.class() == 0x34)
-    {
-        let (Some(payload), Some(end)) = (record.payload(), record.range()) else {
-            continue;
-        };
-        let frame = ConsolidatedFrame {
-            pos: record.byte_offset(),
-            payload: payload.start,
-            end: end.end,
-            header_token: record.header_token(),
-        };
-        if let Some(surface) = a5_surface(ctx, data, frame, refusal)? {
-            ctx.push_vec(&mut surfaces, surface, "catia_a5_surfaces")?;
-        }
+    for surface in a5_surface_records(ctx, data, records, refusal)? {
+        ctx.push_vec(&mut surfaces, surface?, "catia_a5_surfaces")?;
     }
     Ok(surfaces)
+}
+
+/// Traverse complete A5 surfaces without allocating a source surface vector.
+pub(in crate::families) fn a5_surface_records<'a>(
+    ctx: &'a DecodeContext<'_>,
+    data: &'a [u8],
+    records: &'a [ConsolidatedRecord],
+    refusal: &'a mut crate::nurbs::LaneRefusals,
+) -> Result<impl Iterator<Item = Result<FreeformSurface, CodecError>> + 'a, CodecError> {
+    Ok(ctx
+        .admit_iter(records, "catia_a5_surface_record_scan")?
+        .filter(|record| record.family() == ConsolidatedFamily::A && record.class() == 0x34)
+        .filter_map(move |record| {
+            let (payload, end) = (record.payload()?, record.range()?);
+            let frame = ConsolidatedFrame {
+                pos: record.byte_offset(),
+                payload: payload.start,
+                end: end.end,
+                header_token: record.header_token(),
+            };
+            a5_surface(ctx, data, frame, refusal).transpose()
+        }))
 }
 
 fn a5_surface(

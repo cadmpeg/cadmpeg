@@ -1000,11 +1000,11 @@ pub(crate) fn consolidated_analytic_circle_edge_runs_from_records(
             )
         })?;
     }
+    let use_pool = ctx.with_scoped_storage("catia_analytic_circle_use_workspace", || {
+        consolidated_edge_use_runs_from_records(ctx, data, records)
+    })?;
     let (use_index, _use_index_storage) = ctx.collect_scoped_btree_map(
-        temporary
-            .with_storage(|| consolidated_edge_use_runs_from_records(ctx, data, records))?
-            .into_iter()
-            .map(|value| (value.uses[0].pos, value)),
+        use_pool.0.iter().map(|value| (value.uses[0].pos, value)),
         "catia_analytic_circle_use_runs",
     )?;
     let use_runs = use_index;
@@ -1120,20 +1120,24 @@ pub(crate) fn consolidated_class25_edge_runs_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<ConsolidatedClass25EdgeRun>, CodecError> {
-    let mut temporary = ctx.reserve_scoped(0, "catia edge resolution workspace")?;
+    let descriptor_pool = ctx.with_scoped_storage("catia_class25_descriptor_workspace", || {
+        b2_class25_descriptors_from_records(ctx, data, records)
+    })?;
     let (descriptor_index, _descriptor_index_storage) = ctx.collect_scoped_btree_map(
-        temporary
-            .with_storage(|| b2_class25_descriptors_from_records(ctx, data, records))?
+        descriptor_pool
+            .0
             .into_iter()
             .map(|value| (value.pos, value)),
         "catia_class25_edge_descriptors",
     )?;
+    // Descriptors have no heap-owned children; only their source slots expire.
+    drop(descriptor_pool.1);
     let descriptors = descriptor_index;
+    let use_pool = ctx.with_scoped_storage("catia_class25_use_workspace", || {
+        consolidated_edge_use_runs_from_records(ctx, data, records)
+    })?;
     let (use_index, _use_index_storage) = ctx.collect_scoped_btree_map(
-        temporary
-            .with_storage(|| consolidated_edge_use_runs_from_records(ctx, data, records))?
-            .into_iter()
-            .map(|value| (value.uses[0].pos, value)),
+        use_pool.0.iter().map(|value| (value.uses[0].pos, value)),
         "catia_class25_edge_use_runs",
     )?;
     let use_runs = use_index;
@@ -1219,11 +1223,11 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<ConsolidatedEdgeUseRun>, CodecError> {
     let mut temporary = ctx.reserve_scoped(0, "catia edge resolution workspace")?;
+    let use_pool = ctx.with_scoped_storage("catia_edge_use_metadata_workspace", || {
+        b2_use_metadata_from_records(ctx, data, records)
+    })?;
     let (use_index, _use_index_storage) = ctx.collect_scoped_btree_map(
-        temporary
-            .with_storage(|| b2_use_metadata_from_records(ctx, data, records))?
-            .into_iter()
-            .map(|value| (value.pos, value)),
+        use_pool.0.iter().map(|value| (value.pos, value)),
         "catia_edge_use_metadata_index",
     )?;
     let uses = use_index;
@@ -1788,9 +1792,12 @@ pub(crate) fn consolidated_owner_boundary_cycles_from_records(
     let (endpoint_records, face_nodes, record_indices, targets_by_owner) =
         scratch.with_storage(|| {
             let mut endpoint_records = HashMap::new();
-            let bindings = consolidated_compact_edge_endpoints_from_records(ctx, data, records)?;
+            let bindings = ctx
+                .with_scoped_storage("catia_owner_boundary_binding_workspace", || {
+                    consolidated_compact_edge_endpoints_from_records(ctx, data, records)
+                })?;
             for binding in
-                ctx.admit_iter(&bindings, "catia_consolidated_owner_endpoint_bindings")?
+                ctx.admit_iter(&bindings.0, "catia_consolidated_owner_endpoint_bindings")?
             {
                 ctx.insert_hash_map(
                     &mut endpoint_records,
@@ -1799,6 +1806,7 @@ pub(crate) fn consolidated_owner_boundary_cycles_from_records(
                     "catia_owner_boundary_endpoints",
                 )?;
             }
+            drop(bindings);
             let mut face_nodes = BTreeMap::new();
             for node in b2_face_nodes_5f_from_records(ctx, data, records)? {
                 ctx.insert_btree_map(
@@ -1821,9 +1829,12 @@ pub(crate) fn consolidated_owner_boundary_cycles_from_records(
                 )?;
             }
             let mut targets_by_owner = BTreeMap::new();
-            let identity_targets = b2_owner_identity_targets_from_records(ctx, data, records)?;
+            let identity_targets = ctx
+                .with_scoped_storage("catia_owner_boundary_identity_workspace", || {
+                    b2_owner_identity_targets_from_records(ctx, data, records)
+                })?;
             for &target in ctx.admit_iter(
-                &identity_targets,
+                &identity_targets.0,
                 "catia_consolidated_owner_identity_targets",
             )? {
                 ctx.push_btree_group(
@@ -1834,6 +1845,7 @@ pub(crate) fn consolidated_owner_boundary_cycles_from_records(
                     "catia_owner_boundary_target_entries",
                 )?;
             }
+            drop(identity_targets);
             Ok::<_, CodecError>((
                 endpoint_records,
                 face_nodes,

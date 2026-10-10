@@ -303,3 +303,49 @@ fn repeated_revolution_misses_share_a_unique_interval_index() {
     .expect("duplicate intervals stay ambiguous")
     .is_empty());
 }
+
+#[test]
+fn invalid_u_spans_do_not_populate_optional_knot_indexes() {
+    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, ResourceDimension};
+    let knots: Vec<_> = std::iter::once(0.0)
+        .chain((0..1024).map(|index| f64::from(index) / 1023.0))
+        .chain(std::iter::once(1.0))
+        .collect();
+    let carriers = [
+        surface([0.0, 1.0], vec![0.0, 0.0, 1.0, 1.0]),
+        surface([0.0, 1.0], vec![0.0, 0.0, 1.0, 1.0]),
+        surface([-f64::MAX, f64::MAX], knots),
+    ];
+    let queries = vec![offset([0.0, 1.0], [0.0, 1.0]); 8193];
+    // 8193*2 domain candidates exceed 8*2048, so the valid knot bands are
+    // built. The overflowing U span cannot bind and must not visit 1026 knots.
+    let _probe = RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "catia_b2_offset_knot_index_scan",
+        Some(1026),
+    );
+    let bindings = crate::test_support::with_work_limit(u64::MAX, |ctx| {
+        offset_support_carriers(ctx, &queries, &carriers)
+    })
+    .expect("ineligible carriers have no knot index");
+    assert_eq!(bindings, vec![None; 8193]);
+}
+
+#[test]
+fn indexed_revolution_identity_ambiguity_does_not_fall_back() {
+    let mut bytes = revolution_profiles(128, 512, false);
+    for range in [[20.0f64, 30.0], [40.0, 50.0]] {
+        let mut circle = bytes[..57].to_vec();
+        circle[32..40].copy_from_slice(&range[0].to_le_bytes());
+        circle[40..48].copy_from_slice(&range[1].to_le_bytes());
+        bytes.extend(circle);
+    }
+    let records = crate::wire::records::consolidated_records(&bytes);
+    // The original interval [-4, 9] remains unique, but the identity occurs
+    // three times. An identity tombstone cannot become an interval miss.
+    assert!(crate::test_support::with_service_context(|ctx| {
+        super::super::b2_resolved_revolutions_from_records(ctx, &bytes, &records)
+    })
+    .expect("identity ambiguity stays unresolved")
+    .is_empty());
+}
