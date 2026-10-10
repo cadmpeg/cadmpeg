@@ -98,3 +98,24 @@ fn fixed_quartic_paths_preserve_original_refusal() {
     let error = common_plane_conic_parameters(&ctx, zero, zero).expect_err("empty roots preserve refusal");
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal) if refusal == &original));
 }
+
+#[test]
+fn plane_quadric_parameter_conversion_needs_no_work() {
+    use super::super::{intersect_plane_with_two_quadrics, CarrierEquation, SphereEquation};
+    let sphere = |x| CarrierEquation::Sphere(SphereEquation {
+        center: [x, 0.0, 0.0], ref_direction: [1.0, 0.0, 0.0], radius: 1.0,
+    });
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let points = intersect_plane_with_two_quadrics(&ctx,
+        PlaneEquation { origin: [0.0; 3], normal: [0.0, 0.0, 1.0] }, sphere(0.0), sphere(1.0),
+    ).expect("bounded parameter conversion");
+    assert_eq!(points.len(), 2);
+    for point in points {
+        assert!((point[0] - 0.5).abs() <= EPS_TAYLOR_BOUND);
+        assert!((point[1].abs() - 0.75_f64.sqrt()).abs() <= EPS_TAYLOR_BOUND);
+        assert_eq!(point[2], 0.0);
+    }
+}

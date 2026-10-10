@@ -207,18 +207,18 @@ fn absent_support_cone_endpoints_are_free_and_keep_original_refusal() {
 #[test]
 fn empty_mapped_pcurve_evidence_is_free_and_keeps_original_refusal() {
     with_zero_limits(|ctx| assert_free_original(ctx, true, ||
-        pcurve_endpoint_evidence_from_mapped(ctx, &[], false).map(|result| result.is_none())));
+        pcurve_endpoint_evidence_from_mapped(ctx, &[None; 2], false).map(|result| result.is_none())));
 }
 
 #[test]
 fn empty_pcurve_mismatch_is_free_and_keeps_original_refusal() {
     with_zero_limits(|ctx| assert_free_original(ctx, true, ||
-        pcurve_mismatch_detail(ctx, 7, &[]).map(|result| result.is_none())));
+        pcurve_mismatch_detail(ctx, 7, &[None; 2]).map(|result| result.is_none())));
 }
 
 #[test]
 fn single_path_pcurve_mismatch_is_free_and_keeps_original_refusal() {
-    let mapped = [MappedPcurvePath { face_id: 1, endpoints: [[0.0; 3], [1.0, 0.0, 0.0]] }];
+    let mapped = [Some(MappedPcurvePath { face_id: 1, endpoints: [[0.0; 3], [1.0, 0.0, 0.0]] }), None];
     with_zero_limits(|ctx| assert_free_original(ctx, true, ||
         pcurve_mismatch_detail(ctx, 7, &mapped).map(|result| result.is_none())));
 }
