@@ -394,7 +394,7 @@ fn extended_tagged_indexed_curve_record_ends(payload: &[u8], offset: usize) -> b
             .is_some_and(|at| class_declaration_at(payload, at))
 }
 
-struct RosterCurveEndpointRoute<'curve, 'payload> {
+pub(super) struct RosterCurveEndpointRoute<'curve, 'payload> {
     payload: &'payload [u8],
     curve: &'curve SketchInputEntity,
     offset: usize,
@@ -402,7 +402,7 @@ struct RosterCurveEndpointRoute<'curve, 'payload> {
     point_object_construction: bool,
 }
 
-fn roster_curve_endpoint_route<'curve, 'payload>(
+pub(super) fn roster_curve_endpoint_route<'curve, 'payload>(
     payload: &'payload [u8],
     curve: &'curve SketchInputEntity,
 ) -> Option<RosterCurveEndpointRoute<'curve, 'payload>> {

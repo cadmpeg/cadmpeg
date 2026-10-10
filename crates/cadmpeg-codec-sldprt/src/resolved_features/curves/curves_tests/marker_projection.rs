@@ -63,7 +63,7 @@ fn slot_cycle_fixture() -> (
     Vec<cadmpeg_ir::sketches::SketchEntity>,
 ) {
     let slot_offset = 500;
-    let mut payload = vec![0; slot_offset + 140];
+    let mut payload = vec![0; 640];
     let declaration = b"\xff\xff\x01\x00\x08\x00sgSlot_c\0\0\0\0\x01\0\0\0";
     payload[slot_offset - declaration.len()..slot_offset].copy_from_slice(declaration);
     payload[slot_offset..slot_offset + LEGACY_EXTENDED_SKETCH_MARKER.len()]

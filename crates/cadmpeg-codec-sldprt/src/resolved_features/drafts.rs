@@ -435,7 +435,7 @@ fn unique_declared_plane_reference_token(
     let mut classes = lane.classes.iter();
     let Some(first) = ctx.find_map(
         &mut classes,
-        |class| token(class),
+        token,
         "scan SLDPRT declared plane tokens",
     )?
     else {

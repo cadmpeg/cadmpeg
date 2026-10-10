@@ -1,6 +1,7 @@
 //! Component path resolution and selection value encoding.
 use cadmpeg_ir::features::PlanarProfileRef;
 
+use super::classes::is_sketch_block_object;
 use super::operations::feature_inline_operation_fields;
 use super::scalars::ObjectNames;
 use crate::classification::{native_object_class, NativeClassKind};
@@ -105,31 +106,35 @@ impl<'a, 'ctx> FeaturesBySource<'a, 'ctx> {
             }))
     }
 
-    /// The distinct features the components name, in component order.
+    /// The distinct feature identities borrowed in component order.
+    fn identities<'query>(
+        &self,
+        ctx: &'query DecodeContext<'_>,
+        components: &[FeatureInputComponentPathEntry],
+    ) -> Result<ComponentInputIdentities<'a, 'query>, CodecError> {
+        const OPERATION: &str = "resolve SLDPRT component path producers";
+        let mut storage = ctx.reserve_scoped(0, OPERATION)?;
+        let mut seen_storage = ctx.reserve_scoped(0, OPERATION)?;
+        let mut seen = HashSet::new();
+        let mut identities = Vec::new();
+        for component in ctx.admit_iter(components, OPERATION)? {
+            let Some(ComponentProducer::Feature(feature)) = self.component(ctx, component, OPERATION)? else {
+                continue;
+            };
+            if seen_storage.with_storage(|| ctx.insert_hash_set(&mut seen, feature.id.as_str(), OPERATION))? {
+                storage.with_storage(|| ctx.push_vec(&mut identities, feature.id.as_str(), OPERATION))?;
+            }
+        }
+        Ok(ComponentInputIdentities { identities, _storage: storage })
+    }
+
+    /// The distinct retained identities in component order.
     pub(super) fn features(
         &self,
         ctx: &DecodeContext<'_>,
         components: &[FeatureInputComponentPathEntry],
     ) -> Result<Vec<String>, CodecError> {
-        const OPERATION: &str = "resolve SLDPRT component path producers";
-        let mut storage = ctx.reserve_scoped(0, OPERATION)?;
-        let mut seen = HashSet::new();
-        let mut result = Vec::new();
-        for component in ctx.admit_iter(components, OPERATION)? {
-            let Some(ComponentProducer::Feature(feature)) =
-                self.component(ctx, component, OPERATION)?
-            else {
-                continue;
-            };
-            if !storage
-                .with_storage(|| ctx.insert_hash_set(&mut seen, feature.id.as_str(), OPERATION))?
-            {
-                continue;
-            }
-            let identity = ctx.copy_retained_text(&feature.id, OPERATION)?;
-            ctx.push_vec(&mut result, identity, OPERATION)?;
-        }
-        Ok(result)
+        self.identities(ctx, components)?.retain(ctx)
     }
 
     /// The feature the last resolvable component names.
@@ -221,40 +226,24 @@ pub(super) fn component_path_input_identities<'a, 'ctx>(
     consumer_ref: &str,
 ) -> Result<ComponentInputIdentities<'a, 'ctx>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT component path inputs";
-    const PRODUCERS: &str = "resolve SLDPRT component path producers";
-    let mut identity_storage = ctx.reserve_scoped(0, PRODUCERS)?;
-    let mut producers = Vec::new();
-    {
-        let by_source = FeaturesBySource::new(ctx, features)?;
-        let mut seen_storage = ctx.reserve_scoped(0, PRODUCERS)?;
-        let mut seen = HashSet::new();
-        for component in ctx.admit_iter(components, PRODUCERS)? {
-            let Some(ComponentProducer::Feature(feature)) =
-                by_source.component(ctx, component, PRODUCERS)?
-            else {
-                continue;
-            };
-            if seen_storage
-                .with_storage(|| ctx.insert_hash_set(&mut seen, feature.id.as_str(), PRODUCERS))?
-            {
-                identity_storage.with_storage(|| {
-                    ctx.push_vec(&mut producers, feature.id.as_str(), PRODUCERS)
-                })?;
-            }
-        }
+    let empty = ComponentInputIdentities {
+        identities: Vec::new(),
+        _storage: ctx.reserve_scoped(0, OPERATION)?,
+    };
+    if components.is_empty() {
+        return Ok(empty);
     }
     let Some(consumer) = ctx.find_by(
         features,
         |consumer| ctx.equal(consumer.id.as_str(), consumer_ref, OPERATION),
         OPERATION,
-    )?
-    else {
-        ctx.clear_vec(&mut producers, OPERATION)?;
-        return Ok(ComponentInputIdentities {
-            identities: producers,
-            _storage: identity_storage,
-        });
+    )? else {
+        return Ok(empty);
     };
+    let mut producers = FeaturesBySource::new(ctx, features)?.identities(ctx, components)?;
+    if producers.identities.is_empty() {
+        return Ok(producers);
+    }
     {
         let mut storage = ctx.reserve_scoped(0, OPERATION)?;
         let mut first_by_id = HashMap::new();
@@ -267,7 +256,7 @@ pub(super) fn component_path_input_identities<'a, 'ctx>(
             })?;
         }
         ctx.retain_vec(
-            &mut producers,
+            &mut producers.identities,
             |producer| match ctx.get_hash_map(&first_by_id, *producer, OPERATION)? {
                 Some(feature) => precedes(ctx, feature, consumer, OPERATION),
                 None => Ok(false),
@@ -275,10 +264,7 @@ pub(super) fn component_path_input_identities<'a, 'ctx>(
             OPERATION,
         )?;
     }
-    Ok(ComponentInputIdentities {
-        identities: producers,
-        _storage: identity_storage,
-    })
+    Ok(producers)
 }
 
 pub(super) fn component_path_input_features(
@@ -681,14 +667,6 @@ pub(super) fn is_profile_feature_object(feature: &Feature) -> bool {
             && feature.source_value().is_some_and(|source| source != 0))
 }
 
-/// Whether an object can lie between a profile and the extrusion it feeds.
-fn is_sketch_block_object(feature: &Feature) -> bool {
-    matches!(
-        native_object_class(feature.input_class.as_deref().unwrap_or_default()),
-        NativeClassKind::SketchBlockDefinition | NativeClassKind::SketchBlockInstance
-    )
-}
-
 pub(super) fn profile_owns_intervening_sketch_blocks<'a>(
     ctx: &DecodeContext<'_>,
     profile: &Feature,
@@ -700,18 +678,8 @@ pub(super) fn profile_owns_intervening_sketch_blocks<'a>(
         ctx.get_btree_map(&profile.properties, "DissectableChildren", OWNERSHIP)?
     {
         let mut children = BTreeSet::new();
-        let mut characters = encoded.char_indices();
-        let mut start = 0;
-        loop {
-            let end = ctx
-                .find_map(
-                    &mut characters,
-                    |(offset, character)| Ok((character == ',').then_some(offset)),
-                    "parse SLDPRT profile block children",
-                )?
-                .unwrap_or(encoded.len());
-            let value =
-                ctx.trim_text(&encoded[start..end], "trim SLDPRT profile child identity")?;
+        for token in super::child_sources::child_tokens(ctx, encoded, "parse SLDPRT profile block children") {
+            let value = ctx.trim_text(token?, "trim SLDPRT profile child identity")?;
             let Ok(source) = ctx.parse_text::<u32>(value, "parse SLDPRT profile child identity")?
             else {
                 return Ok(false);
@@ -722,10 +690,6 @@ pub(super) fn profile_owns_intervening_sketch_blocks<'a>(
             {
                 return Ok(false);
             }
-            if end == encoded.len() {
-                break;
-            }
-            start = end + 1;
         }
         Some(children)
     } else {

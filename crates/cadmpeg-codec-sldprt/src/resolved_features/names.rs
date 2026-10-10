@@ -147,7 +147,7 @@ impl<'a> NameScanner<'a> {
         Ok(Self {
             payload,
             marker,
-            offsets: 0..payload.len().saturating_sub(4),
+            offsets: 0..payload.get(4..).map_or(0, <[u8]>::len),
         })
     }
 
@@ -232,7 +232,7 @@ pub(crate) fn class_declarations_match(
     let lane_key = ctx
         .rsplit_once(parent, "#", "split SLDPRT feature-input lane key")?
         .map_or(parent, |(_, key)| key);
-    let mut offsets = 0..payload.len().saturating_sub(3);
+    let mut offsets = 0..payload.get(3..).map_or(0, <[u8]>::len);
     let all_match = ctx.all_by(
         classes.iter().enumerate(),
         |(ordinal, actual)| {
@@ -379,7 +379,7 @@ pub(crate) fn class_declarations(
         .rsplit_once(parent, "#", "split SLDPRT feature-input lane key")?
         .map_or(parent, |(_, key)| key);
     let mut classes = Vec::new();
-    let mut offsets = 0..payload.len().saturating_sub(3);
+    let mut offsets = 0..payload.get(3..).map_or(0, <[u8]>::len);
     while let Some((offset, name)) = next_payload_class(ctx, payload, &mut offsets)? {
         let ordinal = classes.len();
         let id = record_id(ctx, "class", lane_key, offset)?;

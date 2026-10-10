@@ -151,6 +151,8 @@ pub(crate) mod classes;
 
 pub(crate) mod compact_reference_planes;
 
+mod child_sources;
+
 pub(crate) mod component_paths;
 
 mod curves;
