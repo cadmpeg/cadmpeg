@@ -3814,13 +3814,29 @@ fn selected_historical_face_selection(
     if selection.secondary().is_some() {
         return Ok(None);
     }
-    let mut face_slots = selection
-        .historical_face_candidates
-        .iter()
-        .filter(|candidate| candidate.historical.state_ids.contains(&previous_state_id))
-        .map(|candidate| candidate.face_slot);
-    let face_slot = or_none!(face_slots.next());
-    if face_slots.any(|candidate| candidate != face_slot) {
+    let mut candidates = selection.historical_face_candidates.iter();
+    let face_slot = or_none!(ctx.find_map(
+        &mut candidates,
+        |candidate| {
+            Ok(ctx.any_by(
+                &candidate.historical.state_ids,
+                |state_id| Ok(*state_id == previous_state_id),
+                "visit F3D Draft historical candidate state",
+            )?.then_some(candidate.face_slot))
+        },
+        "visit F3D Draft historical face candidate",
+    )?);
+    if !ctx.all_by(
+        candidates,
+        |candidate| {
+            Ok(!ctx.any_by(
+                &candidate.historical.state_ids,
+                |state_id| Ok(*state_id == previous_state_id),
+                "visit F3D Draft historical candidate state",
+            )? || candidate.face_slot == face_slot)
+        },
+        "visit F3D Draft historical face candidate",
+    )? {
         return Ok(None);
     }
     let feature = crate::design::identity::neutral_feature_id(ctx, scope)?;
