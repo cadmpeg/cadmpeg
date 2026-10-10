@@ -116,9 +116,9 @@ fn network_connect_points(
             else {
                 return Ok(None);
             };
-            if !ctx
+            if ctx
                 .get_btree_map(entries, &sequence, "iges network point directory lookup")?
-                .is_some_and(|entry| entry.entity_type == 132)
+                .is_none_or(|entry| entry.entity_type != 132)
             {
                 return Ok(None);
             }
@@ -773,7 +773,7 @@ fn attribute_definition_valid_and_shape<'ctx>(
         return Err(refusal.into());
     }
     let mut source_values = IntoIterator::into_iter(0..attribute_count.unwrap_or_default());
-    while source_values.len() != 0 {
+    while !source_values.is_empty() {
         let Some(_) = ctx.next_charged(&mut source_values, "iges structure list traversal")? else {
             break;
         };
@@ -818,7 +818,7 @@ fn attribute_definition_valid_and_shape<'ctx>(
                 return Err(refusal.into());
             }
             let mut source_values = IntoIterator::into_iter(0..value_count.unwrap_or_default());
-            while source_values.len() != 0 {
+            while !source_values.is_empty() {
                 let Some(_) =
                     ctx.next_charged(&mut source_values, "iges structure list traversal")?
                 else {
@@ -1756,8 +1756,8 @@ fn predefined_associativity_valid(
                 }
                 _ => 0,
             };
-            let arrow_cardinality_valid = !dimension
-                .is_some_and(|(_, dimension)| dimension.entity_type == 216)
+            let arrow_cardinality_valid = dimension
+                .is_none_or(|(_, dimension)| dimension.entity_type != 216)
                 || arrow_count != 2
                 || geometry_count == 2;
             let back_pointer_owners = ctx.get_btree_map(
@@ -2565,8 +2565,10 @@ fn legacy_single_parent_face<'ir, 'ctx>(
     proof_context: (&ModelIndex<'ir>, &mut PlaneBoundaryProofs<'ir, '_>),
     source: LegacyPlaneSource<'_>,
     parent: (u32, &DirectoryEntry),
-    entries: &BTreeMap<u32, &DirectoryEntry>,
-    records: &BTreeMap<u32, &ParameterRecord>,
+    (entries, records): (
+        &BTreeMap<u32, &DirectoryEntry>,
+        &BTreeMap<u32, &ParameterRecord>,
+    ),
     global: &ProjectedGlobal,
     ctx: &'ctx DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences<'_>,
@@ -3858,7 +3860,7 @@ pub(super) fn project<'ctx>(
             return Err(refusal.into());
         }
         let mut source_values = IntoIterator::into_iter(0..row_count.unwrap_or_default());
-        while source_values.len() != 0 {
+        while !source_values.is_empty() {
             let Some(_) = ctx.next_charged(&mut source_values, "iges structure list traversal")?
             else {
                 break;
@@ -3879,7 +3881,7 @@ pub(super) fn project<'ctx>(
                     return Err(refusal.into());
                 }
                 let mut source_values = IntoIterator::into_iter(0..*count);
-                while source_values.len() != 0 {
+                while !source_values.is_empty() {
                     let Some(_) =
                         ctx.next_charged(&mut source_values, "iges structure list traversal")?
                     else {
@@ -3965,7 +3967,7 @@ pub(super) fn project<'ctx>(
         else {
             break;
         };
-        if !(entry.entity_type == 302) {
+        if entry.entity_type != 302 {
             continue;
         }
         let Some(record) = ctx
@@ -3992,7 +3994,7 @@ pub(super) fn project<'ctx>(
             return Err(refusal.into());
         }
         let mut source_values = IntoIterator::into_iter(0..class_count.unwrap_or_default());
-        while source_values.len() != 0 {
+        while !source_values.is_empty() {
             let Some(_) = ctx.next_charged(&mut source_values, "iges structure list traversal")?
             else {
                 break;
@@ -4195,8 +4197,7 @@ pub(super) fn project<'ctx>(
                     (index, &mut plane_proofs),
                     LegacyPlaneSource { entry, record },
                     parent,
-                    entries,
-                    records,
+                    (entries, records),
                     global,
                     ctx,
                     sequences,

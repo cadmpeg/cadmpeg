@@ -104,11 +104,10 @@ fn rejected_brep_drafts_release_payload_and_arena_storage() {
             .records;
             (directory, records, global.length_context().unwrap())
         });
-    let first_body = directory
+    let first_body = *directory
         .iter()
         .find(|entry| entry.entity_type == 186)
-        .unwrap()
-        .clone();
+        .unwrap();
     let first_record = records
         .iter()
         .find(|record| record.directory_sequence == first_body.sequence)
@@ -116,7 +115,7 @@ fn rejected_brep_drafts_release_payload_and_arena_storage() {
         .clone();
     // All bodies reach radial admission and reject after constructing complete drafts.
     for index in 1..16_u32 {
-        let mut entry = first_body.clone();
+        let mut entry = first_body;
         entry.sequence += 2 * index;
         let mut record = first_record.clone();
         record.directory_sequence = entry.sequence;
