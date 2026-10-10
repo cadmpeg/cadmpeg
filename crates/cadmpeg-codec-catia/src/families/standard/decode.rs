@@ -103,10 +103,6 @@ fn bind_consolidated_revolution_faces_and_seams(
 ) -> Result<(usize, usize), cadmpeg_core::CodecError> {
     const TOLERANCE: f64 = 2e-3;
 
-    if revolutions.is_empty() {
-        return Ok((0, 0));
-    }
-
     fn point_on_torus(point: Point3, geometry: &SurfaceGeometry, tolerance: f64) -> bool {
         let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) = geometry else {
             return false;
@@ -217,6 +213,10 @@ fn bind_consolidated_revolution_faces_and_seams(
             ),
             [0.0, expected_sweep],
         ))
+    }
+
+    if revolutions.is_empty() {
+        return Ok((0, 0));
     }
 
     let mut storage = ctx.reserve_scoped(0, "catia_revolution_binding_storage")?;

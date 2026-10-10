@@ -1323,7 +1323,7 @@ pub(super) fn transfer_closed_face_topology(
                             admitted!(annotate(
                                 admission.context(),
                                 annotations,
-                                &coedge_id,
+                                coedge_id,
                                 "zero_entity_a9_03",
                                 u64::from(occurrence.support_record_ordinal),
                                 "topology_coedge",
@@ -1332,44 +1332,44 @@ pub(super) fn transfer_closed_face_topology(
                             admitted!(crate::resource::derived_annotation(
                                 admission.context(),
                                 annotations,
-                                &coedge_id,
+                                coedge_id,
                                 "owner_loop",
                             ));
                             admitted!(crate::resource::derived_annotation(
                                 admission.context(),
                                 annotations,
-                                &coedge_id,
+                                coedge_id,
                                 "edge",
                             ));
                             admitted!(crate::resource::derived_annotation(
                                 admission.context(),
                                 annotations,
-                                &coedge_id,
+                                coedge_id,
                                 "radial_next",
                             ));
                             admitted!(crate::resource::derived_annotation(
                                 admission.context(),
                                 annotations,
-                                &coedge_id,
+                                coedge_id,
                                 "sense",
                             ));
                             admitted!(crate::resource::derived_annotation(
                                 admission.context(),
                                 annotations,
-                                &coedge_id,
+                                coedge_id,
                                 "pcurves",
                             ));
                             if use_curve.is_some() {
                                 admitted!(crate::resource::derived_annotation(
                                     admission.context(),
                                     annotations,
-                                    &coedge_id,
+                                    coedge_id,
                                     "use_curve",
                                 ));
                                 admitted!(crate::resource::derived_annotation(
                                     admission.context(),
                                     annotations,
-                                    &coedge_id,
+                                    coedge_id,
                                     "use_curve_parameter_range",
                                 ));
                             }
