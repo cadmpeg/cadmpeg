@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Duplicate carrier geometry and reached proof admission.
 
-use crate::history::{draft_surface_geometry, DraftSurfaceGeometry};
+use crate::history::{draft_surface_geometry, DraftSurfaceEvidence, DraftSurfaceGeometry};
 use crate::history_records::{
     AsmHistoricalCarrierBinding, AsmHistoricalCylinder, AsmHistoricalPlane,
     AsmHistoricalSurfaceAxis, AsmHistoricalSurfaceRadius, AsmHistoricalTopology,
@@ -35,7 +35,7 @@ fn axis(direction: Vector3) -> AsmHistoricalSurfaceAxis {
 
 fn assert_ambiguous(topology: &AsmHistoricalTopology) {
     crate::test_support::with_decode_context(|ctx| {
-        assert!(draft_surface_geometry(ctx, topology, 10).unwrap().is_none());
+        assert!(matches!(draft_surface_geometry(ctx, topology, 10).unwrap(), DraftSurfaceEvidence::Absent | DraftSurfaceEvidence::Repeated));
         assert_eq!(ctx.resource_refusal(), None);
     });
 }
@@ -77,7 +77,7 @@ fn draft_cylinder_keeps_its_axis_and_radius_carriers() {
     topology.surface_radii = vec![AsmHistoricalSurfaceRadius { surface: 100, radius: 2.0 }];
     crate::test_support::with_decode_context(|ctx| {
         assert!(matches!(draft_surface_geometry(ctx, &topology, 10).unwrap(),
-            Some(DraftSurfaceGeometry::Cylinder { radius: 2.0, .. })));
+            DraftSurfaceEvidence::Geometry(DraftSurfaceGeometry::Cylinder { radius: 2.0, .. })));
     });
 }
 
@@ -98,7 +98,7 @@ fn draft_duplicate_carrier_stops_before_unread_geometry() {
     policy.limits.max_materialized_bytes = 0;
     policy.limits.max_retained_bytes = 0;
     crate::test_support::with_decode_policy(&policy, |ctx| {
-        assert!(draft_surface_geometry(ctx, &topology, 10).unwrap().is_none());
+        assert!(matches!(draft_surface_geometry(ctx, &topology, 10).unwrap(), DraftSurfaceEvidence::Absent | DraftSurfaceEvidence::Repeated));
         assert_eq!(ctx.resource_refusal(), None);
         assert!(matches!(ctx.charge_work(1, "after duplicate carrier proof"),
             Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits
@@ -188,7 +188,7 @@ fn draft_carrier_proof_preserves_original_work_refusal() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = u64::MAX;
     crate::test_support::with_decode_policy(&policy, |ctx| {
-        assert!(draft_surface_geometry(ctx, &topology, 10).unwrap().is_some());
+        assert!(matches!(draft_surface_geometry(ctx, &topology, 10).unwrap(), DraftSurfaceEvidence::Geometry(_)));
         let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
             ResourceDimension::WorkUnits, "find F3D draft surface geometry", Some(1),
         );

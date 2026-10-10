@@ -6912,8 +6912,9 @@ pub(crate) fn bind_face_operand_history_candidates(
 /// Draft changes the selected face's actual surface geometry. The same
 /// transition may update tangent or context faces, so the transition is
 /// admissible through an alternate lane only when exactly one face changes
-/// surface geometry. A missing, duplicate, or unchanged surface does not prove
-/// that lane. Without an alternate lane, one exact candidate present in both
+/// surface geometry. Conflicting duplicate carrier evidence rejects the
+/// alternate lane. A missing or unchanged surface does not prove that lane.
+/// Without an alternate lane, one exact candidate present in both
 /// topologies is selected without a geometry comparison.
 /// Carrier record identities are not compared: a history update may
 /// assign a new carrier record without changing the surface.
@@ -6935,19 +6936,27 @@ enum DraftSurfaceGeometry {
     },
 }
 
+enum DraftSurfaceEvidence {
+    Absent,
+    Repeated,
+    Geometry(DraftSurfaceGeometry),
+}
+
 fn draft_surface_geometry(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     topology: &crate::history_records::AsmHistoricalTopology,
     face: i64,
-) -> Result<Option<DraftSurfaceGeometry>, cadmpeg_core::CodecError> {
+) -> Result<DraftSurfaceEvidence, cadmpeg_core::CodecError> {
     let operation = "find F3D draft surface geometry";
-    let Some(binding) = unique_by(
+    let binding = match unique_entry_by(
         ctx,
         &topology.face_surfaces,
         |binding| Ok(binding.entity == face),
         operation,
-    )? else {
-        return Ok(None);
+    )? {
+        UniqueLookup::Absent => return Ok(DraftSurfaceEvidence::Absent),
+        UniqueLookup::Repeated => return Ok(DraftSurfaceEvidence::Repeated),
+        UniqueLookup::Value(binding) => binding,
     };
     let carrier = binding.carrier;
     match unique_entry_by(
@@ -6956,8 +6965,8 @@ fn draft_surface_geometry(
         |surface| Ok(surface.surface == carrier),
         operation,
     )? {
-        UniqueLookup::Repeated => return Ok(None),
-        UniqueLookup::Value(plane) => return Ok(Some(DraftSurfaceGeometry::Plane {
+        UniqueLookup::Repeated => return Ok(DraftSurfaceEvidence::Repeated),
+        UniqueLookup::Value(plane) => return Ok(DraftSurfaceEvidence::Geometry(DraftSurfaceGeometry::Plane {
             origin: plane.origin,
             normal: plane.normal,
         })),
@@ -6969,8 +6978,8 @@ fn draft_surface_geometry(
         |surface| Ok(surface.surface == carrier),
         operation,
     )? {
-        UniqueLookup::Repeated => return Ok(None),
-        UniqueLookup::Value(cylinder) => return Ok(Some(DraftSurfaceGeometry::Cylinder {
+        UniqueLookup::Repeated => return Ok(DraftSurfaceEvidence::Repeated),
+        UniqueLookup::Value(cylinder) => return Ok(DraftSurfaceEvidence::Geometry(DraftSurfaceGeometry::Cylinder {
             origin: cylinder.origin,
             axis: cylinder.axis,
             radius: cylinder.radius,
@@ -6983,7 +6992,8 @@ fn draft_surface_geometry(
         |surface| Ok(surface.surface == carrier),
         operation,
     )? {
-        UniqueLookup::Absent | UniqueLookup::Repeated => return Ok(None),
+        UniqueLookup::Absent => return Ok(DraftSurfaceEvidence::Absent),
+        UniqueLookup::Repeated => return Ok(DraftSurfaceEvidence::Repeated),
         UniqueLookup::Value(axis) => axis,
     };
     let radius = match unique_entry_by(
@@ -6992,11 +7002,11 @@ fn draft_surface_geometry(
         |radius| Ok(radius.surface == carrier),
         operation,
     )? {
-        UniqueLookup::Repeated => return Ok(None),
+        UniqueLookup::Repeated => return Ok(DraftSurfaceEvidence::Repeated),
         UniqueLookup::Value(radius) => Some(radius.radius),
         UniqueLookup::Absent => None,
     };
-    Ok(Some(DraftSurfaceGeometry::Axis {
+    Ok(DraftSurfaceEvidence::Geometry(DraftSurfaceGeometry::Axis {
         origin: axis.origin,
         direction: axis.direction,
         radius,
@@ -7094,10 +7104,17 @@ fn resolve_draft_face_by_surface_transition(
         {
             continue;
         }
-        let (Some(before), Some(after)) = (
-            draft_surface_geometry(decode, preceding, face)?,
-            draft_surface_geometry(decode, result, face)?,
-        ) else {
+        let before = draft_surface_geometry(decode, preceding, face)?;
+        if matches!(before, DraftSurfaceEvidence::Repeated) {
+            return Ok(None);
+        }
+        let after = draft_surface_geometry(decode, result, face)?;
+        if matches!(after, DraftSurfaceEvidence::Repeated) {
+            return Ok(None);
+        }
+        let (DraftSurfaceEvidence::Geometry(before), DraftSurfaceEvidence::Geometry(after)) =
+            (before, after)
+        else {
             continue;
         };
         if before != after && changed.replace(face).is_some() {
