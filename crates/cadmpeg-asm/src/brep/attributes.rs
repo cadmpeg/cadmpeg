@@ -177,10 +177,7 @@ pub fn source_attribute(
     {
         ctx.reserve_vec(&mut values, 1, "ASM attribute values")?;
         let value = attribute_value(ctx, token, format)?.ok_or_else(|| {
-            cadmpeg_core::CodecError::malformed(format_args!(
-                "attribute record {} ({}) holds a non-finite number",
-                record.index, record.name
-            ))
+            cadmpeg_core::CodecError::malformed("attribute record holds a non-finite number")
         })?;
         values.push(value);
     }
@@ -587,6 +584,21 @@ pub fn unknown_record_id(
 mod tests {
     use super::decode_transform;
     use crate::sab::{Record, Token};
+
+    #[test]
+    fn nonfinite_attribute_error_has_fixed_text_for_large_record_names() {
+        let record = crate::test_support::sab::record(17, "attribute".repeat(8192),
+            vec![Token::Double(f64::NAN)].into(), 0, 0);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = 1024;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::source_attribute(&ctx, &record, cadmpeg_ir::attributes::AttributeTarget::Document,
+            crate::asm_format!("f3d")).unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(message)
+            if message == "attribute record holds a non-finite number"));
+        ctx.finish_session().unwrap();
+    }
 
     #[test]
     fn unknown_record_identity_refuses_retained_limit() {
