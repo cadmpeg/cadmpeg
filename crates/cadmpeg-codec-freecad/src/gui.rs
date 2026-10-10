@@ -668,11 +668,9 @@ impl<'source, 'ctx> TopologyIndex<'source, 'ctx> {
             else {
                 break;
             };
-            let key = ctx
-                .split_once(body.id.as_str(), "#", "FCStd GUI body identity key")?
-                .map_or(body.id.as_str(), |(_, key)| key);
+            let key = crate::native::id_key_charged(ctx, body.id.as_str(), "FCStd GUI body identity key")?;
             if ctx
-                .split_once(key, ":", "FCStd GUI body payload key separator")?
+                .position_by(key.as_bytes(), |byte| Ok(*byte == b':'), "FCStd GUI body payload key separator")?
                 .is_none()
             {
                 continue;
@@ -686,7 +684,7 @@ impl<'source, 'ctx> TopologyIndex<'source, 'ctx> {
                 id: &body.id,
             });
         }
-        ctx.stable_sort_by(
+        ctx.sort_unstable_by(
             &mut candidates,
             |candidate| candidate.key,
             str::cmp,

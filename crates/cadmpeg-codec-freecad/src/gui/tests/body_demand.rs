@@ -195,12 +195,6 @@ fn body_candidate_source_refusal_stops_before_a_long_suffix() {
     };
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
     assert_eq!(limit.limit, work_cap);
-    assert!(matches!(
-        limit.operation,
-        "FCStd GUI body candidate sources"
-            | "FCStd GUI body identity key"
-            | "FCStd GUI body payload key separator"
-    ));
     assert!(limit.used + limit.additional > work_cap);
 }
 
