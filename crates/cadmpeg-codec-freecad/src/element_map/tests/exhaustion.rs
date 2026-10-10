@@ -180,16 +180,18 @@ fn empty_and_completed_element_helpers_return_original_refusal() {
 }
 
 #[test]
-fn legacy_record_and_zero_id_ranges_cost_only_actual_records() {
-    with_work(17, |ctx| {
+fn legacy_record_and_zero_id_ranges_preserve_grouped_names() {
+    with_work(u64::MAX, |ctx| {
         let mut scanner = TextScanner::new_ascii("Edge1 x 0");
-        // One record visit; token scans cost 7 + 4 + 3; copying 'x'
-        // and parsing '0' cost one each. The zero ID range has no visits.
-        let records = parse_legacy_records(ctx, &mut scanner, 1).unwrap();
-        assert_eq!(records.data.len(), 1);
-        assert_eq!(records.data[0].indexed_name, "Edge1");
-        assert_eq!(records.data[0].mapped_name, "x");
-        assert!(records.data[0].string_ids.is_empty());
+        let groups = parse_legacy_records(ctx, &mut scanner, 1).unwrap();
+        assert_eq!(groups.data.len(), 1);
+        let slots = groups.data.get("Edge").expect("edge group");
+        assert_eq!(slots.len(), 2);
+        assert!(slots[0].is_empty());
+        assert_eq!(slots[1].len(), 1);
+        assert_eq!(slots[1][0].encoded, "x");
+        assert_eq!(slots[1][0].resolved.as_deref(), Some("x"));
+        assert!(slots[1][0].string_ids.is_empty());
         assert!(scanner.is_done());
         assert_eq!(ctx.resource_refusal(), None);
     });
