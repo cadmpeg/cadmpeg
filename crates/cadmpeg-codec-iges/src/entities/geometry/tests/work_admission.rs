@@ -267,3 +267,83 @@ fn invalid_first_and_last_linear_knots_accept_exact_recovery_without_storage() {
         }
     }
 }
+
+fn linear_parameter_collection_boundary(count: usize, items: usize, accepts: bool) {
+    use cadmpeg_core::decode::{u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let mut knots = vec![0.0, 0.0];
+    knots.extend((1..count).map(|index| f64::from(u32::try_from(index).unwrap())));
+    knots.push(f64::from(u32::try_from(count - 1).unwrap()));
+    let before = knots.clone();
+    let range = [0.0, f64::from(u32::try_from(count - 1).unwrap())];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = u64_from_index(items);
+    // Amortized output backing and its old-buffer overlap fit within four
+    // times the actual output count. Retained output is not required here.
+    policy.limits.max_materialized_bytes = u64_from_index(4 * count * std::mem::size_of::<f64>());
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_entities = 0;
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = super::super::linear_nurbs_parameters(1, &knots, count, false, range, &ctx);
+    if accepts {
+        let (parameters, storage) = result.unwrap().unwrap();
+        let expected: Vec<_> = (0..count)
+            .map(|index| f64::from(u32::try_from(index).unwrap())).collect();
+        assert_eq!(parameters, expected);
+        assert_eq!(knots, before);
+        drop(parameters);
+        drop(storage);
+        let released = ctx.reserve_scoped(policy.limits.max_materialized_bytes,
+            "test linear parameter scratch released").unwrap();
+        drop(released);
+        ctx.finish_session().unwrap();
+    } else {
+        let first = match result.as_ref() {
+            Err(CodecError::ResourceLimit(first)) => *first,
+            _ => panic!("expected actual parameter collection refusal"),
+        };
+        drop(result);
+        assert_eq!(first.dimension, ResourceDimension::CollectionItems);
+        assert_eq!(first.operation, "iges linear NURBS parameters");
+        assert_eq!((first.limit, first.used, first.additional),
+            (u64_from_index(items), u64_from_index(items), 1));
+        for _ in 0..64 {
+            for source in [knots.as_slice(), &[]] {
+                let replay = super::super::linear_nurbs_parameters(1, source,
+                    count, false, range, &ctx);
+                assert!(matches!(replay.as_ref(),
+                    Err(CodecError::ResourceLimit(last)) if *last == first));
+                drop(replay);
+                assert_eq!(knots, before);
+            }
+        }
+        assert!(matches!(ctx.finish_session(),
+            Err(CodecError::ResourceLimit(last)) if last == first));
+    }
+}
+
+#[test]
+fn linear_parameters_first_internal_knot_refuses_collection() {
+    // The start endpoint is the only output before the first internal knot.
+    for count in [4, 64] {
+        linear_parameter_collection_boundary(count, 1, false);
+    }
+}
+
+#[test]
+fn linear_parameters_last_internal_knot_refuses_collection() {
+    // One start and N-3 earlier internal knots precede the last internal knot.
+    for count in [4, 64] {
+        linear_parameter_collection_boundary(count, count - 2, false);
+    }
+}
+
+#[test]
+fn linear_parameters_accept_exact_collection_and_release_backing() {
+    // One start, N-2 internal knots and one end consume exactly N output slots.
+    for count in [2, 4, 64] {
+        linear_parameter_collection_boundary(count, count, true);
+    }
+}
