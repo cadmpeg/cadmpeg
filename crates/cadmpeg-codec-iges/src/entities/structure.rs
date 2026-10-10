@@ -2285,7 +2285,7 @@ fn plane_boundary_edge<'ir>(
             return Ok(proof.coplanarity.result);
         }
     }
-    if proofs.sequences.contains(&boundary_sequence) {
+    if proofs.sequences.contains(boundary_sequence) {
         for neighbor in super::plane_proof::coplanarity_neighbors(plane_key, plane.1) {
             if let Some(proof) = ctx.get_btree_map(
                 &proofs.proven,
@@ -2386,7 +2386,7 @@ fn plane_boundary_edge<'ir>(
             "iges plane boundary proof cache",
         )
     })?;
-    if !proofs.sequences.contains(&boundary_sequence) {
+    if !proofs.sequences.contains(boundary_sequence) {
         proofs.storage.with_storage(|| {
             proofs.sequences.insert(
                 boundary_sequence,

@@ -271,7 +271,11 @@ impl EvaluationSources {
                                             support,
                                             ..
                                         } => {
-                                            self.enqueue_surface(support.as_str(), &mut queue, ctx)?
+                                            self.enqueue_surface(
+                                                support.as_str(),
+                                                &mut queue,
+                                                ctx,
+                                            )?;
                                         }
                                         ProceduralSurfaceDefinition::Extrusion(payload) => self
                                             .enqueue_curve(
