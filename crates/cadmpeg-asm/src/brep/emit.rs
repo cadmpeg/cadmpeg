@@ -977,7 +977,7 @@ fn emit_loft_member_form(
                             source_object: None,
                         }
                     );
-                    support_id.try_clone_for_decode(ctx, "ASM emitted identity copy")
+                    Ok(support_id)
                 })
                 .transpose()?;
             Ok(cadmpeg_ir::geometry::LoftMemberForm::Support {
