@@ -117,3 +117,55 @@ fn closure_extraction_releases_source_points_and_weights_before_bezier_working_l
         }
     }
 }
+
+fn same_basis_source_refusal(cap: u64, operation: &'static str) {
+    let first = rail(0.0, None);
+    let second = rail(1.0, None);
+    let weights = [NonZeroReal::new(0.5).unwrap(); 2];
+    let first_before = serde_json::to_value(&first).unwrap();
+    let second_before = serde_json::to_value(&second).unwrap();
+    // The unit-weight predicate stops at the first non-unit scalar: one
+    // actual visit, with no terminal probe. Each source pole and weight row
+    // then has one visit. Fixed two-control row copies perform no scan.
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = cap;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let Err(CodecError::ResourceLimit(original)) =
+        super::super::same_basis_ruled_surface(&first, &second, &weights, &ctx)
+    else {
+        panic!("expected actual ruled source visit refusal");
+    };
+    assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(original.operation, operation);
+    assert_eq!((original.limit, original.used, original.additional), (cap, cap, 1));
+    for _ in 0..64 {
+        for replay in [&weights[..], &[]] {
+            assert!(matches!(super::super::same_basis_ruled_surface(&first, &second, replay, &ctx),
+                Err(CodecError::ResourceLimit(last)) if last == original));
+        }
+    }
+    assert_eq!(serde_json::to_value(&first).unwrap(), first_before);
+    assert_eq!(serde_json::to_value(&second).unwrap(), second_before);
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == original));
+}
+
+#[test]
+fn ruled_same_basis_poles_refuse_first_actual_source_visit() {
+    same_basis_source_refusal(1, "iges ruled same-basis pole traversal");
+}
+
+#[test]
+fn ruled_same_basis_poles_refuse_last_actual_source_visit() {
+    same_basis_source_refusal(2, "iges ruled same-basis pole traversal");
+}
+
+#[test]
+fn ruled_same_basis_weights_refuse_first_actual_source_visit() {
+    same_basis_source_refusal(3, "iges ruled weight row traversal");
+}
+
+#[test]
+fn ruled_same_basis_weights_refuse_last_actual_source_visit() {
+    same_basis_source_refusal(4, "iges ruled weight row traversal");
+}
