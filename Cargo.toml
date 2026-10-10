@@ -86,7 +86,7 @@ assert_cmd = "2"
 predicates = "3"
 proptest = "1"
 # Parses the wire crates' own source in the hand-written-Deserialize census.
-syn = { version = "2", features = ["full", "parsing"] }
+syn = { version = "3", features = ["full", "parsing"] }
 # `span-locations` gives the optional-field census its `file:line` offenders.
 proc-macro2 = { version = "1", features = ["span-locations"] }
 tempfile = "3"
