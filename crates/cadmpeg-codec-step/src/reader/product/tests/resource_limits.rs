@@ -78,30 +78,30 @@ pub(super) fn product_collection_refuses_source(source: &[u8], operation: &str) 
     let (exchange, diagnostics) =
         crate::test_support::with_service_context(source, crate::parse::parse_inner)
             .expect("valid product exchange");
-    let refused = (0..=1024).any(|limit| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
-            .expect("root fits collection policy");
-        let result = crate::reader::decode_exchange(
-            source,
-            exchange.clone(),
-            &diagnostics,
-            &ctx,
-            crate::reader::Packaging::Bare,
-        );
-        if let Err(CodecError::ResourceLimit(refusal)) = &result {
-            assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
-        }
-        matches!(
-            result,
-            Err(CodecError::ResourceLimit(refusal))
-                if refusal.dimension == ResourceDimension::CollectionItems
-                    && refusal.operation == operation
-        )
-    });
-    assert!(refused, "no collection limit refused {operation}");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        operation,
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+                .expect("root fits collection policy");
+            let result = crate::reader::decode_exchange(
+                source,
+                exchange.clone(),
+                &diagnostics,
+                &ctx,
+                crate::reader::Packaging::Bare,
+            );
+            if let Err(CodecError::ResourceLimit(refusal)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
+            }
+            result
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(refusal)
+        if refusal.dimension == ResourceDimension::CollectionItems && refusal.operation == operation));
 }
 
 pub(super) fn product_collection_refuses(operation: &str) {
