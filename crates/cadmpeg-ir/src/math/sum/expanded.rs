@@ -84,12 +84,13 @@ impl<const FACTORS: usize, const WORDS: usize, const LIMBS: usize>
         Some(())
     }
 
-    pub(super) fn divide<const WIDTHS: usize>(
+    pub(super) fn divide<const WIDTHS: usize, const MULTIPLIERS: usize>(
         self,
         weight: ScaledValue,
         widths: [ScaledValue; WIDTHS],
+        multipliers: [ScaledValue; MULTIPLIERS],
     ) -> Option<Result<FiniteReal, f64>> {
-        const { assert!(WIDTHS + 1 == FACTORS); }
+        const { assert!(WIDTHS + 1 == FACTORS && MULTIPLIERS <= 5); }
         let Some((negative, magnitude)) = signed_difference(&self.positive, &self.negative) else {
             return Some(Ok(FiniteReal::ZERO));
         };
@@ -111,6 +112,13 @@ impl<const FACTORS: usize, const WORDS: usize, const LIMBS: usize>
             * 2.0_f64.powi(-i32::from(keep));
         if negative { mantissa = -mantissa; }
         let mut exponent = Self::ORIGIN + i32::from(highest) + 1;
+        // Fixed normalized numerator factors join the complete ratio before
+        // range admission. Five products keep the mantissa at least 1/64;
+        // all sixteen bounded input exponents remain strictly inside i32.
+        for multiplier in multipliers {
+            mantissa *= multiplier.sign * multiplier.mantissa;
+            exponent += multiplier.exponent();
+        }
         for denominator in std::iter::repeat_n(weight, FACTORS).chain(widths) {
             mantissa /= denominator.sign * denominator.mantissa;
             exponent -= denominator.exponent();
@@ -121,3 +129,6 @@ impl<const FACTORS: usize, const WORDS: usize, const LIMBS: usize>
             .ok_or(mantissa.signum() * f64::INFINITY))
     }
 }
+
+#[cfg(test)]
+mod tests;

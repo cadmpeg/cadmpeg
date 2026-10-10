@@ -61,11 +61,11 @@ pub(super) fn angular(radial: [RadialOrder; 6], max_order: usize)
         for state in &available[..order] { (*state)?; }
         let value = match order {
             3 => crate::math::sum::quotient_second::quotient_second(
-                std::array::from_fn(|n| f[n]), std::array::from_fn(|n| d[n]), unit),
+                std::array::from_fn(|n| f[n]), std::array::from_fn(|n| d[n]), unit, []),
             4 => crate::math::sum::quotient_third::quotient_third(
-                std::array::from_fn(|n| f[n]), std::array::from_fn(|n| d[n]), unit),
+                std::array::from_fn(|n| f[n]), std::array::from_fn(|n| d[n]), unit, []),
             _ => crate::math::sum::quotient_fourth::quotient_fourth(
-                f, d, unit),
+                f, d, unit, []),
         };
         value.ok_or(no_value)?.map_err(|_| EvaluationFailure::NonFinite(()))
     })

@@ -31,7 +31,7 @@ pub(crate) fn quotient_third_partials(
         std::array::from_fn(|order| h[order * (order + 1) / 2 + axis * order]),
         std::array::from_fn(|order| w[order * (order + 1) / 2 + axis * order]),
         widths[axis],
-    );
+    []);
     Some([
         pure(0)?,
         mixed(&h, &w, widths, &UUV, false, 2)?,
@@ -59,7 +59,7 @@ fn mixed(
         numerator.add_product(factors, negative, copies)?;
     }
     let denominators: [ScaledValue; 3] = std::array::from_fn(|at| widths[usize::from((at >= u_order) ^ transpose)]);
-    numerator.divide(w[0]?, denominators)
+    numerator.divide(w[0]?, denominators, [])
 }
 
 #[cfg(test)]

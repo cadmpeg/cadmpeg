@@ -106,10 +106,10 @@ pub(in crate::eval) fn higher(
                 let result = match order {
                     3 => crate::math::sum::quotient_third::quotient_third(
                         std::array::from_fn(|n| values[n][axis]),
-                        std::array::from_fn(|n| values[n][3]), width),
+                        std::array::from_fn(|n| values[n][3]), width, []),
                     4 => crate::math::sum::quotient_fourth::quotient_fourth(
                         std::array::from_fn(|n| values[n][axis]),
-                        std::array::from_fn(|n| values[n][3]), width),
+                        std::array::from_fn(|n| values[n][3]), width, []),
                     _ => crate::math::sum::quotient_fifth::quotient_fifth(
                         std::array::from_fn(|n| values[n][axis]),
                         std::array::from_fn(|n| values[n][3]), width),
