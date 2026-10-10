@@ -338,6 +338,17 @@ impl NativeRecord {
         let canon::Node::Object(mut fields) = serialized else {
             return Err(NativeConvertError::NonObject);
         };
+        // serde_json::Map does not expose its B-tree to remove_btree_map.
+        // A search visits at most eleven keys per level and no more than the stored keys.
+        let length = u64_from_index(fields.len());
+        let half = length / 2 + length % 2;
+        let comparisons = if half == 0 {
+            0
+        } else {
+            11 * (u64::from(half.ilog(6)) + 1)
+        }
+        .min(length);
+        ctx.charge_work(comparisons * 2, "remove native record identity")?;
         let Some(Value::String(id)) = fields.remove("id") else {
             return Err(NativeConvertError::MissingId);
         };
@@ -847,8 +858,8 @@ impl Native {
         &mut self,
         ctx: &DecodeContext<'_>,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        for namespace in self.0.values_mut() {
-            for records in namespace.arenas.values_mut() {
+        for (_, namespace) in ctx.admit_iter(&mut self.0, "finalize native namespaces")? {
+            for (_, records) in ctx.admit_iter(&mut namespace.arenas, "finalize native arenas")? {
                 crate::ids::comparison::stable_sort_by_identity(
                     ctx,
                     records,

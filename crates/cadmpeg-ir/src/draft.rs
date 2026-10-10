@@ -1154,7 +1154,7 @@ mod tests {
                 panic!("comparison admission must retain its refusal");
             };
             assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-            // The probe refuses the first byte pair before its comparison.
+            // The probe refuses the positive length-gate charge before the first byte comparison.
             assert_eq!(limit.additional, 1);
             assert_eq!(
                 limit.operation,

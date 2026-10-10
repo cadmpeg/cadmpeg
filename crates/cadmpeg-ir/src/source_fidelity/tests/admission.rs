@@ -818,3 +818,56 @@ fn source_annotation_collision_admits_its_final_diagnostic() {
         ));
     }
 }
+
+#[test]
+fn stored_unknown_attachment_charges_only_the_malformed_prefix() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let run = |cap, suffix| {
+        let fixture = cadmpeg_test_support::service_decode_context();
+        let mut ir = CadIr::empty();
+        let mut records = vec![serde_json::json!({"id":id("bad"), "links":7})];
+        records.extend(
+            (0..suffix).map(|index| serde_json::json!({"id":id(&format!("suffix-{index}"))})),
+        );
+        ir.native
+            .namespace_mut("synthetic")
+            .set_arena(&fixture, "unknowns", &records)
+            .unwrap();
+        let before = ir.clone();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+        let mut fidelity = SourceFidelity::default();
+        let result = fidelity.attach_native_unknown_records(
+            &mut ir,
+            "synthetic",
+            vec![UnknownRecord::retained(id("incoming"), 0, vec![1], vec![])],
+            &ctx,
+        );
+        assert_eq!(ir, before);
+        assert_eq!(fidelity, SourceFidelity::default());
+        result
+    };
+    for suffix in [0, 128] {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            "copy native unknown records",
+            |cap| run(cap, suffix),
+        );
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("record traversal refusal");
+        };
+        assert_eq!(limit.additional, 1); // Only the first record is reached.
+    }
+    let CodecError::Malformed(expected) = run(u64::MAX, 0).unwrap_err() else {
+        panic!("invalid links");
+    };
+    assert!(expected.contains("invalid type: integer"), "{expected}");
+    // The first invalid record needs the same work irrespective of the unvisited suffix.
+    let CodecError::Malformed(actual) = run(1024, 128).unwrap_err() else {
+        panic!("suffix must stay unvisited");
+    };
+    assert_eq!(actual, expected);
+}
