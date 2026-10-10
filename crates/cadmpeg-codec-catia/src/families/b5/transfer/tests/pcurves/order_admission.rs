@@ -46,7 +46,10 @@ fn isocurve_order_visits_a_long_equal_prefix_once() {
     };
     // The constant-U scan visits COUNT poles and its current core end probe.
     // The order scan visits exactly COUNT - 1 adjacent pairs.
-    assert_eq!(original.used, (COUNT + 1 + COUNT - 1) as u64);
+    assert_eq!(
+        original.used,
+        cadmpeg_core::decode::u64_from_index(COUNT + 1 + COUNT - 1)
+    );
     assert_eq!(original.operation, "catia_b5_pcurve_knot_count");
     assert_eq!(ctx.resource_refusal(), Some(original));
     drop(probe);
@@ -63,16 +66,19 @@ fn isocurve_order_stops_at_the_first_direction_conflict() {
     values[0] = 0.0;
     values[1] = -1.0;
     let curve = pcurve(&values);
-    crate::test_support::with_work_limit((COUNT + 1 + 2) as u64, |ctx| {
-        assert!(super::super::super::pcurves::isocurve_endpoint_parameters(
-            ctx,
-            &curve,
-            [0.0, 1.0]
-        )
-        .expect("only two direction comparisons execute")
-        .is_none());
-        assert!(ctx.resource_refusal().is_none());
-    });
+    crate::test_support::with_work_limit(
+        cadmpeg_core::decode::u64_from_index(COUNT + 1 + 2),
+        |ctx| {
+            assert!(super::super::super::pcurves::isocurve_endpoint_parameters(
+                ctx,
+                &curve,
+                [0.0, 1.0]
+            )
+            .expect("only two direction comparisons execute")
+            .is_none());
+            assert!(ctx.resource_refusal().is_none());
+        },
+    );
 }
 
 #[test]

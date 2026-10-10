@@ -3,6 +3,7 @@
 //! Decodes `a5`/`a8` NURBS surface carriers, common-form and consolidated
 //! rolling-ball jets, guide-curve jets, and object-stream UV pcurves.
 
+#[cfg(test)]
 type A8BSplineOutput = Result<Option<(Vec<f64>, Vec<FiniteVector<2>>)>, cadmpeg_core::CodecError>;
 type A8PcurveKnotsAndControlsOutput =
     Result<Option<(Vec<FiniteReal>, Vec<FiniteVector<2>>)>, cadmpeg_core::CodecError>;
@@ -510,6 +511,7 @@ impl A8Pcurve {
         self.sites.iter().map(|site| site.point.get()).collect()
     }
 
+    #[cfg(test)]
     pub(in crate::families) fn bspline(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,

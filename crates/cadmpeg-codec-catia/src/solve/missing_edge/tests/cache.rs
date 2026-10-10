@@ -79,6 +79,6 @@ fn mesh_analysis_holds_prior_face_triangle_cache_until_trim_destruction() {
     // slots and the five-triangle cache five slots.
     assert_eq!(
         closed_refusal.used - plain_refusal.used,
-        std::mem::size_of::<[u32; 3]>() as u64
+        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<[u32; 3]>())
     );
 }
