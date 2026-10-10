@@ -165,3 +165,65 @@ fn edge_domain_source_accepts_exact_rejected_carrier_visits_and_empty_input() {
         ctx.finish_session().unwrap();
     }
 }
+
+fn skipped_edge_carriers() -> AsmBrep {
+    let carriers = [EdgeCarrier::Free,
+        EdgeCarrier::unbounded(Some(CurveId::mint(CURVE_ID).unwrap())),
+        EdgeCarrier::new(None, Some([1.0, 0.0])).unwrap()];
+    AsmBrep {
+        edges: carriers.into_iter().enumerate().map(|(index, carrier)| Edge {
+            id: EdgeId::mint(format!("sat:brep:edge#{}", index + 1)).unwrap(), carrier,
+            start: VertexId::mint("sat:brep:vertex#a").unwrap(),
+            end: VertexId::mint("sat:brep:vertex#b").unwrap(), tolerance: None,
+        }).collect(),
+        ..Default::default()
+    }
+}
+
+fn edge_source_refusal(work: u64) {
+    let mut out = skipped_edge_carriers();
+    let expected = skipped_edge_carriers();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = work;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let Err(CodecError::ResourceLimit(first)) = clamp_edge_ranges_to_carrier_domains(&ctx, &mut out)
+    else { panic!("expected edge source refusal"); };
+    assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(first.operation, "ASM edge range clamp");
+    assert_eq!((first.limit, first.used, first.additional), (work, work, 1));
+    assert_eq!(out.edges, expected.edges);
+    for _ in 0..64 {
+        for mut replay in [skipped_edge_carriers(), AsmBrep::default()] {
+            assert!(matches!(clamp_edge_ranges_to_carrier_domains(&ctx, &mut replay),
+                Err(CodecError::ResourceLimit(last)) if last == first));
+        }
+    }
+    assert!(matches!(ctx.finish_session(),
+        Err(CodecError::ResourceLimit(last)) if last == first));
+}
+
+#[test]
+fn edge_clamp_source_refuses_before_first_edge() { edge_source_refusal(0); }
+
+#[test]
+fn edge_clamp_source_refuses_before_last_edge() { edge_source_refusal(2); }
+
+#[test]
+fn edge_clamp_source_accepts_exact_skipped_carrier_visits() {
+    let mut out = skipped_edge_carriers();
+    let expected = skipped_edge_carriers();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 3;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    clamp_edge_ranges_to_carrier_domains(&ctx, &mut out).unwrap();
+    assert_eq!(out.edges, expected.edges);
+    ctx.finish_session().unwrap();
+}
