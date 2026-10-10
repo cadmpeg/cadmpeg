@@ -125,7 +125,10 @@ impl<'ctx, V> CarrierTable<'ctx, V> {
     }
 
     #[cfg(test)]
-    fn publish_values<U>(self, ctx: &DecodeContext<'_>, operation: &'static str,
+    fn publish_values<U>(
+        self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
         mut publish: impl FnMut(V) -> Result<U, CodecError>,
     ) -> Result<BTreeMap<u16, U>, CodecError> {
         let mut source = self.into_entries();
@@ -252,32 +255,61 @@ impl<'ctx> StreamCarrierIndex<'ctx> {
 
     /// Publish a retained fixture without replaying stream selection policy.
     #[cfg(test)]
-    pub(in crate::brep::index) fn into_retained(self, ctx: &DecodeContext<'_>) -> Result<super::CarrierIndex, CodecError> {
-        let curves = self.curves.publish_values(ctx, "retain test curve carrier table", |carrier| {
-            let StreamCurve { value, _backing: backing } = carrier;
-            match backing {
-                CurveBacking::Exact { _geometry: geometry } => geometry.commit_value(value),
-                CurveBacking::Derived { _geometry: geometry, _support_uv: support_uv } => {
-                    geometry.commit_value(support_uv.commit_value(value)?)
-                }
-            }
-        })?;
-        let surfaces = self.surfaces.publish_values(ctx, "retain test surface carrier table", |carrier| {
-            let StreamSurface { value, _geometry: geometry } = carrier;
-            geometry.commit_value(value)
-        })?;
-        let CarrierLosses { entries, shell: loss_shell } = self.lane_refusals;
-        let lane_refusals = ctx.try_collect_vec(entries.into_iter().map(|loss| {
-            let StreamLoss { value, _message: message } = loss;
-            message.commit_value(value)
-        }), "retain test carrier losses")?;
+    pub(in crate::brep::index) fn into_retained(
+        self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<super::CarrierIndex, CodecError> {
+        let curves =
+            self.curves
+                .publish_values(ctx, "retain test curve carrier table", |carrier| {
+                    let StreamCurve {
+                        value,
+                        _backing: backing,
+                    } = carrier;
+                    match backing {
+                        CurveBacking::Exact {
+                            _geometry: geometry,
+                        } => geometry.commit_value(value),
+                        CurveBacking::Derived {
+                            _geometry: geometry,
+                            _support_uv: support_uv,
+                        } => geometry.commit_value(support_uv.commit_value(value)?),
+                    }
+                })?;
+        let surfaces =
+            self.surfaces
+                .publish_values(ctx, "retain test surface carrier table", |carrier| {
+                    let StreamSurface {
+                        value,
+                        _geometry: geometry,
+                    } = carrier;
+                    geometry.commit_value(value)
+                })?;
+        let CarrierLosses {
+            entries,
+            shell: loss_shell,
+        } = self.lane_refusals;
+        let lane_refusals = ctx.try_collect_vec(
+            entries.into_iter().map(|loss| {
+                let StreamLoss {
+                    value,
+                    _message: message,
+                } = loss;
+                message.commit_value(value)
+            }),
+            "retain test carrier losses",
+        )?;
         drop(loss_shell);
         Ok(super::CarrierIndex {
-            curves, surfaces,
+            curves,
+            surfaces,
             sweeps: self.sweeps.shell.commit_value(self.sweeps.entries)?,
             blends: self.blends.shell.commit_value(self.blends.entries)?,
             offsets: self.offsets.shell.commit_value(self.offsets.entries)?,
-            blend_support_pairs: self.blend_support_pairs.shell.commit_value(self.blend_support_pairs.entries)?,
+            blend_support_pairs: self
+                .blend_support_pairs
+                .shell
+                .commit_value(self.blend_support_pairs.entries)?,
             lane_refusals,
         })
     }

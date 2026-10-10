@@ -298,11 +298,9 @@ fn nan_surface_control_alias_is_rejected_before_pole_validation() {
             .iter()
             .all(|candidate| candidate.as_slice()[0].is_nan()));
         drop(candidates);
-        assert!(
-            super::exact_f64_array(&ctx, &bytes, &arrays, 182, 12)
-                .unwrap()
-                .is_none()
-        );
+        assert!(super::exact_f64_array(&ctx, &bytes, &arrays, 182, 12)
+            .unwrap()
+            .is_none());
     }
     let probe = RefusalProbe::arm(
         ResourceDimension::WorkUnits,

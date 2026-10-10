@@ -186,13 +186,22 @@ fn scoped_chart_source_preserves_the_original_refusal() {
 fn absent_intersection_sources_skip_uv_scan_and_payload() {
     use cadmpeg_core::decode::refusal_probe::RefusalProbe;
     for with_chart in [false, true] {
-        for operation in ["scan Parasolid support UV records", "decode Parasolid support UV values"] {
-            let mut bytes = if with_chart { chart_bytes() } else { Vec::new() };
+        for operation in [
+            "scan Parasolid support UV records",
+            "decode Parasolid support UV values",
+        ] {
+            let mut bytes = if with_chart {
+                chart_bytes()
+            } else {
+                Vec::new()
+            };
             bytes.extend_from_slice(&[0, 0xcc]);
             bytes.extend_from_slice(&4096_u32.to_be_bytes());
             bytes.extend_from_slice(&10_u16.to_be_bytes());
             bytes.push(4);
-            for _ in 0..4096 { bytes.extend_from_slice(&0.0_f64.to_be_bytes()); }
+            for _ in 0..4096 {
+                bytes.extend_from_slice(&0.0_f64.to_be_bytes());
+            }
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = u64::MAX;
@@ -201,12 +210,18 @@ fn absent_intersection_sources_skip_uv_scan_and_payload() {
             let probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
             let mut curves = BTreeMap::new();
             let mut losses = Vec::new();
-            super::scan_intersection_carriers_into(&ctx, &bytes,
+            super::scan_intersection_carriers_into(
+                &ctx,
+                &bytes,
                 &mut super::LossSink::Retained(&mut losses),
-                &mut super::IntersectionSink::Retained(&mut curves)).unwrap();
+                &mut super::IntersectionSink::Retained(&mut curves),
+            )
+            .unwrap();
             assert!(curves.is_empty());
             assert!(losses.is_empty());
-            let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, operation) else { panic!("UV probe remains armed"); };
+            let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, operation) else {
+                panic!("UV probe remains armed");
+            };
             assert_eq!(limit.operation, operation);
             drop(probe);
         }

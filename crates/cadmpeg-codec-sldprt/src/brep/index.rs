@@ -141,13 +141,13 @@ impl CarrierIndex {
             "lookup SLDPRT blend_support_pair carrier",
         )
     }
-
 }
 
 /// Retained fixture adapter over the production stream scanner.
 #[cfg(test)]
 pub(super) fn scan_carriers(
-    ctx: &DecodeContext<'_>, body: &[u8],
+    ctx: &DecodeContext<'_>,
+    body: &[u8],
 ) -> Result<CarrierIndex, cadmpeg_core::CodecError> {
     scan::scan_stream_carriers(ctx, body)?.into_retained(ctx)
 }
@@ -283,9 +283,18 @@ mod tests {
         .expect("test merge fits service policy");
         let mut base = super::stream::StreamCarrierIndex::empty(&ctx).unwrap();
         let mut delta = super::stream::StreamCarrierIndex::empty(&ctx).unwrap();
-        delta.blend_support_pairs.replace(&ctx, 9, blend::SupportPairCarrier {
-            supports: [11, 12], intersection: 13,
-        }, "test blend support pair").unwrap();
+        delta
+            .blend_support_pairs
+            .replace(
+                &ctx,
+                9,
+                blend::SupportPairCarrier {
+                    supports: [11, 12],
+                    intersection: 13,
+                },
+                "test blend support pair",
+            )
+            .unwrap();
         base.merge_missing(&ctx, delta)
             .expect("test merge fits service policy");
 

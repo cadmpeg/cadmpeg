@@ -23,13 +23,18 @@ fn scan_analytic_carriers<'ctx>(
         match carrier {
             // parse_carrier accepts fixed analytic geometry only.
             Carrier::Curve(value) => out.curves.replace(
-                ctx, value.attr,
+                ctx,
+                value.attr,
                 StreamCurve::exact(value, ctx.reserve_scoped(0, "hold SLDPRT analytic curve")?),
                 "index SLDPRT curve carriers",
             )?,
             Carrier::Surface(value) => out.surfaces.replace(
-                ctx, value.attr,
-                StreamSurface::new(value, ctx.reserve_scoped(0, "hold SLDPRT analytic surface")?),
+                ctx,
+                value.attr,
+                StreamSurface::new(
+                    value,
+                    ctx.reserve_scoped(0, "hold SLDPRT analytic surface")?,
+                ),
                 "index SLDPRT surface carriers",
             )?,
         }

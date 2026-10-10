@@ -751,19 +751,29 @@ pub(in crate::brep) fn scan_intersection_carriers_into<'ctx>(
     lane_refusals: &mut LossSink<'_, 'ctx>,
     out: &mut IntersectionSink<'_, 'ctx>,
 ) -> Result<(), CodecError> {
-    let (value, storage) = ctx.with_scoped_storage("hold Parasolid intersection sources", || {
-        let charts = scoped_chart_records(ctx, bytes)?;
-        if charts.is_empty() {
-            return Ok::<_, CodecError>(None);
-        }
-        let terms = term_records(ctx, bytes)?;
-        if terms.is_empty() {
-            return Ok(None);
-        }
-        Ok(Some(ScopedSourceRecords { charts, terms, uvs: uv_records(ctx, bytes)? }))
-    })?;
-    let Some(value) = value else { return Ok(()); };
-    let records = SourceRecords { value, _storage: storage };
+    let (value, storage) =
+        ctx.with_scoped_storage("hold Parasolid intersection sources", || {
+            let charts = scoped_chart_records(ctx, bytes)?;
+            if charts.is_empty() {
+                return Ok::<_, CodecError>(None);
+            }
+            let terms = term_records(ctx, bytes)?;
+            if terms.is_empty() {
+                return Ok(None);
+            }
+            Ok(Some(ScopedSourceRecords {
+                charts,
+                terms,
+                uvs: uv_records(ctx, bytes)?,
+            }))
+        })?;
+    let Some(value) = value else {
+        return Ok(());
+    };
+    let records = SourceRecords {
+        value,
+        _storage: storage,
+    };
     // Composite records precede intersection-data entities; the first carrier
     // of an attribute is kept. Occupied output does not skip source diagnostics.
     for at in ctx.admit_iter(0..bytes.len(), "scan Parasolid intersection composites")? {
