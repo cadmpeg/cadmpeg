@@ -1,4 +1,4 @@
-use crate::resolved_features::child_sources::child_tokens;
+use super::child_tokens;
 use cadmpeg_core::decode::{
     DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, ResourceFailure,
 };
@@ -40,4 +40,14 @@ fn hole_child_tokens_refuse_on_first_text_visit() {
             && limit.used == 0
             && limit.additional == 1
             && limit.limit == 0));
+}
+
+#[test]
+fn child_tokens_preserve_leading_repeated_and_trailing_delimiters() {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let tokens = super::child_tokens(&ctx, ",7,,9,", "test SLDPRT child delimiters")
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(tokens, ["", "7", "", "9", ""]);
+    ctx.finish_session().unwrap();
 }

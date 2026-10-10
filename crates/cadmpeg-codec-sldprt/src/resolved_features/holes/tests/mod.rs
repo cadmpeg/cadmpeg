@@ -257,5 +257,3 @@ mod hole_axis;
 mod position;
 mod position_patterns;
 mod writer;
-
-mod child_references;
