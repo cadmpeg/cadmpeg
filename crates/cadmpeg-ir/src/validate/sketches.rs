@@ -42,7 +42,6 @@ fn spatial_oriented_endpoints(
     reversed: bool,
 ) -> Result<Option<(crate::math::Point3, crate::math::Point3)>, cadmpeg_core::decode::ResourceLimit>
 {
-    ctx.charge_work_limit(0, "geometry helper boundary")?;
     let endpoints = match geometry.definition() {
         SpatialSketchGeometryDefinition::Line { start, end } => (start.get(), end.get()),
         SpatialSketchGeometryDefinition::Arc {
@@ -1908,12 +1907,12 @@ fn visit_constraint_loci<'definition>(
     mut visit: impl FnMut(&'definition SketchLocus) -> Result<(), CodecError>,
 ) -> Result<(), CodecError> {
     use crate::sketches::SketchDistanceMeasurement;
-
-    ctx.charge_work(0, "sketch constraint locus boundary")?;
     match definition {
         Constraint::CoincidentLoci { loci: members }
         | Constraint::Group { elements: members }
-        | Constraint::Text { elements: members, .. } => {
+        | Constraint::Text {
+            elements: members, ..
+        } => {
             let mut loci = members.iter();
             while loci.len() != 0 {
                 ctx.charge_work(1, "sketch constraint locus scan")?;
@@ -1955,7 +1954,11 @@ fn visit_constraint_loci<'definition>(
                 }
             }
         }
-        Constraint::SnellsLaw { incident, refracted, .. } => {
+        Constraint::SnellsLaw {
+            incident,
+            refracted,
+            ..
+        } => {
             visit(incident)?;
             visit(refracted)?;
         }
@@ -1969,11 +1972,12 @@ fn visit_spatial_constraint_entities<'definition, U, L>(
     definition: &'definition SpatialConstraint<U, L>,
     mut visit: impl FnMut(&'definition crate::sketches::SpatialSketchEntityId) -> Result<(), CodecError>,
 ) -> Result<(), CodecError> {
-    ctx.charge_work(0, "spatial constraint member boundary")?;
     match definition {
         SpatialConstraint::Native { .. } => {}
         SpatialConstraint::SplineGroup { entities: members }
-        | SpatialConstraint::RepeatedLineLength { entities: members, .. } => {
+        | SpatialConstraint::RepeatedLineLength {
+            entities: members, ..
+        } => {
             let mut members = members.iter();
             while members.len() != 0 {
                 ctx.charge_work(1, "spatial constraint member scan")?;
@@ -2006,7 +2010,11 @@ fn visit_spatial_constraint_entities<'definition, U, L>(
             }
         }
         SpatialConstraint::ParallelLineSetDistance { first, second, .. }
-        | SpatialConstraint::Offset { sources: first, results: second, .. } => {
+        | SpatialConstraint::Offset {
+            sources: first,
+            results: second,
+            ..
+        } => {
             for members in [first, second] {
                 let mut members = members.iter();
                 while members.len() != 0 {
@@ -2017,7 +2025,11 @@ fn visit_spatial_constraint_entities<'definition, U, L>(
                 }
             }
         }
-        SpatialConstraint::Symmetric { first, second, axis } => {
+        SpatialConstraint::Symmetric {
+            first,
+            second,
+            axis,
+        } => {
             visit(first)?;
             visit(second)?;
             visit(axis)?;

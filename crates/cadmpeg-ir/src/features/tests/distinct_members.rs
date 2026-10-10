@@ -160,25 +160,6 @@ fn long_parameter_member_comparison_refuses_work_before_equality() {
 }
 
 #[test]
-fn empty_member_mutations_preserve_a_fused_session() {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let original = ctx
-        .charge_work_limit(1, "original member mutation refusal")
-        .unwrap_err();
-    let mut members = DistinctMembers::<u8>::default();
-    assert!(
-        matches!(members.insert(&ctx, 1, "empty insert"), Err(CodecError::ResourceLimit(limit)) if limit == original)
-    );
-    assert!(
-        matches!(members.append(&ctx, [], "empty append"), Err(CodecError::ResourceLimit(limit)) if limit == original)
-    );
-    assert!(members.is_empty());
-}
-
-#[test]
 fn member_iterator_reconstruction_uses_the_shared_insertion_algorithm() {
     let mut members: DistinctMembers<_> = [2_u8, 1, 2].into_iter().collect();
     assert_eq!(members.as_slice(), [2, 1]);

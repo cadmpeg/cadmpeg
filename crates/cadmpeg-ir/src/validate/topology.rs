@@ -63,7 +63,6 @@ use crate::sketches::SketchConstraintDefinitionInput as Definition;
 
 fn non_blank_native_reference(ctx: &DecodeContext<'_>, native: &str) -> Result<bool, CodecError> {
     let operation = "native reference whitespace scan";
-    ctx.charge_work(0, operation)?;
     let mut characters = native.chars();
     while !characters.as_str().is_empty() {
         ctx.charge_work(1, operation)?;

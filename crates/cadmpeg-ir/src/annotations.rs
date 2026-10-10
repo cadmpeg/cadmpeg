@@ -1195,7 +1195,6 @@ impl Annotations {
         mut other: Self,
         operation: &'static str,
     ) -> Result<Result<(), AnnotationIdentityCollision>, cadmpeg_core::CodecError> {
-        ctx.charge_work(0, operation)?;
         if let Some(id) = ctx.find_map(
             other.provenance.keys().chain(other.exactness.keys()),
             |id| {

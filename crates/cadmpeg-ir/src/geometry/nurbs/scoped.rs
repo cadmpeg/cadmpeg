@@ -136,7 +136,10 @@ mod tests {
             .get()
             .expect("child drop must observe the live reservation");
         assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
-        assert_eq!((limit.limit, limit.used, limit.additional), (bytes, bytes, 1));
+        assert_eq!(
+            (limit.limit, limit.used, limit.additional),
+            (bytes, bytes, 1)
+        );
         assert_eq!(limit.operation, "observe live rows during child drop");
         assert_eq!(ctx.resource_refusal(), Some(limit));
         Ok(())
@@ -147,9 +150,7 @@ mod tests {
     impl Drop for PanicOnFirstDrop<'_> {
         fn drop(&mut self) {
             let previous = self.0.replace(self.0.get() + 1);
-            if previous == 0 {
-                panic!("first row destructor fails");
-            }
+            assert!(previous != 0, "first row destructor fails");
         }
     }
 

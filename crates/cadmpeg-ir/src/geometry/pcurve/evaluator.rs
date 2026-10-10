@@ -23,7 +23,6 @@ impl<'ctx> PcurveEvaluatorLanes<'ctx> {
         point_operation: &'static str,
         weight_operation: &'static str,
     ) -> Result<Self, ResourceLimit> {
-        ctx.charge_work_limit(0, point_operation)?;
         let mut storage = ctx.reserve_scoped_limit(0, point_operation)?;
         let mut points = Vec::new();
         ctx.reserve_scoped_vec_limit(&mut storage, &mut points, poles.count(), point_operation)?;

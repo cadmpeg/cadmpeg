@@ -61,29 +61,6 @@ fn shared_knot_checks_preserve_prefix_order_and_original_refusal() {
 }
 
 #[test]
-fn empty_knot_checks_preserve_a_prior_work_refusal() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    use cadmpeg_core::CodecError;
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let Err(CodecError::ResourceLimit(original)) = ctx.charge_work(1, "prior work") else {
-        panic!("prior work must refuse");
-    };
-
-    assert!(matches!(
-        crate::geometry::nurbs::KnotVector::new(&ctx, Vec::new()),
-        Err(CodecError::ResourceLimit(sticky)) if sticky == original
-    ));
-    assert!(matches!(
-        ctx.finish_session(),
-        Err(CodecError::ResourceLimit(sticky)) if sticky == original
-    ));
-}
-
-#[test]
 fn knot_constructors_share_work_keep_storage_and_preserve_refusal() {
     use crate::geometry::nurbs::{KnotVector, NurbsError};
     use crate::scalar::FiniteReal;
@@ -184,9 +161,6 @@ fn knot_order_charges_only_examined_pairs_and_keeps_original_refusals() {
                 assert_eq!(original.dimension, ResourceDimension::WorkUnits);
                 assert_eq!(original.used, allowance);
                 assert_eq!(original.additional, 1);
-                assert!(
-                    matches!(crate::geometry::nurbs::knots_nondecreasing(&[], |count| ctx.charge_work(count, "test empty knot order")), Err(CodecError::ResourceLimit(sticky)) if sticky == original)
-                );
                 assert!(
                     matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original)
                 );

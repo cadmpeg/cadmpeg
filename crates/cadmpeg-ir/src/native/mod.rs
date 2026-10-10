@@ -345,7 +345,6 @@ impl NativeRecord {
         record: &T,
     ) -> Result<Self, NativeConvertError> {
         let serialized = record.serialize(canon::CanonValue::for_record(ctx));
-        ctx.charge_work(0, "construct canonical native value")?;
         let serialized = serialized.map_err(|error| error.into_native(ctx))?;
         let canon::Node::Object(mut fields) = serialized else {
             return Err(NativeConvertError::NonObject);

@@ -49,7 +49,6 @@ pub(super) fn check_spreadsheets(
                 )?;
                 continue;
             };
-            ctx.charge_work(0, "compare spreadsheet parameter owner")?;
             let same_owner = match parameter.owner.as_ref() {
                 Some(owner) => ctx.equal_bytes(
                     owner.as_str().as_bytes(),
@@ -197,11 +196,20 @@ mod tests {
         check_spreadsheets(&ctx, &ir, &mut findings).unwrap();
         assert_eq!(findings.len(), 2);
         assert_eq!(findings[0].message, "spreadsheet feature does not resolve");
-        assert_eq!(findings[1].message, "spreadsheet cell has a different owner");
+        assert_eq!(
+            findings[1].message,
+            "spreadsheet cell has a different owner"
+        );
         for finding in findings {
-            assert_eq!(finding.check, crate::report::check::Check::ReferentialIntegrity);
+            assert_eq!(
+                finding.check,
+                crate::report::check::Check::ReferentialIntegrity
+            );
             assert_eq!(finding.severity, crate::report::Severity::Error);
-            assert_eq!(finding.entity.as_deref(), Some("test:model:spreadsheet#sheet"));
+            assert_eq!(
+                finding.entity.as_deref(),
+                Some("test:model:spreadsheet#sheet")
+            );
         }
         ctx.finish_session().unwrap();
     }
@@ -213,31 +221,44 @@ mod tests {
         const DIFFERENT: &str = "spreadsheet cell has a different owner";
         let mut ir = parameter_fixture();
         let feature = format!("{FEATURE}{}", "x".repeat(1024));
-        ir.model.spreadsheets.push(serde_json::from_value(serde_json::json!({
-            "id": SHEET, "feature": feature,
-            "cells": [{"address": "A1", "parameter": "test:model:parameter#cell"}]
-        })).unwrap());
-        let parameter_bytes = cadmpeg_core::decode::u64_from_index(ir.model.parameters[0].id.as_str().len());
+        ir.model.spreadsheets.push(
+            serde_json::from_value(serde_json::json!({
+                "id": SHEET, "feature": feature,
+                "cells": [{"address": "A1", "parameter": "test:model:parameter#cell"}]
+            }))
+            .unwrap(),
+        );
+        let parameter_bytes =
+            cadmpeg_core::decode::u64_from_index(ir.model.parameters[0].id.as_str().len());
         let feature_bytes = cadmpeg_core::decode::u64_from_index(feature.len());
         let sheet_bytes = cadmpeg_core::decode::u64_from_index(SHEET.len());
         // One parameter index: one source visit, one hash, and the current
         // singleton sort's two measuring visits plus fixed slot/key bound.
         let slot = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
-            u64, &str, &crate::features::DesignParameter,
+            u64,
+            &str,
+            &crate::features::DesignParameter,
         )>());
         let sort = 2 + (slot + 2 * 8) * 2 * 8;
         // Row/cell visits (2), empty feature-search end probe (1), and
         // parameter partition/collision/equality-gate/end visits (4).
         // Finding formatting visits the fixed message twice; its ID once.
-        let prelude = 1 + sort + 3 * parameter_bytes + feature_bytes
-            + 7 + 2 * cadmpeg_core::decode::u64_from_index(MISSING.len()) + sheet_bytes;
-        let different_finding = 2 * cadmpeg_core::decode::u64_from_index(DIFFERENT.len()) + sheet_bytes;
+        let prelude = 1
+            + sort
+            + 3 * parameter_bytes
+            + feature_bytes
+            + 7
+            + 2 * cadmpeg_core::decode::u64_from_index(MISSING.len())
+            + sheet_bytes;
+        let different_finding =
+            2 * cadmpeg_core::decode::u64_from_index(DIFFERENT.len()) + sheet_bytes;
         for (owner, compared, different) in [
             (Some(feature.clone()), feature_bytes, false),
             (Some(feature.replacen('t', "u", 1)), 1, true),
             (None, 0, true),
         ] {
-            ir.model.parameters[0].owner = owner.map(|id| crate::features::FeatureId::mint(id).unwrap());
+            ir.model.parameters[0].owner =
+                owner.map(|id| crate::features::FeatureId::mint(id).unwrap());
             let exact = prelude + compared + if different { different_finding } else { 0 };
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
@@ -247,9 +268,14 @@ mod tests {
             check_spreadsheets(&ctx, &ir, &mut findings).unwrap();
             assert_eq!(findings.len(), 1 + usize::from(different));
             assert_eq!(findings[0].message, MISSING);
-            if different { assert_eq!(findings[1].message, DIFFERENT); }
+            if different {
+                assert_eq!(findings[1].message, DIFFERENT);
+            }
             for finding in findings {
-                assert_eq!(finding.check, crate::report::check::Check::ReferentialIntegrity);
+                assert_eq!(
+                    finding.check,
+                    crate::report::check::Check::ReferentialIntegrity
+                );
                 assert_eq!(finding.severity, crate::report::Severity::Error);
                 assert_eq!(finding.entity.as_deref(), Some(SHEET));
             }
@@ -259,11 +285,16 @@ mod tests {
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let mut findings = Vec::new();
             check_spreadsheets(&ctx, &ir, &mut findings).unwrap();
-            let CodecError::ResourceLimit(limit) = ctx.charge_work(1, "spreadsheet exact prefix consumed").unwrap_err() else {
+            let CodecError::ResourceLimit(limit) = ctx
+                .charge_work(1, "spreadsheet exact prefix consumed")
+                .unwrap_err()
+            else {
                 panic!("every source-derived work unit must have been consumed");
             };
             assert_eq!((limit.used, limit.additional), (exact, 1));
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+            );
         }
         ir.model.parameters[0].owner = Some(crate::features::FeatureId::mint(feature).unwrap());
         for compared in [0, feature_bytes - 1] {
@@ -272,17 +303,25 @@ mod tests {
             policy.limits.max_work_units = prelude + compared;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let mut findings = Vec::new();
-            let Err(CodecError::ResourceLimit(first)) = check_spreadsheets(&ctx, &ir, &mut findings) else {
+            let Err(CodecError::ResourceLimit(first)) =
+                check_spreadsheets(&ctx, &ir, &mut findings)
+            else {
                 panic!("equal-length owners must admit the next compared byte");
             };
             assert_eq!(first.dimension, ResourceDimension::WorkUnits);
             assert_eq!(first.operation, "compare spreadsheet parameter owner");
-            assert_eq!((first.limit, first.used, first.additional), (prelude + compared, prelude + compared, 1));
+            assert_eq!(
+                (first.limit, first.used, first.additional),
+                (prelude + compared, prelude + compared, 1)
+            );
             assert_eq!(findings.len(), 1);
-            assert!(matches!(check_spreadsheets(&ctx, &ir, &mut findings), Err(CodecError::ResourceLimit(sticky)) if sticky == first));
+            assert!(
+                matches!(check_spreadsheets(&ctx, &ir, &mut findings), Err(CodecError::ResourceLimit(sticky)) if sticky == first)
+            );
             assert_eq!(findings.len(), 1);
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == first));
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == first)
+            );
         }
     }
-
 }

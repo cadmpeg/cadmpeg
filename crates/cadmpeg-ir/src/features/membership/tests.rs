@@ -135,9 +135,7 @@ fn membership_hasher_refuses_before_copying_each_byte_chunk() {
             state.write(&[5]);
         }
         assert_eq!(written.0, usize::try_from(allowance).unwrap());
-        let original = ctx
-            .charge_work_limit(0, "observe original hash refusal")
-            .unwrap_err();
+        let original = ctx.resource_refusal().unwrap();
         assert_eq!(original.operation, "hash byte chunk");
         assert_eq!(original.used, allowance);
         assert!(

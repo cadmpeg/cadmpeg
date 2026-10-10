@@ -570,19 +570,6 @@ fn identity_grammar_admits_only_the_scalars_inspected() {
             }
         }
     }
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let original = ctx
-        .charge_work_limit(1, "original grammar refusal")
-        .unwrap_err();
-    assert_eq!(
-        super::Identity::admit_text(String::new(), |work| ctx
-            .charge_work_limit(work, "empty grammar"))
-        .unwrap_err(),
-        original
-    );
 }
 
 #[test]

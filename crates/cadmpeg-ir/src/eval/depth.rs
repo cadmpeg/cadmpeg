@@ -108,13 +108,6 @@ impl<'budget, 'session> ModelEvaluationDepthGuard<'budget, 'session> {
         admission: EvaluationAdmission<'_, '_>,
         result: Result<T, EvaluationFailure<R>>,
     ) -> Result<T, EvaluationFailure<R>> {
-        // An attached work refusal can pass through an optional evaluator branch.
-        // A zero-byte reservation reads the session's first refusal without growing storage.
-        if let Some(budget) = admission.work_slice() {
-            let _boundary = budget
-                .reserve_scratch(0, "finish model evaluation")
-                .map_err(EvaluationFailure::ResourceLimit)?;
-        }
         if let Some(limit) = MODEL_EVALUATION_REFUSAL.with(Cell::get) {
             Err(EvaluationFailure::ResourceLimit(limit))
         } else if MODEL_EVALUATION_CYCLE.with(Cell::get) {

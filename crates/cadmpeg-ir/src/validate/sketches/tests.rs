@@ -1122,8 +1122,8 @@ mod admission;
 mod visits;
 
 #[test]
-fn spatial_sketch_endpoint_helper_preserves_session_depth_refusal() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+fn spatial_sketch_endpoint_helper_does_not_enter_a_frame_for_linear_support() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let curve = crate::geometry::nurbs::NurbsCurve::from_lanes(
         &cadmpeg_test_support::service_decode_context(),
         1,
@@ -1151,20 +1151,5 @@ fn spatial_sketch_endpoint_helper_preserves_session_depth_refusal() {
             Point3::new(1.0, 0.0, 0.0)
         )))
     );
-    let original = ctx
-        .enter_nested_limit("spatial endpoint test outer frame")
-        .expect_err("outer frame refuses");
-    let limit = super::spatial_oriented_endpoints(&ctx, &geometry, false)
-        .expect_err("first evaluator frame refuses");
-    assert_eq!(limit, original);
-    assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
-    assert_eq!((limit.limit, limit.used, limit.additional), (0, 0, 1));
-    assert_eq!(
-        ctx.charge_work_limit(0, "observe endpoint refusal"),
-        Err(limit)
-    );
-    assert_eq!(
-        super::spatial_oriented_endpoints(&ctx, &geometry, true),
-        Err(limit)
-    );
+    ctx.finish_session().unwrap();
 }

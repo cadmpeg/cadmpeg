@@ -94,7 +94,6 @@ impl Homogeneous {
         values: &[Self],
     ) -> Result<Option<Vec<f64>>, ResourceLimit> {
         let result = (|| {
-            scratch.work(0, "IR homogeneous weight inspection")?;
             for value in values {
                 scratch.work(1, "IR homogeneous weight inspection")?;
                 value.values[3]?;

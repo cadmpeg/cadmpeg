@@ -958,7 +958,6 @@ impl BsplineSurface {
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
-        ctx.charge_work(0, operation)?;
         Ok(Self {
             u_degree: self.u_degree,
             v_degree: self.v_degree,
@@ -2186,7 +2185,6 @@ fn knots_ordered<E>(
     repeats: bool,
     work: &mut impl FnMut(u64) -> Result<(), E>,
 ) -> Result<bool, E> {
-    work(0)?;
     for pair in knots.windows(2) {
         work(1)?;
         match pair[0].partial_cmp(&pair[1]) {

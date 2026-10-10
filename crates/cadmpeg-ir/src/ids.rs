@@ -29,7 +29,6 @@ fn admit_local_text<E>(
     value: String,
     mut visit: impl FnMut(u64) -> Result<(), E>,
 ) -> Result<Result<String, IdentityError>, E> {
-    visit(0)?;
     let mut characters = value.chars();
     let mut valid = !value.is_empty();
     while !characters.as_str().is_empty() {
@@ -64,7 +63,6 @@ pub fn is_valid_identity(id: &str) -> bool {
 
 /// One grammar scan with an explicit admission callback before each scalar.
 fn check_identity<E>(id: &str, mut visit: impl FnMut(u64) -> Result<(), E>) -> Result<bool, E> {
-    visit(0)?;
     let mut characters = id.chars();
     let mut separators = 0_u8;
     let mut key = false;
@@ -529,10 +527,7 @@ impl IdentityKey {
         operation: &'static str,
     ) -> Result<Self, CodecError> {
         Ok(Self(match &self.0 {
-            std::borrow::Cow::Borrowed(text) => {
-                ctx.charge_work(0, operation)?;
-                std::borrow::Cow::Borrowed(*text)
-            }
+            std::borrow::Cow::Borrowed(text) => std::borrow::Cow::Borrowed(*text),
             std::borrow::Cow::Owned(text) => {
                 std::borrow::Cow::Owned(ctx.copy_retained_text(text, operation)?)
             }

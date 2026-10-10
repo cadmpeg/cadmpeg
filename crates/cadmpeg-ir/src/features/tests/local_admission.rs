@@ -17,64 +17,6 @@ use crate::ids::{BodyId, FeatureInputTopologyId, HistoricalVertexId};
 const INDEX_ROOM: u64 = 3 * 295;
 
 #[test]
-fn invalid_membership_constructors_preserve_an_existing_refusal() {
-    use crate::features::{
-        BodySelectionError, EdgeSelection, FaceSelection, FeatureCollectionError, NativeSelections,
-    };
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLimit};
-
-    fn refusal<T>(result: Result<Result<T, BodySelectionError>, ResourceLimit>) -> ResourceLimit {
-        result.err().expect("original resource refusal")
-    }
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let original = ctx
-        .charge_work_limit(1, "original membership refusal")
-        .unwrap_err();
-    assert_eq!(
-        refusal(SelectionMembers::<BodyId>::new(
-            Vec::new(),
-            &ctx,
-            "empty selection"
-        )),
-        original
-    );
-    assert_eq!(
-        refusal(NativeSelections::new(
-            Vec::new(),
-            &ctx,
-            "empty native selection"
-        )),
-        original
-    );
-    assert_eq!(
-        refusal(BodyMembers::<BodyId>::try_from_rows(Vec::new(), &ctx)),
-        original
-    );
-    assert_eq!(
-        refusal(EdgeSelection::generated(Vec::new(), String::new(), &ctx)),
-        original
-    );
-    assert_eq!(
-        refusal(FaceSelection::generated(Vec::new(), String::new(), &ctx)),
-        original
-    );
-    assert_eq!(
-        refusal(PlanarProfileRef::generated(Vec::new(), String::new(), &ctx)),
-        original
-    );
-    assert_eq!(
-        TreeChildren::new(Vec::new(), Some(feature_id("missing")), &ctx).unwrap_err(),
-        FeatureCollectionError::Resource(original)
-    );
-    assert!(
-        matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == original)
-    );
-}
-
-#[test]
 fn membership_constructors_preserve_refusals_and_release_scoped_indexes() {
     use crate::features::{
         DistinctMembers, FeatureContent, FeatureSourceContent, NativeSelections,
@@ -951,7 +893,7 @@ fn three_point_constructor_admits_each_target_and_state_comparison() {
 }
 
 #[test]
-fn three_point_constructor_stops_at_a_duplicate_and_preserves_fused_refusals() {
+fn three_point_constructor_stops_at_a_duplicate() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 5;
@@ -976,25 +918,6 @@ fn three_point_constructor_stops_at_a_duplicate_and_preserves_fused_refusals() {
         "points must select three distinct vertex targets"
     );
     ctx.finish_session().unwrap();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let original = ctx
-        .charge_work_limit(1, "original three point refusal")
-        .unwrap_err();
-    let points = Box::new([
-        VertexSelection::Unresolved,
-        VertexSelection::Unresolved,
-        VertexSelection::Unresolved,
-    ]);
-    assert_eq!(
-        ThreePointSelection::new(points, &ctx).unwrap_err(),
-        original
-    );
-    assert!(
-        matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == original)
-    );
 }
 
 #[test]

@@ -131,7 +131,6 @@ impl SolvedCurveGeometry {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         scale: PositiveReal,
     ) -> Result<(), ScalingError> {
-        ctx.charge_work(0, "IR geometry unit scaling work")?;
         let scaled = match self {
             Self::Line(line) => Self::Line(LineCurve::new(
                 scaled_point(
@@ -243,7 +242,6 @@ impl SolvedSurfaceGeometry {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         scale: PositiveReal,
     ) -> Result<(), ScalingError> {
-        ctx.charge_work(0, "IR geometry unit scaling work")?;
         let scaled = match self {
             Self::Plane(plane) => Self::Plane(PlaneSurface::new(
                 scaled_point(plane.origin(), scale, "PlaneSurface.origin must be finite")?,
