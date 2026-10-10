@@ -80,13 +80,16 @@ pub(super) struct CarrierIndex {
 
 impl CarrierIndex {
     pub(super) fn from_ir(ir: &CadIr, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
-        // Preserve the original empty-index route's sticky session gate.
+        // Check session refusal even when all carrier arenas are empty.
         ctx.charge_work(0, "STEP from ir traversal")?;
         let mut curves = HashMap::new();
         let mut curve_source = ir.model.curves.iter().enumerate();
         for _ in 0..curve_source.len() {
-            let (index, curve) = ctx.next_charged(&mut curve_source, "STEP from ir traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP carrier traversal source ended early"))?;
+            let (index, curve) = ctx
+                .next_charged(&mut curve_source, "STEP from ir traversal")?
+                .ok_or_else(|| {
+                    CodecError::malformed("STEP carrier traversal source ended early")
+                })?;
             if let Some(id) = step_instance_id(ctx, curve.id.as_str())? {
                 ctx.insert_hash_map(
                     &mut curves,
@@ -99,8 +102,11 @@ impl CarrierIndex {
         let mut points = HashMap::new();
         let mut point_source = ir.model.points.iter().enumerate();
         for _ in 0..point_source.len() {
-            let (index, point) = ctx.next_charged(&mut point_source, "STEP from ir traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP carrier traversal source ended early"))?;
+            let (index, point) = ctx
+                .next_charged(&mut point_source, "STEP from ir traversal")?
+                .ok_or_else(|| {
+                    CodecError::malformed("STEP carrier traversal source ended early")
+                })?;
             if let Some(id) = step_instance_id(ctx, point.id.as_str())? {
                 ctx.insert_hash_map(
                     &mut points,
@@ -116,8 +122,11 @@ impl CarrierIndex {
         let mut surfaces = HashMap::new();
         let mut surface_source = ir.model.surfaces.iter().enumerate();
         for _ in 0..surface_source.len() {
-            let (index, surface) = ctx.next_charged(&mut surface_source, "STEP from ir traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP carrier traversal source ended early"))?;
+            let (index, surface) = ctx
+                .next_charged(&mut surface_source, "STEP from ir traversal")?
+                .ok_or_else(|| {
+                    CodecError::malformed("STEP carrier traversal source ended early")
+                })?;
             if let Some(id) = step_instance_id(ctx, surface.id.as_str())? {
                 ctx.insert_hash_map(
                     &mut surfaces,
@@ -134,12 +143,21 @@ impl CarrierIndex {
         })
     }
 
-    pub(super) fn get(&self, id: u64, ctx: &DecodeContext<'_>) -> Result<Option<&Point3>, CodecError> {
-        Ok(ctx.get_hash_map(&self.points, &id, "step_carrier_point_lookup")?
+    pub(super) fn get(
+        &self,
+        id: u64,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Option<&Point3>, CodecError> {
+        Ok(ctx
+            .get_hash_map(&self.points, &id, "step_carrier_point_lookup")?
             .map(|point| &point.position))
     }
 
-    pub(super) fn contains_key(&self, id: u64, ctx: &DecodeContext<'_>) -> Result<bool, CodecError> {
+    pub(super) fn contains_key(
+        &self,
+        id: u64,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<bool, CodecError> {
         ctx.contains_key_hash_map(&self.points, &id, "step_carrier_point_lookup")
     }
 }
@@ -227,9 +245,13 @@ mod tests {
     ) {
         let index = CarrierIndex {
             curves: std::collections::HashMap::new(),
-            points: std::collections::HashMap::from([(2, super::PointCarrier {
-                index: super::PointIndex(0), position: Point3::new(0.0, 0.0, 0.0),
-            })]),
+            points: std::collections::HashMap::from([(
+                2,
+                super::PointCarrier {
+                    index: super::PointIndex(0),
+                    position: Point3::new(0.0, 0.0, 0.0),
+                },
+            )]),
             surfaces: std::collections::HashMap::new(),
         };
         // Core hash lookup admits one hash of the actual u64 key bytes.
@@ -272,7 +294,7 @@ mod tests {
 
     #[test]
     fn point_carrier_membership_preserves_work_refusal() {
-        assert_point_lookup_work(|index, id, ctx| index.contains_key(id, ctx));
+        assert_point_lookup_work(CarrierIndex::contains_key);
     }
 
     #[test]
@@ -286,7 +308,9 @@ mod tests {
         policy.limits.max_materialized_bytes = 0;
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-        let error = CarrierIndex::from_ir(&ir, &ctx).err().expect("first curve visit refuses");
+        let error = CarrierIndex::from_ir(&ir, &ctx)
+            .err()
+            .expect("first curve visit refuses");
         let CodecError::ResourceLimit(refusal) = error else {
             panic!("carrier traversal resource refusal");
         };
@@ -305,10 +329,12 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-        let CodecError::ResourceLimit(refusal) = ctx.charge_work(1, "test original carrier refusal")
-            .expect_err("original session refusal") else {
-                panic!("work resource refusal");
-            };
+        let CodecError::ResourceLimit(refusal) = ctx
+            .charge_work(1, "test original carrier refusal")
+            .expect_err("original session refusal")
+        else {
+            panic!("work resource refusal");
+        };
         assert!(matches!(CarrierIndex::from_ir(&CadIr::empty(), &ctx),
             Err(CodecError::ResourceLimit(sticky)) if sticky == refusal));
         assert!(matches!(ctx.finish_session(),

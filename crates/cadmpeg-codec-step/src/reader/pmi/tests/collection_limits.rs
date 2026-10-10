@@ -49,10 +49,12 @@ fn pmi_refuses(records: &str, operation: &str) {
             result
         },
     );
-    assert!(matches!(error, CodecError::ResourceLimit(refusal)
+    assert!(
+        matches!(error, CodecError::ResourceLimit(refusal)
         if refusal.dimension == ResourceDimension::CollectionItems
             && refusal.operation == operation),
-        "no collection limit refused {operation}");
+        "no collection limit refused {operation}"
+    );
 }
 
 fn pmi_retained_refuses(records: &str, operation: &str) {
@@ -365,20 +367,20 @@ fn datum_reference_refuses(records: &str, operation: &str) {
             let mut annotations =
                 super::super::Annotations::new(&ctx).expect("annotation index setup");
             let mut ir = cadmpeg_ir::document::CadIr::empty();
-                annotations
-                    .push(
-                        &mut ir,
-                        2,
-                        super::super::annotations::AnnotationDraft {
-                            name: None,
-                            targets: Vec::new(),
-                            visible: None,
-                            definition: cadmpeg_ir::pmi::PmiDefinition::Datum {
-                                identification: "A".into(),
-                            },
+            annotations
+                .push(
+                    &mut ir,
+                    2,
+                    super::super::annotations::AnnotationDraft {
+                        name: None,
+                        targets: Vec::new(),
+                        visible: None,
+                        definition: cadmpeg_ir::pmi::PmiDefinition::Datum {
+                            identification: "A".into(),
                         },
-                    )
-                    .expect("datum annotation setup");
+                    },
+                )
+                .expect("datum annotation setup");
             let mut losses = Vec::new();
             let mut measurements = super::super::MeasureContext {
                 length_scale: 1.0,
@@ -399,28 +401,26 @@ fn datum_reference_refuses(records: &str, operation: &str) {
                 ),
                 &exchange,
                 &annotations,
-                (
-                    &mut std::collections::BTreeSet::new(),
-                    &mut claim_storage,
-                ),
+                (&mut std::collections::BTreeSet::new(), &mut claim_storage),
                 &mut measurements,
                 (
                     &mut Vec::new(),
                     &mut ctx.reserve_scoped(0, "reference fixture").expect("scope"),
                 ),
                 &ctx,
-            )
-            .map(|_| ());
+            );
             if let Err(CodecError::ResourceLimit(refusal)) = &result {
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
             }
             result
         },
     );
-    assert!(matches!(error, CodecError::ResourceLimit(refusal)
+    assert!(
+        matches!(error, CodecError::ResourceLimit(refusal)
         if refusal.dimension == ResourceDimension::CollectionItems
             && refusal.operation == operation),
-        "datum reference never refused {operation}");
+        "datum reference never refused {operation}"
+    );
 }
 
 #[test]
@@ -470,18 +470,19 @@ fn placement_refuses(operation: &str) {
                 &mut BTreeMap::new(),
                 0,
                 &ctx,
-            )
-            .map(|_| ());
+            );
             if let Err(CodecError::ResourceLimit(refusal)) = &result {
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
             }
             result
         },
     );
-    assert!(matches!(error, CodecError::ResourceLimit(refusal)
+    assert!(
+        matches!(error, CodecError::ResourceLimit(refusal)
         if refusal.dimension == ResourceDimension::CollectionItems
             && refusal.operation == operation),
-        "placement walk did not refuse {operation}");
+        "placement walk did not refuse {operation}"
+    );
 }
 
 #[test]
@@ -977,9 +978,12 @@ fn measure_quantity_length_prefix_does_not_scan_name_suffix() {
     // 4,102-byte name plus the six-byte pattern would exceed this cap.
     policy.limits.max_work_units = 1;
     crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
-        let quantity = super::super::measure_quantity(&value, ctx)
-            .expect("length prefix fits the work limit");
-        assert!(matches!(quantity, Some(cadmpeg_ir::pmi::PmiQuantity::Length)));
+        let quantity =
+            super::super::measure_quantity(&value, ctx).expect("length prefix fits the work limit");
+        assert!(matches!(
+            quantity,
+            Some(cadmpeg_ir::pmi::PmiQuantity::Length)
+        ));
         assert!(ctx.resource_refusal().is_none());
     });
 }
@@ -987,11 +991,9 @@ fn measure_quantity_length_prefix_does_not_scan_name_suffix() {
 #[test]
 fn typed_measure_length_prefix_does_not_scan_name_suffix() {
     let source = format!("{HEADER}#1=ITEM();{TAIL}");
-    let (exchange, _) = crate::test_support::with_service_context(
-        source.as_bytes(),
-        crate::parse::parse_inner,
-    )
-    .expect("measure exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("measure exchange");
     let value = crate::parse::Value::Typed(
         format!("LENGTH{}", "X".repeat(4096)),
         Box::new(crate::parse::Value::Integer(7)),
@@ -1003,7 +1005,8 @@ fn typed_measure_length_prefix_does_not_scan_name_suffix() {
     crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
         let mut losses = Vec::new();
         let reports = std::cell::RefCell::new(
-            ctx.reserve_scoped(0, "report fixture").expect("report scope"),
+            ctx.reserve_scoped(0, "report fixture")
+                .expect("report scope"),
         );
         let mut measurements = super::super::MeasureContext {
             length_scale: 1.0,
@@ -1028,23 +1031,19 @@ fn typed_measure_length_prefix_does_not_scan_name_suffix() {
 #[test]
 fn record_measure_length_prefix_does_not_scan_name_suffix() {
     let source = format!("{HEADER}#1=LENGTH{}();{TAIL}", "X".repeat(4096));
-    let (exchange, _) = crate::test_support::with_service_context(
-        source.as_bytes(),
-        crate::parse::parse_inner,
-    )
-    .expect("long measure record exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("long measure record exchange");
     let value = crate::parse::Value::Reference(1);
     let mut policy = DecodePolicy::service();
-    // The one-record path uses 696 work for active-set insertion, 240 for its
-    // removal, 8 for the record lookup, 9 for three one-partial queries, and 2
-    // for the classifier's partial and first name-window visits: 955 total.
-    // The cap admits that route; the old 4,108-unit full-name-plus-pattern
-    // scan cannot fit.
+    // The active-map operations and classifier's first name-window visit
+    // fit in 2048 units. Scanning the 4096-byte name suffix cannot fit.
     policy.limits.max_work_units = 2048;
     crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
         let mut losses = Vec::new();
         let reports = std::cell::RefCell::new(
-            ctx.reserve_scoped(0, "report fixture").expect("report scope"),
+            ctx.reserve_scoped(0, "report fixture")
+                .expect("report scope"),
         );
         let mut measurements = super::super::MeasureContext {
             length_scale: 1.0,
