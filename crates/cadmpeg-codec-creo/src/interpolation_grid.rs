@@ -282,8 +282,13 @@ mod tests {
             .expect("service admits derivatives")
             .is_some()
         );
+        let limit = crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo legacy spline u derivatives"),
+            derivative_limit_result,
+        );
         assert!(matches!(
-            derivative_limit_result(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo legacy spline u derivatives"), derivative_limit_result)),
+            derivative_limit_result(limit),
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::CollectionItems
                     && limit.operation == "creo legacy spline u derivatives"
@@ -292,8 +297,13 @@ mod tests {
 
     #[test]
     fn legacy_spline_v_derivatives_refuse_collection_limit() {
+        let limit = crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo legacy spline v derivatives"),
+            derivative_limit_result,
+        );
         assert!(matches!(
-            derivative_limit_result(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo legacy spline v derivatives"), derivative_limit_result)),
+            derivative_limit_result(limit),
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::CollectionItems
                     && limit.operation == "creo legacy spline v derivatives"

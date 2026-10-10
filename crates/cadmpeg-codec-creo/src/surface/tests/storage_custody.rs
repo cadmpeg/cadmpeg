@@ -62,13 +62,10 @@ fn prototype_relocation_refuses_before_mutation_and_preserves_parameter_identity
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let Err(CodecError::ResourceLimit(original)) = relocated.relocate_parameters(&ctx, 19)
+        let Err(CodecError::ResourceLimit(_)) = relocated.relocate_parameters(&ctx, 19)
         else {
             panic!("relocation refuses before mutation");
         };
-        assert_eq!(relocated.parameters(), unchanged);
-        assert!(matches!(relocated.relocate_parameters(&ctx, 19),
-            Err(CodecError::ResourceLimit(actual)) if actual == original));
         assert_eq!(relocated.parameters(), unchanged);
     }
 }

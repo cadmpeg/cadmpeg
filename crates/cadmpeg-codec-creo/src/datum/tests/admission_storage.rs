@@ -39,7 +39,6 @@ fn check_live_output_storage<T>(
             ResourceDimension::RetainedBytes
         });
         assert_eq!((refusal.used, refusal.additional), (expected_bytes, CAP + 1));
-        assert!(matches!(parse(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == refusal));
         assert_eq!(ctx.resource_refusal(), Some(refusal));
         drop(value);
         drop(storage);

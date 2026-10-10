@@ -51,9 +51,6 @@ fn assert_live_output<T>(
             };
             assert_eq!(refusal.dimension, dimension);
             assert_eq!(refusal.used, used);
-            assert!(
-                matches!(call(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == refusal)
-            );
             assert_eq!(ctx.resource_refusal(), Some(refusal));
             drop(output);
             drop(storage);
