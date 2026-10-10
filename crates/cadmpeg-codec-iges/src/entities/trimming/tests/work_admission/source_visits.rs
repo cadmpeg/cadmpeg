@@ -393,3 +393,56 @@ fn trimming_empty_or_discontinuous_path_preserves_original_entry_refusal() {
         });
     }
 }
+
+fn split_level_boundary(count: usize, completed: usize, interpolation: bool) {
+    let controls: Vec<_> = (0..count).map(|index|
+        [1.0, f64::from(u32::try_from(index).unwrap()), 0.0, 0.0]).collect();
+    let before = controls.clone();
+    // One copy per control, one visit per completed level, then the
+    // completed interpolation populations N-1 down to N-completed.
+    let slots = completed * (2 * count - completed - 1) / 2;
+    let work = u64::try_from(count + completed + slots + usize::from(interpolation)).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = work;
+    policy.limits.max_materialized_bytes = u64::try_from(
+        count * std::mem::size_of::<[f64; 4]>()).unwrap();
+    policy.limits.max_retained_bytes = 2 * policy.limits.max_materialized_bytes;
+    policy.limits.max_collection_items = u64::try_from(3 * count).unwrap();
+    policy.limits.max_entities = 0;
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let Err(CodecError::ResourceLimit(first)) = split_homogeneous_pcurve(&controls, 0.5, &ctx) else {
+        panic!("expected the next split level operation to refuse");
+    };
+    assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(first.operation, if interpolation {
+        "iges pcurve split interpolation"
+    } else { "iges pcurve split traversal" });
+    let additional = if interpolation { count - completed - 1 } else { 1 };
+    assert_eq!((first.limit, first.used, first.additional),
+        (work, work, u64::try_from(additional).unwrap()));
+    for _ in 0..64 {
+        for source in [controls.as_slice(), &[]] {
+            assert!(matches!(split_homogeneous_pcurve(source, 0.5, &ctx),
+                Err(CodecError::ResourceLimit(last)) if last == first));
+        }
+    }
+    assert_eq!(controls, before);
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+}
+
+#[test]
+fn pcurve_split_first_level_refuses_after_exact_source_copy_population() {
+    for count in [4, 64] { split_level_boundary(count, 0, false); }
+}
+
+#[test]
+fn pcurve_split_last_level_refuses_after_completed_interpolation_populations() {
+    for count in [4, 64] { split_level_boundary(count, count - 2, false); }
+}
+
+#[test]
+fn pcurve_split_last_interpolation_refuses_after_exact_last_level_visit() {
+    for count in [4, 64] { split_level_boundary(count, count - 2, true); }
+}
