@@ -274,24 +274,6 @@ pub(crate) enum DirectoryDefect {
     UnpairedCard,
 }
 
-#[derive(Debug)]
-enum DirectoryParseError {
-    Defect(DirectoryDefect),
-    Refusal(CodecError),
-}
-
-impl From<DirectoryDefect> for DirectoryParseError {
-    fn from(defect: DirectoryDefect) -> Self {
-        Self::Defect(defect)
-    }
-}
-
-impl From<CodecError> for DirectoryParseError {
-    fn from(error: CodecError) -> Self {
-        Self::Refusal(error)
-    }
-}
-
 impl Serialize for DirectoryDefect {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_str(self.key())
@@ -393,19 +375,15 @@ fn fields(line: &PhysicalLine<'_>) -> [[u8; 8]; 9] {
     fields
 }
 
-fn integer(
-    field: [u8; 8],
-    name: &'static str,
-    ctx: &DecodeContext<'_>,
-) -> Result<i64, DirectoryParseError> {
+fn integer(field: [u8; 8], name: &'static str) -> Result<i64, DirectoryDefect> {
     let text = std::str::from_utf8(&field)
         .map_err(|_| DirectoryDefect::FieldNotAscii(name))?
         .trim();
     if text.is_empty() {
         return Ok(0);
     }
-    ctx.parse_text::<i64>(text, "iges directory integer value")?
-        .map_err(|_| DirectoryParseError::Defect(DirectoryDefect::FieldNotAnInteger(name)))
+    text.parse::<i64>()
+        .map_err(|_| DirectoryDefect::FieldNotAnInteger(name))
 }
 
 fn directory_integer(
@@ -413,17 +391,14 @@ fn directory_integer(
     name: &'static str,
     number: u8,
     global_table: GlobalTable,
-    ctx: &DecodeContext<'_>,
-) -> Result<i64, DirectoryParseError> {
+) -> Result<i64, DirectoryDefect> {
     if matches!(global_table, GlobalTable::V4_0)
         && matches!(number, 1 | 2 | 11 | 14)
         && field.iter().all(|byte| *byte == b' ')
     {
-        return Err(DirectoryParseError::Defect(
-            DirectoryDefect::FieldBlankNotAllowed(name),
-        ));
+        return Err(DirectoryDefect::FieldBlankNotAllowed(name));
     }
-    integer(field, name, ctx)
+    integer(field, name)
 }
 
 fn status(field: [u8; 8], global_table: GlobalTable) -> Result<SourceStatus, DirectoryDefect> {
@@ -473,25 +448,17 @@ fn parse_pair(
     first: &PhysicalLine<'_>,
     second: &PhysicalLine<'_>,
     global_table: GlobalTable,
-    ctx: &DecodeContext<'_>,
-) -> Result<DirectoryEntry, DirectoryParseError> {
+) -> Result<DirectoryEntry, DirectoryDefect> {
     let first_fields = fields(first);
     let second_fields = fields(second);
-    let entity_type = directory_integer(first_fields[0], "entity type", 1, global_table, ctx)?;
-    let repeated_type = directory_integer(
-        second_fields[0],
-        "repeated entity type",
-        11,
-        global_table,
-        ctx,
-    )?;
+    let entity_type = directory_integer(first_fields[0], "entity type", 1, global_table)?;
+    let repeated_type =
+        directory_integer(second_fields[0], "repeated entity type", 11, global_table)?;
     if entity_type != repeated_type {
-        return Err(DirectoryParseError::Defect(
-            DirectoryDefect::RepeatedEntityTypeMismatch {
-                declared: entity_type,
-                repeated: repeated_type,
-            },
-        ));
+        return Err(DirectoryDefect::RepeatedEntityTypeMismatch {
+            declared: entity_type,
+            repeated: repeated_type,
+        });
     }
     Ok(DirectoryEntry {
         source_offset: first.offset,
@@ -502,28 +469,26 @@ fn parse_pair(
             "Parameter Data start",
             2,
             global_table,
-            ctx,
         )?,
-        structure: directory_integer(first_fields[2], "structure", 3, global_table, ctx)?,
-        line_font: directory_integer(first_fields[3], "line font", 4, global_table, ctx)?,
-        level: directory_integer(first_fields[4], "level", 5, global_table, ctx)?,
-        view: directory_integer(first_fields[5], "view", 6, global_table, ctx)?,
-        transform: directory_integer(first_fields[6], "transformation", 7, global_table, ctx)?,
-        label_display: directory_integer(first_fields[7], "label display", 8, global_table, ctx)?,
+        structure: directory_integer(first_fields[2], "structure", 3, global_table)?,
+        line_font: directory_integer(first_fields[3], "line font", 4, global_table)?,
+        level: directory_integer(first_fields[4], "level", 5, global_table)?,
+        view: directory_integer(first_fields[5], "view", 6, global_table)?,
+        transform: directory_integer(first_fields[6], "transformation", 7, global_table)?,
+        label_display: directory_integer(first_fields[7], "label display", 8, global_table)?,
         status: status(first_fields[8], global_table)?,
-        line_weight: directory_integer(second_fields[1], "line weight", 12, global_table, ctx)?,
-        color: directory_integer(second_fields[2], "color", 13, global_table, ctx)?,
+        line_weight: directory_integer(second_fields[1], "line weight", 12, global_table)?,
+        color: directory_integer(second_fields[2], "color", 13, global_table)?,
         parameter_line_count: directory_integer(
             second_fields[3],
             "Parameter Data count",
             14,
             global_table,
-            ctx,
         )?,
-        form: directory_integer(second_fields[4], "form", 15, global_table, ctx)?,
+        form: directory_integer(second_fields[4], "form", 15, global_table)?,
         reserved: [second_fields[5], second_fields[6]],
         label: second_fields[7],
-        subscript: directory_integer(second_fields[8], "entity subscript", 19, global_table, ctx)?,
+        subscript: directory_integer(second_fields[8], "entity subscript", 19, global_table)?,
     })
 }
 
@@ -570,21 +535,22 @@ pub(crate) fn parse(
     let mut quarantined = Vec::new();
     let mut pairs = cards.chunks_exact(2);
     while pairs.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some(pair) = ctx.next_charged(&mut pairs, "iges directory card pairs")? else { break; };
+        let Some(pair) = ctx.next_charged(&mut pairs, "iges directory card pairs")? else {
+            break;
+        };
         let [first, second] = pair else {
             continue;
         };
         ctx.charge_entities(1, "iges_directory_entries")?;
-        match parse_pair(first.sequence, &first.line, &second.line, global_table, ctx) {
+        match parse_pair(first.sequence, &first.line, &second.line, global_table) {
             Ok(entry) => {
                 ctx.reserve_vec(&mut entries, 1, "iges directory entries")?;
                 entries.push(entry);
             }
-            Err(DirectoryParseError::Defect(defect)) => {
+            Err(defect) => {
                 ctx.reserve_vec(&mut quarantined, 1, "iges quarantined directory entries")?;
                 quarantined.push(quarantine(first, Some(second), defect, ctx)?);
             }
-            Err(DirectoryParseError::Refusal(error)) => return Err(error),
         }
     }
     if let Some(unpaired) = pairs.remainder().first() {
@@ -626,7 +592,9 @@ pub(crate) fn summary_notes<'ctx>(
     let mut census = BTreeMap::<(i64, i64), usize>::new();
     let mut source = entries.iter();
     while source.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some(entry) = ctx.next_charged(&mut source, "iges directory summary groups")? else { break; };
+        let Some(entry) = ctx.next_charged(&mut source, "iges directory summary groups")? else {
+            break;
+        };
         census_storage.with_storage(|| {
             ctx.admit_btree_entry(
                 &census,
@@ -646,7 +614,11 @@ pub(crate) fn summary_notes<'ctx>(
     )?);
     let mut grouped = census.into_iter();
     while grouped.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some(((entity_type, form), count)) = ctx.next_charged(&mut grouped, "iges directory summary notes")? else { break; };
+        let Some(((entity_type, form), count)) =
+            ctx.next_charged(&mut grouped, "iges directory summary notes")?
+        else {
+            break;
+        };
         ctx.reserve_scoped_vec(&mut storage, &mut notes, 1, "iges directory summary notes")?;
         notes.push(ctx.format_retained(
             format_args!("entity.{entity_type}.form.{form}={count}"),

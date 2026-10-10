@@ -789,6 +789,7 @@ fn type422_entity_table_boundary_follows_referenced_definition_shape() {
                 &directory,
                 &records,
                 crate::global::GlobalTable::V5Later,
+                &mut crate::parameter::AttributeDefinitionWidths::new(ctx).unwrap(),
                 ctx,
             )
             .expect("test-only trailing pointer analysis")
@@ -870,6 +871,7 @@ fn type422_table_boundary_precedes_valid_generic_alternative() {
             &directory,
             &records,
             crate::global::GlobalTable::V5Later,
+            &mut crate::parameter::AttributeDefinitionWidths::new(ctx).unwrap(),
             ctx,
         )
         .expect("test-only trailing pointer analysis")
@@ -959,6 +961,7 @@ fn type422_malformed_definition_or_value_span_does_not_enable_generic_recovery()
                 &directory,
                 &records,
                 crate::global::GlobalTable::V5Later,
+                &mut crate::parameter::AttributeDefinitionWidths::new(ctx).unwrap(),
                 ctx,
             )
             .expect("test-only trailing pointer analysis")
@@ -990,6 +993,7 @@ fn type422_malformed_definition_or_value_span_does_not_enable_generic_recovery()
             &unresolved_directory,
             &records,
             crate::global::GlobalTable::V5Later,
+            &mut crate::parameter::AttributeDefinitionWidths::new(ctx).unwrap(),
             ctx,
         )
         .expect("test-only trailing pointer analysis")

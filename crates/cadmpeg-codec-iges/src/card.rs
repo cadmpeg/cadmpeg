@@ -177,10 +177,20 @@ pub(crate) enum FramingValue {
     FixedCards(usize),
     BackPointer(Option<u32>),
     DeclaredRange(u32),
-    UnusableRange { sequence: u32, start: i64, count: i64 },
+    UnusableRange {
+        sequence: u32,
+        start: i64,
+        count: i64,
+    },
     CensusRun(usize),
-    TerminateField { section: Section, field: [u8; 8] },
-    TerminateCensus { section: Section, count: usize },
+    TerminateField {
+        section: Section,
+        field: [u8; 8],
+    },
+    TerminateCensus {
+        section: Section,
+        count: usize,
+    },
 }
 
 impl fmt::Display for FramingValue {
@@ -194,13 +204,26 @@ impl fmt::Display for FramingValue {
             Self::BackPointer(Some(value)) => write!(formatter, "back-pointer {value}"),
             Self::BackPointer(None) => formatter.write_str("no readable back-pointer"),
             Self::DeclaredRange(owner) => write!(formatter, "the declared range of D{owner}"),
-            Self::UnusableRange { sequence, start, count } => write!(formatter,
-                "an unusable declared range for D{sequence} (start {start}, count {count})"),
-            Self::CensusRun(count) => write!(formatter, "the back-pointer census run of {count} card(s)"),
-            Self::TerminateField { section, field } => write!(formatter,
-                "{} count {}", section.name(), TrimmedLossyField(field)),
-            Self::TerminateCensus { section, count } => write!(formatter,
-                "{} count {count}", section.name()),
+            Self::UnusableRange {
+                sequence,
+                start,
+                count,
+            } => write!(
+                formatter,
+                "an unusable declared range for D{sequence} (start {start}, count {count})"
+            ),
+            Self::CensusRun(count) => {
+                write!(formatter, "the back-pointer census run of {count} card(s)")
+            }
+            Self::TerminateField { section, field } => write!(
+                formatter,
+                "{} count {}",
+                section.name(),
+                TrimmedLossyField(field)
+            ),
+            Self::TerminateCensus { section, count } => {
+                write!(formatter, "{} count {count}", section.name())
+            }
         }
     }
 }
@@ -246,7 +269,9 @@ struct FramingRecovery {
 
 /// Recovered framing declarations, at most one per section and defect class.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(crate) struct FramingRecoveries([[Option<FramingRecovery>; FRAMING_DEFECTS.len()]; SECTION_COUNT]);
+pub(crate) struct FramingRecoveries(
+    [[Option<FramingRecovery>; FRAMING_DEFECTS.len()]; SECTION_COUNT],
+);
 
 const FRAMING_DEFECTS: [FramingDefect; 5] = [
     FramingDefect::CardBoundary,
@@ -255,7 +280,6 @@ const FRAMING_DEFECTS: [FramingDefect; 5] = [
     FramingDefect::UnclaimedParameterCard,
     FramingDefect::TerminateCount,
 ];
-
 
 impl FramingRecoveries {
     pub(crate) fn record(
@@ -272,11 +296,17 @@ impl FramingRecoveries {
         }
         let slot = &mut self.0[key.0.index()][key.1.index()];
         if let Some(recovery) = slot {
-            recovery.count = recovery.count.checked_add(1).ok_or_else(||
+            recovery.count = recovery.count.checked_add(1).ok_or_else(|| {
                 ctx.refuse_codec_limit("iges framing recovery count", u64::MAX, 1)
-            )?;
+            })?;
         } else {
-            *slot = Some(FramingRecovery { position, offset, declared, used, count: 1 });
+            *slot = Some(FramingRecovery {
+                position,
+                offset,
+                declared,
+                used,
+                count: 1,
+            });
         }
         Ok(())
     }
@@ -288,11 +318,13 @@ impl FramingRecoveries {
         // Five sections and five defect classes define every slot and its order.
         for (held_row, incoming_row) in self.0.iter_mut().zip(other.0) {
             for (slot, incoming) in held_row.iter_mut().zip(incoming_row) {
-                let Some(recovery) = incoming else { continue; };
+                let Some(recovery) = incoming else {
+                    continue;
+                };
                 if let Some(held) = slot {
-                    held.count = held.count.checked_add(recovery.count).ok_or_else(||
+                    held.count = held.count.checked_add(recovery.count).ok_or_else(|| {
                         ctx.refuse_codec_limit("iges framing recovery count", u64::MAX, 1)
-                    )?;
+                    })?;
                     if recovery.position < held.position {
                         held.position = recovery.position;
                         held.offset = recovery.offset;
@@ -313,11 +345,24 @@ impl FramingRecoveries {
     ) -> Result<(Vec<LossNote>, ScopedReservation<'ctx>), CodecError> {
         let mut storage = ctx.reserve_scoped(0, "iges framing recovery loss slots")?;
         let mut notes = Vec::new();
-        let sections = [Section::Start, Section::Global, Section::Directory, Section::Parameter, Section::Terminate];
+        let sections = [
+            Section::Start,
+            Section::Global,
+            Section::Directory,
+            Section::Parameter,
+            Section::Terminate,
+        ];
         for (section, row) in sections.into_iter().zip(&self.0) {
             for (defect, recovery) in FRAMING_DEFECTS.into_iter().zip(row) {
-                let Some(recovery) = recovery else { continue; };
-                ctx.reserve_scoped_vec(&mut storage, &mut notes, 1, "iges framing recovery loss slots")?;
+                let Some(recovery) = recovery else {
+                    continue;
+                };
+                ctx.reserve_scoped_vec(
+                    &mut storage,
+                    &mut notes,
+                    1,
+                    "iges framing recovery loss slots",
+                )?;
                 let message = ctx.format_retained(format_args!(
                             "IGES {} section recovered {} from the card census: the first offending {} is at position {} in the section, which declared {}, and the decoder used {}; {} {} in this section required the same recovery",
                             section.name(),
@@ -705,17 +750,13 @@ fn terminate_counts(
     ];
     for (field, (marker, section)) in data.as_chunks::<8>().0.iter().zip(expected) {
         let declared = if field[0] == marker {
-            ctx.validate_utf8(&field[1..], "iges terminate count text")?
-                .ok()
-                .map(str::trim)
+            std::str::from_utf8(&field[1..]).ok().map(str::trim)
         } else {
             None
         }
         .filter(|text| !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit()));
         let declared = match declared {
-            Some(text) => ctx
-                .parse_text::<usize>(text, "iges terminate count integer")?
-                .ok(),
+            Some(text) => text.parse::<usize>().ok(),
             None => None,
         };
         let census = runs[section.index()].len();
@@ -725,8 +766,14 @@ fn terminate_counts(
                 (Section::Terminate, FramingDefect::TerminateCount),
                 1,
                 terminate.offset,
-                FramingValue::TerminateField { section, field: *field },
-                FramingValue::TerminateCensus { section, count: census },
+                FramingValue::TerminateField {
+                    section,
+                    field: *field,
+                },
+                FramingValue::TerminateCensus {
+                    section,
+                    count: census,
+                },
             )?;
         }
     }
@@ -812,7 +859,9 @@ pub(crate) fn summarize(
                 .checked_add(u64_from_index(
                     line.payload.len() + line.ending.bytes().len(),
                 ))
-                .ok_or_else(|| ctx.refuse_codec_limit("iges card summary section size", u64::MAX, 1))?;
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("iges card summary section size", u64::MAX, 1)
+                })?;
             let index = match line.ending {
                 LineEnding::Cr => 0,
                 LineEnding::CrLf => 1,
