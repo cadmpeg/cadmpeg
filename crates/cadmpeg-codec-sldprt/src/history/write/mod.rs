@@ -485,7 +485,7 @@ fn validate_compact_edge_selection_edits(
     }
     let feature_ids_by_native = features
         .iter()
-        .filter_map(|feature| Some((feature.native_ref.as_deref()?, feature.id.clone())))
+        .filter_map(|feature| Some((feature.native_ref.as_deref()?, &feature.id)))
         .collect::<HashMap<_, _>>();
     for feature in features {
         let Some(native_ref) = feature.native_ref.as_deref() else {
@@ -526,7 +526,7 @@ fn validate_compact_edge_selection_edits(
                 let Some(feature) = feature_ids_by_native.get(native_feature) else {
                     return Ok(None);
                 };
-                let feature = feature.clone();
+                let feature = (*feature).clone();
                 let local_id = selection
                     .local_edge_ids
                     .iter()
@@ -579,7 +579,7 @@ fn validate_compact_surface_selection_edits(
     }
     let feature_ids_by_native = features
         .iter()
-        .filter_map(|feature| Some((feature.native_ref.as_deref()?, feature.id.clone())))
+        .filter_map(|feature| Some((feature.native_ref.as_deref()?, &feature.id)))
         .collect::<HashMap<_, _>>();
     for feature in features {
         let Some(native_ref) = feature.native_ref.as_deref() else {
@@ -647,7 +647,7 @@ fn validate_compact_surface_selection_edits(
             SelectionSlot::Face(faces) => {
                 let expected = match generated {
                     Some((feature, local_id)) => match cadmpeg_ir::features::GeneratedFaceRef::new(
-                        feature.clone(),
+                        (*feature).clone(),
                         local_id.to_string(),
                         &ctx,
                     )? {
@@ -669,7 +669,7 @@ fn validate_compact_surface_selection_edits(
                 let expected = match generated {
                     Some((feature, local_id)) => {
                         match cadmpeg_ir::features::GeneratedVertexRef::new(
-                            feature.clone(),
+                            (*feature).clone(),
                             local_id.to_string(),
                             &ctx,
                         )? {

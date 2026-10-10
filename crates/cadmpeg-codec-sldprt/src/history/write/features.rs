@@ -54,9 +54,9 @@ fn synchronize_feature_input_names(
                 return None;
             }
             Some((
-                record.name.clone(),
-                new_name.to_string(),
-                record.input_class.clone()?,
+                record.name.as_str(),
+                new_name,
+                record.input_class.as_deref()?,
             ))
         })
         .collect::<Vec<_>>();
@@ -286,7 +286,6 @@ pub(in crate::history) fn sync_neutral_features(
         .collect::<HashMap<_, _>>();
     let desired_record_ids = record_ids
         .values()
-        .cloned()
         .collect::<std::collections::HashSet<_>>();
     for history in &mut native.feature_histories {
         history.features.retain(|feature| {
@@ -343,7 +342,7 @@ pub(in crate::history) fn sync_neutral_features(
         .collect::<HashMap<_, _>>();
     let body_sources = bodies
         .iter()
-        .map(|body| (body.id.clone(), body.id.as_str().to_owned()))
+        .map(|body| (&body.id, body.id.as_str()))
         .collect::<HashMap<_, _>>();
     for feature in features {
         if feature
@@ -406,7 +405,7 @@ pub(in crate::history) fn sync_neutral_features(
                 .evaluation
                 .outputs()
                 .iter()
-                .map(|body| body_sources.get(body).cloned())
+                .map(|body| body_sources.get(body).copied())
                 .collect::<Option<Vec<_>>>()
                 .ok_or_else(|| {
                     CodecError::malformed(format_args!(
@@ -601,13 +600,13 @@ pub(super) fn synchronize_history_content_order(native: &mut crate::native::Sldp
         let configurations = history
             .configurations
             .iter()
-            .map(|configuration| (configuration.ordinal, configuration.id.clone()))
+            .map(|configuration| (configuration.ordinal, &configuration.id))
             .collect::<Vec<_>>();
         let mut features = history
             .features
             .iter()
             .filter(|feature| feature.tree_parent.is_none())
-            .map(|feature| (feature.ordinal, feature.id.clone()))
+            .map(|feature| (feature.ordinal, &feature.id))
             .collect::<Vec<_>>();
         let mut configurations = configurations;
         configurations.sort();
@@ -619,13 +618,13 @@ pub(super) fn synchronize_history_content_order(native: &mut crate::native::Sldp
                 HistoryContent::Configuration(id) => {
                     *id = configurations
                         .get(configuration_index)
-                        .map_or_else(String::new, |(_, id)| id.clone());
+                        .map_or_else(String::new, |(_, id)| (*id).clone());
                     configuration_index += 1;
                 }
                 HistoryContent::Feature(id) => {
                     *id = features
                         .get(feature_index)
-                        .map_or_else(String::new, |(_, id)| id.clone());
+                        .map_or_else(String::new, |(_, id)| (*id).clone());
                     feature_index += 1;
                 }
                 HistoryContent::Text(_) => {}
@@ -638,13 +637,13 @@ pub(super) fn synchronize_history_content_order(native: &mut crate::native::Sldp
             configurations
                 .iter()
                 .skip(configuration_index)
-                .map(|(_, id)| HistoryContent::Configuration(id.clone())),
+                .map(|(_, id)| HistoryContent::Configuration((*id).clone())),
         );
         history.content.extend(
             features
                 .iter()
                 .skip(feature_index)
-                .map(|(_, id)| HistoryContent::Feature(id.clone())),
+                .map(|(_, id)| HistoryContent::Feature((*id).clone())),
         );
     }
 }

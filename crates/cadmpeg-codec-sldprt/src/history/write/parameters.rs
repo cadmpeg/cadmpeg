@@ -169,7 +169,7 @@ fn sync_neutral_parameters(
         .iter()
         .map(|feature| (&feature.id, feature))
         .collect::<HashMap<_, _>>();
-    let mut desired = HashMap::<FeatureId, Vec<&DesignParameter>>::new();
+    let mut desired = HashMap::<&FeatureId, Vec<&DesignParameter>>::new();
     for parameter in &parameters {
         let Some(owner_id) = parameter.owner.as_ref() else {
             return Err(CodecError::NotImplemented(format!(
@@ -197,7 +197,7 @@ fn sync_neutral_parameters(
                 parameter.id.as_str()
             )));
         }
-        let owner_parameters = desired.entry(owner_id.clone()).or_default();
+        let owner_parameters = desired.entry(owner_id).or_default();
         if owner_parameters
             .iter()
             .any(|candidate| candidate.name == parameter.name)
@@ -353,7 +353,7 @@ fn rewrite_renamed_parameter_references(
         .iter()
         .map(|parameter| (&parameter.id, parameter))
         .collect::<HashMap<_, _>>();
-    let mut replacements = HashMap::<ParameterId, HashMap<String, String>>::new();
+    let mut replacements = HashMap::<&ParameterId, HashMap<String, String>>::new();
     for (id, parameter) in &desired {
         let Some(previous) = original.get(id) else {
             continue;
@@ -404,7 +404,7 @@ fn rewrite_renamed_parameter_references(
             }
         }
         if !aliases.is_empty() {
-            replacements.insert((*id).clone(), aliases);
+            replacements.insert(&previous.id, aliases);
         }
     }
     for parameter in parameters {
