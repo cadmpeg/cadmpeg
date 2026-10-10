@@ -60,12 +60,18 @@ pub(super) fn section_point_locus(
     sketch: &SketchId,
     point_id: u32,
 ) -> Result<Option<SketchLocus>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(segments) = definition.segments.as_ref() else {
         return Ok(None);
     };
     let mut candidate = None;
     let mut rows = segments.rows.as_slice().iter();
-    while let Some(row) = ctx.next_charged(&mut rows, "creo point locus rows")? {
+    while rows.len() != 0 {
+        let Some(row) = ctx.next_charged(&mut rows, "creo point locus rows")? else {
+            break;
+        };
         let (external_id, kinds) = match row {
             SegmentRow::Ordinary(segment) => {
                 use crate::feature::definitions::FeatureSegmentKind;
@@ -1377,6 +1383,9 @@ pub(in super::super) fn visit_section_skamps<B>(
         &crate::feature::definitions::FeatureSkamp,
     ) -> Result<ControlFlow<B>, cadmpeg_core::CodecError>,
 ) -> Result<ControlFlow<B>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(relation) = definition.relations.as_ref() else {
         return Ok(ControlFlow::Continue(()));
     };
@@ -1384,7 +1393,10 @@ pub(in super::super) fn visit_section_skamps<B>(
         return Ok(ControlFlow::Continue(()));
     }
     let mut skamps = relation.skamps().iter();
-    while let Some(skamp) = ctx.next_charged(&mut skamps, "creo relation skamp rows")? {
+    while skamps.len() != 0 {
+        let Some(skamp) = ctx.next_charged(&mut skamps, "creo relation skamp rows")? else {
+            break;
+        };
         if active_only && !section_skamp_active(skamp.status) {
             continue;
         }
@@ -1402,11 +1414,17 @@ pub(in super::super) fn visit_all_section_skamps<B>(
         &crate::feature::definitions::FeatureSkamp,
     ) -> Result<ControlFlow<B>, cadmpeg_core::CodecError>,
 ) -> Result<ControlFlow<B>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(relation) = definition.relations.as_ref() else {
         return Ok(ControlFlow::Continue(()));
     };
     let mut skamps = relation.skamps().iter();
-    while let Some(skamp) = ctx.next_charged(&mut skamps, "creo relation skamp rows")? {
+    while skamps.len() != 0 {
+        let Some(skamp) = ctx.next_charged(&mut skamps, "creo relation skamp rows")? else {
+            break;
+        };
         if let ControlFlow::Break(value) = visit(skamp)? {
             return Ok(ControlFlow::Break(value));
         }
@@ -1434,6 +1452,8 @@ pub(in super::super) fn with_test_locus<T>(
 
 #[cfg(test)]
 mod tests {
+    mod admission_visits;
+
     use super::{
         oriented_arc_midpoint, section_point_locus, section_skamp_arc_midpoint_source,
         section_skamp_curve_entity, section_skamp_is_arc, section_skamp_is_line,
