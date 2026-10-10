@@ -658,6 +658,43 @@ fn take_spline_vectors(
     spline_vectors(ctx, &scalars)
 }
 
+fn take_spline_mixed_derivatives(
+    ctx: &DecodeContext<'_>,
+    body: &[u8],
+    cursor: &mut usize,
+    cache: &scalar::ScalarCache,
+) -> Result<Option<[[f64; 3]; 4]>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let Some(remaining) = body.len().checked_sub(*cursor) else {
+        return Ok(None);
+    };
+    if remaining < 12 {
+        return Ok(None);
+    }
+    let mut derivatives = [[0.0; 3]; 4];
+    for derivative in &mut derivatives {
+        for slot in derivative {
+            let Some((Some(value), next)) = named_spline_scalar_slot(
+                &SurfacePrototypeFamily::Spline(SplineLabel::Spline),
+                "end_uv_deriv",
+                body,
+                *cursor,
+                cache,
+            ) else {
+                return Ok(None);
+            };
+            if next <= *cursor {
+                return Ok(None);
+            }
+            *slot = value;
+            *cursor = next;
+        }
+    }
+    Ok(Some(derivatives))
+}
+
 fn parse_positional_spline_replay(
     ctx: &DecodeContext<'_>,
     body: &[u8],
@@ -712,7 +749,7 @@ fn parse_positional_spline_replay(
         return Ok(None);
     };
     let Some(mixed_derivatives) =
-        take_spline_vectors(ctx, body, &mut cursor, 12, "end_uv_deriv", cache)?
+        take_spline_mixed_derivatives(ctx, body, &mut cursor, cache)?
     else {
         return Ok(None);
     };
@@ -724,9 +761,6 @@ fn parse_positional_spline_replay(
     let Some(v_parameters) =
         take_spline_scalars(ctx, body, &mut cursor, shape.v_count, "v_params", cache)?
     else {
-        return Ok(None);
-    };
-    let Ok(mixed_derivatives) = <[[f64; 3]; 4]>::try_from(mixed_derivatives) else {
         return Ok(None);
     };
     Ok(crate::interpolation_grid::InterpolationGrid::try_new(

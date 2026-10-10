@@ -6,6 +6,7 @@ mod envelope_admission;
 mod inline;
 mod planes;
 mod positional;
+mod positional_mixed;
 mod resource_cache;
 mod round_envelopes;
 mod rows;
