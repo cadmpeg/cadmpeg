@@ -204,7 +204,7 @@ fn fixed_revolution_termination_slots_borrow_original_operands_in_side_order() {
         {
             match (actual, expected) {
                 (Some(TerminationRef::Angular(actual)), Some(expected)) => {
-                    assert!(std::ptr::eq(actual, expected))
+                    assert!(std::ptr::eq(actual, expected));
                 }
                 (None, None) => {}
                 _ => panic!("fixed slots must preserve original side count/order"),
@@ -505,9 +505,9 @@ fn compound_loft_missing_references_keep_branch_scale_and_member_order() {
     use crate::index::{ModelIndex, StandardIndex};
     use crate::math::Vector3;
     let curve =
-        |label: &str| crate::ids::CurveId::mint(&format!("test:model:curve#{label}")).unwrap();
+        |label: &str| crate::ids::CurveId::mint(format!("test:model:curve#{label}")).unwrap();
     let surface =
-        |label: &str| crate::ids::SurfaceId::mint(&format!("test:model:surface#{label}")).unwrap();
+        |label: &str| crate::ids::SurfaceId::mint(format!("test:model:surface#{label}")).unwrap();
     let scale = |label: &str| CompoundLoftScale {
         path: curve(&format!("{label}-path")),
         auxiliaries: (0..2).map(|i| curve(&format!("{label}-aux-{i}"))).collect(),
