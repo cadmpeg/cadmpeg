@@ -2214,28 +2214,28 @@ pub(crate) fn attribute_table_definition_width(
     let defect = ctx.find_map(
         0..attribute_count,
         |attribute| {
-        let descriptor = attribute
-            .checked_mul(3)
-            .and_then(|span| span.checked_add(4));
-        let declared = descriptor.and_then(|cursor| {
-            record.tokens.get(cursor)?;
-            record.tokens.get(cursor + 1)?;
-            let count_index = cursor + 2;
-            match record.tokens.get(count_index) {
-                Some(_) => record.integer_or(count_index, 1),
-                None if attribute + 1 == attribute_count => Some(1),
-                None => None,
-            }
-            .and_then(|value| usize::try_from(value).ok())
-        });
-        let Some(declared) = declared else {
-            return Ok(Some(AttributeWidthDefect::ValueCount { attribute }));
-        };
-        let Some(total) = values_per_row.checked_add(declared) else {
-            return Ok(Some(AttributeWidthDefect::ValueTotal));
-        };
-        values_per_row = total;
-        Ok(None)
+            let descriptor = attribute
+                .checked_mul(3)
+                .and_then(|span| span.checked_add(4));
+            let declared = descriptor.and_then(|cursor| {
+                record.tokens.get(cursor)?;
+                record.tokens.get(cursor + 1)?;
+                let count_index = cursor + 2;
+                match record.tokens.get(count_index) {
+                    Some(_) => record.integer_or(count_index, 1),
+                    None if attribute + 1 == attribute_count => Some(1),
+                    None => None,
+                }
+                .and_then(|value| usize::try_from(value).ok())
+            });
+            let Some(declared) = declared else {
+                return Ok(Some(AttributeWidthDefect::ValueCount { attribute }));
+            };
+            let Some(total) = values_per_row.checked_add(declared) else {
+                return Ok(Some(AttributeWidthDefect::ValueTotal));
+            };
+            values_per_row = total;
+            Ok(None)
         },
         operation,
     )?;
@@ -2249,13 +2249,21 @@ fn attribute_table_definition_values_per_row(
     record: &ParameterRecord,
     ctx: &DecodeContext<'_>,
 ) -> Result<Result<usize, AttributeWidthDefect>, CodecError> {
-    let Some(attribute_count) = record.integer(3).and_then(|value| usize::try_from(value).ok()) else {
+    let Some(attribute_count) = record
+        .integer(3)
+        .and_then(|value| usize::try_from(value).ok())
+    else {
         return Ok(Err(AttributeWidthDefect::AttributeCount));
     };
     if attribute_count == 0 {
         return Ok(Ok(0));
     }
-    attribute_table_definition_width(record, attribute_count, ctx, "iges parameter primary layout")
+    attribute_table_definition_width(
+        record,
+        attribute_count,
+        ctx,
+        "iges parameter primary layout",
+    )
 }
 
 /// A definition's row width and the boundary required to hold its descriptors.
@@ -2288,11 +2296,14 @@ impl<'ctx> AttributeDefinitionWidths<'ctx> {
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Option<AttributeDefinitionWidth>, CodecError> {
-        let Some((first_sequence, width)) = self.first else { return Ok(None); };
+        let Some((first_sequence, width)) = self.first else {
+            return Ok(None);
+        };
         if sequence == first_sequence {
             return Ok(Some(width));
         }
-        ctx.get_btree_map(&self.values, &sequence, operation).map(|width| width.copied())
+        ctx.get_btree_map(&self.values, &sequence, operation)
+            .map(Option::<&AttributeDefinitionWidth>::copied)
     }
 
     fn width(
@@ -2300,28 +2311,41 @@ impl<'ctx> AttributeDefinitionWidths<'ctx> {
         record: &ParameterRecord,
         ctx: &DecodeContext<'_>,
     ) -> Result<Option<usize>, CodecError> {
-        let width = match self.get(record.directory_sequence, ctx, "iges parameter attribute width lookup")? {
+        let width = match self.get(
+            record.directory_sequence,
+            ctx,
+            "iges parameter attribute width lookup",
+        )? {
             Some(width) => width,
             None => {
                 let width = AttributeDefinitionWidth {
                     values_per_row: attribute_table_definition_values_per_row(record, ctx)?,
-                    descriptor_end: record.integer(3).and_then(|value| usize::try_from(value).ok())
+                    descriptor_end: record
+                        .integer(3)
+                        .and_then(|value| usize::try_from(value).ok())
                         .and_then(|count| count.checked_mul(3))
                         .and_then(|span| span.checked_add(4)),
                 };
                 if self.first.is_none() {
                     self.first = Some((record.directory_sequence, width));
                 } else {
-                    self.storage.with_storage(|| ctx.insert_btree_map(
-                        &mut self.values, record.directory_sequence, width,
-                        "iges parameter attribute width nodes",
-                    ))?;
+                    self.storage.with_storage(|| {
+                        ctx.insert_btree_map(
+                            &mut self.values,
+                            record.directory_sequence,
+                            width,
+                            "iges parameter attribute width nodes",
+                        )
+                    })?;
                 }
                 width
             }
         };
         // A zero-attribute definition states no instance primary layout.
-        Ok(width.values_per_row.ok().filter(|_| record.integer(3) != Some(0)))
+        Ok(width
+            .values_per_row
+            .ok()
+            .filter(|_| record.integer(3) != Some(0)))
     }
 }
 
@@ -2873,7 +2897,7 @@ fn groups_for_candidate_with_context(
             }
             let mut pointers = ctx.collection_vec(range.len(), "iges trailing pointer entries")?;
             let mut pointer_indices = range;
-            while pointer_indices.len() != 0 || ctx.resource_refusal().is_some() {
+            while !pointer_indices.is_empty() || ctx.resource_refusal().is_some() {
                 let Some(token_index) =
                     ctx.next_charged(&mut pointer_indices, "iges trailing pointer entries")?
                 else {
@@ -4609,7 +4633,7 @@ fn resolve_ownership<'a, 'ctx>(
             continue;
         }
         let mut claimed_cards = range.clone();
-        while claimed_cards.len() != 0 || ctx.resource_refusal().is_some() {
+        while !claimed_cards.is_empty() || ctx.resource_refusal().is_some() {
             let Some(card) =
                 ctx.next_charged(&mut claimed_cards, "iges claimed parameter cards")?
             else {

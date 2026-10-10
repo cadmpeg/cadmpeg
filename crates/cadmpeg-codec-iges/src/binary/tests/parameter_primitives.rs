@@ -14,14 +14,21 @@ fn parameter_body(count: usize, repeated: bool) -> Vec<u8> {
     writer.control(5);
     writer.pointer(1);
     if repeated {
-        writer.control_repeat(false, u8::try_from(count).unwrap(), 0);
+        writer.control_repeat(
+            false,
+            u8::try_from(count).expect("valid test input and admitted budget"),
+            0,
+        );
     } else {
         for _ in 0..count {
             writer.control(0);
         }
     }
     let body = writer.bytes();
-    let mut bytes = u32::try_from(body.len()).unwrap().to_be_bytes().to_vec();
+    let mut bytes = u32::try_from(body.len())
+        .expect("valid test input and admitted budget")
+        .to_be_bytes()
+        .to_vec();
     bytes.extend_from_slice(&body);
     bytes
 }
@@ -30,7 +37,7 @@ fn directory() -> [BinaryDirectory; 1] {
     let mut fields = std::array::from_fn(|_| BinaryValue::Default);
     fields[0] = BinaryValue::Integer(116);
     fields[1] = BinaryValue::Pointer(1);
-    [BinaryDirectory::new(1, fields).unwrap()]
+    [BinaryDirectory::new(1, fields).expect("valid test input and admitted budget")]
 }
 
 #[test]
@@ -45,8 +52,10 @@ fn binary_parameter_primitives_accept_actual_values_without_an_exhausted_probe()
             + u64_from_index(count)
             + u64_from_index(moved * std::mem::size_of::<BinaryValue>())
             + 18;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let records = read_parameters(&bytes, lengths(), &directory(), &ctx).unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("valid test input and admitted budget");
+        let records = read_parameters(&bytes, lengths(), &directory(), &ctx)
+            .expect("valid test input and admitted budget");
         assert_eq!(records.len(), 1);
         assert_eq!(
             (
@@ -61,7 +70,8 @@ fn binary_parameter_primitives_accept_actual_values_without_an_exhausted_probe()
             .values
             .iter()
             .all(|value| *value == BinaryValue::Default));
-        ctx.finish_session().unwrap();
+        ctx.finish_session()
+            .expect("valid test input and admitted budget");
     }
 }
 
@@ -73,9 +83,11 @@ fn binary_parameter_primitives_refuse_the_first_or_last_real_value_and_replay() 
         let mut policy = DecodePolicy::service();
         let work = u64_from_index(count + moved * std::mem::size_of::<BinaryValue>());
         policy.limits.max_work_units = work;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("valid test input and admitted budget");
         let CodecError::ResourceLimit(first) =
-            read_parameters(&bytes, lengths(), &directory(), &ctx).unwrap_err()
+            read_parameters(&bytes, lengths(), &directory(), &ctx)
+                .expect_err("the test requires a refusal")
         else {
             panic!("expected parameter primitive refusal");
         };
@@ -97,15 +109,17 @@ fn binary_parameter_keeps_pending_values_after_the_byte_source_ends() {
     for count in [4, 16] {
         let bytes = parameter_body(count, true);
         let arena = DecodeArena::new();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-        let records = read_parameters(&bytes, lengths(), &directory(), &ctx).unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("valid test input and admitted budget");
+        let records = read_parameters(&bytes, lengths(), &directory(), &ctx)
+            .expect("valid test input and admitted budget");
         assert_eq!(records[0].values.len(), count);
         assert!(records[0]
             .values
             .iter()
             .all(|value| *value == BinaryValue::Default));
-        ctx.finish_session().unwrap();
+        ctx.finish_session()
+            .expect("valid test input and admitted budget");
     }
 }
 
@@ -117,16 +131,28 @@ fn binary_stream_and_empty_record_readers_need_no_work_or_storage() {
     policy.limits.max_collection_items = 0;
     policy.limits.max_materialized_bytes = 0;
     policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("valid test input and admitted budget");
     let mut stream = ValueStream::new(&[0], lengths(), &ctx);
-    assert_eq!(stream.next().unwrap(), Some(BinaryValue::Default));
-    assert_eq!(stream.next().unwrap(), None);
-    stream.finish().unwrap();
-    assert!(read_directory(&[], lengths(), &ctx).unwrap().is_empty());
-    assert!(read_parameters(&[], lengths(), &[], &ctx)
-        .unwrap()
+    assert_eq!(
+        stream.next().expect("valid test input and admitted budget"),
+        Some(BinaryValue::Default)
+    );
+    assert_eq!(
+        stream.next().expect("valid test input and admitted budget"),
+        None
+    );
+    stream
+        .finish()
+        .expect("valid test input and admitted budget");
+    assert!(read_directory(&[], lengths(), &ctx)
+        .expect("valid test input and admitted budget")
         .is_empty());
-    ctx.finish_session().unwrap();
+    assert!(read_parameters(&[], lengths(), &[], &ctx)
+        .expect("valid test input and admitted budget")
+        .is_empty());
+    ctx.finish_session()
+        .expect("valid test input and admitted budget");
 }
 
 #[test]
@@ -143,7 +169,8 @@ fn binary_directory_records_refuse_before_reading_the_first_count() {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("valid test input and admitted budget");
             let Err(CodecError::ResourceLimit(first)) = read_directory(&bytes, lengths(), &ctx)
             else {
                 panic!("expected first Directory record refusal");

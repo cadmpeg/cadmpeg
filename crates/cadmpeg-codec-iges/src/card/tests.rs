@@ -99,7 +99,7 @@ fn merging_framing_recoveries_uses_fixed_slots_before_final_loss_admission() {
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut merged = super::FramingRecoveries::default();
-        merged.merge(incoming.clone(), &ctx).unwrap();
+        merged.merge(&incoming, &ctx).unwrap();
         let Err(CodecError::ResourceLimit(first)) = merged.notes(&ctx) else {
             panic!("expected final recovery loss slot refusal");
         };
@@ -113,7 +113,7 @@ fn merging_framing_recoveries_uses_fixed_slots_before_final_loss_admission() {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
         let mut merged = super::FramingRecoveries::default();
-        merged.merge(incoming, &ctx).unwrap();
+        merged.merge(&incoming, &ctx).unwrap();
         assert_eq!(merged.notes(&ctx).unwrap().0.len(), 1);
     });
 }

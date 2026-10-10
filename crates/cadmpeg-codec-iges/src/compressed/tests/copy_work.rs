@@ -5,7 +5,7 @@ use super::*;
 #[test]
 fn compressed_global_digit_runs_charge_each_copy_route() {
     // A numeric field can carry its digits through multiple cards.
-    for suffix in [b'H', b',', b' '] {
+    for suffix in *b"H, " {
         let mut first = [b' '; 80];
         first[..72].fill(b'0');
         let mut last = [b' '; 80];

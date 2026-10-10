@@ -46,9 +46,7 @@ fn work_limit_at_amount(
         .used
         .checked_add(limit.additional)
         .expect("work boundary fits");
-    let error = run(need - 1)
-        .err()
-        .expect("the replay one unit below the boundary refuses");
+    let error = run(need - 1).expect_err("the replay one unit below the boundary refuses");
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(ref refusal)
@@ -159,8 +157,7 @@ fn parameter_resolver_nonempty_edge_group_lookup_refuses_work() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     let directory = [directory_target(1, 116), directory_target(3, 116)];
-    let one_comparison_work =
-        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>());
+    let one_comparison_work = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>());
     let error = work_limit_at_amount(
         "iges parameter resolver edge groups",
         one_comparison_work,
@@ -188,8 +185,7 @@ fn parameter_resolver_nonempty_edge_group_lookup_refuses_work() {
 fn parameter_resolver_nonempty_graph_group_lookup_refuses_work() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
-    let one_comparison_work =
-        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>());
+    let one_comparison_work = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>());
     let error = work_limit_at_amount(
         "iges parameter resolver graph groups",
         one_comparison_work,

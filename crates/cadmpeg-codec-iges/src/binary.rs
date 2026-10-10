@@ -279,8 +279,9 @@ impl<'a> BitReader<'a> {
 
             ctx.reserve_capacity(&mut output, count, "iges binary string payload")?;
             let mut source_values = IntoIterator::into_iter(0..count);
-            while source_values.len() != 0 {
-                let Some(_) = ctx.next_charged(&mut source_values, "iges binary string payload")? else {
+            while !source_values.is_empty() {
+                let Some(_) = ctx.next_charged(&mut source_values, "iges binary string payload")?
+                else {
                     break;
                 };
                 let byte = self.read_bits(8)?;
@@ -800,7 +801,9 @@ fn parameter_text(
         }
         let mut source_values = IntoIterator::into_iter(values).enumerate();
         while source_values.len() != 0 {
-            let Some((index, value)) = ctx.next_charged(&mut source_values, "iges binary parameter text")? else {
+            let Some((index, value)) =
+                ctx.next_charged(&mut source_values, "iges binary parameter text")?
+            else {
                 break;
             };
             if index > 0 {
@@ -819,7 +822,8 @@ fn parameter_text(
     let mut output = ctx.copy_retained(entity_text.as_bytes(), "iges binary parameter text")?;
     let mut source_values = IntoIterator::into_iter(values);
     while source_values.len() != 0 {
-        let Some(value) = ctx.next_charged(&mut source_values, "iges binary parameter text")? else {
+        let Some(value) = ctx.next_charged(&mut source_values, "iges binary parameter text")?
+        else {
             break;
         };
         ctx.extend_retained_bytes(&mut output, b",", "iges binary parameter text")?;
@@ -911,7 +915,9 @@ fn render_cards(
     }
     let mut chunks = data.chunks(CARD_DATA_WIDTH);
     while chunks.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some(chunk) = ctx.next_charged(&mut chunks, "iges binary rendered cards")? else { break; };
+        let Some(chunk) = ctx.next_charged(&mut chunks, "iges binary rendered cards")? else {
+            break;
+        };
         render_card(output, chunk, section, sequence, ctx)?;
     }
     Ok(())
@@ -955,7 +961,8 @@ fn normalize_start(
     let mut primitive_storage = ctx.reserve_scoped(0, "IGES binary start primitives")?;
     let mut stream = ValueStream::new(payload, lengths, ctx);
     let mut text = Vec::new();
-    while !stream.pending.is_empty() || !stream.bits.is_empty() || ctx.resource_refusal().is_some() {
+    while !stream.pending.is_empty() || !stream.bits.is_empty() || ctx.resource_refusal().is_some()
+    {
         ctx.charge_work(1, "iges binary start primitives")?;
         let Some(value) = primitive_storage.with_storage(|| stream.next())? else {
             break;
@@ -1089,7 +1096,10 @@ fn read_parameters(
             "Parameter Directory pointer",
         )?;
         let mut values = Vec::new();
-        while !stream.pending.is_empty() || !stream.bits.is_empty() || ctx.resource_refusal().is_some() {
+        while !stream.pending.is_empty()
+            || !stream.bits.is_empty()
+            || ctx.resource_refusal().is_some()
+        {
             ctx.charge_work(1, "iges binary parameter primitives")?;
             let Some(value) = stream.next()? else {
                 break;
@@ -1127,7 +1137,9 @@ fn normalize_directory_and_parameters(
     let mut parameter_sequence = 1_u32;
     let mut source_values = IntoIterator::into_iter(parameters);
     while source_values.len() != 0 {
-        let Some(parameter) = ctx.next_charged(&mut source_values, "iges binary normalized parameters")? else {
+        let Some(parameter) =
+            ctx.next_charged(&mut source_values, "iges binary normalized parameters")?
+        else {
             break;
         };
         let directory_pointer =
@@ -1174,7 +1186,11 @@ fn normalize_directory_and_parameters(
         ctx.alloc_filled(directory.len(), 0_usize, "iges_binary_parameter_counts")?;
     let mut source_values = IntoIterator::into_iter(directory).enumerate();
     while source_values.len() != 0 {
-        let Some((directory_index, directory_record)) = ctx.next_charged(&mut source_values, "iges binary Directory parameter pointers")? else {
+        let Some((directory_index, directory_record)) = ctx.next_charged(
+            &mut source_values,
+            "iges binary Directory parameter pointers",
+        )?
+        else {
             break;
         };
         let pointer = directory_record.parameter_pointer();
@@ -1207,7 +1223,9 @@ fn normalize_directory_and_parameters(
     let mut directory_sequence = 1_u32;
     let mut source_values = IntoIterator::into_iter(directory).enumerate();
     while source_values.len() != 0 {
-        let Some((index, directory_record)) = ctx.next_charged(&mut source_values, "iges binary Directory cards")? else {
+        let Some((index, directory_record)) =
+            ctx.next_charged(&mut source_values, "iges binary Directory cards")?
+        else {
             break;
         };
         let first_sequence = directory_sequence;
@@ -1312,12 +1330,16 @@ fn normalize_directory_and_parameters(
     let mut parameter_sequence = 1_u32;
     let mut source_values = IntoIterator::into_iter(&normalized);
     while source_values.len() != 0 {
-        let Some(parameter) = ctx.next_charged(&mut source_values, "iges binary Parameter Data cards")? else {
+        let Some(parameter) =
+            ctx.next_charged(&mut source_values, "iges binary Parameter Data cards")?
+        else {
             break;
         };
         let mut source_values = IntoIterator::into_iter(&parameter.lines);
         while source_values.len() != 0 {
-            let Some(line) = ctx.next_charged(&mut source_values, "iges binary Parameter Data cards")? else {
+            let Some(line) =
+                ctx.next_charged(&mut source_values, "iges binary Parameter Data cards")?
+            else {
                 break;
             };
             render_parameter_line(
@@ -1358,7 +1380,10 @@ fn render_parameter_lines(
         )?;
         let mut chunks = data.chunks(PARAMETER_DATA_WIDTH);
         while chunks.len() != 0 || ctx.resource_refusal().is_some() {
-            let Some(chunk) = ctx.next_charged(&mut chunks, "iges binary macro parameter cards")? else { break; };
+            let Some(chunk) = ctx.next_charged(&mut chunks, "iges binary macro parameter cards")?
+            else {
+                break;
+            };
             cards.push(ctx.copy_retained(chunk, "iges binary macro parameter card bytes")?);
         }
         return Ok(cards);

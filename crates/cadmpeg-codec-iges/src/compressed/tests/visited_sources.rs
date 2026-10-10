@@ -78,9 +78,10 @@ fn compressed_parameter_lines_refuse_one_step_before_a_malformed_first_line() {
         "iges_compressed_parameter_lines",
         None,
     );
-    let refusal = match parse_data_entity(&lines, 0, None, b',', b';', &ctx) {
-        Err(CodecError::ResourceLimit(refusal)) => refusal,
-        _ => panic!("expected first Parameter Data line-step refusal"),
+    let Err(CodecError::ResourceLimit(refusal)) =
+        parse_data_entity(&lines, 0, None, b',', b';', &ctx)
+    else {
+        panic!("expected first Parameter Data line-step refusal");
     };
     drop(probe);
     assert_eq!(refusal.additional, 1);
@@ -108,9 +109,8 @@ fn compressed_normalization_refuses_one_step_for_each_fallible_output_pass() {
         policy.limits.max_work_units = u64::MAX;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
-        let refusal = match normalize(&source, &ctx) {
-            Err(CodecError::ResourceLimit(refusal)) => refusal,
-            _ => panic!("expected first output-pass step refusal"),
+        let Err(CodecError::ResourceLimit(refusal)) = normalize(&source, &ctx) else {
+            panic!("expected first output-pass step refusal");
         };
         drop(probe);
         assert_eq!(refusal.additional, 1);
@@ -146,9 +146,10 @@ fn compressed_parameter_card_writer_admits_actual_lines_and_propagates_refusal()
         None,
     );
     let mut output = Vec::new();
-    let refusal = match super::super::append_parameter_cards(&mut output, &entity, 1, &ctx) {
-        Err(CodecError::ResourceLimit(refusal)) => refusal,
-        _ => panic!("expected first Parameter card-step refusal"),
+    let Err(CodecError::ResourceLimit(refusal)) =
+        super::super::append_parameter_cards(&mut output, &entity, 1, &ctx)
+    else {
+        panic!("expected first Parameter card-step refusal");
     };
     drop(probe);
     assert_eq!((refusal.used, refusal.additional), (0, 1));
@@ -461,9 +462,14 @@ fn manual_compressed_global_sections_advance_after_the_last_actual_line() {
 
 #[test]
 fn compressed_hollerith_payload_propagates_each_resource_refusal() {
-    for dimension in [ResourceDimension::WorkUnits, ResourceDimension::CollectionItems,
-        ResourceDimension::MaterializedBytes, ResourceDimension::RetainedBytes,
-        ResourceDimension::Entities, ResourceDimension::RecursionDepth] {
+    for dimension in [
+        ResourceDimension::WorkUnits,
+        ResourceDimension::CollectionItems,
+        ResourceDimension::MaterializedBytes,
+        ResourceDimension::RetainedBytes,
+        ResourceDimension::Entities,
+        ResourceDimension::RecursionDepth,
+    ] {
         let operation = "test original Hollerith refusal";
         let error = cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
             let arena = DecodeArena::new();
@@ -481,21 +487,37 @@ fn compressed_hollerith_payload_propagates_each_resource_refusal() {
             let refused = match dimension {
                 ResourceDimension::WorkUnits => ctx.charge_work(1, operation),
                 ResourceDimension::CollectionItems => ctx.charge_collection_items(1, operation),
-                ResourceDimension::MaterializedBytes => ctx.reserve_scoped(1, operation).map(|_| ()),
+                ResourceDimension::MaterializedBytes => {
+                    ctx.reserve_scoped(1, operation).map(|_| ())
+                }
                 ResourceDimension::RetainedBytes => ctx.charge_retained(1, operation),
                 ResourceDimension::Entities => ctx.charge_entities(1, operation),
                 ResourceDimension::RecursionDepth => ctx.enter_nested(operation).map(|_| ()),
                 _ => panic!("Hollerith refusal dimension"),
             };
-            let Err(CodecError::ResourceLimit(first)) = refused else { panic!("original refusal"); };
+            let Err(CodecError::ResourceLimit(first)) = refused else {
+                panic!("original refusal");
+            };
             for _ in 0..64 {
                 assert!(matches!(hollerith_at(b"1Hx", 0, &ctx),
                     Err(CodecError::ResourceLimit(last)) if last == first));
             }
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
+            );
             Err::<(), CodecError>(CodecError::ResourceLimit(first))
         });
-        let CodecError::ResourceLimit(limit) = error else { panic!("resource refusal"); };
-        assert_eq!((limit.dimension, limit.operation, limit.used, limit.additional), (dimension, operation, 0, 1));
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("resource refusal");
+        };
+        assert_eq!(
+            (
+                limit.dimension,
+                limit.operation,
+                limit.used,
+                limit.additional
+            ),
+            (dimension, operation, 0, 1)
+        );
     }
 }

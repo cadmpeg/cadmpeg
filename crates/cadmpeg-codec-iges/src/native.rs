@@ -1483,14 +1483,23 @@ fn attribute_table_value_width(
     width: crate::parameter::AttributeDefinitionWidth,
     end: usize,
 ) -> Result<Option<std::num::NonZeroUsize>, UnstatableAttributeTable> {
-    if !width.descriptor_end.is_some_and(|required| required <= end) {
+    if width.descriptor_end.is_none_or(|required| required > end) {
         return Err(UnstatableAttributeTable::AttributeCount);
     }
-    width.values_per_row.map(std::num::NonZeroUsize::new).map_err(|defect| match defect {
-        crate::parameter::AttributeWidthDefect::AttributeCount => UnstatableAttributeTable::AttributeCount,
-        crate::parameter::AttributeWidthDefect::ValueCount { attribute } => UnstatableAttributeTable::ValueCount { attribute },
-        crate::parameter::AttributeWidthDefect::ValueTotal => UnstatableAttributeTable::ValueTotal,
-    })
+    width
+        .values_per_row
+        .map(std::num::NonZeroUsize::new)
+        .map_err(|defect| match defect {
+            crate::parameter::AttributeWidthDefect::AttributeCount => {
+                UnstatableAttributeTable::AttributeCount
+            }
+            crate::parameter::AttributeWidthDefect::ValueCount { attribute } => {
+                UnstatableAttributeTable::ValueCount { attribute }
+            }
+            crate::parameter::AttributeWidthDefect::ValueTotal => {
+                UnstatableAttributeTable::ValueTotal
+            }
+        })
 }
 
 /// The instance value grid from its cached definition width and row count.
@@ -3126,7 +3135,7 @@ pub(crate) fn store<'ctx>(
                 else {
                     break;
                 };
-                if !(entry.entity_type == 106) {
+                if entry.entity_type != 106 {
                     continue;
                 }
                 ctx.reserve_vec(&mut output, 1, "iges native copious data slots")?;
@@ -5201,7 +5210,7 @@ pub(crate) fn store<'ctx>(
                 else {
                     break;
                 };
-                if !(entry.entity_type == 302) {
+                if entry.entity_type != 302 {
                     continue;
                 }
                 ctx.reserve_vec(&mut output, 1, "iges native associativity definition slots")?;
@@ -6394,14 +6403,24 @@ pub(crate) fn store<'ctx>(
                         crate::graph::resolved_structure_sequence(references, entry.sequence, ctx)?;
                     // Structure admission resolves only Type 322 Form 0 definitions.
                     let definition = match definition_sequence {
-                        Some(sequence) if record.is_some() => attribute_definition_widths.get(
-                            sequence, ctx, "iges native attribute definition width lookup",
-                        )?.map(|width| {
-                            let end = ctx.get_btree_map(
-                                &primary_ends, &sequence, "iges native primary-end cache lookup",
-                            )?.copied().unwrap_or(0);
-                            Ok::<_, CodecError>(attribute_table_value_width(width, end))
-                        }).transpose()?,
+                        Some(sequence) if record.is_some() => attribute_definition_widths
+                            .get(
+                                sequence,
+                                ctx,
+                                "iges native attribute definition width lookup",
+                            )?
+                            .map(|width| {
+                                let end = ctx
+                                    .get_btree_map(
+                                        &primary_ends,
+                                        &sequence,
+                                        "iges native primary-end cache lookup",
+                                    )?
+                                    .copied()
+                                    .unwrap_or(0);
+                                Ok::<_, CodecError>(attribute_table_value_width(width, end))
+                            })
+                            .transpose()?,
                         _ => None,
                     };
                     let value_start = if entry.form == 0 { 1 } else { 2 };
@@ -6624,69 +6643,70 @@ pub(crate) fn store<'ctx>(
                         let independent_count = record
                             .integer(4)
                             .and_then(|value| usize::try_from(value).ok());
-                        let (independent_variables, dependent_values) = match (
-                            dependent_count,
-                            independent_count,
-                        ) {
-                            (Some(dependent_count), Some(independent_count))
-                                if dependent_count > 0 =>
-                            {
-                                let header_end = independent_count
-                                    .checked_mul(2)
-                                    .and_then(|width| 5_usize.checked_add(width))
-                                    .filter(|header_end| *header_end <= end);
-                                match header_end {
-                                    Some(header_end) => {
-                                        let count_start = 5 + independent_count;
-                                        let mut cursor = header_end;
-                                        let mut point_count = 1_usize;
-                                        let mut layout_storage;
-                                        let (mut layouts, storage) =
-                                            ctx.temporary_vec(0, "iges native tabular layouts")?;
-                                        layout_storage = storage;
-                                        let valid = ctx.all_by(
-                                            0..independent_count,
-                                            |offset| {
-                                                let Some(value_count) = record
-                                                    .integer(count_start + offset)
-                                                    .and_then(|count| usize::try_from(count).ok())
-                                                    .filter(|count| *count > 0)
-                                                else {
-                                                    return Ok(false);
-                                                };
-                                                let Some(next) = cursor
-                                                    .checked_add(value_count)
-                                                    .filter(|next| *next <= end)
-                                                else {
-                                                    return Ok(false);
-                                                };
-                                                let Some(total) =
-                                                    point_count.checked_mul(value_count)
-                                                else {
-                                                    return Ok(false);
-                                                };
-                                                ctx.push_scoped_vec(
-                                                    &mut layout_storage,
-                                                    &mut layouts,
-                                                    (offset, cursor, value_count),
-                                                    "iges native tabular layouts",
-                                                )?;
-                                                point_count = total;
-                                                cursor = next;
-                                                Ok(true)
-                                            },
-                                            "iges native tabular layout scan",
-                                        )?;
-                                        let dependent_value_count = valid
-                                            .then(|| dependent_count.checked_mul(point_count))
-                                            .flatten()
-                                            .filter(|count| {
-                                                end.checked_sub(cursor)
-                                                    .is_some_and(|available| *count <= available)
-                                            });
-                                        match dependent_value_count {
-                                            Some(count) => {
-                                                let independent_variables = ctx
+                        let (independent_variables, dependent_values) =
+                            match (dependent_count, independent_count) {
+                                (Some(dependent_count), Some(independent_count))
+                                    if dependent_count > 0 =>
+                                {
+                                    let header_end = independent_count
+                                        .checked_mul(2)
+                                        .and_then(|width| 5_usize.checked_add(width))
+                                        .filter(|header_end| *header_end <= end);
+                                    match header_end {
+                                        Some(header_end) => {
+                                            let count_start = 5 + independent_count;
+                                            let mut cursor = header_end;
+                                            let mut point_count = 1_usize;
+                                            let mut layout_storage;
+                                            let (mut layouts, storage) = ctx
+                                                .temporary_vec(0, "iges native tabular layouts")?;
+                                            layout_storage = storage;
+                                            let valid = ctx.all_by(
+                                                0..independent_count,
+                                                |offset| {
+                                                    let Some(value_count) = record
+                                                        .integer(count_start + offset)
+                                                        .and_then(|count| {
+                                                            usize::try_from(count).ok()
+                                                        })
+                                                        .filter(|count| *count > 0)
+                                                    else {
+                                                        return Ok(false);
+                                                    };
+                                                    let Some(next) = cursor
+                                                        .checked_add(value_count)
+                                                        .filter(|next| *next <= end)
+                                                    else {
+                                                        return Ok(false);
+                                                    };
+                                                    let Some(total) =
+                                                        point_count.checked_mul(value_count)
+                                                    else {
+                                                        return Ok(false);
+                                                    };
+                                                    ctx.push_scoped_vec(
+                                                        &mut layout_storage,
+                                                        &mut layouts,
+                                                        (offset, cursor, value_count),
+                                                        "iges native tabular layouts",
+                                                    )?;
+                                                    point_count = total;
+                                                    cursor = next;
+                                                    Ok(true)
+                                                },
+                                                "iges native tabular layout scan",
+                                            )?;
+                                            let dependent_value_count = valid
+                                                .then(|| dependent_count.checked_mul(point_count))
+                                                .flatten()
+                                                .filter(|count| {
+                                                    end.checked_sub(cursor).is_some_and(
+                                                        |available| *count <= available,
+                                                    )
+                                                });
+                                            match dependent_value_count {
+                                                Some(count) => {
+                                                    let independent_variables = ctx
                                                     .try_collect_retained_with::<_, _, CodecError>(
                                                         layouts,
                                                         "iges native tabular independent variables",
@@ -6703,24 +6723,26 @@ pub(crate) fn store<'ctx>(
                                                 })
                                                         },
                                                     )?;
-                                                drop(layout_storage);
-                                                (
-                                                    independent_variables,
-                                                    ctx.collect_indexed_vec(
-                                                        count,
-                                                        "iges native tabular dependent values",
-                                                        |offset| Ok(record.number(cursor + offset)),
-                                                    )?,
-                                                )
+                                                    drop(layout_storage);
+                                                    (
+                                                        independent_variables,
+                                                        ctx.collect_indexed_vec(
+                                                            count,
+                                                            "iges native tabular dependent values",
+                                                            |offset| {
+                                                                Ok(record.number(cursor + offset))
+                                                            },
+                                                        )?,
+                                                    )
+                                                }
+                                                None => (Vec::new(), Vec::new()),
                                             }
-                                            None => (Vec::new(), Vec::new()),
                                         }
+                                        None => (Vec::new(), Vec::new()),
                                     }
-                                    None => (Vec::new(), Vec::new()),
                                 }
-                            }
-                            _ => (Vec::new(), Vec::new()),
-                        };
+                                _ => (Vec::new(), Vec::new()),
+                            };
                         NativePropertyValue::TabularData {
                             property_type: record.integer(2),
                             declared_dependent_count: record.integer(3),
