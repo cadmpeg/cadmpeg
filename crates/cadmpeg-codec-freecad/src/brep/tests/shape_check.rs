@@ -15,18 +15,10 @@ fn shape_check_invalid_location_skips_unvisited_locations_and_factors() {
             .unwrap()
             .clone();
         facts.locations = vec![
-            TextLocation {
-                factors: vec![
-                    LocationFactor {
-                        location: 0,
-                        power: 1
-                    };
-                    count
-                ],
-                transform: Transform::identity(),
-            };
+            TextLocation { factors: Vec::new(), transform: Transform::identity() };
             count
         ];
+        facts.locations[0].factors = vec![LocationFactor { location: 0, power: 1 }; count];
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 32;
