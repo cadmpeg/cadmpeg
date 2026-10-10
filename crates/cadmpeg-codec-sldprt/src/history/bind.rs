@@ -811,10 +811,10 @@ fn face_owner_bodies<'a, 'ctx>(
     ),
     CodecError,
 > {
-    let mut storage = ctx.reserve_scoped(0, "index SLDPRT face owner bodies")?;
+    let mut region_storage = ctx.reserve_scoped(0, "index SLDPRT face owner regions")?;
     let mut region_bodies = HashMap::new();
     for region in ctx.admit_iter(regions, "index SLDPRT face owner regions")? {
-        storage.with_storage(|| {
+        region_storage.with_storage(|| {
             ctx.insert_hash_map(
                 &mut region_bodies,
                 region.id.as_str(),
@@ -823,6 +823,7 @@ fn face_owner_bodies<'a, 'ctx>(
             )
         })?;
     }
+    let mut shell_storage = ctx.reserve_scoped(0, "index SLDPRT face owner shells")?;
     let mut shell_bodies = HashMap::new();
     for shell in ctx.admit_iter(shells, "index SLDPRT face owner shells")? {
         let Some(&body) = ctx.get_hash_map(
@@ -833,7 +834,7 @@ fn face_owner_bodies<'a, 'ctx>(
         else {
             continue;
         };
-        storage.with_storage(|| {
+        shell_storage.with_storage(|| {
             ctx.insert_hash_map(
                 &mut shell_bodies,
                 shell.id.as_str(),
@@ -842,6 +843,8 @@ fn face_owner_bodies<'a, 'ctx>(
             )
         })?;
     }
+    drop((region_bodies, region_storage));
+    let mut storage = ctx.reserve_scoped(0, "index SLDPRT face owner bodies")?;
     let mut owners = HashMap::new();
     for face in ctx.admit_iter(faces, "index SLDPRT face owner bodies")? {
         let Some(&body) = ctx.get_hash_map(
@@ -861,6 +864,7 @@ fn face_owner_bodies<'a, 'ctx>(
             )
         })?;
     }
+    drop((shell_bodies, shell_storage));
     Ok((owners, storage))
 }
 
@@ -1353,4 +1357,88 @@ mod tests {
     fn sketch_binding_refuses_work_limit() {
         sketch_binding_refusal(ResourceDimension::WorkUnits);
     }
+
+    fn face_owner_fixture() -> cadmpeg_ir::codec::DecodeResult {
+        use cadmpeg_ir::codec::{Codec, DecodeOptions};
+        let source = crate::test_support::container::sldprt_with_body(
+            &crate::test_support::parasolid::triangle_body(),
+        );
+        crate::SldprtCodec
+            .decode(&mut std::io::Cursor::new(source), &DecodeOptions::default())
+            .expect("synthetic topology fixture")
+    }
+
+    #[cfg(target_pointer_width = "64")]
+    #[test]
+    fn face_owner_lookup_retires_region_and_shell_tables() {
+        // Core admits four buckets of (&str, &BodyId):
+        // 4 * 24 + 15 alignment + 4 control bytes + 16 trailing bytes = 131.
+        // Region and shell overlap, then shell and face overlap: peak 262.
+        const TABLE_BYTES: u64 = 131;
+        const PEAK_BYTES: u64 = 262;
+        let fixture = face_owner_fixture();
+        let model = &fixture.ir().model;
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = PEAK_BYTES;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root fits");
+        for _ in 0..64 {
+            let storage;
+            let owners;
+            (owners, storage) = super::face_owner_bodies(
+                &ctx, &model.faces, &model.shells, &model.regions,
+            ).expect("two simultaneous one-entry tables fit");
+            assert_eq!(owners.len(), 1);
+            assert_eq!(owners.get(model.faces[0].id.as_str()).copied(), Some(&model.bodies[0].id));
+            let probe = ctx.reserve_scoped(TABLE_BYTES, "reuse retired face-owner tables")
+                .expect("only returned face lookup backing remains charged");
+            drop(probe);
+            drop((owners, storage));
+            let probe = ctx.reserve_scoped(PEAK_BYTES, "reuse all face-owner scratch")
+                .expect("all lookup backing released while source topology remains alive");
+            drop(probe);
+        }
+        assert!(ctx.resource_refusal().is_none());
+        ctx.finish_session().expect("no retained lookup copies");
+    }
+
+    #[cfg(target_pointer_width = "64")]
+    #[test]
+    fn face_owner_lookup_preserves_original_shell_refusal() {
+        let fixture = face_owner_fixture();
+        let model = &fixture.ir().model;
+        for (dimension, cap, used, additional) in [
+            (ResourceDimension::MaterializedBytes, 261, 131, 131),
+            (ResourceDimension::CollectionItems, 1, 1, 1),
+        ] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = 0;
+            match dimension {
+                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
+                ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+                _ => unreachable!("fixed test dimensions"),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root fits");
+            let result = super::face_owner_bodies(
+                &ctx, &model.faces, &model.shells, &model.regions,
+            );
+            let limit = ctx.resource_refusal().expect("original resource refusal");
+            assert!(matches!(&result, Err(cadmpeg_core::CodecError::ResourceLimit(first)) if first == &limit));
+            assert_eq!(limit.dimension, dimension);
+            assert_eq!(limit.operation, "index SLDPRT face owner shells");
+            assert_eq!(limit.limit, cap);
+            assert_eq!(limit.used, used);
+            assert_eq!(limit.additional, additional);
+            assert!(matches!(ctx.charge_work(0, "probe original face-owner refusal"),
+                Err(cadmpeg_core::CodecError::ResourceLimit(first)) if first == limit));
+            drop(result);
+            assert!(matches!(ctx.finish_session(),
+                Err(cadmpeg_core::CodecError::ResourceLimit(first)) if first == limit));
+        }
+    }
+
 }
