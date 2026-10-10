@@ -278,9 +278,6 @@ pub(crate) fn transfer_neutral(
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
     }
-    if records.is_empty() && joints.is_empty() {
-        return Ok((Vec::new(), Vec::new()));
-    }
     let mut storage = ctx.reserve_scoped(0, "fcstd neutral product lookups")?;
     let record_by_object = storage.with_storage(|| product_record_index(ctx, records))?;
     let mut component_objects = Vec::new();
@@ -403,9 +400,6 @@ pub(crate) fn transfer_neutral(
         "fcstd product component name sort",
     )?;
     ctx.dedup_vec(&mut component_objects, "fcstd product component name dedup")?;
-    if records.is_empty() && component_objects.is_empty() {
-        return Ok((Vec::new(), Vec::new()));
-    }
 
     let owner_index = ctx.collect_scoped_btree_groups(
         properties
@@ -437,6 +431,10 @@ pub(crate) fn transfer_neutral(
                 })?;
             }
         }
+    }
+
+    if records.is_empty() && component_objects.is_empty() {
+        return Ok((Vec::new(), Vec::new()));
     }
 
     let definition_id = |object: &str| -> Result<ProductDefinitionId, CodecError> {
@@ -524,8 +522,7 @@ pub(crate) fn transfer_neutral(
                 record.object.as_str(),
                 "fcstd product parent lookup",
             )?
-            .map(|object| container_occurrence_id(object))
-            .transpose()?;
+            .copied();
         let prototype_transform = storage.with_storage(|| {
             linked_prototype_transform(
                 ctx,
@@ -623,20 +620,13 @@ pub(crate) fn transfer_neutral(
                     PrototypeReference::Unresolved {}
                 },
                 parent: parent
-                    .as_ref()
-                    .map(|occurrence| {
-                        occurrence
-                            .try_clone_for_decode(ctx, "fcstd product parent identity")
+                    .map(|object| {
+                        container_occurrence_id(object)
                             .map(|occurrence| OccurrenceParent::Occurrence { occurrence })
                     })
                     .transpose()?
                     .unwrap_or(OccurrenceParent::Root {}),
-                ordinal: u32::try_from(index).map_err(|_| {
-                    CodecError::malformed(format_args!(
-                        "product occurrence {} element index exceeds u32",
-                        record.id
-                    ))
-                })?,
+                ordinal: 0,
                 transform: local_transform,
                 linked_prototype: (record.link_transform() == Some(true))
                     .then_some(prototype_transform),
@@ -1076,14 +1066,12 @@ fn parse_placement_list(
     else {
         return Ok(Vec::new());
     };
-    let positions = list_layout::<7>(
-        ctx,
-        view,
-        "PlacementList",
-        "fcstd product placement positions",
-    )?;
+    let mut positions = list_layout::<7>(view, "PlacementList")?;
     let mut placements = ctx.collection_vec(positions.len(), "fcstd product placement list")?;
-    for positions in positions {
+    while positions.len() != 0 {
+        let Some(positions) = ctx.next_charged(&mut positions, "fcstd product placement positions")? else {
+            break;
+        };
         let [px, py, pz, qx, qy, qz, qw] = positions.map(read_real);
         let values = [px?, py?, pz?, qx?, qy?, qz?, qw?];
         placements.push(placement_components(&values).ok_or_else(|| {
@@ -1111,9 +1099,12 @@ fn parse_vector_list(
     else {
         return Ok(Vec::new());
     };
-    let positions = list_layout::<3>(ctx, view, "ScaleList", "fcstd product scale positions")?;
+    let mut positions = list_layout::<3>(view, "ScaleList")?;
     let mut vectors = ctx.collection_vec(positions.len(), "fcstd product scale list")?;
-    for positions in positions {
+    while positions.len() != 0 {
+        let Some(positions) = ctx.next_charged(&mut positions, "fcstd product scale positions")? else {
+            break;
+        };
         let [x, y, z] = positions.map(read_real);
         vectors.push(
             cadmpeg_ir::units::FiniteVector::new([x?, y?, z?]).ok_or_else(|| {
@@ -1310,10 +1301,8 @@ struct RealPosition<'a> {
 }
 
 fn list_layout<'a, const N: usize>(
-    ctx: &DecodeContext<'_>,
     view: View<'a>,
     name: &str,
-    operation: &'static str,
 ) -> Result<impl ExactSizeIterator<Item = [RealPosition<'a>; N]>, CodecError> {
     let len = view.end() - view.start();
     if len < link_array::LEN {
@@ -1342,7 +1331,7 @@ fn list_layout<'a, const N: usize>(
             "{name} count {count} does not match {len} bytes"
         )));
     };
-    Ok(ctx.admit_iter(0..count, operation)?.map(move |index| {
+    Ok((0..count).map(move |index| {
         std::array::from_fn(|component| RealPosition {
             view,
             offset: view.start() + link_array::LEN + (index * N + component) * width.bytes(),

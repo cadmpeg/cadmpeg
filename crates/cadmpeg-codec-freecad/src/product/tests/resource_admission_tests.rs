@@ -2,7 +2,7 @@
 //! Product traversal and scratch-storage budget regressions.
 
 use super::super::{
-    bool_list, integer_property, list_layout, metadata_string, parse_finite, product_cycle_nodes,
+    bool_list, integer_property, metadata_string, parse_placement_list, parse_finite, product_cycle_nodes,
     require_root, transfer,
 };
 use crate::native::{PropertyBody, PropertyFamily, PropertyRecord, RetainedXml, ValueRecord};
@@ -129,22 +129,19 @@ fn product_owner_index_visits_and_storage_refuse_at_core_boundaries() {
 
 #[test]
 fn product_owner_index_and_acyclic_graph_keep_scratch_out_of_retained_budget() {
-    let item = property(
-        "Unused",
-        "App::PropertyString",
-        "<Property><String value=\"test\"/></Property>",
-    );
+    let item = property("Unused", "App::PropertyString", "<Property><String value=\"test\"/></Property>");
     let records = [super::node("A", &["B"]), super::node("B", &[])];
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
-    assert!(transfer(&ctx, &[], &[item], &BTreeMap::new())
-        .expect("scoped owners")
-        .is_empty());
-    assert!(product_cycle_nodes(&ctx, &records)
-        .expect("scoped graph")
-        .is_empty());
+    let index = ctx.collect_scoped_btree_groups(std::iter::once((item.owner.as_str(), &item)), "fcstd product owner index")
+        .expect("scoped owners");
+    let storage = index.1;
+    let owners = index.0;
+    assert!(std::ptr::eq(owners[item.owner.as_str()][0], &item));
+    drop((owners, storage));
+    assert!(product_cycle_nodes(&ctx, &records).expect("scoped graph").is_empty());
 }
 
 #[test]
@@ -152,23 +149,14 @@ fn product_real_list_range_refuses_before_first_position() {
     let mut bytes = vec![0xff; 9];
     bytes.extend_from_slice(&1_u32.to_le_bytes());
     bytes.extend_from_slice(&[0; 7 * 8]);
-    let view = View::over_retained(&bytes)
-        .child(9, bytes.len())
-        .expect("bounded list");
-    refusal_at(
-        ResourceDimension::WorkUnits,
-        &[],
-        "fcstd product placement positions",
-        |ctx| {
-            list_layout::<7>(
-                ctx,
-                view,
-                "PlacementList",
-                "fcstd product placement positions",
-            )
-            .map(|_| ())
-        },
-    );
+    let view = View::over_retained(&bytes).child(9, bytes.len()).expect("bounded list");
+    let mut item = property("PlacementList", "App::PropertyPlacementList", "<Property><PlacementList/></Property>");
+    let PropertyBody::Persisted { side_entries, .. } = &mut item.body else { panic!("persisted list") };
+    side_entries.push("positions".into());
+    let entries = BTreeMap::from([("positions".into(), view)]);
+    refusal_at(ResourceDimension::WorkUnits, &[], "fcstd product placement positions", |ctx| {
+        parse_placement_list(ctx, &[&item], &entries)
+    });
 }
 
 #[test]
@@ -290,4 +278,51 @@ fn product_cycle_scan_refuses_at_traversal_and_lookup_boundaries() {
             product_cycle_nodes(ctx, &records)
         });
     }
+}
+
+fn invalid_binary_prefix(name: &str, type_name: &str, root: &str, components: usize, diagnostic: &str) {
+        let mut item = property(name, type_name, &format!("<Property><{root}/></Property>"));
+        let PropertyBody::Persisted { side_entries, .. } = &mut item.body else { panic!("persisted list") };
+        side_entries.push("list".into());
+        let bytes = |count: u32| {
+            let mut bytes = count.to_le_bytes().to_vec();
+            for _ in 0..count {
+                for axis in 0..components {
+                    let value = if components == 3 && axis == 0 { f64::NAN } else { 0.0 };
+                    bytes.extend_from_slice(&value.to_le_bytes());
+                }
+            }
+            bytes
+        };
+        let run = |ctx: &DecodeContext<'_>, bytes: &[u8]| {
+            let entries = BTreeMap::from([("list".into(), View::over_retained(bytes))]);
+            let result = if components == 7 {
+                super::super::parse_placement_list(ctx, &[&item], &entries).map(|_| ())
+            } else {
+                super::super::parse_vector_list(ctx, &[&item], &entries).map(|_| ())
+            };
+            let error = result.expect_err("invalid first tuple");
+            assert!(matches!(error, CodecError::Malformed(message) if message == diagnostic));
+            assert_eq!(ctx.resource_refusal(), None);
+        };
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::default();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        run(&ctx, &bytes(1));
+        let CodecError::ResourceLimit(limit) = ctx.charge_work(u64::MAX, "list work measure").expect_err("work overflow") else { panic!("work refusal") };
+        let cap = limit.used;
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        run(&ctx, &bytes(u32::try_from(cap + 1).expect("finite count")));
+ }
+
+#[test]
+fn product_placement_list_rejects_first_invalid_tuple_without_prepaying_suffix() {
+    invalid_binary_prefix("PlacementList", "App::PropertyPlacementList", "PlacementList", 7, "PlacementList contains an invalid placement value");
+}
+
+#[test]
+fn product_scale_list_rejects_first_invalid_tuple_without_prepaying_suffix() {
+    invalid_binary_prefix("ScaleList", "App::PropertyVectorList", "VectorList", 3, "element_scales: scale vector components must be finite");
 }

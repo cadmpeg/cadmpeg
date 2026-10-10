@@ -5,7 +5,7 @@ use super::super::{linked_object_names, nonempty_subelements, product_record_ind
 use crate::native::{self, ProductNodeRecord};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 /// Measure Work only after the oracle has succeeded and has not fused.
 fn successful_work(oracle: impl FnOnce(&DecodeContext<'_>) -> Result<(), CodecError>) -> u64 {
@@ -26,23 +26,9 @@ fn successful_work(oracle: impl FnOnce(&DecodeContext<'_>) -> Result<(), CodecEr
 
 fn duplicate_prefix_work(records: &[ProductNodeRecord]) -> u64 {
     successful_work(|ctx| {
-        let mut index = HashMap::new();
-        let mut visits = records.iter();
-        for _ in 0..2 {
-            let record = ctx
-                .next_charged(&mut visits, "fcstd product record index")?
-                .expect("two prefix records");
-            ctx.insert_hash_map(
-                &mut index,
-                record.object.as_str(),
-                record,
-                "fcstd product record index",
-            )?;
-        }
-        ctx.format_retained(
-            format_args!("product object A has duplicate product records"),
-            "fcstd product duplicate record",
-        )?;
+        let error = product_record_index(ctx, records).expect_err("duplicate prefix");
+        assert!(matches!(error, CodecError::Malformed(message)
+            if message == "product object A has duplicate product records"));
         Ok(())
     })
 }
@@ -66,7 +52,7 @@ fn product_duplicate_record_does_not_prepay_long_suffix() {
 #[test]
 fn product_index_nested_refusal_does_not_prepay_long_suffix() {
     let prefix = [super::node("A", &[]), super::node("B", &[])];
-    let cap = duplicate_prefix_work(&prefix);
+    let cap = duplicate_prefix_work(&[super::node("A", &[]), super::node("A", &[])]);
     let mut records = prefix.to_vec();
     records.extend((0..=cap).map(|_| super::node("C", &[])));
     let arena = DecodeArena::new();
