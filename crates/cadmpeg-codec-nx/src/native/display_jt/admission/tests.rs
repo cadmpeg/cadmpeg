@@ -239,7 +239,7 @@ fn display_jt_native_validation_propagates_resource_limit() {
             let error = crate::NxCodec::validate_native(ctx, &ir).unwrap_err();
             assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "construct canonical native value"));
+            && limit.operation == "load typed native record"));
             crate::test_support::with_decode_context(|service| {
                 assert!(crate::NxCodec::validate_native(service, &ir)
                     .unwrap()
@@ -250,7 +250,7 @@ fn display_jt_native_validation_propagates_resource_limit() {
 }
 
 #[test]
-fn display_jt_native_arena_refuses_before_value_clone() {
+fn display_jt_native_arena_refuses_scoped_identity_before_reading() {
     let namespace: NativeNamespace = serde_json::from_value(graph_wire()).unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.native.0.insert("nx".into(), namespace);

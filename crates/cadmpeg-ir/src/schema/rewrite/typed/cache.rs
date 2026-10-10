@@ -15,17 +15,20 @@ pub(super) struct ReplacementIndex<'ctx> {
 }
 
 impl<'ctx> ReplacementIndex<'ctx> {
-    pub(super) fn build<K: AsRef<str> + 'ctx>(
+    pub(super) fn build<K: AsRef<str> + 'ctx, S>(
         ctx: &DecodeContext<'_>,
-        replacements: impl ExactSizeIterator<Item = (&'ctx K, &'ctx String)>,
+        replacements: S,
         storage: &mut ScopedReservation<'_>,
         operation: &'static str,
-    ) -> Result<Self, CodecError> {
-        ctx.charge_work(0, operation)?;
+    ) -> Result<Self, CodecError>
+    where
+        S: cadmpeg_core::decode::iter_source::IterSource,
+        S::Iter: ExactSizeIterator<Item = (&'ctx K, &'ctx String)>,
+    {
+        let replacements = ctx.admit_iter(replacements, operation)?;
         let mut values: Vec<(&'ctx str, &'ctx str)> = Vec::new();
         ctx.reserve_scoped_vec(storage, &mut values, replacements.len(), operation)?;
         for (source, target) in replacements {
-            ctx.charge_work(1, operation)?;
             let source = source.as_ref();
             if let Some((previous, _)) = values.last() {
                 if compare(ctx, previous, source, operation)? != Ordering::Less {
@@ -45,7 +48,6 @@ impl<'ctx> ReplacementIndex<'ctx> {
         source: &str,
         operation: &'static str,
     ) -> Result<Option<&'ctx str>, ResourceLimit> {
-        ctx.charge_work_limit(0, operation)?;
         let mut low = 0;
         let mut high = self.values.len();
         while low < high {

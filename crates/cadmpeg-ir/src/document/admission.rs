@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed storage and work admission for model construction.
 
+use std::collections::HashMap;
 use std::convert::Infallible;
 use std::fmt;
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 
 use crate::ids::{ProceduralCurveId, ProceduralSurfaceId};
@@ -52,6 +53,37 @@ pub trait ModelAdmission {
         id: &ProceduralCurveId,
         operation: &'static str,
     ) -> Result<ProceduralCurveId, Self::Error>;
+
+    /// An empty temporary index of arena positions by identity.
+    fn positions(&self, operation: &'static str) -> Result<IdentityPositions<'_>, Self::Error>;
+
+    /// Hash identity text for a positions index.
+    fn hash_identity(&self, identity: &str, operation: &'static str) -> Result<u64, Self::Error>;
+
+    /// Record an arena position under an identity hash.
+    fn push_position(
+        &self,
+        positions: &mut IdentityPositions<'_>,
+        hash: u64,
+        position: usize,
+        operation: &'static str,
+    ) -> Result<(), Self::Error>;
+
+    /// The positions recorded under an identity hash, in recording order.
+    /// Distinct identities can share a hash, so callers compare each
+    /// candidate's identity.
+    fn positions_of<'p>(
+        &self,
+        positions: &'p IdentityPositions<'_>,
+        hash: u64,
+        operation: &'static str,
+    ) -> Result<&'p [usize], Self::Error>;
+}
+
+/// Arena positions grouped by identity hash, held in temporary storage.
+pub struct IdentityPositions<'s> {
+    slots: HashMap<u64, Vec<usize>>,
+    storage: Option<ScopedReservation<'s>>,
 }
 
 /// Standard allocation for reconstruction without decode admission.
@@ -93,6 +125,33 @@ impl ModelAdmission for StandardAdmission {
     ) -> Result<ProceduralCurveId, Infallible> {
         Ok(id.clone())
     }
+    fn positions(&self, _operation: &'static str) -> Result<IdentityPositions<'_>, Infallible> {
+        Ok(IdentityPositions {
+            slots: HashMap::new(),
+            storage: None,
+        })
+    }
+    fn hash_identity(&self, identity: &str, _operation: &'static str) -> Result<u64, Infallible> {
+        Ok(crate::index::identity_hash(identity))
+    }
+    fn push_position(
+        &self,
+        positions: &mut IdentityPositions<'_>,
+        hash: u64,
+        position: usize,
+        _operation: &'static str,
+    ) -> Result<(), Infallible> {
+        positions.slots.entry(hash).or_default().push(position);
+        Ok(())
+    }
+    fn positions_of<'p>(
+        &self,
+        positions: &'p IdentityPositions<'_>,
+        hash: u64,
+        _operation: &'static str,
+    ) -> Result<&'p [usize], Infallible> {
+        Ok(positions.slots.get(&hash).map_or(&[][..], Vec::as_slice))
+    }
 }
 
 impl ModelAdmission for DecodeContext<'_> {
@@ -129,5 +188,49 @@ impl ModelAdmission for DecodeContext<'_> {
         operation: &'static str,
     ) -> Result<ProceduralCurveId, CodecError> {
         id.try_clone_for_decode(self, operation)
+    }
+    fn positions(&self, operation: &'static str) -> Result<IdentityPositions<'_>, CodecError> {
+        Ok(IdentityPositions {
+            slots: HashMap::new(),
+            storage: Some(self.reserve_scoped(0, operation)?),
+        })
+    }
+    fn hash_identity(&self, identity: &str, operation: &'static str) -> Result<u64, CodecError> {
+        self.charge_work(u64_from_index(identity.len()), operation)?;
+        Ok(crate::index::identity_hash(identity))
+    }
+    fn push_position(
+        &self,
+        positions: &mut IdentityPositions<'_>,
+        hash: u64,
+        position: usize,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        let IdentityPositions { slots, storage } = positions;
+        let mut push = || match self.entry_hash_map(slots, hash, operation)? {
+            std::collections::hash_map::Entry::Occupied(mut slot) => {
+                self.push_vec(slot.get_mut(), position, operation)
+            }
+            std::collections::hash_map::Entry::Vacant(slot) => {
+                let mut list = Vec::new();
+                self.push_vec(&mut list, position, operation)?;
+                slot.insert(list);
+                Ok(())
+            }
+        };
+        match storage {
+            Some(storage) => storage.with_storage(push),
+            None => push(),
+        }
+    }
+    fn positions_of<'p>(
+        &self,
+        positions: &'p IdentityPositions<'_>,
+        hash: u64,
+        operation: &'static str,
+    ) -> Result<&'p [usize], CodecError> {
+        Ok(self
+            .get_hash_map(&positions.slots, &hash, operation)?
+            .map_or(&[][..], Vec::as_slice))
     }
 }

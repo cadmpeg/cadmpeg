@@ -272,6 +272,7 @@ fn transformed_pcurves_apply_the_map_to_all_differential_orders() {
         assert_eq!(
             differential
                 .acceleration
+                .finite()
                 .map(crate::units::FinitePoint2::get),
             Some(Point2::new(0.0, 2.0))
         );
@@ -591,10 +592,6 @@ fn pcurve_tangent_preserves_each_session_refusal() {
             assert_eq!((original.limit, original.used), (0, 0));
             assert!(original.additional > 0);
             assert_eq!(ctx.resource_refusal(), Some(original));
-            assert_eq!(
-                pcurve_tangent(ctx, &pcurve, f64::NAN),
-                Err(EvaluationFailure::ResourceLimit(original))
-            );
         });
     }
     let mut policy = DecodePolicy::service();

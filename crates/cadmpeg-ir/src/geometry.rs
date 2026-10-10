@@ -179,7 +179,6 @@ impl SolvedSurfaceGeometry {
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
-        ctx.charge_work(1, operation)?;
         Ok(match self {
             Self::Plane(value) => Self::Plane(*value),
             Self::Cylinder(value) => Self::Cylinder(*value),
@@ -189,6 +188,7 @@ impl SolvedSurfaceGeometry {
             Self::Nurbs(value) => Self::Nurbs(value.try_clone_for_decode(ctx, operation)?),
             Self::Polygonal(value) => Self::Polygonal(value.try_clone_for_decode(ctx, operation)?),
             Self::Transformed(value) => {
+                ctx.charge_work(1, operation)?;
                 let _depth = ctx.enter_nested(operation)?;
                 charge_decode_copy::<Self>(1, ctx, operation)?;
                 Self::Transformed(PlacedSurface {
@@ -468,7 +468,6 @@ impl SolvedCurveGeometry {
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
-        ctx.charge_work(1, operation)?;
         Ok(match self {
             Self::Line(value) => Self::Line(*value),
             Self::Circle(value) => Self::Circle(*value),
@@ -482,8 +481,7 @@ impl SolvedCurveGeometry {
             } => {
                 let mut copy = Vec::new();
                 ctx.reserve_vec(&mut copy, segments.len(), operation)?;
-                ctx.charge_work(u64_from_index(segments.len()), operation)?;
-                for segment in segments {
+                for segment in ctx.admit_iter(&segments[..], operation)? {
                     copy.push(CompositeCurveSegment {
                         curve: segment.curve.try_clone_for_decode(ctx, operation)?,
                         same_sense: segment.same_sense,
@@ -564,10 +562,10 @@ impl PlacedCurve {
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
+        ctx.charge_work(1, operation)?;
         let _depth = ctx.enter_nested(operation)?;
         charge_decode_copy::<SolvedCurveGeometry>(1, ctx, operation)?;
         let basis = if let SolvedCurveGeometry::Transformed(placed) = self.basis.as_ref() {
-            ctx.charge_work(1, operation)?;
             SolvedCurveGeometry::Transformed(placed.try_clone_for_decode(ctx, operation)?)
         } else {
             self.basis.try_clone_for_decode(ctx, operation)?
@@ -1046,21 +1044,71 @@ impl CompoundCurveConstruction {
         components: Vec<CompoundComponent<CurveId>>,
         cache: Option<LegacyCache>,
     ) -> Result<Self, &'static str> {
+        Self::validate(parameters, components, cache, |_, _| {
+            Ok::<_, &'static str>(())
+        })?
+    }
+
+    /// Admit visited parameters and components within the decode budget.
+    pub fn try_new_for_decode(
+        ctx: &DecodeContext<'_>,
+        parameters: Vec<f64>,
+        components: Vec<CompoundComponent<CurveId>>,
+        cache: Option<LegacyCache>,
+    ) -> Result<Result<Self, &'static str>, CodecError> {
+        Self::validate(parameters, components, cache, |operation, work| {
+            ctx.charge_work(work, operation)
+        })
+    }
+
+    fn validate<E>(
+        parameters: Vec<f64>,
+        components: Vec<CompoundComponent<CurveId>>,
+        cache: Option<LegacyCache>,
+        mut visit: impl FnMut(&'static str, u64) -> Result<(), E>,
+    ) -> Result<Result<Self, &'static str>, E> {
         const INVALID: &str = "compound curve parameters must be finite";
         if components.is_empty() {
-            return Err("compound curve components must not be empty");
+            return Ok(Err("compound curve components must not be empty"));
         }
-        let [parameters] = FiniteReal::lanes([parameters]).ok_or(INVALID)?;
-        let components = components
+        for parameter in &parameters {
+            visit("compound curve parameter admission", 1)?;
+            if !parameter.is_finite() {
+                return Ok(Err(INVALID));
+            }
+        }
+        for component in &components {
+            visit("compound curve component admission", 1)?;
+            if !component.parameter.is_finite() {
+                return Ok(Err(INVALID));
+            }
+        }
+        // Parameter conversion checks and maps each scalar. Component conversion
+        // checks and maps each component. Both input allocations move into the
+        // construction without storage admission.
+        visit(
+            "compound curve parameter admission",
+            2 * cadmpeg_core::decode::u64_from_index(parameters.len()),
+        )?;
+        let Some([parameters]) = FiniteReal::lanes([parameters]) else {
+            return Ok(Err(INVALID));
+        };
+        visit(
+            "compound curve component admission",
+            cadmpeg_core::decode::u64_from_index(components.len()),
+        )?;
+        let Some(components) = components
             .into_iter()
             .map(CompoundComponent::admit)
             .collect::<Option<Vec<_>>>()
-            .ok_or(INVALID)?;
-        Ok(Self {
+        else {
+            return Ok(Err(INVALID));
+        };
+        Ok(Ok(Self {
             parameters,
             components,
             cache,
-        })
+        }))
     }
 
     /// Return the parameters.
@@ -3436,11 +3484,12 @@ impl RollingBallJetStations {
         )? {
             return Ok(Err(error));
         }
-        for station in &stations {
-            ctx.charge_work(1, "rolling-ball jet station controls")?;
-            if let Err(error) = admit_rolling_ball_radii(&station.site) {
-                return Ok(Err(error));
-            }
+        if let Some(error) = ctx.find_map(
+            &stations,
+            |station| Ok(admit_rolling_ball_radii(&station.site).err()),
+            "rolling-ball jet station controls",
+        )? {
+            return Ok(Err(error));
         }
         Ok(Ok(Self { degree, stations }))
     }
@@ -8364,6 +8413,7 @@ pub(crate) struct ProceduralCurveRow {
 
 impl ProceduralSurfaceRow {
     /// The row a construction and its carrier state.
+    #[cfg(test)]
     pub(crate) fn new(surface: SurfaceId, procedural: &ProceduralSurface) -> Self {
         Self {
             id: procedural.id.clone(),
@@ -8383,15 +8433,6 @@ impl ProceduralSurfaceRow {
 }
 
 impl ProceduralCurveRow {
-    /// The row a construction and its carrier state.
-    pub(crate) fn new(curve: CurveId, procedural: &ProceduralCurve) -> Self {
-        Self {
-            id: procedural.id.clone(),
-            curve,
-            definition: procedural.definition.clone(),
-        }
-    }
-
     /// The carrier and the construction this row states.
     pub(crate) fn into_parts(self) -> (CurveId, ProceduralCurve) {
         (
@@ -8497,9 +8538,6 @@ impl CurveOffsetDistanceLaw {
         })
     }
 }
-
-#[cfg(test)]
-mod tests;
 
 impl CompoundCurveConstruction {
     /// Solved-cache fit contract this construction states.
@@ -8669,3 +8707,8 @@ cadmpeg_core::named_optional_field!(deserialize_record_bounds, RecordBounds, "re
 mod identity_rewrite;
 
 mod serialization;
+
+mod decode_cost;
+
+#[cfg(test)]
+mod tests;
