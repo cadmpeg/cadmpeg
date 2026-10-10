@@ -18,6 +18,7 @@ use crate::brep::index::view::CarrierView;
 use crate::brep::offset::OffsetCarrier;
 use crate::brep::sweep;
 use crate::brep::sweep::SweepKind;
+use crate::lane_refusal::scoped::RefusalSink;
 use crate::brep::topology;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
@@ -42,12 +43,12 @@ pub(super) struct SweepSurfaceResolution {
     pub(super) exactness: Option<Exactness>,
 }
 
-pub(super) fn resolve_sweep_surface(
-    ctx: &DecodeContext<'_>,
+pub(super) fn resolve_sweep_surface<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     carriers: &CarrierView<'_, '_>,
     tables: &topology::Tables,
     face: &WalkedFace,
-    refusal: &mut crate::lane_refusal::LaneRefusals,
+    refusal: &mut RefusalSink<'_, 'ctx>,
 ) -> Result<Option<SweepSurfaceResolution>, cadmpeg_core::CodecError> {
     let Some(construction) = carriers.sweep(ctx, face.surface_attr)? else {
         return Ok(None);
@@ -55,11 +56,7 @@ pub(super) fn resolve_sweep_surface(
     let Some(profile) = carriers.curve(ctx, construction.profile_attr)? else {
         return Ok(None);
     };
-    let record = format!(
-        "sldprt sweep construction at byte {} for surface attr {}",
-        construction.offset, face.surface_attr
-    );
-    let Some(profile_curve) = sweep::profile_nurbs(ctx, &profile.carrier().geometry, &record, refusal)?
+    let Some(profile_curve) = sweep::profile_nurbs(ctx, &profile.carrier().geometry, &format_args!("sldprt sweep construction at byte {} for surface attr {}", construction.offset, face.surface_attr), refusal)?
     else {
         return Ok(None);
     };
@@ -67,7 +64,7 @@ pub(super) fn resolve_sweep_surface(
     let profile_derived = matches!(profile, IndexedCurve::Derived(_));
     match &construction.kind {
         SweepKind::Spun { base, axis } => Ok(sweep::spun_nurbs(
-            ctx, curve, *base, *axis, &record, refusal,
+            ctx, curve, *base, *axis, &format_args!("sldprt sweep construction at byte {} for surface attr {}", construction.offset, face.surface_attr), refusal,
         )?
         .map(|surface| SweepSurfaceResolution {
             geometry: SolvedSurfaceGeometry::Nurbs(surface),
@@ -155,7 +152,7 @@ pub(super) fn resolve_sweep_surface(
                 unit_direction,
                 v_start - pad,
                 v_end + pad,
-                &record,
+                &format_args!("sldprt sweep construction at byte {} for surface attr {}", construction.offset, face.surface_attr),
                 refusal,
             )?
             .map(|surface| SweepSurfaceResolution {
