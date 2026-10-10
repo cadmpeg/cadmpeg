@@ -22,9 +22,11 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{HashMap, HashSet};
 
 use self::membership::{contains_face, contains_slot};
+use self::operand_queries::unique_face_operand;
 use self::planes::{face_coincident_with_sketch, parallel_vectors, plane_for_face};
 
 mod membership;
+mod operand_queries;
 mod planes;
 
 fn face_slot_id(ctx: &DecodeContext<'_>, slot: i64) -> Result<cadmpeg_ir::ids::FaceId, CodecError> {
@@ -106,22 +108,19 @@ pub(super) fn resolved_face_group(
     group: &DesignConstructionOperandGroup,
     operands: &[DesignFaceOperand],
 ) -> Result<Option<cadmpeg_ir::features::FaceSelection>, CodecError> {
-    let Some(stream) = native_stream(&group.id) else {
+    ctx.charge_work(0, "resolve F3D face group")?;
+    if group.members().is_empty() || operands.is_empty() {
+        return Ok(None);
+    }
+    let Some(stream) = crate::ids::native_stream_charged(ctx, &group.id, "resolve F3D face group stream")? else {
         return Ok(None);
     };
     let mut faces = Vec::new();
-    for record_index in group.members().iter().map(|member| &member.value) {
-        let mut matches = operands.iter().filter(|operand| {
-            native_stream(&operand.id) == Some(stream)
-                && operand.scope_record_index == group.scope_record_index
-                && operand.record_index() == *record_index
-        });
-        let Some(operand) = matches.next() else {
+    let mut members = group.members().iter();
+    while let Some(member) = ctx.next_charged(&mut members, "visit F3D face group member")? {
+        let Some(operand) = unique_face_operand(ctx, operands, Some(stream), group.scope_record_index, member.value)? else {
             return Ok(None);
         };
-        if matches.next().is_some() {
-            return Ok(None);
-        }
         if operand.resolved_active_face.is_none()
             && operand.resolved_face_slots.is_empty()
             && operand.alternate_selector_candidate_faces.is_empty()
