@@ -759,8 +759,11 @@ pub(in super::super) fn transfer_sketches(
         {
             let external_id = *external_id;
             let offset = *offset;
-            let mut identity_storage = ctx.reserve_scoped(0, "creo solver-only candidate identity")?;
-            let Some(id) = identity_storage.with_storage(|| sketch_entity_id_admitted(ctx, &sketch_id, external_id))? else {
+            let mut identity_storage =
+                ctx.reserve_scoped(0, "creo solver-only candidate identity")?;
+            let Some(id) = identity_storage
+                .with_storage(|| sketch_entity_id_admitted(ctx, &sketch_id, external_id))?
+            else {
                 continue;
             };
             let already_present = ctx.contains_btree_set(
@@ -840,13 +843,16 @@ pub(in super::super) fn transfer_sketches(
             let suffix = suffix_storage.with_storage(|| {
                 section_segment_identity_suffix_admitted(ctx, &unique_segment_ids, segment)
             })?;
-            let mut candidate_storage = ctx.reserve_scoped(0, "creo orientation candidate storage")?;
-            let Some(entity) = candidate_storage.with_storage(|| sketch_entity_id_admitted(ctx, &sketch_id, &suffix))? else {
+            let mut candidate_storage =
+                ctx.reserve_scoped(0, "creo orientation candidate storage")?;
+            let Some(entity) = candidate_storage
+                .with_storage(|| sketch_entity_id_admitted(ctx, &sketch_id, &suffix))?
+            else {
                 continue;
             };
-            if let Some(definition) =
-                candidate_storage.with_storage(|| section_segment_verhor_definition(ctx, segment, &sketch_id, entity))?
-            {
+            if let Some(definition) = candidate_storage.with_storage(|| {
+                section_segment_verhor_definition(ctx, segment, &sketch_id, entity)
+            })? {
                 emit_verhor_constraint(
                     ctx,
                     (annotations, &mut constraints),
@@ -888,17 +894,22 @@ pub(in super::super) fn transfer_sketches(
                         )
                     }
                 })?;
-                let mut candidate_storage = ctx.reserve_scoped(0, "creo orientation candidate storage")?;
-            let Some(entity) = candidate_storage.with_storage(|| sketch_entity_id_admitted(ctx, &sketch_id, &suffix))? else {
+                let mut candidate_storage =
+                    ctx.reserve_scoped(0, "creo orientation candidate storage")?;
+                let Some(entity) = candidate_storage
+                    .with_storage(|| sketch_entity_id_admitted(ctx, &sketch_id, &suffix))?
+                else {
                     continue;
                 };
-                let definition = candidate_storage.with_storage(|| native_section_segment_verhor_definition(
-                    ctx,
-                    &sketch_id,
-                    entity,
-                    segment.external_id,
-                    0,
-                ))?;
+                let definition = candidate_storage.with_storage(|| {
+                    native_section_segment_verhor_definition(
+                        ctx,
+                        &sketch_id,
+                        entity,
+                        segment.external_id,
+                        0,
+                    )
+                })?;
                 emit_verhor_constraint(
                     ctx,
                     (annotations, &mut constraints),
@@ -943,17 +954,22 @@ pub(in super::super) fn transfer_sketches(
                         )
                     }
                 })?;
-                let mut candidate_storage = ctx.reserve_scoped(0, "creo orientation candidate storage")?;
-            let Some(entity) = candidate_storage.with_storage(|| sketch_entity_id_admitted(ctx, &sketch_id, &suffix))? else {
+                let mut candidate_storage =
+                    ctx.reserve_scoped(0, "creo orientation candidate storage")?;
+                let Some(entity) = candidate_storage
+                    .with_storage(|| sketch_entity_id_admitted(ctx, &sketch_id, &suffix))?
+                else {
                     continue;
                 };
-                let definition = candidate_storage.with_storage(|| native_section_segment_verhor_definition(
-                    ctx,
-                    &sketch_id,
-                    entity,
-                    segment.external_id,
-                    verhor,
-                ))?;
+                let definition = candidate_storage.with_storage(|| {
+                    native_section_segment_verhor_definition(
+                        ctx,
+                        &sketch_id,
+                        entity,
+                        segment.external_id,
+                        verhor,
+                    )
+                })?;
                 emit_verhor_constraint(
                     ctx,
                     (annotations, &mut constraints),
@@ -998,17 +1014,22 @@ pub(in super::super) fn transfer_sketches(
                         )
                     }
                 })?;
-                let mut candidate_storage = ctx.reserve_scoped(0, "creo orientation candidate storage")?;
-            let Some(entity) = candidate_storage.with_storage(|| sketch_entity_id_admitted(ctx, &sketch_id, &suffix))? else {
+                let mut candidate_storage =
+                    ctx.reserve_scoped(0, "creo orientation candidate storage")?;
+                let Some(entity) = candidate_storage
+                    .with_storage(|| sketch_entity_id_admitted(ctx, &sketch_id, &suffix))?
+                else {
                     continue;
                 };
-                let definition = candidate_storage.with_storage(|| native_section_segment_verhor_definition(
-                    ctx,
-                    &sketch_id,
-                    entity,
-                    segment.external_id,
-                    verhor,
-                ))?;
+                let definition = candidate_storage.with_storage(|| {
+                    native_section_segment_verhor_definition(
+                        ctx,
+                        &sketch_id,
+                        entity,
+                        segment.external_id,
+                        verhor,
+                    )
+                })?;
                 emit_verhor_constraint(
                     ctx,
                     (annotations, &mut constraints),
@@ -1040,17 +1061,22 @@ pub(in super::super) fn transfer_sketches(
                         segment,
                     )
                 })?;
-                let mut candidate_storage = ctx.reserve_scoped(0, "creo orientation candidate storage")?;
-            let Some(entity) = candidate_storage.with_storage(|| sketch_entity_id_admitted(ctx, &sketch_id, &suffix))? else {
+                let mut candidate_storage =
+                    ctx.reserve_scoped(0, "creo orientation candidate storage")?;
+                let Some(entity) = candidate_storage
+                    .with_storage(|| sketch_entity_id_admitted(ctx, &sketch_id, &suffix))?
+                else {
                     continue;
                 };
-                let definition = candidate_storage.with_storage(|| native_section_segment_verhor_definition(
-                    ctx,
-                    &sketch_id,
-                    entity,
-                    segment.external_id,
-                    verhor,
-                ))?;
+                let definition = candidate_storage.with_storage(|| {
+                    native_section_segment_verhor_definition(
+                        ctx,
+                        &sketch_id,
+                        entity,
+                        segment.external_id,
+                        verhor,
+                    )
+                })?;
                 emit_verhor_constraint(
                     ctx,
                     (annotations, &mut constraints),
@@ -1063,40 +1089,53 @@ pub(in super::super) fn transfer_sketches(
             }
         }
         if let Some(relation_solver) = RelationIncidences::for_dimension_rows(ctx, definition)? {
-        let (dimension_rows, _dimension_slots) = section_dimension_constraints_with_links(ctx, &sketch_id, &relation_solver)?;
-        for (constraint, offset, relation_index, mut storage) in ctx.admit_iter(
-            dimension_rows,
-            "creo transferred dimension rows",
-        )? {
-            let Some(relation) = definition
-                .relations
-                .as_ref()
-                .and_then(|relations| relations.rows.get(relation_index))
-            else {
-                continue;
-            };
-            let mut kind = constraint.definition.into_kind();
-            let reconciled = storage.with_storage(|| reconcile_section_dimension_constraint(
-                ctx, &mut kind, &sketch_id, relation, &emitted_entity_ids, &available_parameter_ids, &relation_solver,
-            ))?;
-            if !reconciled {
-                continue;
+            let (dimension_rows, _dimension_slots) =
+                section_dimension_constraints_with_links(ctx, &sketch_id, &relation_solver)?;
+            for (constraint, offset, relation_index, mut storage) in
+                ctx.admit_iter(dimension_rows, "creo transferred dimension rows")?
+            {
+                let Some(relation) = definition
+                    .relations
+                    .as_ref()
+                    .and_then(|relations| relations.rows.get(relation_index))
+                else {
+                    continue;
+                };
+                let mut kind = constraint.definition.into_kind();
+                let reconciled = storage.with_storage(|| {
+                    reconcile_section_dimension_constraint(
+                        ctx,
+                        &mut kind,
+                        &sketch_id,
+                        relation,
+                        &emitted_entity_ids,
+                        &available_parameter_ids,
+                        &relation_solver,
+                    )
+                })?;
+                if !reconciled {
+                    continue;
+                }
+                let Ok(definition) =
+                    cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(kind)
+                else {
+                    continue;
+                };
+                let constraint = SketchConstraint {
+                    definition,
+                    ..constraint
+                };
+                annotate(
+                    ctx,
+                    annotations,
+                    constraint.id.as_str(),
+                    "FeatDefs",
+                    cadmpeg_core::decode::u64_from_index(offset),
+                    "section_dimension_constraint",
+                    Exactness::ByteExact,
+                )?;
+                admit_constraint_row(ctx, &mut constraints, storage.commit_value(constraint)?)?;
             }
-            let Ok(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(kind) else {
-                continue;
-            };
-            let constraint = SketchConstraint { definition, ..constraint };
-            annotate(
-                ctx,
-                annotations,
-                constraint.id.as_str(),
-                "FeatDefs",
-                cadmpeg_core::decode::u64_from_index(offset),
-                "section_dimension_constraint",
-                Exactness::ByteExact,
-            )?;
-            admit_constraint_row(ctx, &mut constraints, storage.commit_value(constraint)?)?;
-        }
         }
         for (constraint, offset) in ctx.admit_iter(
             section_segment_radius_constraints_for_emitted(
@@ -1119,23 +1158,35 @@ pub(in super::super) fn transfer_sketches(
             )?;
             admit_constraint_row(ctx, &mut constraints, constraint)?;
         }
-        let (mut equation_constraints, mut equation_slots) = ctx.temporary_vec(0, "creo sketch equation constraints")?;
+        let (mut equation_constraints, mut equation_slots) =
+            ctx.temporary_vec(0, "creo sketch equation constraints")?;
         for (rows, _slots) in [
             section_equation_axis_distance_candidates(ctx, definition, &sketch_id)?,
             section_equation_unsigned_distance_candidates(ctx, definition, &sketch_id)?,
             section_equation_point_on_line_candidates(ctx, definition, &sketch_id)?,
             section_equation_same_coordinate_candidates(ctx, definition, &sketch_id)?,
-            section_equation_function_thirty_one_point_coordinate_candidates(ctx, definition, &sketch_id)?,
-            section_equation_function_forty_two_midpoint_coordinate_candidates(ctx, definition, &sketch_id)?,
+            section_equation_function_thirty_one_point_coordinate_candidates(
+                ctx, definition, &sketch_id,
+            )?,
+            section_equation_function_forty_two_midpoint_coordinate_candidates(
+                ctx, definition, &sketch_id,
+            )?,
             section_equation_function_five_scalar_equality_candidates(ctx, definition, &sketch_id)?,
-            section_equation_function_sixteen_angle_difference_candidates(ctx, definition, &sketch_id)?,
+            section_equation_function_sixteen_angle_difference_candidates(
+                ctx, definition, &sketch_id,
+            )?,
             section_equation_radius_dimension_candidates(ctx, definition, &sketch_id)?,
             section_equation_polar_distance_candidates(ctx, definition, &sketch_id)?,
             section_equation_function_six_distance_candidates(ctx, definition, &sketch_id)?,
             section_equation_equal_distance_candidates(ctx, definition, &sketch_id)?,
-
         ] {
-            equation_slots.with_storage(|| ctx.extend_vec(&mut equation_constraints, rows, "creo sketch equation constraints"))?;
+            equation_slots.with_storage(|| {
+                ctx.extend_vec(
+                    &mut equation_constraints,
+                    rows,
+                    "creo sketch equation constraints",
+                )
+            })?;
         }
         let equation_offsets = section_storage.with_storage(|| {
             ctx.collect_btree_set(
@@ -1144,25 +1195,45 @@ pub(in super::super) fn transfer_sketches(
             )
         })?;
         let mut rejected_equation_offsets = BTreeSet::new();
-        let (mut reconciled_equation_constraints, mut reconciled_slots) = ctx.temporary_vec(0, "creo reconciled equation rows")?;
+        let (mut reconciled_equation_constraints, mut reconciled_slots) =
+            ctx.temporary_vec(0, "creo reconciled equation rows")?;
         for (constraint, offset, storage) in
             ctx.admit_iter(equation_constraints, "creo equation reconciliation rows")?
         {
             let mut kind = constraint.definition.into_kind();
-            let entity_reconciled = reconcile_constraint_entity_references(ctx, &mut kind, &emitted_entity_ids)?;
+            let entity_reconciled =
+                reconcile_constraint_entity_references(ctx, &mut kind, &emitted_entity_ids)?;
             // A failed entity edit rejects this candidate before parameter reconciliation.
-            let valid_after_entities = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(kind);
+            let valid_after_entities =
+                cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(kind);
             let Ok(definition) = valid_after_entities else {
-                section_storage.with_storage(|| ctx.insert_btree_set(&mut rejected_equation_offsets, offset, "creo rejected equation offset nodes"))?;
+                section_storage.with_storage(|| {
+                    ctx.insert_btree_set(
+                        &mut rejected_equation_offsets,
+                        offset,
+                        "creo rejected equation offset nodes",
+                    )
+                })?;
                 continue;
             };
             let mut kind = definition.into_kind();
-            let parameter_reconciled = reconcile_constraint_parameter_reference(ctx, &mut kind, &available_parameter_ids)?;
-            let Ok(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(kind) else {
-                section_storage.with_storage(|| ctx.insert_btree_set(&mut rejected_equation_offsets, offset, "creo rejected equation offset nodes"))?;
+            let parameter_reconciled =
+                reconcile_constraint_parameter_reference(ctx, &mut kind, &available_parameter_ids)?;
+            let Ok(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(kind)
+            else {
+                section_storage.with_storage(|| {
+                    ctx.insert_btree_set(
+                        &mut rejected_equation_offsets,
+                        offset,
+                        "creo rejected equation offset nodes",
+                    )
+                })?;
                 continue;
             };
-            let constraint = SketchConstraint { definition, ..constraint };
+            let constraint = SketchConstraint {
+                definition,
+                ..constraint
+            };
             if !entity_reconciled || !parameter_reconciled {
                 section_storage.with_storage(|| {
                     ctx.insert_btree_set(
@@ -1173,8 +1244,12 @@ pub(in super::super) fn transfer_sketches(
                 })?;
                 continue;
             }
-            ctx.push_scoped_vec(&mut reconciled_slots, &mut reconciled_equation_constraints,
-                (constraint, offset, storage), "creo reconciled equation rows")?;
+            ctx.push_scoped_vec(
+                &mut reconciled_slots,
+                &mut reconciled_equation_constraints,
+                (constraint, offset, storage),
+                "creo reconciled equation rows",
+            )?;
         }
         drop(equation_slots);
         for (constraint, offset, storage) in ctx.admit_iter(
@@ -1242,20 +1317,26 @@ pub(in super::super) fn transfer_sketches(
             admit_constraint_row(ctx, &mut constraints, constraint)?;
         }
         let (skamp_rows, skamp_slots) = section_skamp_candidates_for_geometry(
-                ctx,
-                definition,
-                &sketch_id,
-                Some(&emitted_entity_geometry),
-            )?;
-        for (constraint, offset, storage) in ctx.admit_iter(skamp_rows, "creo transferred SKAMP constraint rows")? {
+            ctx,
+            definition,
+            &sketch_id,
+            Some(&emitted_entity_geometry),
+        )?;
+        for (constraint, offset, storage) in
+            ctx.admit_iter(skamp_rows, "creo transferred SKAMP constraint rows")?
+        {
             let mut kind = constraint.definition.into_kind();
             if !reconcile_constraint_entity_references(ctx, &mut kind, &emitted_entity_ids)? {
                 continue;
             }
-            let Ok(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(kind) else {
+            let Ok(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(kind)
+            else {
                 continue;
             };
-            let constraint = SketchConstraint { definition, ..constraint };
+            let constraint = SketchConstraint {
+                definition,
+                ..constraint
+            };
             annotate(
                 ctx,
                 annotations,
@@ -1394,7 +1475,10 @@ fn emit_verhor_constraint(
     emitted_entity_ids: &BTreeSet<SketchEntityId>,
     sketch: &SketchId,
     suffix: &str,
-    candidate: (SketchConstraintDefinitionInput, cadmpeg_core::decode::ScopedReservation<'_>),
+    candidate: (
+        SketchConstraintDefinitionInput,
+        cadmpeg_core::decode::ScopedReservation<'_>,
+    ),
     offset: usize,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let (annotations, constraints) = output;
@@ -1404,7 +1488,9 @@ fn emit_verhor_constraint(
     {
         return Ok(());
     }
-    let Some(id) = storage.with_storage(|| sketch_constraint_id_admitted(ctx, sketch, format_args!("verhor:{suffix}")))?
+    let Some(id) = storage.with_storage(|| {
+        sketch_constraint_id_admitted(ctx, sketch, format_args!("verhor:{suffix}"))
+    })?
     else {
         return Ok(());
     };
@@ -1422,21 +1508,23 @@ fn emit_verhor_constraint(
         "section_verhor_constraint",
         Exactness::ByteExact,
     )?;
-    let constraint = storage.with_storage(|| Ok::<_, cadmpeg_core::CodecError>(SketchConstraint {
-        id,
-        sketch: sketch.try_clone_for_decode(ctx, "creo constraint sketch identity")?,
-        definition,
-        name: None,
-        driving: None,
-        active: None,
-        virtual_space: None,
-        visible: None,
-        orientation: None,
-        label_distance: None,
-        label_position: None,
-        metadata: None,
-        native_ref: Some(sketch_native_ref_admitted(ctx, sketch)?),
-    }))?;
+    let constraint = storage.with_storage(|| {
+        Ok::<_, cadmpeg_core::CodecError>(SketchConstraint {
+            id,
+            sketch: sketch.try_clone_for_decode(ctx, "creo constraint sketch identity")?,
+            definition,
+            name: None,
+            driving: None,
+            active: None,
+            virtual_space: None,
+            visible: None,
+            orientation: None,
+            label_distance: None,
+            label_position: None,
+            metadata: None,
+            native_ref: Some(sketch_native_ref_admitted(ctx, sketch)?),
+        })
+    })?;
     admit_constraint_row(ctx, constraints, storage.commit_value(constraint)?)
 }
 

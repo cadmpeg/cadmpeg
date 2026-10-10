@@ -42,7 +42,10 @@ pub(in super::super) fn feature_section_sweep_semantics_conflict(
     {
         return Ok(false);
     }
-    Ok(matches!(operation.kind, crate::feature::operations::OperationKind::Native))
+    Ok(matches!(
+        operation.kind,
+        crate::feature::operations::OperationKind::Native
+    ))
 }
 
 pub(in super::super) fn current_additive_feature_recipe(
@@ -84,10 +87,16 @@ pub(in super::super) fn feature_is_first_material_operation(
     feature_id: u32,
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let (unique_operations, _operation_storage) = ctx.unique_index(
-        scan.features.operations.iter().map(|row| (row.feature_id, row)),
+        scan.features
+            .operations
+            .iter()
+            .map(|row| (row.feature_id, row)),
         "creo first material identity rows",
     )?;
-    if unique_operations.get(&feature_id).is_none_or(Option::is_none) {
+    if unique_operations
+        .get(&feature_id)
+        .is_none_or(Option::is_none)
+    {
         return Ok(false);
     }
     let mut transforms_by_feature = None;
@@ -98,7 +107,10 @@ pub(in super::super) fn feature_is_first_material_operation(
         "creo first material operation rows",
     )? {
         let candidate = operation.feature_id;
-        if unique_operations.get(&candidate).is_none_or(Option::is_none) {
+        if unique_operations
+            .get(&candidate)
+            .is_none_or(Option::is_none)
+        {
             continue;
         }
         let recipe_is_material = operation.recipe.resolved().is_some_and(|recipe| {
@@ -117,11 +129,16 @@ pub(in super::super) fn feature_is_first_material_operation(
             continue;
         }
         if transforms_by_feature.is_none() {
-            transforms_by_feature = Some(ctx.unique_index(
-                ctx.admit_iter(&scan.features.section_transforms, "creo first material section transforms")?
+            transforms_by_feature = Some(
+                ctx.unique_index(
+                    ctx.admit_iter(
+                        &scan.features.section_transforms,
+                        "creo first material section transforms",
+                    )?
                     .filter_map(|row| row.feature_id.map(|id| (id, row))),
-                "creo first material transform identities",
-            )?);
+                    "creo first material transform identities",
+                )?,
+            );
         }
         let Some(transform) = transforms_by_feature
             .as_ref()
@@ -184,9 +201,9 @@ pub(in super::super) fn current_feature_operation<'operations>(
     let mut selected = None;
     let mut operations = operations.iter();
     while operations.len() != 0 {
-        let Some(operation) = ctx.next_charged(
-            &mut operations, "creo current feature operation rows",
-        )? else {
+        let Some(operation) =
+            ctx.next_charged(&mut operations, "creo current feature operation rows")?
+        else {
             break;
         };
         if operation.feature_id == feature_id {
@@ -251,9 +268,8 @@ fn feature_schema_class_with_operation(
         || {
             let mut rounds = scan.features.legacy_rounds.iter();
             while rounds.len() != 0 {
-                let Some(round) = ctx.next_charged(
-                    &mut rounds, "creo legacy round schema rows",
-                )? else {
+                let Some(round) = ctx.next_charged(&mut rounds, "creo legacy round schema rows")?
+                else {
                     break;
                 };
                 if round.feature_id == feature_id {
@@ -362,9 +378,8 @@ pub(in super::super) fn unique_feature_revolution_extent<'records>(
     }
     let mut records = records.iter();
     while records.len() != 0 {
-        let Some(record) = ctx.next_charged(
-            &mut records, "creo feature revolution extent rows",
-        )? else {
+        let Some(record) = ctx.next_charged(&mut records, "creo feature revolution extent rows")?
+        else {
             break;
         };
         if record.feature_id == feature_id {
