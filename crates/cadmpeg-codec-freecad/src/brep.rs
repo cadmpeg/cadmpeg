@@ -321,8 +321,8 @@ impl ShapeSet {
         .map_err(CodecError::Malformed)
     }
 
-    /// Checks every reference, admitting each list's visits through `admit`
-    /// before reading it. `max_nodes` holds the greatest node index of each
+    /// Checks every reference, admitting each visit through `admit`
+    /// before reading its value. `max_nodes` holds the greatest node index of each
     /// indexed polygon, so a polygon's nodes are read once however many edges
     /// name it.
     fn check<E>(
@@ -368,10 +368,10 @@ impl ShapeSet {
             }
             Ok(())
         };
-        admit(locations)?;
         for (position, location) in self.locations.iter().enumerate() {
-            admit(location.factors.len())?;
+            admit(1)?;
             for factor in &location.factors {
+                admit(1)?;
                 checked!(validate_one_based(
                     factor.location,
                     position,
@@ -379,8 +379,8 @@ impl ShapeSet {
                 ));
             }
         }
-        admit(self.polygons3d.len())?;
         for (position, polygon) in self.polygons3d.iter().enumerate() {
+            admit(1)?;
             if polygon
                 .parameters
                 .as_ref()
@@ -391,13 +391,15 @@ impl ShapeSet {
                 )));
             }
         }
-        admit(self.polygons_on_triangulations.len())?;
         for (position, polygon) in self.polygons_on_triangulations.iter().enumerate() {
-            admit(polygon.nodes.len())?;
-            if polygon.nodes.contains(&0) {
-                return Ok(Err(format!(
-                    "PolygonOnTriangulations[{position}] node indices must be one-based"
-                )));
+            admit(1)?;
+            for node in &polygon.nodes {
+                admit(1)?;
+                if *node == 0 {
+                    return Ok(Err(format!(
+                        "PolygonOnTriangulations[{position}] node indices must be one-based"
+                    )));
+                }
             }
             if polygon
                 .parameters
@@ -409,11 +411,11 @@ impl ShapeSet {
                 )));
             }
         }
-        admit(self.tshapes.len())?;
         for (position, shape) in self.tshapes.iter().enumerate() {
+            admit(1)?;
             let shape_index = position + 1;
-            admit(shape.children.len())?;
             for child in &shape.children {
+                admit(1)?;
                 checked!(validate_one_based(
                     child.shape,
                     self.tshapes.len(),
@@ -435,8 +437,8 @@ impl ShapeSet {
                 TextTShapeGeometry::Vertex {
                     representations, ..
                 } => {
-                    admit(representations.len())?;
                     for representation in representations {
+                        admit(1)?;
                         match representation {
                             TextPointRepresentation::Curve3d {
                                 curve, location, ..
@@ -494,8 +496,8 @@ impl ShapeSet {
                 TextTShapeGeometry::Edge {
                     representations, ..
                 } => {
-                    admit(representations.len())?;
                     for representation in representations {
+                        admit(1)?;
                         match representation {
                             TextEdgeRepresentation::Curve3d {
                                 curve, location, ..
@@ -655,8 +657,8 @@ impl ShapeSet {
                 | TextTShapeGeometry::Compound => {}
             }
         }
-        admit(self.roots.len())?;
         for root in &self.roots {
+            admit(1)?;
             checked!(validate_one_based(
                 root.shape,
                 self.tshapes.len(),
