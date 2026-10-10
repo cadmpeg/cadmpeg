@@ -1006,21 +1006,21 @@ pub(crate) fn derive_feature_outputs(
     let owners;
     (owners, _owners_storage) = face_owner_bodies(ctx, faces, shells, regions)?;
     let mut produced: HashMap<u32, Vec<&BodyId>> = HashMap::new();
+    let mut seen_storage = ctx.reserve_scoped(0, "SLDPRT produced body membership")?;
     let mut seen = std::collections::HashSet::new();
     for (face, source_id) in ctx.admit_iter(face_producers, "collect SLDPRT produced bodies")? {
         let Some(&body) = ctx.get_hash_map(&owners, *face, "look up SLDPRT hash key")?
         else {
             continue;
         };
-        if ctx.contains_hash_set(&seen, &(*source_id, body), "collect SLDPRT produced bodies")? {
+        if !seen_storage.with_storage(|| ctx.insert_hash_set(
+            &mut seen,
+            (*source_id, body),
+            "collect SLDPRT produced bodies",
+        ))? {
             continue;
         }
         scratch.with_storage(|| {
-            ctx.insert_hash_set(
-                &mut seen,
-                (*source_id, body),
-                "collect SLDPRT produced bodies",
-            )?;
             ctx.push_hash_group(
                 &mut produced,
                 *source_id,
@@ -1030,6 +1030,7 @@ pub(crate) fn derive_feature_outputs(
             )
         })?;
     }
+    drop((seen, seen_storage));
     // The source identifier of the first native record bearing each identity.
     let mut sources_by_record = HashMap::new();
     for history in ctx.admit_iter(histories, "scan SLDPRT feature output histories")? {
@@ -1087,6 +1088,7 @@ pub(crate) fn derive_feature_outputs(
 
 #[cfg(test)]
 mod tests {
+    mod produced_bodies;
     use super::{
         bind_unique_sketch_feature, derive_feature_outputs, order_features_for_regeneration,
         order_model_features_for_regeneration,
