@@ -4040,6 +4040,7 @@ pub(in crate::families) fn offset_support_carriers(
     }
     let index = ctx.with_scoped_storage("catia_b2_offset_index", || {
         let mut events: [OffsetEvents; 3] = std::array::from_fn(|_| OffsetEvents::new());
+        let mut knot_count = 0usize;
         let mut band =
             |lane: usize, index: usize, lower: f64, upper: f64| -> Result<(), CodecError> {
                 for (parameter, event) in [
@@ -4079,24 +4080,7 @@ pub(in crate::families) fn offset_support_carriers(
             let v_tolerance = EPS_OFFSET_PARAMETER_RELATIVE * v_span;
             band(0, index, u_min - u_tolerance, u_max + u_tolerance)?;
             band(1, index, v_min - v_tolerance, v_max + v_tolerance)?;
-            let mut previous = None;
-            for &knot in ctx.admit_iter(
-                surface.v_knots().as_slice(),
-                "catia_b2_offset_knot_index_scan",
-            )? {
-                if previous == Some(knot) {
-                    continue;
-                }
-                previous = Some(knot);
-                // Outward rounding contains the rounded absolute-difference
-                // predicate. Exact comparison removes the conservative margin.
-                band(
-                    2,
-                    index,
-                    (knot - v_tolerance.next_up()).next_down(),
-                    (knot + v_tolerance.next_up()).next_up(),
-                )?;
-            }
+            knot_count = knot_count.saturating_add(surface.v_knots().len());
         }
         let choices = ctx.alloc_filled(
             offsets.len(),
@@ -4107,11 +4091,7 @@ pub(in crate::families) fn offset_support_carriers(
             .admit_iter(offsets, "catia_b2_offset_carrier_scan")?
             .enumerate()
         {
-            let coordinates = [
-                offset.u_range.endpoints(),
-                offset.v_range.endpoints(),
-                offset.v_range.endpoints(),
-            ];
+            let coordinates = [offset.u_range.endpoints(), offset.v_range.endpoints()];
             for (lane, coordinates) in coordinates.into_iter().enumerate() {
                 for (endpoint, coordinate) in coordinates.into_iter().enumerate() {
                     let event = OffsetEventKind::Query {
@@ -4130,10 +4110,10 @@ pub(in crate::families) fn offset_support_carriers(
         }
         // Equal-coordinate events of each kind arrive in source-index order.
         // The key places starts before queries and queries before ends.
-        Ok::<_, CodecError>((events, choices))
+        Ok::<_, CodecError>((events, choices, knot_count))
     })?;
-    let _index_storage = index.1;
-    let (events, mut choices) = index.0;
+    let mut index_storage = index.1;
+    let (mut events, mut choices, knot_count) = index.0;
     bindings = ctx.alloc_filled(offsets.len(), None, "catia_b2_offset_bindings")?;
     for evaluate in [false, true] {
         let mut required = [!evaluate; 3];
@@ -4142,17 +4122,104 @@ pub(in crate::families) fn offset_support_carriers(
                 required[query / 2] = true;
             }
         }
-        for (lane, events) in events.iter().enumerate() {
-            if !required[lane] {
+        for lane in 0..3 {
+            if !evaluate && lane == 2 {
+                let domain_visits = ctx.sum(
+                    &choices,
+                    |total: usize, &(count, _)| Ok(total.saturating_add(count)),
+                    "catia_b2_offset_query_lanes",
+                )?;
+                // Tree entries, grouped event slots and two event walks cost
+                // more than a knot visit. Build bands only when the remaining
+                // domain candidates amortize that construction.
+                if domain_visits <= knot_count.saturating_mul(2048) {
+                    continue;
+                }
+                index_storage.with_storage(|| {
+                    for (index, carrier) in ctx
+                        .admit_iter(carriers, "catia_b2_offset_domain_index_scan")?
+                        .enumerate()
+                    {
+                        let surface = &carrier.borrow().geometry;
+                        let (Some(&v_min), Some(&v_max)) =
+                            (surface.v_knots().first(), surface.v_knots().last())
+                        else {
+                            continue;
+                        };
+                        let v_span = v_max - v_min;
+                        if !v_span.is_finite() || v_span <= 0.0 {
+                            continue;
+                        }
+                        let tolerance = EPS_OFFSET_PARAMETER_RELATIVE * v_span;
+                        let mut previous = None;
+                        for &knot in ctx.admit_iter(
+                            surface.v_knots().as_slice(),
+                            "catia_b2_offset_knot_index_scan",
+                        )? {
+                            if previous == Some(knot) {
+                                continue;
+                            }
+                            previous = Some(knot);
+                            // Outward rounding contains the absolute-difference
+                            // predicate. Matching removes the conservative margin.
+                            for (parameter, event) in [
+                                (
+                                    (knot - tolerance.next_up()).next_down(),
+                                    OffsetEventKind::Start(index),
+                                ),
+                                (
+                                    (knot + tolerance.next_up()).next_up(),
+                                    OffsetEventKind::End(index),
+                                ),
+                            ] {
+                                ctx.push_btree_group(
+                                    &mut events[2],
+                                    event.key(parameter),
+                                    event,
+                                    "catia_b2_offset_index",
+                                    "catia_b2_offset_index",
+                                )?;
+                            }
+                        }
+                    }
+                    for (index, offset) in ctx
+                        .admit_iter(offsets, "catia_b2_offset_carrier_scan")?
+                        .enumerate()
+                    {
+                        for (endpoint, coordinate) in
+                            offset.v_range.endpoints().into_iter().enumerate()
+                        {
+                            let event = OffsetEventKind::Query {
+                                offset: index,
+                                endpoint,
+                            };
+                            ctx.push_btree_group(
+                                &mut events[2],
+                                event.key(coordinate),
+                                event,
+                                "catia_b2_offset_index",
+                                "catia_b2_offset_index",
+                            )?;
+                        }
+                    }
+                    Ok::<_, CodecError>(())
+                })?;
+            }
+            let events = &events[lane];
+            if !required[lane] || events.is_empty() {
                 continue;
             }
             let mut counts = ctx.with_scoped_storage("catia_b2_offset_active_slots", || {
-                ctx.alloc_filled(carriers.len(), 0usize, "catia_b2_offset_active_counts")
+                ctx.alloc_filled(
+                    carriers.len(),
+                    (0usize, 0usize),
+                    "catia_b2_offset_active_counts",
+                )
             })?;
             let mut active_count = 0;
             let mut active = if evaluate {
                 Some((
-                    std::collections::BTreeSet::new(),
+                    Vec::new(),
                     ctx.reserve_scoped(0, "catia_b2_offset_active_carriers")?,
                 ))
             } else {
@@ -4162,35 +4229,31 @@ pub(in crate::families) fn offset_support_carriers(
                 for &event in ctx.admit_iter(group, "catia_b2_offset_event_scan")? {
                     match event {
                         OffsetEventKind::Start(index) => {
-                            if counts.0[index] == 0 {
+                            if counts.0[index].0 == 0 {
                                 active_count += 1;
                                 if let Some((values, storage)) = &mut active {
-                                    storage.with_storage(|| {
-                                        ctx.insert_btree_set(
-                                            values,
-                                            index,
-                                            "catia_b2_offset_active_carriers",
-                                        )
-                                    })?;
-                                }
-                            }
-                            counts.0[index] += 1;
-                        }
-                        OffsetEventKind::End(index) => {
-                            counts.0[index] -= 1;
-                            if counts.0[index] == 0 {
-                                active_count -= 1;
-                                if let Some((values, storage)) = &mut active {
-                                    ctx.remove_btree_set(
+                                    counts.0[index].1 = values.len();
+                                    ctx.push_scoped_vec(
+                                        storage,
                                         values,
-                                        &index,
+                                        index,
                                         "catia_b2_offset_active_carriers",
                                     )?;
-                                    if values.is_empty() {
-                                        // Drop empty tree backing before releasing its node lease.
-                                        *values = std::collections::BTreeSet::new();
-                                        *storage = ctx
-                                            .reserve_scoped(0, "catia_b2_offset_active_carriers")?;
+                                }
+                            }
+                            counts.0[index].0 += 1;
+                        }
+                        OffsetEventKind::End(index) => {
+                            counts.0[index].0 -= 1;
+                            if counts.0[index].0 == 0 {
+                                active_count -= 1;
+                                if let Some((values, _storage)) = &mut active {
+                                    // The event visit pays for these fixed slot updates.
+                                    // Capacity stays reusable across entry/removal cycles.
+                                    let position = counts.0[index].1;
+                                    values.swap_remove(position);
+                                    if let Some(&moved) = values.get(position) {
+                                        counts.0[moved].1 = position;
                                     }
                                 }
                             }

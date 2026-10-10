@@ -133,3 +133,64 @@ fn circles_without_revolutions_build_no_profile_index() {
     .expect("no profile consumer")
     .is_empty());
 }
+
+#[test]
+fn two_offset_queries_do_not_materialize_long_unused_knot_lanes() {
+    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, ResourceDimension};
+    let knots: Vec<_> = std::iter::once(0.0)
+        .chain((0..65_536).map(|index| f64::from(index) / 65_535.0))
+        .chain(std::iter::once(1.0))
+        .collect();
+    let carriers = [
+        surface([0.0, 1.0], knots.clone()),
+        surface([2.0, 3.0], knots),
+    ];
+    let queries = [
+        offset([0.0, 1.0], [0.0, 1.0]),
+        offset([2.0, 3.0], [0.0, 1.0]),
+    ];
+    let _probe = RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "catia_b2_offset_knot_index_scan",
+        None,
+    );
+    assert_eq!(
+        crate::test_support::with_work_limit(u64::MAX, |ctx| offset_support_carriers(
+            ctx, &queries, &carriers
+        ))
+        .expect("domain candidates need only binary knot searches"),
+        [Some(0), Some(1)]
+    );
+}
+
+#[test]
+fn offset_active_slots_reuse_backing_while_one_carrier_stays_live() {
+    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, ResourceDimension};
+    let mut carriers = vec![surface([0.0, 256.0], vec![0.0, 0.0, 1.0, 1.0])];
+    carriers.extend((0..128).map(|index| {
+        let lower = f64::from(index) * 2.0;
+        surface([lower, lower + 1.0], vec![0.0, 0.0, 1.0, 1.0])
+    }));
+    let queries: Vec<_> = (0..128)
+        .map(|index| {
+            let lower = f64::from(index) * 2.0;
+            offset([lower, lower + 1.0], [0.0, 1.0])
+        })
+        .collect();
+    // An ordered usize set node used 11 key slots, 16 pointer-width slots,
+    // and two alignment slots. The active vector now holds at most two ids
+    // in reusable backing; no such node is allocated on any entry cycle.
+    let node_bytes = cadmpeg_core::decode::u64_from_index(29 * std::mem::size_of::<usize>());
+    let _probe = RefusalProbe::arm(
+        ResourceDimension::MaterializedBytes,
+        "catia_b2_offset_active_carriers",
+        Some(node_bytes),
+    );
+    assert_eq!(
+        crate::test_support::with_materialized_limit(u64::MAX, |ctx| {
+            offset_support_carriers(ctx, &queries, &carriers)
+        })
+        .expect("reusable active backing"),
+        vec![None; 128]
+    );
+}
