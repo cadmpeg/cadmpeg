@@ -6520,6 +6520,14 @@ fn unit_cross_direction(
     first.cross(second).unit().ok_or(EvaluationFailure::NoValue)
 }
 
+/// The data a blend section reads from a contact track.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ContactRequest {
+    Support,
+    Tangent,
+    NormalDerivative,
+}
+
 /// The contact track of a blend side at a parameter: the support's point
 /// with its first partials, the side pcurve's tangent, and the derivative of
 /// the support's unit normal along the track, each derivative with its own
@@ -6575,28 +6583,36 @@ fn variable_blend_contact_track(
         FinitePoint3,
     >,
     parameter: f64,
+    request: ContactRequest,
 ) -> Result<ContactTrack, EvaluationFailure<()>> {
     let no_value = EvaluationFailure::NoValue;
     let surface = &side.surface.as_ref().ok_or(no_value)?.surface;
     let pcurve = side.pcurve.as_ref().ok_or(no_value)?;
-    // A non-finite offset-pcurve point is evaluated on its support as a
-    // finite one is.
-    let uv = match crate::eval::decode::pcurve_uv(admission, pcurve, parameter) {
-        Ok(uv) => uv.get(),
-        Err(EvaluationFailure::NonFinite(uv)) => uv,
-        Err(EvaluationFailure::NoValue) => return Err(no_value),
-        Err(EvaluationFailure::ResourceLimit(limit)) => {
-            return Err(EvaluationFailure::ResourceLimit(limit))
-        }
+    // The point owner already computes this actual pcurve differential.
+    // Keep its scalar Results and release its scratch before support traversal.
+    let pcurve = {
+        let scratch = decode::Scratch::new(admission);
+        let result = (|| {
+            let parameter = FiniteReal::new(parameter).ok_or(no_value)?;
+            let evaluated = pcurve_uv_differential(&scratch, pcurve, parameter).ok_or(no_value)?;
+            if let Some(limit) = evaluated.resource {
+                return Err(EvaluationFailure::ResourceLimit(limit));
+            }
+            Ok(evaluated)
+        })();
+        scratch.settle(result)?
     };
+    // A non-finite offset-pcurve point still reaches the actual support.
+    let uv = pcurve.point.map_or_else(|point| point, FinitePoint2::get);
     let support = model_surface_first_order_by_id(admission, index, surface, uv.u, uv.v)
         .map_err(|failure| failure.map(|_| ()))?;
-    let uv_tangent =
-        pcurve_tangent(admission, pcurve, parameter).map_err(|failure| failure.map(|_| ()));
+    let uv_tangent = if request == ContactRequest::Support {
+        Err(no_value)
+    } else { pcurve.tangent.map_err(|failure| failure.map(|_| ())) };
     if let Err(EvaluationFailure::ResourceLimit(limit)) = uv_tangent {
         return Err(EvaluationFailure::ResourceLimit(limit));
     }
-    let normal_derivative = uv_tangent.and_then(|uv_tangent| {
+    let normal_derivative = if request == ContactRequest::NormalDerivative { uv_tangent.and_then(|uv_tangent| {
         let support = model_surface_second_partials_by_id(admission, index, surface, uv.u, uv.v)
             .map_err(|failure| failure.map(|_| ()))?;
         let [du, dv, duu, duv, dvv] = FiniteVector3::raw_array([
@@ -6613,7 +6629,7 @@ fn variable_blend_contact_track(
         let (_, derivative) = unit_vector_with_derivative(normal, normal_derivative)
             .ok_or(EvaluationFailure::NoValue)?;
         derivative
-    });
+    }) } else { Err(no_value) };
     if let Err(EvaluationFailure::ResourceLimit(limit)) = normal_derivative {
         return Err(EvaluationFailure::ResourceLimit(limit));
     }
@@ -6725,6 +6741,7 @@ fn cacheless_ruled_variable_blend_tracks(
     payload: &crate::geometry::surface_payloads::VariableBlendSurfacePayload,
     u: f64,
     v: f64,
+    request: ContactRequest,
 ) -> Result<[ContactTrack; 2], EvaluationFailure<()>> {
     let construction = payload.construction();
     let no_value = EvaluationFailure::NoValue;
@@ -6743,8 +6760,8 @@ fn cacheless_ruled_variable_blend_tracks(
         }
     }
     Ok([
-        variable_blend_contact_track(admission, index, &construction.sides[0], v)?,
-        variable_blend_contact_track(admission, index, &construction.sides[1], v)?,
+        variable_blend_contact_track(admission, index, &construction.sides[0], v, request)?,
+        variable_blend_contact_track(admission, index, &construction.sides[1], v, request)?,
     ])
 }
 
@@ -6757,7 +6774,7 @@ fn cacheless_ruled_variable_blend_point(
     u: f64,
     v: f64,
 ) -> Result<Point3, EvaluationFailure<()>> {
-    let [first, second] = cacheless_ruled_variable_blend_tracks(admission, index, payload, u, v)?;
+    let [first, second] = cacheless_ruled_variable_blend_tracks(admission, index, payload, u, v, ContactRequest::Support)?;
     Ok(offset(
         first.point(),
         &[(u, point_displacement(second.point(), first.point()))],
@@ -6773,7 +6790,7 @@ fn cacheless_ruled_variable_blend_first_order(
     u: f64,
     v: f64,
 ) -> Result<SurfaceFirstOrder, EvaluationFailure<Point3>> {
-    let [first, second] = cacheless_ruled_variable_blend_tracks(admission, index, payload, u, v)
+    let [first, second] = cacheless_ruled_variable_blend_tracks(admission, index, payload, u, v, ContactRequest::Tangent)
         .map_err(|failure| failure.map(|()| UNREACHED_POINT))?;
     let chord = point_displacement(second.point(), first.point());
     let point = admit_point(offset(first.point(), &[(u, chord)]))?;
@@ -6928,6 +6945,7 @@ fn circular_variable_blend_tracks(
     payload: &crate::geometry::surface_payloads::VariableBlendSurfacePayload,
     u: f64,
     v: f64,
+    request: ContactRequest,
 ) -> Result<[ContactTrack; 2], EvaluationFailure<()>> {
     let construction = payload.construction();
     let (finite_u, finite_v) = blend_parameters(u, v)?;
@@ -6935,8 +6953,8 @@ fn circular_variable_blend_tracks(
         return Err(EvaluationFailure::NoValue);
     }
     Ok([
-        variable_blend_contact_track(admission, index, &construction.sides[0], v)?,
-        variable_blend_contact_track(admission, index, &construction.sides[1], v)?,
+        variable_blend_contact_track(admission, index, &construction.sides[0], v, request)?,
+        variable_blend_contact_track(admission, index, &construction.sides[1], v, request)?,
     ])
 }
 
@@ -6947,7 +6965,7 @@ fn cacheless_circular_variable_blend_point(
     u: f64,
     v: f64,
 ) -> Result<Point3, EvaluationFailure<()>> {
-    let tracks = circular_variable_blend_tracks(admission, index, payload, u, v)?;
+    let tracks = circular_variable_blend_tracks(admission, index, payload, u, v, ContactRequest::Support)?;
     if u == 0.0 {
         return Ok(tracks[0].point());
     }
@@ -6960,6 +6978,7 @@ fn cacheless_circular_variable_blend_point(
         payload.construction(),
         v,
         tracks,
+        ContactRequest::Support,
     )?;
     minor_circular_arc_point(
         section.center,
@@ -6995,6 +7014,7 @@ fn cacheless_circular_variable_blend_section(
     >,
     v: f64,
     [first, second]: [ContactTrack; 2],
+    request: ContactRequest,
 ) -> Result<CircularVariableBlendSection, EvaluationFailure<()>> {
     let no_value = EvaluationFailure::NoValue;
     let signed_radius = variable_blend_radius(admission, construction.radii.first(), v)?.get();
@@ -7002,9 +7022,10 @@ fn cacheless_circular_variable_blend_section(
     if radius <= f64::EPSILON {
         return Err(no_value);
     }
-    let radius_derivative =
+    let radius_derivative = if request == ContactRequest::NormalDerivative {
         variable_blend_radius_derivative(admission, construction.radii.first(), v)
-            .map(|derivative| derivative.get() * signed_radius.signum());
+            .map(|derivative| derivative.get() * signed_radius.signum())
+    } else { Err(no_value) };
     if let Err(EvaluationFailure::ResourceLimit(limit)) = radius_derivative {
         return Err(EvaluationFailure::ResourceLimit(limit));
     }
@@ -7078,7 +7099,7 @@ fn cacheless_constant_rolling_ball_point(
     u: f64,
     v: f64,
 ) -> Result<Point3, EvaluationFailure<()>> {
-    let section = cacheless_constant_rolling_ball_section(admission, index, payload, u, v)?;
+    let section = cacheless_constant_rolling_ball_section(admission, index, payload, u, v, ContactRequest::Support)?;
     minor_circular_arc_point(
         section.center,
         section.first.point(),
@@ -7106,6 +7127,7 @@ fn cacheless_constant_rolling_ball_section(
     payload: &crate::geometry::surface_payloads::BlendSurfacePayload,
     u: f64,
     v: f64,
+    request: ContactRequest,
 ) -> Result<ConstantRollingBallSection, EvaluationFailure<()>> {
     let no_value = EvaluationFailure::NoValue;
     let native = payload.native().ok_or(no_value)?;
@@ -7144,14 +7166,18 @@ fn cacheless_constant_rolling_ball_section(
             return Err(no_value);
         }
     }
-    let first = variable_blend_contact_track(admission, index, &native.sides[0], v)?;
-    let second = variable_blend_contact_track(admission, index, &native.sides[1], v)?;
+    let first = variable_blend_contact_track(admission, index, &native.sides[0], v, request)?;
+    let second = variable_blend_contact_track(admission, index, &native.sides[1], v, request)?;
     let center = model_curve_point_by_id(admission, index, &native.slice, v)
         .map_err(|failure| failure.map(|_| ()))?;
-    let center_tangent = model_curve_differential_by_id(admission, index, &native.slice, v, ModelCurveRequest::Second)
-        .map_err(|failure| failure.map(|_| ()))
-        .and_then(|differential| differential.tangent)
-        .map(FiniteVector3::get);
+    let center_tangent = if request == ContactRequest::Support {
+        Err(no_value)
+    } else {
+        model_curve_differential_by_id(admission, index, &native.slice, v, ModelCurveRequest::First)
+            .map_err(|failure| failure.map(|_| ()))
+            .and_then(|differential| differential.tangent)
+            .map(FiniteVector3::get)
+    };
     if let Err(EvaluationFailure::ResourceLimit(limit)) = center_tangent {
         return Err(EvaluationFailure::ResourceLimit(limit));
     }
@@ -7202,13 +7228,14 @@ fn cacheless_circular_variable_blend_first_order(
 ) -> Result<SurfaceFirstOrder, EvaluationFailure<Point3>> {
     let unreached = |failure: EvaluationFailure<()>| failure.map(|()| UNREACHED_POINT);
     let tracks =
-        circular_variable_blend_tracks(admission, index, payload, u, v).map_err(unreached)?;
+        circular_variable_blend_tracks(admission, index, payload, u, v, ContactRequest::NormalDerivative).map_err(unreached)?;
     let section = cacheless_circular_variable_blend_section(
         admission,
         index,
         payload.construction(),
         v,
         tracks,
+        ContactRequest::NormalDerivative,
     )
     .map_err(unreached)?;
     let center_tangent = (|| {
@@ -7255,7 +7282,7 @@ fn cacheless_constant_rolling_ball_first_order(
     u: f64,
     v: f64,
 ) -> Result<SurfaceFirstOrder, EvaluationFailure<Point3>> {
-    let section = cacheless_constant_rolling_ball_section(admission, index, payload, u, v)
+    let section = cacheless_constant_rolling_ball_section(admission, index, payload, u, v, ContactRequest::Tangent)
         .map_err(|failure| failure.map(|()| UNREACHED_POINT))?;
     constant_rolling_ball_first_order(&section, u)
 }
