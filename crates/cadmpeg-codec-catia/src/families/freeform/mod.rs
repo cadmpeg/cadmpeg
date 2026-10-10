@@ -1473,8 +1473,15 @@ fn attach_standalone_wires(
     if wires.is_empty() {
         return Ok(true);
     }
-    let positions =
-        crate::families::ModelCurvePositions::new(admission.context(), &ir.model.curves, &[])?;
+    let positions = if wires.len() == 1 {
+        None
+    } else {
+        Some(crate::families::ModelCurvePositions::new(
+            admission.context(),
+            &ir.model.curves,
+            &[],
+        )?)
+    };
     let mut plans = admission
         .context()
         .scoped_vector_storage(0, "catia_freeform_wire_plans")?;
@@ -1483,10 +1490,21 @@ fn attach_standalone_wires(
         .context()
         .next_charged(&mut source, "catia_freeform_wire_visits")?
     {
-        let Some(geometry) = positions
-            .curve(admission.context(), curve_id)?
-            .map(|position| &ir.model.curves[position].geometry)
-        else {
+        let position = match &positions {
+            Some(positions) => positions.curve(admission.context(), curve_id)?,
+            None => admission.context().position_by(
+                &ir.model.curves,
+                |curve| {
+                    admission.context().equal(
+                        &curve.id,
+                        curve_id,
+                        "catia_freeform_wire_curve_id_comparison",
+                    )
+                },
+                "catia_freeform_wire_curve_search",
+            )?,
+        };
+        let Some(geometry) = position.map(|position| &ir.model.curves[position].geometry) else {
             return Ok(false);
         };
         let Some(start) =
@@ -1524,6 +1542,7 @@ fn attach_standalone_wires(
             "catia_freeform_wire_plans",
         )?;
     }
+    drop(positions);
     let body_id = admission
         .context()
         .copy_retained_text("catia:freeform:wire-body#0", "catia_freeform_wire_body_id")
@@ -1580,7 +1599,6 @@ fn attach_standalone_wires(
             Exactness::Inferred,
         )?;
     }
-    drop(positions);
     for (index, carrier, pos, start, end) in admission
         .context()
         .admit_iter(plans.0, "catia_freeform_wire_plan_visits")?
@@ -2621,69 +2639,78 @@ fn append_resolved_consolidated_surface_curves(
     // Every carrier table, model index and pending queue below is scratch for
     // this pass; only the curves, surfaces and pcurves it emits are kept.
     let mut scratch = ctx.reserve_scoped(0, "catia_freeform_surface_curve_workspace")?;
-    let (standalone, embedded, cones, spheres, tori, planes, complete_runs) =
-        scratch.with_storage(|| {
-            let mut standalone = HashMap::new();
-            for cylinder in
-                crate::families::b2::records::b2_cylinders_from_records(ctx, data, records)?
-            {
-                let cylinder = cylinder?;
-                ctx.insert_hash_map(
-                    &mut standalone,
-                    cylinder.pos,
-                    cylinder,
-                    "catia_freeform_standalone_cylinders",
-                )?;
-            }
-            let mut embedded = HashMap::new();
-            for value in
-                crate::families::b2::records::b2_embedded_cylinders_from_records(ctx, data, records)?
-            {
-                let value = value?;
-                ctx.insert_hash_map(
-                    &mut embedded,
-                    value.pos,
-                    value,
-                    "catia_freeform_embedded_cylinders",
-                )?;
-            }
-            let mut cones = HashMap::new();
-            for cone in crate::families::b2::records::b2_cones_from_records(ctx, data, records)? {
-                ctx.insert_hash_map(&mut cones, cone.pos, cone, "catia_freeform_cones")?;
-            }
-            let mut spheres = HashMap::new();
-            for sphere in crate::families::b2::records::b2_spheres_from_records(ctx, data, records)?
-            {
-                ctx.insert_hash_map(&mut spheres, sphere.pos, sphere, "catia_freeform_spheres")?;
-            }
-            let mut tori = HashMap::new();
-            for torus in crate::families::b2::records::b2_tori_from_records(ctx, data, records)? {
-                ctx.insert_hash_map(&mut tori, torus.pos, torus, "catia_freeform_tori")?;
-            }
-            let plane_carriers =
-                crate::families::b2::records::b2_plane_carriers_from_records(ctx, data, records)?;
-            let planes = ctx.collect_hash_map(
-                plane_carriers.into_iter().map(|plane| (plane.pos, plane)),
-                "catia_freeform_planes",
+    let complete_runs = scratch.with_storage(|| {
+        let topology_runs =
+            crate::families::consolidated::records::consolidated_topology_edge_runs_from_records(
+                ctx, data, records,
             )?;
-            let topology_runs =
-                crate::families::consolidated::records::consolidated_topology_edge_runs_from_records(
-                    ctx, data, records,
-                )?;
-            let complete_runs = ctx.collect_hash_map(
-                topology_runs.into_iter().map(|run| (run.edge.pcurves[0].pos, run)),
-                "catia_freeform_complete_runs",
+        ctx.collect_hash_map(
+            topology_runs
+                .into_iter()
+                .map(|run| (run.edge.pcurves[0].pos, run)),
+            "catia_freeform_complete_runs",
+        )
+    })?;
+    let mut pending = scratch.with_storage(|| {
+        let mut pending = VecDeque::new();
+        for index in ctx.admit_iter(0..resolved_blocks.len(), "catia_freeform_pending_edges")? {
+            if let Some(run) = ctx.get_hash_map(
+                &complete_runs,
+                &resolved_blocks[index].block.pcurves[0].pos,
+                "catia_freeform_complete_run_lookup",
+            )? {
+                ctx.push_back(&mut pending, (index, run), "catia_freeform_pending_edges")?;
+            }
+        }
+        Ok::<_, cadmpeg_core::CodecError>(pending)
+    })?;
+    if pending.is_empty() {
+        return Ok(ConsolidatedCurveBindingCounts::default());
+    }
+    let (standalone, embedded, cones, spheres, tori, planes) = scratch.with_storage(|| {
+        let mut standalone = HashMap::new();
+        for cylinder in crate::families::b2::records::b2_cylinders_from_records(ctx, data, records)?
+        {
+            let cylinder = cylinder?;
+            ctx.insert_hash_map(
+                &mut standalone,
+                cylinder.pos,
+                cylinder,
+                "catia_freeform_standalone_cylinders",
             )?;
-            Ok::<_, cadmpeg_core::CodecError>((
-                standalone,
-                embedded,
-                cones,
-                spheres,
-                tori,
-                planes,
-                complete_runs,
-            ))
-        })?;
+        }
+        let mut embedded = HashMap::new();
+        for value in
+            crate::families::b2::records::b2_embedded_cylinders_from_records(ctx, data, records)?
+        {
+            let value = value?;
+            ctx.insert_hash_map(
+                &mut embedded,
+                value.pos,
+                value,
+                "catia_freeform_embedded_cylinders",
+            )?;
+        }
+        let mut cones = HashMap::new();
+        for cone in crate::families::b2::records::b2_cones_from_records(ctx, data, records)? {
+            ctx.insert_hash_map(&mut cones, cone.pos, cone, "catia_freeform_cones")?;
+        }
+        let mut spheres = HashMap::new();
+        for sphere in crate::families::b2::records::b2_spheres_from_records(ctx, data, records)? {
+            ctx.insert_hash_map(&mut spheres, sphere.pos, sphere, "catia_freeform_spheres")?;
+        }
+        let mut tori = HashMap::new();
+        for torus in crate::families::b2::records::b2_tori_from_records(ctx, data, records)? {
+            ctx.insert_hash_map(&mut tori, torus.pos, torus, "catia_freeform_tori")?;
+        }
+        let plane_carriers =
+            crate::families::b2::records::b2_plane_carriers_from_records(ctx, data, records)?;
+        let planes = ctx.collect_hash_map(
+            plane_carriers.into_iter().map(|plane| (plane.pos, plane)),
+            "catia_freeform_planes",
+        )?;
+        Ok::<_, cadmpeg_core::CodecError>((standalone, embedded, cones, spheres, tori, planes))
+    })?;
 
     let mut surface_ids = HashMap::<ConsolidatedCarrierKey, SurfaceId>::new();
     let mut surface_positions = crate::families::ModelSurfacePositions::new(ctx, ir)?;
@@ -2742,8 +2769,7 @@ fn append_resolved_consolidated_surface_curves(
             )?;
         }
         drop(point_positions);
-        let curve_positions =
-            crate::families::ModelCurvePositions::new(ctx, &ir.model.curves, &[])?;
+        let mut curve_positions = None::<crate::families::ModelCurvePositions<'_>>;
         let loops = ctx.with_scoped_storage("catia_freeform_face_loop_index_workspace", || {
             let faces = ctx.with_scoped_storage("catia_freeform_face_index_workspace", || {
                 let mut face_surfaces = HashMap::new();
@@ -2913,7 +2939,28 @@ fn append_resolved_consolidated_surface_curves(
                 let Some(curve_id) = edge.curve() else {
                     return Ok(None);
                 };
-                let Some(curve_index) = curve_positions.curve(ctx, curve_id)? else {
+                let position = if ir.model.edges.len() == 1 {
+                    ctx.position_by(
+                        &ir.model.curves,
+                        |curve| {
+                            ctx.equal(
+                                &curve.id,
+                                curve_id,
+                                "catia_freeform_attachable_curve_id_comparison",
+                            )
+                        },
+                        "catia_freeform_attachable_curve_search",
+                    )?
+                } else if let Some(positions) = &curve_positions {
+                    positions.curve(ctx, curve_id)?
+                } else {
+                    let positions =
+                        crate::families::ModelCurvePositions::new(ctx, &ir.model.curves, &[])?;
+                    let position = positions.curve(ctx, curve_id)?;
+                    curve_positions = Some(positions);
+                    position
+                };
+                let Some(curve_index) = position else {
                     return Ok(None);
                 };
                 let CurveGeometry::Procedural {
@@ -3043,18 +3090,11 @@ fn append_resolved_consolidated_surface_curves(
     let mut binding_counts = ConsolidatedCurveBindingCounts::default();
     let mut partner_support_blocks = HashSet::new();
 
-    let mut pending = scratch.with_storage(|| {
-        let mut pending = VecDeque::new();
-        for index in ctx.admit_iter(0..resolved_blocks.len(), "catia_freeform_pending_edges")? {
-            ctx.push_back(&mut pending, index, "catia_freeform_pending_edges")?;
-        }
-        Ok::<_, cadmpeg_core::CodecError>(pending)
-    })?;
     // Positions of the freeform pool surfaces, indexed only when a partner
     // search needs them. Searches borrow geometry from the model arena.
     let mut partner_candidates = None::<Vec<(usize, usize)>>;
     while !pending.is_empty() {
-        let Some(resolved_index) = ctx.next_charged(
+        let Some((resolved_index, run)) = ctx.next_charged(
             &mut std::iter::from_fn(|| pending.pop_front()),
             "catia_freeform_pending_edge_visits",
         )?
@@ -3062,14 +3102,6 @@ fn append_resolved_consolidated_surface_curves(
             break;
         };
         let resolved = &mut resolved_blocks[resolved_index];
-        let Some(run) = ctx.get_hash_map(
-            &complete_runs,
-            &resolved.block.pcurves[0].pos,
-            "catia_freeform_complete_run_lookup",
-        )?
-        else {
-            continue;
-        };
         let mut side_ids: [Option<cadmpeg_core::decode::ScopedReservation<'_>>; 2] =
             std::array::from_fn(|_| None);
         let mut side_pcurves: [Option<cadmpeg_core::decode::ScopedReservation<'_>>; 2] =
@@ -4030,7 +4062,11 @@ fn append_resolved_consolidated_surface_curves(
             // The new carrier can make both coedge pcurves resolvable. Replay this
             // block after mutating the face geometry and emit only on that replay.
             scratch.with_storage(|| {
-                ctx.push_back(&mut pending, resolved_index, "catia_freeform_pending_edges")
+                ctx.push_back(
+                    &mut pending,
+                    (resolved_index, run),
+                    "catia_freeform_pending_edges",
+                )
             })?;
             continue;
         }

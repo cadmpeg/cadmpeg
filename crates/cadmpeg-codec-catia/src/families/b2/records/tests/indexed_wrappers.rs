@@ -361,8 +361,8 @@ fn b2_revolution_profile_lookups_propagate_caller_work_refusal() {
     let bytes = b2_resolved_revolution_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
     for operation in [
-        "catia_b2_revolution_profile_index",
-        "catia_b2_revolution_identity_lookup",
+        "catia_b2_revolution_identity_scan",
+        "catia_b2_resolved_revolution_scan",
     ] {
         let refused = crate::test_support::with_work_refusal(operation, |ctx| {
             let result = crate::families::b2::records::b2_resolved_revolutions_from_records(
