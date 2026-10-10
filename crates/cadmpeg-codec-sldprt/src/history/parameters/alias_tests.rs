@@ -884,7 +884,7 @@ fn coherence_without_a_stated_value_leaves_expression_unread() {
 }
 
 #[test]
-fn empty_quoted_equation_alias_does_not_evaluate_consumer() {
+fn empty_quoted_equation_alias_evaluates_without_a_dependency() {
     let mut owner = feature("owner", Some("1"), 0);
     owner.parameters = BTreeMap::from([
         (cadmpeg_core::nonblank_literal!("Width"), "1".into()),
@@ -924,7 +924,7 @@ fn empty_quoted_equation_alias_does_not_evaluate_consumer() {
             .find(|p| p.name.as_str() == "Consumer")
             .unwrap()
             .value,
-        None
+        Some(ParameterValue::Integer(2))
     );
     let _storage;
     let aliases;
@@ -932,7 +932,7 @@ fn empty_quoted_equation_alias_does_not_evaluate_consumer() {
         ParameterAliases::scoped(&ctx, &parameters, &HashMap::new(), &HashSet::new()).unwrap();
     assert_eq!(
         parameters_with_unevaluable_expressions(&ctx, &parameters, &aliases, &[]).unwrap(),
-        1
+        0
     );
     assert!(expression_identifiers("\"\"").next().is_none());
     assert!(parameters

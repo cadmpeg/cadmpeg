@@ -435,6 +435,9 @@ impl<'a, 'aliases, 'ctx, 'arena> ParameterExpressionParser<'a, 'aliases, 'ctx, '
                 return Err(ExpressionFailure::NoValue);
             }
             self.offset = end + 1;
+            if end == start {
+                return Ok(Token::Quoted(ParameterTokenText::Borrowed("")));
+            }
             let identifier = super::ExpressionIdentifier::quoted(
                 self.ctx,
                 self.input,
