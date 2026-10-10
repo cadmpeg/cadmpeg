@@ -1905,9 +1905,10 @@ fn native_feature_kind(
             .map(NativeFeatureKind::from)
     })?;
     if matches!(&kind, NativeFeatureKind::Other(_)) {
-        storage.commit()?;
+        storage.commit_value(kind)
+    } else {
+        Ok(kind)
     }
-    Ok(kind)
 }
 
 pub(super) fn non_boolean_feature_definition_with_parameters(
@@ -2980,8 +2981,9 @@ pub(super) fn hole_package_projection(
             .with_scoped_storage("NX hole package placement candidate", || {
                 hole_axis_placements_for_body(ctx, ir, body)
             })?;
+        let placements = placements;
         if placements.len() == group.members.len() {
-            placement_storage.commit()?;
+            let placements = placement_storage.commit_value(placements)?;
             ctx.insert_btree_map(
                 &mut projection.placements,
                 ctx.copy_retained_text(&use_.operation_label, "NX hole package placement map")?,

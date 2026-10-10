@@ -189,7 +189,7 @@ fn class_ordinal_projection_releases_discovery_workspace() {
             if cap == peak {
                 let values = result.unwrap().unwrap();
                 assert_eq!(values, [2, 0]);
-                output_storage.commit().expect("only two final u32 slots remain");
+                let _values = output_storage.commit_value(values).expect("only two final u32 slots remain");
                 assert!(ctx.resource_refusal().is_none());
             } else {
                 let Err(CodecError::ResourceLimit(limit)) = result else {
@@ -221,7 +221,7 @@ fn class_ordinal_projection_retains_only_accepted_output() {
                 crate::om::offset_store_control_class_ordinals(ctx, &bytes))
                 .expect("discovery and projection fit separately").unwrap();
             assert_eq!(values, [2, 0]);
-            let result = output_storage.commit();
+            let result = output_storage.commit_value(values);
             if cap == retained {
                 result.expect("exact retained output budget");
                 assert!(ctx.resource_refusal().is_none());

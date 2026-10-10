@@ -606,10 +606,7 @@ pub(crate) fn entity_51_record_at(
     };
     let mut payloads = ctx.reserve_scoped(0, "NX entity-51 reference lanes")?;
     let record = entity_51_record_from_frame(ctx, bytes, frame, &mut payloads)?;
-    if record.is_some() {
-        payloads.commit()?;
-    }
-    Ok(record)
+    record.map(|record| payloads.commit_value(record)).transpose()
 }
 
 #[derive(Clone, Copy)]
@@ -1132,7 +1129,7 @@ fn append_all_zlib_streams<'a>(
                 if keep {
                     let inflated =
                         ctx.copy_retained(expanded.window(), "retain NX inflated stream")?;
-                    candidate_storage.commit()?;
+                    let body = candidate_storage.commit_value(body)?;
                     ctx.charge_entities(1, "admit NX streams")?;
                     ctx.push_vec(
                         streams,

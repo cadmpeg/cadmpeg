@@ -775,8 +775,7 @@ pub(in crate::native) fn feature_draft_construction_index_lanes(
             };
             let indices = match section_ordinal {
                 None => {
-                    lane_storage.commit()?;
-                    FeatureDraftConstructionIndices::Unresolved(frame)
+                    FeatureDraftConstructionIndices::Unresolved(lane_storage.commit_value(frame)?)
                 }
                 Some(section_ordinal) => {
                     let resolved = frame.resolve(ctx, |index| {

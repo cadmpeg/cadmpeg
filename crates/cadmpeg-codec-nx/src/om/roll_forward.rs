@@ -244,13 +244,12 @@ pub(super) fn operation_state_group_at(
     else {
         return Ok(None);
     };
-    storage.commit()?;
-    Ok(Some(OperationStateGroup {
+    Ok(Some(storage.commit_value(OperationStateGroup {
         offset,
         byte_len,
         opener,
         members,
-    }))
+    })?))
 }
 
 /// A nonempty contiguous group sequence with its exact boundary suffix.

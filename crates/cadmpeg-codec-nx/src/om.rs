@@ -2015,8 +2015,7 @@ fn unique_payload_candidate<T, I: IntoIterator>(
     {
         return Ok(None);
     }
-    storage.commit()?;
-    Ok(Some(candidate))
+    Ok(Some(storage.commit_value(candidate)?))
 }
 
 /// Decode the unique counted reference field in a bounded `SKETCH` payload.
@@ -2636,8 +2635,7 @@ pub(crate) fn swp104_payload_leading_branch(
         return Ok(None);
     }
 
-    storage.commit()?;
-    Ok(Some(Swp104PayloadLeadingBranch {
+    let branch = Swp104PayloadLeadingBranch {
         discriminator,
         scalars,
         leading_zero,
@@ -2648,7 +2646,8 @@ pub(crate) fn swp104_payload_leading_branch(
             Err(_) => return Ok(None),
         },
         terminal,
-    }))
+    };
+    Ok(Some(storage.commit_value(branch)?))
 }
 
 /// Decode the fixed two-scalar header in a bounded `EXTRUDE` payload.
@@ -2743,7 +2742,7 @@ pub(crate) fn operation_body_members(
         let Some(body_reference_ordinal) = u32::try_from(body_ordinal).ok() else {
             continue;
         };
-        storage.commit()?;
+        let members = storage.commit_value(members)?;
         ctx.push_vec(
             &mut groups,
             OperationBodyMemberGroup {
@@ -2883,12 +2882,12 @@ pub(crate) fn operation_body_reference_lanes(
         };
         let values = match (compact, objects) {
             (Some(values), None) => {
-                compact_storage.commit()?;
-                OperationBodyReferenceLaneValues::CompactIndex(values)
+                drop(object_storage);
+                OperationBodyReferenceLaneValues::CompactIndex(compact_storage.commit_value(values)?)
             }
             (None, Some(values)) => {
-                object_storage.commit()?;
-                OperationBodyReferenceLaneValues::PayloadObjectIndex(values)
+                drop(compact_storage);
+                OperationBodyReferenceLaneValues::PayloadObjectIndex(object_storage.commit_value(values)?)
             }
             _ => continue,
         };
@@ -2994,7 +2993,7 @@ pub(crate) fn sketch_payload_scalar_lanes(
             else {
                 continue;
             };
-            candidate_storage.commit()?;
+            let lane = candidate_storage.commit_value(lane)?;
             ctx.reserve_vec(&mut lanes, 1, "NX sketch scalar lanes")?;
             lanes.push(lane);
         }
@@ -3227,7 +3226,7 @@ pub(crate) fn draft_construction_fixed_lanes(
         else {
             continue;
         };
-        candidate_storage.commit()?;
+        let lane = candidate_storage.commit_value(lane)?;
         ctx.reserve_vec(&mut lanes, 1, "NX draft fixed lanes")?;
         lanes.push(lane);
     }
@@ -3285,7 +3284,7 @@ pub(crate) fn draft_construction_binary32_lanes(
             else {
                 continue;
             };
-            candidate_storage.commit()?;
+            let lane = candidate_storage.commit_value(lane)?;
             ctx.reserve_vec(&mut lanes, 1, "NX draft binary32 lanes")?;
             lanes.push(lane);
         }
@@ -3735,10 +3734,7 @@ fn operation_state_group_table_before_counter_map(
     drop(candidates);
     drop(scratch);
     let table = OperationStateGroupTable::new(ctx, groups, trailing)?;
-    if table.is_some() {
-        group_storage.commit()?;
-    }
-    Ok(table)
+    table.map(|table| group_storage.commit_value(table)).transpose()
 }
 
 /// Decode a complete bounded `m_rollForwardStates` group table.
@@ -3862,8 +3858,7 @@ fn audit_trail_rows(
         storage.with_storage(|| ctx.reserve_vec(&mut rows, 1, "NX audit-trail rows"))?;
         rows.push(row);
     }
-    storage.commit()?;
-    Ok(Some(rows))
+    Ok(Some(storage.commit_value(rows)?))
 }
 
 fn operation_state_journal_start(
@@ -3983,8 +3978,7 @@ fn operation_state_journal_groups_before_boundary(
     if groups.is_empty() {
         return Ok(None);
     }
-    storage.commit()?;
-    Ok(Some(groups))
+    Ok(Some(storage.commit_value(groups)?))
 }
 
 /// Decode a complete bounded state journal.
@@ -4223,7 +4217,8 @@ fn boolean_operations_with_labels(
         let Some(target) = targets.into_iter().next() else {
             continue;
         };
-        tool_storage.commit()?;
+        drop(target_storage);
+        let tools = tool_storage.commit_value(tools)?;
         ctx.push_vec(
             &mut operations,
             BooleanOperation {
@@ -4280,8 +4275,7 @@ fn counted_feature_object_indices(
         })?;
         cursor += value.raw().len();
     }
-    storage.commit()?;
-    Ok(Some((values, cursor)))
+    Ok(Some((storage.commit_value(values)?, cursor)))
 }
 
 /// Decode count-framed runs of same-section record references.

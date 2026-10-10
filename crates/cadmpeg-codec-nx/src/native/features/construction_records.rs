@@ -1226,8 +1226,7 @@ pub(in crate::native) fn feature_operation_body_operands(
                 id.as_str(),
                 "find NX operation operand data block",
             )? {
-                candidate.commit()?;
-                Some(id)
+                Some(candidate.commit_value(id)?)
             } else {
                 None
             }

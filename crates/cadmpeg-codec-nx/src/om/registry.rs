@@ -227,11 +227,10 @@ fn complete_type_registry_at<'a>(
     loop {
         ctx.charge_work(1, "NX class registry traversal")?;
         if let Some(field_start) = field_registry_start(ctx, bytes, at, end)? {
-            reservation.commit()?;
-            return Ok(Some(TypeRegistry {
+            return Ok(Some(reservation.commit_value(TypeRegistry {
                 definitions,
                 field_start,
-            }));
+            })?));
         }
         let Some(declaration) = registry_declaration_at(ctx, bytes, at, end, b"UGS::")? else {
             return Ok(None);

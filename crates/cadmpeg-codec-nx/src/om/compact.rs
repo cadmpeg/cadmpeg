@@ -238,8 +238,7 @@ impl<T, const RESERVED: u8> CountedIndexMembers<T, RESERVED> {
             };
             storage.with_storage(|| ctx.push_vec(&mut mapped, value, operation))?;
         }
-        storage.commit()?;
-        Ok(Some(CountedIndexMembers(mapped, self.1)))
+        Ok(Some(storage.commit_value(CountedIndexMembers(mapped, self.1))?))
     }
     pub(crate) fn new(members: Vec<T>) -> Result<Self, &'static str> {
         if !(1..=usize::from(u8::MAX - RESERVED)).contains(&members.len()) {

@@ -396,8 +396,7 @@ mod tests {
                 let (lane, storage) =
                     super::scan(ctx, OperationPayload::new(&bytes, 100, "DRAFT").unwrap())?;
                 assert!(lane.is_some());
-                storage.commit()?;
-                Ok(lane)
+                storage.commit_value(lane)
             },
         );
     }

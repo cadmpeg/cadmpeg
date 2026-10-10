@@ -1563,8 +1563,7 @@ fn parse_framed_section_cache<'bytes>(
             drop(parsed_storage);
         }
     }
-    layouts_storage.commit()?;
-    Ok((sections, layouts))
+    layouts_storage.commit_value((sections, layouts))
 }
 
 type IndexedSections<'a> = Vec<(usize, crate::om::IndexedSection<'a>)>;
@@ -1674,8 +1673,7 @@ fn parse_indexed_section_cache<'bytes>(
             drop(parsed_storage);
         }
     }
-    layouts_storage.commit()?;
-    Ok((sections, layouts))
+    layouts_storage.commit_value((sections, layouts))
 }
 
 /// Return whether `prefix` starts with [`MAGIC`].

@@ -68,8 +68,7 @@ impl ChartSamples {
         let Some(samples) = crate::om::nonempty::NonEmpty::from_admitted_vec(samples) else {
             return Ok(None);
         };
-        storage.commit()?;
-        Ok(Some(Self { samples }))
+        Ok(Some(storage.commit_value(Self { samples })?))
     }
     #[cfg(test)]
     fn new(points: Vec<FinitePoint3>, parameters: Vec<FiniteReal>) -> Result<Self, &'static str> {
@@ -343,10 +342,7 @@ impl SourceChartData {
             },
         )?
         .ok();
-        if data.is_some() {
-            reservation.commit()?;
-        }
-        Ok(data)
+        data.map(|value| reservation.commit_value(value)).transpose()
     }
 
     pub(crate) fn xyz3(points: &[Point3]) -> Result<Self, &'static str> {
@@ -383,6 +379,7 @@ impl SourceChartData {
             },
             None => (None, None),
         };
+        let first = first;
         let (second, second_reservation) = match second {
             Some(values) => match super::SupportUvLane::from_present_values_scoped(ctx, &values)? {
                 Some((lane, reservation)) => (Some(lane), Some(reservation)),
@@ -390,6 +387,7 @@ impl SourceChartData {
             },
             None => (None, None),
         };
+        let second = second;
         let mut reservation = ctx.reserve_scoped(0, "NX chart sample pairs")?;
         let data = Self::ext11_with_storage(
             points,
@@ -406,16 +404,17 @@ impl SourceChartData {
             },
         )?
         .ok();
-        if data.is_some() {
-            reservation.commit()?;
-            for lane_reservation in [first_reservation, second_reservation]
-                .into_iter()
-                .flatten()
-            {
-                lane_reservation.commit()?;
-            }
+        let Some(data) = data else {
+            return Ok(None);
+        };
+        let mut data = reservation.commit_value(data)?;
+        for lane_reservation in [first_reservation, second_reservation]
+            .into_iter()
+            .flatten()
+        {
+            data = lane_reservation.commit_value(data)?;
         }
-        Ok(data)
+        Ok(Some(data))
     }
 
     pub(crate) fn ext11(

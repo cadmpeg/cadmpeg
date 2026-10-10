@@ -191,8 +191,52 @@ mod tests {
                 |ctx| OperationRecord::new(ctx, &bytes, label(100)),
             );
             assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.additional == 5)
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                        && limit.used == 0 && limit.additional == 1)
             );
+        }
+    }
+
+    #[test]
+    fn record_label_equality_admits_only_the_compared_prefix() {
+        let original = *b"\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff\xff\xff\xff\xff\x03\x07BLOCK\0payload";
+        for mismatch in [None, Some(0), Some(4)] {
+            let mut bytes = original;
+            if let Some(index) = mismatch {
+                bytes[21 + index] = b'X';
+            }
+            let compared = cadmpeg_core::decode::u64_from_index(mismatch.map_or(5, |index| index + 1));
+            for cap in [compared - 1, compared] {
+                crate::test_support::with_decode_context_over(
+                    &[],
+                    |policy| policy.limits.max_work_units = cap,
+                    |ctx| {
+                        let result = OperationRecord::new(ctx, &bytes, label(100));
+                        if cap < compared {
+                            let Err(cadmpeg_core::CodecError::ResourceLimit(first)) = result else {
+                                panic!("the next label byte must refuse");
+                            };
+                            assert_eq!(first.operation, "NX operation record label equality");
+                            assert_eq!(first.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+                            assert_eq!(first.used, cap);
+                            assert_eq!(first.additional, 1);
+                            assert_eq!(ctx.resource_refusal(), Some(first));
+                            assert!(matches!(ctx.charge_work(0, "label refusal stays fused"),
+                                Err(cadmpeg_core::CodecError::ResourceLimit(later)) if later == first));
+                        } else {
+                            assert_eq!(result.unwrap().is_some(), mismatch.is_none());
+                            assert_eq!(ctx.resource_refusal(), None);
+                            let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) =
+                                ctx.charge_work(1, "label compared prefix boundary") else {
+                                panic!("the exact compared prefix exhausted the work cap");
+                            };
+                            assert_eq!(limit.used, compared);
+                            assert_eq!(limit.additional, 1);
+                        }
+                    },
+                );
+            }
         }
     }
 

@@ -2244,8 +2244,7 @@ fn continue_surface_intersection_parameters_with_index_and_seeds_and_budget(
             &mut blend_parameter_grids,
         )?
     else { return Ok(None); };
-    storage.commit()?;
-    Ok(Some(lanes))
+    Ok(Some(storage.commit_value(lanes)?))
 }
 
 /// Continue one surface-intersection branch along `chart`. The two parameter
@@ -3040,8 +3039,7 @@ pub(super) fn intersection_side(
             }
             if valid {
                 let knots = linear_knots(parameters, geometry_budget)?;
-                controls_storage.commit()?;
-                Some((control_points, knots))
+                Some((controls_storage.commit_value(control_points)?, knots))
             } else {
                 drop(control_points);
                 None
@@ -3065,8 +3063,7 @@ pub(super) fn intersection_side(
                 false,
             )?
             .map_err(cadmpeg_core::CodecError::malformed)?;
-            pcurve_storage.commit()?;
-            Some(PcurveGeometry::Nurbs { nurbs })
+            Some(pcurve_storage.commit_value(PcurveGeometry::Nurbs { nurbs })?)
         }
         None => None,
     };

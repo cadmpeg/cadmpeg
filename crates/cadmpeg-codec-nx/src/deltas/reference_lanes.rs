@@ -113,8 +113,8 @@ impl TaggedReferences {
             Ok(first) => first,
             Err(error) => return Ok(Err(error)),
         };
-        let mut rest = Vec::new();
         let mut storage = ctx.reserve_scoped(0, "NX references converted entries")?;
+        let mut rest = Vec::new();
         while let Some(entry) = ctx.next_charged(&mut entries, "NX references conversion")? {
             let entry = match convert(entry) {
                 Ok(entry) => entry,
@@ -124,8 +124,7 @@ impl TaggedReferences {
                 ctx.push_vec(&mut rest, entry, "NX references converted entries")
             })?;
         }
-        storage.commit()?;
-        Ok(Ok(Self { first, rest }))
+        Ok(Ok(storage.commit_value(Self { first, rest })?))
     }
 }
 impl TryFrom<Vec<(u16, u32)>> for TaggedReferences {
@@ -190,8 +189,8 @@ impl MapEntries {
             Ok(first) => first,
             Err(error) => return Ok(Err(error)),
         };
-        let mut rest = Vec::new();
         let mut storage = ctx.reserve_scoped(0, "NX entries converted entries")?;
+        let mut rest = Vec::new();
         while let Some(entry) = ctx.next_charged(&mut entries, "NX entries conversion")? {
             let entry = match convert(entry) {
                 Ok(entry) => entry,
@@ -200,8 +199,7 @@ impl MapEntries {
             storage
                 .with_storage(|| ctx.push_vec(&mut rest, entry, "NX entries converted entries"))?;
         }
-        storage.commit()?;
-        Ok(Ok(Self { first, rest }))
+        Ok(Ok(storage.commit_value(Self { first, rest })?))
     }
 }
 impl TryFrom<Vec<(u32, u16)>> for MapEntries {

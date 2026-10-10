@@ -102,8 +102,7 @@ struct ScratchLane<'ctx, T> {
 
 impl<T> ScratchLane<'_, T> {
     fn into_retained(self) -> Result<Vec<T>, CodecError> {
-        self.reservation.commit()?;
-        Ok(self.values)
+        self.reservation.commit_value(self.values)
     }
 }
 
