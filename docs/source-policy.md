@@ -61,10 +61,11 @@ Use repeatable `--crate NAME` arguments to restrict reported findings to named c
   repeats through a chain of flattened types. The flattened type's name is
   resolved the same way. A type the flattened type reaches through anything
   other than a further `#[serde(flatten)]` is not resolved.
-- Every test a `scripts/test_*.py` file declares is collected. A test case class
-  or a free `test_` function declared at or after the file's
-  `if __name__ == "__main__":` block fails: discovery imports the module and
-  never runs that block.
+- Test declarations in `scripts/test_*.py` precede the file's
+  `if __name__ == "__main__":` block. A direct run calls `unittest.main()` in
+  that block before any later definition exists, and discovery never runs the
+  block, so a test declared after it is missed by direct runs and one declared
+  inside it is missed by discovery.
 
 ## Numeric casts
 

@@ -91,6 +91,15 @@ pub enum PropertyValue {
 pub struct RepeatedValues(Vec<PropertyValue>);
 
 impl RepeatedValues {
+    /// Wraps members that one scalar carrier produced.
+    ///
+    /// The record reader builds every member of a repeated property with the
+    /// same scalar carrier, which is the invariant the checked conversion
+    /// tests, so its result needs no second pass.
+    pub(crate) fn of_one_scalar_carrier(values: Vec<PropertyValue>) -> Self {
+        Self(values)
+    }
+
     /// Borrows the checked scalar sequence.
     pub fn values(&self) -> &[PropertyValue] {
         &self.0
