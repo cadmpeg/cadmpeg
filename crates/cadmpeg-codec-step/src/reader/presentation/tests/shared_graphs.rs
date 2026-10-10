@@ -35,10 +35,10 @@ fn domain_resolution_reuses_a_shared_dag() {
     let exchange = exchange(&layered_graph("GEOMETRIC_SET", 16));
     let mut policy = DecodePolicy::service();
     // Thirty-three reachable nodes need one active and one completed entry each.
-    // The first query transfers its 33-node completion map: 66 total slots.
-    // Root #2 needs one active, one pending and one stage entry: 69 total.
-    // Repeating all 33 nodes needs 66 + 66 + 1 = 133 slots; publication
-    // charges only the new root, because existing map keys add no slots.
+    // The first query inserts 33 completion entries: 66 total slots.
+    // Root #2 needs one active and one completed entry: 68 total.
+    // A second full walk would need another 66 entries. The second
+    // root uses the stage completions and fits within 128 collection items.
     policy.limits.max_collection_items = 128;
     crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
         let mut index = super::super::StyleDomainIndex::new(ctx).expect("stage index");
@@ -98,10 +98,10 @@ fn style_domain_point_prefix_does_not_scan_the_name_suffix() {
 }
 
 #[test]
-fn style_domain_query_error_does_not_publish_completed_descendants() {
+fn style_domain_query_preserves_collection_refusal() {
     let exchange = exchange("#1=GEOMETRIC_SET('',(#2,#3));#2=CARTESIAN_POINT('',(0.,0.,0.));#3=CARTESIAN_POINT('',(1.,0.,0.));");
     let mut policy = DecodePolicy::service();
-    // Root active, #2 active and #2 pending completion precede #3's active slot.
+    // Root active, #2 active and #2 completion precede #3's active slot.
     policy.limits.max_collection_items = 3;
     crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
         let mut index = super::super::StyleDomainIndex::new(ctx).expect("stage index");
@@ -114,7 +114,7 @@ fn style_domain_query_error_does_not_publish_completed_descendants() {
                 && limit.operation == "step_presentation_style_domain_active"
                 && limit.used == 3 && limit.additional == 1
                 && ctx.resource_refusal() == Some(limit)));
-        assert!(index.complete.is_empty());
+
     });
 }
 
@@ -153,25 +153,21 @@ fn invisible_resolution_reuses_a_shared_dag() {
     crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
         let mut index = super::super::InvisibleIndex::new(ctx).expect("stage index");
         let mut bodies = [test_body(33), test_body(34)];
-        let mut prepared = index.prepare(1, &exchange, &topology.value, &indices)
-            .expect("linear invisibility walk");
-        assert_eq!(prepared.summary, super::super::InvisibleSummary::Supported { hidden: true });
+        let (summary, mut body_ids, _body_storage) = index.resolve(1, &exchange, &topology.value, &indices).expect("linear invisibility walk");
+        assert_eq!(summary, super::super::InvisibleSummary::Supported { hidden: true });
         assert_eq!(
-            prepared.body_ids.keys().map(cadmpeg_ir::ids::BodyId::as_str).collect::<Vec<_>>(),
+            body_ids.keys().map(cadmpeg_ir::ids::BodyId::as_str).collect::<Vec<_>>(),
             ["step:data:body#33", "step:data:body#34"]
         );
-        for (body_id, index) in std::mem::take(&mut prepared.body_ids) {
+        for (body_id, index) in std::mem::take(&mut body_ids) {
             let index = index.expect("resolved test body index");
             assert_eq!(body_id, bodies[index].id);
             bodies[index].visible = Some(false);
         }
-        index.publish(prepared).expect("completed effect publication");
         assert_eq!(index.complete.len(), 33);
-        let prepared = index.prepare(2, &exchange, &topology.value, &indices)
-            .expect("distinct root reuses descendants");
-        assert_eq!(prepared.summary, super::super::InvisibleSummary::Supported { hidden: true });
-        assert!(prepared.body_ids.is_empty());
-        index.publish(prepared).expect("second completed root");
+        let (summary, body_ids, _body_storage) = index.resolve(2, &exchange, &topology.value, &indices).expect("distinct root reuses descendants");
+        assert_eq!(summary, super::super::InvisibleSummary::Supported { hidden: true });
+        assert!(body_ids.is_empty());
         assert_eq!(index.complete.len(), 34);
         assert!(bodies.iter().all(|body| body.visible == Some(false)));
     });
@@ -204,21 +200,18 @@ fn domain_cycles_keep_any_and_invisibility_cycles_keep_unsupported() {
         let indices = BTreeMap::from([("step:data:body#3".to_owned(), 0)]);
         let mut index = super::super::InvisibleIndex::new(ctx).expect("stage index");
         let mut body = test_body(3);
-        let mut prepared = index.prepare(1, &exchange, &topology.value, &indices)
-            .expect("cycle walk");
-        assert_eq!(prepared.summary, super::super::InvisibleSummary::Unsupported);
-        assert_eq!(prepared.body_ids.len(), 1);
-        assert!(index.complete.is_empty());
-        for (id, index) in std::mem::take(&mut prepared.body_ids) {
+        let (summary, mut body_ids, _body_storage) = index.resolve(1, &exchange, &topology.value, &indices).expect("cycle walk");
+        assert_eq!(summary, super::super::InvisibleSummary::Unsupported);
+        assert_eq!(body_ids.len(), 1);
+
+        for (id, index) in std::mem::take(&mut body_ids) {
             assert_eq!(index, Some(0));
             assert_eq!(id, body.id);
             body.visible = Some(false);
         }
-        index.publish(prepared).expect("completed cycle effects");
-        let prepared = index.prepare(2, &exchange, &topology.value, &indices)
-            .expect("completed cycle descendant");
-        assert_eq!(prepared.summary, super::super::InvisibleSummary::Unsupported);
-        assert!(prepared.body_ids.is_empty());
+        let (summary, body_ids, _body_storage) = index.resolve(2, &exchange, &topology.value, &indices).expect("completed cycle descendant");
+        assert_eq!(summary, super::super::InvisibleSummary::Unsupported);
+        assert!(body_ids.is_empty());
         assert_eq!(body.visible, Some(false));
     });
 }

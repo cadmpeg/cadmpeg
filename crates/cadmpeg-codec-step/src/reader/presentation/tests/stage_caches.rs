@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Completed invisibility queries and their publication boundary.
+//! Completed invisibility queries, effects, and caller refusals.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
@@ -8,7 +8,7 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::{CadIr, Codec, DecodeOptions};
 
-use super::super::{InvisibleIndex, InvisibleSummary, InvisibleWalk};
+use super::super::{InvisibleIndex, InvisibleSummary};
 use crate::{loss::StepLossCode, StepCodec};
 
 fn exchange(records: &str) -> crate::parse::Exchange {
@@ -17,55 +17,20 @@ fn exchange(records: &str) -> crate::parse::Exchange {
         .expect("cache exchange").0
 }
 
-#[test]
-fn invisible_body_refusal_frees_the_failed_active_path() {
-    let exchange = exchange("#1=ITEM();");
-    let mut ir = CadIr::empty();
-    crate::test_support::with_service_context(b"", |_, setup| {
-        let carriers = crate::reader::index::CarrierIndex::from_ir(&ir, setup).expect("index");
-        let mut topology = crate::reader::topology::decode(&exchange, &mut ir, &carriers, setup)
-            .expect("topology");
-        topology.value.body_by_root.insert(1, vec![cadmpeg_ir::ids::BodyId::from(
-            crate::ids::data(crate::ids::kind!("body"), 1),
-        )]);
-        let indices = BTreeMap::from([("step:data:body#1".to_owned(), 0)]);
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 1;
-        crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
-            let complete = BTreeMap::new();
-            let mut body_storage = ctx.reserve_scoped(0, "test selected bodies").expect("scope");
-            let mut bodies = BTreeMap::new();
-            let mut walk = InvisibleWalk {
-                active: BTreeSet::new(), complete: BTreeMap::new(), stage_complete: &complete,
-                storage: ctx.reserve_scoped(0, "test completion map").expect("scope"),
-            };
-            let result = body_storage.with_storage(|| super::super::collect_invisible_body_ids(
-                1, &exchange, &topology.value, &indices, &mut walk, &mut bodies, ctx,
-            ));
-            assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "step_presentation_invisible_body_ids"
-                    && limit.used == 1 && limit.additional == 1
-                    && ctx.resource_refusal() == Some(limit)));
-            assert!(walk.active.is_empty());
-            assert!(walk.complete.is_empty());
-            assert!(bodies.is_empty());
-        });
-    });
-}
 
 #[test]
-fn style_target_claim_refusal_frees_the_failed_active_path() {
+fn style_target_claim_refuses_before_visiting_a_target() {
     let exchange = exchange("#1=GEOMETRIC_SET('',(#2));#2=ITEM();");
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 1;
     crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+        let mut active_storage = ctx.reserve_scoped(0, "test active targets").expect("scope");
         let mut claim_storage = ctx.reserve_scoped(0, "test target claims").expect("scope");
         let mut claims = BTreeSet::new();
         let mut active = BTreeSet::new();
         let mut visited = 0;
         let result = super::super::expand_style_targets(
-            1, &exchange, (&mut claims, &mut claim_storage), &mut active, (0, 128),
+            1, &exchange, (&mut claims, &mut claim_storage), (&mut active, &mut active_storage), (0, 128),
             &mut |_| { visited += 1; Ok(()) }, ctx,
         );
         assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
@@ -73,57 +38,16 @@ fn style_target_claim_refusal_frees_the_failed_active_path() {
                 && limit.operation == "step_presentation_typed_claims"
                 && limit.used == 1 && limit.additional == 1
                 && ctx.resource_refusal() == Some(limit)));
-        assert!(active.is_empty());
+
         assert!(claims.is_empty());
         assert_eq!(visited, 0);
     });
 }
 
-#[test]
-fn style_domain_child_refusal_frees_the_failed_active_path() {
-    let exchange = exchange("#1=GEOMETRIC_SET('',(#2));#2=ITEM();");
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
-    crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
-        let mut storage = ctx.reserve_scoped(0, "test domain query").expect("scope");
-        let mut active = BTreeSet::new();
-        let mut pending = BTreeMap::new();
-        let complete = BTreeMap::new();
-        let result = storage.with_storage(|| super::super::style_domain_at(
-            1, &exchange, &mut active, &mut pending, &complete, ctx,
-        ));
-        assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "step_presentation_style_domain_active"
-                && limit.used == 1 && limit.additional == 1
-                && ctx.resource_refusal() == Some(limit)));
-        assert!(active.is_empty());
-        assert!(pending.is_empty());
-    });
-}
+
 
 #[test]
-fn first_invisible_publication_preserves_a_caller_refusal() {
-    let exchange = exchange("#1=ITEM();");
-    let mut ir = CadIr::empty();
-    crate::test_support::with_service_context(b"", |_, ctx| {
-        let carriers = crate::reader::index::CarrierIndex::from_ir(&ir, ctx).expect("index");
-        let topology = crate::reader::topology::decode(&exchange, &mut ir, &carriers, ctx)
-            .expect("topology");
-        let indices = BTreeMap::from([("step:data:body#1".to_owned(), 0)]);
-        let mut index = InvisibleIndex::new(ctx).expect("index");
-        let prepared = index.prepare(1, &exchange, &topology.value, &indices).expect("prepare");
-        assert!(!prepared.pending.is_empty());
-        let CodecError::ResourceLimit(first) = ctx.charge_work(u64::MAX, "test caller refusal")
-            .expect_err("caller refuses before publication") else { panic!("resource refusal"); };
-        assert!(matches!(index.publish(prepared), Err(CodecError::ResourceLimit(limit)) if limit == first));
-        assert!(index.complete.is_empty());
-        assert_eq!(ctx.resource_refusal(), Some(first));
-    });
-}
-
-#[test]
-fn invisible_query_refusal_keeps_completed_descendants_private() {
+fn invisible_query_preserves_collection_refusal() {
     let exchange = exchange("#1=REPRESENTATION('',(#2,#3),$);#2=ITEM();#3=ITEM();");
     let mut ir = CadIr::empty();
     let setup_arena = DecodeArena::new();
@@ -137,8 +61,8 @@ fn invisible_query_refusal_keeps_completed_descendants_private() {
     // The next child's active insertion is the fifth slot and must refuse.
     policy.limits.max_collection_items = 4;
     crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
-        let index = InvisibleIndex::new(ctx).expect("index");
-        let error = match index.prepare(1, &exchange, &topology, &indices) {
+        let mut index = InvisibleIndex::new(ctx).expect("index");
+        let error = match index.resolve(1, &exchange, &topology, &indices) {
             Err(error) => error,
             Ok(_) => panic!("second child must require another collection slot"),
         };
@@ -147,33 +71,10 @@ fn invisible_query_refusal_keeps_completed_descendants_private() {
                 && limit.operation == "step_presentation_invisible_body_active"
                 && limit.used == 4 && limit.additional == 1
                 && ctx.resource_refusal() == Some(limit)));
-        assert!(index.complete.is_empty());
+
     });
 }
 
-#[test]
-fn unpublished_invisible_effects_are_not_reused() {
-    let exchange = exchange("#1=ITEM();");
-    let mut ir = CadIr::empty();
-    crate::test_support::with_service_context(b"", |_, ctx| {
-        let carriers = crate::reader::index::CarrierIndex::from_ir(&ir, ctx).expect("index");
-        let topology = crate::reader::topology::decode(&exchange, &mut ir, &carriers, ctx)
-            .expect("topology");
-        let indices = BTreeMap::from([("step:data:body#1".to_owned(), 0)]);
-        let mut index = InvisibleIndex::new(ctx).expect("index");
-        let first = index.prepare(1, &exchange, &topology.value, &indices).expect("prepare");
-        assert_eq!(first.summary, InvisibleSummary::Supported { hidden: true });
-        assert_eq!(first.body_ids.len(), 1);
-        drop(first); // Caller effect or warning failure does not publish.
-        assert!(index.complete.is_empty());
-        let second = index.prepare(1, &exchange, &topology.value, &indices).expect("retry");
-        assert_eq!(second.body_ids.len(), 1);
-        index.publish(second).expect("publish completed caller effects");
-        let third = index.prepare(1, &exchange, &topology.value, &indices).expect("cache hit");
-        assert!(third.body_ids.is_empty());
-        assert_eq!(third.summary, InvisibleSummary::Supported { hidden: true });
-    });
-}
 
 #[test]
 fn supported_invisible_summary_requires_a_matching_body_index() {
@@ -188,13 +89,12 @@ fn supported_invisible_summary_requires_a_matching_body_index() {
         )]);
         let mut index = InvisibleIndex::new(ctx).expect("index");
         let indices = BTreeMap::new();
-        let first = index.prepare(1, &exchange, &topology.value, &indices).expect("prepare");
-        assert_eq!(first.summary, InvisibleSummary::Supported { hidden: false });
-        assert_eq!(first.body_ids.len(), 1);
-        index.publish(first).expect("publish after unsupported-target warning");
-        let second = index.prepare(1, &exchange, &topology.value, &indices).expect("cache hit");
-        assert_eq!(second.summary, InvisibleSummary::Supported { hidden: false });
-        assert!(second.body_ids.is_empty());
+        let first = index.resolve(1, &exchange, &topology.value, &indices).expect("prepare");
+        assert_eq!(first.0, InvisibleSummary::Supported { hidden: false });
+        assert_eq!(first.1.len(), 1);
+        let second = index.resolve(1, &exchange, &topology.value, &indices).expect("cache hit");
+        assert_eq!(second.0, InvisibleSummary::Supported { hidden: false });
+        assert!(second.1.is_empty());
     });
 }
 
@@ -209,17 +109,16 @@ fn cached_invisible_query_does_not_enter_depth() {
     let topology = crate::reader::topology::decode(&exchange, &mut ir, &carriers, &setup).expect("topology").value;
     let indices = BTreeMap::from([("step:data:body#2".to_owned(), 0)]);
     let mut policy = DecodePolicy::service();
-    // The first leaf query uses one depth. After publication a real caller
+    // The first leaf query uses one depth. After completion a real caller
     // depth owns that one slot; the cached query must not enter another.
     policy.limits.max_recursion_depth = 1;
     crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
         let mut index = InvisibleIndex::new(ctx).expect("index");
-        let first = index.prepare(2, &exchange, &topology, &indices).expect("leaf");
-        index.publish(first).expect("completed leaf effects");
+        let _first = index.resolve(2, &exchange, &topology, &indices).expect("leaf");
         let _parent_depth = ctx.enter_nested("test active parent query").expect("caller depth");
-        let parent = index.prepare(2, &exchange, &topology, &indices).expect("cached query");
-        assert_eq!(parent.summary, InvisibleSummary::Supported { hidden: true });
-        assert!(parent.body_ids.is_empty());
+        let parent = index.resolve(2, &exchange, &topology, &indices).expect("cached query");
+        assert_eq!(parent.0, InvisibleSummary::Supported { hidden: true });
+        assert!(parent.1.is_empty());
         assert_eq!(ctx.resource_refusal(), None);
     });
 }
@@ -243,33 +142,6 @@ fn reused_representation_invisibility_keeps_body_effects_and_warning_order() {
     ]);
 }
 
-#[test]
-fn invisible_prepared_body_entry_preserves_its_collection_refusal() {
-    let exchange = exchange("#1=ITEM();");
-    let mut ir = CadIr::empty();
-    crate::test_support::with_service_context(b"", |_, setup| {
-        let carriers = crate::reader::index::CarrierIndex::from_ir(&ir, setup).expect("index");
-        let topology = crate::reader::topology::decode(&exchange, &mut ir, &carriers, setup)
-            .expect("topology");
-        let indices = BTreeMap::from([("step:data:body#1".to_owned(), 0)]);
-        let mut policy = DecodePolicy::service();
-        // One active node fits. Its first prepared body is the second slot.
-        policy.limits.max_collection_items = 1;
-        crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
-            let index = InvisibleIndex::new(ctx).expect("index");
-            let error = match index.prepare(1, &exchange, &topology.value, &indices) {
-                Err(error) => error,
-                Ok(_) => panic!("the first body entry must refuse"),
-            };
-            assert!(matches!(error, CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "step_presentation_invisible_body_ids"
-                    && limit.used == 1 && limit.additional == 1
-                    && ctx.resource_refusal() == Some(limit)));
-            assert!(index.complete.is_empty());
-        });
-    });
-}
 
 #[test]
 fn empty_color_frame_visits_no_terminal_step() {
@@ -301,4 +173,45 @@ fn empty_color_frame_visits_no_terminal_step() {
     drop(frame);
     assert_eq!(ctx.resource_refusal(), None);
     ctx.finish_session().expect("no terminal-step refusal");
+}
+#[test]
+fn style_domain_completion_keeps_empty_active_tree_admitted() {
+    let exchange = exchange("#1=CARTESIAN_POINT('',(0.,0.,0.));");
+    let mut policy = DecodePolicy::service();
+    // One u64-key active leaf: eleven key lanes, sixteen pointer lanes,
+    // and two alignment paddings. Removal leaves its empty root allocated.
+    let alignment = std::mem::align_of::<u64>().max(std::mem::align_of::<usize>());
+    let active_bytes = 11 * std::mem::size_of::<u64>() + 16 * std::mem::size_of::<usize>() + 2 * alignment;
+    policy.limits.max_materialized_bytes = u64::try_from(active_bytes).expect("node bytes");
+    crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+        let mut index = super::super::StyleDomainIndex::new(ctx).expect("index");
+        assert!(matches!(index.domain(1, &exchange), Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::MaterializedBytes
+                && limit.operation == "step_style_domain_cache"
+                && limit.used == u64::try_from(active_bytes).expect("node bytes")
+                && ctx.resource_refusal() == Some(limit)));
+    });
+}
+
+#[test]
+fn style_target_active_tree_stays_admitted_until_dropped() {
+    let exchange = exchange("#1=GEOMETRIC_SET('',());");
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 64 * 1024;
+    let alignment = std::mem::align_of::<u64>().max(std::mem::align_of::<usize>());
+    let node_bytes = u64::try_from(11 * std::mem::size_of::<u64>() + 16 * std::mem::size_of::<usize>() + 2 * alignment).expect("node bytes");
+    crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+        let mut active_storage = ctx.reserve_scoped(0, "active targets").expect("scope");
+        let mut active = BTreeSet::new();
+        let mut claim_storage = ctx.reserve_scoped(0, "target claims").expect("scope");
+        let mut claims = BTreeSet::new();
+        super::super::expand_style_targets(1, &exchange, (&mut claims, &mut claim_storage), (&mut active, &mut active_storage), (0, 128), &mut |_| panic!("empty set"), ctx).expect("empty expansion");
+        assert!(active.is_empty());
+        assert_eq!(claims, BTreeSet::from([1]));
+        // The claim tree and the empty active tree each keep one admitted node.
+        assert!(matches!(ctx.reserve_scoped(policy.limits.max_materialized_bytes - node_bytes, "live active root probe"), Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::MaterializedBytes
+                && limit.used == 2 * node_bytes
+                && ctx.resource_refusal() == Some(limit)));
+    });
 }

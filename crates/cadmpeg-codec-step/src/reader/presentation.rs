@@ -202,8 +202,8 @@ pub(super) fn decode<'ctx>(
                     continue;
                 }
             }
-            let mut prepared = invisible.prepare(target, exchange, topology, &body_indices)?;
-            let mut body_ids = std::mem::take(&mut prepared.body_ids).into_iter();
+            let (summary, body_ids, _body_storage) = invisible.resolve(target, exchange, topology, &body_indices)?;
+            let mut body_ids = body_ids.into_iter();
             ctx.charge_work(0, "STEP presentation body_ids traversal")?;
             for _ in 0..body_ids.len() {
                 let (_body_id, index) = ctx.next_charged(&mut body_ids, "STEP presentation body_ids traversal")?
@@ -212,7 +212,7 @@ pub(super) fn decode<'ctx>(
                     ir.model.bodies[index].visible = Some(false);
                 }
             }
-            if !prepared.summary.is_hidden() {
+            if !summary.is_hidden() {
                 ctx.push_scoped_vec(
                     &mut slot_storage.borrow_mut(),
                     &mut losses,
@@ -223,10 +223,6 @@ pub(super) fn decode<'ctx>(
                 )?;
                 supported = false;
             }
-            // Completed summaries are reusable only after this root's ordered
-            // effects and warning have succeeded. A later cached root contributes
-            // no repeated body IDs, because visibility is changed only to false.
-            invisible.publish(prepared)?;
         }
         if style_targets.is_empty() && layer_targets.is_empty() && supported {
             claim_storage.with_storage(|| {
@@ -593,28 +589,22 @@ pub(super) fn decode<'ctx>(
                 entry.insert(stored)
             }
         };
-        let hidden = style_is_hidden(
-            style_id,
-            &hidden_style_ids,
-            exchange,
-            &mut style_visibility,
-            &mut scratch_storage,
-            ctx,
-        )?;
         let mut emitted = false;
-        let mut ordinal = 0_usize;
+        let mut target_storage = ctx.reserve_scoped(0, "STEP expanded style target scratch")?;
+        let mut target_steps = Vec::new();
+        let mut active_storage = ctx.reserve_scoped(0, "STEP style target active scratch")?;
+        let mut active = BTreeSet::new();
         expand_style_targets(
-            target_step,
-            exchange,
-            (&mut typed, &mut claim_storage),
-            &mut BTreeSet::new(),
-            (0, graph_limit),
-            &mut |target_step| {
-                ctx.charge_work(1, "STEP style target traversal")?;
-                let target_ordinal = ordinal;
-                ordinal = ordinal
-                    .checked_add(1)
-                    .ok_or_else(|| CodecError::malformed("STEP style target ordinal overflow"))?;
+            target_step, exchange, (&mut typed, &mut claim_storage),
+            (&mut active, &mut active_storage), (0, graph_limit),
+            &mut |target| ctx.push_scoped_vec(&mut target_storage, &mut target_steps, target, "step_presentation_expanded_targets"), ctx,
+        )?;
+        drop(active);
+        drop(active_storage);
+        let mut target_steps = target_steps.into_iter().enumerate();
+        for _ in 0..target_steps.len() {
+            let (target_ordinal, target_step) = ctx.next_charged(&mut target_steps, "STEP expanded style target traversal")?
+                .ok_or_else(|| CodecError::malformed("STEP expanded style target source ended early"))?;
                 let mut appearance_target_storage =
                     ctx.reserve_scoped(0, "STEP appearance target slots")?;
                 let targets = appearance_targets(
@@ -639,7 +629,7 @@ pub(super) fn decode<'ctx>(
                         StepLossCode::DecodeWarning.note(message),
                         "step_presentation_losses",
                     )?;
-                    return Ok(());
+                    continue;
                 }
                 let mut targets = targets.into_iter().enumerate();
                 ctx.charge_work(0, "STEP appearance target traversal")?;
@@ -677,15 +667,13 @@ pub(super) fn decode<'ctx>(
                             "step_presentation_source_entity_id",
                         )?),
                         object_type: None,
-                        visible: hidden.then_some(false),
+                        visible: style_is_hidden(style_id, &hidden_style_ids, exchange,
+                            &mut style_visibility, &mut scratch_storage, ctx)?.then_some(false),
                         channels: BTreeMap::new(),
                     };
                     ir.model.appearance_bindings.push(binding);
                 }
-                Ok(())
-            },
-            ctx,
-        )?;
+        }
         if emitted && !deferred_invisibility.is_empty() {
             let mut ancestor = Some(style_id);
             while let Some(id) = ancestor {
@@ -863,14 +851,6 @@ struct InvisibleIndex<'ctx, 'arena> {
     storage: ScopedReservation<'ctx>,
 }
 
-struct PreparedInvisible<'ctx> {
-    body_ids: BTreeMap<BodyId, Option<usize>>,
-    summary: InvisibleSummary,
-    pending: BTreeMap<u64, InvisibleSummary>,
-    pending_storage: ScopedReservation<'ctx>,
-    _body_storage: ScopedReservation<'ctx>,
-}
-
 impl<'ctx, 'arena> InvisibleIndex<'ctx, 'arena> {
     fn new(ctx: &'ctx DecodeContext<'arena>) -> Result<Self, CodecError> {
         Ok(Self {
@@ -880,21 +860,21 @@ impl<'ctx, 'arena> InvisibleIndex<'ctx, 'arena> {
         })
     }
 
-    fn prepare(
-        &self,
+    fn resolve(
+        &mut self,
         id: u64,
         exchange: &Exchange,
         topology: &TopologyData,
         body_indices: &BTreeMap<String, usize>,
-    ) -> Result<PreparedInvisible<'ctx>, CodecError> {
+    ) -> Result<(InvisibleSummary, BTreeMap<BodyId, Option<usize>>, ScopedReservation<'ctx>), CodecError> {
         let ctx = self.ctx;
         let mut body_storage = ctx.reserve_scoped(0, "STEP invisible body selection scratch")?;
         let mut body_ids = BTreeMap::new();
         let mut walk = InvisibleWalk {
             active: BTreeSet::new(),
-            complete: BTreeMap::new(),
-            stage_complete: &self.complete,
-            storage: ctx.reserve_scoped(0, "STEP invisible completion scratch")?,
+            complete: &mut self.complete,
+            storage: &mut self.storage,
+            active_storage: ctx.reserve_scoped(0, "STEP invisible active scratch")?,
         };
         let summary = body_storage.with_storage(|| {
             collect_invisible_body_ids(
@@ -902,41 +882,15 @@ impl<'ctx, 'arena> InvisibleIndex<'ctx, 'arena> {
                 &mut body_ids, ctx,
             )
         })?;
-        Ok(PreparedInvisible {
-            body_ids,
-            summary,
-            pending: walk.complete,
-            pending_storage: walk.storage,
-            _body_storage: body_storage,
-        })
-    }
-
-    fn publish(&mut self, prepared: PreparedInvisible<'ctx>) -> Result<(), CodecError> {
-        let PreparedInvisible { mut pending_storage, pending, .. } = prepared;
-        if self.complete.is_empty() {
-            self.storage.absorb(&mut pending_storage)?;
-            self.complete = pending;
-        } else {
-            let count = pending.len();
-            let mut pending = pending.into_iter();
-            for _ in 0..count {
-                let (id, summary) = self.ctx
-                    .next_charged(&mut pending, "STEP invisible publication traversal")?
-                    .ok_or_else(|| CodecError::malformed("STEP invisible completion source ended early"))?;
-                self.storage.with_storage(|| {
-                    self.ctx.insert_btree_map(&mut self.complete, id, summary, "step_invisible_complete")
-                })?;
-            }
-        }
-        Ok(())
+        Ok((summary, body_ids, body_storage))
     }
 }
 
 struct InvisibleWalk<'stage, 'ctx> {
     active: BTreeSet<u64>,
-    complete: BTreeMap<u64, InvisibleSummary>,
-    stage_complete: &'stage BTreeMap<u64, InvisibleSummary>,
-    storage: ScopedReservation<'ctx>,
+    complete: &'stage mut BTreeMap<u64, InvisibleSummary>,
+    storage: &'stage mut ScopedReservation<'ctx>,
+    active_storage: ScopedReservation<'ctx>,
 }
 
 fn collect_invisible_body_ids(
@@ -956,9 +910,6 @@ fn collect_invisible_body_ids(
     {
         return Ok(*supported);
     }
-    if let Some(summary) = ctx.get_btree_map(walk.stage_complete, &id, "STEP invisible stage completion lookup")? {
-        return Ok(*summary);
-    }
     let supported = collect_invisible_body_ids_uncached(
         id,
         exchange,
@@ -969,7 +920,7 @@ fn collect_invisible_body_ids(
         ctx,
     )?;
     walk.storage.with_storage(|| {
-        ctx.insert_btree_map(&mut walk.complete, id, supported, "step_invisible_complete")
+        ctx.insert_btree_map(walk.complete, id, supported, "step_invisible_complete")
     })?;
     Ok(supported)
 }
@@ -984,126 +935,113 @@ fn collect_invisible_body_ids_uncached(
     ctx: &DecodeContext<'_>,
 ) -> Result<InvisibleSummary, CodecError> {
     let _nested = ctx.enter_nested("step_presentation_invisible_body_walk")?;
-    let (_inserted, _active_storage) =
-        ctx.with_scoped_storage("STEP active key scratch", || {
-            ctx.insert_btree_set(
-                &mut walk.active,
-                id,
-                "step_presentation_invisible_body_active",
-            )
-        })?;
-    let result = (|| {
-        if let Some(ids) = ctx.get_btree_map(
-            &topology.body_by_root,
-            &id,
-            "STEP presentation topology.body_by_root get",
-        )? {
-            let mut hidden = false;
-            let mut source_body_ids = ids.iter();
-            ctx.charge_work(0, "STEP presentation ids traversal")?;
-            for _ in 0..source_body_ids.len() {
-                let body = ctx.next_charged(&mut source_body_ids, "STEP presentation ids traversal")?
-                    .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
-                let index = if let Some(index) = ctx.get_btree_map(body_ids, body, "STEP body ids membership")? {
-                    *index
-                } else {
-                    let body = body.try_clone_for_decode(ctx, "step_presentation_invisible_body_identity")?;
-                    let index = ctx.get_btree_map(body_indices, body.as_str(), "STEP presentation body_indices get")?.copied();
-                    ctx.insert_btree_map(body_ids, body, index, "step_presentation_invisible_body_ids")?;
-                    index
-                };
-                hidden |= index.is_some();
-            }
-            ctx.remove_btree_set(&mut walk.active, &id, "STEP presentation active remove")?;
-            return Ok(if ids.is_empty() { InvisibleSummary::Unsupported } else { InvisibleSummary::Supported { hidden } });
-        }
-        let fallback = BodyId::from(ids::data(kind!("body"), id));
-        if let Some(index) = ctx.get_btree_map(
-            body_indices,
-            fallback.as_str(),
-            "STEP presentation body_indices contains_key",
-        )?.copied() {
-            ctx.insert_btree_map(body_ids, fallback, Some(index), "step_presentation_invisible_body_ids")?;
-            ctx.remove_btree_set(&mut walk.active, &id, "STEP presentation active remove")?;
-            return Ok(InvisibleSummary::Supported { hidden: true });
-        }
-
-        let Some(record) =
-            ctx.get_btree_map(exchange.records(), &id, "STEP presentation record get")?
-        else {
-            ctx.remove_btree_set(&mut walk.active, &id, "STEP presentation active remove")?;
-            return Ok(InvisibleSummary::Unsupported);
-        };
-        let mut found_reference = false;
-        let mut supported = true;
+    walk.active_storage.with_storage(|| {
+        ctx.insert_btree_set(&mut walk.active, id, "step_presentation_invisible_body_active")
+    })?;
+    if let Some(ids) = ctx.get_btree_map(
+        &topology.body_by_root,
+        &id,
+        "STEP presentation topology.body_by_root get",
+    )? {
         let mut hidden = false;
-        if record.partial(ctx, "STYLED_ITEM")?.is_some()
-            || record.partial(ctx, "OVER_RIDING_STYLED_ITEM")?.is_some()
+        let mut source_body_ids = ids.iter();
+        ctx.charge_work(0, "STEP presentation ids traversal")?;
+        for _ in 0..source_body_ids.len() {
+            let body = ctx.next_charged(&mut source_body_ids, "STEP presentation ids traversal")?
+                .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
+            let index = if let Some(index) = ctx.get_btree_map(body_ids, body, "STEP body ids membership")? {
+                *index
+            } else {
+                let body = body.try_clone_for_decode(ctx, "step_presentation_invisible_body_identity")?;
+                let index = ctx.get_btree_map(body_indices, body.as_str(), "STEP presentation body_indices get")?.copied();
+                ctx.insert_btree_map(body_ids, body, index, "step_presentation_invisible_body_ids")?;
+                index
+            };
+            hidden |= index.is_some();
+        }
+        ctx.remove_btree_set(&mut walk.active, &id, "STEP presentation active remove")?;
+        return Ok(if ids.is_empty() { InvisibleSummary::Unsupported } else { InvisibleSummary::Supported { hidden } });
+    }
+    let fallback = BodyId::from(ids::data(kind!("body"), id));
+    if let Some(index) = ctx.get_btree_map(
+        body_indices,
+        fallback.as_str(),
+        "STEP presentation body_indices contains_key",
+    )?.copied() {
+        ctx.insert_btree_map(body_ids, fallback, Some(index), "step_presentation_invisible_body_ids")?;
+        ctx.remove_btree_set(&mut walk.active, &id, "STEP presentation active remove")?;
+        return Ok(InvisibleSummary::Supported { hidden: true });
+    }
+
+    let Some(record) =
+        ctx.get_btree_map(exchange.records(), &id, "STEP presentation record get")?
+    else {
+        ctx.remove_btree_set(&mut walk.active, &id, "STEP presentation active remove")?;
+        return Ok(InvisibleSummary::Unsupported);
+    };
+    let mut found_reference = false;
+    let mut supported = true;
+    let mut hidden = false;
+    if record.partial(ctx, "STYLED_ITEM")?.is_some()
+        || record.partial(ctx, "OVER_RIDING_STYLED_ITEM")?.is_some()
+    {
+        if let Some(reference) =
+            styled_item_parts(ctx, record)?.and_then(|parts| parts.target.reference())
         {
-            if let Some(reference) =
-                styled_item_parts(ctx, record)?.and_then(|parts| parts.target.reference())
-            {
-                found_reference = true;
-                let child = collect_invisible_body_ids(
-                    reference,
-                    exchange,
-                    topology,
-                    body_indices,
-                    walk,
-                    body_ids,
-                    ctx,
-                )?;
-                match child {
-                    InvisibleSummary::Unsupported => supported = false,
-                    InvisibleSummary::Supported { hidden: child_hidden } => hidden |= child_hidden,
-                }
+            found_reference = true;
+            let child = collect_invisible_body_ids(
+                reference,
+                exchange,
+                topology,
+                body_indices,
+                walk,
+                body_ids,
+                ctx,
+            )?;
+            match child {
+                InvisibleSummary::Unsupported => supported = false,
+                InvisibleSummary::Supported { hidden: child_hidden } => hidden |= child_hidden,
             }
-        } else if ctx.any_by(
-            &(record.partials)[..],
-            |partial| Ok(super::representation::is_representation_name(&partial.name)),
-            "STEP collect invisible body ids traversal",
-        )? {
-            if let Some(values) = super::representation::item_values(ctx, record)? {
-                let mut values = values.iter();
-                ctx.charge_work(0, "STEP representation item traversal")?;
-                for _ in 0..values.len() {
-                    let value = ctx.next_charged(&mut values, "STEP representation item traversal")?
-                        .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
-                    for reference in references(value, ctx) {
-                        found_reference = true;
-                        let child = collect_invisible_body_ids(
-                            reference?,
-                            exchange,
-                            topology,
-                            body_indices,
-                            walk,
-                            body_ids,
-                            ctx,
-                        )?;
-                        match child {
-                            InvisibleSummary::Unsupported => supported = false,
-                            InvisibleSummary::Supported { hidden: child_hidden } => hidden |= child_hidden,
-                        }
+        }
+    } else if ctx.any_by(
+        &(record.partials)[..],
+        |partial| Ok(super::representation::is_representation_name(&partial.name)),
+        "STEP collect invisible body ids traversal",
+    )? {
+        if let Some(values) = super::representation::item_values(ctx, record)? {
+            let mut values = values.iter();
+            ctx.charge_work(0, "STEP representation item traversal")?;
+            for _ in 0..values.len() {
+                let value = ctx.next_charged(&mut values, "STEP representation item traversal")?
+                    .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
+                for reference in references(value, ctx) {
+                    found_reference = true;
+                    let child = collect_invisible_body_ids(
+                        reference?,
+                        exchange,
+                        topology,
+                        body_indices,
+                        walk,
+                        body_ids,
+                        ctx,
+                    )?;
+                    match child {
+                        InvisibleSummary::Unsupported => supported = false,
+                        InvisibleSummary::Supported { hidden: child_hidden } => hidden |= child_hidden,
                     }
                 }
             }
         }
-        ctx.remove_btree_set(&mut walk.active, &id, "STEP presentation active remove")?;
-        Ok(if found_reference && supported { InvisibleSummary::Supported { hidden } } else { InvisibleSummary::Unsupported })
-    })();
-    if result.is_err() {
-        // A failed private walk owns no surviving active path. Free its nodes
-        // before this frame releases the admission for its active key.
-        drop(std::mem::take(&mut walk.active));
     }
-    result
+    ctx.remove_btree_set(&mut walk.active, &id, "STEP presentation active remove")?;
+    Ok(if found_reference && supported { InvisibleSummary::Supported { hidden } } else { InvisibleSummary::Unsupported })
 }
 
 fn expand_style_targets<F: FnMut(u64) -> Result<(), CodecError>>(
     id: u64,
     exchange: &Exchange,
     (typed, claim_storage): (&mut BTreeSet<u64>, &mut ScopedReservation<'_>),
-    active: &mut BTreeSet<u64>,
+    (active, active_storage): (&mut BTreeSet<u64>, &mut ScopedReservation<'_>),
     (depth, graph_limit): (usize, usize),
     visit: &mut F,
     ctx: &DecodeContext<'_>,
@@ -1114,68 +1052,59 @@ fn expand_style_targets<F: FnMut(u64) -> Result<(), CodecError>>(
         return Ok(());
     }
     let _nested = ctx.enter_nested("step_presentation_style_target_walk")?;
-    let (_inserted, _active_storage) = ctx
-        .with_scoped_storage("STEP active key scratch", || {
-            ctx.insert_btree_set(active, id, "step_presentation_style_target_active")
-        })?;
-    let result = (|| {
-        let Some(record) =
-            ctx.get_btree_map(exchange.records(), &id, "STEP presentation record get")?
-        else {
-            ctx.remove_btree_set(active, &id, "STEP presentation active remove")?;
-            visit(id)?;
-            return Ok(());
-        };
-        let Some(set_name) = ctx.find_map(
-            &(record.partials)[..],
-            |partial| {
-                Ok(match partial.name.as_str() {
-                    "GEOMETRIC_SET" => Some("GEOMETRIC_SET"),
-                    "GEOMETRIC_CURVE_SET" => Some("GEOMETRIC_CURVE_SET"),
-                    _ => None,
-                })
-            },
-            "STEP expand style targets traversal",
-        )?
-        else {
-            ctx.remove_btree_set(active, &id, "STEP presentation active remove")?;
-            visit(id)?;
-            return Ok(());
-        };
-        claim_storage
-            .with_storage(|| ctx.insert_btree_set(typed, id, "step_presentation_typed_claims"))?;
-        let values = record
-            .partial(ctx, set_name)?
-            .and_then(|partial| partial.parameters.get(1))
-            .and_then(ValueExt::list)
-            .unwrap_or_default();
-        let mut values = values.iter();
-        ctx.charge_work(0, "STEP geometric style set traversal")?;
-        for _ in 0..values.len() {
-            let value = ctx.next_charged(&mut values, "STEP geometric style set traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
-            if let Some(item) = ValueExt::reference(value) {
-                ctx.charge_work(1, "STEP style target edge")?;
-                expand_style_targets(
-                    item,
-                    exchange,
-                    (typed, claim_storage),
-                    active,
-                    (depth + 1, graph_limit),
-                    visit,
-                    ctx,
-                )?;
-            }
-        }
+    active_storage.with_storage(|| {
+        ctx.insert_btree_set(active, id, "step_presentation_style_target_active")
+    })?;
+    let Some(record) =
+        ctx.get_btree_map(exchange.records(), &id, "STEP presentation record get")?
+    else {
         ctx.remove_btree_set(active, &id, "STEP presentation active remove")?;
-        Ok(())
-    })();
-    if result.is_err() {
-        // A failed private walk owns no surviving active path. Free its nodes
-        // before this frame releases the admission for its active key.
-        drop(std::mem::take(&mut *active));
+        visit(id)?;
+        return Ok(());
+    };
+    let Some(set_name) = ctx.find_map(
+        &(record.partials)[..],
+        |partial| {
+            Ok(match partial.name.as_str() {
+                "GEOMETRIC_SET" => Some("GEOMETRIC_SET"),
+                "GEOMETRIC_CURVE_SET" => Some("GEOMETRIC_CURVE_SET"),
+                _ => None,
+            })
+        },
+        "STEP expand style targets traversal",
+    )?
+    else {
+        ctx.remove_btree_set(active, &id, "STEP presentation active remove")?;
+        visit(id)?;
+        return Ok(());
+    };
+    claim_storage
+        .with_storage(|| ctx.insert_btree_set(typed, id, "step_presentation_typed_claims"))?;
+    let values = record
+        .partial(ctx, set_name)?
+        .and_then(|partial| partial.parameters.get(1))
+        .and_then(ValueExt::list)
+        .unwrap_or_default();
+    let mut values = values.iter();
+    ctx.charge_work(0, "STEP geometric style set traversal")?;
+    for _ in 0..values.len() {
+        let value = ctx.next_charged(&mut values, "STEP geometric style set traversal")?
+            .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
+        if let Some(item) = ValueExt::reference(value) {
+            ctx.charge_work(1, "STEP style target edge")?;
+            expand_style_targets(
+                item,
+                exchange,
+                (typed, claim_storage),
+                (active, active_storage),
+                (depth + 1, graph_limit),
+                visit,
+                ctx,
+            )?;
+        }
     }
-    result
+    ctx.remove_btree_set(active, &id, "STEP presentation active remove")?;
+    Ok(())
 }
 
 fn appearance_targets(
@@ -2992,37 +2921,11 @@ impl<'ctx, 'arena> StyleDomainIndex<'ctx, 'arena> {
     }
 
     fn domain(&mut self, id: u64, exchange: &Exchange) -> Result<StyleDomain, CodecError> {
-        let ctx = self.ctx;
-        let mut pending_storage = ctx.reserve_scoped(0, "STEP style domain query scratch")?;
-        let mut pending = BTreeMap::new();
-        let domain = pending_storage.with_storage(|| {
-            style_domain_at(
-                id,
-                exchange,
-                &mut BTreeSet::new(),
-                &mut pending,
-                &self.complete,
-                ctx,
-            )
-        })?;
-        // A completed first query can transfer its actual map and admission.
-        // Later queries publish only after every descendant has succeeded.
-        if self.complete.is_empty() {
-            self.storage.absorb(&mut pending_storage)?;
-            self.complete = pending;
-        } else {
-            let pending_count = pending.len();
-            let mut pending = pending.into_iter();
-            for _ in 0..pending_count {
-                let (id, domain) = ctx
-                    .next_charged(&mut pending, "STEP style domain publication traversal")?
-                    .ok_or_else(|| CodecError::malformed("STEP domain completion source ended early"))?;
-                self.storage.with_storage(|| {
-                    ctx.insert_btree_map(&mut self.complete, id, domain, "step_style_domain_cache")
-                })?;
-            }
-        }
-        Ok(domain)
+        let mut active_storage = self.ctx.reserve_scoped(0, "STEP style domain active scratch")?;
+        let mut active = BTreeSet::new();
+        self.storage.with_storage(|| {
+            style_domain_at(id, exchange, &mut active, &mut self.complete, &mut active_storage, self.ctx)
+        })
     }
 }
 
@@ -3031,7 +2934,7 @@ fn style_domain_at(
     exchange: &Exchange,
     active: &mut BTreeSet<u64>,
     cache: &mut BTreeMap<u64, StyleDomain>,
-    complete: &BTreeMap<u64, StyleDomain>,
+    active_storage: &mut ScopedReservation<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<StyleDomain, CodecError> {
     if ctx.contains_btree_set(active, &id, "STEP presentation active contains")? {
@@ -3040,10 +2943,7 @@ fn style_domain_at(
     if let Some(domain) = ctx.get_btree_map(cache, &id, "STEP style domain cache lookup")? {
         return Ok(*domain);
     }
-    if let Some(domain) = ctx.get_btree_map(complete, &id, "STEP style domain stage lookup")? {
-        return Ok(*domain);
-    }
-    let domain = style_domain_uncached(id, exchange, active, cache, complete, ctx)?;
+    let domain = style_domain_uncached(id, exchange, active, cache, active_storage, ctx)?;
     // Any is absorbing in a geometric set. A reachable cycle thus has Any
     // for every entry point, independent of the active path.
     ctx.insert_btree_map(cache, id, domain, "step_style_domain_cache")?;
@@ -3055,190 +2955,181 @@ fn style_domain_uncached(
     exchange: &Exchange,
     active: &mut BTreeSet<u64>,
     cache: &mut BTreeMap<u64, StyleDomain>,
-    complete: &BTreeMap<u64, StyleDomain>,
+    active_storage: &mut ScopedReservation<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<StyleDomain, CodecError> {
     let _nested = ctx.enter_nested("step_presentation_style_domain_walk")?;
-    let (_inserted, _active_storage) = ctx
-        .with_scoped_storage("STEP active key scratch", || {
-            ctx.insert_btree_set(active, id, "step_presentation_style_domain_active")
-        })?;
-    let result = (|| {
-        let Some(record) =
-            ctx.get_btree_map(exchange.records(), &id, "STEP presentation record get")?
-        else {
+    active_storage.with_storage(|| {
+        ctx.insert_btree_set(active, id, "step_presentation_style_domain_active")
+    })?;
+    let Some(record) =
+        ctx.get_btree_map(exchange.records(), &id, "STEP presentation record get")?
+    else {
+        ctx.remove_btree_set(active, &id, "STEP presentation active remove")?;
+        return Ok(StyleDomain::Any);
+    };
+    let set_name = ctx.find_map(
+        &record.partials[..],
+        |partial| {
+            Ok(match partial.name.as_str() {
+                "GEOMETRIC_SET" => Some("GEOMETRIC_SET"),
+                "GEOMETRIC_CURVE_SET" => Some("GEOMETRIC_CURVE_SET"),
+                _ => None,
+            })
+        },
+        "STEP style domain at traversal",
+    )?;
+    if let Some(set_name) = set_name {
+        let mut first = None;
+        let mut same = true;
+        let members = record
+            .partial(ctx, set_name)?
+            .and_then(|partial| partial.parameters.get(1))
+            .and_then(ValueExt::list)
+            .unwrap_or_default();
+        let mut members = members.iter();
+        ctx.charge_work(0, "STEP style domain member traversal")?;
+        for _ in 0..members.len() {
+            let value = ctx.next_charged(&mut members, "STEP style domain member traversal")?
+                .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
+            let Some(member) = ValueExt::reference(value) else {
+                continue;
+            };
+            let domain = style_domain_at(member, exchange, active, cache, active_storage, ctx)?;
+            if first.is_some_and(|first| first != domain) {
+                same = false;
+            }
+            if first.is_none() {
+                first = Some(domain);
+            }
+        }
+        if let Some(first) = first {
             ctx.remove_btree_set(active, &id, "STEP presentation active remove")?;
-            return Ok(StyleDomain::Any);
-        };
-        let set_name = ctx.find_map(
+            return Ok(if same { first } else { StyleDomain::Any });
+        }
+    }
+    let has_point = ctx
+        .find_map(
             &record.partials[..],
-            |partial| {
-                Ok(match partial.name.as_str() {
-                    "GEOMETRIC_SET" => Some("GEOMETRIC_SET"),
-                    "GEOMETRIC_CURVE_SET" => Some("GEOMETRIC_CURVE_SET"),
-                    _ => None,
-                })
+            |partial| -> Result<Option<()>, CodecError> {
+                let name = partial.name.as_str();
+                Ok(
+                    (ctx
+                        .position_by(
+                            name.as_bytes().windows(b"POINT".len()),
+                            |window| Ok(window == &b"POINT"[..]),
+                            "STEP style domain point containment",
+                        )?
+                        .is_some()
+                        || ctx
+                            .position_by(
+                                name.as_bytes().windows(b"VERTEX".len()),
+                                |window| Ok(window == &b"VERTEX"[..]),
+                                "STEP style domain vertex containment",
+                            )?
+                            .is_some())
+                    .then_some(()),
+                )
             },
             "STEP style domain at traversal",
-        )?;
-        if let Some(set_name) = set_name {
-            let mut first = None;
-            let mut same = true;
-            let members = record
-                .partial(ctx, set_name)?
-                .and_then(|partial| partial.parameters.get(1))
-                .and_then(ValueExt::list)
-                .unwrap_or_default();
-            let mut members = members.iter();
-            ctx.charge_work(0, "STEP style domain member traversal")?;
-            for _ in 0..members.len() {
-                let value = ctx.next_charged(&mut members, "STEP style domain member traversal")?
-                    .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
-                let Some(member) = ValueExt::reference(value) else {
-                    continue;
-                };
-                let domain = style_domain_at(member, exchange, active, cache, complete, ctx)?;
-                if first.is_some_and(|first| first != domain) {
-                    same = false;
-                }
-                if first.is_none() {
-                    first = Some(domain);
-                }
-            }
-            if let Some(first) = first {
-                ctx.remove_btree_set(active, &id, "STEP presentation active remove")?;
-                return Ok(if same { first } else { StyleDomain::Any });
-            }
-        }
-        let has_point = ctx
-            .find_map(
-                &record.partials[..],
-                |partial| -> Result<Option<()>, CodecError> {
-                    let name = partial.name.as_str();
-                    Ok(
-                        (ctx
-                            .position_by(
-                                name.as_bytes().windows(b"POINT".len()),
-                                |window| Ok(window == &b"POINT"[..]),
-                                "STEP style domain point containment",
-                            )?
-                            .is_some()
-                            || ctx
-                                .position_by(
-                                    name.as_bytes().windows(b"VERTEX".len()),
-                                    |window| Ok(window == &b"VERTEX"[..]),
-                                    "STEP style domain vertex containment",
-                                )?
-                                .is_some())
-                        .then_some(()),
-                    )
-                },
-                "STEP style domain at traversal",
-            )?
-            .is_some();
-        if has_point {
-            ctx.remove_btree_set(active, &id, "STEP presentation active remove")?;
-            return Ok(StyleDomain::Point);
-        }
-        let has_curve = ctx
-            .find_map(
-                &record.partials[..],
-                |partial| -> Result<Option<()>, CodecError> {
-                    let name = partial.name.as_str();
-                    Ok(
-                        (ctx
-                            .position_by(
-                                name.as_bytes().windows(b"CURVE".len()),
-                                |window| Ok(window == &b"CURVE"[..]),
-                                "STEP style domain curve containment",
-                            )?
-                            .is_some()
-                            || ctx
-                                .position_by(
-                                    name.as_bytes().windows(b"EDGE".len()),
-                                    |window| Ok(window == &b"EDGE"[..]),
-                                    "STEP style domain edge containment",
-                                )?
-                                .is_some()
-                            || ctx
-                                .position_by(
-                                    name.as_bytes().windows(b"_LINE".len()),
-                                    |window| Ok(window == &b"_LINE"[..]),
-                                    "STEP style domain line containment",
-                                )?
-                                .is_some()
-                            || matches!(
-                                name,
-                                "LINE" | "POLYLINE" | "CIRCLE" | "ELLIPSE" | "HYPERBOLA" | "PARABOLA"
-                            ))
-                        .then_some(()),
-                    )
-                },
-                "STEP style domain at traversal",
-            )?
-            .is_some();
-        if has_curve {
-            ctx.remove_btree_set(active, &id, "STEP presentation active remove")?;
-            return Ok(StyleDomain::Curve);
-        }
-        let result = if ctx
-            .find_map(
-                &record.partials[..],
-                |partial| -> Result<Option<()>, CodecError> {
-                    let name = partial.name.as_str();
-                    Ok(
-                        (ctx
-                            .position_by(
-                                name.as_bytes().windows(b"FACE".len()),
-                                |window| Ok(window == &b"FACE"[..]),
-                                "STEP style domain face containment",
-                            )?
-                            .is_some()
-                            || ctx
-                                .position_by(
-                                    name.as_bytes().windows(b"SURFACE".len()),
-                                    |window| Ok(window == &b"SURFACE"[..]),
-                                    "STEP style domain surface containment",
-                                )?
-                                .is_some()
-                            || ctx
-                                .position_by(
-                                    name.as_bytes().windows(b"SOLID".len()),
-                                    |window| Ok(window == &b"SOLID"[..]),
-                                    "STEP style domain solid containment",
-                                )?
-                                .is_some()
-                            || ctx
-                                .position_by(
-                                    name.as_bytes().windows(b"SHELL".len()),
-                                    |window| Ok(window == &b"SHELL"[..]),
-                                    "STEP style domain shell containment",
-                                )?
-                                .is_some()
-                            || matches!(
-                                name,
-                                "PLANE" | "CYLINDER" | "CONE" | "SPHERE" | "TORUS" | "DEGENERATE_TORUS"
-                            ))
-                        .then_some(()),
-                    )
-                },
-                "STEP style domain at traversal",
-            )?
-            .is_some()
-        {
-            StyleDomain::Surface
-        } else {
-            StyleDomain::Any
-        };
+        )?
+        .is_some();
+    if has_point {
         ctx.remove_btree_set(active, &id, "STEP presentation active remove")?;
-        Ok(result)
-    })();
-    if result.is_err() {
-        // A failed private walk owns no surviving active path. Free its nodes
-        // before this frame releases the admission for its active key.
-        drop(std::mem::take(&mut *active));
+        return Ok(StyleDomain::Point);
     }
-    result
+    let has_curve = ctx
+        .find_map(
+            &record.partials[..],
+            |partial| -> Result<Option<()>, CodecError> {
+                let name = partial.name.as_str();
+                Ok(
+                    (ctx
+                        .position_by(
+                            name.as_bytes().windows(b"CURVE".len()),
+                            |window| Ok(window == &b"CURVE"[..]),
+                            "STEP style domain curve containment",
+                        )?
+                        .is_some()
+                        || ctx
+                            .position_by(
+                                name.as_bytes().windows(b"EDGE".len()),
+                                |window| Ok(window == &b"EDGE"[..]),
+                                "STEP style domain edge containment",
+                            )?
+                            .is_some()
+                        || ctx
+                            .position_by(
+                                name.as_bytes().windows(b"_LINE".len()),
+                                |window| Ok(window == &b"_LINE"[..]),
+                                "STEP style domain line containment",
+                            )?
+                            .is_some()
+                        || matches!(
+                            name,
+                            "LINE" | "POLYLINE" | "CIRCLE" | "ELLIPSE" | "HYPERBOLA" | "PARABOLA"
+                        ))
+                    .then_some(()),
+                )
+            },
+            "STEP style domain at traversal",
+        )?
+        .is_some();
+    if has_curve {
+        ctx.remove_btree_set(active, &id, "STEP presentation active remove")?;
+        return Ok(StyleDomain::Curve);
+    }
+    let result = if ctx
+        .find_map(
+            &record.partials[..],
+            |partial| -> Result<Option<()>, CodecError> {
+                let name = partial.name.as_str();
+                Ok(
+                    (ctx
+                        .position_by(
+                            name.as_bytes().windows(b"FACE".len()),
+                            |window| Ok(window == &b"FACE"[..]),
+                            "STEP style domain face containment",
+                        )?
+                        .is_some()
+                        || ctx
+                            .position_by(
+                                name.as_bytes().windows(b"SURFACE".len()),
+                                |window| Ok(window == &b"SURFACE"[..]),
+                                "STEP style domain surface containment",
+                            )?
+                            .is_some()
+                        || ctx
+                            .position_by(
+                                name.as_bytes().windows(b"SOLID".len()),
+                                |window| Ok(window == &b"SOLID"[..]),
+                                "STEP style domain solid containment",
+                            )?
+                            .is_some()
+                        || ctx
+                            .position_by(
+                                name.as_bytes().windows(b"SHELL".len()),
+                                |window| Ok(window == &b"SHELL"[..]),
+                                "STEP style domain shell containment",
+                            )?
+                            .is_some()
+                        || matches!(
+                            name,
+                            "PLANE" | "CYLINDER" | "CONE" | "SPHERE" | "TORUS" | "DEGENERATE_TORUS"
+                        ))
+                    .then_some(()),
+                )
+            },
+            "STEP style domain at traversal",
+        )?
+        .is_some()
+    {
+        StyleDomain::Surface
+    } else {
+        StyleDomain::Any
+    };
+    ctx.remove_btree_set(active, &id, "STEP presentation active remove")?;
+    Ok(result)
 }
 
 fn style_is_hidden(
@@ -3258,13 +3149,6 @@ fn style_is_hidden(
     let mut visited = BTreeSet::new();
     let mut current = id;
     let hidden = loop {
-        let depth_guard = ctx.enter_nested("step_presentation_hidden_style_walk")?;
-        ctx.push_scoped_vec(
-            &mut depth_storage,
-            &mut depth_guards,
-            depth_guard,
-            "STEP hidden style depth guards",
-        )?;
         ctx.charge_work(1, "STEP hidden style step")?;
         if let Some(hidden) =
             ctx.get_btree_map(cache, &current, "STEP hidden style cache lookup")?
@@ -3283,6 +3167,13 @@ fn style_is_hidden(
         })? {
             break false;
         }
+        let depth_guard = ctx.enter_nested("step_presentation_hidden_style_walk")?;
+        ctx.push_scoped_vec(
+            &mut depth_storage,
+            &mut depth_guards,
+            depth_guard,
+            "STEP hidden style depth guards",
+        )?;
         ctx.push_scoped_vec(
             &mut path_storage,
             &mut path,
