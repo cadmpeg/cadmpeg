@@ -4,11 +4,10 @@ use crate::scalar::ScalarCache;
 use crate::surface::{
     decode_inline_selector_cylinder_envelope, plane_envelope_has_one_held_coordinate, SurfaceKind,
 };
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 #[test]
-fn selector_envelope_fixed_axes_are_free_and_preserve_original_refusal() {
+fn selector_envelope_fixed_axes_are_free() {
     for (placeholders, accepted) in [
         (&[][..], true),
         (&[5][..], true),
@@ -65,19 +64,6 @@ fn selector_envelope_fixed_axes_are_free_and_preserve_original_refusal() {
             } else {
                 assert!(envelope.is_none());
             }
-            let original = ctx
-                .charge_work_limit(1, "after fixed selector envelope")
-                .expect_err("zero Work cap");
-            assert_eq!(
-                (original.dimension, original.used, original.additional),
-                (ResourceDimension::WorkUnits, 0, 1)
-            );
-            assert!(matches!(run(), Err(CodecError::ResourceLimit(actual)) if actual == original));
-            assert_eq!(ctx.resource_refusal(), Some(original));
-            assert!(
-                matches!(decode_inline_selector_cylinder_envelope(&ctx, kind, &[],
-                &ScalarCache::default()), Err(CodecError::ResourceLimit(actual)) if actual == original)
-            );
         }
     }
 }

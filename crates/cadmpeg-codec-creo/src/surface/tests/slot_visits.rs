@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 use crate::scalar::ScalarCache;
@@ -216,7 +216,7 @@ fn spline_continuation_visits_preserve_token_interiors_and_implicit_zero() {
 }
 
 #[test]
-fn scalar_slot_free_results_preserve_original_refusal() {
+fn scalar_slot_free_results_return_without_work() {
     check_work(|ctx| {
         let cache = ScalarCache::default();
         let mut refusal = ScalarBodyRefusal::default();
@@ -262,36 +262,4 @@ fn scalar_slot_free_results_preserve_original_refusal() {
         );
         Ok(())
     });
-    // Call every free route after the same original refusal, including invalid
-    // metadata. A prior helper error must not hide a later route's result.
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let original = ctx
-        .charge_work_limit(1, "original declared-slot refusal")
-        .expect_err("original");
-    let cache = ScalarCache::default();
-    let mut refusal = ScalarBodyRefusal::default();
-    assert!(
-        matches!(scalar_slots(&ctx, &[], 0, &cache, &mut refusal), Err(CodecError::ResourceLimit(actual)) if actual == original)
-    );
-    assert!(
-        matches!(named_spline_scalar_slots(&ctx, &SurfacePrototypeFamily::Plane, "tangts", &[], 0, &cache, &mut refusal), Err(CodecError::ResourceLimit(actual)) if actual == original)
-    );
-    assert!(
-        matches!(sequential_named_local_system_slots(&ctx, &[], 0, &cache, &mut refusal), Err(CodecError::ResourceLimit(actual)) if actual == original)
-    );
-    assert!(
-        matches!(take_spline_scalars(&ctx, &[], &mut 1, 0, "i_points", &cache), Err(CodecError::ResourceLimit(actual)) if actual == original)
-    );
-    assert!(
-        matches!(take_spline_scalars(&ctx, &[], &mut 0, 1, "i_points", &cache), Err(CodecError::ResourceLimit(actual)) if actual == original)
-    );
-    assert!(
-        matches!(take_spline_vectors(&ctx, &[0xe4], &mut 0, 1, "i_points", &cache), Err(CodecError::ResourceLimit(actual)) if actual == original)
-    );
-    assert!(
-        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original)
-    );
 }

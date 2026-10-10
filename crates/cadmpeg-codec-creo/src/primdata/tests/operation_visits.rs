@@ -9,7 +9,7 @@ const BOUNDARY: &[u8] = b"\xe0\x00value(";
 const ACCUM: &[u8] = b"\xe0\x01p_accum_set_size\0";
 
 #[test]
-fn fixed_short_primitive_searches_and_empty_geometry_are_free_and_keep_original_refusal() {
+fn fixed_short_primitive_searches_and_empty_geometry_are_free() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
@@ -29,19 +29,7 @@ fn fixed_short_primitive_searches_and_empty_geometry_are_free_and_keep_original_
         triangle_strip_geometry(&ctx, &[], 3),
         Err(TriangleStripGeometryError::Missing)
     ));
-    let original = ctx
-        .charge_work_limit(1, "seed empty primitive refusal")
-        .expect_err("zero cap");
-    assert_eq!((original.used, original.additional), (0, 1));
-    assert!(
-        matches!(scalar_arrays(&ctx, &[]), Err(CodecError::ResourceLimit(actual)) if actual == original)
-    );
-    assert!(
-        matches!(triangle_strips(&ctx, &[]), Err(CodecError::ResourceLimit(actual)) if actual == original)
-    );
-    assert!(matches!(triangle_strip_geometry(&ctx, &[], 3),
-        Err(TriangleStripGeometryError::Resource(CodecError::ResourceLimit(actual))) if actual == original));
-    assert_eq!(ctx.resource_refusal(), Some(original));
+
 }
 
 #[test]

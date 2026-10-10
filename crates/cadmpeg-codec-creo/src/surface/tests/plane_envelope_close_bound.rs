@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_core::CodecError;
 
 use crate::scalar::ScalarCache;
 use crate::surface::plane_envelope_compound_close;
@@ -57,7 +56,7 @@ fn plane_envelope_close_bound_preserves_minimal_compact_and_maximum_width_frames
 }
 
 #[test]
-fn impossible_plane_envelope_closes_are_free_and_preserve_original_refusal() {
+fn impossible_plane_envelope_closes_are_free() {
     for size in [0, 1, 7, 79, 80, 81, 4096] {
         let mut body = vec![0xed; size];
         if size >= 80 {
@@ -75,13 +74,5 @@ fn impossible_plane_envelope_closes_are_free_and_preserve_original_refusal() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let run = || plane_envelope_compound_close(&ctx, &body, &ScalarCache::default());
         assert!(run().expect("fixed candidate scan is free").is_none());
-        let original = ctx
-            .charge_work_limit(1, "after absent plane envelope")
-            .expect_err("zero Work cap");
-        assert_eq!((original.used, original.additional), (0, 1));
-        assert!(matches!(run(), Err(CodecError::ResourceLimit(actual)) if actual == original));
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original)
-        );
     }
 }

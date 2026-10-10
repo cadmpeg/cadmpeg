@@ -380,9 +380,8 @@ fn last_limit_before_counted_scalar_array(payload: &[u8]) -> u64 {
 }
 
 #[test]
-fn counted_parameter_empty_extents_are_free_and_preserve_original_refusal() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
+fn counted_parameter_empty_extents_are_free() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -411,24 +410,6 @@ fn counted_parameter_empty_extents_are_free_and_preserve_original_refusal() {
         );
     }
     assert_eq!(ctx.resource_refusal(), None);
-    let original = ctx
-        .charge_work_limit(1, "after empty counted parameter extent")
-        .expect_err("zero work cap");
-    assert_eq!(
-        (original.dimension, original.used, original.additional),
-        (ResourceDimension::WorkUnits, 0, 1)
-    );
-    for _ in 0..2 {
-        for &(body, count, _) in cases {
-            assert!(
-                matches!(crate::surface::counted_parameter_scalar_slots(&ctx, body, count, &cache),
-                Err(CodecError::ResourceLimit(actual)) if actual == original)
-            );
-        }
-    }
-    assert!(
-        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original)
-    );
 }
 
 #[test]

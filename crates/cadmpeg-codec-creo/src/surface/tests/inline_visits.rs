@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 use crate::scalar::ScalarCache;
@@ -115,25 +115,12 @@ fn inline_suffix_success_leaves_unvisited_frame_bytes_free() {
 }
 
 #[test]
-fn inline_empty_and_other_family_routes_preserve_original_refusal() {
+fn inline_empty_and_other_family_routes_return_without_work() {
     for kind in [SurfaceKind::Plane, SurfaceKind::Spline, SurfaceKind::Fillet] {
         let record = record(kind, Vec::new());
         check_work(&false, |ctx| {
             record.has_inline_non_plane_local_system_suffix(ctx)
         });
     }
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let original = ctx.charge_work_limit(1, "original").expect_err("fuse");
-    let mut starts = inline_local_starts(&ctx, &[]);
-    assert!(
-        matches!(starts.next(), Some(Err(CodecError::ResourceLimit(actual))) if actual == original)
-    );
-    assert!(starts.next().is_none());
-    drop(starts);
-    assert!(
-        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original)
-    );
+
 }

@@ -80,7 +80,7 @@ fn active_parameter(
 }
 
 #[test]
-fn active_datum_fixed_terminal_frame_is_free_and_keeps_original_refusal() {
+fn active_datum_fixed_terminal_frame_is_free() {
     let (row, parameter) = active_parameter(&[], 8.0);
     let cache = crate::scalar::ScalarCache::default();
     let arena = DecodeArena::new();
@@ -103,19 +103,6 @@ fn active_datum_fixed_terminal_frame_is_free_and_keeps_original_refusal() {
             .expect("fixed invalid plane prefix"),
         None
     );
-    let original = ctx
-        .charge_work_limit(1, "seed fixed datum refusal")
-        .expect_err("zero work cap");
-    assert_eq!((original.used, original.additional), (0, 1));
-    assert!(
-        matches!(super::super::active_cylinder_frame(&ctx, &row, &parameter),
-        Err(CodecError::ResourceLimit(actual)) if actual == original)
-    );
-    assert!(
-        matches!(super::super::positional_plane(&ctx, &[], &row, 0, &cache),
-        Err(CodecError::ResourceLimit(actual)) if actual == original)
-    );
-    assert_eq!(ctx.resource_refusal(), Some(original));
 }
 
 #[test]

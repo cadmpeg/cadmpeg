@@ -247,9 +247,5 @@ fn partial_shaded_construction_keeps_original_work_refusal_before_promotion() {
             boundary.additional
         )
     );
-    assert!(
-        matches!(PrimitiveTriangleStrip::new(&ctx, 0, Vec::new(), None, Vec::new()),
-        Err(CodecError::ResourceLimit(actual)) if actual == original)
-    );
     assert_eq!(ctx.resource_refusal(), Some(original));
 }

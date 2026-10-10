@@ -235,9 +235,6 @@ fn active_cylinder_frame(
     row: &SurfaceRow,
     parameter: &SurfaceParameterRecord,
 ) -> Result<Option<PositionalCylinderFrame>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if row.kind != crate::surface::SurfaceKind::Cylinder
         || !matches!(
             row.boundary_type,
@@ -379,9 +376,6 @@ fn positional_plane(
     row_end: usize,
     cache: &scalar::ScalarCache,
 ) -> Result<Option<DatumPlaneRecord>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let id_start = row.offset;
     let Some(body_start) = (|| {
         if payload.get(id_start).copied()? > 0xbf {

@@ -73,9 +73,6 @@ impl PrimitiveTriangleStrip {
         normals: Option<Vec<FiniteVector<3>>>,
         strip_lengths: Vec<u32>,
     ) -> Result<Option<Self>, CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let mut total = 0usize;
         let mut lengths = strip_lengths.iter();
         while lengths.len() != 0 {
@@ -284,9 +281,6 @@ fn triangle_strip_geometry(
     arrays: &[PrimitiveScalarArray],
     vertex_count: u32,
 ) -> Result<TriangleStripGeometry, TriangleStripGeometryError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(TriangleStripGeometryError::Resource(refusal.into()));
-    }
     let (positions, normals) = select_triangle_strip_lanes(ctx, arrays, vertex_count)?;
     let (geometry, storage) =
         ctx.with_scoped_storage("creo triangle strip geometry storage", || {
@@ -340,9 +334,6 @@ pub(crate) fn triangle_strips(
 ) -> Result<PrimitiveTriangleStripScan, CodecError> {
     const RECORD: &[u8] = b"value(prim_tristripsetwithatt)\0";
     const ACCUM: &[u8] = b"\xe0\x01p_accum_set_size\0";
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut strips = Vec::new();
     let mut conflicting_representation_count = 0usize;
     let mut discoveries = data.windows(RECORD.len()).enumerate();
@@ -472,9 +463,6 @@ pub(crate) fn scalar_arrays(
         PrimitiveArrayField::VertexPositions,
         PrimitiveArrayField::VertexNormalsAndPositions,
     ];
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut arrays = Vec::new();
     let mut fields = data.windows(5).enumerate();
     while fields.len() != 0 {
@@ -844,12 +832,6 @@ mod tests {
             if let Err(CodecError::ResourceLimit(original)) = &result {
                 assert_eq!(original.dimension, ResourceDimension::WorkUnits);
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(original));
-                assert!(
-                    matches!(run(&ctx), Err(CodecError::ResourceLimit(actual)) if &actual == original)
-                );
-                assert!(
-                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if &actual == original)
-                );
             }
             result
         };
@@ -859,15 +841,7 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = work;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let value = run(&ctx).expect("walker admits the unchanged fixture");
-        let original = ctx
-            .charge_work_limit(1, "after owner work route")
-            .expect_err("exact work cap");
-        assert!(matches!(run(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == original));
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original)
-        );
-        value
+        run(&ctx).expect("walker admits the unchanged fixture")
     }
     fn finite_points(points: Vec<[f64; 3]>) -> Vec<FiniteVector<3>> {
         points

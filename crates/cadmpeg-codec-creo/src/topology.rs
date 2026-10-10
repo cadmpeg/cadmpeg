@@ -124,9 +124,6 @@ impl Loop {
         half_edges: Vec<HalfEdgeId>,
         graph: &[HalfEdge],
     ) -> Result<Option<Self>, CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         if half_edges.is_empty() {
             return Ok(None);
         }
@@ -193,9 +190,6 @@ impl FaceComponent {
         face_ids: Vec<u32>,
         curve_ids: Vec<u32>,
     ) -> Result<Option<Self>, CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         if face_ids.is_empty()
             || face_ids[0] == 0
             || (face_ids.len() > 1
@@ -250,9 +244,6 @@ impl TopologicalVertex {
         id: u32,
         half_edges: Vec<HalfEdgeId>,
     ) -> Result<Option<Self>, CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let Some(id) = NonZeroU32::new(id) else {
             return Ok(None);
         };

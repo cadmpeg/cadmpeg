@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::super::PrimitiveTriangleStrip;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_core::CodecError;
 
 #[test]
-fn empty_strip_validation_is_free_and_keeps_the_original_refusal() {
+fn empty_strip_validation_is_free() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
@@ -17,14 +16,7 @@ fn empty_strip_validation_is_free_and_keeps_the_original_refusal() {
             .expect("no span")
             .is_none()
     );
-    let original = ctx
-        .charge_work_limit(1, "seed empty primitive strip refusal")
-        .expect_err("zero work cap");
-    assert_eq!((original.used, original.additional), (0, 1));
-    assert!(
-        matches!(PrimitiveTriangleStrip::new(&ctx, 17, Vec::new(), None, Vec::new()),
-        Err(CodecError::ResourceLimit(r)) if r == original)
-    );
+
 }
 
 #[test]

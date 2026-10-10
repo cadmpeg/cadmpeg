@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::super::take_spline_mixed_derivatives;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 fn assert_fixed_read(body: &[u8], start: usize, expected: Option<[[f64; 3]; 4]>, end: usize) {
     let arena = DecodeArena::new();
@@ -20,17 +19,6 @@ fn assert_fixed_read(body: &[u8], start: usize, expected: Option<[[f64; 3]; 4]>,
         .expect("fixed literal slots have no input-sized admission"), expected);
     assert_eq!(cursor, end);
     assert_eq!(ctx.resource_refusal(), None);
-    let original = ctx.charge_work_limit(1, "after fixed positional mixed slots")
-        .expect_err("zero cap");
-    assert_eq!((original.dimension, original.used, original.additional),
-        (ResourceDimension::WorkUnits, 0, 1));
-    for _ in 0..2 {
-        let mut cursor = start;
-        assert!(matches!(take_spline_mixed_derivatives(&ctx, body, &mut cursor, &cache),
-            Err(CodecError::ResourceLimit(actual)) if actual == original));
-        assert_eq!(cursor, start);
-    }
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original));
 }
 
 #[test]

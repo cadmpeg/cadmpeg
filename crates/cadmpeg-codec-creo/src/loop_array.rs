@@ -111,9 +111,6 @@ fn find_named_field(
     end: usize,
     name: &[u8],
 ) -> Result<Option<usize>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(marker_len) = name.len().checked_add(3) else {
         return Ok(None);
     };
@@ -155,9 +152,6 @@ fn prototype_close(
     end: usize,
     class_id: u32,
 ) -> Result<Option<usize>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(close_end) = end.checked_sub(4) else {
         return Ok(None);
     };
@@ -251,9 +245,6 @@ fn row_end(
     body_start: usize,
     end: usize,
 ) -> Result<Option<usize>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut cursor = body_start;
     while cursor < end {
         let Some(token) = psb::token_at(ctx, data, cursor)? else {
@@ -282,9 +273,6 @@ fn parse_frame(
     offset: usize,
     section_end: usize,
 ) -> Result<Option<(LoopArrayFrame, Vec<PendingLoopRow>)>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(mut cursor) = offset.checked_add(LO_ARRAY_LABEL.len()) else {
         return Ok(None);
     };
@@ -395,9 +383,6 @@ fn parse_frame(
 
 /// Retain structurally complete `lo_array` frames and positional rows.
 pub(crate) fn scan(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<LoopArrayScan, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut result = LoopArrayScan::default();
     let mut search = 0;
     while data

@@ -104,7 +104,7 @@ fn named_scalar_sequence_dispatch_stops_at_first_boundary_and_keeps_interiors() 
 }
 
 #[test]
-fn named_value_empty_and_fixed_metadata_routes_preserve_original_refusal() {
+fn named_value_empty_and_fixed_metadata_routes_return_without_work() {
     for (name, body, expected) in [
         ("data_dbls", &[][..], Some(SurfaceNamedValue::Empty)),
         ("id", &[7][..], Some(SurfaceNamedValue::CompactInt(7))),

@@ -50,9 +50,7 @@ fn check_name(payload: &[u8], offset: usize, expected: Option<usize>) {
                 )
             );
         }
-        let original = ctx.resource_refusal().expect("original refusal");
-        assert!(matches!(named_record_length(&ctx, payload, offset),
-            Err(CodecError::ResourceLimit(actual)) if actual == original));
+
     }
 }
 
@@ -146,11 +144,6 @@ fn surface_named_boundary_admits_visited_positions_and_skips_scalar_interiors() 
                     (ResourceDimension::WorkUnits, cap, 1, operation)
                 );
             }
-            let original = ctx.resource_refusal().expect("original refusal");
-            assert!(
-                matches!(named_record_boundary(&ctx, SurfaceKind::Plane, payload, &cache),
-                Err(CodecError::ResourceLimit(actual)) if actual == original)
-            );
         }
     }
 }

@@ -710,9 +710,6 @@ fn take_spline_scalars(
     name: &str,
     cache: &scalar::ScalarCache,
 ) -> Result<Option<Vec<f64>>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(remaining) = body.len().checked_sub(*cursor) else {
         return Ok(None);
     };
@@ -801,14 +798,11 @@ fn take_spline_vectors(
 }
 
 fn take_spline_mixed_derivatives(
-    ctx: &DecodeContext<'_>,
+    _ctx: &DecodeContext<'_>,
     body: &[u8],
     cursor: &mut usize,
     cache: &scalar::ScalarCache,
 ) -> Result<Option<[[f64; 3]; 4]>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(remaining) = body.len().checked_sub(*cursor) else {
         return Ok(None);
     };
@@ -1630,9 +1624,6 @@ impl SurfaceParameterRecord {
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<bool, CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let kind = self.kind();
         if !matches!(
             kind,
@@ -3884,9 +3875,6 @@ fn parsed_named_surface_value(
     refusal: &mut ScalarBodyRefusal,
     grid: Option<arrays::ScalarExtent<[u32; 2]>>,
 ) -> Option<Result<SurfaceNamedValue, CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     if body.is_empty() {
         return Some(Ok(SurfaceNamedValue::Empty));
     }
@@ -4555,9 +4543,6 @@ fn cone_half_angle_before_close(
     ctx: &DecodeContext<'_>,
     body: &[u8],
 ) -> Result<Option<ConeHalfAngleLayout>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     // Seven token bytes and the following close must fit. Shorter suffixes
     // cannot produce a layout and need no scalar dispatch.
     let Some(start_limit) = body.len().checked_sub(7) else {
@@ -4592,9 +4577,6 @@ fn scalar_tokens(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Result<Vec<SurfaceParameterScalar>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut tokens = Vec::new();
     let positional_plane_corners = (kind == SurfaceKind::Plane)
         .then(|| first_coordinate_plane_corner_tokens(body, cache))
@@ -4760,9 +4742,6 @@ fn opaque_spans(
     body: &[u8],
     tokens: &[SurfaceParameterScalar],
 ) -> Result<Vec<SurfaceParameterOpaqueSpan>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut spans = Vec::new();
     let mut cursor = 0;
     for token in ctx.admit_iter(tokens, "creo surface opaque span traversal")? {
@@ -4794,9 +4773,6 @@ fn scalar_frames(
     ctx: &DecodeContext<'_>,
     tokens: &[SurfaceParameterScalar],
 ) -> Result<Vec<SurfaceParameterScalarFrame>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut frames: Vec<SurfaceParameterScalarFrame> = Vec::new();
     for token in ctx.admit_iter(tokens, "creo surface scalar frame traversal")? {
         let contiguous = frames
@@ -4869,9 +4845,6 @@ fn named_record_length(
     body: &[u8],
     offset: usize,
 ) -> Result<Option<usize>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if body.get(offset) != Some(&psb::token::NAMED_RECORD)
         || body
             .get(offset + 1)
@@ -4903,9 +4876,6 @@ fn named_record_boundary(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Result<Option<usize>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let cone_half_angle = if kind == SurfaceKind::Cone {
         terminal_cone_half_angle_layout(body)
     } else {
@@ -5006,9 +4976,6 @@ fn inline_surface_body(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Result<Option<InlineSurfaceBody>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let standard_envelope = decode_inline_surface_envelope(kind, body, cache);
     let four_bound_envelope = decode_inline_four_bound_cylinder_envelope(kind, body, cache);
     let referenced_envelope = decode_inline_referenced_cylinder_envelope(kind, body, cache);
@@ -5120,9 +5087,6 @@ fn inline_surface_suffix_body(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Result<Option<InlineSurfaceBody>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut sole_layout = None;
     for local_start in inline_local_starts(ctx, body) {
         let local_start = local_start?;
@@ -5457,14 +5421,11 @@ fn decode_inline_four_bound_cylinder_envelope(
 }
 
 fn decode_inline_selector_cylinder_envelope(
-    ctx: &DecodeContext<'_>,
+    _ctx: &DecodeContext<'_>,
     kind: SurfaceKind,
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Result<Option<InlineSurfaceEnvelope>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let candidate = (|| {
         (kind == SurfaceKind::Cylinder).then_some(())?;
         let selector_end = |cursor: usize| match body.get(cursor..) {
@@ -6278,9 +6239,6 @@ fn append_surface_contour_chain(
         offset: usize,
         envelope_offset: usize,
     }
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut cursor = start;
     let mut scratch = ctx.reserve_scoped(0, "creo contour chain scratch")?;
     let mut chain = Vec::new();
@@ -7003,9 +6961,6 @@ fn surface_body_compound_close(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Result<Option<usize>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if body.is_empty() {
         return Ok(None);
     }
@@ -7059,9 +7014,6 @@ fn first_compound_close(
     end: usize,
 ) -> Result<Option<usize>, CodecError> {
     const OUTLINE_PAIR_CLOSE: &[u8; 4] = &[0x00, 0x0c, 0x98, psb::token::COMPOUND_CLOSE];
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(body) = payload.get(start..end).filter(|body| !body.is_empty()) else {
         return Ok(None);
     };
@@ -7102,9 +7054,6 @@ fn plane_local_system_compound_close(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> Result<Option<usize>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     // Keep the established structural boundary when it exists. Some local
     // systems contain an e0 byte inside a numeric token; in that case the
     // generic scanner can stop without finding the following e3. Validate a
@@ -7146,9 +7095,6 @@ fn named_spline_scalar_slots(
     cache: &scalar::ScalarCache,
     refusal: &mut ScalarBodyRefusal,
 ) -> Result<Option<Vec<ScalarTokenSlot>>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut slots = Vec::new();
     ctx.reserve_vec(&mut slots, count, "creo named spline scalar slots")?;
     let mut cursor = psb::Cursor::new(body);
@@ -7298,9 +7244,6 @@ fn counted_parameter_scalar_slots(
     count: usize,
     cache: &scalar::ScalarCache,
 ) -> Result<Option<Vec<ScalarTokenSlot>>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if count == 0 || body.is_empty() {
         return Ok((count == 0 && body.is_empty()).then(Vec::new));
     }
@@ -7632,9 +7575,6 @@ fn scalar_slots(
     cache: &scalar::ScalarCache,
     refusal: &mut ScalarBodyRefusal,
 ) -> Result<Option<Vec<Option<f64>>>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut slots = Vec::new();
     ctx.reserve_vec(&mut slots, count, "creo scalar body slots")?;
     let mut positions = 0..body.len();
@@ -7853,9 +7793,6 @@ fn plane_envelope_compound_close(
     // the compact prefix has one marker and eight such slots. The final
     // positive-DICT scalar consumes seven bytes. No later close can qualify.
     const MAX_ENVELOPE_CLOSE: usize = 9 * 8 + 7;
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     for (offset, byte) in body.iter().take(MAX_ENVELOPE_CLOSE + 1).enumerate() {
         if *byte != psb::token::COMPOUND_CLOSE {
             continue;
@@ -7900,9 +7837,6 @@ fn plane_envelope_has_one_held_coordinate(
     slots: &[(Option<f64>, &[u8])],
     pairs: [[usize; 2]; 3],
 ) -> Result<bool, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut count = 0usize;
     for [first, second] in pairs {
         if ctx.equal_bytes(
@@ -7966,9 +7900,6 @@ fn sequential_named_local_system_slots(
     cache: &scalar::ScalarCache,
     refusal: &mut ScalarBodyRefusal,
 ) -> Result<Option<Vec<Option<f64>>>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut slots = Vec::new();
     ctx.reserve_vec(&mut slots, count, "creo local-system scalar slots")?;
     let mut positions = 0..body.len();
@@ -8856,10 +8787,6 @@ fn inline_local_starts<'a, 'ctx>(
     std::iter::from_fn(move || {
         if finished {
             return None;
-        }
-        if let Some(refusal) = ctx.resource_refusal() {
-            finished = true;
-            return Some(Err(refusal.into()));
         }
         if initial {
             initial = false;

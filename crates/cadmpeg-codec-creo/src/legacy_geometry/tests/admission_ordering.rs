@@ -5,7 +5,7 @@ use super::*;
 use std::collections::{BTreeMap, HashMap};
 
 #[test]
-fn empty_legacy_geometry_routes_are_free_and_keep_original_refusal() {
+fn empty_legacy_geometry_routes_are_free() {
     let persistence = Persistence::default();
     let object_ids = BTreeMap::new();
     let children = HashMap::new();
@@ -26,37 +26,24 @@ fn empty_legacy_geometry_routes_are_free_and_keep_original_refusal() {
     policy.limits.max_collection_items = 0;
     policy.limits.max_recursion_depth = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    for refused in [false, true] {
-        if refused {
-            ctx.charge_work_limit(1, "legacy geometry seed")
-                .expect_err("zero cap");
-        }
-        let results = [
-            super::super::scan(&ctx, &persistence).map(|v| v == LegacyGeometryScan::default()),
-            super::super::namespace(
-                &ctx,
-                &index,
-                "Sld_VisGeom",
-                "active_geom",
-                LegacySurfaceNamespace::Visible,
-                &mut Vec::new(),
-            )
-            .map(|v| v.is_empty()),
-            super::super::curve_namespace(&ctx, &[], &object_ids, &integer_fields, &real_fields)
-                .map(|v| v.0.is_empty() && v.1.is_empty()),
-        ];
-        for result in results {
-            if refused {
-                let original = ctx.resource_refusal().expect("seed refusal");
-                assert!(
-                    matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original)
-                );
-            } else {
-                assert!(result.expect("no input traversal or ordering"));
-            }
-        }
-        assert_eq!(ctx.resource_refusal().is_some(), refused);
+    let results = [
+        super::super::scan(&ctx, &persistence).map(|v| v == LegacyGeometryScan::default()),
+        super::super::namespace(
+            &ctx,
+            &index,
+            "Sld_VisGeom",
+            "active_geom",
+            LegacySurfaceNamespace::Visible,
+            &mut Vec::new(),
+        )
+        .map(|v| v.is_empty()),
+        super::super::curve_namespace(&ctx, &[], &object_ids, &integer_fields, &real_fields)
+            .map(|v| v.0.is_empty() && v.1.is_empty()),
+    ];
+    for result in results {
+        assert!(result.expect("no input traversal or ordering"));
     }
+    assert_eq!(ctx.resource_refusal(), None);
 }
 
 fn element_scratch_limit<T>(run: impl Fn(&DecodeContext<'_>) -> Result<T, CodecError>) -> u64 {
@@ -246,7 +233,4 @@ fn singleton_legacy_curve_namespace_uses_no_ordering_or_dedup_scratch() {
             policy.limits.max_materialized_bytes + 1
         )
     );
-    assert!(matches!(super::super::curve_namespace(&ctx, &[],
-        &object_ids, &integer_fields, &real_fields),
-        Err(CodecError::ResourceLimit(actual)) if actual == original));
 }

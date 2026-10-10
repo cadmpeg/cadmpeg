@@ -62,9 +62,7 @@ fn primitive_conflicts_compare_borrowed_lanes_without_allocating_candidates() {
             .charge_work_limit(1, "after primitive conflict")
             .expect_err("exact visits");
         assert_eq!((original.used, original.additional), (need, 1));
-        assert!(matches!(triangle_strip_geometry(&ctx, &arrays, 3),
-            Err(TriangleStripGeometryError::Resource(CodecError::ResourceLimit(actual)))
-                if actual == original));
+
     }
 }
 
@@ -136,9 +134,6 @@ fn primitive_geometry_retains_only_selected_output_buffers() {
                 (original.used, original.additional),
                 (expected_bytes, CAP + 1)
             );
-            assert!(
-                matches!(parse(), Err(CodecError::ResourceLimit(actual)) if actual == original)
-            );
             assert_eq!(ctx.resource_refusal(), Some(original));
             drop(geometry);
             drop(storage);
@@ -182,9 +177,6 @@ fn primitive_geometry_allocation_and_promotion_preserve_original_refusal() {
             }
         );
         assert_eq!((original.used, original.additional), (0, bytes));
-        assert!(matches!(triangle_strip_geometry(&ctx, &[], 3),
-            Err(TriangleStripGeometryError::Resource(CodecError::ResourceLimit(actual)))
-                if actual == original));
         assert_eq!(ctx.resource_refusal(), Some(original));
     }
 }
