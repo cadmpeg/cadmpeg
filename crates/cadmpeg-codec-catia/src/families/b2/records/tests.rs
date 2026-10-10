@@ -1988,3 +1988,5 @@ mod spatial_and_consolidated;
 mod offset_queries;
 
 mod rejected_storage;
+
+mod revolution_queries;
