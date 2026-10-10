@@ -676,7 +676,6 @@ fn parse_schema_program(
     if catalog_offset > data.len() {
         return Err(ctx.refuse_codec_limit("catia_legacy_schema_scan", u64::MAX, u64::MAX));
     }
-    ctx.charge_work(0, "catia_legacy_schema_scan")?;
     let Some(prefix_offset) = catalog_offset.checked_add(CATALOG_OPEN.len()) else {
         return Ok(None);
     };
@@ -1415,7 +1414,6 @@ pub(crate) fn parse_relation_signature(
 ) -> Result<Option<LegacyRelationSignature>, CodecError> {
     const TRIM: &str = "catia_legacy_relation_trim";
     let source = source.strip_suffix('\n').unwrap_or(source);
-    ctx.charge_work(0, "catia_legacy_relation_result_split")?;
     let Some(source) = source.strip_prefix('(') else {
         return Ok(None);
     };

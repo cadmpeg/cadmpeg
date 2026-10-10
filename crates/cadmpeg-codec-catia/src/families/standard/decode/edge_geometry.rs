@@ -360,7 +360,6 @@ pub(super) fn point_on_surface_if_supported(
     surface: &SurfaceGeometry,
 ) -> Result<Option<bool>, cadmpeg_core::decode::ResourceLimit> {
     const TOLERANCE: f64 = 1e-3;
-    ctx.charge_work_limit(0, "catia surface membership boundary")?;
     let residual = match surface {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let origin = plane_surface.origin().get();
@@ -420,7 +419,6 @@ pub(super) fn standard_spline_line(
     points: [usize; 2],
 ) -> Result<Option<(CurveGeometry, [f64; 2])>, CodecError> {
     const TOLERANCE: f64 = 2e-3;
-    ctx.charge_work_limit(0, "catia surface membership boundary")?;
 
     let surfaces = [
         face_surface(ctx, ir, bindings, surface_indices, support.faces[0])?,
@@ -520,7 +518,6 @@ pub(super) fn standard_spline_circle(
     support: &crate::families::standard::records::StandardCurveSupport,
     points: [usize; 2],
 ) -> Result<Option<CurveGeometry>, CodecError> {
-    ctx.charge_work_limit(0, "catia surface membership boundary")?;
     let surfaces = [
         face_surface(ctx, ir, bindings, surface_indices, support.faces[0])?,
         face_surface(ctx, ir, bindings, surface_indices, support.faces[1])?,
@@ -613,7 +610,6 @@ pub(super) fn standard_spline_cylinder_plane(
     support: &crate::families::standard::records::StandardCurveSupport,
     points: [usize; 2],
 ) -> Result<Option<CurveGeometry>, CodecError> {
-    ctx.charge_work_limit(0, "catia surface membership boundary")?;
     let surfaces = [
         face_surface(ctx, ir, bindings, surface_indices, support.faces[0])?,
         face_surface(ctx, ir, bindings, surface_indices, support.faces[1])?,
@@ -753,7 +749,6 @@ pub(super) fn standard_spline_perpendicular_cylinders(
     support: &crate::families::standard::records::StandardCurveSupport,
     points: [usize; 2],
 ) -> Result<Option<CurveGeometry>, CodecError> {
-    ctx.charge_work_limit(0, "catia surface membership boundary")?;
     let surfaces = [
         face_surface(ctx, ir, bindings, surface_indices, support.faces[0])?,
         face_surface(ctx, ir, bindings, surface_indices, support.faces[1])?,
@@ -2491,7 +2486,6 @@ pub(super) fn native_support_circle_param_range(
     endpoints: [Point3; 2],
 ) -> Result<Option<[f64; 2]>, cadmpeg_core::decode::ResourceLimit> {
     let [start, end] = endpoints;
-    ctx.charge_work_limit(0, "geometry helper boundary")?;
     (|| -> Option<Result<[f64; 2], cadmpeg_core::decode::ResourceLimit>> {
         const GEOMETRY_TOLERANCE: f64 = 2e-3;
 
@@ -3817,7 +3811,6 @@ pub(super) fn point_on_standard_face(
     surface: &SurfaceGeometry,
     bounds: Option<crate::families::standard::records::StandardFaceBounds>,
 ) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
-    ctx.charge_work_limit(0, "catia surface membership boundary")?;
     if bounds.is_some_and(|bounds| !point_inside_standard_face_bounds(point, bounds)) {
         return Ok(false);
     }
@@ -3850,7 +3843,6 @@ pub(super) fn standard_nurbs_line_pair_on_face(
     points: &[Point],
     bounds: Option<crate::families::standard::records::StandardFaceBounds>,
 ) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
-    ctx.charge_work_limit(0, "catia surface membership boundary")?;
     if !matches!(
         surface,
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
