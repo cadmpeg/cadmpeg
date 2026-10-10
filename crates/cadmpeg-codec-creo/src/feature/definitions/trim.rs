@@ -51,8 +51,10 @@ pub(super) fn trim_entity_table(
                 let Ok((class, after_reference)) = psb::reference_id(payload, offset + 3) else {
                     return Ok(None);
                 };
-                Ok((class == header.classes.table && payload.get(after_reference) == Some(&0xe2))
-                    .then_some(after_reference + 1))
+                Ok(
+                    (class == header.classes.table && payload.get(after_reference) == Some(&0xe2))
+                        .then_some(after_reference + 1),
+                )
             },
             "creo trim entity cursor",
         )?,
@@ -1018,8 +1020,10 @@ pub(super) fn trim_vertex_table(
         .checked_add(b"vert_tab\0".len())
         .and_then(|after_label| after_label.checked_add(CHAINS_WINDOW))
         .map_or(end, |window_end| window_end.min(end));
-    let Some(chains) = payload[table..chains_end].windows(b"chains\0".len())
-        .position(|window| window == b"chains\0").map(|relative| table + relative)
+    let Some(chains) = payload[table..chains_end]
+        .windows(b"chains\0".len())
+        .position(|window| window == b"chains\0")
+        .map(|relative| table + relative)
     else {
         return Ok(None);
     };
@@ -1140,7 +1144,11 @@ pub(super) fn trim_vertex_table(
         ctx.reserve_vec(&mut rows, 1, "creo trim vertex rows")?;
         rows.push(FeatureTrimVertex {
             section_coordinates: trim_vertex_intersection(
-                ctx, &entities, segments, variables, &mut geometry,
+                ctx,
+                &entities,
+                segments,
+                variables,
+                &mut geometry,
             )?,
             vertex_id,
             entities,
@@ -1215,7 +1223,11 @@ pub(super) fn positional_trim_vertex_table(
         ctx.reserve_vec(&mut rows, 1, "creo trim vertex rows")?;
         rows.push(FeatureTrimVertex {
             section_coordinates: trim_vertex_intersection(
-                ctx, &entities, segments, variables, &mut geometry,
+                ctx,
+                &entities,
+                segments,
+                variables,
+                &mut geometry,
             )?,
             vertex_id,
             entities,
@@ -1605,7 +1617,8 @@ fn entity_intersection_cached<'ctx>(
     let mut carriers = Vec::new();
     let mut segment_iter = segments_for_intersection.iter();
     while segment_iter.len() != 0 {
-        let Some(segment) = ctx.next_charged(&mut segment_iter, "creo trim carrier traversal")? else {
+        let Some(segment) = ctx.next_charged(&mut segment_iter, "creo trim carrier traversal")?
+        else {
             break;
         };
         let Some(carrier) = trim_carrier(ctx, segment, geometry)? else {
