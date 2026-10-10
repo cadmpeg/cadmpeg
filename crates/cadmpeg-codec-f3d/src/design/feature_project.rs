@@ -2903,7 +2903,11 @@ fn project_thread_face_selection(
         }
         state.get_or_insert(group_state);
         for face in group_faces.as_slice() {
-            if !faces.contains(face) {
+            if faces.is_empty() || !ctx.any_by(
+                &faces,
+                |candidate: &cadmpeg_ir::ids::HistoricalFaceId| ctx.equal_bytes(candidate.as_str().as_bytes(), face.as_str().as_bytes(), "compare F3D Thread selected face identity"),
+                "visit F3D Thread selected face membership",
+            )? {
                 let face = (face).try_clone_for_decode(ctx, "f3d Thread historical face id")?;
                 ctx.push_vec(&mut faces, face, "f3d Thread historical face")?;
             }
@@ -3574,7 +3578,11 @@ fn project_surface_offset(
             return Ok(None);
         };
         for face in &group_faces {
-            if !faces.contains(face) {
+            if faces.is_empty() || !ctx.any_by(
+                &faces,
+                |candidate: &cadmpeg_ir::ids::FaceId| ctx.equal_bytes(candidate.as_str().as_bytes(), face.as_str().as_bytes(), "compare F3D surface offset face identity"),
+                "visit F3D surface offset face membership",
+            )? {
                 let face = (face).try_clone_for_decode(ctx, "f3d offset surface face id")?;
                 ctx.push_vec(&mut faces, face, "f3d offset surface face")?;
             }
@@ -4118,7 +4126,9 @@ fn resolved_split_face_path(
             return Ok(None);
         }
         let edge_slot = or_none!(selection.resolved_edge_slot);
-        if edge_slots.contains(&edge_slot) {
+        if !edge_slots.is_empty() && ctx.any_by(
+            &edge_slots, |candidate| Ok(*candidate == edge_slot), "visit F3D SplitFace path edge membership",
+        )? {
             return Ok(None);
         }
         scratch_storage.with_storage(|| {
@@ -5349,7 +5359,11 @@ pub(crate) fn direct_face_selection(
             let mut resolved = Vec::new();
             for slot in members.iter().flat_map(|(_, faces)| faces.iter().copied()) {
                 let face = historical_face(previous_state_id, slot)?;
-                if !resolved.contains(&face) {
+                if resolved.is_empty() || !ctx.any_by(
+                    &resolved,
+                    |candidate: &cadmpeg_ir::ids::HistoricalFaceId| ctx.equal_bytes(candidate.as_str().as_bytes(), face.as_str().as_bytes(), "compare F3D direct historical face identity"),
+                    "visit F3D direct historical face membership",
+                )? {
                     ctx.push_vec(&mut resolved, face, "f3d direct historical face")?;
                 }
             }
@@ -5380,7 +5394,11 @@ pub(crate) fn direct_face_selection(
                 } else {
                     for slot in *slots {
                         let face = historical_face(previous_state_id, *slot)?;
-                        if !faces.contains(&face) {
+                        if faces.is_empty() || !ctx.any_by(
+                            &faces,
+                            |candidate: &cadmpeg_ir::ids::HistoricalFaceId| ctx.equal_bytes(candidate.as_str().as_bytes(), face.as_str().as_bytes(), "compare F3D direct partial face identity"),
+                            "visit F3D direct partial face membership",
+                        )? {
                             ctx.push_vec(&mut faces, face, "f3d direct partial historical face")?;
                         }
                     }
@@ -5674,7 +5692,9 @@ fn cyclic_parameter_components(
                 }
             }
         }
-        if !remaining_members.is_empty() || edges[root].contains(&root) {
+        if !remaining_members.is_empty() || !edges[root].is_empty() && ctx.any_by(
+            &edges[root], |candidate| Ok(*candidate == root), "visit F3D parameter cycle self-edge membership",
+        )? {
             ctx.push_vec(
                 &mut cycles,
                 (indices[root], remaining_members),
@@ -8970,7 +8990,11 @@ fn project_extrude(
                     }
                     state = Some(selected_state);
                     for face in selected_faces {
-                        if !faces.contains(&face) {
+                        if faces.is_empty() || !ctx.any_by(
+                            &faces,
+                            |candidate: &cadmpeg_ir::ids::HistoricalFaceId| ctx.equal_bytes(candidate.as_str().as_bytes(), face.as_str().as_bytes(), "compare F3D Extrude profile face identity"),
+                            "visit F3D Extrude profile face membership",
+                        )? {
                             ctx.push_vec(&mut faces, face, "f3d Extrude profile historical face")?;
                         }
                     }
