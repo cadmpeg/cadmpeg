@@ -73,6 +73,7 @@ fn standard_planar_spline_edge_solves_line_and_retains_intersection_construction
         build_standard_edge_curve(
             ctx,
             crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                support_storage: None,
                 native_surfaces:
                     &mut crate::families::standard::decode::edge_geometry::NativeSurfaceIndex::new(
                         admission.context(),
@@ -211,6 +212,7 @@ fn standard_sphere_plane_spline_edge_derives_unbounded_circle_carrier() {
         build_standard_edge_curve(
             ctx,
             crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                support_storage: None,
                 native_surfaces:
                     &mut crate::families::standard::decode::edge_geometry::NativeSurfaceIndex::new(
                         admission.context(),
@@ -310,6 +312,7 @@ fn standard_cylinder_plane_spline_edge_derives_ellipse_carrier() {
         build_standard_edge_curve(
             ctx,
             crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                support_storage: None,
                 native_surfaces:
                     &mut crate::families::standard::decode::edge_geometry::NativeSurfaceIndex::new(
                         admission.context(),
@@ -422,6 +425,7 @@ fn standard_equal_perpendicular_cylinders_select_one_ellipse_branch() {
         build_standard_edge_curve(
             ctx,
             crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                support_storage: None,
                 native_surfaces:
                     &mut crate::families::standard::decode::edge_geometry::NativeSurfaceIndex::new(
                         admission.context(),
@@ -571,6 +575,7 @@ fn standard_spline_retains_a_procedural_rolling_ball_support() {
                 )
                 .expect("index reservation"),
                 &mut admission,
+                None,
             )
         });
         if matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -589,6 +594,7 @@ fn standard_spline_retains_a_procedural_rolling_ball_support() {
         build_standard_edge_curve(
             ctx,
             crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                support_storage: None,
                 native_surfaces:
                     &mut crate::families::standard::decode::edge_geometry::NativeSurfaceIndex::new(
                         admission.context(),
@@ -681,6 +687,7 @@ fn standard_intersection_entity_limit_refuses_before_procedural_curve_creation()
         let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = build_standard_edge_curve(
             ctx,
             crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                support_storage: None,
                 native_surfaces:
                     &mut crate::families::standard::decode::edge_geometry::NativeSurfaceIndex::new(
                         admission.context(),

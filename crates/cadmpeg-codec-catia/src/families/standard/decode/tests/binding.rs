@@ -1660,6 +1660,7 @@ fn standard_emission_reverses_face_pcurve_range_and_refuses_edge_flag_limit() {
             emit_standard_topology(
                 ctx,
                 crate::families::standard::decode::EmitStandardTopologyInputs {
+                    storage: None,
                     ir: &mut limited_ir,
                     annotations: &mut AnnotationBuilder::new(),
                     bindings: &bindings,
@@ -1686,6 +1687,7 @@ fn standard_emission_reverses_face_pcurve_range_and_refuses_edge_flag_limit() {
             emit_standard_topology(
                 ctx,
                 crate::families::standard::decode::EmitStandardTopologyInputs {
+                    storage: None,
                     ir: &mut ir,
                     annotations: &mut annotations,
                     bindings: &bindings,

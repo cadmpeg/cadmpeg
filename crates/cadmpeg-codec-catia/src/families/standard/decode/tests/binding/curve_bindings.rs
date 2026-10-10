@@ -85,6 +85,7 @@ fn standard_full_circle_edge_uses_vertex_seam_and_radian_domain() {
         build_standard_edge_curve(
             ctx,
             crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                support_storage: None,
                 native_surfaces:
                     &mut crate::families::standard::decode::edge_geometry::NativeSurfaceIndex::new(
                         admission.context(),
@@ -692,6 +693,7 @@ fn native_edge_support_match_refuses_work_limit() {
                 )
                 .expect("index reservation"),
                 &mut admission,
+                None,
             )
         });
     assert!(
@@ -710,6 +712,7 @@ fn native_edge_support_match_refuses_work_limit() {
             )
             .expect("index reservation"),
             &mut admission,
+            None,
         )
     })
     .expect("service profile admits surface match");
@@ -735,6 +738,7 @@ fn native_edge_support_nurbs_copy_refuses_collection_limit() {
             )
             .expect("index reservation"),
             &mut admission,
+            None,
         )
     });
     assert!(
@@ -754,6 +758,7 @@ fn native_edge_support_nurbs_copy_refuses_collection_limit() {
             )
             .expect("index reservation"),
             &mut admission,
+            None,
         )?;
         Ok::<_, cadmpeg_core::CodecError>((id, ir.model.surfaces))
     })
