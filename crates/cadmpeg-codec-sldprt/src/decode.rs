@@ -4321,30 +4321,34 @@ fn assign_native_configuration_indices(
     {
         let mut record_storage = ctx.reserve_scoped(0, OPERATION)?;
         let mut records = BTreeMap::<&str, (usize, usize)>::new();
-        for (history_index, history) in ctx
-            .admit_iter(&native.feature_histories, OPERATION)?
-            .enumerate()
-        {
-            for (record_index, record) in ctx
-                .admit_iter(&history.configurations, OPERATION)?
-                .enumerate()
-            {
-                if !ctx.contains_key_btree_map(&records, record.id.as_str(), OPERATION)? {
-                    record_storage.with_storage(|| {
-                        ctx.insert_btree_map(
-                            &mut records,
-                            record.id.as_str(),
-                            (history_index, record_index),
-                            OPERATION,
-                        )
-                    })?;
-                }
-            }
-        }
+        let mut indexed = false;
         for configuration in ctx.admit_iter(&ir.model.configurations, OPERATION)? {
             let Some(native_ref) = configuration.native_ref.as_deref() else {
                 continue;
             };
+            if !indexed {
+                for (history_index, history) in ctx
+                    .admit_iter(&native.feature_histories, OPERATION)?
+                    .enumerate()
+                {
+                    for (record_index, record) in ctx
+                        .admit_iter(&history.configurations, OPERATION)?
+                        .enumerate()
+                    {
+                        if !ctx.contains_key_btree_map(&records, record.id.as_str(), OPERATION)? {
+                            record_storage.with_storage(|| {
+                                ctx.insert_btree_map(
+                                    &mut records,
+                                    record.id.as_str(),
+                                    (history_index, record_index),
+                                    OPERATION,
+                                )
+                            })?;
+                        }
+                    }
+                }
+                indexed = true;
+            }
             if let Some(&position) = ctx.get_btree_map(&records, native_ref, OPERATION)? {
                 assignment_storage.with_storage(|| {
                     ctx.push_vec(
