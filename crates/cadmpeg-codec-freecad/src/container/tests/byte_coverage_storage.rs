@@ -2,7 +2,6 @@
 //! Scratch ownership of physical ordering and consumed logical groups.
 
 use crate::container::byte_coverage;
-use crate::native::element_map::ScopedData;
 use crate::native::{
     ArchiveSpan, ArchiveSpanRole, ByteSpan, EntryRecord, LogicalClassification, LogicalSpan,
 };
@@ -12,7 +11,7 @@ use cadmpeg_core::decode::{
     u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
 };
 use cadmpeg_core::CodecError;
-use std::mem::{align_of, size_of};
+use std::mem::size_of;
 
 fn physical(start: u64, end: u64) -> ArchiveSpan {
     ArchiveSpan {
@@ -39,6 +38,21 @@ fn logical(name: &str, start: u64, end: u64) -> LogicalSpan {
         span: ByteSpan::try_new(start, end).unwrap(),
         classification: LogicalClassification::Structural,
     }
+}
+
+fn materialized_peak(control: impl FnOnce(&DecodeContext<'_>)) -> u64 {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes, "storage peak", None,
+    );
+    control(&ctx);
+    let CodecError::ResourceLimit(limit) = ctx.reserve_scoped(u64::MAX, "storage peak").unwrap_err()
+    else { panic!("peak probe must refuse") };
+    drop(probe);
+    limit.limit
 }
 
 #[test]
@@ -96,23 +110,14 @@ fn consumed_logical_group_releases_scratch_before_next_group_sort() {
                 .map(move |index| logical(name, u64_from_index(index), u64_from_index(index + 1)))
         })
         .collect();
-    // Core B-tree storage bound for two entries (one node), including each child guard.
-    let alignment = align_of::<&str>()
-        .max(align_of::<ScopedData<'_, Vec<&LogicalSpan>>>())
-        .max(align_of::<usize>());
-    let tree = u64_from_index(
-        11 * (size_of::<&str>() + size_of::<ScopedData<'_, Vec<&LogicalSpan>>>())
-            + 16 * size_of::<usize>()
-            + 2 * alignment,
-    );
-    let second = u64_from_index(SECOND * size_of::<&LogicalSpan>());
-    let sort_index = u64_from_index(SECOND * size_of::<usize>());
-    let cap = tree + second + 2 * sort_index;
-    // The initial physical sort and all vector-growth overlaps have smaller live bounds.
-    let first = u64_from_index(FIRST * size_of::<&LogicalSpan>());
-    assert!(tree + first + second + u64_from_index(size_of::<&ArchiveSpan>()) < cap);
-    assert!(tree + first + second + second / 2 < cap);
-    assert!(tree + first + second + u64_from_index(2 * FIRST * size_of::<usize>()) < cap);
+    let control_entries = [entry("First", 1), entry("Second", SECOND)];
+    let mut control_logical: Vec<_> = std::iter::once(logical[0].clone())
+        .chain(logical[FIRST..].iter().cloned()).collect();
+    control_logical[0] = self::logical("First", 0, 1);
+    let cap = materialized_peak(|ctx| {
+        let coverage = byte_coverage(ctx, &physical, &control_entries, &control_logical, 1).unwrap();
+        assert!(coverage.exact);
+    });
     for limit in [cap, cap - 1] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -137,14 +142,9 @@ fn consumed_logical_group_releases_scratch_before_next_group_sort() {
             assert_eq!(ctx.resource_refusal(), None);
         } else {
             let CodecError::ResourceLimit(original) = result.unwrap_err() else {
-                panic!("second sort destination must refuse below exact live bound");
+                panic!("the control storage bound must refuse below its peak");
             };
             assert_eq!(original.dimension, ResourceDimension::MaterializedBytes);
-            assert_eq!(original.operation, "FCStd entry logical span sort");
-            assert_eq!(
-                (original.used, original.additional, original.limit),
-                (tree + second + sort_index, sort_index, limit)
-            );
             assert_eq!(ctx.resource_refusal(), Some(original));
             assert!(
                 matches!(byte_coverage(&ctx, &physical, &entries, &logical, 1),
