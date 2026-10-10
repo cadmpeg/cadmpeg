@@ -211,7 +211,10 @@ fn reference_worklist_preserves_per_visit_refusal() {
 #[test]
 fn reference_materialization_does_not_admit_suffix_after_a_depth_refusal() {
     for count in [1, 1024] {
-        let mut values = vec![Value::Typed("T".into(), Box::new(Value::Typed("T".into(), Box::new(Value::Integer(1)))))];
+        let mut values = vec![Value::Typed(
+            "T".into(),
+            Box::new(Value::Typed("T".into(), Box::new(Value::Integer(1)))),
+        )];
         values.extend((1..count).map(|_| Value::Integer(1)));
         let value = Value::List(values);
         let mut policy = DecodePolicy::service();
@@ -221,17 +224,22 @@ fn reference_materialization_does_not_admit_suffix_after_a_depth_refusal() {
         policy.limits.max_recursion_depth = 2;
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let anchors = std::collections::BTreeMap::new();
-            let mut resolver = crate::parse::ReferenceResolver::new(&[], &anchors, &ctx).expect("empty resolver");
-            let error = resolver.resolve_value(&value, 0).expect_err("first child exceeds depth");
-            let crate::parse::ResolveError::Resource(CodecError::ResourceLimit(refusal)) = error else {
-                panic!("original depth refusal required");
-            };
-            assert_eq!(refusal.dimension, ResourceDimension::RecursionDepth);
-            assert_eq!(refusal.operation, "step_reference_expansion");
-            assert_eq!(ctx.resource_refusal(), Some(refusal));
-            drop(resolver);
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == refusal));
+        let anchors = std::collections::BTreeMap::new();
+        let mut resolver =
+            crate::parse::ReferenceResolver::new(&[], &anchors, &ctx).expect("empty resolver");
+        let error = resolver
+            .resolve_value(&value, 0)
+            .expect_err("first child exceeds depth");
+        let crate::parse::ResolveError::Resource(CodecError::ResourceLimit(refusal)) = error else {
+            panic!("original depth refusal required");
+        };
+        assert_eq!(refusal.dimension, ResourceDimension::RecursionDepth);
+        assert_eq!(refusal.operation, "step_reference_expansion");
+        assert_eq!(ctx.resource_refusal(), Some(refusal));
+        drop(resolver);
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == refusal)
+        );
     }
 }
 
@@ -248,21 +256,29 @@ fn resolver_children_have_one_collection_admission_per_output_slot() {
         with_policy_context(&[], &policy, |_, ctx| {
             let anchors = std::collections::BTreeMap::new();
             let mut resolver = crate::parse::AnchorResolver::new(&anchors, ctx).expect("resolver");
-            assert_eq!(resolver.resolve_root(&value).expect("two output slots"), value);
+            assert_eq!(
+                resolver.resolve_root(&value).expect("two output slots"),
+                value
+            );
         });
         with_policy_context(&[], &policy, |_, ctx| {
             let anchors = std::collections::BTreeMap::new();
-            let mut resolver = crate::parse::ReferenceResolver::new(&[], &anchors, ctx).expect("resolver");
-            assert_eq!(resolver.resolve_value(&value, 0).expect("two output slots"), value);
+            let mut resolver =
+                crate::parse::ReferenceResolver::new(&[], &anchors, ctx).expect("resolver");
+            assert_eq!(
+                resolver.resolve_value(&value, 0).expect("two output slots"),
+                value
+            );
         });
     }
 }
 
 #[test]
 fn anchor_memo_copies_admit_only_their_allocated_child_slots() {
-    let anchors = std::collections::BTreeMap::from([
-        (String::from("a"), Value::List(vec![Value::Integer(1), Value::Integer(2)])),
-    ]);
+    let anchors = std::collections::BTreeMap::from([(
+        String::from("a"),
+        Value::List(vec![Value::Integer(1), Value::Integer(2)]),
+    )]);
     let mut policy = DecodePolicy::service();
     // First expansion, memo population, and memo retrieval allocate two slots each.
     // The memo table and expansion stack admit one item each.
@@ -271,8 +287,12 @@ fn anchor_memo_copies_admit_only_their_allocated_child_slots() {
     with_policy_context(&[], &policy, |_, ctx| {
         let mut resolver = crate::parse::AnchorResolver::new(&anchors, ctx).expect("resolver");
         for _ in 0..2 {
-            assert_eq!(resolver.resolve_root(&Value::Resource("a".into())).expect("memo copies fit"),
-                Value::List(vec![Value::Integer(1), Value::Integer(2)]));
+            assert_eq!(
+                resolver
+                    .resolve_root(&Value::Resource("a".into()))
+                    .expect("memo copies fit"),
+                Value::List(vec![Value::Integer(1), Value::Integer(2)])
+            );
         }
     });
 }
