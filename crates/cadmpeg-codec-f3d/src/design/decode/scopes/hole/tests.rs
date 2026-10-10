@@ -57,6 +57,59 @@ fn hole_input_records_refuse_collection_limit() {
 }
 
 #[test]
+fn hole_scopes_propagate_reference_and_ascii_scan_refusals() {
+    let (bytes, scope, _, _) = hole_point_stream();
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let stream_types = HashMap::from([(55_u64, (HOLE_POINT_DATA_TYPE_GUID, 4))]);
+    // A record name of one graphic byte after an empty eleven-byte header
+    // and its four-byte word.
+    let mut named = vec![0; 15];
+    named.extend_from_slice(&[1, 0, 0, 0, b'a']);
+    assert_eq!(
+        super::record_name_end(
+            &cadmpeg_test_support::service_decode_context(),
+            &named,
+            0,
+            "validate F3D hole ASCII field",
+        )
+        .unwrap(),
+        Some(20),
+    );
+    for operation in [
+        "scan F3D Hole face-selection scope references",
+        "scan F3D Hole scope references",
+        "scan F3D Hole carrier frames",
+        "validate F3D hole ASCII field",
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            operation,
+            0,
+            |ctx| {
+                if operation == "validate F3D hole ASCII field" {
+                    return super::record_name_end(ctx, &named, 0, operation).map(|_| ());
+                }
+                exact_hole_construction_with_ctx(
+                    ctx,
+                    &bytes,
+                    &records,
+                    &scope,
+                    &stream_types,
+                    &crate::records::feature::scope::DesignFeatureKind::Hole,
+                )
+                .map(|_| ())
+            },
+        );
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(failure)
+                if failure.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                    && failure.operation == operation
+        ));
+    }
+}
+
+#[test]
 fn hole_carrier_reads_borrowed_as_built_scope() {
     let (bytes, mut scope, _, _) = hole_point_stream();
     scope

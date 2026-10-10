@@ -951,7 +951,7 @@ fn arrangement_configuration_route_refuses_work_limit() {
     assert!(
         matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "nx arrangement XML scan"),
+            && limit.operation == "locate NX named entry"),
         "{error:?}"
     );
 }
@@ -1015,7 +1015,7 @@ fn part_attribute_route_refuses_work_limit() {
     assert!(
         matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "nx part attribute XML scan"),
+            && limit.operation == "locate NX named entry"),
         "{error:?}"
     );
 }
@@ -1330,7 +1330,7 @@ fn control_handle_pair_route_refuses_scoped_limit() {
     let error = control_handle_pair_refusal(|policy| policy.limits.max_materialized_bytes = 0);
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::MaterializedBytes
-            && limit.operation == "NX control handle pair index"));
+            && limit.operation == "NX control handle pair blocks"));
 }
 
 #[test]
@@ -1344,9 +1344,10 @@ fn control_handle_pair_route_refuses_retained_limit() {
 #[test]
 fn control_handle_pair_route_refuses_work_limit() {
     let error = control_handle_pair_refusal(|policy| policy.limits.max_work_units = 0);
+    // The reference traversal is admitted before the handle index is built.
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "index NX control handle pair references"));
+            && limit.operation == "NX object references"));
 }
 
 #[test]
@@ -1568,7 +1569,7 @@ fn fastload_native_records_refuse_collection_limit_before_reserve() {
     assert_fastload_limit(
         &error,
         ResourceDimension::CollectionItems,
-        "admit NX FastLoad native collections",
+        "allocate NX FastLoad member links",
     );
 }
 

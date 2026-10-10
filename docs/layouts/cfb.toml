@@ -1,0 +1,119 @@
+# SPDX-License-Identifier: Apache-2.0
+# Directory layout defined by MS-CFB and docs/formats/cfb.md.
+schema = 1
+format = "cfb"
+spec = "docs/formats/cfb.md"
+endianness = "little"
+note = "The shared directory-entry layout applies to version 3 and version 4. Versioned stream-size interpretation is specified in section 2."
+
+[[record]]
+name = "directory_entry"
+parsed_by = "crates/cadmpeg-container/src/compound.rs"
+kind = "byte"
+section = "1"
+anchor = "Each directory entry occupies 128 bytes"
+size = 128
+
+[[record.field]]
+name = "name"
+offset = 0
+type = "bytes[64]"
+source = "spec"
+anchor = "`name` | 64 bytes | UTF-16 name storage."
+note = "UTF-16 name storage."
+
+[[record.field]]
+name = "name_length"
+offset = 64
+type = "u16"
+source = "spec"
+anchor = "`name_length` | 2 bytes | Even byte count including the null terminator; at most 64."
+note = "Even byte count including the null terminator; at most 64."
+
+[[record.field]]
+name = "object_type"
+offset = 66
+type = "u8"
+source = "spec"
+anchor = "`object_type` | 1 byte | Unallocated=0, storage=1, stream=2, root=5."
+note = "Unallocated=0, storage=1, stream=2, root=5."
+
+[[record.field]]
+name = "color"
+offset = 67
+type = "u8"
+source = "spec"
+anchor = "`color` | 1 byte | Red=0 or black=1."
+note = "Red=0 or black=1."
+
+[[record.field]]
+name = "left"
+offset = 68
+type = "u32"
+source = "spec"
+anchor = "`left` | 4 bytes | Left sibling ordinal."
+note = "Left sibling ordinal."
+
+[[record.field]]
+name = "right"
+offset = 72
+type = "u32"
+source = "spec"
+anchor = "`right` | 4 bytes | Right sibling ordinal."
+note = "Right sibling ordinal."
+
+[[record.field]]
+name = "child"
+offset = 76
+type = "u32"
+source = "spec"
+anchor = "`child` | 4 bytes | Child ordinal."
+note = "Child ordinal."
+
+[[record.field]]
+name = "clsid"
+offset = 80
+type = "bytes[16]"
+source = "spec"
+anchor = "`clsid` | 16 bytes | Storage class identifier."
+note = "Storage class identifier."
+
+[[record.field]]
+name = "state_bits"
+offset = 96
+type = "u32"
+source = "spec"
+anchor = "`state_bits` | 4 bytes | Application flags."
+note = "Application flags."
+
+[[record.field]]
+name = "creation_time"
+offset = 100
+type = "u64"
+source = "spec"
+anchor = "`creation_time` | 8 bytes | UTC FILETIME."
+note = "UTC FILETIME."
+
+[[record.field]]
+name = "modified_time"
+offset = 108
+type = "u64"
+source = "spec"
+anchor = "`modified_time` | 8 bytes | UTC FILETIME."
+note = "UTC FILETIME."
+
+[[record.field]]
+name = "start_sector"
+offset = 116
+type = "u32"
+source = "spec"
+anchor = "`start_sector` | 4 bytes | First stream sector."
+note = "First stream sector."
+
+[[record.field]]
+name = "stream_size"
+offset = 120
+type = "u64"
+source = "spec"
+anchor = "`stream_size` | 8 bytes | Stream byte length."
+note = "Stream byte length."

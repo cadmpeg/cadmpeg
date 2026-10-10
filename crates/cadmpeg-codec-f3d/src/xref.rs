@@ -12,8 +12,6 @@ use cadmpeg_core::decode::u64_from_index;
 
 use cadmpeg_core::container::ContainerRole;
 
-use std::collections::HashSet;
-
 use serde::Deserialize;
 
 use cadmpeg_core::decode::{DecodeContext, View};
@@ -616,7 +614,7 @@ fn bind_occurrences(
             bytes,
             &headers,
             serializer_magic,
-            placement_offsets.as_ref(),
+            placement_offsets.as_deref(),
         )?;
 
         ctx.reserve_vec(&mut streams, 1, "collect F3D xref streams")?;
@@ -820,41 +818,67 @@ fn superseded_placement_count(
 fn typed_occurrence_placement_offsets(
     ctx: &DecodeContext<'_>,
     meta: &crate::metastream::MetaStream,
-) -> Result<HashSet<usize>, CodecError> {
-    let mut placement_entities = HashSet::new();
-    for entity in meta
-        .types
-        .iter()
-        .filter(|design_type| {
-            design_type
-                .type_guid
-                .as_str()
-                .eq_ignore_ascii_case(OCCURRENCE_PLACEMENT_TYPE_GUID)
-        })
-        .flat_map(|design_type| design_type.entities.values().copied())
-    {
-        if !placement_entities.contains(&entity) {
-            ctx.reserve_set(
+) -> Result<Vec<usize>, CodecError> {
+    // Both sets are sorted vectors searched by bisection: their charges and
+    // contents do not depend on hashing.
+    let mut placement_entities = Vec::new();
+    for design_type in ctx.admit_iter(&meta.types, "scan F3D xref placement types")? {
+        // The comparison stops at a length mismatch, so it reads at most the
+        // 36 bytes of the constant GUID.
+        if !design_type
+            .type_guid
+            .as_str()
+            .eq_ignore_ascii_case(OCCURRENCE_PLACEMENT_TYPE_GUID)
+        {
+            continue;
+        }
+        let unlocated = ctx.admit_iter(
+            design_type.entities.unlocated_values().unwrap_or(&[]),
+            "index F3D xref placement entities",
+        )?;
+        let located = ctx.admit_iter(
+            design_type.entities.located_rows().unwrap_or(&[]),
+            "index F3D xref placement entities",
+        )?;
+        for entity in unlocated.chain(located.map(|row| &row.value)) {
+            ctx.push_vec(
                 &mut placement_entities,
-                1,
+                *entity,
                 "index F3D xref placement entities",
             )?;
-            placement_entities.insert(entity);
         }
     }
-    let mut offsets = HashSet::new();
-    for record in meta.records.iter().chain(meta.secondary_records.iter()) {
-        if !placement_entities.contains(&record.entity_id) {
+    ctx.sort_unstable_by(
+        &mut placement_entities[..],
+        |entity| entity,
+        Ord::cmp,
+        "sort F3D xref placement entities",
+    )?;
+    let mut offsets = Vec::new();
+    let records = ctx.admit_iter(&meta.records, "index F3D xref placement offsets")?;
+    let secondary = ctx.admit_iter(&meta.secondary_records, "index F3D xref placement offsets")?;
+    for record in records.chain(secondary) {
+        if ctx
+            .binary_search(
+                &placement_entities,
+                &record.entity_id,
+                "find F3D xref placement entity",
+            )?
+            .is_err()
+        {
             continue;
         }
         let offset = usize::try_from(record.bulk_offset).map_err(|_| {
             CodecError::Malformed("F3D occurrence-placement BulkStream offset exceeds usize".into())
         })?;
-        if !offsets.contains(&offset) {
-            ctx.reserve_set(&mut offsets, 1, "index F3D xref placement offsets")?;
-            offsets.insert(offset);
-        }
+        ctx.push_vec(&mut offsets, offset, "index F3D xref placement offsets")?;
     }
+    ctx.sort_unstable_by(
+        &mut offsets[..],
+        |offset| offset,
+        Ord::cmp,
+        "sort F3D xref placement offsets",
+    )?;
     Ok(offsets)
 }
 
@@ -951,7 +975,7 @@ fn occurrence_placements_filtered(
     bytes: &[u8],
     records: &[IndexedRecord],
     serializer_magic: Option<u32>,
-    typed_offsets: Option<&HashSet<usize>>,
+    typed_offsets: Option<&[usize]>,
 ) -> Vec<OccurrencePlacement> {
     occurrence_placements_with_failures(
         &cadmpeg_test_support::service_decode_context(),
@@ -971,14 +995,19 @@ fn occurrence_placements_with_failures(
     bytes: &[u8],
     records: &[IndexedRecord],
     serializer_magic: Option<u32>,
-    typed_offsets: Option<&HashSet<usize>>,
+    typed_offsets: Option<&[usize]>,
 ) -> Result<(Vec<OccurrencePlacement>, Vec<OccurrencePlacementFailure>), CodecError> {
     let mut placements = Vec::new();
     let mut failures = Vec::new();
-    for record in records
-        .iter()
-        .filter(|record| typed_offsets.is_none_or(|offsets| offsets.contains(&record.offset)))
-    {
+    for record in ctx.admit_iter(records, "scan F3D xref placement records")? {
+        if let Some(offsets) = typed_offsets {
+            if ctx
+                .binary_search(offsets, &record.offset, "find F3D xref placement offset")?
+                .is_err()
+            {
+                continue;
+            }
+        }
         let Some(body) = bytes.get(record.offset..record.end) else {
             continue;
         };

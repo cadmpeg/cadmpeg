@@ -77,12 +77,12 @@ impl<T> NonEmpty<T> {
     pub(crate) fn try_map_charged<U>(
         self,
         ctx: &DecodeContext<'_>,
-        mut map: impl FnMut(T) -> Option<U>,
+        mut map: impl FnMut(T) -> Result<Option<U>, CodecError>,
     ) -> Result<Option<NonEmpty<U>>, CodecError> {
         let mut initial = Vec::new();
         for value in self.initial {
             ctx.charge_work(1, "NX nonempty mapped entries")?;
-            let Some(value) = map(value) else {
+            let Some(value) = map(value)? else {
                 return Ok(None);
             };
             ctx.reserve_vec(&mut initial, 1, "NX nonempty mapped entries")?;
@@ -90,7 +90,7 @@ impl<T> NonEmpty<T> {
         }
         ctx.charge_work(1, "NX nonempty mapped entries")?;
         ctx.charge_collection_items(1, "NX nonempty mapped entries")?;
-        let Some(last) = map(self.last) else {
+        let Some(last) = map(self.last)? else {
             return Ok(None);
         };
         Ok(Some(NonEmpty { initial, last }))
@@ -102,7 +102,7 @@ impl<T> NonEmpty<Option<T>> {
         self,
         ctx: &DecodeContext<'_>,
     ) -> Result<Option<NonEmpty<T>>, CodecError> {
-        self.try_map_charged(ctx, |value| value)
+        self.try_map_charged(ctx, Ok)
     }
 }
 
@@ -157,7 +157,7 @@ mod tests {
                     .unwrap()
                     .try_map_charged(ctx, |value| {
                         visited.push(value);
-                        Some(value + 1)
+                        Ok(Some(value + 1))
                     })
                     .unwrap()
                     .unwrap();

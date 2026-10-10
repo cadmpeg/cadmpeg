@@ -73,8 +73,10 @@ pub(in crate::native) fn data_block_counted_index_lanes(
     container: &Container,
 ) -> Result<Vec<DataBlockCountedIndexLane>, CodecError> {
     let mut output = Vec::new();
-    for (section_ordinal, (entry, section)) in
-        container.indexed_om_sections(ctx)?.into_iter().enumerate()
+    let sections = container.indexed_om_sections(ctx)?;
+    for (section_ordinal, (entry, section)) in ctx
+        .admit_iter(&sections, "NX compact lane input sections")?
+        .enumerate()
     {
         let Some((_, _, records)) = section.as_offset_only() else {
             continue;
@@ -92,7 +94,8 @@ pub(in crate::native) fn data_block_counted_index_lanes(
                 continue;
             };
             let mut ordinal = 0usize;
-            for lane in counted_lanes(ctx, block.bytes)? {
+            let lanes = counted_lanes(ctx, block.bytes)?;
+            for lane in ctx.admit_iter(lanes, "NX compact lane lanes visits")? {
                 let Some(lane) = lane.into_absolute(source_base) else {
                     continue;
                 };
@@ -133,8 +136,10 @@ pub(in crate::native) fn data_block_abr_reference_lanes(
     container: &Container,
 ) -> Result<Vec<DataBlockAbrReferenceLane>, CodecError> {
     let mut output = Vec::new();
-    for (section_ordinal, (entry, section)) in
-        container.indexed_om_sections(ctx)?.into_iter().enumerate()
+    let sections = container.indexed_om_sections(ctx)?;
+    for (section_ordinal, (entry, section)) in ctx
+        .admit_iter(&sections, "NX compact lane input sections")?
+        .enumerate()
     {
         let Some((_, storage, records)) = section.as_offset_only() else {
             continue;
@@ -151,7 +156,8 @@ pub(in crate::native) fn data_block_abr_reference_lanes(
             .checked_add(1)
             .ok_or_else(|| ctx.refuse_codec_limit("NX ABR lane block count", 0, 1))?;
         let mut ordinal = 0usize;
-        for lane in abr_lanes(ctx, storage)? {
+        let lanes = abr_lanes(ctx, storage)?;
+        for lane in ctx.admit_iter(lanes, "NX compact lane lanes visits")? {
             let Some(lane) = lane.into_absolute(source_base) else {
                 continue;
             };

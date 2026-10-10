@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use std::collections::HashSet;
 use std::io::Cursor;
 
 use crate::test_support::assembly_test::{f3d_without_brep, XREF_ROLE};
@@ -15,7 +14,7 @@ fn typed_placement_admission_rejects_shape_collision() {
     let records =
         super::super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes)
             .unwrap();
-    let no_registered_placements = HashSet::new();
+    let no_registered_placements: [usize; 0] = [];
     assert!(super::super::occurrence_placements_filtered(
         &bytes,
         &records,
@@ -24,7 +23,7 @@ fn typed_placement_admission_rejects_shape_collision() {
     )
     .is_empty());
 
-    let registered_placement = HashSet::from([0]);
+    let registered_placement = [0];
     assert_eq!(
         super::super::occurrence_placements_filtered(
             &bytes,

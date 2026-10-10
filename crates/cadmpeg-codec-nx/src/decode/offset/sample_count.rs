@@ -18,9 +18,9 @@
 /// points are unknown.
 ///
 /// The field is private to this module, which holds nothing but the type, its
-/// two constructors and its two readers. `CoarseSampleCount(0)` is spellable
-/// nowhere else, so `intervals()` has no zero to state and no underflow to
-/// refuse.
+/// two constructors, its two readers and the ceiling a sample loop is bounded
+/// by. `CoarseSampleCount(0)` is spellable nowhere else, so `intervals()` has
+/// no zero to state and no underflow to refuse.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct CoarseSampleCount(usize);
 
@@ -28,8 +28,9 @@ impl CoarseSampleCount {
     /// Two intervals: both domain ends and the midpoint.
     const FLOOR: usize = 3;
 
-    /// The count taken when the control-point count is unknown.
-    const CEILING: usize = 9;
+    /// The count taken when the control-point count is unknown, and the most
+    /// samples any direction takes.
+    pub(super) const CEILING: usize = 9;
 
     /// The count for a direction carrying `control_points` control points: one
     /// sample per control point and one more, held inside the floor and the

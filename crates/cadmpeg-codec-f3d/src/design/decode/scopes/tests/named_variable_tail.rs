@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 use crate::design::decode::scopes::draft::exact_draft_operation_with_owners;
 use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
@@ -132,12 +133,17 @@ fn parameter_scope_parses_named_variable_tail() {
         )
         .unwrap(),
     ];
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let operation = exact_draft_operation_with_owners(
+        &ctx,
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &owner_scope,
         &owners,
     )
+    .unwrap()
     .expect("owner-lane Draft operation");
     assert_eq!(operation.angle.get(), 0.0);
     assert_eq!(operation.angle_record_index, 327);

@@ -2,7 +2,6 @@
 use cadmpeg_core::decode::u64_from_index;
 
 use crate::design::decode::sketch::bind_sketch_graph;
-use crate::design::decode::sketch::parse_sketch_placement_candidates;
 use crate::design::sketch_project::project_sketch_design;
 use crate::records::entity_header::DesignEntityHeader;
 use crate::records::entity_header::DESIGN_MODULE_SKETCH;
@@ -79,23 +78,49 @@ fn candidates(
     record_index: u32,
 ) -> Vec<DesignSketchPlacement> {
     let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
+    let entity_id = crate::records::identity::DesignEntityId::try_from(entity_id.to_owned())
+        .expect("valid entity ID");
     crate::design::test_support::with_test_decode_context(|ctx| {
-        parse_sketch_placement_candidates(
-            ctx,
-            bytes,
-            scope_record_index,
-            &crate::records::identity::DesignEntityId::try_from(entity_id.to_owned())
-                .expect("valid entity ID"),
-            record_index,
-            &records,
-        )
-        .unwrap()
+        crate::design::decode::sketch::scope_placement_frames(ctx, bytes, record_index, &records)
+            .unwrap()
+            .map(|candidate| {
+                crate::design::decode::sketch::placement_from_frame(
+                    ctx,
+                    bytes,
+                    Some(scope_record_index),
+                    &entity_id,
+                    candidate,
+                )
+                .unwrap()
+            })
+            .collect()
     })
 }
 
+/// The member-run head placement of the sketch entity at `entity_byte_offset`.
+fn member_run_head_placement(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    entity_byte_offset: u64,
+    entity_id: &crate::records::identity::DesignEntityId,
+    records: &crate::design::decode::sketch::IndexedRecordOffsets,
+) -> Result<Option<DesignSketchPlacement>, cadmpeg_core::CodecError> {
+    let Some(head) = crate::design::decode::sketch::member_run_head(
+        ctx,
+        bytes,
+        entity_byte_offset,
+        entity_id.suffix(),
+        records,
+    )?
+    else {
+        return Ok(None);
+    };
+    crate::design::decode::sketch::placement_from_frame(ctx, bytes, None, entity_id, head).map(Some)
+}
+
 #[test]
-fn sketch_placement_candidate_refuses_collection_and_entity_id_limits() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+fn sketch_placement_entity_id_refuses_retained_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
     let mut bytes = vec![0; 212];
@@ -107,199 +132,26 @@ fn sketch_placement_candidate_refuses_collection_and_entity_id_limits() {
     bytes[208..212].copy_from_slice(&185u32.to_le_bytes());
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let entity_id = crate::records::identity::DesignEntityId::try_from("0_172".to_owned()).unwrap();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let refusal_cap = match cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::CollectionItems,
-        "f3d sketch placement candidate",
-        |cap| {
-            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-            match ResourceDimension::CollectionItems {
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                    policy.limits.max_retained_bytes = cap;
-                }
-                cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                    policy.limits.max_collection_items = cap;
-                }
-                cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                    policy.limits.max_materialized_bytes = cap;
-                }
-                cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                    policy.limits.max_work_units = cap;
-                }
-                dimension => panic!("unsupported refusal dimension: {dimension:?}"),
-            }
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            (parse_sketch_placement_candidates(&ctx, &bytes, 177, &entity_id, 185, &records))
-                .map(|_| ())
-        },
-    ) {
-        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
-        error => panic!("unexpected refusal: {error:?}"),
-    };
-    policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
-    match ResourceDimension::CollectionItems {
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-            policy.limits.max_retained_bytes = refusal_cap;
-        }
-        cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-            policy.limits.max_collection_items = refusal_cap;
-        }
-        cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-            policy.limits.max_materialized_bytes = refusal_cap;
-        }
-        cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-            policy.limits.max_work_units = refusal_cap;
-        }
-        dimension => panic!("unsupported refusal dimension: {dimension:?}"),
-    }
-    let refusal_cap = match cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::CollectionItems,
-        "f3d sketch placement candidate",
-        |cap| {
-            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-            match ResourceDimension::CollectionItems {
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                    policy.limits.max_retained_bytes = cap;
-                }
-                cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                    policy.limits.max_collection_items = cap;
-                }
-                cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                    policy.limits.max_materialized_bytes = cap;
-                }
-                cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                    policy.limits.max_work_units = cap;
-                }
-                dimension => panic!("unsupported refusal dimension: {dimension:?}"),
-            }
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            (parse_sketch_placement_candidates(&ctx, &bytes, 177, &entity_id, 185, &records))
-                .map(|_| ())
-        },
-    ) {
-        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
-        error => panic!("unexpected refusal: {error:?}"),
-    };
-    policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
-    match ResourceDimension::CollectionItems {
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-            policy.limits.max_retained_bytes = refusal_cap;
-        }
-        cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-            policy.limits.max_collection_items = refusal_cap;
-        }
-        cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-            policy.limits.max_materialized_bytes = refusal_cap;
-        }
-        cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-            policy.limits.max_work_units = refusal_cap;
-        }
-        dimension => panic!("unsupported refusal dimension: {dimension:?}"),
-    }
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(
-        parse_sketch_placement_candidates(&ctx, &bytes, 177, &entity_id, 185, &records),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "f3d sketch placement candidate"
-    ));
-
-    policy.limits.max_collection_items = 1;
-    policy.limits.max_retained_bytes = u64_from_index(entity_id.as_str().len()) - 1;
-    let refusal_cap = match cadmpeg_test_support::refusal::resource_limit_at(
+    let error = crate::test_support::resource_refusal_at(
         ResourceDimension::RetainedBytes,
         "f3d sketch placement entity ID",
-        |cap| {
-            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-            match ResourceDimension::RetainedBytes {
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                    policy.limits.max_retained_bytes = cap;
-                }
-                cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                    policy.limits.max_collection_items = cap;
-                }
-                cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                    policy.limits.max_materialized_bytes = cap;
-                }
-                cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                    policy.limits.max_work_units = cap;
-                }
-                dimension => panic!("unsupported refusal dimension: {dimension:?}"),
-            }
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            (parse_sketch_placement_candidates(&ctx, &bytes, 177, &entity_id, 185, &records))
-                .map(|_| ())
+        0,
+        |ctx| {
+            let mut frames =
+                crate::design::decode::sketch::scope_placement_frames(ctx, &bytes, 185, &records)?;
+            let candidate = frames.next().expect("compact placement frame");
+            crate::design::decode::sketch::placement_from_frame(
+                ctx,
+                &bytes,
+                Some(177),
+                &entity_id,
+                candidate,
+            )
         },
-    ) {
-        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
-        error => panic!("unexpected refusal: {error:?}"),
-    };
-    policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
-    match ResourceDimension::RetainedBytes {
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-            policy.limits.max_retained_bytes = refusal_cap;
-        }
-        cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-            policy.limits.max_collection_items = refusal_cap;
-        }
-        cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-            policy.limits.max_materialized_bytes = refusal_cap;
-        }
-        cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-            policy.limits.max_work_units = refusal_cap;
-        }
-        dimension => panic!("unsupported refusal dimension: {dimension:?}"),
-    }
-    let refusal_cap = match cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::RetainedBytes,
-        "f3d sketch placement entity ID",
-        |cap| {
-            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-            match ResourceDimension::RetainedBytes {
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                    policy.limits.max_retained_bytes = cap;
-                }
-                cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                    policy.limits.max_collection_items = cap;
-                }
-                cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                    policy.limits.max_materialized_bytes = cap;
-                }
-                cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                    policy.limits.max_work_units = cap;
-                }
-                dimension => panic!("unsupported refusal dimension: {dimension:?}"),
-            }
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            (parse_sketch_placement_candidates(&ctx, &bytes, 177, &entity_id, 185, &records))
-                .map(|_| ())
-        },
-    ) {
-        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
-        error => panic!("unexpected refusal: {error:?}"),
-    };
-    policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
-    match ResourceDimension::RetainedBytes {
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-            policy.limits.max_retained_bytes = refusal_cap;
-        }
-        cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-            policy.limits.max_collection_items = refusal_cap;
-        }
-        cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-            policy.limits.max_materialized_bytes = refusal_cap;
-        }
-        cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-            policy.limits.max_work_units = refusal_cap;
-        }
-        dimension => panic!("unsupported refusal dimension: {dimension:?}"),
-    }
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    );
     assert!(matches!(
-        parse_sketch_placement_candidates(&ctx, &bytes, 177, &entity_id, 185, &records),
-        Err(CodecError::ResourceLimit(limit))
+        error,
+        CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "f3d sketch placement entity ID"
     ));
@@ -642,14 +494,8 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
     };
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let placement = crate::design::test_support::with_test_decode_context(|ctx| {
-        crate::design::decode::sketch::parse_member_run_head_placement(
-            ctx,
-            &bytes,
-            entity.byte_offset,
-            &entity.entity_id,
-            &records,
-        )
-        .unwrap()
+        member_run_head_placement(ctx, &bytes, entity.byte_offset, &entity.entity_id, &records)
+            .unwrap()
     })
     .expect("feature-owned sketch placement");
     assert_eq!(placement.record_index, 200);
@@ -679,14 +525,8 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
     bytes.extend_from_slice(&201u32.to_le_bytes());
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let compact = crate::design::test_support::with_test_decode_context(|ctx| {
-        crate::design::decode::sketch::parse_member_run_head_placement(
-            ctx,
-            &bytes,
-            entity.byte_offset,
-            &entity.entity_id,
-            &records,
-        )
-        .unwrap()
+        member_run_head_placement(ctx, &bytes, entity.byte_offset, &entity.entity_id, &records)
+            .unwrap()
     })
     .expect("compact identity sketch placement");
     assert_eq!(compact.frame_length(), 34);
@@ -695,6 +535,92 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
         crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.rows()
     );
     assert_eq!(compact.transform_offset(), None);
+}
+
+#[test]
+fn member_run_placement_decodes_in_a_stream_whose_name_is_escaped() {
+    use std::io::{Cursor, Write};
+    use zip::CompressionMethod;
+
+    // The asset folder name holds a space, which the native scope escapes.
+    // The entity's stream is found through its escaped scope.
+    const ASSET_GUID: &str = "00000000-0000-4000-8000-000000000003";
+    const STREAM: &str = "Fusion Asset[Active]/Design1/BulkStream.dat";
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"281");
+    bytes.extend_from_slice(&100u32.to_le_bytes());
+    bytes.resize(40, 0);
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"282");
+    bytes.extend_from_slice(&100u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 8]);
+    bytes.push(1);
+    bytes.extend_from_slice(&200u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 4]);
+    bytes.resize(80, 0);
+    let head_at = bytes.len();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"283");
+    bytes.extend_from_slice(&200u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 11]);
+    for value in crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY
+        .rows()
+        .into_iter()
+        .flatten()
+    {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes.extend_from_slice(&[0, 1]);
+    bytes.resize(
+        head_at + crate::design::decode::sketch::MEMBER_RUN_HEAD_FRAME,
+        0,
+    );
+
+    let scope = crate::ids::native_scope(STREAM);
+    assert!(scope.contains("%20"));
+    let entity = DesignEntityHeader {
+        id: format!("{scope}:design-entity-header#0"),
+        byte_offset: 0,
+
+        entity_id: crate::records::identity::DesignEntityId::try_from("0_100".to_owned())
+            .expect("valid entity ID"),
+        class_tag: crate::records::references::DesignClassTag::try_from("281".to_owned()).unwrap(),
+        optional_slot_present: false,
+        registration: crate::records::entity_header::DesignEntityRegistration::new(
+            Some(DESIGN_MODULE_SKETCH.to_owned()),
+            None,
+            crate::records::identity::ReferenceRun::unlocated(Vec::new()),
+        )
+        .expect("valid module registration"),
+    };
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    zip.start_file("Manifest.dat", stored).unwrap();
+    zip.write_all(&crate::manifest::encode_top_level(ASSET_GUID, &["Fusion Asset"]).unwrap())
+        .unwrap();
+    zip.start_file("Fusion Asset[Active]/Manifest.dat", stored)
+        .unwrap();
+    zip.write_all(&crate::manifest::encode_design_asset("Fusion Asset", ASSET_GUID).unwrap())
+        .unwrap();
+    zip.start_file(STREAM, stored).unwrap();
+    zip.write_all(&bytes).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+    crate::test_support::zip_test::with_scan(&archive, |scan| {
+        let placements = crate::design::decode::sketch::decode_sketch_placements(
+            &cadmpeg_test_support::service_decode_context(),
+            scan,
+            &[],
+            std::slice::from_ref(&entity),
+        )
+        .expect("placements decode");
+        let [placement] = placements.as_slice() else {
+            panic!("one member-run placement, got {}", placements.len());
+        };
+        assert_eq!(placement.record_index, 200);
+        assert_eq!(placement.byte_offset(), u64_from_index(head_at));
+        assert!(placement.id.starts_with(&scope));
+    });
 }
 
 #[test]
@@ -968,7 +894,7 @@ fn tested_decode_sketch_nurbs(
     record_at: usize,
 ) -> Option<Result<(SketchCurveGeometry, usize), cadmpeg_core::CodecError>> {
     crate::design::test_support::with_test_decode_context(|ctx| {
-        crate::design::decode::sketch::decode_sketch_nurbs(ctx, payload, record_at)
+        crate::design::decode::sketch::decode_sketch_nurbs(ctx, payload, record_at).transpose()
     })
 }
 
@@ -978,6 +904,7 @@ fn tested_decode_legacy_sketch_nurbs(
 ) -> Option<Result<(SketchCurveGeometry, usize), cadmpeg_core::CodecError>> {
     crate::design::test_support::with_test_decode_context(|ctx| {
         crate::design::decode::sketch::decode_legacy_sketch_nurbs(ctx, payload, record_at)
+            .transpose()
     })
 }
 
@@ -1007,6 +934,43 @@ fn modern_sketch_nurbs_payload() -> Vec<u8> {
 }
 
 #[test]
+fn sketch_nurbs_subtype_class_tag_copy_refuses_work() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let modern = modern_sketch_nurbs_payload();
+    let modern_error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        "copy F3D sketch NURBS subtype class tag",
+        0,
+        |ctx| crate::design::decode::sketch::decode_sketch_nurbs(ctx, &modern, 17).map(|_| ()),
+    );
+    assert!(matches!(
+        modern_error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "copy F3D sketch NURBS subtype class tag"
+                && limit.additional == 3
+    ));
+
+    let legacy = legacy_sketch_nurbs_payload();
+    let legacy_error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        "copy F3D legacy sketch NURBS subtype class tag",
+        0,
+        |ctx| {
+            crate::design::decode::sketch::decode_legacy_sketch_nurbs(ctx, &legacy, 0).map(|_| ())
+        },
+    );
+    assert!(matches!(
+        legacy_error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "copy F3D legacy sketch NURBS subtype class tag"
+                && limit.additional == 3
+    ));
+}
+
+#[test]
 fn modern_sketch_nurbs_collections_refuse_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
@@ -1030,7 +994,6 @@ fn modern_sketch_nurbs_collections_refuse_collection_limit() {
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = crate::design::decode::sketch::decode_sketch_nurbs(&ctx, &bytes, 17)
-            .transpose()
             .expect_err("collection limit must refuse modern NURBS");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
@@ -1139,7 +1102,6 @@ fn legacy_sketch_nurbs_collections_refuse_collection_limit() {
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = crate::design::decode::sketch::decode_legacy_sketch_nurbs(&ctx, &bytes, 0)
-            .transpose()
             .expect_err("collection limit must refuse legacy NURBS");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
@@ -1286,12 +1248,8 @@ fn sketch_geometry_tail_names_its_owner_container() {
 }
 
 fn sketch_graph_header(suffix: u64, members: Vec<u32>) -> DesignEntityHeader {
-    sketch_graph_header_in("f3d:native", suffix, members)
-}
-
-fn sketch_graph_header_in(stream: &str, suffix: u64, members: Vec<u32>) -> DesignEntityHeader {
     DesignEntityHeader {
-        id: format!("{stream}:design-entity-header#{suffix}"),
+        id: format!("f3d:native:design-entity-header#{suffix}"),
         byte_offset: suffix,
 
         entity_id: crate::records::identity::DesignEntityId::try_from(format!("0_{suffix}"))
@@ -1313,12 +1271,8 @@ fn sketch_graph_header_in(stream: &str, suffix: u64, members: Vec<u32>) -> Desig
 }
 
 fn sketch_graph_point(record_index: u32) -> SketchPoint {
-    sketch_graph_point_in("f3d:native", record_index)
-}
-
-fn sketch_graph_point_in(stream: &str, record_index: u32) -> SketchPoint {
     SketchPoint::try_from(crate::records::sketch_geometry::SketchPointDraft {
-        id: format!("{stream}:sketch-point#{record_index}"),
+        id: format!("f3d:native:sketch-point#{record_index}"),
         record_index,
         owner_reference: None,
         class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
@@ -1340,16 +1294,12 @@ fn sketch_graph_point_in(stream: &str, record_index: u32) -> SketchPoint {
 }
 
 fn sketch_graph_relation() -> crate::records::sketch_relations::SketchRelation {
-    sketch_graph_relation_in("f3d:native")
-}
-
-fn sketch_graph_relation_in(stream: &str) -> crate::records::sketch_relations::SketchRelation {
     use crate::records::sketch_relations::{
         SketchRelation, SketchRelationDraft, SketchRelationMember, SketchRelationReturnMember,
     };
 
     SketchRelation::try_new(SketchRelationDraft {
-        id: format!("{stream}:sketch-relation#30"),
+        id: "f3d:native:sketch-relation#30".to_owned(),
         record_index: 30,
         class_tag: crate::records::references::DesignClassTag::try_from("302".to_owned()).unwrap(),
         byte_offset: 0,
@@ -1375,59 +1325,45 @@ fn sketch_graph_relation_in(stream: &str) -> crate::records::sketch_relations::S
 
 #[test]
 fn sketch_graph_collections_and_text_refuse_limits() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
 
-    for (limit, operation) in [
-        (0, "f3d sketch graph owner key"),
-        (1, "f3d sketch graph scoped relations"),
-        (2, "f3d sketch graph typed record"),
-        (3, "f3d sketch graph record owner"),
-        (4, "f3d sketch graph operand key"),
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut points = [sketch_graph_point(20)];
-        let mut relations = [sketch_graph_relation()];
-        let error = bind_sketch_graph(
-            &ctx,
-            &[sketch_graph_header(100, vec![20])],
-            &mut points,
-            &mut [],
-            &mut [],
-            &mut relations,
-        )
-        .expect_err("collection limit must refuse sketch graph");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
-            if failure.dimension == ResourceDimension::CollectionItems
-                && failure.operation == operation)
-        );
-    }
-    // The scope text needs as many materialized bytes as the relation's stream
-    // is long. That stream is longer than the transient hash-table reservation
-    // the operand table holds while it grows (227 bytes), so the scope text is
-    // the first charge to need more materialized bytes than that peak.
-    let long_stream = "s".repeat(256);
-    for (dimension, operation, stream) in [
+    for (dimension, operation) in [
+        (ResourceDimension::CollectionItems, "f3d sketch graph scope"),
+        (
+            ResourceDimension::CollectionItems,
+            "f3d sketch graph owner key",
+        ),
+        (
+            ResourceDimension::CollectionItems,
+            "f3d sketch graph scoped relations",
+        ),
+        (
+            ResourceDimension::CollectionItems,
+            "f3d sketch graph typed records",
+        ),
+        (
+            ResourceDimension::CollectionItems,
+            "f3d sketch graph operand key",
+        ),
+        (
+            ResourceDimension::CollectionItems,
+            "f3d sketch graph record owner",
+        ),
         (
             ResourceDimension::RetainedBytes,
             "f3d sketch relation owner text",
-            "f3d:native",
         ),
         (
             ResourceDimension::MaterializedBytes,
-            "f3d sketch relation scope text",
-            long_stream.as_str(),
+            "f3d sketch graph scope",
         ),
     ] {
         let error = crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
-            let mut points = [sketch_graph_point_in(stream, 20)];
-            let mut relations = [sketch_graph_relation_in(stream)];
+            let mut points = [sketch_graph_point(20)];
+            let mut relations = [sketch_graph_relation()];
             bind_sketch_graph(
                 ctx,
-                &[sketch_graph_header_in(stream, 100, vec![20])],
+                &[sketch_graph_header(100, vec![20])],
                 &mut points,
                 &mut [],
                 &mut [],

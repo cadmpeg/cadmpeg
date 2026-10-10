@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use super::super::extrude::ExtrudeScopeFrame;
 use crate::records::feature::extrude::{
     DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue, DesignExtrudeStart,
 };
@@ -59,11 +60,13 @@ fn legacy_class_397_symmetric_extrude_scope_decodes_473_byte_frame() {
 
     let prologue = super::super::legacy_class_397::exact_symmetric_extrude_prologue(
         &bytes,
-        0,
-        layout::LEN,
-        "397",
-        "262",
-        layout::REFERENCE_COUNT,
+        ExtrudeScopeFrame {
+            start: 0,
+            paired_at: layout::LEN,
+            class_tag: "397",
+            paired_class_tag: "262",
+            reference_count_at: layout::REFERENCE_COUNT,
+        },
         &REFERENCE_MEMBERS,
     )
     .expect("class-397 symmetric shifted Extrude prologue");
@@ -93,12 +96,14 @@ fn legacy_class_397_symmetric_extrude_scope_decodes_473_byte_frame() {
     assert!(
         super::super::legacy_class_397::exact_symmetric_extrude_prologue(
             &invalid_side,
-            0,
-            layout::LEN,
-            "397",
-            "262",
-            layout::REFERENCE_COUNT,
-            &REFERENCE_MEMBERS,
+            ExtrudeScopeFrame {
+                start: 0,
+                paired_at: layout::LEN,
+                class_tag: "397",
+                paired_class_tag: "262",
+                reference_count_at: layout::REFERENCE_COUNT
+            },
+            &REFERENCE_MEMBERS
         )
         .is_none()
     );

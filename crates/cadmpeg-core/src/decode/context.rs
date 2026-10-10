@@ -112,6 +112,14 @@ impl<'a> DecodeContext<'a> {
         Ok((ctx, View::over_space(bytes, SpaceId::ROOT)))
     }
 
+    /// Starts provisional retained storage for an actual candidate.
+    pub fn provisional_retained(
+        &self,
+        operation: &'static str,
+    ) -> Result<super::ProvisionalReservation<'_>, CodecError> {
+        self.budget.provisional_retained(operation)
+    }
+
     /// Returns the decode policy in force.
     pub fn policy(&self) -> &DecodePolicy {
         self.budget.policy()
@@ -126,7 +134,7 @@ impl<'a> DecodeContext<'a> {
         self.budget.decompression_allowance()
     }
 
-    fn per_expand_allowance(&self) -> u64 {
+    pub(super) fn per_expand_allowance(&self) -> u64 {
         let policy_limit = self
             .budget
             .policy()
@@ -142,6 +150,13 @@ impl<'a> DecodeContext<'a> {
     }
 
     fn allocate_space(&self) -> Result<SpaceId, CodecError> {
+        let space = self.preview_space()?;
+        self.derived_spaces.set(space.index());
+        Ok(space)
+    }
+
+    fn preview_space(&self) -> Result<SpaceId, CodecError> {
+        self.charge_work(0, "decode address spaces")?;
         let used = self.derived_spaces.get();
         let index = used.checked_add(1).ok_or_else(|| {
             // Root owns zero; every other `usize` value identifies a derived space.
@@ -154,7 +169,6 @@ impl<'a> DecodeContext<'a> {
                 "decode address spaces",
             )
         })?;
-        self.derived_spaces.set(index);
         Ok(SpaceId::from_index(index))
     }
 
@@ -636,6 +650,17 @@ impl<'a> DecodeContext<'a> {
     /// Begins an expansion whose output is charged incrementally and becomes
     /// available only after successful finalization.
     pub fn begin_expand(&self, spec: ExpandSpec) -> Result<ExpandWriter<'_, 'a>, CodecError> {
+        self.check_expansion_start(spec)?;
+        Ok(ExpandWriter {
+            ctx: self,
+            spec,
+            buffer: Vec::new(),
+        })
+    }
+
+    /// Checks the common expansion declaration without allocating output or
+    /// debiting bytes that have not been produced.
+    pub(super) fn check_expansion_start(&self, spec: ExpandSpec) -> Result<(), CodecError> {
         if let Some(limit) = self.budget.fused() {
             return Err(CodecError::ResourceLimit(limit));
         }
@@ -662,11 +687,7 @@ impl<'a> DecodeContext<'a> {
                 ));
             }
         }
-        Ok(ExpandWriter {
-            ctx: self,
-            spec,
-            buffer: Vec::new(),
-        })
+        Ok(())
     }
 
     /// Copies several input extents into one derived view.
@@ -693,18 +714,19 @@ impl<'a> DecodeContext<'a> {
                     )
                 })
             })?;
-        let (mut buffer, reservation) = self.scoped_vector_storage(total, "concat_views")?;
+        let reservation;
+        let mut buffer;
+        (buffer, reservation) = self.scoped_vector_storage(total, "concat_views")?;
         for view in self.admit_iter(inputs, "concat_views")? {
             let data = view.window();
             self.reserve_capacity(&mut buffer, data.len(), "concat_views")?;
             self.charge_work(u64_from_index(data.len()), "concat_views")?;
             buffer.extend_from_slice(data);
         }
-        let bytes = self
-            .arena
-            .alloc(self, self.into_boxed_slice(buffer, "concat_views boxing")?)?;
-        reservation.commit()?;
-        let space = self.allocate_space()?;
+        let space = self.preview_space()?;
+        let buffer = self.into_boxed_slice(buffer, "concat_views boxing")?;
+        let bytes = self.arena.alloc_scoped(self, buffer, reservation)?;
+        self.derived_spaces.set(space.index());
         Ok(View::over_space(bytes, space))
     }
 
@@ -877,11 +899,12 @@ impl<'a> ExpandWriter<'_, 'a> {
     /// Finalizes the expansion, stores it in the arena, and registers its space.
     pub fn finalize(self) -> Result<View<'a>, CodecError> {
         self.check_exact()?;
+        let space = self.ctx.preview_space()?;
         let bytes = self.ctx.arena.alloc(
             self.ctx,
             self.ctx.into_boxed_slice(self.buffer, "expansion boxing")?,
         )?;
-        let space = self.ctx.allocate_space()?;
+        self.ctx.derived_spaces.set(space.index());
         Ok(View::over_space(bytes, space))
     }
 
@@ -912,6 +935,7 @@ impl<'a> ExpandWriter<'_, 'a> {
 
 #[cfg(test)]
 mod tests {
+    mod publication;
     use super::{u64_from_index, ByteRange, DecodeArena, DecodeContext, DecodePolicy};
     use crate::decode::{ResourceDimension, ResourceFailure};
     use crate::CodecError;
