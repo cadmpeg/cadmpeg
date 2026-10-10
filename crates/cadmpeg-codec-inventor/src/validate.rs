@@ -129,7 +129,7 @@ pub(crate) fn validate_native(
     let (actual_arenas, actual_arenas_storage) =
         ctx.with_scoped_storage("collect Inventor native arena names", || {
             ctx.collect_btree_set(
-                namespace.arenas().iter().map(|(name, _)| name.as_str()),
+                namespace.arenas().keys().map(String::as_str),
                 "collect Inventor native arena names",
             )
         })?;
