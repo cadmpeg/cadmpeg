@@ -149,3 +149,112 @@ fn native_composite_endpoint_release_preserves_segments_and_identity() {
     drop(released);
     ctx.finish_session().unwrap();
 }
+
+fn native_segment_source_boundary(count: usize, visited: usize, before_copy: bool, complete: bool) {
+    let (mut ir, mut index, child) = fixture();
+    // A NURBS carrier uses the indexed edge range without the separate line
+    // endpoint evaluation. Its two stored points still define the endpoints.
+    ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(test_nurbs(
+        1, vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)], None,
+    )));
+    let before = ir.clone();
+    let children = vec![&child; count];
+    let entry = crate::test_support::directory_target(5, 102);
+    let child_bytes = u64_from_index(child.as_str().len());
+    let vertex_bytes = u64_from_index(index.edges[&child][0].start.as_str().len()
+        + index.edges[&child][0].end.as_str().len());
+    // Each endpoint visits its child and edge candidate, looks up the child
+    // in each one-key tree, copies both selected vertex IDs, then reads both
+    // endpoints from the two-key vertex tree. No tail/end source is executed.
+    let endpoint_work = u64_from_index(count) * (2 + 2 * child_bytes + 3 * vertex_bytes);
+    let completed_segments = if complete { count } else { visited };
+    let work = endpoint_work + u64_from_index(completed_segments) * (1 + child_bytes)
+        + u64::from(before_copy && !complete);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = work;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut sequences = SourceSequences::new(&ctx).unwrap();
+    let mut index_storage = ctx.reserve_scoped(0, "test index growth").unwrap();
+    let mut output = ctx.reserve_scoped(0, "test native composite output").unwrap();
+    let error = output.with_storage(|| project_native_composite(&mut ir, (&mut index, &mut index_storage),
+        &entry, &children, 0.0, &ctx, &mut sequences)).unwrap_err();
+    let CodecError::ResourceLimit(first) = error else { panic!("expected native segment work refusal"); };
+    assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+    assert_eq!((first.limit, first.used), (work, work));
+    if complete {
+        // The whole fixed-step source and all child copies finish. The next
+        // operation formats the first point ID; its emitted fragment is not
+        // part of the source traversal's exact work total.
+        assert_eq!(first.operation, "iges generated identity");
+        assert!(first.additional > 0);
+        assert!(first.additional <= u64_from_index("iges:model:point#D5-start".len()));
+    } else if before_copy {
+        assert_eq!(first.operation, "iges composite native segment curve ids");
+        assert_eq!(first.additional, child_bytes);
+    } else {
+        assert_eq!(first.operation, "iges composite native segment traversal");
+        assert_eq!(first.additional, 1);
+    }
+    assert_eq!(ir, before);
+    for _ in 0..64 {
+        for source in [children.as_slice(), &[]] {
+            assert!(matches!(project_native_composite(&mut ir, (&mut index, &mut index_storage),
+                &entry, source, 0.0, &ctx, &mut sequences), Err(CodecError::ResourceLimit(last)) if last == first));
+            assert_eq!(ir, before);
+        }
+    }
+    drop(ir);
+    drop(index);
+    drop(sequences);
+    drop(index_storage);
+    drop(output);
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+}
+
+#[test]
+fn native_composite_segments_refuse_first_and_last_source_visits() {
+    for count in [1, CHILDREN] {
+        for visited in [0, count - 1] {
+            native_segment_source_boundary(count, visited, false, false);
+        }
+    }
+}
+
+#[test]
+fn native_composite_segments_refuse_first_and_last_identity_copies() {
+    for count in [1, CHILDREN] {
+        for visited in [0, count - 1] {
+            native_segment_source_boundary(count, visited, true, false);
+        }
+    }
+}
+
+#[test]
+fn native_composite_complete_segments_reach_output_without_an_end_probe() {
+    for count in [1, CHILDREN] {
+        native_segment_source_boundary(count, 0, false, true);
+    }
+    let (mut ir, mut index, _) = fixture();
+    let before = ir.clone();
+    let entry = crate::test_support::directory_target(5, 102);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_entities = 0;
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut sequences = SourceSequences::new(&ctx).unwrap();
+    let mut index_storage = ctx.reserve_scoped(0, "test index growth").unwrap();
+    assert!(project_native_composite(&mut ir, (&mut index, &mut index_storage),
+        &entry, &[], 0.0, &ctx, &mut sequences).unwrap().is_none());
+    assert_eq!(ir, before);
+    drop(sequences);
+    drop(index_storage);
+    ctx.finish_session().unwrap();
+}
