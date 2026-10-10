@@ -136,18 +136,6 @@ fn gui_validator_buffers_use_materialized_admission() {
     crate::test_support::materialized_refusal_at("FCStd GUI StringList child nodes", |ctx| {
         super::super::validate_gui_string_list(ctx, xml.root_element(), "names")
     });
-    let bytes = [
-        1_u32.to_le_bytes().as_slice(),
-        0_f64.to_le_bytes().as_slice(),
-    ]
-    .concat();
-    crate::test_support::materialized_refusal_at("FCStd GUI float-list entries", |ctx| {
-        super::super::parse_float_list(
-            ctx,
-            cadmpeg_core::decode::View::over_retained(&bytes),
-            "values",
-        )
-    });
 }
 
 #[test]

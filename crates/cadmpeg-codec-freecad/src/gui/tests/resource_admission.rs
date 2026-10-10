@@ -702,56 +702,6 @@ fn gui_color_list_refuses_at_caller_limit() {
     );
 }
 
-fn assert_gui_binary_list_refusal(
-    payload_len: usize,
-    operation: &str,
-    parse: impl Fn(
-        &cadmpeg_core::decode::DecodeContext<'_>,
-        cadmpeg_core::decode::View<'_>,
-    ) -> Result<(), cadmpeg_core::CodecError>,
-) {
-    let mut bytes = 1_u32.to_le_bytes().to_vec();
-    bytes.extend(std::iter::repeat_n(0_u8, payload_len));
-    crate::test_support::assert_collection_refusal_at(&[], operation, |ctx| {
-        parse(ctx, cadmpeg_core::decode::View::over_retained(&bytes))
-    });
-}
-
-#[test]
-fn gui_float_list_refuses_at_caller_limit() {
-    assert_gui_binary_list_refusal(8, "FCStd GUI float-list entries", |ctx, view| {
-        super::super::parse_float_list(ctx, view, "floats")
-    });
-}
-
-#[test]
-fn gui_vector_list_refuses_at_caller_limit() {
-    assert_gui_binary_list_refusal(24, "FCStd GUI vector-list entries", |ctx, view| {
-        super::super::parse_vector_list(ctx, view, "vectors")
-    });
-}
-
-#[test]
-fn gui_placement_list_refuses_at_caller_limit() {
-    assert_gui_binary_list_refusal(56, "FCStd GUI placement-list entries", |ctx, view| {
-        super::super::parse_placement_list(ctx, view, "placements")
-    });
-}
-
-#[test]
-fn gui_fillet_edge_list_refuses_at_caller_limit() {
-    assert_gui_binary_list_refusal(20, "FCStd GUI fillet-edge entries", |ctx, view| {
-        super::super::parse_fillet_edges(ctx, view, "fillets")
-    });
-}
-
-#[test]
-fn gui_raw_material_list_refuses_at_caller_limit() {
-    assert_gui_binary_list_refusal(24, "FCStd GUI raw material entries", |ctx, view| {
-        super::super::parse_material_list(ctx, view, 2, "material", false).map(|_| ())
-    });
-}
-
 fn material_list_property() -> crate::native::GuiPropertyRecord {
     crate::native::GuiPropertyRecord {
         id: "fcstd:gui:property#ShapeAppearance".into(),
@@ -820,8 +770,10 @@ fn gui_material_list_index_refuses_at_matching_materialized_limit() {
 
 #[test]
 fn gui_material_list_refuses_at_caller_limit() {
-    assert_gui_binary_list_refusal(24, "FCStd GUI material entries", |ctx, view| {
-        super::super::parse_material_list(ctx, view, 2, "material", false).map(|_| ())
+    let mut bytes = 1_u32.to_le_bytes().to_vec();
+    bytes.extend([0_u8; 24]);
+    crate::test_support::assert_collection_refusal_at(&[], "FCStd GUI material entries", |ctx| {
+        super::super::parse_material_list(ctx, cadmpeg_core::decode::View::over_retained(&bytes), 2, "material", false).map(|_| ())
     });
 }
 

@@ -5919,32 +5919,33 @@ fn read_color_list_count(
         })
 }
 
-fn read_gui_counted<'a, T>(
+fn read_gui_counted<'a>(
     ctx: &DecodeContext<'_>,
     view: &mut View<'a>,
     count: u32,
     element_size: usize,
-    mut read: impl FnMut(&mut View<'a>) -> Option<T>,
+    mut validate: impl FnMut(&mut View<'a>) -> Option<bool>,
     operation: &'static str,
-) -> Result<Option<Vec<T>>, CodecError> {
+) -> Result<Option<bool>, CodecError> {
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
     }
     let Some(count) = view.counted(count.into(), element_size) else {
         return Ok(None);
     };
-    let mut values = ctx.collection_vec(count.get(), operation)?;
     let mut indices = 0..count.get();
     while indices.len() != 0 {
         let Some(_) = ctx.next_charged(&mut indices, operation)? else {
             break;
         };
-        let Some(value) = read(view) else {
+        let Some(valid) = validate(view) else {
             return Ok(None);
         };
-        values.push(value);
+        if !valid {
+            return Ok(Some(false));
+        }
     }
-    Ok(Some(values))
+    Ok(Some(true))
 }
 
 fn parse_float_list(
@@ -5953,39 +5954,17 @@ fn parse_float_list(
     entry_name: &str,
 ) -> Result<(), CodecError> {
     let count = view.req_u32_le()?;
-    let (_value_storage, values) = ctx
-        .with_scoped_storage("FCStd GUI list validation storage", || {
-            read_gui_counted(
-                ctx,
-                &mut view,
-                count,
-                8,
-                View::f64_le,
-                "FCStd GUI float-list entries",
-            )
-        })
-        .map(|(values, storage)| (storage, values))?;
-    let values = values.ok_or_else(|| {
-        gui_malformed(
-            ctx,
-            format_args!("float-list entry {entry_name} count exceeds its payload"),
-        )
+    let valid = read_gui_counted(ctx, &mut view, count, 8, |view| {
+        let value = view.f64_le()?;
+        Some(value.is_finite())
+    }, "FCStd GUI float-list entries")?.ok_or_else(|| {
+        gui_malformed(ctx, format_args!("float-list entry {entry_name} count exceeds its payload"))
     })?;
-    if ctx.any_by(
-        &values,
-        |value| Ok(!value.is_finite()),
-        "FCStd GUI float-list scalar validation",
-    )? {
-        return Err(gui_malformed(
-            ctx,
-            format_args!("float-list entry {entry_name} has a non-finite value"),
-        ));
+    if !valid {
+        return Err(gui_malformed(ctx, format_args!("float-list entry {entry_name} has a non-finite value")));
     }
     if !view.is_empty() {
-        return Err(gui_malformed(
-            ctx,
-            format_args!("float-list entry {entry_name} has trailing bytes"),
-        ));
+        return Err(gui_malformed(ctx, format_args!("float-list entry {entry_name} has trailing bytes")));
     }
     Ok(())
 }
@@ -5996,39 +5975,17 @@ fn parse_vector_list(
     entry_name: &str,
 ) -> Result<(), CodecError> {
     let count = view.req_u32_le()?;
-    let (_value_storage, values) = ctx
-        .with_scoped_storage("FCStd GUI list validation storage", || {
-            read_gui_counted(
-                ctx,
-                &mut view,
-                count,
-                24,
-                |view| Some((view.f64_le()?, view.f64_le()?, view.f64_le()?)),
-                "FCStd GUI vector-list entries",
-            )
-        })
-        .map(|(values, storage)| (storage, values))?;
-    let values = values.ok_or_else(|| {
-        gui_malformed(
-            ctx,
-            format_args!("vector-list entry {entry_name} count exceeds its payload"),
-        )
+    let valid = read_gui_counted(ctx, &mut view, count, 24, |view| {
+        let value = [view.f64_le()?, view.f64_le()?, view.f64_le()?];
+        Some(value.iter().all(|scalar| scalar.is_finite()))
+    }, "FCStd GUI vector-list entries")?.ok_or_else(|| {
+        gui_malformed(ctx, format_args!("vector-list entry {entry_name} count exceeds its payload"))
     })?;
-    if ctx.any_by(
-        &values,
-        |value| Ok(!value.0.is_finite() || !value.1.is_finite() || !value.2.is_finite()),
-        "FCStd GUI vector-list scalar validation",
-    )? {
-        return Err(gui_malformed(
-            ctx,
-            format_args!("vector-list entry {entry_name} has a non-finite value"),
-        ));
+    if !valid {
+        return Err(gui_malformed(ctx, format_args!("vector-list entry {entry_name} has a non-finite value")));
     }
     if !view.is_empty() {
-        return Err(gui_malformed(
-            ctx,
-            format_args!("vector-list entry {entry_name} has trailing bytes"),
-        ));
+        return Err(gui_malformed(ctx, format_args!("vector-list entry {entry_name} has trailing bytes")));
     }
     Ok(())
 }
@@ -6039,49 +5996,17 @@ fn parse_placement_list(
     entry_name: &str,
 ) -> Result<(), CodecError> {
     let count = view.req_u32_le()?;
-    let (_value_storage, values) = ctx
-        .with_scoped_storage("FCStd GUI list validation storage", || {
-            read_gui_counted(
-                ctx,
-                &mut view,
-                count,
-                56,
-                |view| {
-                    Some([
-                        view.f64_le()?,
-                        view.f64_le()?,
-                        view.f64_le()?,
-                        view.f64_le()?,
-                        view.f64_le()?,
-                        view.f64_le()?,
-                        view.f64_le()?,
-                    ])
-                },
-                "FCStd GUI placement-list entries",
-            )
-        })
-        .map(|(values, storage)| (storage, values))?;
-    let values = values.ok_or_else(|| {
-        gui_malformed(
-            ctx,
-            format_args!("placement-list entry {entry_name} count exceeds its payload"),
-        )
+    let valid = read_gui_counted(ctx, &mut view, count, 56, |view| {
+        let value = [view.f64_le()?, view.f64_le()?, view.f64_le()?, view.f64_le()?, view.f64_le()?, view.f64_le()?, view.f64_le()?];
+        Some(value.iter().all(|scalar| scalar.is_finite()))
+    }, "FCStd GUI placement-list entries")?.ok_or_else(|| {
+        gui_malformed(ctx, format_args!("placement-list entry {entry_name} count exceeds its payload"))
     })?;
-    if ctx.any_by(
-        &values,
-        |value| Ok(value.iter().any(|scalar| !scalar.is_finite())),
-        "FCStd GUI placement-list scalar validation",
-    )? {
-        return Err(gui_malformed(
-            ctx,
-            format_args!("placement-list entry {entry_name} has a non-finite value"),
-        ));
+    if !valid {
+        return Err(gui_malformed(ctx, format_args!("placement-list entry {entry_name} has a non-finite value")));
     }
     if !view.is_empty() {
-        return Err(gui_malformed(
-            ctx,
-            format_args!("placement-list entry {entry_name} has trailing bytes"),
-        ));
+        return Err(gui_malformed(ctx, format_args!("placement-list entry {entry_name} has trailing bytes")));
     }
     Ok(())
 }
@@ -6092,39 +6017,19 @@ fn parse_fillet_edges(
     entry_name: &str,
 ) -> Result<(), CodecError> {
     let count = view.req_u32_le()?;
-    let (_value_storage, values) = ctx
-        .with_scoped_storage("FCStd GUI list validation storage", || {
-            read_gui_counted(
-                ctx,
-                &mut view,
-                count,
-                20,
-                |view| Some((view.i32_le()?, view.f64_le()?, view.f64_le()?)),
-                "FCStd GUI fillet-edge entries",
-            )
-        })
-        .map(|(values, storage)| (storage, values))?;
-    let values = values.ok_or_else(|| {
-        gui_malformed(
-            ctx,
-            format_args!("fillet-edges entry {entry_name} count exceeds its payload"),
-        )
+    let valid = read_gui_counted(ctx, &mut view, count, 20, |view| {
+        view.i32_le()?;
+        let radius1 = view.f64_le()?;
+        let radius2 = view.f64_le()?;
+        Some(radius1.is_finite() && radius2.is_finite())
+    }, "FCStd GUI fillet-edge entries")?.ok_or_else(|| {
+        gui_malformed(ctx, format_args!("fillet-edges entry {entry_name} count exceeds its payload"))
     })?;
-    if ctx.any_by(
-        &values,
-        |(_, radius1, radius2)| Ok(!radius1.is_finite() || !radius2.is_finite()),
-        "FCStd GUI fillet-edge scalar validation",
-    )? {
-        return Err(gui_malformed(
-            ctx,
-            format_args!("fillet-edges entry {entry_name} has a non-finite radius"),
-        ));
+    if !valid {
+        return Err(gui_malformed(ctx, format_args!("fillet-edges entry {entry_name} has a non-finite radius")));
     }
     if !view.is_empty() {
-        return Err(gui_malformed(
-            ctx,
-            format_args!("fillet-edges entry {entry_name} has trailing bytes"),
-        ));
+        return Err(gui_malformed(ctx, format_args!("fillet-edges entry {entry_name} has trailing bytes")));
     }
     Ok(())
 }
@@ -6185,73 +6090,36 @@ fn parse_material_list<'data>(
             )));
         }
     };
-    let (raw_storage, raw_materials) = ctx
-        .with_scoped_storage("FCStd GUI raw material storage", || {
-            read_gui_counted(
-                ctx,
-                &mut view,
-                count,
-                24,
-                |view| {
-                    Some((
-                        [
-                            view.u32_le()?,
-                            view.u32_le()?,
-                            view.u32_le()?,
-                            view.u32_le()?,
-                        ],
-                        [view.f32_le()?, view.f32_le()?],
-                    ))
-                },
-                "FCStd GUI raw material entries",
-            )
-        })
-        .map(|(materials, storage)| (storage, materials))?;
-    let raw_materials = raw_materials.ok_or_else(|| {
-        gui_malformed(
-            ctx,
-            format_args!("GUI material list {property_id} count exceeds its payload"),
-        )
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let count = view.counted(count.into(), 24).ok_or_else(|| {
+        gui_malformed(ctx, format_args!("GUI material list {property_id} count exceeds its payload"))
     })?;
-    let mut materials = ctx.collection_vec(raw_materials.len(), "FCStd GUI material entries")?;
-    let mut raw_materials = raw_materials.into_iter();
-    while raw_materials.len() != 0 {
-        let Some(([ambient, diffuse, specular, emissive], [shininess, transparency])) =
-            ctx.next_charged(&mut raw_materials, "FCStd GUI material conversion")?
-        else {
+    let mut materials = ctx.collection_vec(count.get(), "FCStd GUI material entries")?;
+    let mut indices = 0..count.get();
+    while indices.len() != 0 {
+        let Some(_) = ctx.next_charged(&mut indices, "FCStd GUI material records")? else {
             break;
         };
+        let ambient = view.req_u32_le()?;
+        let diffuse = view.req_u32_le()?;
+        let specular = view.req_u32_le()?;
+        let emissive = view.req_u32_le()?;
+        let shininess = view.req_f32_le()?;
+        let transparency = view.req_f32_le()?;
         let invalid = || {
-            gui_malformed(
-                ctx,
-                format_args!("GUI material list {property_id} has non-finite scalars"),
-            )
+            gui_malformed(ctx, format_args!("GUI material list {property_id} has non-finite scalars"))
         };
         materials.push(GuiMaterial {
-            ambient,
-            diffuse,
-            specular,
-            emissive,
+            ambient: convert_packed_alpha(ambient, requires_alpha_conversion),
+            diffuse: convert_packed_alpha(diffuse, requires_alpha_conversion),
+            specular: convert_packed_alpha(specular, requires_alpha_conversion),
+            emissive: convert_packed_alpha(emissive, requires_alpha_conversion),
             shininess: FiniteBinary32::new(shininess).ok_or_else(invalid)?,
             transparency: FiniteBinary32::new(transparency).ok_or_else(invalid)?,
             uuid: "",
         });
-    }
-    drop(raw_materials);
-    drop(raw_storage);
-    if requires_alpha_conversion {
-        let mut materials_iter = materials.iter_mut();
-        while materials_iter.len() != 0 {
-            let Some(material) =
-                ctx.next_charged(&mut materials_iter, "FCStd GUI material records")?
-            else {
-                break;
-            };
-            material.ambient = convert_packed_alpha(material.ambient, true);
-            material.diffuse = convert_packed_alpha(material.diffuse, true);
-            material.specular = convert_packed_alpha(material.specular, true);
-            material.emissive = convert_packed_alpha(material.emissive, true);
-        }
     }
     if has_strings {
         let mut materials_iter = materials.iter_mut();
