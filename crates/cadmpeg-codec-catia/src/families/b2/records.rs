@@ -4137,6 +4137,9 @@ pub(in crate::families) fn offset_support_carriers(
             band(1, index, v_min - v_tolerance, v_max + v_tolerance)?;
             knot_count = knot_count.saturating_add(surface.v_knots().len());
         }
+        if knot_count == 0 {
+            return Ok((events, Vec::new(), knot_count));
+        }
         let choices = ctx.alloc_filled(
             offsets.len(),
             (usize::MAX, 0usize),
@@ -4169,6 +4172,9 @@ pub(in crate::families) fn offset_support_carriers(
     })?;
     let mut index_storage = index.1;
     let (mut events, mut choices, knot_count) = index.0;
+    if knot_count == 0 {
+        return ctx.alloc_filled(offsets.len(), None, "catia_b2_offset_bindings");
+    }
     bindings = ctx.alloc_filled(offsets.len(), None, "catia_b2_offset_bindings")?;
     for evaluate in [false, true] {
         let mut required = [!evaluate; 3];

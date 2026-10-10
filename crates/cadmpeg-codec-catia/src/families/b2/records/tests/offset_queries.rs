@@ -210,3 +210,22 @@ fn invalid_u_spans_do_not_populate_optional_knot_indexes() {
     .expect("ineligible carriers have no knot index");
     assert_eq!(bindings, vec![None; 8193]);
 }
+
+#[test]
+fn offsets_without_eligible_domains_build_no_query_or_active_index() {
+    let carriers = [
+        surface([-f64::MAX, f64::MAX], vec![0.0, 0.0, 1.0, 1.0]),
+        surface([0.0, 1.0], vec![-f64::MAX, -f64::MAX, f64::MAX, f64::MAX]),
+    ];
+    let queries = [
+        offset([0.0, 1.0], [0.0, 1.0]),
+        offset([0.0, 1.0], [0.0, 1.0]),
+    ];
+    assert_eq!(
+        crate::test_support::with_materialized_limit(0, |ctx| {
+            offset_support_carriers(ctx, &queries, &carriers)
+        })
+        .expect("only unresolved binding slots survive the domain walk"),
+        [None, None]
+    );
+}
