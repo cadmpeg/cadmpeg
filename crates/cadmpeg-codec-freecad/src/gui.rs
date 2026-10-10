@@ -562,7 +562,8 @@ impl<'source, 'ctx> TopologyIndex<'source, 'ctx> {
                         let suffix = &candidate.key[payload_key.len()..];
                         Ok(suffix.as_bytes().first().is_none_or(|byte| *byte < b':'))
                     } else {
-                        Ok(ctx.compare(
+                        Ok(cadmpeg_ir::ids::comparison::compare(
+                            ctx,
                             candidate.key,
                             payload_key,
                             "FCStd GUI body payload prefix lower bound",
