@@ -210,16 +210,28 @@ fn logical_global_stream<'ctx>(
                 let count = ctx
                     .parse_text::<usize>(count_text, "iges compressed Global Hollerith number")?
                     .map_err(|_| malformed("Global Hollerith count is out of range"))?;
+                ctx.charge_work(
+                    u64_from_index(pending_digits.len()),
+                    "iges compressed Global digit copy",
+                )?;
                 stream.extend_from_slice(&pending_digits);
                 stream.push(byte);
                 pending_digits.clear();
                 hollerith_remaining = count;
                 continue;
             }
+            ctx.charge_work(
+                u64_from_index(pending_digits.len()),
+                "iges compressed Global digit copy",
+            )?;
             stream.append(&mut pending_digits);
             stream.push(byte);
         }
     }
+    ctx.charge_work(
+        u64_from_index(pending_digits.len()),
+        "iges compressed Global digit copy",
+    )?;
     stream.append(&mut pending_digits);
     if hollerith_remaining != 0 {
         return Err(malformed("Global Hollerith payload is truncated"));
@@ -816,8 +828,10 @@ fn parse_data_entity<'a>(
         let mut terminated = false;
         let mut parameter_source_lines = source_lines.iter();
         while !parameter_source_lines.as_slice().is_empty() {
-            let Some(line) =
-                ctx.next_charged(&mut parameter_source_lines, "iges_compressed_parameter_lines")?
+            let Some(line) = ctx.next_charged(
+                &mut parameter_source_lines,
+                "iges_compressed_parameter_lines",
+            )?
             else {
                 break;
             };
@@ -1016,7 +1030,6 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
         .and_then(|count| count.checked_add(parameter_count))
         .and_then(|count| count.checked_add(1))
         .and_then(|count| count.checked_mul(CARD_WIDTH + 1))
-        .and_then(|size| size.checked_add(source.len()))
         .ok_or_else(|| {
             CodecError::NotImplemented(
                 "IGES Compressed ASCII normalized output exceeds usize".into(),
@@ -1035,7 +1048,8 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
     }
     let mut source_values = IntoIterator::into_iter(&lines[start_begin..global_begin]);
     while source_values.len() != 0 {
-        let Some(line) = ctx.next_charged(&mut source_values, "iges compressed Start cards")? else {
+        let Some(line) = ctx.next_charged(&mut source_values, "iges compressed Start cards")?
+        else {
             break;
         };
         append_source_card(&mut output, line, b'S')?;
@@ -1045,7 +1059,8 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
     }
     let mut source_values = IntoIterator::into_iter(&lines[global_begin..data_begin]);
     while source_values.len() != 0 {
-        let Some(line) = ctx.next_charged(&mut source_values, "iges compressed Global cards")? else {
+        let Some(line) = ctx.next_charged(&mut source_values, "iges compressed Global cards")?
+        else {
             break;
         };
         append_source_card(&mut output, line, b'G')?;
@@ -1085,8 +1100,10 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
     let mut parameter_sequence = 1_u32;
     let mut parameter_entities = entities.iter();
     while !parameter_entities.as_slice().is_empty() {
-        let Some(entity) =
-            ctx.next_charged(&mut parameter_entities, "iges compressed Parameter Data cards")?
+        let Some(entity) = ctx.next_charged(
+            &mut parameter_entities,
+            "iges compressed Parameter Data cards",
+        )?
         else {
             break;
         };
@@ -1105,10 +1122,22 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
         directory_count,
         parameter_count,
     )?;
-    for line in ctx.admit_iter(
-        lines.get(terminate_index + 1..).unwrap_or_default(),
-        "iges compressed trailing records",
-    )? {
+    let mut trailing_records = lines.get(terminate_index + 1..).unwrap_or_default().iter();
+    while !trailing_records.as_slice().is_empty() {
+        let Some(line) =
+            ctx.next_charged(&mut trailing_records, "iges compressed trailing records")?
+        else {
+            break;
+        };
+        ctx.charge_work(
+            u64_from_index(line.len()),
+            "iges compressed trailing record copy",
+        )?;
+        ctx.reserve_capacity(
+            &mut output,
+            line.len().saturating_add(1),
+            "iges_compressed_normalized_output",
+        )?;
         output.extend_from_slice(line);
         output.push(b'\n');
     }

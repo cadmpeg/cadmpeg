@@ -1094,3 +1094,44 @@ fn native_annotation_symbol_and_section_lists_refuse_limits() {
         assert_collection_refusal_at(&bytes, operation);
     }
 }
+
+#[test]
+fn native_fixed_components_keep_storage_without_work_charges() {
+    use cadmpeg_core::decode::refusal_probe::RefusalProbe;
+    for (kind, parameters, arena_name, field, operation, expected) in [
+        (
+            123,
+            "123,1,0,0;",
+            "directions",
+            "components",
+            "iges native direction components",
+            serde_json::json!([1.0, 0.0, 0.0]),
+        ),
+        (
+            124,
+            "124,1,0,0,0,0,1,0,0,0,0,1,0;",
+            "transformations",
+            "coefficients",
+            "iges native transformation coefficients",
+            serde_json::json!([1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0]),
+        ),
+    ] {
+        let bytes = owned_test_file(&[native_entity(kind, 0, parameters)]);
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
+        let decoded = IgesCodec
+            .decode(
+                &mut Cursor::new(bytes),
+                &DecodeOptions {
+                    policy,
+                    ..DecodeOptions::default()
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            decoded.ir().native.namespace("iges").unwrap().arenas()[arena_name][0].fields()[field],
+            expected
+        );
+    }
+}

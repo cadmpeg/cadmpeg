@@ -12,14 +12,15 @@ use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
 
 mod advanced_entity_boundaries;
 mod advanced_geometry_boundaries;
+mod attribute_widths;
 mod curve_surface_boundaries;
 mod curve_surface_segment_boundaries;
 mod drawing_associativity;
 mod drawing_property_boundaries;
-mod entry_refusal;
 mod entity_table_boundaries;
 mod entity_table_forms;
 mod entity_table_text_and_names;
+mod entry_refusal;
 mod envelope_boundaries;
 mod envelope_counted_entity_boundaries;
 mod envelope_fixed_field_boundaries;
