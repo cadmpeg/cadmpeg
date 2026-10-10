@@ -952,7 +952,7 @@ pub(in crate::decode) fn trim_segment_ids(
     let Some(index) = ctx.position_by(trim_rows, unmatched_row, OPERATION)? else {
         return Ok(ids);
     };
-    if ctx.any_by(&trim_rows[index + 1..], unmatched_row, OPERATION)? {
+    if index + 1 < trim_rows.len() && ctx.any_by(&trim_rows[index + 1..], unmatched_row, OPERATION)? {
         return Ok(ids);
     }
     // A row whose identifier names a segment of another family stays unmatched.
@@ -983,6 +983,7 @@ pub(in crate::decode) fn trim_segment_id(
 
 #[cfg(test)]
 mod tests {
+    mod admission_visits;
     #[test]
     fn numerical_followup_arc_radius_evidence_requires_matching_endpoints() {
         for radius in [1e-6, 1.0] {

@@ -361,29 +361,37 @@ pub(in crate::decode) fn saved_section_line_geometry(
                 },
                 "creo saved line segment position rows",
             )? {
-                let previous = ctx.find_map(
-                    rows[..position].iter().rev(),
-                    |row| {
-                        Ok(match row {
-                            SegmentRow::Ordinary(candidate) => {
-                                order_table.internal_id(candidate.external_id)
-                            }
-                            _ => None,
-                        })
-                    },
-                    "creo saved line previous segment rows",
-                )?;
-                if let Some(previous) = previous {
-                    let next = ctx.find_map(
-                        &rows[position + 1..],
-                        |row| match row {
-                            SegmentRow::Ordinary(candidate) => {
-                                Ok(order_table.internal_id(candidate.external_id))
-                            }
-                            _ => Ok(None),
+                let previous = if position == 0 {
+                    None
+                } else {
+                    ctx.find_map(
+                        rows[..position].iter().rev(),
+                        |row| {
+                            Ok(match row {
+                                SegmentRow::Ordinary(candidate) => {
+                                    order_table.internal_id(candidate.external_id)
+                                }
+                                _ => None,
+                            })
                         },
-                        "creo saved line next segment rows",
-                    )?;
+                        "creo saved line previous segment rows",
+                    )?
+                };
+                if let Some(previous) = previous {
+                    let next = if position + 1 == rows.len() {
+                        None
+                    } else {
+                        ctx.find_map(
+                            &rows[position + 1..],
+                            |row| match row {
+                                SegmentRow::Ordinary(candidate) => {
+                                    Ok(order_table.internal_id(candidate.external_id))
+                                }
+                                _ => Ok(None),
+                            },
+                            "creo saved line next segment rows",
+                        )?
+                    };
                     if let Some(next) = next {
                         if let Some(candidate_id) = previous.checked_add(1) {
                             if candidate_id.checked_add(1) == Some(next) {
