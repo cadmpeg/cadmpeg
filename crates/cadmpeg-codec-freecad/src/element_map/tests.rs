@@ -942,6 +942,7 @@ fn legacy_group_index_nodes_use_scoped_storage() {
     assert!(group.names[0].is_empty());
     assert_eq!(group.names[1][0].encoded, "stable");
     assert_eq!(group.names[1][0].resolved.as_deref(), Some("stable"));
+    assert_eq!(ctx.resource_refusal(), None);
 }
 
 #[test]
