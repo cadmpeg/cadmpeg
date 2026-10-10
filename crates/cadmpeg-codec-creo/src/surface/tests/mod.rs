@@ -16,6 +16,7 @@ mod rows;
 mod scalar_dispatch;
 mod scalar_spans;
 mod scan;
+mod slot_visits;
 
 const EPS_FRAME_COMPONENT: f64 = 1.0e-12;
 
