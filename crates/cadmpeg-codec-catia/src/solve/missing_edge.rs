@@ -810,32 +810,27 @@ fn mesh_edge_occurrences(
 ) -> Result<Option<Vec<Vec<MeshEdgeRun>>>, CodecError> {
     const OPERATION: &str = "catia_mesh_occurrence_matches";
     let mut scratch = ctx.reserve_scoped(0, "catia_mesh_occurrence_handles")?;
-    let single_patterns = ctx.any_by(
+    let mut widths = [false; 3];
+    ctx.any_by(
         edge_rows,
         |row| {
-            Ok(row
-                .boundary_pattern()
-                .is_some_and(|pattern| pattern.len() == 1))
+            if let Some(pattern) = row.boundary_pattern() {
+                widths[pattern.len().min(3) - 1] = true;
+            }
+            Ok(widths == [true; 3])
         },
         "catia_mesh_occurrence_rows",
     )?;
-    let pair_patterns = ctx.any_by(
-        edge_rows,
-        |row| {
-            Ok(row
-                .boundary_pattern()
-                .is_some_and(|pattern| pattern.len() > 1))
-        },
-        "catia_mesh_occurrence_rows",
-    )?;
-    if !single_patterns && !pair_patterns {
+    let [single_patterns, pair_patterns, triple_patterns] = widths;
+    if !single_patterns && !pair_patterns && !triple_patterns {
         return ctx
             .collect_indexed_vec(edge_rows.len(), "catia_mesh_occurrence_rows", |_| {
                 Ok(Vec::new())
             })
             .map(Some);
     }
-    let mut locations = HashMap::<(u32, Option<u32>), Vec<(usize, usize, usize)>>::new();
+    let mut locations =
+        HashMap::<(u32, Option<u32>, Option<u32>), Vec<(usize, usize, usize)>>::new();
     for (face, face_cycles) in ctx
         .admit_iter(cycles, "catia_mesh_occurrence_locations")?
         .enumerate()
@@ -848,9 +843,12 @@ fn mesh_edge_occurrences(
                 .admit_iter(handles, "catia_mesh_occurrence_locations")?
                 .enumerate()
             {
-                for next in [
-                    single_patterns.then_some(None),
-                    pair_patterns.then_some(Some(handles[(position + 1) % handles.len()])),
+                let next = handles[(position + 1) % handles.len()];
+                let third = handles[(position + 2) % handles.len()];
+                for suffix in [
+                    single_patterns.then_some((None, None)),
+                    pair_patterns.then_some((Some(next), None)),
+                    triple_patterns.then_some((Some(next), Some(third))),
                 ]
                 .into_iter()
                 .flatten()
@@ -858,7 +856,7 @@ fn mesh_edge_occurrences(
                     scratch.with_storage(|| {
                         ctx.push_hash_group(
                             &mut locations,
-                            (handle, next),
+                            (handle, suffix.0, suffix.1),
                             (face, cycle, position),
                             "catia_mesh_occurrence_handles",
                             "catia_mesh_occurrence_locations",
@@ -868,6 +866,7 @@ fn mesh_edge_occurrences(
             }
         }
     }
+    let mut long_matches = HashMap::<&[u32], BTreeMap<(usize, usize, usize), bool>>::new();
     let mut rows = ctx.collection_vec(edge_rows.len(), "catia_mesh_occurrence_rows")?;
     let mut charged_steps = edge_rows.iter().enumerate();
     while let Some((edge, row)) =
@@ -881,65 +880,88 @@ fn mesh_edge_occurrences(
             return Ok(None);
         };
         // A forward match at a start position wins over a reversed one.
-        let matches = ctx.with_scoped_storage(
-            OPERATION,
-            || -> Result<BTreeMap<(usize, usize, usize), bool>, CodecError> {
-                let mut matches = BTreeMap::new();
-                let second = pattern.get(1).copied();
-                let penultimate = if pattern.len() == 1 {
-                    None
-                } else {
-                    pattern.get(pattern.len() - 2).copied()
-                };
-                for (anchor, reversed) in [((first, second), false), ((last, penultimate), true)] {
-                    let Some(anchored) = ctx.get_hash_map(&locations, &anchor, OPERATION)? else {
-                        continue;
+        let cached = if pattern.len() > 3 {
+            ctx.get_hash_map(&long_matches, &pattern, OPERATION)?
+        } else {
+            None
+        };
+        let computed = if cached.is_some() {
+            None
+        } else {
+            Some(ctx.with_scoped_storage(
+                OPERATION,
+                || -> Result<BTreeMap<(usize, usize, usize), bool>, CodecError> {
+                    let mut matches = BTreeMap::new();
+                    let second = pattern.get(1).copied();
+                    let penultimate = if pattern.len() == 1 {
+                        None
+                    } else {
+                        pattern.get(pattern.len() - 2).copied()
                     };
-                    for &(face, cycle, start) in ctx.admit_iter(anchored, OPERATION)? {
-                        let handles = &cycles[face][cycle];
-                        let at = |offset: usize, handle: &u32| {
-                            Ok(handles[(start + offset) % handles.len()] == *handle)
+                    let third = pattern.get(2).copied();
+                    let antepenultimate = pattern
+                        .len()
+                        .checked_sub(3)
+                        .and_then(|index| pattern.get(index))
+                        .copied();
+                    for (anchor, reversed) in [
+                        ((first, second, third), false),
+                        ((last, penultimate, antepenultimate), true),
+                    ] {
+                        let Some(anchored) = ctx.get_hash_map(&locations, &anchor, OPERATION)?
+                        else {
+                            continue;
                         };
-                        let matched = if pattern.len() <= 2 {
-                            true
-                        } else if reversed {
-                            ctx.all_by(
-                                pattern.iter().rev().enumerate().skip(2),
-                                |(offset, handle)| at(offset, handle),
-                                OPERATION,
-                            )?
-                        } else {
-                            ctx.all_by(
-                                pattern.iter().enumerate().skip(2),
-                                |(offset, handle)| at(offset, handle),
-                                OPERATION,
-                            )?
-                        };
-                        if matched
-                            && !(reversed
-                                && ctx.contains_key_btree_map(
-                                    &matches,
-                                    &(face, cycle, start),
+                        for &(face, cycle, start) in ctx.admit_iter(anchored, OPERATION)? {
+                            let handles = &cycles[face][cycle];
+                            let at = |offset: usize, handle: &u32| {
+                                Ok(handles[(start + offset) % handles.len()] == *handle)
+                            };
+                            let matched = if pattern.len() <= 3 {
+                                true
+                            } else if reversed {
+                                ctx.all_by(
+                                    pattern.iter().rev().enumerate().skip(3),
+                                    |(offset, handle)| at(offset, handle),
                                     OPERATION,
-                                )?)
-                        {
-                            ctx.insert_btree_map(
-                                &mut matches,
-                                (face, cycle, start),
-                                reversed,
-                                OPERATION,
-                            )?;
+                                )?
+                            } else {
+                                ctx.all_by(
+                                    pattern.iter().enumerate().skip(3),
+                                    |(offset, handle)| at(offset, handle),
+                                    OPERATION,
+                                )?
+                            };
+                            if matched
+                                && !(reversed
+                                    && ctx.contains_key_btree_map(
+                                        &matches,
+                                        &(face, cycle, start),
+                                        OPERATION,
+                                    )?)
+                            {
+                                ctx.insert_btree_map(
+                                    &mut matches,
+                                    (face, cycle, start),
+                                    reversed,
+                                    OPERATION,
+                                )?;
+                            }
                         }
                     }
-                }
-                Ok(matches)
-            },
-        )?;
+                    Ok(matches)
+                },
+            )?)
+        };
+        let matches = match &computed {
+            Some((matches, _storage)) => matches,
+            None => cached.ok_or_else(|| CodecError::malformed("cached pattern has no matches"))?,
+        };
         // Matches are in (face, cycle, start) order, so a cycle holding two
         // occurrences shows as two neighbouring keys.
         let mut previous_cycle = None;
         let mut occurrences = Vec::new();
-        let mut charged_steps = matches.0.iter();
+        let mut charged_steps = matches.iter();
         while let Some((&(face, cycle, start), &reversed)) =
             ctx.next_charged(&mut charged_steps, "catia_mesh_occurrence_runs")?
         {
@@ -962,6 +984,14 @@ fn mesh_edge_occurrences(
                 },
                 "catia_mesh_occurrence_runs",
             )?;
+        }
+        if pattern.len() > 3 {
+            if let Some((matches, mut storage)) = computed {
+                scratch.absorb(&mut storage)?;
+                scratch.with_storage(|| {
+                    ctx.insert_hash_map(&mut long_matches, pattern, matches, OPERATION)
+                })?;
+            }
         }
         rows.push(occurrences);
     }
