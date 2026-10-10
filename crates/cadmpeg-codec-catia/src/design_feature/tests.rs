@@ -33,6 +33,7 @@ use crate::test_support::test_object_graph::{
 use crate::CatiaCodec;
 
 mod definitions;
+mod operation_sort;
 mod range;
 mod reference_planes;
 

@@ -1432,14 +1432,11 @@ pub(crate) fn consolidated_edge_nodes(
                 .remove_hash_map(&mut class25_descriptors, &node.pos, LOOKUP)?
                 .map(|descriptor| {
                     const VALUES: &str = "catia_native_class25_descriptor_values";
-                    let mut storage = ctx.reserve_scoped(0, VALUES)?;
-                    let values = storage
-                        .with_storage(|| ctx.copy_slice(descriptor.values.as_slice(), VALUES))?;
-                    storage.commit_value(CatiaConsolidatedClass25Descriptor {
+                    Ok::<_, CodecError>(CatiaConsolidatedClass25Descriptor {
                         byte_offset: u64_from_index(descriptor.pos),
                         record_id: descriptor.record_id,
                         control: descriptor.control,
-                        values,
+                        values: ctx.copy_slice(descriptor.values.as_slice(), VALUES)?,
                     })
                 })
                 .transpose()?,

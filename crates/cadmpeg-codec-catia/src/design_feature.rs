@@ -892,16 +892,21 @@ fn normalize_parameter_names(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<
             .get_hash_map(next_suffixes, base, "catia_parameter_suffix_lookup")?
             .copied()
             .unwrap_or(1);
+        let mut suffixes = std::iter::successors(Some(suffix), |suffix| suffix.checked_add(1));
         let neutral_name = loop {
-            ctx.charge_work(1, "catia_parameter_name_collision")?;
+            let candidate_suffix = ctx
+                .next_charged(&mut suffixes, "catia_parameter_name_collision")?
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("catia_parameter_name_collision", u64::MAX, u64::MAX)
+                })?;
             let (candidate, candidate_storage) =
                 ctx.with_scoped_storage("catia_parameter_neutral_name", || {
                     ctx.format_retained(
-                        format_args!("{base}#{suffix}"),
+                        format_args!("{base}#{candidate_suffix}"),
                         "catia_parameter_neutral_name",
                     )
                 })?;
-            suffix = suffix.checked_add(1).ok_or_else(|| {
+            suffix = candidate_suffix.checked_add(1).ok_or_else(|| {
                 ctx.refuse_codec_limit("catia_parameter_name_collision", u64::MAX, u64::MAX)
             })?;
             if !ctx.contains_hash_set(reserved, &candidate, "catia_parameter_reserved_lookup")?
@@ -945,12 +950,12 @@ fn nearest_feature_for_design_object<'a>(
     let mut path_storage = ctx.reserve_scoped(0, "catia_feature_owner_path")?;
     let mut path = Vec::new();
     let mut active = HashSet::new();
-    let mut current = Some(start);
+    let current = std::cell::Cell::new(Some(start));
+    let mut chain = std::iter::from_fn(|| current.take());
     let owner = loop {
-        let Some(id) = current else {
+        let Some(id) = ctx.next_charged(&mut chain, "catia_feature_owner_chain")? else {
             break None;
         };
-        ctx.charge_work(1, "catia_feature_owner_chain")?;
         if let Some(owner) =
             ctx.get_hash_map(resolved, id, "catia_feature_resolved_owner_lookup")?
         {
@@ -971,7 +976,7 @@ fn nearest_feature_for_design_object<'a>(
         if let Some(feature) = ctx.get_hash_map(feature_ids, id, "catia_feature_lookup")? {
             break Some(feature);
         }
-        current = object.owner_design_object.as_deref();
+        current.set(object.owner_design_object.as_deref());
     };
     for id in ctx.admit_iter(path, "catia_feature_owner_path_results")? {
         storage.with_storage(|| {
@@ -1786,15 +1791,35 @@ fn native_operation_definition_properties<'a>(
         }
     }
 
-    ctx.sort_unstable_by_key(
-        &mut definition_values,
-        |value| {
-            let entity = value.0;
-            (entity.byte_offset, entity.ordinal, entity.id.as_str())
-        },
-        Ord::cmp,
-        "catia_feature_definition_values_sort",
-    )?;
+    match definition_values.as_mut_slice() {
+        [] | [_] => {}
+        [left, right] => {
+            let left = left.0;
+            let right = right.0;
+            let order = (left.byte_offset, left.ordinal).cmp(&(right.byte_offset, right.ordinal));
+            if order == std::cmp::Ordering::Greater
+                || (order == std::cmp::Ordering::Equal
+                    && ctx.compare(
+                        left.id.as_str(),
+                        right.id.as_str(),
+                        "catia_feature_definition_values_sort",
+                    )? == std::cmp::Ordering::Greater)
+            {
+                definition_values.swap(0, 1);
+            }
+        }
+        _ => {
+            ctx.sort_unstable_by_key(
+                &mut definition_values,
+                |value| {
+                    let entity = value.0;
+                    (entity.byte_offset, entity.ordinal, entity.id.as_str())
+                },
+                Ord::cmp,
+                "catia_feature_definition_values_sort",
+            )?;
+        }
+    }
     for (ordinal, (entity, value)) in ctx
         .admit_iter(definition_values, "catia_feature_property_value_visits")?
         .enumerate()
@@ -1843,15 +1868,35 @@ fn native_operation_definition_properties<'a>(
     }
 
     drop(definition_values_storage);
-    ctx.sort_unstable_by_key(
-        &mut definition_chain_values,
-        |value| {
-            let entity = value.0;
-            (entity.byte_offset, entity.ordinal, entity.id.as_str())
-        },
-        Ord::cmp,
-        "catia_feature_definition_chain_values_sort",
-    )?;
+    match definition_chain_values.as_mut_slice() {
+        [] | [_] => {}
+        [left, right] => {
+            let left = left.0;
+            let right = right.0;
+            let order = (left.byte_offset, left.ordinal).cmp(&(right.byte_offset, right.ordinal));
+            if order == std::cmp::Ordering::Greater
+                || (order == std::cmp::Ordering::Equal
+                    && ctx.compare(
+                        left.id.as_str(),
+                        right.id.as_str(),
+                        "catia_feature_definition_chain_values_sort",
+                    )? == std::cmp::Ordering::Greater)
+            {
+                definition_chain_values.swap(0, 1);
+            }
+        }
+        _ => {
+            ctx.sort_unstable_by_key(
+                &mut definition_chain_values,
+                |value| {
+                    let entity = value.0;
+                    (entity.byte_offset, entity.ordinal, entity.id.as_str())
+                },
+                Ord::cmp,
+                "catia_feature_definition_chain_values_sort",
+            )?;
+        }
+    }
     for (ordinal, (entity, value)) in ctx
         .admit_iter(
             definition_chain_values,
@@ -1901,15 +1946,35 @@ fn native_operation_definition_properties<'a>(
     }
 
     drop(definition_chain_values_storage);
-    ctx.sort_unstable_by_key(
-        &mut range_intervals,
-        |value| {
-            let entity = value.0;
-            (entity.byte_offset, entity.ordinal, entity.id.as_str())
-        },
-        Ord::cmp,
-        "catia_feature_range_intervals_sort",
-    )?;
+    match range_intervals.as_mut_slice() {
+        [] | [_] => {}
+        [left, right] => {
+            let left = left.0;
+            let right = right.0;
+            let order = (left.byte_offset, left.ordinal).cmp(&(right.byte_offset, right.ordinal));
+            if order == std::cmp::Ordering::Greater
+                || (order == std::cmp::Ordering::Equal
+                    && ctx.compare(
+                        left.id.as_str(),
+                        right.id.as_str(),
+                        "catia_feature_range_intervals_sort",
+                    )? == std::cmp::Ordering::Greater)
+            {
+                range_intervals.swap(0, 1);
+            }
+        }
+        _ => {
+            ctx.sort_unstable_by_key(
+                &mut range_intervals,
+                |value| {
+                    let entity = value.0;
+                    (entity.byte_offset, entity.ordinal, entity.id.as_str())
+                },
+                Ord::cmp,
+                "catia_feature_range_intervals_sort",
+            )?;
+        }
+    }
     ctx.dedup_by(
         &mut range_intervals,
         |(left, _), (right, _)| {
@@ -1969,12 +2034,14 @@ fn native_operation_owned_objects<'a>(
         let mut path_storage = ctx.reserve_scoped(0, "catia_feature_operation_owner_path")?;
         let mut path = Vec::new();
         let mut active = HashSet::new();
-        let mut current = Some(*id);
+        let current = std::cell::Cell::new(Some(*id));
+        let mut chain = std::iter::from_fn(|| current.take());
         let owner = loop {
-            let Some(current_id) = current else {
+            let Some(current_id) =
+                ctx.next_charged(&mut chain, "catia_feature_operation_owner_chain")?
+            else {
                 break None;
             };
-            ctx.charge_work(1, "catia_feature_operation_owner_chain")?;
             if let Some(owner) = ctx.get_hash_map(
                 &resolved,
                 current_id,
@@ -2010,7 +2077,7 @@ fn native_operation_owned_objects<'a>(
             else {
                 break None;
             };
-            current = current_object.owner_design_object.as_deref();
+            current.set(current_object.owner_design_object.as_deref());
         };
         for item in ctx.admit_iter(path, "catia_feature_operation_owner_results")? {
             cache_storage.with_storage(|| {
