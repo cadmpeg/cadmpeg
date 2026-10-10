@@ -47,9 +47,9 @@ pub(crate) fn object_names(
     let mut names = Vec::new();
     let mut scanner = NameScanner::new(ctx, payload)?;
     while let Some((offset, object_id, units)) = scanner.next(ctx, false)? {
-        let _name_reservation;
+        let name_reservation;
         let decoded;
-        (decoded, _name_reservation) = match ctx.utf16le_scoped_text(
+        (decoded, name_reservation) = match ctx.utf16le_scoped_text(
             units,
             units.len() / 2,
             false,
@@ -70,7 +70,7 @@ pub(crate) fn object_names(
             ctx.refuse_codec_limit("collect SLDPRT feature input names", u64::MAX - 1, u64::MAX)
         })?;
         let value = ctx.copy_retained_text(&decoded, "retain SLDPRT feature input name")?;
-        drop((decoded, _name_reservation));
+        drop((decoded, name_reservation));
         let id = record_id(ctx, "name", lane_key, offset)?;
         let parent = ctx.copy_retained_text(parent, "retain SLDPRT feature input name parent")?;
         ctx.push_vec(

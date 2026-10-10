@@ -148,7 +148,7 @@ fn arc_dimension_uses_two_endpoint_markers_for_a_bounded_arc() {
     assert_eq!(arc.center, [0.0, 0.0]);
     assert_eq!(arc.start, [0.003, 0.0]);
     assert_eq!(arc.end, [0.0, 0.003]);
-    assert_eq!(arc.endpoints, Some(["start".into(), "end".into()]));
+    assert_eq!(arc.endpoints, Some(["start", "end"]));
 
     let mut invalid_end = lane.sketch_entities[2].clone();
     invalid_end.coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.0, 0.004]);

@@ -1969,11 +1969,10 @@ fn compact_termination_reference_offsets(
         ctx.next_charged(&mut markers, "scan SLDPRT termination reference offsets")?
     {
         let present = if require_path {
-            let (_path, _storage) = ctx
+            let (path, _storage) = ctx
                 .with_scoped_storage("SLDPRT termination reference candidate", || {
                     compact_termination_reference_path_at(ctx, payload, marker)
                 })?;
-            let path = _path;
             path.is_some()
         } else {
             compact_termination_reference_frame_at(payload, marker).is_some()
@@ -2213,7 +2212,7 @@ fn legacy_single_face_reference_path_at(
     if header_valid.is_none() {
         return Ok(None);
     }
-    let (_selected, _storage) = ctx.with_scoped_storage(
+    let (selected, _storage) = ctx.with_scoped_storage(
         "SLDPRT legacy face path workspace",
         || -> Result<_, cadmpeg_core::CodecError> {
             let mut search = LegacyFacePathSearch {
@@ -2276,7 +2275,6 @@ fn legacy_single_face_reference_path_at(
             })
         },
     )?;
-    let selected = _selected;
     selected
         .map(|entries| ctx.collect_vec(entries.iter().cloned(), "retain SLDPRT legacy face path"))
         .transpose()

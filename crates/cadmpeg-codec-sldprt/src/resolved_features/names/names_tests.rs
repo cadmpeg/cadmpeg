@@ -288,7 +288,7 @@ fn object_name_record_growth_refuses_at_exact_output_peak_and_stays_sticky() {
     assert_eq!(first.operation, "collect SLDPRT feature input names");
     assert_eq!(first.used, text);
     assert_eq!(first.additional, slots);
-    assert_eq!(ctx.resource_refusal(), Some(first.clone()));
+    assert_eq!(ctx.resource_refusal(), Some(first));
     let CodecError::ResourceLimit(next) = ctx.reserve_scoped(0, "sticky name refusal").unwrap_err()
     else {
         panic!("expected original name refusal");

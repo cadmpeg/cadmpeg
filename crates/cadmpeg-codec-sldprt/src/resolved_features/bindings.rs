@@ -2659,7 +2659,7 @@ fn bind_resolved_curve_vertices(
                     curve,
                     &markers_by_id,
                     &curve_markers,
-                    &geometry,
+                    geometry,
                 )
             })?;
             for marker in ctx.admit_iter(endpoints, SELECTED)? {
@@ -2712,7 +2712,7 @@ fn bind_resolved_curve_vertices(
                         curve,
                         &markers_by_id,
                         &curve_markers,
-                        &geometry,
+                        geometry,
                     )
                 })?;
                 if endpoints.len() == 2 {

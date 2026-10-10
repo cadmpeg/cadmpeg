@@ -141,7 +141,7 @@ fn transformed_arc_copies_only_final_endpoint_text_with_exact_limits() {
             2,
         ),
     ] {
-        let mut refusal_policy = policy.clone();
+        let mut refusal_policy = policy;
         match dimension {
             ResourceDimension::RetainedBytes => refusal_policy.limits.max_retained_bytes = 103,
             ResourceDimension::WorkUnits => refusal_policy.limits.max_work_units = 7,
@@ -150,10 +150,9 @@ fn transformed_arc_copies_only_final_endpoint_text_with_exact_limits() {
         }
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &refusal_policy).unwrap();
-        let error = match super::transformed_dimensioned_arc(&ctx, transform, &arc, 1000.0, QUANTUM)
-        {
-            Ok(_) => panic!("one-below executed endpoint demand must refuse"),
-            Err(error) => error,
+        let Err(error) = super::transformed_dimensioned_arc(&ctx, transform, &arc, 1000.0, QUANTUM)
+        else {
+            panic!("one-below executed endpoint demand must refuse");
         };
         let CodecError::ResourceLimit(limit) = error else {
             panic!("resource refusal");

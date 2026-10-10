@@ -58,6 +58,7 @@ pub(crate) fn project_helix_axes(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
+    const INDEX_OPERATION: &str = "index SLDPRT helix object boundaries";
     if !ctx.any_by(
         &*model_features,
         |feature| {
@@ -141,7 +142,6 @@ pub(crate) fn project_helix_axes(
             let Some(name) = names.of(ctx, record)? else {
                 continue;
             };
-            const INDEX_OPERATION: &str = "index SLDPRT helix object boundaries";
             if ctx
                 .get_hash_map(&object_offsets, &lane_index, INDEX_OPERATION)?
                 .is_none()
@@ -488,7 +488,6 @@ fn enrich_history_hole_constructions_with_names(
             let profile = if let Some(profile) = hole_profile_from_position_source(
                 ctx,
                 feature,
-                history,
                 &records,
                 lanes,
                 object_names,
@@ -844,7 +843,6 @@ fn claimed_hole_profiles<'a>(
 fn hole_profile_from_position_source<'a>(
     ctx: &DecodeContext<'_>,
     feature: &crate::records::Feature,
-    history: &'a crate::records::FeatureHistory,
     records: &HoleHistoryIndex<'a, '_>,
     lanes: &[FeatureInputLane],
     object_names: &[HoleLaneNames<'_, '_>],
@@ -852,6 +850,8 @@ fn hole_profile_from_position_source<'a>(
     object_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
 ) -> Result<Option<(&'a crate::records::Feature, u8)>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT hole profile ownership";
+    const INDEX_OPERATION: &str = "index SLDPRT hole object orders";
+    let history = records.history;
     let mut source = None;
     for (lane, names) in ctx.admit_iter(lanes, OPERATION)?.zip(object_names) {
         let Some(candidate) = hole_position_sketch_source(ctx, feature, lane, names)? else {
@@ -907,7 +907,6 @@ fn hole_profile_from_position_source<'a>(
                 else {
                     return Ok(None);
                 };
-                const INDEX_OPERATION: &str = "index SLDPRT hole object orders";
                 if ctx
                     .get_hash_map(object_orders, &lane_index, INDEX_OPERATION)?
                     .is_none()
@@ -1169,7 +1168,7 @@ pub(crate) fn enrich_history_cosmetic_thread_diameters(
                             crate::history::project::solid::threaded_hole_major_diameter(
                                 ctx,
                                 producer,
-                                |key| lookups.profile(key),
+                                |key| lookups.profile(&key),
                             )?
                         else {
                             continue;
@@ -2493,9 +2492,9 @@ pub(crate) fn project_hole_position_sketches(
     let mut markers = HashMap::new();
     let mut source_items = features.iter_mut();
     while let Some(feature) = ctx.next_charged(&mut source_items, OPERATION)? {
-        let _projection_storage;
+        let projection_storage;
         let projection;
-        (projection, _projection_storage) =
+        (projection, projection_storage) =
             ctx.with_scoped_storage(OPERATION, || -> Result<_, CodecError> {
                 let mut projection = None;
                 'feature_edit: {
@@ -2862,7 +2861,7 @@ pub(crate) fn project_hole_position_sketches(
                 Ok(projection)
             })?;
         // Every marker workspace value has died inside the projection closure.
-        drop(_projection_storage);
+        drop(projection_storage);
         if let Some(projection) = projection {
             let (resolved, dependency) = projection.into_output()?;
             feature.evaluation.edit(|definition, _| {
@@ -2885,7 +2884,7 @@ struct HoleMarkers<'lane, 'ctx> {
     by_feature: HashMap<&'lane str, Vec<&'lane crate::records::SketchInputEntity>>,
     paired: HashMap<&'lane str, Vec<(&'lane crate::records::SketchInputEntity, [f64; 2])>>,
     pairs_indexed: bool,
-    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+    storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
 impl<'lane, 'ctx> HoleMarkers<'lane, 'ctx> {
@@ -2907,7 +2906,7 @@ impl<'lane, 'ctx> HoleMarkers<'lane, 'ctx> {
             by_feature,
             paired: HashMap::new(),
             pairs_indexed: false,
-            _storage: storage,
+            storage: storage,
         })
     }
 
@@ -2944,7 +2943,7 @@ impl<'lane, 'ctx> HoleMarkers<'lane, 'ctx> {
                     .coordinates_m
                     .is_some_and(|coordinates| coordinates == [0.0, 0.0])
             {
-                self._storage.with_storage(|| {
+                self.storage.with_storage(|| {
                     ctx.push_hash_group(
                         &mut self.paired,
                         feature,

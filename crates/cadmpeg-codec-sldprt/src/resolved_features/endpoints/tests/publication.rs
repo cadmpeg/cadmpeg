@@ -8,7 +8,8 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 use cadmpeg_core::CodecError;
 use std::collections::HashMap;
 
-const ENDPOINT_BYTES: u64 = 4 * std::mem::size_of::<&SketchInputEntity>() as u64;
+const ENDPOINT_BYTES: u64 =
+    4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<&SketchInputEntity>());
 
 fn centered_payload() -> Vec<u8> {
     let mut payload = vec![0; 142 + SKETCH_MARKER.len()];
@@ -72,8 +73,8 @@ fn centered_endpoint_fallback_retains_only_the_selected_vector() {
         output_curve_endpoint_markers(&ctx, &payload, &entities[0], &by_id, &roster, &geometry)
             .unwrap();
     assert_eq!(endpoints.len(), 2);
-    assert!(std::ptr::eq(endpoints[0], &entities[1]));
-    assert!(std::ptr::eq(endpoints[1], &entities[2]));
+    assert!(std::ptr::eq(endpoints[0], &raw const entities[1]));
+    assert!(std::ptr::eq(endpoints[1], &raw const entities[2]));
     assert_eq!(endpoints[0].coordinates_m.unwrap().get(), [1.0, 2.0]);
     assert_eq!(endpoints[1].coordinates_m.unwrap().get(), [3.0, 4.0]);
     assert!(ctx.resource_refusal().is_none());

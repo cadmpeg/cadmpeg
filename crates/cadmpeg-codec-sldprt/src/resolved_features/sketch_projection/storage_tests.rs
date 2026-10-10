@@ -124,6 +124,9 @@ fn first_hash_table<T>() -> usize {
 }
 
 fn projection_peak() -> u64 {
+    type Locus<'a> = (bool, &'a SketchEntityId);
+    type EndpointKey<'a> = &'a str;
+    type EndpointValue<'a> = Vec<Locus<'a>>;
     let stream_indexes = first_hash_table::<(&SurfaceId, &SurfaceGeometry)>()
         + first_hash_table::<(&LoopId, &Loop)>()
         + first_hash_table::<(&CoedgeId, &Coedge)>()
@@ -138,9 +141,6 @@ fn projection_peak() -> u64 {
         + entity_id;
     // Endpoint grouping starts at one exact slot. Adding its second occurrence grows
     // to four slots and admits overlap for the original slot before reallocation.
-    type Locus<'a> = (bool, &'a SketchEntityId);
-    type EndpointKey<'a> = &'a str;
-    type EndpointValue<'a> = Vec<Locus<'a>>;
     let tree_alignment = align_of::<EndpointKey<'_>>()
         .max(align_of::<EndpointValue<'_>>())
         .max(align_of::<usize>());

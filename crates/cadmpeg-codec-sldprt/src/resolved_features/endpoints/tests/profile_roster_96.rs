@@ -285,7 +285,8 @@ fn endpoint_storage_entities() -> [SketchInputEntity; 3] {
 
 // collect_vec uses the four-slot minimum for pointer-sized elements. The
 // returned vector owns those slots; its markers remain borrowed native records.
-const ENDPOINT_VECTOR_BYTES: u64 = 4 * std::mem::size_of::<&SketchInputEntity>() as u64;
+const ENDPOINT_VECTOR_BYTES: u64 =
+    4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<&SketchInputEntity>());
 
 #[test]
 fn compact_legacy_96_profile_roster_publishes_only_endpoint_slots() {
@@ -306,8 +307,8 @@ fn compact_legacy_96_profile_roster_publishes_only_endpoint_slots() {
         roster_curve_endpoint_markers(&ctx, &payload, &entities[0], &markers, &geometry, None)
             .unwrap();
     assert_eq!(endpoints.len(), 2);
-    assert!(std::ptr::eq(endpoints[0], &entities[1]));
-    assert!(std::ptr::eq(endpoints[1], &entities[2]));
+    assert!(std::ptr::eq(endpoints[0], &raw const entities[1]));
+    assert!(std::ptr::eq(endpoints[1], &raw const entities[2]));
     assert_eq!(endpoints[0].coordinates_m.unwrap().get(), [0.0, 0.0]);
     assert_eq!(endpoints[1].coordinates_m.unwrap().get(), [1.0, 0.0]);
     assert!(ctx.resource_refusal().is_none());
@@ -337,8 +338,8 @@ fn compact_legacy_96_profile_roster_charges_each_live_output_once() {
     assert_eq!(first.len(), 2);
     assert_eq!(second.len(), 2);
     for endpoints in [&first, &second] {
-        assert!(std::ptr::eq(endpoints[0], &entities[1]));
-        assert!(std::ptr::eq(endpoints[1], &entities[2]));
+        assert!(std::ptr::eq(endpoints[0], &raw const entities[1]));
+        assert!(std::ptr::eq(endpoints[1], &raw const entities[2]));
     }
     assert!(ctx.resource_refusal().is_none());
 }

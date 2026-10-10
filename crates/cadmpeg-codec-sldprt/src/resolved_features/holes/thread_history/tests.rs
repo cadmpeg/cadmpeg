@@ -232,7 +232,10 @@ fn first_id_hash_growth_has_the_exact_typed_workspace_boundary() {
         let (result, allocations) =
             crate::test_support::allocation::count_allocations(|| lookups.by_id("thread"));
         if accepted {
-            assert!(std::ptr::eq(result.unwrap().unwrap(), &features[0]));
+            assert!(std::ptr::eq(
+                result.unwrap().unwrap(),
+                &raw const features[0]
+            ));
             assert_eq!(allocations, 1);
             drop(lookups);
             drop(
@@ -271,12 +274,15 @@ fn first_source_tree_growth_has_the_exact_typed_workspace_boundary() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut lookups = ThreadHistoryLookups::new(&ctx, &features).unwrap();
         let (result, allocations) = crate::test_support::allocation::count_allocations(|| {
-            lookups.profile(HoleProfileKey::Source(
+            lookups.profile(&HoleProfileKey::Source(
                 FeatureSource::from_value(11).unwrap(),
             ))
         });
         if accepted {
-            assert!(std::ptr::eq(result.unwrap().unwrap(), &features[0]));
+            assert!(std::ptr::eq(
+                result.unwrap().unwrap(),
+                &raw const features[0]
+            ));
             assert_eq!(allocations, 1);
             assert!(lookups.by_id.is_none());
             assert!(lookups.records.is_none());
@@ -317,10 +323,13 @@ fn first_record_hash_growth_has_the_exact_typed_workspace_boundary() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut lookups = ThreadHistoryLookups::new(&ctx, &features).unwrap();
         let (result, allocations) = crate::test_support::allocation::count_allocations(|| {
-            lookups.profile(HoleProfileKey::Record("profile"))
+            lookups.profile(&HoleProfileKey::Record("profile"))
         });
         if accepted {
-            assert!(std::ptr::eq(result.unwrap().unwrap(), &features[0]));
+            assert!(std::ptr::eq(
+                result.unwrap().unwrap(),
+                &raw const features[0]
+            ));
             assert_eq!(allocations, 1);
             assert!(lookups.by_id.is_none());
             assert!(lookups.by_source.is_none());
@@ -369,19 +378,19 @@ fn repeated_queries_reuse_last_id_source_and_permanent_record_tombstones() {
     for _ in 0..2 {
         assert!(std::ptr::eq(
             lookups.by_id("profile").unwrap().unwrap(),
-            &features[2]
+            &raw const features[2]
         ));
         assert!(std::ptr::eq(
             lookups
-                .profile(HoleProfileKey::Source(
+                .profile(&HoleProfileKey::Source(
                     FeatureSource::from_value(11).unwrap()
                 ))
                 .unwrap()
                 .unwrap(),
-            &features[2]
+            &raw const features[2]
         ));
         assert!(lookups
-            .profile(HoleProfileKey::Record("profile"))
+            .profile(&HoleProfileKey::Record("profile"))
             .unwrap()
             .is_none());
     }
