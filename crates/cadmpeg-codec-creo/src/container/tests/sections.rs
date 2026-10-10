@@ -4,7 +4,7 @@ use super::feature_row_for_aggregate;
 
 #[test]
 fn retained_scan_sections_refuse_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
     let bytes = super::build_prt("c", &[("VisibGeom", b"payload".to_vec())]);
@@ -13,23 +13,15 @@ fn retained_scan_sections_refuse_collection_limit() {
             .expect("service scan admitted");
     assert_eq!(service.framing.sections.len(), 1);
 
-    let refusal_limit = (0..4096).find(|&limit| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root image admitted");
-        matches!(
-            crate::container::scan_bytes(&ctx, bytes.clone()),
-            Err(CodecError::ResourceLimit(resource))
-                if resource.dimension == ResourceDimension::CollectionItems
-                    && resource.operation == "creo retained scan sections"
-        )
-    });
-    assert!(
-        refusal_limit.is_some(),
-        "one retained section exceeds a collection cap"
+    let error = crate::test_support::last_refusal_at(
+        &bytes,
+        ResourceDimension::CollectionItems,
+        "creo retained scan sections",
+        |ctx| crate::container::scan_bytes(ctx, bytes.clone()),
     );
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo retained scan sections"));
 }
 
 #[test]
@@ -43,8 +35,11 @@ fn section_header_name_refuses_before_retained_copy() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) =
         DecodeContext::from_root_bytes(data, &arena, &policy).expect("section input is admitted");
-    let error =
-        super::super::scan_sections(&ctx, data, 0).expect_err("name copy needs retained bytes");
+    let mut section_storage = ctx
+        .reserve_scoped(0, "test section roster storage")
+        .expect("empty storage");
+    let error = super::super::scan_sections(&ctx, &mut section_storage, data, 0)
+        .expect_err("name copy needs retained bytes");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo section header names"));
@@ -61,8 +56,11 @@ fn section_header_hit_refuses_before_vec_growth() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) =
         DecodeContext::from_root_bytes(data, &arena, &policy).expect("section input is admitted");
-    let error =
-        super::super::scan_sections(&ctx, data, 0).expect_err("hit needs one collection item");
+    let mut section_storage = ctx
+        .reserve_scoped(0, "test section roster storage")
+        .expect("empty storage");
+    let error = super::super::scan_sections(&ctx, &mut section_storage, data, 0)
+        .expect_err("hit needs one collection item");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo section header hits"));
@@ -70,17 +68,23 @@ fn section_header_hit_refuses_before_vec_growth() {
 
 #[test]
 fn scanned_section_refuses_before_output_vec_growth() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
     let data = b"\n#Body\nabc";
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(data, &arena, &policy).expect("section input is admitted");
-    let error = super::super::scan_sections(&ctx, data, 0)
-        .expect_err("output needs another collection item");
+    let error = crate::test_support::last_refusal_at(
+        data,
+        ResourceDimension::CollectionItems,
+        "creo scanned sections",
+        |ctx| {
+            super::super::scan_sections(
+                ctx,
+                &mut ctx.reserve_scoped(0, "test section roster storage")?,
+                data,
+                0,
+            )
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo scanned sections"));
@@ -93,7 +97,11 @@ fn scanned_section_succeeds_under_service_policy() {
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
         .expect("section input is admitted");
-    let sections = super::super::scan_sections(&ctx, data, 0).expect("section is admitted");
+    let mut section_storage = ctx
+        .reserve_scoped(0, "test section roster storage")
+        .expect("empty storage");
+    let sections = super::super::scan_sections(&ctx, &mut section_storage, data, 0)
+        .expect("section is admitted");
     assert_eq!(sections.len(), 1);
     assert_eq!(sections[0].section.raw_name(), "Body");
 }
@@ -125,8 +133,11 @@ fn toc_section_name_refuses_before_retained_copy() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&data, &arena, &policy).expect("TOC input is admitted");
-    let error =
-        super::super::toc_sections(&ctx, &data, 0).expect_err("TOC name needs retained bytes");
+    let mut section_storage = ctx
+        .reserve_scoped(0, "test section roster storage")
+        .expect("empty storage");
+    let error = super::super::toc_sections(&ctx, &mut section_storage, &data, 0)
+        .expect_err("TOC name needs retained bytes");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo TOC section names"));
@@ -143,7 +154,10 @@ fn modelview_toc_name_refuses_before_retained_growth() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&data, &arena, &policy).expect("TOC input is admitted");
-    let error = super::super::toc_sections(&ctx, &data, 0)
+    let mut section_storage = ctx
+        .reserve_scoped(0, "test section roster storage")
+        .expect("empty storage");
+    let error = super::super::toc_sections(&ctx, &mut section_storage, &data, 0)
         .expect_err("ModelView name needs retained bytes");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
@@ -152,17 +166,23 @@ fn modelview_toc_name_refuses_before_retained_growth() {
 
 #[test]
 fn toc_section_refuses_before_vec_growth() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
     let data = one_toc_section("Body", "Body");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&data, &arena, &policy).expect("TOC input is admitted");
-    let error =
-        super::super::toc_sections(&ctx, &data, 0).expect_err("one TOC section needs one item");
+    let error = crate::test_support::last_refusal_at(
+        &data,
+        ResourceDimension::CollectionItems,
+        "creo TOC sections",
+        |ctx| {
+            super::super::toc_sections(
+                ctx,
+                &mut ctx.reserve_scoped(0, "test section roster storage")?,
+                &data,
+                0,
+            )
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo TOC sections"));
@@ -175,7 +195,11 @@ fn toc_section_succeeds_under_service_policy() {
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
         .expect("TOC input is admitted");
-    let sections = super::super::toc_sections(&ctx, &data, 0).expect("TOC section is admitted");
+    let mut section_storage = ctx
+        .reserve_scoped(0, "test section roster storage")
+        .expect("empty storage");
+    let sections = super::super::toc_sections(&ctx, &mut section_storage, &data, 0)
+        .expect("TOC section is admitted");
     assert_eq!(sections.len(), 1);
     assert_eq!(sections[0].section.raw_name(), "ModelView#1");
 }
@@ -203,7 +227,10 @@ fn legacy_toc_name_refuses_before_retained_copy() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy)
         .expect("legacy TOC input is admitted");
-    let error = super::super::legacy_toc_sections(&ctx, &data, 0)
+    let mut section_storage = ctx
+        .reserve_scoped(0, "test section roster storage")
+        .expect("empty storage");
+    let error = super::super::legacy_toc_sections(&ctx, &mut section_storage, &data, 0)
         .expect_err("legacy TOC name needs retained bytes");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
@@ -212,17 +239,23 @@ fn legacy_toc_name_refuses_before_retained_copy() {
 
 #[test]
 fn legacy_toc_section_refuses_before_vec_growth() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
     let data = one_legacy_toc_section();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy)
-        .expect("legacy TOC input is admitted");
-    let error = super::super::legacy_toc_sections(&ctx, &data, 0)
-        .expect_err("legacy TOC section needs one item");
+    let error = crate::test_support::last_refusal_at(
+        &data,
+        ResourceDimension::CollectionItems,
+        "creo legacy TOC sections",
+        |ctx| {
+            super::super::legacy_toc_sections(
+                ctx,
+                &mut ctx.reserve_scoped(0, "test section roster storage")?,
+                &data,
+                0,
+            )
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo legacy TOC sections"));
@@ -235,8 +268,11 @@ fn legacy_toc_section_succeeds_under_service_policy() {
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
         .expect("legacy TOC input is admitted");
-    let sections =
-        super::super::legacy_toc_sections(&ctx, &data, 0).expect("legacy TOC section is admitted");
+    let mut section_storage = ctx
+        .reserve_scoped(0, "test section roster storage")
+        .expect("empty storage");
+    let sections = super::super::legacy_toc_sections(&ctx, &mut section_storage, &data, 0)
+        .expect("legacy TOC section is admitted");
     assert_eq!(sections.len(), 1);
     assert_eq!(sections[0].section.raw_name(), "BasicData");
 }
@@ -261,18 +297,17 @@ fn legacy_schema_refuses_before_retained_copy_even_without_banner() {
 
 #[test]
 fn legacy_release_refuses_before_retained_copy() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
     let data = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 6\n\
         #END_OF_P_OBJECT\n#Pro/ENGINEER  TM  Version H-01-21\n";
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 1;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(data, &arena, &policy).expect("legacy header is admitted");
-    let error = super::super::legacy_ascii_framing(&ctx, data)
-        .expect_err("release copy needs retained bytes after schema");
+    let error = crate::test_support::last_refusal_at(
+        data,
+        ResourceDimension::RetainedBytes,
+        "creo legacy product release",
+        |ctx| super::super::legacy_ascii_framing(ctx, data),
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo legacy product release"));
@@ -329,7 +364,7 @@ fn expanded_section_name_refuses_before_retained_copy() {
 
 #[test]
 fn expanded_section_record_refuses_before_vec_growth() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
     let data = one_compressed_section();
@@ -341,13 +376,12 @@ fn expanded_section_record_refuses_before_vec_growth() {
         &data,
     )
     .expect("bounded compressed section");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 3 * (1 << 16);
-    let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy)
-        .expect("compressed input is admitted");
-    let error = super::super::expanded_sections(&ctx, &data, std::slice::from_ref(&section))
-        .expect_err("expanded record needs another collection item");
+    let error = crate::test_support::last_refusal_at(
+        &data,
+        ResourceDimension::CollectionItems,
+        "creo expanded sections",
+        |ctx| super::super::expanded_sections(ctx, &data, std::slice::from_ref(&section)),
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo expanded sections"));
@@ -435,7 +469,6 @@ fn native_model_name_succeeds_under_service_policy() {
 #[test]
 fn legacy_persistence_scopes_refuse_before_counted_vec_growth() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
 
     let data = b"0123456789";
     let framing = super::super::LegacyAsciiFraming {
@@ -445,40 +478,38 @@ fn legacy_persistence_scopes_refuse_before_counted_vec_growth() {
         object_offset: 5,
         persistence: crate::legacy::Persistence::default(),
     };
-    let run = |limit| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(data, &arena, &policy)
-            .expect("legacy scope input is admitted");
-        super::super::legacy_scope_ranges(&ctx, data, &framing, &[])
-    };
-    assert_eq!(run(1).expect("initial scope admitted"), vec![5..10]);
-    let error = run(0).expect_err("initial scope needs one collection item");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo legacy persistence scopes"));
+    let result = crate::test_support::assert_refusal_order(
+        ResourceDimension::CollectionItems,
+        &["creo legacy persistence scopes"],
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(data, &arena, &policy).expect("root");
+            super::super::legacy_scope_ranges(&ctx, data, &framing, &[])
+        },
+    );
+    assert_eq!(result, vec![5..10]);
 }
 
 #[test]
 fn section_owner_range_refuses_before_counted_vec_growth() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
 
     let row = feature_row_for_aggregate(b"xx");
-    let run = |limit| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&row.body, &arena, &policy)
-            .expect("feature row is admitted");
-        super::super::section_owner_ranges(&ctx, &[], std::slice::from_ref(&row))
-    };
-    assert_eq!(run(1).expect("one owner range admitted"), vec![(100, 102)]);
-    let error = run(0).expect_err("one owner range needs one item");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo section owner ranges"));
+    let result = crate::test_support::assert_refusal_order(
+        ResourceDimension::CollectionItems,
+        &["creo section owner ranges"],
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&row.body, &arena, &policy).expect("root");
+            super::super::section_owner_ranges(&ctx, &[], std::slice::from_ref(&row))
+        },
+    );
+    assert_eq!(result, vec![(100, 102)]);
 }
 
 #[test]
@@ -500,8 +531,15 @@ fn complete_legacy_directory_admits_more_than_4096_entries() {
         bytes.extend_from_slice(b"#BasicData\nabc");
     }
     crate::decode::with_test_decode_ctx(|ctx| {
-        let sections =
-            super::super::legacy_toc_sections(ctx, &bytes, 0).expect("complete directory admitted");
+        let sections = super::super::legacy_toc_sections(
+            ctx,
+            &mut ctx
+                .reserve_scoped(0, "test section roster storage")
+                .expect("empty storage"),
+            &bytes,
+            0,
+        )
+        .expect("complete directory admitted");
         assert_eq!(sections.len(), count);
     });
 }
@@ -556,58 +594,105 @@ fn section_scan_normalizes_decorated_names_once() {
 }
 
 #[test]
-fn toc_section_deduplication_refuses_work() {
-let mut data = one_toc_section("Body", "Body");
-// A second directory repeats the original bounded section.
-data.extend_from_slice(b"\n");
-data.extend_from_slice(format!("{:<80}\n", "#UGC_TOC 2 1 81 17").as_bytes());
-data.extend_from_slice(format!("{:<80}\n", "Body a2 9 0").as_bytes());
-let sections = crate::decode::with_test_decode_ctx(|ctx|
-super::super::toc_sections(ctx, &data, 0)).expect("duplicate directory witness");
-assert_eq!(sections.len(), 1);
-assert_eq!(sections[0].section.raw_name(), "Body");
-assert_eq!(sections[0].section.offset(), 162);
-assert_eq!(sections[0].region, b"#Body\nabc");
-    let error = crate::test_support::last_refusal_at(
-        &[],
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "creo toc sections sections deduplication",
-        |ctx| super::super::toc_sections(ctx, &data, 0),
+fn toc_section_duplicates_copy_only_surviving_names() {
+    let mut data = one_toc_section("Body", "Body");
+    // A second directory repeats the original bounded section.
+    data.extend_from_slice(b"\n");
+    data.extend_from_slice(format!("{:<80}\n", "#UGC_TOC 2 1 81 17").as_bytes());
+    data.extend_from_slice(format!("{:<80}\n", "Body a2 9 0").as_bytes());
+    let sections = crate::decode::with_test_decode_ctx(|ctx| {
+        super::super::toc_sections(
+            ctx,
+            &mut ctx
+                .reserve_scoped(0, "test section roster storage")
+                .expect("empty storage"),
+            &data,
+            0,
+        )
+    })
+    .expect("duplicate directory witness");
+    assert_eq!(sections.len(), 1);
+    assert_eq!(sections[0].section.raw_name(), "Body");
+    assert_eq!(sections[0].section.offset(), 162);
+    assert_eq!(sections[0].region, b"#Body\nabc");
+    let name_bytes = sections[0].section.raw_name.capacity();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from(name_bytes).expect("surviving name backing");
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let mut storage = ctx
+        .reserve_scoped(0, "test section roster storage")
+        .expect("storage");
+    let bounded = super::super::toc_sections(&ctx, &mut storage, &data, 0)
+        .expect("duplicate entries copy only the surviving name");
+    assert_eq!(bounded.len(), 1);
+    assert_eq!(
+        bounded[0].section.raw_name(),
+        sections[0].section.raw_name()
     );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo toc sections sections deduplication")
+    assert_eq!(bounded[0].section.offset(), sections[0].section.offset());
+    assert_eq!(bounded[0].region, sections[0].region);
+    let resource = ctx
+        .charge_retained_limit(u64::MAX, "duplicate section live names")
+        .expect_err("read live names");
+    assert_eq!(
+        resource.used,
+        u64::try_from(name_bytes).expect("one name backing")
     );
 }
 
 #[test]
-fn legacy_toc_section_deduplication_refuses_work() {
-let mut data = b"#Pro/ENGINEER  TM  Version H-01-21\n@Toc 52 0\n0 52 ->\n\
-@entry 53 10\n1 53 [2]\n".to_vec();
-let row_len = b"2 53 BasicData 00000000 0000000e 0 983####\n".len();
-let offset = data.len() + 2 * row_len;
-let row = format!("2 53 BasicData {offset:08x} 0000000e 0 983####\n");
-data.extend_from_slice(row.as_bytes());
-data.extend_from_slice(row.as_bytes());
-assert_eq!(data.len(), offset);
-data.extend_from_slice(b"#BasicData\nabc");
-let sections = crate::decode::with_test_decode_ctx(|ctx|
-super::super::legacy_toc_sections(ctx, &data, 0)).expect("duplicate legacy witness");
-assert_eq!(sections.len(), 1);
-assert_eq!(sections[0].section.raw_name(), "BasicData");
-assert_eq!(sections[0].section.offset(), offset);
-assert_eq!(sections[0].region, b"#BasicData\nabc");
-    let error = crate::test_support::last_refusal_at(
-        &[],
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "creo legacy toc sections sections deduplication",
-        |ctx| super::super::legacy_toc_sections(ctx, &data, 0),
+fn legacy_toc_section_duplicates_copy_only_surviving_names() {
+    let mut data = b"#Pro/ENGINEER  TM  Version H-01-21\n@Toc 52 0\n0 52 ->\n\
+@entry 53 10\n1 53 [2]\n"
+        .to_vec();
+    let row_len = b"2 53 BasicData 00000000 0000000e 0 983####\n".len();
+    let offset = data.len() + 2 * row_len;
+    let row = format!("2 53 BasicData {offset:08x} 0000000e 0 983####\n");
+    data.extend_from_slice(row.as_bytes());
+    data.extend_from_slice(row.as_bytes());
+    assert_eq!(data.len(), offset);
+    data.extend_from_slice(b"#BasicData\nabc");
+    let sections = crate::decode::with_test_decode_ctx(|ctx| {
+        super::super::legacy_toc_sections(
+            ctx,
+            &mut ctx
+                .reserve_scoped(0, "test section roster storage")
+                .expect("empty storage"),
+            &data,
+            0,
+        )
+    })
+    .expect("duplicate legacy witness");
+    assert_eq!(sections.len(), 1);
+    assert_eq!(sections[0].section.raw_name(), "BasicData");
+    assert_eq!(sections[0].section.offset(), offset);
+    assert_eq!(sections[0].region, b"#BasicData\nabc");
+    let name_bytes = sections[0].section.raw_name.capacity();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from(name_bytes).expect("surviving name backing");
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let mut storage = ctx
+        .reserve_scoped(0, "test section roster storage")
+        .expect("storage");
+    let bounded = super::super::legacy_toc_sections(&ctx, &mut storage, &data, 0)
+        .expect("duplicate entries copy only the surviving name");
+    assert_eq!(bounded.len(), 1);
+    assert_eq!(
+        bounded[0].section.raw_name(),
+        sections[0].section.raw_name()
     );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo legacy toc sections sections deduplication")
+    assert_eq!(bounded[0].section.offset(), sections[0].section.offset());
+    assert_eq!(bounded[0].region, sections[0].region);
+    let resource = ctx
+        .charge_retained_limit(u64::MAX, "duplicate section live names")
+        .expect_err("read live names");
+    assert_eq!(
+        resource.used,
+        u64::try_from(name_bytes).expect("one name backing")
     );
 }
 

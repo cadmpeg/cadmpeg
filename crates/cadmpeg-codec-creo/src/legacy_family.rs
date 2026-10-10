@@ -345,10 +345,7 @@ fn array_elements<'ctx, 'a>(
     index: &Index<'a>,
     parent: usize,
     name: &str,
-) -> Result<
-    Option<FamilyArrayElements<'ctx, 'a>>,
-    CodecError,
-> {
+) -> Result<Option<FamilyArrayElements<'ctx, 'a>>, CodecError> {
     let Some(array) = one_object(ctx, index, parent, name)? else {
         return Ok(None);
     };
@@ -394,7 +391,10 @@ fn array_elements<'ctx, 'a>(
             .with_storage(|| ctx.reserve_vec(&mut rows, 1, "creo legacy family array elements"))?;
         rows.push(element);
     }
-    Ok(Some(FamilyArrayElements { rows, _storage: storage }))
+    Ok(Some(FamilyArrayElements {
+        rows,
+        _storage: storage,
+    }))
 }
 
 fn optional_integer(
@@ -596,14 +596,10 @@ fn parse_indexed(
     let generic_name = generic_name
         .map(|value| copy_string_value(ctx, value))
         .transpose()?;
-    let Some(item_rows) =
-        array_elements(ctx, index, root.offset, ITEMS_ARRAY)?
-    else {
+    let Some(item_rows) = array_elements(ctx, index, root.offset, ITEMS_ARRAY)? else {
         return Ok(None);
     };
-    let Some(instance_rows) =
-        array_elements(ctx, index, root.offset, INSTANCES_ARRAY)?
-    else {
+    let Some(instance_rows) = array_elements(ctx, index, root.offset, INSTANCES_ARRAY)? else {
         return Ok(None);
     };
     if item_rows.rows.is_empty() || instance_rows.rows.is_empty() {
@@ -661,8 +657,10 @@ fn parse_indexed(
     let mut instances = Vec::new();
     let mut pending_instances = instance_rows.rows.iter().copied();
     while pending_instances.len() != 0 {
-        let Some(instance) =
-            ctx.next_charged(&mut pending_instances, "creo legacy family instances traversal")?
+        let Some(instance) = ctx.next_charged(
+            &mut pending_instances,
+            "creo legacy family instances traversal",
+        )?
         else {
             break;
         };
@@ -705,9 +703,7 @@ fn parse_indexed(
         if !matches!(model.payload, ObjectPayload::Arrow) {
             return Ok(None);
         }
-        let Some(value_rows) =
-            array_elements(ctx, index, instance.offset, VALUES_ARRAY)?
-        else {
+        let Some(value_rows) = array_elements(ctx, index, instance.offset, VALUES_ARRAY)? else {
             return Ok(None);
         };
         if value_rows.rows.len() != items.len() {
@@ -1301,7 +1297,8 @@ mod tests {
             .expect("empty index has no variable work or backing")
             .expect("empty index is structurally valid");
         assert!(index.object_by_offset.is_empty());
-        let original = ctx.charge_work_limit(1, "seed empty family index refusal")
+        let original = ctx
+            .charge_work_limit(1, "seed empty family index refusal")
             .expect_err("zero work cap");
         assert_eq!((original.used, original.additional), (0, 1));
         assert!(matches!(super::Index::build(&ctx, &persistence),
@@ -1311,24 +1308,53 @@ mod tests {
     #[test]
     fn family_array_rows_keep_then_release_their_scoped_backing() {
         let persistence = complete_table();
-        let index = crate::decode::with_test_decode_ctx(|ctx| super::Index::build(ctx, &persistence))
-            .expect("fixture index admission").expect("fixture index");
-        // Amortized Vec growth reserves four pointer slots for the first row.
-        const ROW_CAPACITY: usize = 4;
-        let row_backing_bytes = u64::try_from(ROW_CAPACITY * std::mem::size_of::<&ObjectRecord>())
-            .expect("four pointer slots fit the byte counter");
+        let index =
+            crate::decode::with_test_decode_ctx(|ctx| super::Index::build(ctx, &persistence))
+                .expect("fixture index admission")
+                .expect("fixture index");
+        let run = |cap, dimension| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = 0;
+            match dimension {
+                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
+                ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+                _ => panic!("family row allocation dimension"),
+            }
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            super::array_elements(&ctx, &index, fixture_offset("root"), ITEMS_ARRAY)
+                .map(|rows| rows.map(|rows| rows.rows.len()))
+        };
+        let row_backing_bytes = crate::test_support::allocation_limit_at(
+            ResourceDimension::MaterializedBytes,
+            None,
+            |cap| run(cap, ResourceDimension::MaterializedBytes),
+        );
+        let row_items = crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            None,
+            |cap| run(cap, ResourceDimension::CollectionItems),
+        );
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_materialized_bytes = row_backing_bytes;
         policy.limits.max_retained_bytes = 0;
-        policy.limits.max_collection_items = 1;
+        policy.limits.max_collection_items = row_items;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let rows = super::array_elements(&ctx, &index, fixture_offset("root"), ITEMS_ARRAY)
-            .expect("one scoped reference row").expect("complete item array");
+            .expect("one scoped reference row")
+            .expect("complete item array");
         assert_eq!(rows.rows.len(), 1);
         assert_eq!(rows.rows[0].offset, fixture_offset("item"));
+        assert_eq!(
+            row_backing_bytes,
+            u64::try_from(rows.rows.capacity() * std::mem::size_of::<&ObjectRecord>())
+                .expect("actual row backing")
+        );
         drop(rows);
-        let replacement = ctx.reserve_scoped(row_backing_bytes, "after family reference rows")
+        let replacement = ctx
+            .reserve_scoped(row_backing_bytes, "after family reference rows")
             .expect("the row owner released its backing");
         drop(replacement);
     }
@@ -1347,13 +1373,18 @@ mod tests {
                 "creo legacy family values traversal",
             ],
             |ctx| parse_checked(ctx, &persistence),
-        ).expect("complete table");
-        assert_eq!(table.root_parent_id, legacy::object_node_id(fixture_offset("solid")));
+        )
+        .expect("complete table");
+        assert_eq!(
+            table.root_parent_id,
+            legacy::object_node_id(fixture_offset("solid"))
+        );
         assert_eq!(table.root_parent_name, "Solid");
         assert_eq!(table.items[0].item_id, 17);
         assert_eq!(table.instances[0].name, "SMALL");
-        assert_eq!(table.instances[0].values[0].source_object_id,
-            legacy::object_node_id(fixture_offset("value")));
+        assert_eq!(
+            table.instances[0].values[0].source_object_id,
+            legacy::object_node_id(fixture_offset("value"))
+        );
     }
-
 }

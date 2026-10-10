@@ -888,8 +888,18 @@ fn loop_array_section_sources_refuse_before_vec_growth() {
             };
             super::super::loop_array_sections(&ctx, model, nonvisible, all)
         };
-        assert_eq!(run(1).expect("one loop section admitted").len(), 1);
-        let error = run(0).expect_err("one loop section requires an output Vec item");
+        let selected = crate::test_support::assert_refusal_order(
+            ResourceDimension::CollectionItems,
+            &["creo loop array sections"],
+            run,
+        );
+        assert_eq!(selected.len(), 1);
+        let limit = crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo loop array sections"),
+            run,
+        );
+        let error = run(limit).expect_err("one loop section requires an output Vec item");
         assert!(matches!(
             error,
             CodecError::ResourceLimit(limit)
@@ -921,7 +931,7 @@ fn loop_array_aggregate_fixture() -> Vec<u8> {
     payload
 }
 
-fn assert_loop_array_aggregate_refusal(limit: u64, operation: &'static str) {
+fn assert_loop_array_aggregate_refusal(operation: &'static str) {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
@@ -949,6 +959,11 @@ fn assert_loop_array_aggregate_refusal(limit: u64, operation: &'static str) {
             .len(),
         1
     );
+    let limit = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        Some(operation),
+        run,
+    );
     let error = run(limit).expect_err("loop array aggregate exceeds collection limit");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
@@ -957,12 +972,12 @@ fn assert_loop_array_aggregate_refusal(limit: u64, operation: &'static str) {
 
 #[test]
 fn loop_array_aggregate_frame_refuses_before_growth() {
-    assert_loop_array_aggregate_refusal(3, "creo loop array aggregate frames");
+    assert_loop_array_aggregate_refusal("creo loop array aggregate frames");
 }
 
 #[test]
 fn loop_array_aggregate_record_refuses_before_growth() {
-    assert_loop_array_aggregate_refusal(4, "creo loop array aggregate records");
+    assert_loop_array_aggregate_refusal("creo loop array aggregate records");
 }
 
 #[test]

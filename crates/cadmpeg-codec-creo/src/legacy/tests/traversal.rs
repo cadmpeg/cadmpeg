@@ -155,16 +155,38 @@ fn object_completeness_overflow_does_not_visit_trailing_dimensions() {
         complete: false,
     };
     let boundary = work_refusal("creo object array extent traversal", |ctx| {
-        short.is_complete(ctx)
+        super::super::object_array_is_complete(
+            ctx,
+            match &short {
+                super::super::ObjectPayload::Array { dimensions, .. } => dimensions,
+                _ => unreachable!(),
+            },
+            &[],
+        )
     });
     assert_eq!(
-        work_refusal("creo object array extent traversal", |ctx| long
-            .is_complete(ctx)),
+        work_refusal("creo object array extent traversal", |ctx| {
+            super::super::object_array_is_complete(
+                ctx,
+                match &long {
+                    super::super::ObjectPayload::Array { dimensions, .. } => dimensions,
+                    _ => unreachable!(),
+                },
+                &[],
+            )
+        }),
         boundary
     );
     assert!(
-        !crate::decode::with_test_decode_ctx(|ctx| long.is_complete(ctx))
-            .expect("extent admission")
+        !crate::decode::with_test_decode_ctx(|ctx| super::super::object_array_is_complete(
+            ctx,
+            match &long {
+                super::super::ObjectPayload::Array { dimensions, .. } => dimensions,
+                _ => unreachable!(),
+            },
+            &[]
+        ))
+        .expect("extent admission")
     );
 }
 
@@ -178,7 +200,6 @@ fn string_completeness_stops_at_first_unsupported_value() {
     let short = StringPayload::Array {
         dimensions: vec![1],
         values: values.clone(),
-        continuation: None,
         complete: false,
         accepted_value_indices: Vec::new(),
     };
@@ -186,30 +207,56 @@ fn string_completeness_stops_at_first_unsupported_value() {
     let long = StringPayload::Array {
         dimensions: vec![257],
         values,
-        continuation: None,
         complete: false,
         accepted_value_indices: (1..257).collect(),
     };
-    let boundary = work_refusal("creo string array completeness traversal", |ctx| {
-        short.is_complete(ctx)
-    });
-    assert_eq!(
-        work_refusal("creo string array completeness traversal", |ctx| long
-            .is_complete(ctx)),
-        boundary
-    );
-    assert!(
-        !crate::decode::with_test_decode_ctx(|ctx| long.is_complete(ctx))
-            .expect("string admission")
-    );
+    for (payload, count) in [(&short, 0), (&long, 256)] {
+        let wire = serde_json::to_value(payload).expect("supported string array wire");
+        assert_eq!(wire["complete"], false);
+        assert_eq!(
+            wire["values"].as_array().expect("supported values").len(),
+            count
+        );
+        assert!(wire["values"]
+            .as_array()
+            .expect("values")
+            .iter()
+            .all(|value| value == &serde_json::json!({"form": "null"})));
+    }
+    for count in [1, 257] {
+        let mut bytes =
+            format!("@names 1 10\n0 1 [{count}]\n1 1 skipped\n$continued\n").into_bytes();
+        for _ in 1..count {
+            bytes.extend_from_slice(b"1 1 NULL\n");
+        }
+        let persistence = crate::decode::with_test_decode_ctx(|ctx| {
+            super::super::scan(ctx, &bytes, std::iter::once(0..bytes.len()))
+        })
+        .expect("unsupported-first-value parser");
+        assert_eq!(persistence.incomplete_string_array_count, 1);
+        assert_eq!(persistence.unresolved_string_value_count, 1);
+        let wire =
+            serde_json::to_value(&persistence.string_values[0].payload).expect("parsed wire");
+        assert_eq!(wire["complete"], false);
+        assert_eq!(
+            wire["values"].as_array().expect("supported values").len(),
+            count - 1
+        );
+        assert!(wire["values"]
+            .as_array()
+            .expect("values")
+            .iter()
+            .all(|value| value == &serde_json::json!({"form": "null"})));
+    }
 }
-
 
 #[test]
 fn legacy_empty_and_fixed_lanes_are_free_and_preserve_original_refusal() {
+    use super::super::{
+        array_dimensions, byte_string_value, text_field, NullToken, ObjectPayload, Persistence,
+        StringPayload, StringValue,
+    };
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
-    use super::super::{array_dimensions, byte_string_value, NullToken, ObjectPayload,
-        Persistence, StringPayload, StringValue, text_field};
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
@@ -220,30 +267,48 @@ fn legacy_empty_and_fixed_lanes_are_free_and_preserve_original_refusal() {
     assert_eq!(line(&ctx, &[], 0).expect("empty line"), Some((&[][..], 0)));
     assert_eq!(line(&ctx, &[], 1).expect("missing line"), None);
     assert_eq!(decimal(&ctx, &[], 0).expect("empty decimal"), None);
-    assert!(array_dimensions(&ctx, &[]).expect("empty dimensions").is_none());
-    assert_eq!(byte_string_value(&ctx, b"NULL", NullToken::RepresentsNull)
-        .expect("fixed null token"), StringValue::Null);
-    assert!(!ObjectPayload::Null.is_complete(&ctx).expect("fixed object variant"));
-    let strings = StringPayload::Scalar { value: StringValue::Null };
-    assert!(!strings.is_complete(&ctx).expect("fixed string variant"));
-    assert_eq!(strings.element_count(&ctx).expect("fixed scalar count"), 1);
-    assert_eq!(strings.undecoded_encoding_count(&ctx).expect("fixed encoding count"), 0);
-    assert_eq!(Persistence::default().principal_unit_system(&ctx).expect("no unit rows"), None);
+    assert!(array_dimensions(&ctx, &[])
+        .expect("empty dimensions")
+        .is_none());
+    assert_eq!(
+        byte_string_value(&ctx, b"NULL", NullToken::RepresentsNull).expect("fixed null token"),
+        StringValue::Null
+    );
+    assert!(!ObjectPayload::Null
+        .is_complete(&ctx)
+        .expect("fixed object variant"));
+    let strings = StringPayload::Scalar {
+        value: StringValue::Null,
+    };
+    assert_eq!(
+        serde_json::to_value(&strings).expect("fixed string wire"),
+        serde_json::json!({"form": "scalar", "value": {"form": "null"}})
+    );
+    assert_eq!(
+        Persistence::default()
+            .principal_unit_system(&ctx)
+            .expect("no unit rows"),
+        None
+    );
     let mut empty = "";
-    assert_eq!(text_field(&ctx, &mut empty, false).expect("empty field"), None);
-    let original = ctx.charge_work_limit(1, "seed fixed legacy refusal")
+    assert_eq!(
+        text_field(&ctx, &mut empty, false).expect("empty field"),
+        None
+    );
+    let original = ctx
+        .charge_work_limit(1, "seed fixed legacy refusal")
         .expect_err("zero work cap");
     assert_eq!((original.used, original.additional), (0, 1));
     assert!(matches!(line(&ctx, &[], 1), Err(CodecError::ResourceLimit(r)) if r == original));
     assert!(matches!(decimal(&ctx, &[], 0), Err(CodecError::ResourceLimit(r)) if r == original));
-    assert!(matches!(array_dimensions(&ctx, &[]), Err(CodecError::ResourceLimit(r)) if r == original));
-    assert!(matches!(byte_string_value(&ctx, b"NULL", NullToken::RepresentsNull),
-        Err(CodecError::ResourceLimit(r)) if r == original));
+    assert!(
+        matches!(array_dimensions(&ctx, &[]), Err(CodecError::ResourceLimit(r)) if r == original)
+    );
+    assert!(
+        matches!(byte_string_value(&ctx, b"NULL", NullToken::RepresentsNull),
+        Err(CodecError::ResourceLimit(r)) if r == original)
+    );
     assert!(matches!(ObjectPayload::Null.is_complete(&ctx),
-        Err(CodecError::ResourceLimit(r)) if r == original));
-    assert!(matches!(strings.is_complete(&ctx), Err(CodecError::ResourceLimit(r)) if r == original));
-    assert!(matches!(strings.element_count(&ctx), Err(CodecError::ResourceLimit(r)) if r == original));
-    assert!(matches!(strings.undecoded_encoding_count(&ctx),
         Err(CodecError::ResourceLimit(r)) if r == original));
     assert!(matches!(Persistence::default().principal_unit_system(&ctx),
         Err(CodecError::ResourceLimit(r)) if r == original));
@@ -255,110 +320,56 @@ fn legacy_empty_and_fixed_lanes_are_free_and_preserve_original_refusal() {
 
 #[test]
 fn legacy_line_and_decimal_admit_only_present_source_bytes() {
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
-    for (source, expected) in [(b"ab".as_slice(), b"ab".as_slice()), (b"a\nTAIL".as_slice(), b"a".as_slice())] {
-        for allowed in 0..=2 {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = allowed;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-            let result = line(&ctx, source, 0);
-            if allowed < 2 {
-                let CodecError::ResourceLimit(r) = result.expect_err("next byte visit") else {
-                    panic!("work refusal");
-                };
-                assert_eq!(r.dimension, ResourceDimension::WorkUnits);
-                assert_eq!(r.operation, "creo legacy line scan");
-                assert_eq!((r.used, r.additional), (allowed, 1));
-            } else {
-                assert_eq!(result.expect("two present bytes"), Some((expected, 2)));
-                let r = ctx.charge_work_limit(1, "after two line visits").expect_err("exact cap");
-                assert_eq!((r.used, r.additional), (2, 1));
-            }
-        }
-    }
-    for (source, expected, visits) in [
-        (b"007".as_slice(), (7, 3), 3),
-        (b"7xTAIL".as_slice(), (7, 1), 2),
+    for (source, expected) in [
+        (b"ab".as_slice(), b"ab".as_slice()),
+        (b"a\nTAIL".as_slice(), b"a".as_slice()),
     ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = visits;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        assert_eq!(decimal(&ctx, source, 0).expect("digits and first delimiter"), Some(expected));
-        let r = ctx.charge_work_limit(1, "after decimal visits").expect_err("exact cap");
-        assert_eq!((r.used, r.additional), (visits, 1));
+        let result =
+            crate::test_support::assert_work_boundaries(&["creo legacy line scan"], |ctx| {
+                line(ctx, source, 0)
+            });
+        assert_eq!(result, Some((expected, 2)));
+    }
+    for (source, expected) in [(b"007".as_slice(), (7, 3)), (b"7xTAIL".as_slice(), (7, 1))] {
+        let result =
+            crate::test_support::assert_work_boundaries(&["creo legacy decimal digits"], |ctx| {
+                decimal(ctx, source, 0)
+            });
+        assert_eq!(result, Some(expected));
     }
 }
 
 #[test]
 fn legacy_text_fields_admit_present_characters_and_preserve_unicode_boundaries() {
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
     use super::super::text_field;
-    for (source, remainder, visits, first_visits) in [
-        ("é", "", 1, 1),
-        (" \u{2003}é next", "next", 4, 3),
+    for (source, remainder, operations) in [
+        ("é", "", ["creo text field whitespace"].as_slice()),
+        (
+            " \u{2003}é next",
+            "next",
+            ["creo text field whitespace", "creo text field boundary"].as_slice(),
+        ),
     ] {
-        for allowed in 0..=visits {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = allowed;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let actual = crate::test_support::assert_work_boundaries(operations, |ctx| {
             let mut pending = source;
-            let result = text_field(&ctx, &mut pending, false);
-            if allowed < visits {
-                let CodecError::ResourceLimit(r) = result.expect_err("next character visit") else {
-                    panic!("work refusal");
-                };
-                assert_eq!(r.dimension, ResourceDimension::WorkUnits);
-                assert_eq!(r.operation, if allowed < first_visits {
-                    "creo text field whitespace"
-                } else {
-                    "creo text field boundary"
-                });
-                assert_eq!((r.used, r.additional), (allowed, 1));
+            let result = text_field(ctx, &mut pending, false);
+            if result.is_err() {
                 assert_eq!(pending, source);
-                let mut empty = "";
-                assert!(matches!(text_field(&ctx, &mut empty, false),
-                    Err(CodecError::ResourceLimit(original)) if original == r));
-            } else {
-                assert_eq!(result.expect("present characters"), Some("é"));
-                assert_eq!(pending, remainder);
-                let r = ctx.charge_work_limit(1, "after field character visits").expect_err("exact cap");
-                assert_eq!((r.used, r.additional), (visits, 1));
             }
-        }
+            result.map(|value| (value, pending))
+        });
+        assert_eq!(actual, (Some("é"), remainder));
     }
 }
 
 #[test]
 fn legacy_scope_extent_visits_exclude_terminal_probe_and_preserve_empty_output() {
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
     use super::super::{scan, Persistence};
-    for allowed in 0..=2 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = allowed;
-        policy.limits.max_materialized_bytes = 0;
-        policy.limits.max_retained_bytes = 0;
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        let result = scan(&ctx, &[], [0..0, 0..0]);
-        if allowed < 2 {
-            let CodecError::ResourceLimit(r) = result.expect_err("next extent") else {
-                panic!("work refusal");
-            };
-            assert_eq!(r.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(r.operation, "creo legacy scope extent traversal");
-            assert_eq!((r.used, r.additional), (allowed, 1));
-            assert!(matches!(scan(&ctx, &[], std::iter::empty()),
-                Err(CodecError::ResourceLimit(original)) if original == r));
-        } else {
-            assert_eq!(result.expect("two present extents"), Persistence::default());
-            let r = ctx.charge_work_limit(1, "after two extent visits").expect_err("exact cap");
-            assert_eq!((r.used, r.additional), (2, 1));
-        }
-    }
+    let actual = crate::test_support::assert_work_boundaries(
+        &["creo legacy scope extent traversal"],
+        |ctx| scan(ctx, &[], [0..0, 0..0]),
+    );
+    assert_eq!(actual, Persistence::default());
 }
 
 #[test]
@@ -371,7 +382,10 @@ fn legacy_pruning_visits_only_expired_rows_and_preserves_records() {
         |ctx| parent_object_offsets(ctx, &scopes),
     );
     assert_eq!(parents.len(), 1);
-    assert_eq!(parents.get(&scopes[0].values[1].offset), Some(&scopes[0].values[0].offset));
+    assert_eq!(
+        parents.get(&scopes[0].values[1].offset),
+        Some(&scopes[0].values[0].offset)
+    );
     let data = b"@names 1 10\n@other 2 10\n0 1 [1]\n1 1 value\n0 2 tail\n";
     let scopes = vec![super::scope_fixture(data, 0..data.len())];
     let parents = crate::decode::with_test_decode_ctx(|ctx| parent_object_offsets(ctx, &scopes))
@@ -382,19 +396,26 @@ fn legacy_pruning_visits_only_expired_rows_and_preserves_records() {
     );
     assert_eq!((records.len(), incomplete, unresolved), (2, 0, 0));
     assert_eq!(records[0].name, "names");
-    let StringPayload::Array { values, complete, .. } = &records[0].payload else {
+    let StringPayload::Array {
+        values, complete, ..
+    } = &records[0].payload
+    else {
         panic!("string array");
     };
     assert!(*complete);
-    assert_eq!(values, &[Ok(StringValue::Utf8 { text: "value".to_owned() })]);
+    assert_eq!(
+        values,
+        &[Ok(StringValue::Utf8 {
+            text: "value".to_owned()
+        })]
+    );
     assert_eq!(records[1].name, "other");
 }
 
-
 #[test]
-fn object_array_complete_shape_admits_two_extent_visits() {
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+fn object_array_complete_shape_uses_stored_completeness() {
     use super::super::ObjectPayload;
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
     let payload = ObjectPayload::Array {
         dimensions: vec![2, 2],
         elements: [
@@ -402,29 +423,19 @@ fn object_array_complete_shape_admits_two_extent_visits() {
             "creo:legacy_ascii:object#2",
             "creo:legacy_ascii:object#3",
             "creo:legacy_ascii:object#4",
-        ].map(str::to_owned).to_vec(),
+        ]
+        .map(str::to_owned)
+        .to_vec(),
         complete: true,
     };
-    for allowed in 0..=2 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = allowed;
-        policy.limits.max_materialized_bytes = 0;
-        policy.limits.max_retained_bytes = 0;
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        let result = payload.is_complete(&ctx);
-        if allowed < 2 {
-            let CodecError::ResourceLimit(r) = result.expect_err("next extent multiplication") else {
-                panic!("work refusal");
-            };
-            assert_eq!(r.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(r.operation, "creo object array extent traversal");
-            assert_eq!((r.used, r.additional), (allowed, 1));
-        } else {
-            assert!(result.expect("two extent multiplications"));
-            let r = ctx.charge_work_limit(1, "after object extent visits").expect_err("exact cap");
-            assert_eq!((r.used, r.additional), (2, 1));
-        }
-    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    assert!(payload
+        .is_complete(&ctx)
+        .expect("stored completeness is free"));
 }
