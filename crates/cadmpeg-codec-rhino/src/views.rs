@@ -556,10 +556,6 @@ fn push_list_loss(
         message,
         "Rhino view list loss message",
     )?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(tag.len()),
-        "Rhino view list loss tag",
-    )?;
     losses.push_admitted(
         ctx,
         loss.with_provenance(
@@ -579,10 +575,6 @@ fn push_view_loss(
     message: std::fmt::Arguments<'_>,
 ) -> Result<(), CodecError> {
     let loss = crate::wire::admitted_loss(ctx, code, message, "Rhino view loss message")?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(tag.len()),
-        "Rhino view loss tag",
-    )?;
     losses.push_admitted(
         ctx,
         loss.with_provenance(
@@ -860,7 +852,14 @@ fn parse_attributes<'ctx>(
     body: std::ops::Range<usize>,
     archive: ArchiveVersion,
     scale: MillimeterScale,
-) -> Result<(ViewAttributes, Vec<std::ops::Range<usize>>, cadmpeg_core::decode::ScopedReservation<'ctx>), FramingError> {
+) -> Result<
+    (
+        ViewAttributes,
+        Vec<std::ops::Range<usize>>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    ),
+    FramingError,
+> {
     let mut reader = BoundedReader::new(data, body.start, body.end)?;
     let mut checksum_storage = ctx.reserve_scoped(0, "Rhino view attribute checksum ranges")?;
     let mut checksum_children = Vec::new();
@@ -1094,14 +1093,12 @@ where
     R: std::borrow::Borrow<std::ops::Range<usize>>,
 {
     match verify_checksum_ranges(ctx, data, child, direct_ranges)? {
-        ChecksumStatus::Mismatch { expected, actual } => {
-            Ok(Some(crate::chunks::ChecksumNote {
-                offset: child.header_start,
-                typecode: child.typecode,
-                expected,
-                actual,
-            }))
-        }
+        ChecksumStatus::Mismatch { expected, actual } => Ok(Some(crate::chunks::ChecksumNote {
+            offset: child.header_start,
+            typecode: child.typecode,
+            expected,
+            actual,
+        })),
         _ => Ok(None),
     }
 }
@@ -1401,13 +1398,14 @@ fn parse_view<'ctx>(
                 wallpaper_storage = Some(storage);
             }
             VIEW_NAME if !child.short() => {
-                let (replacement_buffer, storage) = ctx.with_scoped_storage("Rhino view name", || {
-                    let mut reader =
-                        BoundedReader::new(data, child.body().start, child.body().end)?;
-                    let value = utf16_retained(ctx, &mut reader, "Rhino view name")?;
-                    reader.skip_remaining()?;
-                    Ok::<_, FramingError>(value)
-                })?;
+                let (replacement_buffer, storage) =
+                    ctx.with_scoped_storage("Rhino view name", || {
+                        let mut reader =
+                            BoundedReader::new(data, child.body().start, child.body().end)?;
+                        let value = utf16_retained(ctx, &mut reader, "Rhino view name")?;
+                        reader.skip_remaining()?;
+                        Ok::<_, FramingError>(value)
+                    })?;
                 let replacement = replacement_buffer;
                 name = replacement;
                 name_storage = Some(storage);
@@ -1436,9 +1434,10 @@ fn parse_view<'ctx>(
             VIEW_V3_DISPLAY_MODE if child.short() => legacy_display_mode = Some(child.value()?),
             VIEW_ATTRIBUTES if !child.short() => {
                 let mut storage = ctx.reserve_scoped(0, "Rhino view attributes")?;
-                let (attributes, nested_children_buffer, _nested_children_storage) = storage.with_storage(|| {
-                    parse_attributes(ctx, data, child.body().clone(), archive, scale)
-                })?;
+                let (attributes, nested_children_buffer, _nested_children_storage) = storage
+                    .with_storage(|| {
+                        parse_attributes(ctx, data, child.body().clone(), archive, scale)
+                    })?;
                 let nested_children = nested_children_buffer;
                 if let Some(warning) =
                     view_child_checksum_warning_excluding(ctx, data, &child, &nested_children)?
@@ -1560,14 +1559,12 @@ fn parse_view<'ctx>(
     }
     let direct = direct_checksum_ranges(ctx, &record.body(), &checksum_children)?;
     let checksum_warning = match verify_checksum_ranges(ctx, data, record, &direct)? {
-        ChecksumStatus::Mismatch { expected, actual } => {
-            Some(crate::chunks::ChecksumNote {
-                offset: record.header_start,
-                typecode: record.typecode,
-                expected,
-                actual,
-            })
-        }
+        ChecksumStatus::Mismatch { expected, actual } => Some(crate::chunks::ChecksumNote {
+            offset: record.header_start,
+            typecode: record.typecode,
+            expected,
+            actual,
+        }),
         _ => None,
     };
     if let Some(warning) = checksum_warning {
@@ -1786,7 +1783,7 @@ fn parse_named_cplanes<'ctx>(
         .filter(|count| *count <= 1 << 16)
         .ok_or_else(|| {
             FramingError::structural(count_offset, "named construction-plane count is invalid")
-    })?;
+        })?;
     let mut staging = ctx.reserve_scoped(0, "Rhino named construction-plane list")?;
     let mut values = Vec::new();
     for index in 0..count {
@@ -1798,8 +1795,7 @@ fn parse_named_cplanes<'ctx>(
                 "named construction-plane record is invalid",
             ));
         }
-        let mut record_storage =
-            ctx.reserve_scoped(0, "Rhino named construction-plane record")?;
+        let mut record_storage = ctx.reserve_scoped(0, "Rhino named construction-plane record")?;
         let (id, value) = record_storage.with_storage(|| {
             Ok::<_, FramingError>((
                 ctx.format_retained(
@@ -1870,14 +1866,16 @@ pub(crate) fn install<'ctx>(
     let mut opaque_records = ScratchVec::new(ctx, "Rhino view source Vec")?;
     let mut table_source = scan.tables.iter();
     for _ in 0..table_source.len() {
-        let table = ctx.next_charged(&mut table_source, "Rhino install traversal")?
+        let table = ctx
+            .next_charged(&mut table_source, "Rhino install traversal")?
             .ok_or_else(|| CodecError::malformed("Rhino view table source ended early"))?;
         if table.typecode & !0x0000_8000 != SETTINGS {
             continue;
         }
         let mut record_source = table.records.iter();
         for _ in 0..record_source.len() {
-            let record = ctx.next_charged(&mut record_source, "Rhino install traversal")?
+            let record = ctx
+                .next_charged(&mut record_source, "Rhino install traversal")?
                 .ok_or_else(|| CodecError::malformed("Rhino view record source ended early"))?;
             if record.typecode == NAMED_CPLANES {
                 let Some(scale) = binding.neutral_scale() else {
@@ -1911,10 +1909,6 @@ pub(crate) fn install<'ctx>(
                             crate::loss::RhinoLossCode::PresentationRecordDropped,
                             format_args!("named construction-plane list at offset {} was omitted after parsing failed: {error}", record.range.start),
                             "Rhino view setting loss message")?;
-                        ctx.charge_retained(
-                            cadmpeg_core::decode::u64_from_index("VIEW/NAMED_CPLANES".len()),
-                            "Rhino view setting loss tag",
-                        )?;
                         losses.push_admitted(
                             ctx,
                             loss.with_provenance(
@@ -1950,8 +1944,7 @@ pub(crate) fn install<'ctx>(
                     )?;
                     continue;
                 };
-                let mut parsed_storage =
-                    ctx.reserve_scoped(0, "Rhino view list source records")?;
+                let mut parsed_storage = ctx.reserve_scoped(0, "Rhino view list source records")?;
                 let (parsed, parse_losses) = parse_list(
                     ctx,
                     scan.data,
@@ -1990,8 +1983,7 @@ pub(crate) fn install<'ctx>(
                     )?;
                     continue;
                 };
-                let mut parsed_storage =
-                    ctx.reserve_scoped(0, "Rhino view list source records")?;
+                let mut parsed_storage = ctx.reserve_scoped(0, "Rhino view list source records")?;
                 let (parsed, parse_losses) = parse_list(
                     ctx,
                     scan.data,
@@ -2229,22 +2221,30 @@ mod tests {
         let error = cadmpeg_test_support::refusal::resource_limit_at(
             cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
             "Rhino named construction plane ID",
-            |cap| with_materialized_limit(&bytes, cap, |ctx| {
-                super::parse_named_cplanes(
-                    ctx,
-                    &bytes,
-                    &record,
-                    archive,
-                    crate::settings::MillimeterScale::IDENTITY,
-                ).map(drop).map_err(|error| match error {
-                    FramingError::Resource(limit) => cadmpeg_core::CodecError::ResourceLimit(limit),
-                    error => panic!("unexpected construction plane failure: {error}"),
+            |cap| {
+                with_materialized_limit(&bytes, cap, |ctx| {
+                    super::parse_named_cplanes(
+                        ctx,
+                        &bytes,
+                        &record,
+                        archive,
+                        crate::settings::MillimeterScale::IDENTITY,
+                    )
+                    .map(drop)
+                    .map_err(|error| match error {
+                        FramingError::Resource(limit) => {
+                            cadmpeg_core::CodecError::ResourceLimit(limit)
+                        }
+                        error => panic!("unexpected construction plane failure: {error}"),
+                    })
                 })
-            }),
+            },
         );
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
-                && limit.operation == "Rhino named construction plane ID"));
+                && limit.operation == "Rhino named construction plane ID")
+        );
         let service_context = cadmpeg_test_support::service_decode_context();
         let (values_buffer, _values_storage) = super::parse_named_cplanes(
             &service_context,

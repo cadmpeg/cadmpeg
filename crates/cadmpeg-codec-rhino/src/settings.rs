@@ -933,53 +933,43 @@ pub(crate) struct DocumentMetadata {
 /// Refuses a group of `f64` values with a non-finite member at `offset`, the
 /// first byte of the group.
 fn finite_array<const N: usize>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     offset: usize,
     values: [f64; N],
     label: &str,
 ) -> Result<FiniteVector<N>, FramingError> {
-    FiniteVector::new(values).map_or_else(
-        || {
-            Err(FramingError::structural(
-                offset,
-                ctx.format_retained(
-                    format_args!("{label} contains a nonfinite value"),
-                    "Rhino finite_array text",
-                )?,
-            ))
-        },
-        Ok,
-    )
+    FiniteVector::new(values).ok_or_else(|| {
+        FramingError::structural(offset, format!("{label} contains a nonfinite value"))
+    })
 }
 
 /// Reads a finite point.
 pub(crate) fn point(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
 ) -> Result<Point3, FramingError> {
     let offset = reader.position();
     let values = [reader.f64()?, reader.f64()?, reader.f64()?];
-    Ok(Point3(finite_array(ctx, offset, values, "point")?))
+    Ok(Point3(finite_array(offset, values, "point")?))
 }
 
 /// Reads a finite vector.
 pub(crate) fn vector(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
 ) -> Result<Vector3, FramingError> {
     let offset = reader.position();
     let values = [reader.f64()?, reader.f64()?, reader.f64()?];
-    Ok(Vector3(finite_array(ctx, offset, values, "vector")?))
+    Ok(Vector3(finite_array(offset, values, "vector")?))
 }
 
 /// Reads a finite interval.
 pub(crate) fn interval(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
 ) -> Result<Interval, FramingError> {
     let offset = reader.position();
     let values = [reader.f64()?, reader.f64()?];
-    Ok(Interval(finite_array(ctx, offset, values, "interval")?))
+    Ok(Interval(finite_array(offset, values, "interval")?))
 }
 
 /// Reads a finite plane without reconstructing its serialized equation.
@@ -999,7 +989,6 @@ pub(crate) fn plane(
         yaxis: yaxis.0,
         zaxis: zaxis.0,
         equation: CoordinateLane::Admitted(finite_array(
-            ctx,
             equation_offset,
             equation,
             "plane equation",
@@ -1020,7 +1009,7 @@ pub(crate) fn bbox(
 
 /// Reads a finite row-major transform.
 pub(crate) fn xform(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
 ) -> Result<Xform, FramingError> {
     let offset = reader.position();
@@ -1028,7 +1017,7 @@ pub(crate) fn xform(
     for value in &mut values {
         *value = reader.f64()?;
     }
-    Ok(Xform(finite_array(ctx, offset, values, "transform")?))
+    Ok(Xform(finite_array(offset, values, "transform")?))
 }
 
 /// Decodes an archive UTF-8 string for later plugin/settings records.
@@ -1122,9 +1111,14 @@ pub(crate) fn utf16_deferred<'a>(
     ctx.charge_work(0, "validate Rhino deferred UTF-16")?;
     let mut remaining_units = bytes.len() / 2;
     while remaining_units != 0 {
-        let character = ctx.next_charged(&mut characters, "validate Rhino deferred UTF-16")?
-            .ok_or_else(|| FramingError::structural(error_offset, "invalid UTF-16 surrogate sequence"))?
-            .map_err(|_| FramingError::structural(error_offset, "invalid UTF-16 surrogate sequence"))?;
+        let character = ctx
+            .next_charged(&mut characters, "validate Rhino deferred UTF-16")?
+            .ok_or_else(|| {
+                FramingError::structural(error_offset, "invalid UTF-16 surrogate sequence")
+            })?
+            .map_err(|_| {
+                FramingError::structural(error_offset, "invalid UTF-16 surrogate sequence")
+            })?;
         // A valid supplementary character consumed both surrogate units.
         remaining_units -= character.len_utf16();
     }
@@ -1155,190 +1149,193 @@ fn parse_layer_extensions(
     archive: ArchiveVersion,
     parent_id: Option<Uuid>,
 ) -> Result<Vec<LayerPerViewportSettings>, FramingError> {
-    let outer = chunk_at(
-        data,
-        descriptor.payload_range.start,
-        descriptor.payload_range.end,
-        archive,
-        false,
-    )?;
-    if outer.short() || outer.typecode != ANONYMOUS {
-        return Err(FramingError::structural(
-            outer.header_start,
-            "layer extensions payload is not a long anonymous chunk",
-        ));
-    }
-    let mut outer_reader = BoundedReader::new(data, outer.body().start, outer.body().end)?;
-    let major = outer_reader.i32()?;
-    let minor = outer_reader.i32()?;
-    if major != 1 || minor < 0 {
-        return Err(FramingError::structural(
-            outer.body().start,
-            "layer extensions version is unsupported",
-        ));
-    }
-    let count = outer_reader.i32()?;
-    let count = checked_count_bytes(
-        count,
-        1,
-        outer_reader.remaining(),
-        MAX_ARRAY_ITEMS,
-        outer_reader.position(),
-    )?;
-    let parent_is_nil = parent_id.is_none_or(Uuid::is_nil);
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(count),
-        "Rhino layer extension entries",
-    )?;
-    let mut values = Vec::new();
-    ctx.reserve_capacity(&mut values, count, "Rhino layer extension capacity")?;
-    for _ in 0..count {
-        ctx.charge_work(1, "Rhino settings cursor traversal")?;
-        let entry = chunk_at(
+    let (values, storage) = ctx.with_scoped_storage("Rhino layer extension attempt", || {
+        let outer = chunk_at(
             data,
-            outer_reader.position(),
-            outer.body().end,
+            descriptor.payload_range.start,
+            descriptor.payload_range.end,
             archive,
             false,
         )?;
-        if entry.short() || entry.typecode != ANONYMOUS {
+        if outer.short() || outer.typecode != ANONYMOUS {
             return Err(FramingError::structural(
-                entry.header_start,
-                "layer extensions entry is not a long anonymous chunk",
+                outer.header_start,
+                "layer extensions payload is not a long anonymous chunk",
             ));
         }
-        let mut entry_reader = BoundedReader::new(data, entry.body().start, entry.body().end)?;
-        let entry_major = entry_reader.i32()?;
-        let entry_minor = entry_reader.i32()?;
-        if entry_major != 1 || entry_minor < 0 {
+        let mut outer_reader = BoundedReader::new(data, outer.body().start, outer.body().end)?;
+        let major = outer_reader.i32()?;
+        let minor = outer_reader.i32()?;
+        if major != 1 || minor < 0 {
             return Err(FramingError::structural(
-                entry.body().start,
-                "layer extensions entry version is unsupported",
+                outer.body().start,
+                "layer extensions version is unsupported",
             ));
         }
-        let bits = entry_reader.u32()?;
-        let viewport_id = if bits & LAYER_PER_VIEWPORT_ID != 0 {
-            uuid(&mut entry_reader)?
-        } else {
-            Uuid::nil()
-        };
-        let color_value = if bits & LAYER_PER_VIEWPORT_COLOR != 0 {
-            Some(color(&mut entry_reader)?)
-        } else {
-            None
-        };
-        let plot_color_value = if bits & LAYER_PER_VIEWPORT_PLOT_COLOR != 0 {
-            Some(color(&mut entry_reader)?)
-        } else {
-            None
-        };
-        let plot_weight_mm = if bits & LAYER_PER_VIEWPORT_PLOT_WEIGHT != 0 {
-            let offset = entry_reader.position();
-            let value = entry_reader.f64()?;
-            Some(LayerPlotWeight::new(value).ok_or_else(|| {
-                FramingError::structural(offset, "invalid layer per-viewport plot weight")
-            })?)
-        } else {
-            None
-        };
-        let (visible_value, compatibility_visible) = if bits & LAYER_PER_VIEWPORT_VISIBLE != 0 {
-            let offset = entry_reader.position();
-            let value = LayerVisibility::from_byte(entry_reader.u8()?).ok_or_else(|| {
-                FramingError::structural(offset, "invalid layer per-viewport visibility")
-            })?;
-            let compatibility_value = if entry_minor >= 1 {
-                let offset = entry_reader.position();
-                Some(
-                    LayerVisibility::from_byte(entry_reader.u8()?).ok_or_else(|| {
-                        FramingError::structural(
-                            offset,
-                            "invalid layer per-viewport persistent visibility",
-                        )
-                    })?,
-                )
+        let count = outer_reader.i32()?;
+        let count = checked_count_bytes(
+            count,
+            1,
+            outer_reader.remaining(),
+            MAX_ARRAY_ITEMS,
+            outer_reader.position(),
+        )?;
+        let parent_is_nil = parent_id.is_none_or(Uuid::is_nil);
+        ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(count),
+            "Rhino layer extension entries",
+        )?;
+        let mut values = Vec::new();
+        ctx.reserve_capacity(&mut values, count, "Rhino layer extension capacity")?;
+        for _ in 0..count {
+            ctx.charge_work(1, "Rhino settings cursor traversal")?;
+            let entry = chunk_at(
+                data,
+                outer_reader.position(),
+                outer.body().end,
+                archive,
+                false,
+            )?;
+            if entry.short() || entry.typecode != ANONYMOUS {
+                return Err(FramingError::structural(
+                    entry.header_start,
+                    "layer extensions entry is not a long anonymous chunk",
+                ));
+            }
+            let mut entry_reader = BoundedReader::new(data, entry.body().start, entry.body().end)?;
+            let entry_major = entry_reader.i32()?;
+            let entry_minor = entry_reader.i32()?;
+            if entry_major != 1 || entry_minor < 0 {
+                return Err(FramingError::structural(
+                    entry.body().start,
+                    "layer extensions entry version is unsupported",
+                ));
+            }
+            let bits = entry_reader.u32()?;
+            let viewport_id = if bits & LAYER_PER_VIEWPORT_ID != 0 {
+                uuid(&mut entry_reader)?
+            } else {
+                Uuid::nil()
+            };
+            let color_value = if bits & LAYER_PER_VIEWPORT_COLOR != 0 {
+                Some(color(&mut entry_reader)?)
             } else {
                 None
             };
-            (Some(value), compatibility_value)
-        } else {
-            (None, None)
-        };
-        let persistent_value =
-            if entry_minor >= 2 && bits & LAYER_PER_VIEWPORT_PERSISTENT_VISIBILITY != 0 {
-                let offset = entry_reader.position();
-                Some(
-                    LayerVisibility::from_byte(entry_reader.u8()?).ok_or_else(|| {
-                        FramingError::structural(
-                            offset,
-                            "invalid layer per-viewport persistent visibility",
-                        )
-                    })?,
-                )
+            let plot_color_value = if bits & LAYER_PER_VIEWPORT_PLOT_COLOR != 0 {
+                Some(color(&mut entry_reader)?)
             } else {
-                compatibility_visible
+                None
             };
-        entry_reader.skip_remaining()?;
+            let plot_weight_mm = if bits & LAYER_PER_VIEWPORT_PLOT_WEIGHT != 0 {
+                let offset = entry_reader.position();
+                let value = entry_reader.f64()?;
+                Some(LayerPlotWeight::new(value).ok_or_else(|| {
+                    FramingError::structural(offset, "invalid layer per-viewport plot weight")
+                })?)
+            } else {
+                None
+            };
+            let (visible_value, compatibility_visible) = if bits & LAYER_PER_VIEWPORT_VISIBLE != 0 {
+                let offset = entry_reader.position();
+                let value = LayerVisibility::from_byte(entry_reader.u8()?).ok_or_else(|| {
+                    FramingError::structural(offset, "invalid layer per-viewport visibility")
+                })?;
+                let compatibility_value = if entry_minor >= 1 {
+                    let offset = entry_reader.position();
+                    Some(
+                        LayerVisibility::from_byte(entry_reader.u8()?).ok_or_else(|| {
+                            FramingError::structural(
+                                offset,
+                                "invalid layer per-viewport persistent visibility",
+                            )
+                        })?,
+                    )
+                } else {
+                    None
+                };
+                (Some(value), compatibility_value)
+            } else {
+                (None, None)
+            };
+            let persistent_value =
+                if entry_minor >= 2 && bits & LAYER_PER_VIEWPORT_PERSISTENT_VISIBILITY != 0 {
+                    let offset = entry_reader.position();
+                    Some(
+                        LayerVisibility::from_byte(entry_reader.u8()?).ok_or_else(|| {
+                            FramingError::structural(
+                                offset,
+                                "invalid layer per-viewport persistent visibility",
+                            )
+                        })?,
+                    )
+                } else {
+                    compatibility_visible
+                };
+            entry_reader.skip_remaining()?;
 
-        let color = color_value.filter(|value| *value != [u8::MAX; 4]);
-        let plot_color = plot_color_value.filter(|value| *value != [u8::MAX; 4]);
-        let visible = visible_value;
-        let persistent_visibility = if parent_is_nil {
-            None
-        } else {
-            persistent_value
-        };
-        if !viewport_id.is_nil()
-            && (color.is_some()
-                || plot_color.is_some()
-                || plot_weight_mm.is_some()
-                || visible.is_some()
-                || persistent_visibility.is_some())
-        {
-            values.push(LayerPerViewportSettings {
-                viewport_id,
-                color,
-                plot_color,
-                plot_weight_mm,
-                visible,
-                persistent_visibility,
-            });
+            let color = color_value.filter(|value| *value != [u8::MAX; 4]);
+            let plot_color = plot_color_value.filter(|value| *value != [u8::MAX; 4]);
+            let visible = visible_value;
+            let persistent_visibility = if parent_is_nil {
+                None
+            } else {
+                persistent_value
+            };
+            if !viewport_id.is_nil()
+                && (color.is_some()
+                    || plot_color.is_some()
+                    || plot_weight_mm.is_some()
+                    || visible.is_some()
+                    || persistent_visibility.is_some())
+            {
+                values.push(LayerPerViewportSettings {
+                    viewport_id,
+                    color,
+                    plot_color,
+                    plot_weight_mm,
+                    visible,
+                    persistent_visibility,
+                });
+            }
+            outer_reader.skip(entry.next_offset() - outer_reader.position())?;
         }
-        outer_reader.skip(entry.next_offset() - outer_reader.position())?;
-    }
-    outer_reader.skip_remaining()?;
-    ctx.stable_sort_by(
-        &mut values,
-        |value| value,
-        |a, b| {
-            a.viewport_id
-                .cmp(&b.viewport_id)
-                .then_with(|| a.settings_mask().cmp(&b.settings_mask()))
-                .then_with(|| a.visible.cmp(&b.visible))
-                .then_with(|| a.persistent_visibility.cmp(&b.persistent_visibility))
-                .then_with(|| {
-                    a.color
-                        // endian-exception: packed-color-order
-                        .map(u32::from_le_bytes)
-                        // endian-exception: packed-color-order
-                        .cmp(&b.color.map(u32::from_le_bytes))
-                })
-                .then_with(|| {
-                    a.plot_color
-                        // endian-exception: packed-color-order
-                        .map(u32::from_le_bytes)
-                        // endian-exception: packed-color-order
-                        .cmp(&b.plot_color.map(u32::from_le_bytes))
-                })
-                .then_with(|| match (a.plot_weight_mm, b.plot_weight_mm) {
-                    (Some(a), Some(b)) => a.get().total_cmp(&b.get()),
-                    (None, None) => std::cmp::Ordering::Equal,
-                    (None, Some(_)) => std::cmp::Ordering::Less,
-                    (Some(_), None) => std::cmp::Ordering::Greater,
-                })
-        },
-        "Rhino layer per-viewport settings sort",
-    )?;
-    Ok(values)
+        outer_reader.skip_remaining()?;
+        ctx.stable_sort_by(
+            &mut values,
+            |value| value,
+            |a, b| {
+                a.viewport_id
+                    .cmp(&b.viewport_id)
+                    .then_with(|| a.settings_mask().cmp(&b.settings_mask()))
+                    .then_with(|| a.visible.cmp(&b.visible))
+                    .then_with(|| a.persistent_visibility.cmp(&b.persistent_visibility))
+                    .then_with(|| {
+                        a.color
+                            // endian-exception: packed-color-order
+                            .map(u32::from_le_bytes)
+                            // endian-exception: packed-color-order
+                            .cmp(&b.color.map(u32::from_le_bytes))
+                    })
+                    .then_with(|| {
+                        a.plot_color
+                            // endian-exception: packed-color-order
+                            .map(u32::from_le_bytes)
+                            // endian-exception: packed-color-order
+                            .cmp(&b.plot_color.map(u32::from_le_bytes))
+                    })
+                    .then_with(|| match (a.plot_weight_mm, b.plot_weight_mm) {
+                        (Some(a), Some(b)) => a.get().total_cmp(&b.get()),
+                        (None, None) => std::cmp::Ordering::Equal,
+                        (None, Some(_)) => std::cmp::Ordering::Less,
+                        (Some(_), None) => std::cmp::Ordering::Greater,
+                    })
+            },
+            "Rhino layer per-viewport settings sort",
+        )?;
+        Ok(values)
+    })?;
+    Ok(storage.commit_value(values)?)
 }
 
 fn packed(reader: &mut BoundedReader<'_>) -> Result<(u8, u8), FramingError> {
@@ -1354,26 +1351,14 @@ fn times(reader: &mut BoundedReader<'_>) -> Result<UtcTime, FramingError> {
     Ok(UtcTime { fields })
 }
 
-fn short_index(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    record: &Record,
-    label: &str,
-) -> Result<i64, FramingError> {
+fn short_index(record: &Record, label: &str) -> Result<i64, FramingError> {
     record
         .short_value()
         .filter(|value| (-1..=i64::from(i32::MAX)).contains(value))
-        .map_or_else(
-            || {
-                Err(FramingError::Structural {
-                    offset: record.range.start,
-                    message: ctx.format_retained(
-                        format_args!("{label} is not a valid short index"),
-                        "Rhino short_index text",
-                    )?,
-                })
-            },
-            Ok,
-        )
+        .ok_or_else(|| FramingError::Structural {
+            offset: record.range.start,
+            message: format!("{label} is not a valid short index"),
+        })
 }
 
 fn parse_revision(
@@ -1569,7 +1554,6 @@ fn parse_units_reader(
 }
 
 fn anonymous_payload<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &'a [u8],
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
@@ -1580,10 +1564,7 @@ fn anonymous_payload<'a>(
     if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(FramingError::structural(
             start,
-            ctx.format_retained(
-                format_args!("{label} must be a long anonymous chunk"),
-                "Rhino anonymous_payload text",
-            )?,
+            format!("{label} must be a long anonymous chunk"),
         ));
     }
     let payload = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
@@ -1592,7 +1573,6 @@ fn anonymous_payload<'a>(
 }
 
 fn anonymous_version(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     label: &str,
 ) -> Result<(i32, i32), FramingError> {
@@ -1600,10 +1580,7 @@ fn anonymous_version(
     if version.0 != 1 || version.1 < 0 {
         return Err(FramingError::structural(
             reader.position(),
-            ctx.format_retained(
-                format_args!("{label} version is unsupported"),
-                "Rhino anonymous_version text",
-            )?,
+            format!("{label} version is unsupported"),
         ));
     }
     Ok(version)
@@ -1615,8 +1592,8 @@ fn parse_plugin_reference<'a>(
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
 ) -> Result<(), FramingError> {
-    let (mut payload, _) = anonymous_payload(ctx, data, reader, archive, "plugin reference")?;
-    let version = anonymous_version(ctx, &mut payload, "plugin reference")?;
+    let (mut payload, _) = anonymous_payload(data, reader, archive, "plugin reference")?;
+    let version = anonymous_version(&mut payload, "plugin reference")?;
     uuid(&mut payload)?;
     payload.i32()?;
     for _ in 0..3 {
@@ -1673,8 +1650,8 @@ fn parse_earth_anchor<'a>(
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
 ) -> Result<(), FramingError> {
-    let (mut payload, _) = anonymous_payload(ctx, data, reader, archive, "earth anchor")?;
-    let version = anonymous_version(ctx, &mut payload, "earth anchor")?;
+    let (mut payload, _) = anonymous_payload(data, reader, archive, "earth anchor")?;
+    let version = anonymous_version(&mut payload, "earth anchor")?;
     for _ in 0..3 {
         payload.f64()?;
     }
@@ -1696,13 +1673,12 @@ fn parse_earth_anchor<'a>(
 }
 
 fn parse_io_settings<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &'a [u8],
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
 ) -> Result<(), FramingError> {
-    let (mut payload, _) = anonymous_payload(ctx, data, reader, archive, "IO settings")?;
-    anonymous_version(ctx, &mut payload, "IO settings")?;
+    let (mut payload, _) = anonymous_payload(data, reader, archive, "IO settings")?;
+    anonymous_version(&mut payload, "IO settings")?;
     payload.bool()?;
     payload.i32()?;
     payload.skip_remaining()?;
@@ -1710,14 +1686,12 @@ fn parse_io_settings<'a>(
 }
 
 fn parse_subd_display_parameters<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &'a [u8],
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
 ) -> Result<SubDDisplayParameters, FramingError> {
-    let (mut payload, _) =
-        anonymous_payload(ctx, data, reader, archive, "SubD display parameters")?;
-    let version = anonymous_version(ctx, &mut payload, "SubD display parameters")?.1;
+    let (mut payload, _) = anonymous_payload(data, reader, archive, "SubD display parameters")?;
+    let version = anonymous_version(&mut payload, "SubD display parameters")?.1;
     let display_density = payload.i32()?.cast_unsigned();
     let mesh_location = payload.i32()?.cast_unsigned();
     let display_density_is_absolute = if version >= 2 {
@@ -1794,7 +1768,7 @@ pub(crate) fn parse_mesh_parameters<'a>(
         None
     };
     let subd = if version.1 >= 5 {
-        Some(parse_subd_display_parameters(ctx, data, reader, archive)?)
+        Some(parse_subd_display_parameters(data, reader, archive)?)
     } else {
         None
     };
@@ -1849,14 +1823,9 @@ fn parse_settings_attributes(
         reader.i32()?;
     }
     if version.1 >= 1 {
-        let (mut payload, _) = anonymous_payload(
-            ctx,
-            data,
-            &mut reader,
-            archive,
-            "settings-attributes page units",
-        )?;
-        anonymous_version(ctx, &mut payload, "settings-attributes page-units wrapper")?;
+        let (mut payload, _) =
+            anonymous_payload(data, &mut reader, archive, "settings-attributes page units")?;
+        anonymous_version(&mut payload, "settings-attributes page-units wrapper")?;
         parse_units_reader(ctx, &mut payload, false)?;
     }
     if version.1 >= 2 {
@@ -1870,7 +1839,7 @@ fn parse_settings_attributes(
         reader.bool()?;
     }
     if version.1 >= 5 {
-        parse_io_settings(ctx, data, &mut reader, archive)?;
+        parse_io_settings(data, &mut reader, archive)?;
     }
     if version.1 >= 6 {
         parse_mesh_parameters(ctx, data, &mut reader, archive, false)?;
@@ -1938,9 +1907,8 @@ pub(crate) fn parse_rendering_attributes(
     )?;
     let count = count_bytes;
     let mut child_storage = ctx.reserve_scoped(0, "Rhino rendering child ranges")?;
-    let mut children = child_storage.with_storage(|| {
-        ctx.collection_vec(count, "Rhino rendering material references")
-    })?;
+    let mut children = child_storage
+        .with_storage(|| ctx.collection_vec(count, "Rhino rendering material references"))?;
     for _ in 0..count {
         ctx.charge_work(1, "Rhino settings cursor traversal")?;
         let material =
@@ -2066,8 +2034,7 @@ pub(crate) fn parse_rendering_attributes(
                 MAX_ARRAY_ITEMS,
                 mapping_payload.position(),
             )?;
-            let mut channel_storage =
-                ctx.reserve_scoped(0, "Rhino rendering channel ranges")?;
+            let mut channel_storage = ctx.reserve_scoped(0, "Rhino rendering channel ranges")?;
             let mut channels = channel_storage.with_storage(|| {
                 ctx.collection_vec(channel_count, "Rhino rendering mapping channels")
             })?;
@@ -2153,7 +2120,6 @@ pub(crate) fn parse_rendering_attributes(
 }
 
 fn begin_direct_object<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &'a [u8],
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
@@ -2163,10 +2129,7 @@ fn begin_direct_object<'a>(
     if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(FramingError::structural(
             reader.position(),
-            ctx.format_retained(
-                format_args!("{label} must be an object chunk"),
-                "Rhino begin_direct_object text",
-            )?,
+            format!("{label} must be an object chunk"),
         ));
     }
     let mut payload = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
@@ -2235,7 +2198,7 @@ pub(crate) fn parse_direct_linetype<'a>(
     warnings: &mut Diagnostics,
 ) -> Result<EmbeddedDescriptor, FramingError> {
     let (chunk, mut payload, version) =
-        begin_direct_object(ctx, data, reader, archive, "embedded linetype")?;
+        begin_direct_object(data, reader, archive, "embedded linetype")?;
     if (archive.value() < 60 && version != (1, 1))
         || (archive.value() >= 60 && (version.0 != 2 || version.1 < 1))
     {
@@ -2255,9 +2218,8 @@ pub(crate) fn parse_direct_linetype<'a>(
         }
     } else {
         // The version-two grammar has exactly one checksum child.
-        children = child_storage.with_storage(|| {
-            ctx.collection_vec(1, "Rhino embedded linetype checksum children")
-        })?;
+        children = child_storage
+            .with_storage(|| ctx.collection_vec(1, "Rhino embedded linetype checksum children"))?;
         children.push(skip_model_attributes(
             ctx,
             data,
@@ -2339,18 +2301,16 @@ pub(crate) fn parse_direct_section_style<'a>(
     warnings: &mut Diagnostics,
 ) -> Result<EmbeddedDescriptor, FramingError> {
     let (chunk, mut payload, version) =
-        begin_direct_object(ctx, data, reader, archive, "embedded section style")?;
+        begin_direct_object(data, reader, archive, "embedded section style")?;
     if version.0 != 1 {
         return Err(FramingError::structural(
             payload.position(),
             "unsupported embedded section-style version",
         ));
     }
-    let mut child_storage =
-        ctx.reserve_scoped(0, "Rhino embedded section-style child ranges")?;
-    let mut children = child_storage.with_storage(|| {
-        ctx.collection_vec(1, "Rhino embedded section-style checksum children")
-    })?;
+    let mut child_storage = ctx.reserve_scoped(0, "Rhino embedded section-style child ranges")?;
+    let mut children = child_storage
+        .with_storage(|| ctx.collection_vec(1, "Rhino embedded section-style checksum children"))?;
     children.push(skip_model_attributes(
         ctx,
         data,
@@ -2523,10 +2483,7 @@ fn parse_layer(
     if class.class_uuid != ON_LAYER_UUID {
         return Err(FramingError::Structural {
             offset: record.range.start,
-            message: ctx.format_retained(
-                format_args!("layer record has class UUID {}", class.class_uuid),
-                "Rhino parse_layer text",
-            )?,
+            message: format!("layer record has class UUID {}", class.class_uuid),
         });
     }
     let mut reader = BoundedReader::new(
@@ -2826,6 +2783,9 @@ pub(crate) fn parse_metadata(
     tables: &[Table],
     warnings: &mut Diagnostics,
 ) -> Result<DocumentMetadata, CodecError> {
+    let mut property_storages =
+        std::array::from_fn::<_, { PROPERTY_SINGLETONS.len() }, _>(|_| None);
+    let mut setting_storages = std::array::from_fn::<_, { SETTING_SINGLETONS.len() }, _>(|_| None);
     let mut metadata = DocumentMetadata::default();
     let mut id_workspace = ctx.reserve_scoped(0, "Rhino layer UUID workspace")?;
     let mut ids = HashSet::<Uuid>::new();
@@ -2834,12 +2794,14 @@ pub(crate) fn parse_metadata(
     let mut opaque_records = Vec::new();
     let mut table_source = tables.iter();
     for _ in 0..table_source.len() {
-        let table = ctx.next_charged(&mut table_source, "Rhino parse metadata traversal")?
+        let table = ctx
+            .next_charged(&mut table_source, "Rhino parse metadata traversal")?
             .ok_or_else(|| CodecError::malformed("Rhino metadata table source ended early"))?;
         let table_type = table.typecode & !0x0000_8000;
         let mut record_source = table.records.iter();
         for _ in 0..record_source.len() {
-            let record = ctx.next_charged(&mut record_source, "Rhino parse metadata traversal")?
+            let record = ctx
+                .next_charged(&mut record_source, "Rhino parse metadata traversal")?
                 .ok_or_else(|| CodecError::malformed("Rhino metadata record source ended early"))?;
             // The singleton lists are constants, so finding a record's slot
             // and remembering that it was seen is fixed work.
@@ -2857,40 +2819,68 @@ pub(crate) fn parse_metadata(
                 _ => None,
             };
             let duplicate_singleton = singleton.as_deref().copied().unwrap_or(false);
-            let result = if table_type == PROPERTIES {
-                match record.typecode {
-                    WRITER_VERSION => {
-                        if let Some(value) = record.short_value() {
-                            metadata.properties.writer_version = Some(value);
+            let storage_slot = match table_type {
+                PROPERTIES => PROPERTY_SINGLETONS
+                    .iter()
+                    .position(|code| *code == record.typecode)
+                    .map(|slot| &mut property_storages[slot]),
+                SETTINGS => SETTING_SINGLETONS
+                    .iter()
+                    .position(|code| *code == record.typecode)
+                    .map(|slot| &mut setting_storages[slot]),
+                _ => None,
+            };
+            let parse_singleton = |metadata: &mut DocumentMetadata| {
+                if table_type == PROPERTIES {
+                    match record.typecode {
+                        WRITER_VERSION => {
+                            if let Some(value) = record.short_value() {
+                                metadata.properties.writer_version = Some(value);
+                            }
+                            Ok(())
                         }
-                        Ok(())
+                        REVISION_HISTORY => parse_revision(ctx, data, record)
+                            .map(|value| metadata.properties.revision_history = Some(value)),
+                        NOTES => parse_notes(ctx, data, record)
+                            .map(|value| metadata.properties.notes = Some(value)),
+                        APPLICATION => parse_application(ctx, data, record)
+                            .map(|value| metadata.properties.application = Some(value)),
+                        AS_FILE_NAME => utf16_record(ctx, data, record, "Rhino as-file name")
+                            .map(|value| metadata.properties.as_file_name = Some(value)),
+                        PREVIEW | COMPRESSED_PREVIEW => {
+                            ctx.reserve_vec(
+                                &mut metadata.properties.previews,
+                                1,
+                                "Rhino property previews",
+                            )?;
+                            metadata.properties.previews.push(PreviewDescriptor {
+                                source: SourceRange {
+                                    range: record.range.clone(),
+                                },
+                                compressed: record.typecode == COMPRESSED_PREVIEW,
+                            });
+                            Ok(())
+                        }
+                        _ => Ok(()),
                     }
-                    REVISION_HISTORY => parse_revision(ctx, data, record)
-                        .map(|value| metadata.properties.revision_history = Some(value)),
-                    NOTES => parse_notes(ctx, data, record)
-                        .map(|value| metadata.properties.notes = Some(value)),
-                    APPLICATION => parse_application(ctx, data, record)
-                        .map(|value| metadata.properties.application = Some(value)),
-                    AS_FILE_NAME => utf16_record(ctx, data, record, "Rhino as-file name")
-                        .map(|value| metadata.properties.as_file_name = Some(value)),
-                    PREVIEW | COMPRESSED_PREVIEW => {
-                        ctx.reserve_vec(
-                            &mut metadata.properties.previews,
-                            1,
-                            "Rhino property previews",
-                        )?;
-                        metadata.properties.previews.push(PreviewDescriptor {
-                            source: SourceRange {
-                                range: record.range.clone(),
-                            },
-                            compressed: record.typecode == COMPRESSED_PREVIEW,
-                        });
-                        Ok(())
-                    }
-                    _ => Ok(()),
+                } else if table_type == SETTINGS {
+                    parse_setting(ctx, data, record, &mut metadata.settings, archive)
+                } else {
+                    Ok(())
                 }
-            } else if table_type == SETTINGS {
-                parse_setting(ctx, data, record, &mut metadata.settings, archive)
+            };
+            let result = if let Some(storage_slot) = storage_slot {
+                let mut attempt = ctx.reserve_scoped(0, "Rhino singleton metadata attempt")?;
+                let result = attempt.with_storage(|| parse_singleton(&mut metadata));
+                if result.is_ok() {
+                    // Assignment dropped the replaced value before its old storage is released.
+                    *storage_slot = Some(attempt);
+                } else {
+                    drop(attempt);
+                }
+                result
+            } else if matches!(table_type, PROPERTIES | SETTINGS) {
+                parse_singleton(&mut metadata)
             } else if table_type == LAYER && record.typecode == LAYER_RECORD {
                 let writer_version = metadata.properties.writer_version;
                 match parse_layer(
@@ -2979,7 +2969,8 @@ pub(crate) fn parse_metadata(
     let layer_index_counts = layer_index_counts_buffer;
     let mut index_source = layer_index_counts.iter();
     for _ in 0..index_source.len() {
-        let &(index, count) = ctx.next_charged(&mut index_source, "Rhino layer index count traversal")?
+        let &(index, count) = ctx
+            .next_charged(&mut index_source, "Rhino layer index count traversal")?
             .ok_or_else(|| CodecError::malformed("Rhino layer index source ended early"))?;
         if count > 1 {
             warnings.push_coded_admitted(ctx,
@@ -2992,7 +2983,15 @@ pub(crate) fn parse_metadata(
     }
     metadata.opaque_records = opaque_records;
     report_layer_parent_references(ctx, &metadata.layers, warnings)?;
-    Ok(metadata)
+    let mut storage = ctx.reserve_scoped(0, "Rhino singleton metadata output")?;
+    for reservation in property_storages
+        .iter_mut()
+        .chain(setting_storages.iter_mut())
+        .flatten()
+    {
+        storage.absorb(reservation)?;
+    }
+    Ok(storage.commit_value(metadata)?)
 }
 
 /// Records a layer UUID in the table of UUIDs seen so far and returns whether
@@ -3097,7 +3096,11 @@ fn report_layer_parent_references(
     let mut id_counts = HashMap::<Uuid, usize>::new();
     let mut layer_source = layers.iter();
     for _ in 0..layer_source.len() {
-        let layer = ctx.next_charged(&mut layer_source, "Rhino report layer parent references traversal")?
+        let layer = ctx
+            .next_charged(
+                &mut layer_source,
+                "Rhino report layer parent references traversal",
+            )?
             .ok_or_else(|| CodecError::malformed("Rhino layer parent source ended early"))?;
         if let Some(id) = layer.id.filter(|id| !id.is_nil()) {
             let count = workspace
@@ -3110,7 +3113,11 @@ fn report_layer_parent_references(
     }
     let mut layer_source = layers.iter();
     for _ in 0..layer_source.len() {
-        let layer = ctx.next_charged(&mut layer_source, "Rhino report layer parent references traversal")?
+        let layer = ctx
+            .next_charged(
+                &mut layer_source,
+                "Rhino report layer parent references traversal",
+            )?
             .ok_or_else(|| CodecError::malformed("Rhino layer parent source ended early"))?;
         let Some(parent) = layer
             .hierarchy
@@ -3162,7 +3169,7 @@ fn parse_setting(
         RENDER_MESH | ANALYSIS_MESH => parse_mesh_record(ctx, data, record, archive),
         ATTRIBUTES => parse_settings_attributes(ctx, data, record, archive),
         CURRENT_LAYER => {
-            settings.current_layer = Some(short_index(ctx, record, "current layer")?);
+            settings.current_layer = Some(short_index(record, "current layer")?);
             Ok(())
         }
         CURRENT_MATERIAL => {
@@ -3200,11 +3207,11 @@ fn parse_setting(
             Ok(())
         }
         CURRENT_FONT => {
-            settings.current_font = Some(short_index(ctx, record, "current font")?);
+            settings.current_font = Some(short_index(record, "current font")?);
             Ok(())
         }
         CURRENT_DIMSTYLE => {
-            settings.current_dimstyle = Some(short_index(ctx, record, "current dimstyle")?);
+            settings.current_dimstyle = Some(short_index(record, "current dimstyle")?);
             Ok(())
         }
         MODEL_URL => utf16_record(ctx, data, record, "Rhino model URL")
