@@ -501,8 +501,8 @@ fn assert_primitive_retained_refusal(operation: &str) {
 }
 
 #[test]
-fn gui_appearance_identity_copy_refuses_at_retained_limit() {
-    assert_primitive_retained_refusal("FCStd GUI appearance identity copy");
+fn gui_appearance_identity_refuses_at_retained_limit() {
+    assert_primitive_retained_refusal("FCStd GUI edge appearance identity");
 }
 
 #[test]
@@ -833,45 +833,13 @@ fn gui_property_identity_refuses_at_retained_limit() {
 }
 
 #[test]
-fn gui_provider_identity_refuses_at_materialized_limit() {
-    let text =
-        r#"<ViewProvider name="Provider With Spaces"><Properties Count="0"/></ViewProvider>"#;
-    let xml = roxmltree::Document::parse(text).expect("GUI provider XML");
-    let error = crate::test_support::refusal_at(
-        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
-        text.as_bytes(),
-        "FreeCAD native identity",
-        |ctx| {
-            let error = super::super::append_native_provider(
-                ctx,
-                text,
-                xml.root_element(),
-                0,
-                None,
-                &mut Vec::new(),
-                &mut Vec::new(),
-            )
-            .expect_err("provider identity must charge before construction");
-            Err::<(), cadmpeg_core::CodecError>(error)
-        },
-    );
-
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
-        if failure.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
-            && failure.operation == "FreeCAD native identity"),
-        "{error:?}"
-    );
-}
-
-#[test]
-fn gui_provider_record_identity_copy_refuses_at_retained_limit() {
+fn gui_provider_record_identity_refuses_at_retained_limit() {
     let text =
         r#"<ViewProvider name="Provider With Spaces"><Properties Count="0"/></ViewProvider>"#;
     let xml = roxmltree::Document::parse(text).expect("GUI provider XML");
     crate::test_support::assert_retained_refusal_at(
         text.as_bytes(),
-        "FCStd GUI provider record identity",
+        "FreeCAD native identity",
         |ctx| {
             super::super::append_native_provider(
                 ctx,
