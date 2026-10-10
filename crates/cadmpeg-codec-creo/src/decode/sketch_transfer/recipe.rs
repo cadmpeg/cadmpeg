@@ -9,7 +9,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{AngularTermination, RevolveExtent};
 #[cfg(test)]
 use std::collections::BTreeMap;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
 
 pub(in super::super) fn feature_recipe(
     ctx: &DecodeContext<'_>,
@@ -83,23 +83,10 @@ pub(in super::super) fn feature_is_first_material_operation(
     scan: &ContainerScan,
     feature_id: u32,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    let mut storage = ctx.reserve_scoped(0, "creo first material indexes")?;
-    let mut unique_operations = HashMap::new();
-    for operation in ctx.admit_iter(
-        &scan.features.operations,
+    let (unique_operations, _operation_storage) = ctx.unique_index(
+        scan.features.operations.iter().map(|row| (row.feature_id, row)),
         "creo first material identity rows",
-    )? {
-        storage.with_storage(|| {
-            ctx.entry_hash_map(
-                &mut unique_operations,
-                operation.feature_id,
-                "creo first material operation identities",
-            )?
-            .and_modify(|unique| *unique = false)
-            .or_insert(true);
-            Ok::<_, CodecError>(())
-        })?;
-    }
+    )?;
     let mut transforms_by_feature = None;
     let mut target_offset = None;
     let mut earliest_other_offset: Option<usize> = None;
@@ -108,7 +95,7 @@ pub(in super::super) fn feature_is_first_material_operation(
         "creo first material operation rows",
     )? {
         let candidate = operation.feature_id;
-        if unique_operations.get(&candidate) != Some(&true) {
+        if unique_operations.get(&candidate).is_none_or(Option::is_none) {
             continue;
         }
         let recipe_is_material = operation.recipe.resolved().is_some_and(|recipe| {
@@ -127,30 +114,15 @@ pub(in super::super) fn feature_is_first_material_operation(
             continue;
         }
         if transforms_by_feature.is_none() {
-            let mut transforms = HashMap::new();
-            for transform in ctx.admit_iter(
-                &scan.features.section_transforms,
-                "creo first material section transforms",
-            )? {
-                let Some(id) = transform.feature_id else {
-                    continue;
-                };
-                storage.with_storage(|| {
-                    ctx.entry_hash_map(
-                        &mut transforms,
-                        id,
-                        "creo first material transform identities",
-                    )?
-                    .and_modify(|unique| *unique = None)
-                    .or_insert(Some(transform));
-                    Ok::<_, CodecError>(())
-                })?;
-            }
-            transforms_by_feature = Some(transforms);
+            transforms_by_feature = Some(ctx.unique_index(
+                ctx.admit_iter(&scan.features.section_transforms, "creo first material section transforms")?
+                    .filter_map(|row| row.feature_id.map(|id| (id, row))),
+                "creo first material transform identities",
+            )?);
         }
         let Some(transform) = transforms_by_feature
             .as_ref()
-            .and_then(|transforms| transforms.get(&candidate))
+            .and_then(|(transforms, _storage)| transforms.get(&candidate))
             .copied()
             .flatten()
         else {
