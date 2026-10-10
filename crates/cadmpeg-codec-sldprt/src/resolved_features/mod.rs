@@ -71,7 +71,9 @@ fn sorted_classes<'l>(
 ) -> Result<Vec<&'l crate::records::FeatureInputClass>, cadmpeg_core::CodecError> {
     let mut classes = Vec::new();
     for class in ctx.admit_iter(&lane.classes, operation)? {
-        if ctx.equal(class.name.as_str(), name, operation)? {
+        // Every caller selects a fixed grammar class; the admitted lane
+        // traversal owns the variable work, not this bounded comparison.
+        if class.name == name {
             storage.with_storage(|| ctx.push_vec(&mut classes, class, operation))?;
         }
     }
@@ -213,3 +215,6 @@ pub(crate) mod validate;
 mod write_generate;
 
 pub(crate) mod write_prepare;
+
+#[cfg(test)]
+mod class_filter_tests;
