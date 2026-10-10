@@ -213,3 +213,24 @@ fn shell_connectivity_keeps_shared_vertex_storage_proportional_to_faces() {
     drop(ctx.reserve_scoped(scratch_bound, "shell incidence scopes released").unwrap());
     ctx.finish_session().unwrap();
 }
+
+#[test]
+fn shell_connectivity_admits_one_incidence_before_child_work() {
+    let ir = crate::examples::unit_cube().unwrap();
+    let run = |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+        let mut findings = Vec::new();
+        let result = super::check_shell_connectivity(&ctx, &ir, &mut findings);
+        assert!(findings.is_empty());
+        result
+    };
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits, "shell connectivity incidence scan", run,
+    );
+    let CodecError::ResourceLimit(limit) = error else { panic!("incidence traversal refusal"); };
+    assert_eq!(limit.additional, 1); // Only the first incidence precedes its child work.
+    run(u64::MAX).unwrap();
+}
