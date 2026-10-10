@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::sab::Token;
-use cadmpeg_core::decode::{u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{
+    u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
+};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use std::mem::size_of;
@@ -12,11 +14,23 @@ fn surface_cache_keeps_only_the_selected_candidate_and_its_actual_retained_backi
     tokens.extend(super::rectangular_surface_tokens(false));
     // The final candidate has a 512 by 2 grid but no coordinates.
     tokens.extend([
-        Token::Ident("nubs".into()), Token::Long(1), Token::Long(1),
-        Token::Enum(0), Token::Enum(0), Token::Enum(0), Token::Enum(0),
-        Token::Long(2), Token::Long(2),
-        Token::Double(0.0), Token::Long(256), Token::Double(1.0), Token::Long(256),
-        Token::Double(0.0), Token::Long(1), Token::Double(1.0), Token::Long(1),
+        Token::Ident("nubs".into()),
+        Token::Long(1),
+        Token::Long(1),
+        Token::Enum(0),
+        Token::Enum(0),
+        Token::Enum(0),
+        Token::Enum(0),
+        Token::Long(2),
+        Token::Long(2),
+        Token::Double(0.0),
+        Token::Long(256),
+        Token::Double(1.0),
+        Token::Long(256),
+        Token::Double(0.0),
+        Token::Long(1),
+        Token::Double(1.0),
+        Token::Long(1),
         Token::SubtypeClose,
     ]);
     let marker_bytes = 4 * size_of::<usize>();
@@ -26,11 +40,12 @@ fn surface_cache_keeps_only_the_selected_candidate_and_its_actual_retained_backi
     let peak = u64_from_index(marker_bytes + knot_bytes + rows_bytes + 512 * row_bytes);
     // The selected 2 by 3 surface keeps four U knots, five V knots, two
     // row slots and six already-admitted poles, with no lane copies.
-    let retained = u64_from_index(9 * size_of::<f64>()
-        + 2 * size_of::<Vec<FinitePoint3>>() + 6 * size_of::<FinitePoint3>());
-    for (material_cap, retained_cap) in [
-        (peak - 1, retained), (peak, retained - 1), (peak, retained),
-    ] {
+    let retained = u64_from_index(
+        9 * size_of::<f64>() + 2 * size_of::<Vec<FinitePoint3>>() + 6 * size_of::<FinitePoint3>(),
+    );
+    for (material_cap, retained_cap) in
+        [(peak - 1, retained), (peak, retained - 1), (peak, retained)]
+    {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_materialized_bytes = material_cap;
@@ -38,21 +53,31 @@ fn surface_cache_keeps_only_the_selected_candidate_and_its_actual_retained_backi
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = super::super::surface_cache(&ctx, &tokens).transpose();
         if material_cap < peak || retained_cap < retained {
-            let first = match result {
-                Err(CodecError::ResourceLimit(first)) => first,
-                _ => panic!("expected actual candidate allocation or selected output refusal"),
+            let Err(CodecError::ResourceLimit(first)) = result else {
+                panic!("expected actual candidate allocation or selected output refusal");
             };
             if material_cap < peak {
                 assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
                 assert_eq!(first.operation, "ASM NURBS grid row poles");
-                assert_eq!((first.limit, first.used, first.additional),
-                    (material_cap, peak - u64_from_index(row_bytes), u64_from_index(row_bytes)));
+                assert_eq!(
+                    (first.limit, first.used, first.additional),
+                    (
+                        material_cap,
+                        peak - u64_from_index(row_bytes),
+                        u64_from_index(row_bytes)
+                    )
+                );
             } else {
                 assert_eq!(first.dimension, ResourceDimension::RetainedBytes);
                 assert_eq!(first.operation, "ASM surface cache candidate");
-                assert_eq!((first.limit, first.used, first.additional), (retained_cap, 0, retained));
+                assert_eq!(
+                    (first.limit, first.used, first.additional),
+                    (retained_cap, 0, retained)
+                );
             }
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
+            );
         } else {
             let selected = result.unwrap().unwrap();
             assert_eq!((selected.u_count(), selected.v_count()), (2, 3));
@@ -60,7 +85,9 @@ fn surface_cache_keeps_only_the_selected_candidate_and_its_actual_retained_backi
             assert_eq!(selected.v_knots().as_slice(), [0.0, 0.0, 1.0, 2.0, 2.0]);
             // Keep the selected actual surface alive. Discarded candidates
             // and the marker index must no longer occupy materialized bytes.
-            let available = ctx.reserve_scoped(peak, "discarded surface candidates released").unwrap();
+            let available = ctx
+                .reserve_scoped(peak, "discarded surface candidates released")
+                .unwrap();
             drop(available);
             drop(selected);
             ctx.finish_session().unwrap();
@@ -72,11 +99,23 @@ fn surface_cache_keeps_only_the_selected_candidate_and_its_actual_retained_backi
 fn owned_surface_cache_discards_failed_forward_candidates_before_retaining_the_winner() {
     let mut tokens = vec![Token::SubtypeOpen, Token::Ident("carrier".into())];
     tokens.extend([
-        Token::Ident("nubs".into()), Token::Long(1), Token::Long(1),
-        Token::Enum(0), Token::Enum(0), Token::Enum(0), Token::Enum(0),
-        Token::Long(2), Token::Long(2),
-        Token::Double(0.0), Token::Long(256), Token::Double(1.0), Token::Long(256),
-        Token::Double(0.0), Token::Long(1), Token::Double(1.0), Token::Long(1),
+        Token::Ident("nubs".into()),
+        Token::Long(1),
+        Token::Long(1),
+        Token::Enum(0),
+        Token::Enum(0),
+        Token::Enum(0),
+        Token::Enum(0),
+        Token::Long(2),
+        Token::Long(2),
+        Token::Double(0.0),
+        Token::Long(256),
+        Token::Double(1.0),
+        Token::Long(256),
+        Token::Double(0.0),
+        Token::Long(1),
+        Token::Double(1.0),
+        Token::Long(1),
     ]);
     tokens.extend(super::rectangular_surface_tokens(false));
     tokens.push(Token::SubtypeClose);
@@ -85,38 +124,55 @@ fn owned_surface_cache_discards_failed_forward_candidates_before_retaining_the_w
     let rows_bytes = 512 * size_of::<Vec<FinitePoint3>>();
     let row_bytes = 2 * size_of::<FinitePoint3>();
     let peak = u64_from_index(marker_bytes + knot_bytes + rows_bytes + 512 * row_bytes);
-    let retained = u64_from_index(9 * size_of::<f64>()
-        + 2 * size_of::<Vec<FinitePoint3>>() + 6 * size_of::<FinitePoint3>());
-    for (material_cap, retained_cap) in [(peak - 1, retained), (peak, retained - 1), (peak, retained)] {
+    let retained = u64_from_index(
+        9 * size_of::<f64>() + 2 * size_of::<Vec<FinitePoint3>>() + 6 * size_of::<FinitePoint3>(),
+    );
+    for (material_cap, retained_cap) in
+        [(peak - 1, retained), (peak, retained - 1), (peak, retained)]
+    {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_materialized_bytes = material_cap;
         policy.limits.max_retained_bytes = retained_cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let scope = crate::nurbs::toks::subtype_span(&ctx, &tokens, 0).unwrap().unwrap();
+        let scope = crate::nurbs::toks::subtype_span(&ctx, &tokens, 0)
+            .unwrap()
+            .unwrap();
         let result = super::super::owned_surface_cache(&ctx, scope).transpose();
         if material_cap < peak || retained_cap < retained {
-            let first = match result {
-                Err(CodecError::ResourceLimit(first)) => first,
-                _ => panic!("expected failed forward surface or retained winner refusal"),
+            let Err(CodecError::ResourceLimit(first)) = result else {
+                panic!("expected failed forward surface or retained winner refusal");
             };
             if material_cap < peak {
                 assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
                 assert_eq!(first.operation, "ASM NURBS grid row poles");
-                assert_eq!((first.limit, first.used, first.additional),
-                    (material_cap, peak - u64_from_index(row_bytes), u64_from_index(row_bytes)));
+                assert_eq!(
+                    (first.limit, first.used, first.additional),
+                    (
+                        material_cap,
+                        peak - u64_from_index(row_bytes),
+                        u64_from_index(row_bytes)
+                    )
+                );
             } else {
                 assert_eq!(first.dimension, ResourceDimension::RetainedBytes);
                 assert_eq!(first.operation, "ASM owned surface cache candidate");
-                assert_eq!((first.limit, first.used, first.additional), (retained_cap, 0, retained));
+                assert_eq!(
+                    (first.limit, first.used, first.additional),
+                    (retained_cap, 0, retained)
+                );
             }
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
+            );
         } else {
             let selected = result.unwrap().unwrap();
             assert_eq!((selected.u_count(), selected.v_count()), (2, 3));
             assert_eq!(selected.u_knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
             assert_eq!(selected.v_knots().as_slice(), [0.0, 0.0, 1.0, 2.0, 2.0]);
-            let available = ctx.reserve_scoped(peak, "discarded owned surface candidates released").unwrap();
+            let available = ctx
+                .reserve_scoped(peak, "discarded owned surface candidates released")
+                .unwrap();
             drop(available);
             drop(selected);
             ctx.finish_session().unwrap();
@@ -129,13 +185,30 @@ fn curve_selectors_discard_failed_forward_candidates_before_retaining_the_winner
     use cadmpeg_ir::math::Point3;
     let mut tokens = vec![Token::SubtypeOpen, Token::Ident("carrier".into())];
     tokens.extend([
-        Token::Ident("nubs".into()), Token::Long(1), Token::Enum(0), Token::Long(2),
-        Token::Double(0.0), Token::Long(256), Token::Double(1.0), Token::Long(256),
+        Token::Ident("nubs".into()),
+        Token::Long(1),
+        Token::Enum(0),
+        Token::Long(2),
+        Token::Double(0.0),
+        Token::Long(256),
+        Token::Double(1.0),
+        Token::Long(256),
         // The malformed 512-pole cache is immediately followed by a valid one.
-        Token::Ident("nubs".into()), Token::Long(1), Token::Enum(0), Token::Long(2),
-        Token::Double(0.0), Token::Long(1), Token::Double(1.0), Token::Long(1),
-        Token::Double(0.0), Token::Double(0.0), Token::Double(0.0),
-        Token::Double(1.0), Token::Double(0.0), Token::Double(0.0), Token::SubtypeClose,
+        Token::Ident("nubs".into()),
+        Token::Long(1),
+        Token::Enum(0),
+        Token::Long(2),
+        Token::Double(0.0),
+        Token::Long(1),
+        Token::Double(1.0),
+        Token::Long(1),
+        Token::Double(0.0),
+        Token::Double(0.0),
+        Token::Double(0.0),
+        Token::Double(1.0),
+        Token::Double(0.0),
+        Token::Double(0.0),
+        Token::SubtypeClose,
     ]);
     let marker_bytes = 4 * size_of::<usize>();
     let knot_bytes = 514 * size_of::<f64>();
@@ -143,40 +216,64 @@ fn curve_selectors_discard_failed_forward_candidates_before_retaining_the_winner
     let peak = u64_from_index(marker_bytes + knot_bytes + pole_bytes);
     let retained = u64_from_index(4 * size_of::<f64>() + 2 * size_of::<FinitePoint3>());
     for owned in [false, true] {
-        for (material_cap, retained_cap) in [(peak - 1, retained), (peak, retained - 1), (peak, retained)] {
+        for (material_cap, retained_cap) in
+            [(peak - 1, retained), (peak, retained - 1), (peak, retained)]
+        {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_materialized_bytes = material_cap;
             policy.limits.max_retained_bytes = retained_cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let result = if owned {
-                let scope = crate::nurbs::toks::subtype_span(&ctx, &tokens, 0).unwrap().unwrap();
+                let scope = crate::nurbs::toks::subtype_span(&ctx, &tokens, 0)
+                    .unwrap()
+                    .unwrap();
                 super::super::owned_curve_cache(&ctx, scope)
             } else {
                 super::super::curve_cache(&ctx, &tokens)
-            }.transpose();
+            }
+            .transpose();
             if material_cap < peak || retained_cap < retained {
-                let first = match result {
-                    Err(CodecError::ResourceLimit(first)) => first,
-                    _ => panic!("expected failed forward curve or retained winner refusal"),
+                let Err(CodecError::ResourceLimit(first)) = result else {
+                    panic!("expected failed forward curve or retained winner refusal");
                 };
                 if material_cap < peak {
                     assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
                     assert_eq!(first.operation, "ASM polynomial NURBS poles");
-                    assert_eq!((first.limit, first.used, first.additional),
-                        (material_cap, u64_from_index(marker_bytes + knot_bytes), u64_from_index(pole_bytes)));
+                    assert_eq!(
+                        (first.limit, first.used, first.additional),
+                        (
+                            material_cap,
+                            u64_from_index(marker_bytes + knot_bytes),
+                            u64_from_index(pole_bytes)
+                        )
+                    );
                 } else {
                     assert_eq!(first.dimension, ResourceDimension::RetainedBytes);
-                    assert_eq!(first.operation, if owned { "ASM owned curve cache candidate" } else { "ASM curve cache candidate" });
-                    assert_eq!((first.limit, first.used, first.additional), (retained_cap, 0, retained));
+                    assert_eq!(
+                        first.operation,
+                        if owned {
+                            "ASM owned curve cache candidate"
+                        } else {
+                            "ASM curve cache candidate"
+                        }
+                    );
+                    assert_eq!(
+                        (first.limit, first.used, first.additional),
+                        (retained_cap, 0, retained)
+                    );
                 }
-                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
+                );
             } else {
                 let selected = result.unwrap().unwrap();
                 assert_eq!(selected.degree(), 1);
                 assert_eq!(selected.knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
                 assert_eq!(selected.pole_rows().point_at(1).unwrap().get().x, 10.0);
-                let available = ctx.reserve_scoped(peak, "discarded curve candidates released").unwrap();
+                let available = ctx
+                    .reserve_scoped(peak, "discarded curve candidates released")
+                    .unwrap();
                 drop(available);
                 drop(selected);
                 ctx.finish_session().unwrap();

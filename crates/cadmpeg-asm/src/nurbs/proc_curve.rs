@@ -997,10 +997,10 @@ fn procedural_curve_recursive(
             }));
         let positions = positions?;
         let decode = |position| {
-            let (candidate, storage) = ctx.with_scoped_storage(
-                "ASM procedural curve cache candidate",
-                || curve_block(ctx, cache_scope, position).transpose(),
-            )?;
+            let (candidate, storage) = ctx
+                .with_scoped_storage("ASM procedural curve cache candidate", || {
+                    curve_block(ctx, cache_scope, position).transpose()
+                })?;
             match candidate {
                 Some(candidate) => storage.commit_value(candidate).map(Some),
                 None => Ok(None),
@@ -1074,15 +1074,17 @@ fn procedural_curve_recursive(
             })
             .or_else(|| compound.map(ProceduralCurveConstruction::Compound).map(Ok))
             .unwrap_or_else(|| {
-                let native_kind = crate::nurbs::toks::owned_construction_subtype(ctx, toks)
-                    .transpose()?;
+                let native_kind =
+                    crate::nurbs::toks::owned_construction_subtype(ctx, toks).transpose()?;
                 if native_kind == Some("exact_int_cur") {
                     Ok(ProceduralCurveConstruction::Exact)
                 } else if let Some(helix) = helix_definition(ctx, toks).transpose()? {
                     Ok(ProceduralCurveConstruction::Helix(helix))
                 } else {
                     let native_kind = match native_kind {
-                        Some(kind) => ctx.copy_retained_text(kind, "ASM construction subtype name")?,
+                        Some(kind) => {
+                            ctx.copy_retained_text(kind, "ASM construction subtype name")?
+                        }
                         None => "intcurve".to_string(),
                     };
                     Ok(ProceduralCurveConstruction::Unknown(native_kind))
@@ -1129,7 +1131,7 @@ mod reference_allocation_tests {
         procedural_curve_resolving_refs,
     };
     use crate::nurbs::toks::SubtypeTable;
-    use crate::sab::{Record, Token};
+    use crate::sab::Token;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
@@ -1137,18 +1139,18 @@ mod reference_allocation_tests {
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let record = Record {
-            index: 0,
-            name: "spline".into(),
-            tokens: vec![
+        let record = crate::test_support::sab::record(
+            0,
+            "spline".into(),
+            vec![
                 Token::SubtypeOpen,
                 Token::Ident("exact_int_cur".into()),
                 Token::SubtypeClose,
             ]
             .into(),
-            offset: 0,
-            len: 0,
-        };
+            0,
+            0,
+        );
         SubtypeTable::from_records(&ctx, &[record]).unwrap()
     }
 
@@ -1232,10 +1234,8 @@ fn embedded_deformable(
         let Some(Token::Long(index)) = toks.get(reference + 2) else {
             return None;
         };
-        let reference_span = propagate_resource!(crate::nurbs::toks::subtype_span(
-            ctx, toks, reference
-        ))?
-        .tokens();
+        let reference_span =
+            propagate_resource!(crate::nurbs::toks::subtype_span(ctx, toks, reference))?.tokens();
         cur.set_pos(reference + reference_span.len());
         EmbeddedDeformableSource::NativeReference {
             flag,
@@ -1262,10 +1262,12 @@ fn embedded_deformable(
                     Err(error) => return Some(Err(error)),
                 };
             let mut visits = 0..count;
-            while (!visits.is_empty() || ctx.resource_refusal().is_some()) && propagate_resource!(
-                ctx.next_charged(&mut visits, "ASM embedded deformable entries")
-            )
-            .is_some() {
+            while (!visits.is_empty() || ctx.resource_refusal().is_some())
+                && propagate_resource!(
+                    ctx.next_charged(&mut visits, "ASM embedded deformable entries")
+                )
+                .is_some()
+            {
                 parameter_pairs.push([cur.take_f64()?, cur.take_f64()?]);
             }
             EmbeddedDeformableData::VectorField {
@@ -1443,8 +1445,10 @@ fn embedded_law_curve(
     let mut additional =
         propagate_resource!(ctx.collection_vec(count, "ASM law curve additional formulas"));
     let mut visits = 0..count;
-    while (!visits.is_empty() || ctx.resource_refusal().is_some()) && propagate_resource!(ctx.next_charged(&mut visits, "ASM embedded law curve entries"))
-        .is_some() {
+    while (!visits.is_empty() || ctx.resource_refusal().is_some())
+        && propagate_resource!(ctx.next_charged(&mut visits, "ASM embedded law curve entries"))
+            .is_some()
+    {
         additional.push(propagate_resource!(law_formula(ctx, &mut cur)?));
     }
     Some(Ok(EmbeddedLawCurve {
@@ -1724,10 +1728,12 @@ pub fn compound_patch_layout(
             ctx.collection_vec(component_count, "ASM compound patch component parameters")
         );
         let mut visits = 0..component_count;
-        while (!visits.is_empty() || ctx.resource_refusal().is_some()) && propagate_resource!(
-            ctx.next_charged(&mut visits, "ASM compound patch component parameters")
-        )
-        .is_some() {
+        while (!visits.is_empty() || ctx.resource_refusal().is_some())
+            && propagate_resource!(
+                ctx.next_charged(&mut visits, "ASM compound patch component parameters")
+            )
+            .is_some()
+        {
             component_parameters.push(take_double_payload(bytes, &mut position)?);
         }
         Some(Ok(CompoundPatchLayout {
@@ -1969,9 +1975,8 @@ pub(super) fn embedded_base_curve_resolving_refs(
         cur.take_bool()?;
         let reference = cur.pos();
         if matches!(toks.get(reference), Some(Token::SubtypeOpen)) {
-            let scope = propagate_resource!(crate::nurbs::toks::subtype_span(
-                ctx, toks, reference
-            ))?;
+            let scope =
+                propagate_resource!(crate::nurbs::toks::subtype_span(ctx, toks, reference))?;
             if let Some(curve) = owned_curve_cache_resolving_refs(ctx, scope, table) {
                 cur.set_pos(reference + scope.tokens().len());
                 return Some(curve);
@@ -2055,10 +2060,9 @@ pub(super) fn embedded_base_curve_resolving_refs(
                 return None;
             };
             let index = usize::try_from(*index).ok()?;
-            let reference_span = propagate_resource!(crate::nurbs::toks::subtype_span(
-                ctx, toks, reference
-            ))?
-            .tokens();
+            let reference_span =
+                propagate_resource!(crate::nurbs::toks::subtype_span(ctx, toks, reference))?
+                    .tokens();
             cur.set_pos(reference + reference_span.len());
             table
                 .span(index)
@@ -3926,10 +3930,9 @@ pub(super) fn optional_embedded_surface_with_bounds(
                 return None;
             };
             let index = usize::try_from(*index).ok()?;
-            let reference_span = propagate_resource!(crate::nurbs::toks::subtype_span(
-                ctx, toks, reference
-            ))?
-            .tokens();
+            let reference_span =
+                propagate_resource!(crate::nurbs::toks::subtype_span(ctx, toks, reference))?
+                    .tokens();
             cur.set_pos(reference + reference_span.len());
             let surface = table
                 .span(index)
@@ -3974,11 +3977,8 @@ pub(super) fn optional_embedded_surface_with_bounds(
             cur.take_bool()?;
         }
         if matches!(cur.peek(), Some(Token::SubtypeOpen)) {
-            let scope = propagate_resource!(crate::nurbs::toks::subtype_span(
-                ctx,
-                toks,
-                cur.pos(),
-            ))?;
+            let scope =
+                propagate_resource!(crate::nurbs::toks::subtype_span(ctx, toks, cur.pos(),))?;
             let surface =
                 if let Some(surface) = owned_surface_cache_resolving_refs(ctx, scope, table) {
                     Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
@@ -4029,8 +4029,10 @@ fn compound_definition(
         propagate_resource!(ctx.temporary_vec(count, "ASM compound curve parameters"));
     _parameter_storage = result_parameter_storage;
     let mut visits = 0..count;
-    while (!visits.is_empty() || ctx.resource_refusal().is_some()) && propagate_resource!(ctx.next_charged(&mut visits, "ASM compound definition entries"))
-        .is_some() {
+    while (!visits.is_empty() || ctx.resource_refusal().is_some())
+        && propagate_resource!(ctx.next_charged(&mut visits, "ASM compound definition entries"))
+            .is_some()
+    {
         component_parameters.push(cur.take_f64()?);
     }
     if !matches!(cur.peek(), Some(Token::True | Token::False)) {
@@ -4046,7 +4048,9 @@ fn compound_definition(
     }
     let mut source_values = IntoIterator::into_iter(component_parameters);
     while source_values.len() != 0 {
-        let Some(parameter) = propagate_resource!(ctx.next_charged(&mut source_values, "ASM compound curve components")) else {
+        let Some(parameter) = propagate_resource!(
+            ctx.next_charged(&mut source_values, "ASM compound curve components")
+        ) else {
             break;
         };
         let (curve, end) = propagate_resource!(curve_block(ctx, toks, cur.pos())?);
@@ -4280,7 +4284,6 @@ mod cache_form_tests {
 
     #[test]
     fn cache_first_support_propagates_reference_cache_allocation_refusal() {
-        use crate::sab::Record;
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         let mut target = vec![
             Token::SubtypeOpen,
@@ -4312,13 +4315,7 @@ mod cache_form_tests {
             target.extend(point.map(Token::Double));
         }
         target.push(Token::SubtypeClose);
-        let record = Record {
-            index: 0,
-            name: "spline".into(),
-            tokens: target.into(),
-            offset: 0,
-            len: 0,
-        };
+        let record = crate::test_support::sab::record(0, "spline".into(), target.into(), 0, 0);
         let table = crate::nurbs::toks::SubtypeTable::from_records(
             &cadmpeg_test_support::service_decode_context(),
             &[record],

@@ -10,18 +10,18 @@ use cadmpeg_ir::geometry::RevisionCacheForm;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use std::collections::{HashMap, HashSet};
 
+mod entry_refusal;
 mod shared_carrier;
 mod source_visits;
-mod entry_refusal;
 
 fn ref_record(index: usize, name: &str, refs: &[i64]) -> Record {
-    Record {
+    crate::test_support::sab::record(
         index,
-        name: name.into(),
-        tokens: refs.iter().copied().map(Token::Ref).collect(),
-        offset: 0,
-        len: 0,
-    }
+        name.into(),
+        refs.iter().copied().map(Token::Ref).collect(),
+        0,
+        0,
+    )
 }
 
 fn with_collection_limit(
@@ -669,12 +669,14 @@ fn history_pcurve_use_has_no_invented_parameter_interval() {
         &cadmpeg_core::decode::DecodePolicy::default(),
     )
     .expect("test decode context");
-    let record = |index, name: &str, fields: &[i64]| Record {
-        index,
-        name: name.into(),
-        tokens: fields.iter().copied().map(Token::Ref).collect(),
-        offset: 0,
-        len: 0,
+    let record = |index, name: &str, fields: &[i64]| {
+        crate::test_support::sab::record(
+            index,
+            name.into(),
+            fields.iter().copied().map(Token::Ref).collect(),
+            0,
+            0,
+        )
     };
     let records = [
         record(0, "face", &[-1, -1, -1, -1, 1]),
@@ -736,10 +738,10 @@ fn model_pcurve_parameter_range_refuses_collection_limit() {
         ref_record(1, "loop", &[-1, -1, -1, -1, 2]),
         ref_record(2, "coedge", &[-1, -1, -1, 2, -1, -1, 3, -1, -1, 4]),
         ref_record(3, "edge", &[-1; 9]),
-        Record {
-            index: 4,
-            name: "pcurve".into(),
-            tokens: vec![
+        crate::test_support::sab::record(
+            4,
+            "pcurve".into(),
+            vec![
                 Token::Ref(-1),
                 Token::Ref(-1),
                 Token::Ref(-1),
@@ -762,9 +764,9 @@ fn model_pcurve_parameter_range_refuses_collection_limit() {
                 Token::SubtypeClose,
             ]
             .into(),
-            offset: 0,
-            len: 0,
-        },
+            0,
+            0,
+        ),
     ];
     let by_index = records
         .iter()
@@ -810,10 +812,10 @@ fn model_pcurve_subtype_lookup_propagates_work_refusal() {
         ref_record(1, "loop", &[-1, -1, -1, -1, 2]),
         ref_record(2, "coedge", &[-1, -1, -1, 2, -1, -1, 3, -1, -1, 4]),
         ref_record(3, "edge", &[-1; 9]),
-        Record {
-            index: 4,
-            name: "pcurve".into(),
-            tokens: vec![
+        crate::test_support::sab::record(
+            4,
+            "pcurve".into(),
+            vec![
                 Token::Ref(-1),
                 Token::Ref(-1),
                 Token::Ref(-1),
@@ -824,9 +826,9 @@ fn model_pcurve_subtype_lookup_propagates_work_refusal() {
                 Token::SubtypeClose,
             ]
             .into(),
-            offset: 0,
-            len: 0,
-        },
+            0,
+            0,
+        ),
     ];
     let by_index = indexed_records(&records);
     let error = with_work_limit("ASM payload subtype token scan", |ctx| {
@@ -864,18 +866,18 @@ fn history_construction_kind_does_not_consume_retained_storage() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let records = [
         ref_record(0, "face", &[-1, -1, -1, -1, -1, -1, -1, 1]),
-        Record {
-            index: 1,
-            name: "spline".into(),
-            offset: 0,
-            len: 0,
-            tokens: vec![
+        crate::test_support::sab::record(
+            1,
+            "spline".into(),
+            vec![
                 Token::SubtypeOpen,
                 Token::Ident("mystery".into()),
                 Token::SubtypeClose,
             ]
             .into(),
-        },
+            0,
+            0,
+        ),
     ];
     let by_index = indexed_records(&records);
     let token_table = nurbs::toks::SubtypeTable::from_records(
@@ -915,3 +917,11 @@ fn history_construction_kind_does_not_consume_retained_storage() {
         }))
     ));
 }
+
+mod cache_budgets;
+
+mod shared_pcurve;
+
+mod wire_collector;
+
+mod candidate_storage;

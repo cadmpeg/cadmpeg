@@ -59,13 +59,7 @@ fn record(revision: bool, ranges: [f64; 4], subtransform: Vec<Token>, knot: f64)
     tokens.push(Token::SubtypeOpen);
     tokens.extend(subtransform);
     tokens.extend([Token::SubtypeClose, Token::Long(9), Token::SubtypeClose]);
-    Record {
-        index: 0,
-        name: "spline".into(),
-        tokens: tokens.into(),
-        offset: 0,
-        len: 0,
-    }
+    crate::test_support::sab::record(0, "spline".into(), tokens.into(), 0, 0)
 }
 
 fn inline(program: &str) -> Vec<Token> {

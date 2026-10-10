@@ -112,10 +112,12 @@ pub fn final_pcurve_patch_layout(
                 let control_start = pos;
                 let components = if rational { 3 } else { 2 };
                 let mut visits = 0..control_count * components;
-                while (!visits.is_empty() || ctx.resource_refusal().is_some()) && propagate_resource!(
-                    ctx.next_charged(&mut visits, "ASM pcurve patch control components")
-                )
-                .is_some() {
+                while (!visits.is_empty() || ctx.resource_refusal().is_some())
+                    && propagate_resource!(
+                        ctx.next_charged(&mut visits, "ASM pcurve patch control components")
+                    )
+                    .is_some()
+                {
                     if record.get(pos) != Some(&0x06) {
                         return None;
                     }
@@ -247,69 +249,81 @@ pub(super) fn pcurve_block_with_end(
     toks: &[Token],
     marker_pos: usize,
 ) -> Option<Result<(PcurveNurbs, usize), cadmpeg_core::CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
-    let rational = toks::marker_at(toks, marker_pos)?.rational();
-    let mut cur = Cur::at(toks, marker_pos + 1);
-    let degree = cur.take_long()?;
-    if !(1..=20).contains(&degree) {
-        return None;
-    }
-    let closure = cur.take_enum()?;
-    let n_uniq = cur.take_long()?;
-    if !(1..=1000).contains(&n_uniq) {
-        return None;
-    }
-    let (knots, n_poles) =
-        match toks::take_knot_table(ctx, &mut cur, usize::try_from(n_uniq).ok()?, degree)? {
-            Ok(knots) => knots,
-            Err(error) => return Some(Err(error)),
-        };
-    let mut points = Vec::new();
-    let mut weighted = Vec::new();
-    if rational {
-        weighted = match ctx.collection_vec(n_poles, "ASM rational pcurve poles") {
-            Ok(weighted) => weighted,
-            Err(error) => return Some(Err(error)),
-        };
-    } else {
-        points = match ctx.collection_vec(n_poles, "ASM polynomial pcurve poles") {
-            Ok(points) => points,
-            Err(error) => return Some(Err(error)),
-        };
-    }
-    let mut visits = 0..n_poles;
-    while (!visits.is_empty() || ctx.resource_refusal().is_some()) && propagate_resource!(ctx.next_charged(&mut visits, "ASM pcurve block with end entries"))
-        .is_some() {
-        let u = cur.take_f64()?;
-        let v = cur.take_f64()?;
-        let point = FinitePoint2::new(Point2::new(u, v))?;
-        if rational {
-            weighted.push(WeightedPole2 {
-                point,
-                weight: NonZeroReal::new(cur.take_f64()?)?,
-            });
-        } else {
-            points.push(point);
-        }
-    }
-    let poles = if rational {
-        PcurveNurbsPoles::Rational { points: weighted }
-    } else {
-        PcurveNurbsPoles::Polynomial { points }
-    };
-    Some(Ok((
-        propagate_resource!(PcurveNurbs::new(
-            ctx,
-            u32::try_from(degree).ok()?,
-            knots,
-            poles,
-            is_periodic(closure),
-        ))
-        .ok()?,
-        cur.pos(),
-    )))
+    let mut attempt = propagate_resource!(ctx.reserve_scoped(0, "ASM pcurve block attempt"));
+    let candidate = propagate_resource!(attempt.with_storage(|| {
+        (|| {
+            let rational = toks::marker_at(toks, marker_pos)?.rational();
+            let mut cur = Cur::at(toks, marker_pos + 1);
+            let degree = cur.take_long()?;
+            if !(1..=20).contains(&degree) {
+                return None;
+            }
+            let closure = cur.take_enum()?;
+            let n_uniq = cur.take_long()?;
+            if !(1..=1000).contains(&n_uniq) {
+                return None;
+            }
+            let (knots, n_poles) = match toks::take_knot_table(
+                ctx,
+                &mut cur,
+                usize::try_from(n_uniq).ok()?,
+                degree,
+            )? {
+                Ok(knots) => knots,
+                Err(error) => return Some(Err(error)),
+            };
+            let mut points = Vec::new();
+            let mut weighted = Vec::new();
+            if rational {
+                weighted = match ctx.collection_vec(n_poles, "ASM rational pcurve poles") {
+                    Ok(weighted) => weighted,
+                    Err(error) => return Some(Err(error)),
+                };
+            } else {
+                points = match ctx.collection_vec(n_poles, "ASM polynomial pcurve poles") {
+                    Ok(points) => points,
+                    Err(error) => return Some(Err(error)),
+                };
+            }
+            let mut visits = 0..n_poles;
+            while (!visits.is_empty() || ctx.resource_refusal().is_some())
+                && propagate_resource!(
+                    ctx.next_charged(&mut visits, "ASM pcurve block with end entries")
+                )
+                .is_some()
+            {
+                let u = cur.take_f64()?;
+                let v = cur.take_f64()?;
+                let point = FinitePoint2::new(Point2::new(u, v))?;
+                if rational {
+                    weighted.push(WeightedPole2 {
+                        point,
+                        weight: NonZeroReal::new(cur.take_f64()?)?,
+                    });
+                } else {
+                    points.push(point);
+                }
+            }
+            let poles = if rational {
+                PcurveNurbsPoles::Rational { points: weighted }
+            } else {
+                PcurveNurbsPoles::Polynomial { points }
+            };
+            Some(Ok((
+                propagate_resource!(PcurveNurbs::new(
+                    ctx,
+                    u32::try_from(degree).ok()?,
+                    knots,
+                    poles,
+                    is_periodic(closure),
+                ))
+                .ok()?,
+                cur.pos(),
+            )))
+        })()
+        .transpose()
+    }));
+    candidate.map(|value| attempt.commit_value(value))
 }
 
 fn pcurve_block(
@@ -376,10 +390,10 @@ pub fn pcurve_fit_tolerance(
         propagate_resource!(ctx.find_map(
             positions.into_iter().rev(),
             |pos| {
-                let (candidate, storage) = ctx.with_scoped_storage(
-                    "ASM pcurve tolerance cache",
-                    || pcurve_block_with_end(ctx, tokens, pos).transpose(),
-                )?;
+                let (candidate, storage) = ctx
+                    .with_scoped_storage("ASM pcurve tolerance cache", || {
+                        pcurve_block_with_end(ctx, tokens, pos).transpose()
+                    })?;
                 let end = candidate.map(|(_, end)| end);
                 drop(storage);
                 Ok(end)

@@ -51,7 +51,10 @@ fn control_points(
         marker.rational(),
     ));
     let mut visits = 0..count;
-    while (!visits.is_empty() || ctx.resource_refusal().is_some()) && propagate_resource!(ctx.next_charged(&mut visits, "ASM control points entries")).is_some() {
+    while (!visits.is_empty() || ctx.resource_refusal().is_some())
+        && propagate_resource!(ctx.next_charged(&mut visits, "ASM control points entries"))
+            .is_some()
+    {
         let mut comps = [0.0f64; 4];
         for comp in comps.iter_mut().take(marker.cp_dims()) {
             *comp = cur.take_f64()?;
@@ -149,13 +152,17 @@ pub(super) fn surface_block(
             |_| ctx.collection_vec(n_poles_v, "ASM NURBS grid row poles"),
         ));
         let mut columns = 0..n_poles_v;
-        while (!columns.is_empty() || ctx.resource_refusal().is_some()) && propagate_resource!(ctx.next_charged(&mut columns, "ASM surface control columns"))
-            .is_some() {
+        while (!columns.is_empty() || ctx.resource_refusal().is_some())
+            && propagate_resource!(ctx.next_charged(&mut columns, "ASM surface control columns"))
+                .is_some()
+        {
             let mut rows = rows.iter_mut();
             while rows.len() != 0 || ctx.resource_refusal().is_some() {
-                let Some(row) = propagate_resource!(
-                ctx.next_charged(&mut rows, "ASM surface control points")
-            ) else { break; };
+                let Some(row) =
+                    propagate_resource!(ctx.next_charged(&mut rows, "ASM surface control points"))
+                else {
+                    break;
+                };
                 let point = FinitePoint3::new(Point3::new(
                     cur.take_f64()? * LEN_TO_MM,
                     cur.take_f64()? * LEN_TO_MM,
@@ -175,13 +182,17 @@ pub(super) fn surface_block(
             |_| ctx.collection_vec(n_poles_v, "ASM NURBS grid row poles"),
         ));
         let mut columns = 0..n_poles_v;
-        while (!columns.is_empty() || ctx.resource_refusal().is_some()) && propagate_resource!(ctx.next_charged(&mut columns, "ASM surface control columns"))
-            .is_some() {
+        while (!columns.is_empty() || ctx.resource_refusal().is_some())
+            && propagate_resource!(ctx.next_charged(&mut columns, "ASM surface control columns"))
+                .is_some()
+        {
             let mut rows = rows.iter_mut();
             while rows.len() != 0 || ctx.resource_refusal().is_some() {
-                let Some(row) = propagate_resource!(
-                ctx.next_charged(&mut rows, "ASM surface control points")
-            ) else { break; };
+                let Some(row) =
+                    propagate_resource!(ctx.next_charged(&mut rows, "ASM surface control points"))
+                else {
+                    break;
+                };
                 row.push(FinitePoint3::new(Point3::new(
                     cur.take_f64()? * LEN_TO_MM,
                     cur.take_f64()? * LEN_TO_MM,
@@ -279,10 +290,10 @@ pub(super) fn surface_cache(
         matches!(token, Token::Ident(name) | Token::SubIdent(name) if name == "comp_spl_sur")
     ), "ASM compound surface cache search"));
     let decode = |pos| {
-        let (candidate, storage) = ctx.with_scoped_storage(
-            "ASM surface cache candidate",
-            || surface_block(ctx, scope, pos).transpose(),
-        )?;
+        let (candidate, storage) = ctx
+            .with_scoped_storage("ASM surface cache candidate", || {
+                surface_block(ctx, scope, pos).transpose()
+            })?;
         match candidate {
             Some((surface, _)) => storage.commit_value(surface).map(Some),
             None => Ok(None),
@@ -313,10 +324,10 @@ pub(super) fn owned_surface_cache(
     propagate_resource!(ctx.find_map(
         positions,
         |pos| {
-            let (candidate, storage) = ctx.with_scoped_storage(
-                "ASM owned surface cache candidate",
-                || surface_block(ctx, tokens, pos).transpose(),
-            )?;
+            let (candidate, storage) = ctx
+                .with_scoped_storage("ASM owned surface cache candidate", || {
+                    surface_block(ctx, tokens, pos).transpose()
+                })?;
             match candidate {
                 Some((cache, _)) => storage.commit_value(cache).map(Some),
                 None => Ok(None),
@@ -343,10 +354,10 @@ pub(super) fn curve_cache(
     propagate_resource!(ctx.find_map(
         positions,
         |pos| {
-            let (candidate, storage) = ctx.with_scoped_storage(
-                "ASM curve cache candidate",
-                || curve_block(ctx, scope, pos).transpose(),
-            )?;
+            let (candidate, storage) = ctx
+                .with_scoped_storage("ASM curve cache candidate", || {
+                    curve_block(ctx, scope, pos).transpose()
+                })?;
             match candidate {
                 Some((cache, _)) => storage.commit_value(cache).map(Some),
                 None => Ok(None),
@@ -370,10 +381,10 @@ pub(super) fn owned_curve_cache(
     propagate_resource!(ctx.find_map(
         positions,
         |pos| {
-            let (candidate, storage) = ctx.with_scoped_storage(
-                "ASM owned curve cache candidate",
-                || curve_block(ctx, tokens, pos).transpose(),
-            )?;
+            let (candidate, storage) = ctx
+                .with_scoped_storage("ASM owned curve cache candidate", || {
+                    curve_block(ctx, tokens, pos).transpose()
+                })?;
             match candidate {
                 Some((cache, _)) => storage.commit_value(cache).map(Some),
                 None => Ok(None),
@@ -988,7 +999,9 @@ mod tests {
                     let mut policy = DecodePolicy::service();
                     policy.limits.max_work_units = cap;
                     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-                    super::surface_block(&ctx, &tokens, 0).transpose().map(|_| ())
+                    super::surface_block(&ctx, &tokens, 0)
+                        .transpose()
+                        .map(|_| ())
                 },
             );
             let CodecError::ResourceLimit(limit) = error else {
@@ -1121,20 +1134,20 @@ mod tests {
 
     #[test]
     fn subtype_search_refuses_before_entering_a_nested_reference() {
-        use crate::sab::{Record, Token};
+        use crate::sab::Token;
         let table_ctx = cadmpeg_test_support::service_decode_context();
-        let record = Record {
-            index: 0,
-            name: "spline".into(),
-            offset: 0,
-            len: 0,
-            tokens: vec![
+        let record = crate::test_support::sab::record(
+            0,
+            "spline".into(),
+            vec![
                 Token::SubtypeOpen,
                 Token::Ident("construction".into()),
                 Token::SubtypeClose,
             ]
             .into(),
-        };
+            0,
+            0,
+        );
         let table = SubtypeTable::from_records(&table_ctx, &[record]).unwrap();
         let tokens = [Token::SubtypeOpen, Token::Long(0), Token::SubtypeClose];
         for returns_cache in [false, true] {

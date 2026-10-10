@@ -608,13 +608,8 @@ mod tests {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_core::CodecError;
 
-        let record = Record {
-            index: 1,
-            name: "mystery".into(),
-            tokens: std::sync::Arc::from([]),
-            offset: 0,
-            len: 0,
-        };
+        let record =
+            crate::test_support::sab::record(1, "mystery".into(), std::sync::Arc::from([]), 0, 0);
         let expected = "f3d:brep:mystery#1";
         let error = cadmpeg_test_support::refusal::resource_limit_at(
             ResourceDimension::RetainedBytes,
@@ -648,13 +643,8 @@ mod tests {
     fn unknown_record_kind_uses_scoped_storage() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
-        let record = Record {
-            index: 1,
-            name: "mystery".into(),
-            tokens: std::sync::Arc::from([]),
-            offset: 0,
-            len: 0,
-        };
+        let record =
+            crate::test_support::sab::record(1, "mystery".into(), std::sync::Arc::from([]), 0, 0);
         let expected = "f3d:brep:mystery#1";
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -707,20 +697,10 @@ mod tests {
         use cadmpeg_ir::attributes::AttributeTarget;
         use std::collections::{HashMap, HashSet};
 
-        let entity = Record {
-            index: 0,
-            name: "entity".into(),
-            tokens: vec![Token::Ref(1)].into(),
-            offset: 0,
-            len: 0,
-        };
-        let attribute = Record {
-            index: 1,
-            name: "empty-st-attrib".into(),
-            tokens: Vec::new().into(),
-            offset: 0,
-            len: 0,
-        };
+        let entity =
+            crate::test_support::sab::record(0, "entity".into(), vec![Token::Ref(1)].into(), 0, 0);
+        let attribute =
+            crate::test_support::sab::record(1, "empty-st-attrib".into(), Vec::new().into(), 0, 0);
         let by_index = HashMap::from([(1, &attribute)]);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -749,19 +729,19 @@ mod tests {
     }
 
     fn transform_record(scale: f64, x: [f64; 3]) -> Record {
-        Record {
-            index: 0,
-            name: "transform".into(),
-            tokens: std::sync::Arc::from([
+        crate::test_support::sab::record(
+            0,
+            "transform".into(),
+            std::sync::Arc::from([
                 Token::Vector3(x),
                 Token::Vector3([0.0, 1.0, 0.0]),
                 Token::Vector3([0.0, 0.0, 1.0]),
                 Token::Position([0.0, 0.0, 0.0]),
                 Token::Double(scale),
             ]),
-            offset: 0,
-            len: 0,
-        }
+            0,
+            0,
+        )
     }
 
     #[test]
@@ -794,7 +774,7 @@ mod tests {
             .unwrap()
             .is_none());
     }
-    mod limits;
     mod entry_refusal;
+    mod limits;
     mod owned_values;
 }

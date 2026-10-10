@@ -22,6 +22,7 @@ pub mod attributes;
 mod emit;
 pub mod geometry;
 pub mod key_maps;
+mod owner_cycle;
 pub mod records;
 pub mod stats;
 use stats::Stats;
@@ -273,7 +274,9 @@ pub fn collect_owned_ids(
             }
             let mut source_values = IntoIterator::into_iter(fields);
             while source_values.len() != 0 {
-                let Some((key, value)) = ctx.next_charged(&mut source_values, "ASM serialized map fields")? else {
+                let Some((key, value)) =
+                    ctx.next_charged(&mut source_values, "ASM serialized map fields")?
+                else {
                     break;
                 };
                 collect_owned_ids(ctx, key, out)?;
@@ -286,7 +289,9 @@ pub fn collect_owned_ids(
             }
             let mut source_values = IntoIterator::into_iter(items);
             while source_values.len() != 0 {
-                let Some(item) = ctx.next_charged(&mut source_values, "ASM serialized sequence items")? else {
+                let Some(item) =
+                    ctx.next_charged(&mut source_values, "ASM serialized sequence items")?
+                else {
                     break;
                 };
                 collect_owned_ids(ctx, item, out)?;
@@ -335,7 +340,8 @@ pub fn collect_entity_adjacency(
     }
     let mut source_values = IntoIterator::into_iter(fields);
     while source_values.len() != 0 {
-        let Some((_, value)) = ctx.next_charged(&mut source_values, "ASM adjacency root fields")? else {
+        let Some((_, value)) = ctx.next_charged(&mut source_values, "ASM adjacency root fields")?
+        else {
             break;
         };
         let Value::Seq(items) = value else {
@@ -346,7 +352,9 @@ pub fn collect_entity_adjacency(
         }
         let mut source_values = IntoIterator::into_iter(items);
         while source_values.len() != 0 {
-            let Some(item) = ctx.next_charged(&mut source_values, "ASM serialized sequence items")? else {
+            let Some(item) =
+                ctx.next_charged(&mut source_values, "ASM serialized sequence items")?
+            else {
                 break;
             };
             let Some(id) = entity_id(ctx, item)? else {
@@ -363,7 +371,9 @@ pub fn collect_entity_adjacency(
             }
             let mut source_values = IntoIterator::into_iter(references);
             while source_values.len() != 0 {
-                let Some(reference) = ctx.next_charged(&mut source_values, "ASM adjacency references")? else {
+                let Some(reference) =
+                    ctx.next_charged(&mut source_values, "ASM adjacency references")?
+                else {
                     break;
                 };
                 insert_adjacency(ctx, out, id, &reference)?;
@@ -439,7 +449,9 @@ pub fn collect_references(
             }
             let mut source_values = IntoIterator::into_iter(items);
             while source_values.len() != 0 {
-                let Some(item) = ctx.next_charged(&mut source_values, "ASM serialized sequence items")? else {
+                let Some(item) =
+                    ctx.next_charged(&mut source_values, "ASM serialized sequence items")?
+                else {
                     break;
                 };
                 collect_references(ctx, item, owned, out)?;
@@ -451,7 +463,9 @@ pub fn collect_references(
             }
             let mut source_values = IntoIterator::into_iter(fields);
             while source_values.len() != 0 {
-                let Some((key, value)) = ctx.next_charged(&mut source_values, "ASM serialized map fields")? else {
+                let Some((key, value)) =
+                    ctx.next_charged(&mut source_values, "ASM serialized map fields")?
+                else {
                     break;
                 };
                 collect_references(ctx, key, owned, out)?;
@@ -484,7 +498,8 @@ pub fn retain_root_entities(
     }
     let mut source_values = IntoIterator::into_iter(fields);
     while source_values.len() != 0 {
-        let Some((_, value)) = ctx.next_charged(&mut source_values, "ASM retained root fields")? else {
+        let Some((_, value)) = ctx.next_charged(&mut source_values, "ASM retained root fields")?
+        else {
             break;
         };
         if let Value::Seq(items) = value {
@@ -522,7 +537,9 @@ pub fn remap_owned_ids(
             }
             let mut source_values = IntoIterator::into_iter(items);
             while source_values.len() != 0 {
-                let Some(item) = ctx.next_charged(&mut source_values, "ASM serialized sequence items")? else {
+                let Some(item) =
+                    ctx.next_charged(&mut source_values, "ASM serialized sequence items")?
+                else {
                     break;
                 };
                 remap_owned_ids(ctx, item, replacements)?;
@@ -535,7 +552,9 @@ pub fn remap_owned_ids(
             }
             let mut source_values = IntoIterator::into_iter(entries);
             while source_values.len() != 0 {
-                let Some((mut key, mut item)) = ctx.next_charged(&mut source_values, "ASM remapped map fields")? else {
+                let Some((mut key, mut item)) =
+                    ctx.next_charged(&mut source_values, "ASM remapped map fields")?
+                else {
                     break;
                 };
                 remap_owned_ids(ctx, &mut key, replacements)?;
@@ -630,6 +649,7 @@ struct Carriers {
     /// Source record indices of synthetic procedural surface curves.
     procedural_curve_child_sources: Vec<(i64, CurveId)>,
     surface_geo: HashMap<i64, SurfaceGeometry>,
+    unknown_surface_kinds: HashMap<i64, Option<String>>,
     procedural_surface_defs: HashMap<i64, DecodedProceduralSurface>,
     curve_geo: HashMap<i64, CurveGeometry>,
     procedural_curve_defs: HashMap<i64, ProceduralCurveSource>,
@@ -721,9 +741,7 @@ pub fn decode_with_header(
     let mut by_index = HashMap::new();
     let mut source_index_entries = records.iter();
     while source_index_entries.len() != 0 {
-        let Some(record) =
-            ctx.next_charged(&mut source_index_entries, "index ASM records")?
-        else {
+        let Some(record) = ctx.next_charged(&mut source_index_entries, "index ASM records")? else {
             break;
         };
         let index = i64::try_from(record.index).map_err(|_| {
@@ -885,32 +903,58 @@ fn inherited_attribute_target(
     mut owner: i64,
     by_index: &HashMap<i64, &Record>,
     targets: &HashMap<i64, AttributeTarget>,
+    resolved: &mut HashMap<i64, Option<i64>>,
+    cache_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
 ) -> Result<Option<AttributeTarget>, cadmpeg_core::CodecError> {
     let mut storage = ctx.reserve_scoped(0, "ASM inherited attribute visited")?;
-    let mut visited = HashSet::new();
-    loop {
+    let mut path = Vec::new();
+    let mut cycle = owner_cycle::OwnerCycle::new(owner);
+    let target_index = loop {
+        if let Some(target) = resolved.get(&owner) {
+            break *target;
+        }
         ctx.charge_work(1, "ASM inherited attribute walk")?;
-        if !storage.with_storage(|| {
-            ctx.insert_hash_set(&mut visited, owner, "ASM inherited attribute visited")
-        })? {
-            return Ok(None);
+        if ctx
+            .get_hash_map(targets, &owner, "ASM inherited target lookup")?
+            .is_some()
+        {
+            break Some(owner);
         }
-        if let Some(target) = ctx.get_hash_map(targets, &owner, "ASM inherited target lookup")? {
-            return target
-                .try_clone_for_decode(ctx, "ASM inherited attribute target")
-                .map(Some);
-        }
-        let Some(attribute) = ctx.get_hash_map(by_index, &owner, "ASM inherited record lookup")? else {
-            return Ok(None);
+        let Some(attribute) = ctx.get_hash_map(by_index, &owner, "ASM inherited record lookup")?
+        else {
+            break None;
         };
         if !attribute.name.ends_with("-attrib") {
-            return Ok(None);
+            break None;
         }
+        ctx.push_scoped_vec(
+            &mut storage,
+            &mut path,
+            owner,
+            "ASM inherited attribute path",
+        )?;
         let Some(parent) = attribute_owner(attribute) else {
-            return Ok(None);
+            break None;
         };
         owner = parent;
+        if cycle.advance(Some(owner)) {
+            break None;
+        }
+    };
+    cycle.trim_path(ctx, &mut path, "ASM inherited cycle entry")?;
+    cache_storage
+        .with_storage(|| ctx.reserve_map(resolved, path.len(), "ASM inherited attribute cache"))?;
+    let mut entries = path.into_iter();
+    while entries.len() != 0 {
+        let Some(index) = ctx.next_charged(&mut entries, "ASM inherited cache entries")? else {
+            break;
+        };
+        resolved.insert(index, target_index);
     }
+    target_index
+        .and_then(|index| targets.get(&index))
+        .map(|target| target.try_clone_for_decode(ctx, "ASM inherited attribute target"))
+        .transpose()
 }
 
 #[cfg(test)]
@@ -920,15 +964,21 @@ mod tests;
 mod serialized_id_tests {
     #[test]
     fn asm_non_map_entity_id_preserves_original_refusal() {
-        let values = [serde_value::Value::Unit, serde_value::Value::Bool(true),
-            serde_value::Value::U64(7), serde_value::Value::Seq(Vec::new())];
+        let values = [
+            serde_value::Value::Unit,
+            serde_value::Value::Bool(true),
+            serde_value::Value::U64(7),
+            serde_value::Value::Seq(Vec::new()),
+        ];
         crate::test_support::with_entry_context(|ctx, original| {
             for value in &values {
                 let result = super::entity_id(ctx, value);
                 match original {
                     Some(first) => assert!(matches!(result,
                         Err(cadmpeg_core::CodecError::ResourceLimit(last)) if last == first)),
-                    None => assert!(result.expect("fixed non-map identity recovery is free").is_none()),
+                    None => assert!(result
+                        .expect("fixed non-map identity recovery is free")
+                        .is_none()),
                 }
             }
         });
@@ -942,7 +992,10 @@ mod serialized_id_tests {
             match original {
                 Some(first) => assert!(matches!(result,
                     Err(cadmpeg_core::CodecError::ResourceLimit(last)) if last == first)),
-                None => assert_eq!(result.expect("borrowed string is free"), Some("sat:brep:entity#7")),
+                None => assert_eq!(
+                    result.expect("borrowed string is free"),
+                    Some("sat:brep:entity#7")
+                ),
             }
         });
     }

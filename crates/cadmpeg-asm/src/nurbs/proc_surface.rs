@@ -713,10 +713,11 @@ fn bridge_token(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
 ) -> Option<Result<cadmpeg_ir::geometry::LoftBridgeToken, cadmpeg_core::CodecError>> {
+    use cadmpeg_ir::geometry::LoftBridgeToken;
+
     if let Some(refusal) = ctx.resource_refusal() {
         return Some(Err(refusal.into()));
     }
-    use cadmpeg_ir::geometry::LoftBridgeToken;
     match cur.peek()? {
         Token::True | Token::False => Some(Ok(LoftBridgeToken::Boolean(cur.take_bool()?))),
         Token::Long(_) => Some(Ok(LoftBridgeToken::Integer(cur.take_long()?))),
@@ -1680,8 +1681,10 @@ fn compound_loft_scale(
     let mut members =
         propagate_resource!(ctx.collection_vec(count, "ASM compound loft scale members"));
     let mut visits = 0..count;
-    while (!visits.is_empty() || ctx.resource_refusal().is_some()) && propagate_resource!(ctx.next_charged(&mut visits, "ASM compound loft scale entries"))
-        .is_some() {
+    while (!visits.is_empty() || ctx.resource_refusal().is_some())
+        && propagate_resource!(ctx.next_charged(&mut visits, "ASM compound loft scale entries"))
+            .is_some()
+    {
         let type_code = cur.take_long()?;
         let (curve, curve_end) = propagate_resource!(curve_block(ctx, cur.toks(), cur.pos())?);
         cur.set_pos(curve_end);
@@ -1698,8 +1701,10 @@ fn compound_loft_scale(
         ctx.collection_vec(auxiliary_count, "ASM compound loft scale auxiliaries")
     );
     let mut visits = 0..auxiliary_count;
-    while (!visits.is_empty() || ctx.resource_refusal().is_some()) && propagate_resource!(ctx.next_charged(&mut visits, "ASM compound loft scale entries"))
-        .is_some() {
+    while (!visits.is_empty() || ctx.resource_refusal().is_some())
+        && propagate_resource!(ctx.next_charged(&mut visits, "ASM compound loft scale entries"))
+            .is_some()
+    {
         let (curve, curve_end) = propagate_resource!(curve_block(ctx, cur.toks(), cur.pos())?);
         cur.set_pos(curve_end);
         auxiliaries.push(curve);
@@ -1878,8 +1883,10 @@ fn revision_loft_section(
         Err(error) => return Some(Err(error)),
     };
     let mut visits = 0..count;
-    while (!visits.is_empty() || ctx.resource_refusal().is_some()) && propagate_resource!(ctx.next_charged(&mut visits, "ASM revision loft section entries"))
-        .is_some() {
+    while (!visits.is_empty() || ctx.resource_refusal().is_some())
+        && propagate_resource!(ctx.next_charged(&mut visits, "ASM revision loft section entries"))
+            .is_some()
+    {
         let parameter = cur.take_f64()?;
         let member_count = usize::try_from(cur.take_long()?).ok()?;
         // Each member consumes at least its type-code token.
@@ -1893,9 +1900,12 @@ fn revision_loft_section(
             Err(error) => return Some(Err(error)),
         };
         let mut visits = 0..member_count;
-        while
-            (!visits.is_empty() || ctx.resource_refusal().is_some()) && propagate_resource!(ctx.next_charged(&mut visits, "ASM revision loft section entries"))
-                .is_some() {
+        while (!visits.is_empty() || ctx.resource_refusal().is_some())
+            && propagate_resource!(
+                ctx.next_charged(&mut visits, "ASM revision loft section entries")
+            )
+            .is_some()
+        {
             let type_code = cur.take_long()?;
             let curve = propagate_resource!(embedded_base_curve_resolving_refs(ctx, cur, table)?);
             let endpoints = [
@@ -1943,9 +1953,12 @@ fn revision_loft_section(
             Err(error) => return Some(Err(error)),
         };
         let mut visits = 0..auxiliary_count;
-        while
-            (!visits.is_empty() || ctx.resource_refusal().is_some()) && propagate_resource!(ctx.next_charged(&mut visits, "ASM revision loft section entries"))
-                .is_some() {
+        while (!visits.is_empty() || ctx.resource_refusal().is_some())
+            && propagate_resource!(
+                ctx.next_charged(&mut visits, "ASM revision loft section entries")
+            )
+            .is_some()
+        {
             let (auxiliary, auxiliary_end) =
                 propagate_resource!(curve_block(ctx, cur.toks(), cur.pos())?);
             cur.set_pos(auxiliary_end);
@@ -1977,10 +1990,11 @@ fn loft_subdata_form(
     cur: &mut Cur<'_>,
     revision: bool,
 ) -> Option<Result<cadmpeg_ir::geometry::LoftSubdata, cadmpeg_core::CodecError>> {
+    use cadmpeg_ir::geometry::{LoftSubdata, LoftSubdataRow};
+
     if let Some(refusal) = ctx.resource_refusal() {
         return Some(Err(refusal.into()));
     }
-    use cadmpeg_ir::geometry::{LoftSubdata, LoftSubdataRow};
     let type_code = cur.take_long()?;
     let row_count = cur.take_long()?;
     let column_count = cur.take_long()?;
@@ -2004,14 +2018,18 @@ fn loft_subdata_form(
     )?;
     let mut rows = propagate_resource!(ctx.collection_vec(rows_to_read, "ASM loft subdata rows"));
     let mut visits = 0..rows_to_read;
-    while (!visits.is_empty() || ctx.resource_refusal().is_some()) && propagate_resource!(ctx.next_charged(&mut visits, "ASM loft subdata form entries"))
-        .is_some() {
+    while (!visits.is_empty() || ctx.resource_refusal().is_some())
+        && propagate_resource!(ctx.next_charged(&mut visits, "ASM loft subdata form entries"))
+            .is_some()
+    {
         let parameters = [cur.take_f64()?, cur.take_f64()?];
         let mut columns =
             propagate_resource!(ctx.collection_vec(columns_to_read, "ASM loft subdata columns"));
         let mut visits = 0..columns_to_read;
-        while (!visits.is_empty() || ctx.resource_refusal().is_some()) && propagate_resource!(ctx.next_charged(&mut visits, "ASM loft subdata columns"))
-            .is_some() {
+        while (!visits.is_empty() || ctx.resource_refusal().is_some())
+            && propagate_resource!(ctx.next_charged(&mut visits, "ASM loft subdata columns"))
+                .is_some()
+        {
             columns.push([cur.take_f64()?, cur.take_f64()?]);
         }
         let extra = if revision {
@@ -2079,7 +2097,9 @@ fn loft_section(
     )?;
     let mut entries = propagate_resource!(ctx.collection_vec(count, "ASM legacy loft sections"));
     let mut visits = 0..count;
-    while (!visits.is_empty() || ctx.resource_refusal().is_some()) && propagate_resource!(ctx.next_charged(&mut visits, "ASM loft section entries")).is_some() {
+    while (!visits.is_empty() || ctx.resource_refusal().is_some())
+        && propagate_resource!(ctx.next_charged(&mut visits, "ASM loft section entries")).is_some()
+    {
         let parameter = cur.take_f64()?;
         let member_count = usize::try_from(cur.take_long()?).ok()?;
         // Each member consumes at least its type-code token.
@@ -2092,8 +2112,10 @@ fn loft_section(
             ctx.collection_vec(member_count, "ASM legacy loft profile members")
         );
         let mut visits = 0..member_count;
-        while (!visits.is_empty() || ctx.resource_refusal().is_some()) && propagate_resource!(ctx.next_charged(&mut visits, "ASM loft section entries"))
-            .is_some() {
+        while (!visits.is_empty() || ctx.resource_refusal().is_some())
+            && propagate_resource!(ctx.next_charged(&mut visits, "ASM loft section entries"))
+                .is_some()
+        {
             let type_code = cur.take_long()?;
             let (curve, curve_end) = propagate_resource!(curve_block(ctx, cur.toks(), cur.pos())?);
             cur.set_pos(curve_end);
@@ -2116,8 +2138,10 @@ fn loft_section(
             ctx.collection_vec(auxiliary_count, "ASM legacy loft auxiliary curves")
         );
         let mut visits = 0..auxiliary_count;
-        while (!visits.is_empty() || ctx.resource_refusal().is_some()) && propagate_resource!(ctx.next_charged(&mut visits, "ASM loft section entries"))
-            .is_some() {
+        while (!visits.is_empty() || ctx.resource_refusal().is_some())
+            && propagate_resource!(ctx.next_charged(&mut visits, "ASM loft section entries"))
+                .is_some()
+        {
             let (auxiliary, auxiliary_end) =
                 propagate_resource!(curve_block(ctx, cur.toks(), cur.pos())?);
             cur.set_pos(auxiliary_end);
@@ -2293,8 +2317,10 @@ fn revision_cl_scale(
             Err(error) => return Some(Err(error)),
         };
     let mut visits = 0..member_count;
-    while (!visits.is_empty() || ctx.resource_refusal().is_some()) && propagate_resource!(ctx.next_charged(&mut visits, "ASM revision cl scale entries"))
-        .is_some() {
+    while (!visits.is_empty() || ctx.resource_refusal().is_some())
+        && propagate_resource!(ctx.next_charged(&mut visits, "ASM revision cl scale entries"))
+            .is_some()
+    {
         let type_code = cur.take_long()?;
         let curve = propagate_resource!(embedded_base_curve_resolving_refs(ctx, cur, table)?);
         let endpoints = [
@@ -2344,8 +2370,10 @@ fn revision_cl_scale(
         Err(error) => return Some(Err(error)),
     };
     let mut visits = 0..auxiliary_count;
-    while (!visits.is_empty() || ctx.resource_refusal().is_some()) && propagate_resource!(ctx.next_charged(&mut visits, "ASM revision cl scale entries"))
-        .is_some() {
+    while (!visits.is_empty() || ctx.resource_refusal().is_some())
+        && propagate_resource!(ctx.next_charged(&mut visits, "ASM revision cl scale entries"))
+            .is_some()
+    {
         let (auxiliary, auxiliary_end) =
             propagate_resource!(curve_block(ctx, cur.toks(), cur.pos())?);
         cur.set_pos(auxiliary_end);
@@ -2396,8 +2424,10 @@ fn revision_compound_loft(
         Err(error) => return Some(Err(error)),
     };
     let mut visits = 0..entry_count;
-    while (!visits.is_empty() || ctx.resource_refusal().is_some()) && propagate_resource!(ctx.next_charged(&mut visits, "ASM revision compound loft entries"))
-        .is_some() {
+    while (!visits.is_empty() || ctx.resource_refusal().is_some())
+        && propagate_resource!(ctx.next_charged(&mut visits, "ASM revision compound loft entries"))
+            .is_some()
+    {
         let (profile, path) = match revision_cl_scale(ctx, &mut cur, table, asm_extension_present)?
         {
             Ok(scale) => scale,
@@ -2903,8 +2933,10 @@ fn law_formula_resolving(
     }
     let mut variables = propagate_resource!(ctx.collection_vec(count, "ASM law formula variables"));
     let mut visits = 0..count;
-    while (!visits.is_empty() || ctx.resource_refusal().is_some()) && propagate_resource!(ctx.next_charged(&mut visits, "ASM law formula resolving entries"))
-        .is_some() {
+    while (!visits.is_empty() || ctx.resource_refusal().is_some())
+        && propagate_resource!(ctx.next_charged(&mut visits, "ASM law formula resolving entries"))
+            .is_some()
+    {
         variables.push(propagate_resource!(law_expression_resolving(
             ctx, cur, 0, resolver
         )?));
@@ -2951,8 +2983,10 @@ fn skin_spl_sur(
         let mut profiles =
             propagate_resource!(ctx.collection_vec(profile_count, "ASM skin surface profiles"));
         let mut visits = 0..profile_count;
-        while (!visits.is_empty() || ctx.resource_refusal().is_some()) && propagate_resource!(ctx.next_charged(&mut visits, "ASM skin spl sur entries"))
-            .is_some() {
+        while (!visits.is_empty() || ctx.resource_refusal().is_some())
+            && propagate_resource!(ctx.next_charged(&mut visits, "ASM skin spl sur entries"))
+                .is_some()
+        {
             let type_code = cur.take_long()?;
             let (curve, curve_end) = propagate_resource!(curve_block(ctx, span, cur.pos())?);
             cur.set_pos(curve_end);
@@ -3035,7 +3069,9 @@ pub(super) fn law_spl_sur(
     let mut additional =
         propagate_resource!(ctx.collection_vec(count, "ASM law surface additional formulas"));
     let mut visits = 0..count;
-    while (!visits.is_empty() || ctx.resource_refusal().is_some()) && propagate_resource!(ctx.next_charged(&mut visits, "ASM law spl sur entries")).is_some() {
+    while (!visits.is_empty() || ctx.resource_refusal().is_some())
+        && propagate_resource!(ctx.next_charged(&mut visits, "ASM law spl sur entries")).is_some()
+    {
         additional.push(propagate_resource!(law_formula(ctx, &mut cur)?));
     }
     let selector = if parameter_ranges.is_some()
@@ -3789,7 +3825,9 @@ fn comp_spl_sur(
     }
     let mut source_values = IntoIterator::into_iter(parameters);
     while source_values.len() != 0 {
-        let Some(parameter) = propagate_resource!(ctx.next_charged(&mut source_values, "ASM compound surface components")) else {
+        let Some(parameter) = propagate_resource!(
+            ctx.next_charged(&mut source_values, "ASM compound surface components")
+        ) else {
             break;
         };
         components.push(cadmpeg_ir::geometry::CompoundComponent {
@@ -4602,8 +4640,10 @@ fn defm_spl_sur(
                 ctx.collection_vec(count, "ASM deformable surface parameter triples")
             );
             let mut visits = 0..count;
-            while (!visits.is_empty() || ctx.resource_refusal().is_some()) && propagate_resource!(ctx.next_charged(&mut visits, "ASM defm spl sur entries"))
-                .is_some() {
+            while (!visits.is_empty() || ctx.resource_refusal().is_some())
+                && propagate_resource!(ctx.next_charged(&mut visits, "ASM defm spl sur entries"))
+                    .is_some()
+            {
                 parameter_triples.push([cur.take_f64()?, cur.take_f64()?, cur.take_f64()?]);
             }
             EmbeddedDeformableSurfaceData::Resolved(DeformableSurfaceData::Plain {
@@ -4640,8 +4680,10 @@ fn defm_spl_sur(
                 ctx.collection_vec(count, "ASM deformable surface curve parameter triples")
             );
             let mut visits = 0..count;
-            while (!visits.is_empty() || ctx.resource_refusal().is_some()) && propagate_resource!(ctx.next_charged(&mut visits, "ASM defm spl sur entries"))
-                .is_some() {
+            while (!visits.is_empty() || ctx.resource_refusal().is_some())
+                && propagate_resource!(ctx.next_charged(&mut visits, "ASM defm spl sur entries"))
+                    .is_some()
+            {
                 parameter_triples.push([cur.take_f64()?, cur.take_f64()?, cur.take_f64()?]);
             }
             EmbeddedDeformableSurfaceData::SurfaceCurve {
@@ -5025,7 +5067,7 @@ mod reference_allocation_tests {
         t_spline_subtransform,
     };
     use crate::nurbs::toks::{Cur, SubtypeTable};
-    use crate::sab::{Record, Token};
+    use crate::sab::Token;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
@@ -5033,18 +5075,18 @@ mod reference_allocation_tests {
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let record = Record {
-            index: 0,
-            name: "spline".into(),
-            tokens: vec![
+        let record = crate::test_support::sab::record(
+            0,
+            "spline".into(),
+            vec![
                 Token::SubtypeOpen,
                 Token::Ident("t_spl_subtrans_object".into()),
                 Token::SubtypeClose,
             ]
             .into(),
-            offset: 0,
-            len: 0,
-        };
+            0,
+            0,
+        );
         SubtypeTable::from_records(&ctx, &[record]).unwrap()
     }
 

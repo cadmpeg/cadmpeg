@@ -201,43 +201,116 @@ pub struct Record {
     pub offset: usize,
     /// Byte length of the record including its terminator.
     pub len: usize,
+    head_end: usize,
+    chunk_positions: Arc<Vec<usize>>,
 }
 
 impl Record {
+    /// Build the dispatch and value-token indices once. Replacing the name or
+    /// changing payload token kinds or order requires constructing a new record.
+    pub fn new(
+        ctx: &DecodeContext<'_>,
+        index: usize,
+        name: String,
+        tokens: Arc<[Token]>,
+        offset: usize,
+        len: usize,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let head_end = ctx
+            .position_by(
+                name.as_bytes(),
+                |byte| Ok(*byte == b'-'),
+                "index ASM record head",
+            )?
+            .unwrap_or(name.len());
+        Self::with_head_end(ctx, index, name, tokens, offset, len, head_end)
+    }
+
+    pub(crate) fn with_head_end(
+        ctx: &DecodeContext<'_>,
+        index: usize,
+        name: String,
+        tokens: Arc<[Token]>,
+        offset: usize,
+        len: usize,
+        head_end: usize,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let mut chunk_positions = Vec::new();
+        let mut source = tokens.iter().enumerate();
+        while source.len() != 0 {
+            let Some((position, token)) =
+                ctx.next_charged(&mut source, "index ASM record chunks")?
+            else {
+                break;
+            };
+            if !token.is_payload_ident() {
+                ctx.push_vec(&mut chunk_positions, position, "ASM record chunk positions")?;
+            }
+        }
+        // Share the vector without copying its file-controlled payload.
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<Vec<usize>>() + 2 * std::mem::size_of::<usize>(),
+            ),
+            "ASM record chunk index",
+        )?;
+        Ok(Self {
+            index,
+            name,
+            tokens,
+            offset,
+            len,
+            head_end,
+            chunk_positions: Arc::new(chunk_positions),
+        })
+    }
+
+    /// Copy the name under the decode budget and share the immutable token index.
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        Ok(Self {
+            index: self.index,
+            name: ctx.copy_retained_text(&self.name, operation)?,
+            tokens: self.tokens.clone(),
+            offset: self.offset,
+            len: self.len,
+            head_end: self.head_end,
+            chunk_positions: self.chunk_positions.clone(),
+        })
+    }
+
     /// Leading name component used for dispatch, such as `cone` or `body`.
     #[must_use]
     pub fn head(&self) -> &str {
-        self.name
-            .split_once('-')
-            .map_or(self.name.as_str(), |(head, _)| head)
+        &self.name[..self.head_end]
     }
 
-    /// Returns the `i`th payload value token. Payload identifiers leave field
-    /// positions unchanged, so `chunk[i]` has the same meaning in records with
-    /// and without named subtypes.
+    /// The `i`th payload value token. Payload identifiers leave field positions unchanged.
     pub fn chunk(&self, i: usize) -> Option<&Token> {
-        self.chunks().nth(i)
+        self.tokens.get(*self.chunk_positions.get(i)?)
     }
 
-    /// The `chunk[i]` as a non-null entity reference index. Returns `None` for a
-    /// null reference (`-1`) or a non-reference token.
+    /// The `chunk[i]` as a non-null entity reference index.
     pub fn ref_at(&self, i: usize) -> Option<i64> {
         match self.chunk(i) {
-            Some(Token::Ref(v)) if *v >= 0 => Some(*v),
+            Some(Token::Ref(value)) if *value >= 0 => Some(*value),
             _ => None,
         }
     }
 
-    /// The payload value tokens in order, payload identifiers skipped: the
-    /// stream that `chunk[i]` indexes.
-    pub fn chunks(&self) -> impl DoubleEndedIterator<Item = &Token> {
-        self.tokens.iter().filter(|t| !t.is_payload_ident())
+    /// Payload value tokens in order. Each iterator step reads one indexed token.
+    pub fn chunks(&self) -> impl DoubleEndedIterator<Item = &Token> + ExactSizeIterator {
+        self.chunk_positions
+            .iter()
+            .map(|position| &self.tokens[*position])
     }
 
-    /// Number of payload value tokens: the length of the stream that
-    /// `chunk[i]` indexes.
+    /// Number of indexed payload value tokens.
     pub fn chunk_len(&self) -> usize {
-        self.chunks().count()
+        self.chunk_positions.len()
     }
 }
 
@@ -797,14 +870,11 @@ fn frame_impl(
         }
         ctx.reserve_vec(&mut records, 1, "frame SAB record")
             .map_err(StreamFailure::from_operation)?;
-        records.push(Record {
-            index,
-            name,
+        records.push(
+            Record::new(ctx, index, name, tokens.into(), rec_start, pos - rec_start)
+                .map_err(StreamFailure::from_operation)?,
+        );
 
-            tokens: tokens.into(),
-            offset: rec_start,
-            len: pos - rec_start,
-        });
         index += 1;
     }
 
@@ -814,6 +884,7 @@ fn frame_impl(
 #[cfg(test)]
 mod tests {
     mod manual_scans;
+    mod record_index;
     use super::{
         exact_identifier_at, frame as frame_stream, frame_history as frame_history_stream,
         payload_token, Record,
@@ -853,25 +924,15 @@ mod tests {
                         &bytes,
                         ResourceDimension::WorkUnits,
                         "scan SAB history record",
-                        |ctx| {
-                            match (acis, with_header) {
-                                (false, false) => {
-                                    crate::asm_header::solved_record_limit(ctx, &bytes)
-                                }
-                                (false, true) => {
-                                    crate::asm_header::solved_record_limit_with_header(
-                                        ctx, &bytes, &header,
-                                    )
-                                }
-                                (true, false) => {
-                                    crate::acis_header::solved_record_limit(ctx, &bytes)
-                                }
-                                (true, true) => {
-                                    crate::acis_header::solved_record_limit_with_header(
-                                        ctx, &bytes, &header,
-                                    )
-                                }
-                            }
+                        |ctx| match (acis, with_header) {
+                            (false, false) => crate::asm_header::solved_record_limit(ctx, &bytes),
+                            (false, true) => crate::asm_header::solved_record_limit_with_header(
+                                ctx, &bytes, &header,
+                            ),
+                            (true, false) => crate::acis_header::solved_record_limit(ctx, &bytes),
+                            (true, true) => crate::acis_header::solved_record_limit_with_header(
+                                ctx, &bytes, &header,
+                            ),
                         },
                     );
                     assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);

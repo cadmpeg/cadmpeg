@@ -127,10 +127,10 @@ pub(super) fn cyl_spl_sur(
             let cache_end = propagate_resource!(ctx.find_map(
                 positions.into_iter().rev(),
                 |at| {
-                    let (candidate, storage) = ctx.with_scoped_storage(
-                        "ASM extrusion cache",
-                        || surface_block(ctx, span, at).transpose(),
-                    )?;
+                    let (candidate, storage) = ctx
+                        .with_scoped_storage("ASM extrusion cache", || {
+                            surface_block(ctx, span, at).transpose()
+                        })?;
                     let end = candidate.map(|(_, end)| end);
                     drop(storage);
                     Ok(end)
@@ -481,10 +481,11 @@ pub(super) fn rolling_ball_side(
 ) -> Option<
     Result<RollingBallSide<SurfaceGeometry, CurveGeometry, PcurveNurbs>, cadmpeg_core::CodecError>,
 > {
+    use cadmpeg_ir::geometry::VariableBlendSupportKind;
+
     if let Some(refusal) = ctx.resource_refusal() {
         return Some(Err(refusal.into()));
     }
-    use cadmpeg_ir::geometry::VariableBlendSupportKind;
     let support_kind = match cur.take_str()? {
         "blend_support_cos_curve" | "blendsupcos" => VariableBlendSupportKind::CosineCurve,
         "blend_support_curve" | "blendsupcur" => VariableBlendSupportKind::Curve,
@@ -904,10 +905,12 @@ fn variable_blend_value(
                     Err(error) => return Some(Err(error)),
                 };
             let mut visits = 0..count;
-            while (!visits.is_empty() || ctx.resource_refusal().is_some()) && propagate_resource!(
-                ctx.next_charged(&mut visits, "ASM variable blend value entries")
-            )
-            .is_some() {
+            while (!visits.is_empty() || ctx.resource_refusal().is_some())
+                && propagate_resource!(
+                    ctx.next_charged(&mut visits, "ASM variable blend value entries")
+                )
+                .is_some()
+            {
                 let parameter = cur.take_f64()?;
                 let radius = cur.take_f64()? * LEN_TO_MM;
                 let tangents = [cur.take_f64()?, cur.take_f64()?]
@@ -1412,8 +1415,10 @@ pub(super) fn vertex_blend_spl_sur(
         Err(error) => return Some(Err(error)),
     };
     let mut visits = 0..count;
-    while (!visits.is_empty() || ctx.resource_refusal().is_some()) && propagate_resource!(ctx.next_charged(&mut visits, "ASM vertex blend spl sur entries"))
-        .is_some() {
+    while (!visits.is_empty() || ctx.resource_refusal().is_some())
+        && propagate_resource!(ctx.next_charged(&mut visits, "ASM vertex blend spl sur entries"))
+            .is_some()
+    {
         boundaries.push(if revision.is_some() {
             match revision_vertex_blend_boundary(ctx, &mut cur, resolver)? {
                 Ok(boundary) => boundary,

@@ -2,7 +2,9 @@
 
 use super::super::{parse, Cur, FieldReader, Prim};
 use crate::stream_error::StreamFailure;
-use cadmpeg_core::decode::{refusal_probe::RefusalProbe, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{
+    refusal_probe::RefusalProbe, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
+};
 use cadmpeg_core::CodecError;
 
 #[test]
@@ -18,24 +20,48 @@ fn manual_sat_typing_peeks_only_actual_primitives() {
             policy.limits.max_materialized_bytes = 0;
             policy.limits.max_retained_bytes = 0;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let mut cur = Cur { prims: &prims, pos: 0, scale: 1.0, failure: None, resource: None, ctx: &ctx };
+            let mut cur = Cur {
+                prims: &prims,
+                pos: 0,
+                scale: 1.0,
+                failure: None,
+                resource: None,
+                ctx: &ctx,
+            };
             for _ in 0..count {
-                if cur.bump().is_none() { break; }
+                if cur.bump().is_none() {
+                    break;
+                }
             }
             if cap == required {
                 assert_eq!(cur.pos, count);
-                for _ in 0..64 { assert!(cur.peek().is_none()); }
+                for _ in 0..64 {
+                    assert!(cur.peek().is_none());
+                }
                 assert!(cur.resource.is_none());
                 ctx.finish_session().unwrap();
             } else {
-                let Some(CodecError::ResourceLimit(first)) = cur.resource.as_ref() else { panic!("actual primitive refusal"); };
+                let Some(CodecError::ResourceLimit(first)) = cur.resource.as_ref() else {
+                    panic!("actual primitive refusal");
+                };
                 let first = *first;
                 assert_eq!(first.operation, "read SAT typing primitive");
                 assert_eq!((first.limit, first.used, first.additional), (cap, cap, 1));
-                let mut empty = Cur { prims: &[], pos: 0, scale: 1.0, failure: None, resource: None, ctx: &ctx };
+                let mut empty = Cur {
+                    prims: &[],
+                    pos: 0,
+                    scale: 1.0,
+                    failure: None,
+                    resource: None,
+                    ctx: &ctx,
+                };
                 assert!(empty.peek().is_none());
-                assert!(matches!(empty.resource, Some(CodecError::ResourceLimit(last)) if last == first));
-                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+                assert!(
+                    matches!(empty.resource, Some(CodecError::ResourceLimit(last)) if last == first)
+                );
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
+                );
             }
         }
     }
@@ -49,8 +75,10 @@ fn manual_sat_absent_record_does_not_execute_a_record_step() {
     policy.limits.max_work_units = u64::MAX;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let probe = RefusalProbe::arm(ResourceDimension::WorkUnits, "frame SAT record", None);
-    assert!(matches!(parse(&ctx, bytes), Err(StreamFailure::Parse(error))
-        if error.reason == "stream has no End-of-ASM-data or End-of-ACIS-data line"));
+    assert!(
+        matches!(parse(&ctx, bytes), Err(StreamFailure::Parse(error))
+        if error.reason == "stream has no End-of-ASM-data or End-of-ACIS-data line")
+    );
     drop(probe);
     assert!(ctx.resource_refusal().is_none());
     ctx.finish_session().unwrap();
@@ -64,8 +92,10 @@ fn manual_sat_absent_field_keeps_the_missing_terminator_error() {
     policy.limits.max_work_units = u64::MAX;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let probe = RefusalProbe::arm(ResourceDimension::WorkUnits, "frame SAT field", None);
-    assert!(matches!(parse(&ctx, bytes), Err(StreamFailure::Parse(error))
-        if error.reason == "record `audit` has no `#` terminator"));
+    assert!(
+        matches!(parse(&ctx, bytes), Err(StreamFailure::Parse(error))
+        if error.reason == "record `audit` has no `#` terminator")
+    );
     drop(probe);
     assert!(ctx.resource_refusal().is_none());
     ctx.finish_session().unwrap();
@@ -81,11 +111,18 @@ fn manual_sat_empty_fields_are_free_and_preserve_original_refusal() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut reader = FieldReader { bytes: &[], pos: 0 };
-    for _ in 0..64 { assert!(reader.next_field(&ctx).unwrap().is_none()); }
-    let Err(CodecError::ResourceLimit(first)) = ctx.charge_work(1, "test original SAT scan refusal")
-    else { panic!("original refusal"); };
     for _ in 0..64 {
-        assert!(matches!(reader.next_field(&ctx), Err(StreamFailure::Resource(last)) if last == first));
+        assert!(reader.next_field(&ctx, None).unwrap().is_none());
+    }
+    let Err(CodecError::ResourceLimit(first)) =
+        ctx.charge_work(1, "test original SAT scan refusal")
+    else {
+        panic!("original refusal");
+    };
+    for _ in 0..64 {
+        assert!(
+            matches!(reader.next_field(&ctx, None), Err(StreamFailure::Resource(last)) if last == first)
+        );
         assert!(matches!(parse(&ctx, &[]), Err(StreamFailure::Resource(last)) if last == first));
     }
     assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
@@ -94,13 +131,17 @@ fn manual_sat_empty_fields_are_free_and_preserve_original_refusal() {
 #[test]
 fn entry_sat_header_integer_missing_field_preserves_original_refusal() {
     crate::test_support::with_entry_context(|ctx, original| {
-
         let result = super::super::header_int::<i64>(ctx, None, 7, "version");
         if let Some(first) = original {
-            assert!(matches!(result, Err(crate::stream_error::StreamFailure::Resource(last)) if last == first));
-
+            assert!(
+                matches!(result, Err(crate::stream_error::StreamFailure::Resource(last)) if last == first)
+            );
         } else {
-            let Err(StreamFailure::Parse(error)) = result else { panic!("missing field"); }; assert_eq!(error.offset, 7); assert_eq!(error.reason, "header line has no version field");
+            let Err(StreamFailure::Parse(error)) = result else {
+                panic!("missing field");
+            };
+            assert_eq!(error.offset, 7);
+            assert_eq!(error.reason, "header line has no version field");
         }
     });
 }
@@ -108,13 +149,17 @@ fn entry_sat_header_integer_missing_field_preserves_original_refusal() {
 #[test]
 fn entry_sat_header_float_missing_field_preserves_original_refusal() {
     crate::test_support::with_entry_context(|ctx, original| {
-
         let result = super::super::header_float(ctx, None, 9, "tolerance");
         if let Some(first) = original {
-            assert!(matches!(result, Err(crate::stream_error::StreamFailure::Resource(last)) if last == first));
-
+            assert!(
+                matches!(result, Err(crate::stream_error::StreamFailure::Resource(last)) if last == first)
+            );
         } else {
-            let Err(StreamFailure::Malformed(error)) = result else { panic!("missing value"); }; assert_eq!(error.offset, 9); assert_eq!(error.reason, "header line has no valid tolerance value");
+            let Err(StreamFailure::Malformed(error)) = result else {
+                panic!("missing value");
+            };
+            assert_eq!(error.offset, 9);
+            assert_eq!(error.reason, "header line has no valid tolerance value");
         }
     });
 }
@@ -125,10 +170,17 @@ fn entry_sat_truncated_string_preserves_original_refusal_and_cursor() {
         let mut reader = FieldReader { bytes: &[], pos: 0 };
         let result = reader.read_str_payload(ctx, 3, 11);
         if let Some(first) = original {
-            assert!(matches!(result, Err(crate::stream_error::StreamFailure::Resource(last)) if last == first));
+            assert!(
+                matches!(result, Err(crate::stream_error::StreamFailure::Resource(last)) if last == first)
+            );
             assert_eq!(reader.pos, 0);
         } else {
-            let Err(StreamFailure::Parse(error)) = result else { panic!("truncated string"); }; assert_eq!(error.offset, 11); assert_eq!(error.reason, "truncated @3 string"); assert_eq!(reader.pos, 1);
+            let Err(StreamFailure::Parse(error)) = result else {
+                panic!("truncated string");
+            };
+            assert_eq!(error.offset, 11);
+            assert_eq!(error.reason, "truncated @3 string");
+            assert_eq!(reader.pos, 1);
         }
     });
 }
@@ -142,7 +194,10 @@ fn entry_sat_fixed_braces_preserve_original_refusal() {
             if let Some(first) = &original {
                 assert!(matches!(result, Err(StreamFailure::Resource(last)) if &last == first));
             } else {
-                assert!(matches!((field, result.unwrap()), ("{", Prim::Open) | ("}", Prim::Close)));
+                assert!(matches!(
+                    (field, result.unwrap()),
+                    ("{", Prim::Open) | ("}", Prim::Close)
+                ));
             }
             assert_eq!(reader.pos, 0);
         }

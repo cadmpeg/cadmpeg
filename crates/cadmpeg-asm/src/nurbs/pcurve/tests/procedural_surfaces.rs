@@ -1736,13 +1736,13 @@ fn projection_layout_walks_both_tail_forms_at_both_widths() {
                         )
                         .expect("decode work admission")
                         .is_none());
-                        let record = crate::sab::Record {
-                            index: 0,
-                            name: "intcurve".into(),
-                            tokens: Vec::new().into(),
-                            offset: 0,
-                            len: malformed.len(),
-                        };
+                        let record = crate::test_support::sab::record(
+                            0,
+                            "intcurve".into(),
+                            Vec::new().into(),
+                            0,
+                            malformed.len(),
+                        );
                         let edits = crate::edit::AsmEditSet::from_framed(
                             vec![record.clone()],
                             int_width,
@@ -1835,14 +1835,14 @@ fn silhouette_layout_walks_each_family_at_both_widths() {
                 push_f64(&mut bytes, 0.5);
             }
 
-        let layout = silhouette_patch_layout(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            int_width,
-            &kind,
-        )
-        .expect("decode work admission")
-        .unwrap_or_else(|| panic!("{name} layout at width {int_width}"));
+            let layout = silhouette_patch_layout(
+                &cadmpeg_test_support::service_decode_context(),
+                &bytes,
+                int_width,
+                &kind,
+            )
+            .expect("decode work admission")
+            .unwrap_or_else(|| panic!("{name} layout at width {int_width}"));
             assert_eq!(layout.light_direction, light);
             assert_eq!(layout.draft_factor.is_some(), name.starts_with("taper"));
         }
