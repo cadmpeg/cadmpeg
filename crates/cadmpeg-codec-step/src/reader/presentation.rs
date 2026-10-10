@@ -408,8 +408,13 @@ pub(super) fn decode<'ctx>(
     )?;
     let mut scalar_color_candidates: ScalarCandidates = std::array::from_fn(|_| BTreeMap::new());
     let mut style_colors = StyleColors {
+        exchange,
         prefixes: BTreeMap::new(),
         values: BTreeMap::new(),
+        queries: Vec::new(),
+        frames: Vec::new(),
+        frame_storage: ctx.reserve_scoped(0, "STEP shared color frames")?,
+        completed: ColorCompletions::new(ctx)?,
         ctx,
         storage: ctx.reserve_scoped(0, "STEP shared color scratch")?,
     };
@@ -512,7 +517,6 @@ pub(super) fn decode<'ctx>(
         }
         let (color_query, resolved) = style_colors.resolve(
             &style_references,
-            exchange,
             domain,
             &color_storage,
             (&mut losses, &slot_storage),
@@ -1976,10 +1980,101 @@ fn combine_color_resolutions(
     }
 }
 
+struct ColorResult {
+    color: CachedColor,
+    // None prevents sharing after a cycle, cutoff, or warning.
+    height: Option<u8>,
+}
+
+// Explicitly visited completions keep local claims. Shared hits also
+// claim their completed descendants.
+#[derive(Clone, Copy)]
+enum ColorCacheSource { Local, Completed, Shared }
+
+struct ColorCacheEntry {
+    color: usize,
+    source: ColorCacheSource,
+    height: Option<u8>,
+}
+
+#[derive(Default)]
+struct ColorCache {
+    values: BTreeMap<(u64, StyleDomain), ColorCacheEntry>,
+    colors: Vec<CachedColor>,
+}
+
+struct CompletedColor {
+    color: usize,
+    height: u8,
+}
+
+struct ColorCompletions<'ctx> {
+    values: BTreeMap<(u64, StyleDomain), CompletedColor>,
+    colors: Vec<CachedColor>,
+    claimed: BTreeSet<(u64, StyleDomain)>,
+    storage: ScopedReservation<'ctx>,
+}
+
+impl<'ctx> ColorCompletions<'ctx> {
+    fn new(ctx: &'ctx DecodeContext<'_>) -> Result<Self, CodecError> {
+        Ok(Self {
+            values: BTreeMap::new(),
+            colors: Vec::new(),
+            claimed: BTreeSet::new(),
+            storage: ctx.reserve_scoped(0, "STEP completed color graph scratch")?,
+        })
+    }
+
+    fn claim(
+        &mut self,
+        root: (u64, StyleDomain),
+        (claims, storage): (&mut BTreeSet<u64>, &mut ScopedReservation<'_>),
+        exchange: &Exchange,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<(), CodecError> {
+        let mut walk_storage = ctx.reserve_scoped(0, "STEP shared color claim walk")?;
+        let mut pending = Vec::new();
+        ctx.push_scoped_vec(&mut walk_storage, &mut pending, root, "STEP shared color claim pending")?;
+        while !pending.is_empty() {
+            ctx.charge_work(1, "STEP shared color claim step")?;
+            let key = pending.pop().ok_or_else(|| CodecError::malformed("STEP shared color claim node missing"))?;
+            if ctx.contains_btree_set(&self.claimed, &key, "STEP shared color claimed lookup")? {
+                continue;
+            }
+            // Missing records and context styles have no completion or claim.
+            let Some(node) = ctx.get_btree_map(&self.values, &key, "STEP shared color claim lookup")? else {
+                continue;
+            };
+            self.storage.with_storage(|| ctx.insert_btree_set(&mut self.claimed, key, "STEP shared color claimed"))?;
+            storage.with_storage(|| ctx.insert_btree_set(claims, key.0, "step_presentation_typed_claims"))?;
+            if node.height == 0 {
+                continue;
+            }
+            let record = ctx.get_btree_map(exchange.records(), &key.0, "STEP shared color claim record lookup")?
+                .ok_or_else(|| CodecError::malformed("STEP shared color claim record missing"))?;
+            let mut partials = record.partials.iter();
+            for _ in 0..partials.len() {
+                let partial = ctx.next_charged(&mut partials, "STEP shared color claim partials")?
+                    .ok_or_else(|| CodecError::malformed("STEP shared color claim partial missing"))?;
+                let mut parameters = partial.parameters.iter();
+                for _ in 0..parameters.len() {
+                    let value = ctx.next_charged(&mut parameters, "STEP shared color claim parameters")?
+                        .ok_or_else(|| CodecError::malformed("STEP shared color claim parameter missing"))?;
+                    for child in references(value, ctx) {
+                        ctx.push_scoped_vec(&mut walk_storage, &mut pending, (child?, key.1), "STEP shared color claim pending")?;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 struct ColorSearchState<'a, 'ctx> {
     storage: &'a std::cell::RefCell<cadmpeg_core::decode::ScopedReservation<'ctx>>,
     active: &'a mut BTreeSet<u64>,
-    cache: &'a mut BTreeMap<(u64, StyleDomain), CachedColor>,
+    cache: &'a mut ColorCache,
+    completed: Option<&'a mut ColorCompletions<'ctx>>,
     losses: (
         &'a mut Vec<LossNote>,
         &'a std::cell::RefCell<ScopedReservation<'ctx>>,
@@ -1990,32 +2085,38 @@ struct ColorSearchState<'a, 'ctx> {
 struct CachedStyleColors {
     color: CachedColor,
     losses: Vec<LossNote>,
-    claims: Vec<u64>,
+    claims: Vec<((u64, StyleDomain), bool)>,
     claims_applied: bool,
 }
 
-struct StyleColors<'ctx, 'arena> {
+struct StyleColors<'source, 'ctx, 'arena> {
+    exchange: &'source Exchange,
     // Fixed-size prefix keys identify an ordered reference list without
     // variable-length map-key comparisons or repeated graph evaluation.
     prefixes: BTreeMap<(usize, u64), usize>,
-    values: BTreeMap<(usize, StyleDomain), CachedStyleColors>,
+    values: BTreeMap<(usize, StyleDomain), usize>,
+    queries: Vec<CachedStyleColors>,
+    // Successful walks drain frames; their backing remains available.
+    frames: Vec<ColorFrame<'source, 'ctx, 'arena>>,
+    frame_storage: ScopedReservation<'ctx>,
+    completed: ColorCompletions<'ctx>,
     ctx: &'ctx DecodeContext<'arena>,
     storage: ScopedReservation<'ctx>,
 }
 
-impl StyleColors<'_, '_> {
-    fn resolve<'storage>(
+impl<'source, 'ctx, 'arena> StyleColors<'source, 'ctx, 'arena> {
+    fn resolve(
         &mut self,
         references: &[u64],
-        exchange: &Exchange,
         domain: StyleDomain,
-        storage: &std::cell::RefCell<ScopedReservation<'storage>>,
+        storage: &std::cell::RefCell<ScopedReservation<'ctx>>,
         (losses, slot_storage): (
             &mut Vec<LossNote>,
-            &std::cell::RefCell<ScopedReservation<'storage>>,
+            &std::cell::RefCell<ScopedReservation<'ctx>>,
         ),
     ) -> Result<(usize, &CachedStyleColors), CodecError> {
         let ctx = self.ctx;
+        let exchange = self.exchange;
         let mut prefix = 0;
         let mut reference_prefix = references.iter();
         ctx.charge_work(0, "STEP style color query references")?;
@@ -2040,12 +2141,11 @@ impl StyleColors<'_, '_> {
             "STEP style color query lookup",
         )?;
         if !cached_before {
-            // Each ordered query starts with the same local traversal state.
-            // Caching the complete query preserves local cache history, cycles,
-            // depth cutoffs, domain fallback, and per-style warning order.
+            // Local cache history precedes shared lookup. Shared completions
+            // are acyclic, warning-free, and fit wholly below the cutoff.
             let loss_start = losses.len();
             let mut active = BTreeSet::new();
-            let mut cache = BTreeMap::new();
+            let mut cache = ColorCache::default();
             let mut invalid_surface_sides = BTreeSet::new();
             let mut resolve = |domain| {
                 let mut references = references.iter().copied();
@@ -2063,10 +2163,12 @@ impl StyleColors<'_, '_> {
                             storage,
                             active: &mut active,
                             cache: &mut cache,
+                            completed: Some(&mut self.completed),
                             losses: (&mut *losses, slot_storage),
                             invalid_surface_sides: &mut invalid_surface_sides,
                         },
                         0,
+                    Some((&mut self.frames, &mut self.frame_storage)),
                         ctx,
                     )
                 });
@@ -2081,17 +2183,17 @@ impl StyleColors<'_, '_> {
                 };
             self.storage.with_storage(|| {
                 let mut claims = Vec::new();
-                let mut cache_entries = cache.iter();
+                let mut cache_entries = cache.values.iter();
                 ctx.charge_work(0, "STEP color claim cache traversal")?;
                 for _ in 0..cache_entries.len() {
-                    let (&(id, _), _) = ctx.next_charged(&mut cache_entries, "STEP color claim cache traversal")?
+                    let (&key, entry) = ctx.next_charged(&mut cache_entries, "STEP color claim cache traversal")?
                         .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
                     if !ctx.contains_btree_set(
                         &invalid_surface_sides,
-                        &id,
+                        &key.0,
                         "STEP presentation invalid_surface_sides contains",
                     )? {
-                        ctx.push_vec(&mut claims, id, "step_style_color_claims")?;
+                        ctx.push_vec(&mut claims, (key, matches!(entry.source, ColorCacheSource::Shared)), "step_style_color_claims")?;
                     }
                 }
                 let cached = CachedStyleColors {
@@ -2105,10 +2207,12 @@ impl StyleColors<'_, '_> {
                         "step_style_color_cached_losses",
                     )?,
                 };
+                let index = self.queries.len();
+                ctx.push_vec(&mut self.queries, cached, "step_style_color_query_values")?;
                 ctx.insert_btree_map(
                     &mut self.values,
                     (prefix, domain),
-                    cached,
+                    index,
                     "step_style_color_query_entries",
                 )
             })?;
@@ -2119,6 +2223,7 @@ impl StyleColors<'_, '_> {
                 &(prefix, domain),
                 "STEP style color query result",
             )?
+            .and_then(|index| self.queries.get(*index))
             .ok_or_else(|| CodecError::malformed("STEP style color query is missing"))?;
         if cached_before {
             let mut cached_losses = cached.losses.iter();
@@ -2146,21 +2251,24 @@ impl StyleColors<'_, '_> {
     ) -> Result<(), CodecError> {
         let ctx = self.ctx;
         let cached = ctx
-            .get_mut_btree_map(
-                &mut self.values,
+            .get_btree_map(
+                &self.values,
                 &(prefix, domain),
                 "STEP style color claims lookup",
             )?
+            .and_then(|index| self.queries.get_mut(*index))
             .ok_or_else(|| CodecError::malformed("STEP style color query is missing"))?;
         if !cached.claims_applied {
             let mut cached_claims = cached.claims.iter();
             ctx.charge_work(0, "STEP style color claim traversal")?;
             for _ in 0..cached_claims.len() {
-                let &id = ctx.next_charged(&mut cached_claims, "STEP style color claim traversal")?
+                let &(key, shared) = ctx.next_charged(&mut cached_claims, "STEP style color claim traversal")?
                     .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
-                storage.with_storage(|| {
-                    ctx.insert_btree_set(claims, id, "step_presentation_typed_claims")
-                })?;
+                if shared {
+                    self.completed.claim(key, (claims, storage), self.exchange, ctx)?;
+                } else {
+                    storage.with_storage(|| ctx.insert_btree_set(claims, key.0, "step_presentation_typed_claims"))?;
+                }
             }
             cached.claims_applied = true;
         }
@@ -2171,6 +2279,7 @@ impl StyleColors<'_, '_> {
 struct ColorFrame<'exchange, 'ctx, 'arena> {
     id: u64,
     depth: usize,
+    loss_start: usize,
     partials: std::slice::Iter<'exchange, crate::parse::PartialRecord>,
     partial_operation: &'static str,
     transparency: Option<Fraction>,
@@ -2179,12 +2288,12 @@ struct ColorFrame<'exchange, 'ctx, 'arena> {
     parameter_operation: &'static str,
     parameters: Option<std::slice::Iter<'exchange, Value>>,
     references: Option<References<'exchange, 'ctx, 'arena>>,
-    result: CachedColor,
+    result: ColorResult,
     _depth: DepthGuard<'ctx>,
 }
 
 enum ColorVisit<'exchange, 'ctx, 'arena> {
-    Complete(CachedColor),
+    Complete(ColorResult),
     Frame(ColorFrame<'exchange, 'ctx, 'arena>),
 }
 
@@ -2209,18 +2318,20 @@ fn find_color<'exchange, 'ctx, 'arena>(
     domain: StyleDomain,
     state: ColorSearchState<'_, '_>,
     depth: usize,
+    walk: Option<(&mut Vec<ColorFrame<'exchange, 'ctx, 'arena>>, &mut ScopedReservation<'ctx>)>,
     ctx: &'ctx DecodeContext<'arena>,
 ) -> Result<CachedColor, CodecError> {
     let ColorSearchState {
         storage,
         active,
         cache,
+        mut completed,
         losses: (losses, slot_storage),
         invalid_surface_sides,
     } = state;
-    let (frames_buffer, mut frame_storage) =
+    let (mut local_frames, mut local_storage) =
         ctx.temporary_vec(0, "step_presentation_color_walk_frames")?;
-    let mut frames = frames_buffer;
+    let (frames, frame_storage) = walk.unwrap_or((&mut local_frames, &mut local_storage));
     let first = begin_color_visit(
         id,
         exchange,
@@ -2229,6 +2340,7 @@ fn find_color<'exchange, 'ctx, 'arena>(
             storage,
             active: &mut *active,
             cache: &mut *cache,
+            completed: completed.as_deref_mut(),
             losses: (&mut *losses, slot_storage),
             invalid_surface_sides: &mut *invalid_surface_sides,
         },
@@ -2236,121 +2348,111 @@ fn find_color<'exchange, 'ctx, 'arena>(
         ctx,
     )?;
     match first {
-        ColorVisit::Complete(result) => return Ok(result),
-        ColorVisit::Frame(frame) => push_color_frame(
+        ColorVisit::Complete(result) => return Ok(result.color),
+        ColorVisit::Frame(frame) => ctx.push_scoped_vec(
+            frame_storage,
+            frames,
             frame,
-            &mut frames,
-            &mut frame_storage,
-            active,
-            ctx,
+            "step_presentation_color_walk_frames",
         )?,
     }
 
-    let result = (|| -> Result<CachedColor, CodecError> {
-        loop {
-            let child_id = next_color_reference(
-                frames.last_mut().ok_or_else(|| {
-                    CodecError::malformed("STEP color traversal has no active frame")
-                })?,
-                ctx,
-            )?;
-            if let Some(child_id) = child_id {
-                let child_depth = frames
-                    .last()
-                    .map(|frame| frame.depth + 1)
-                    .ok_or_else(|| {
-                        CodecError::malformed("STEP color traversal lost its parent frame")
-                    })?;
-                let child = begin_color_visit(
-                    child_id,
-                    exchange,
-                    domain,
-                    ColorSearchState {
-                        storage,
-                        active: &mut *active,
-                        cache: &mut *cache,
-                        losses: (&mut *losses, slot_storage),
-                        invalid_surface_sides: &mut *invalid_surface_sides,
-                    },
-                    child_depth,
-                    ctx,
-                )?;
-                match child {
-                    ColorVisit::Complete(result) => {
-                        let parent = frames.last_mut().ok_or_else(|| {
-                            CodecError::malformed("STEP color traversal lost its parent frame")
-                        })?;
-                        if parent.combine_children {
-                            let result = result.map(|candidate| {
-                                candidate.with_min_rank(parent.side_rank)
-                            });
-                            parent.result = combine_color_resolutions([
-                                Ok(std::mem::take(&mut parent.result)),
-                                Ok(result),
-                            ])?;
-                        }
-                    }
-                    ColorVisit::Frame(frame) => push_color_frame(
-                        frame,
-                        &mut frames,
-                        &mut frame_storage,
-                        active,
-                        ctx,
-                    )?,
-                }
-                continue;
-            }
-
-            let frame = frames.pop().ok_or_else(|| {
-                CodecError::malformed("STEP color traversal ended without a frame")
-            })?;
-            let ColorFrame {
-                id,
-                transparency,
-                result,
-                _depth,
-                ..
-            } = frame;
-            let result = finish_color(
-                id,
+    loop {
+        let child_id = next_color_reference(
+            frames.last_mut().ok_or_else(|| {
+                CodecError::malformed("STEP color traversal has no active frame")
+            })?,
+            ctx,
+        )?;
+        if let Some(child_id) = child_id {
+            let child_depth = frames
+                .last()
+                .map(|frame| frame.depth + 1)
+                .ok_or_else(|| {
+                    CodecError::malformed("STEP color traversal lost its parent frame")
+                })?;
+            let child = begin_color_visit(
+                child_id,
+                exchange,
                 domain,
-                transparency,
-                result,
                 ColorSearchState {
                     storage,
                     active: &mut *active,
                     cache: &mut *cache,
+                    completed: completed.as_deref_mut(),
                     losses: (&mut *losses, slot_storage),
                     invalid_surface_sides: &mut *invalid_surface_sides,
                 },
+                child_depth,
                 ctx,
             )?;
-            drop(_depth);
-            let Some(parent) = frames.last_mut() else {
-                return Ok(result);
-            };
-            if parent.combine_children {
-                let result = result.map(|candidate| candidate.with_min_rank(parent.side_rank));
-                parent.result = combine_color_resolutions([
-                    Ok(std::mem::take(&mut parent.result)),
-                    Ok(result),
-                ])?;
+            match child {
+                ColorVisit::Complete(result) => {
+                    let parent = frames.last_mut().ok_or_else(|| {
+                        CodecError::malformed("STEP color traversal lost its parent frame")
+                    })?;
+                    parent.result.height = parent.result.height.zip(result.height).and_then(|(height, child)| child.checked_add(1).map(|child| height.max(child)));
+                    if parent.combine_children {
+                        let result = result.color.map(|candidate| {
+                            candidate.with_min_rank(parent.side_rank)
+                        });
+                        parent.result.color = combine_color_resolutions([
+                            Ok(std::mem::take(&mut parent.result.color)),
+                            Ok(result),
+                        ])?;
+                    }
+                }
+                ColorVisit::Frame(frame) => ctx.push_scoped_vec(
+                    frame_storage,
+                    frames,
+                    frame,
+                    "step_presentation_color_walk_frames",
+                )?,
             }
+            continue;
         }
-    })();
-    if let Err(error) = result {
-        while let Some(frame) = frames.pop() {
-            if let Err(cleanup) = ctx.remove_btree_set(
-                active,
-                &frame.id,
-                "STEP presentation active remove",
-            ) {
-                return Err(cleanup);
-            }
+
+        let frame = frames.pop().ok_or_else(|| {
+            CodecError::malformed("STEP color traversal ended without a frame")
+        })?;
+        let ColorFrame {
+            id,
+            transparency,
+            result,
+            depth,
+            loss_start,
+            _depth,
+            ..
+        } = frame;
+        let result = finish_color(
+            id,
+            domain,
+            transparency,
+            result,
+            ColorSearchState {
+                storage,
+                active: &mut *active,
+                cache: &mut *cache,
+                completed: completed.as_deref_mut(),
+                losses: (&mut *losses, slot_storage),
+                invalid_surface_sides: &mut *invalid_surface_sides,
+            },
+            (depth, loss_start),
+            ctx,
+        )?;
+        drop(_depth);
+        let Some(parent) = frames.last_mut() else {
+            return Ok(result.color);
+        };
+        parent.result.height = parent.result.height.zip(result.height).and_then(|(height, child)| child.checked_add(1).map(|child| height.max(child)));
+        if parent.combine_children {
+            let result = result.color.map(|candidate| candidate.with_min_rank(parent.side_rank));
+            parent.result.color = combine_color_resolutions([
+                Ok(std::mem::take(&mut parent.result.color)),
+                Ok(result),
+            ])?;
         }
-        return Err(error);
     }
-    result
 }
 
 fn begin_color_visit<'exchange, 'ctx, 'arena>(
@@ -2365,32 +2467,65 @@ fn begin_color_visit<'exchange, 'ctx, 'arena>(
         storage,
         active,
         cache,
+        mut completed,
         losses: (losses, slot_storage),
         invalid_surface_sides,
     } = state;
     if depth >= 256 {
-        return Ok(ColorVisit::Complete(None));
+        return Ok(ColorVisit::Complete(ColorResult { color: None, height: None }));
     }
-    if let Some(result) = ctx.get_btree_map(cache, &(id, domain), "STEP presentation cache get")? {
+    if let Some(result) = ctx.get_btree_map(&cache.values, &(id, domain), "STEP presentation cache get")? {
+        let color = match result.source {
+            ColorCacheSource::Local => cache.colors.get(result.color),
+            ColorCacheSource::Completed | ColorCacheSource::Shared => completed.as_ref().and_then(|completed| completed.colors.get(result.color)),
+        }.ok_or_else(|| CodecError::malformed("STEP color cache value missing"))?;
         let result = storage.borrow_mut().with_storage(|| {
-            clone_color_resolution(result, ctx, "step_presentation_color_cache_copy")
+            Ok::<_, CodecError>(ColorResult {
+                color: clone_color_resolution(color, ctx, "step_presentation_color_cache_copy")?,
+                height: result.height,
+            })
         })?;
         return Ok(ColorVisit::Complete(result));
+    }
+    if let Some(completed) = completed.as_deref_mut() {
+        if let Some(result) = ctx.get_btree_map(&completed.values, &(id, domain), "STEP completed color lookup")? {
+            if depth + usize::from(result.height) < 256 {
+                let result = storage.borrow_mut().with_storage(|| {
+                    let color = completed.colors.get(result.color)
+                        .ok_or_else(|| CodecError::malformed("STEP completed color value missing"))?;
+                    let color = clone_color_resolution(color, ctx, "step_presentation_color_cache_copy")?;
+                    let height = Some(result.height);
+                    ctx.insert_btree_map(&mut cache.values, (id, domain), ColorCacheEntry { color: result.color, source: ColorCacheSource::Shared, height }, "step_presentation_color_cache_entries")?;
+                    Ok::<_, CodecError>(ColorResult { color, height })
+                })?;
+                return Ok(ColorVisit::Complete(result));
+            }
+        }
     }
     let Some(record) =
         ctx.get_btree_map(exchange.records(), &id, "STEP presentation record get")?
     else {
-        return Ok(ColorVisit::Complete(None));
+        return Ok(ColorVisit::Complete(ColorResult { color: None, height: Some(0) }));
     };
-    if is_presentation_style_by_context(ctx, record)?
-        || ctx.contains_btree_set(active, &id, "STEP presentation active contains")?
-    {
-        return Ok(ColorVisit::Complete(None));
+    if is_presentation_style_by_context(ctx, record)? {
+        return Ok(ColorVisit::Complete(ColorResult { color: None, height: Some(0) }));
+    }
+    if ctx.contains_btree_set(active, &id, "STEP presentation active contains")? {
+        return Ok(ColorVisit::Complete(ColorResult { color: None, height: None }));
     }
     let depth_guard = ctx.enter_nested("step_presentation_color_walk")?;
     storage
         .borrow_mut()
         .with_storage(|| ctx.insert_btree_set(active, id, "step_presentation_color_active"))?;
+    let loss_start = losses.len();
+    // Surface fallback can exclude an invalid usage from claims even when
+    // another partial selects this record's non-surface domain.
+    let height = if matches!(domain, StyleDomain::Curve | StyleDomain::Point) {
+        record.partial(ctx, "SURFACE_STYLE_USAGE")?.is_none_or(|usage| matches!(
+            usage.parameters.first().and_then(ValueExt::enumeration),
+            Some("BOTH" | "POSITIVE" | "NEGATIVE")
+        )).then_some(0)
+    } else { Some(0) };
     let body = (|| -> Result<ColorBody<'exchange>, CodecError> {
         let transparency = if domain == StyleDomain::Surface {
             surface_transparency(id, record, exchange, (losses, slot_storage), ctx)?
@@ -2582,16 +2717,7 @@ fn begin_color_visit<'exchange, 'ctx, 'arena>(
             }
         };
         Ok(ColorBody::Ready { transparency, result })
-    })();
-    let body = match body {
-        Ok(body) => body,
-        Err(error) => {
-            return match ctx.remove_btree_set(active, &id, "STEP presentation active remove") {
-                Ok(_) => Err(error),
-                Err(cleanup) => Err(cleanup),
-            };
-        }
-    };
+    })()?;
     match body {
         ColorBody::Ready {
             transparency,
@@ -2601,14 +2727,16 @@ fn begin_color_visit<'exchange, 'ctx, 'arena>(
                 id,
                 domain,
                 transparency,
-                result,
+                ColorResult { color: result, height },
                 ColorSearchState {
                     storage,
                     active,
                     cache,
+                    completed,
                     losses: (losses, slot_storage),
                     invalid_surface_sides,
                 },
+                (depth, loss_start),
                 ctx,
             )?;
             drop(depth_guard);
@@ -2624,6 +2752,7 @@ fn begin_color_visit<'exchange, 'ctx, 'arena>(
         } => Ok(ColorVisit::Frame(ColorFrame {
             id,
             depth,
+            loss_start,
             partials: record.partials.iter(),
             partial_operation,
             transparency,
@@ -2632,7 +2761,7 @@ fn begin_color_visit<'exchange, 'ctx, 'arena>(
             parameter_operation,
             parameters: None,
             references: None,
-            result: None,
+            result: ColorResult { color: None, height },
             _depth: depth_guard,
         })),
     }
@@ -2673,45 +2802,26 @@ fn next_color_reference<'exchange, 'ctx, 'arena>(
     }
 }
 
-fn push_color_frame<'exchange, 'ctx, 'arena>(
-    frame: ColorFrame<'exchange, 'ctx, 'arena>,
-    frames: &mut Vec<ColorFrame<'exchange, 'ctx, 'arena>>,
-    frame_storage: &mut ScopedReservation<'_>,
-    active: &mut BTreeSet<u64>,
-    ctx: &DecodeContext<'_>,
-) -> Result<(), CodecError> {
-    let id = frame.id;
-    match ctx.push_scoped_vec(
-        frame_storage,
-        frames,
-        frame,
-        "step_presentation_color_walk_frames",
-    ) {
-        Ok(()) => Ok(()),
-        Err(error) => match ctx.remove_btree_set(active, &id, "STEP presentation active remove") {
-            Ok(_) => Err(error),
-            Err(cleanup) => Err(cleanup),
-        },
-    }
-}
-
 fn finish_color(
     id: u64,
     domain: StyleDomain,
     transparency: Option<Fraction>,
-    mut result: CachedColor,
+    mut result: ColorResult,
     state: ColorSearchState<'_, '_>,
+    (depth, loss_start): (usize, usize),
     ctx: &DecodeContext<'_>,
-) -> Result<CachedColor, CodecError> {
+) -> Result<ColorResult, CodecError> {
     let ColorSearchState {
         storage,
         active,
         cache,
+        completed,
+        losses: (losses, _),
         ..
     } = state;
     ctx.remove_btree_set(active, &id, "STEP presentation active remove")?;
     if let Some(transparency) = transparency {
-        match result.as_mut() {
+        match result.color.as_mut() {
             Some(ColorResolution::Candidate(candidate)) => {
                 if let Some(alpha) = cadmpeg_core::convert::f32_from_f64(1.0 - transparency.get()) {
                     candidate.color = candidate.color.with_alpha(alpha).unwrap_or(candidate.color);
@@ -2721,14 +2831,40 @@ fn finish_color(
             None => {}
         }
     }
-    let cached = storage.borrow_mut().with_storage(|| {
-        clone_color_resolution(&result, ctx, "step_presentation_color_cache_value")
-    })?;
+    if losses.len() != loss_start {
+        result.height = None;
+    }
+    let mut shared = None;
+    if let (Some(completed), Some(height)) = (completed, result.height) {
+        if depth + usize::from(height) < 256 {
+            if let Some(cached) = ctx.get_btree_map(&completed.values, &(id, domain), "STEP completed color lookup")? {
+                shared = Some(cached.color);
+            } else {
+                let index = completed.colors.len();
+                completed.storage.with_storage(|| {
+                    let color = clone_color_resolution(&result.color, ctx, "STEP completed color value")?;
+                    ctx.push_vec(&mut completed.colors, color, "STEP completed color values")?;
+                    ctx.insert_btree_map(&mut completed.values, (id, domain), CompletedColor { color: index, height }, "STEP completed color entries")
+                })?;
+                shared = Some(index);
+            }
+        }
+    }
+    let (color, source) = if let Some(index) = shared {
+        (index, ColorCacheSource::Completed)
+    } else {
+        let index = cache.colors.len();
+        storage.borrow_mut().with_storage(|| {
+            let color = clone_color_resolution(&result.color, ctx, "step_presentation_color_cache_value")?;
+            ctx.push_vec(&mut cache.colors, color, "STEP local color values")
+        })?;
+        (index, ColorCacheSource::Local)
+    };
     storage.borrow_mut().with_storage(|| {
         ctx.insert_btree_map(
-            cache,
+            &mut cache.values,
             (id, domain),
-            cached,
+            ColorCacheEntry { color, source, height: result.height },
             "step_presentation_color_cache_entries",
         )
     })?;

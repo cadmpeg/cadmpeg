@@ -74,7 +74,8 @@ ENDSEC;END-ISO-10303-21;",
                         .expect("scope"),
                 ),
                 active: &mut BTreeSet::new(),
-                cache: &mut BTreeMap::new(),
+                cache: &mut super::ColorCache::default(),
+                    completed: None,
                 losses: (
                     &mut Vec::new(),
                     &std::cell::RefCell::new(
@@ -84,6 +85,7 @@ ENDSEC;END-ISO-10303-21;",
                 invalid_surface_sides: &mut BTreeSet::new(),
             },
             0,
+                    None,
             ctx,
         )
         .expect("colour search fits local resources")

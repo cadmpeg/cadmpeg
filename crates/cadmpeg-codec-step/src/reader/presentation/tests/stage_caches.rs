@@ -157,6 +157,7 @@ fn empty_color_frame_visits_no_terminal_step() {
     let mut frame = super::super::ColorFrame {
         id: 1,
         depth: 0,
+        loss_start: 0,
         partials: partials.iter(),
         partial_operation: "test empty color partials",
         transparency: None,
@@ -165,7 +166,7 @@ fn empty_color_frame_visits_no_terminal_step() {
         parameter_operation: "test empty color parameters",
         parameters: Some(parameters.iter()),
         references: None,
-        result: None,
+        result: super::super::ColorResult { color: None, height: Some(0) },
         _depth: ctx.enter_nested("test empty color frame").expect("frame depth"),
     };
     assert_eq!(super::super::next_color_reference(&mut frame, &ctx)
