@@ -1492,15 +1492,14 @@ pub(crate) fn parse_relation_signature(
                 };
                 (true, ctx.trim_text(value_type, TRIM)?)
             };
-            if parameter.is_empty()
-                || value_type.is_empty()
-                || ctx.contains_hash_set(&names, parameter, "catia_legacy_relation_names")?
-            {
+            if parameter.is_empty() || value_type.is_empty() {
                 return Ok(None);
             }
-            name_storage.with_storage(|| {
+            if !name_storage.with_storage(|| {
                 ctx.insert_hash_set(&mut names, parameter, "catia_legacy_relation_names")
-            })?;
+            })? {
+                return Ok(None);
+            }
             let parameter = LegacyRelationParameter {
                 parameter: ctx.copy_retained_text(parameter, "catia_legacy_relation_parameter")?,
                 value_type: ctx

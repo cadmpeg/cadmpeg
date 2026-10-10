@@ -430,10 +430,37 @@ fn formula_legacy_empty_symbol_index_does_not_admit_unread_names() {
         .inputs
         .extend(std::iter::repeat_n(relation.inputs[0].clone(), 4096));
     let names = std::collections::HashMap::new();
-    // One expression byte and one input-row visit. Empty membership needs no key read.
-    assert!(crate::test_support::with_work_limit(2, |ctx| {
+    // One expression byte. Empty membership rejects before input rows or keys.
+    assert!(crate::test_support::with_work_limit(1, |ctx| {
         super::super::legacy_relation_evaluation(ctx, &relation, &names, &candidates)
     })
     .expect("empty membership leaves long names and the input tail unread")
     .is_none());
+}
+
+#[test]
+fn formula_legacy_empty_inputs_skip_row_admission() {
+    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, ResourceDimension};
+    let (mut relation, candidates, _) = relation_fixture(0);
+    relation.expression = "1".to_owned();
+    let names = std::collections::HashMap::new();
+    let _probe = RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "catia_formula_legacy_input_visits",
+        None,
+    );
+    let result = crate::test_support::with_work_limit(u64::MAX, |ctx| {
+        let result = super::super::legacy_relation_evaluation(ctx, &relation, &names, &candidates)?;
+        assert_eq!(ctx.resource_refusal(), None);
+        Ok::<_, cadmpeg_core::CodecError>(result)
+    })
+    .expect("empty input list has no row admission")
+    .expect("constant relation");
+    assert!(result.dependencies.is_empty());
+    assert_eq!(result.source_type, "Real");
+    assert_eq!(result.expression, "1");
+    assert_eq!(
+        result.evaluated.scalar().expect("scalar result").value(),
+        1.0
+    );
 }

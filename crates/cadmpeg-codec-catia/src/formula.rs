@@ -1753,18 +1753,23 @@ fn legacy_relation_evaluation<'a>(
             }
         }
     }
+    if symbol_parameters.is_empty() && !relation.inputs.is_empty() {
+        return Ok(None);
+    }
     let mut bindings = BTreeMap::new();
     let mut bound = HashSet::new();
     let mut dependencies = Vec::new();
     let mut inputs = relation.inputs.iter();
-    while let Some(input) = ctx.next_charged(&mut inputs, "catia_formula_legacy_input_visits")? {
-        if symbol_parameters.is_empty()
-            || !ctx.contains_hash_set(
-                &symbol_parameters,
-                input.parameter.as_str(),
-                "catia_legacy_formula_symbol_index",
-            )?
-        {
+    while inputs.len() != 0 {
+        let Some(input) = ctx.next_charged(&mut inputs, "catia_formula_legacy_input_visits")?
+        else {
+            break;
+        };
+        if !ctx.contains_hash_set(
+            &symbol_parameters,
+            input.parameter.as_str(),
+            "catia_legacy_formula_symbol_index",
+        )? {
             return Ok(None);
         }
         let Some(Some(parameter_id)) = ctx.get_hash_map(
