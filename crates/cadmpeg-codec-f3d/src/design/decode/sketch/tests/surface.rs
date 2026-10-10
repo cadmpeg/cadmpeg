@@ -110,24 +110,24 @@ fn sketch_surface_parser_refuses_scaled_coordinate_overflow() {
 
 #[test]
 fn sketch_surface_collections_refuse_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
 
     let payload = canonical_surface_payload();
-    for (limit, operation) in [
-        (11, "f3d sketch surface scalar values"),
-        (15, "f3d sketch surface scalar values"),
-        (19, "f3d sketch surface scalar values"),
-        (23, "f3d sketch surface scaled points"),
-        (25, "f3d sketch surface rows"),
-        (27, "f3d sketch surface row points"),
-        (29, "f3d sketch surface row points"),
+    for (skip, operation) in [
+        (0, "f3d sketch surface scalar values"),
+        (1, "f3d sketch surface scalar values"),
+        (2, "f3d sketch surface scalar values"),
+        (0, "f3d sketch surface scaled points"),
+        (0, "f3d sketch surface rows"),
+        (0, "f3d sketch surface row points"),
+        (1, "f3d sketch surface row points"),
     ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = parse_sketch_surface(&ctx, &payload, 0)
-            .expect_err("collection limit must refuse surface geometry");
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::CollectionItems,
+            operation,
+            skip,
+            |ctx| parse_sketch_surface(ctx, &payload, 0),
+        );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
             if failure.dimension == ResourceDimension::CollectionItems
@@ -141,19 +141,49 @@ fn sketch_surface_decoder_keeps_constructor_refusals_in_the_outer_result() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     let payload = canonical_surface_payload();
-    for allowance in [0, 2, 8, 12, 15] {
+    // Every work refusal on the way to an admitted surface stays in the
+    // result and in the session.
+    let mut allowance = 0;
+    loop {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = allowance;
         let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
-        let Err(CodecError::ResourceLimit(original)) = parse_sketch_surface(&ctx, &payload, 0)
-        else {
-            panic!("constructor refusal must not disappear");
+        let original = match parse_sketch_surface(&ctx, &payload, 0) {
+            Ok(_) => break,
+            Err(CodecError::ResourceLimit(original)) => original,
+            Err(error) => panic!("constructor refusal must not change kind: {error:?}"),
         };
         assert_eq!(original.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(original.used, allowance);
+        assert!(original.used <= allowance && original.used + original.additional > allowance);
         assert!(
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original)
         );
+        allowance = original.used + original.additional;
+    }
+    assert!(allowance > 0);
+}
+
+#[test]
+fn sketch_surface_row_copy_refuses_each_resource_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let payload = canonical_surface_payload();
+    let operation = "f3d sketch surface row points";
+    for (dimension, additional) in [
+        (ResourceDimension::WorkUnits, 50),
+        (ResourceDimension::CollectionItems, 2),
+        (ResourceDimension::RetainedBytes, 96),
+    ] {
+        let refusal = crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
+            parse_sketch_surface(ctx, &payload, 0).map(|_| ())
+        });
+        assert!(matches!(
+            refusal,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == dimension
+                    && limit.operation == operation
+                    && limit.additional == additional
+        ));
     }
 }

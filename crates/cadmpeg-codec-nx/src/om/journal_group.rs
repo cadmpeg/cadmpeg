@@ -98,7 +98,7 @@ impl JournalGroup<usize> {
     ) -> Result<Option<JournalGroup>, CodecError> {
         Ok(self
             .rows
-            .try_map_charged(ctx, |row| row.into_absolute(base))?
+            .try_map_charged(ctx, |row| Ok(row.into_absolute(base)))?
             .map(|rows| JournalGroup {
                 selector: self.selector,
                 header: self.header,
