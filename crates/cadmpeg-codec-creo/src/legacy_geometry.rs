@@ -197,9 +197,6 @@ pub(crate) fn scan(
     ctx: &DecodeContext<'_>,
     persistence: &Persistence,
 ) -> Result<LegacyGeometryScan, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut scratch = ctx.reserve_scoped(0, "creo legacy geometry scratch")?;
     let object_ids = scratch.with_storage(|| object_id_index(ctx, &persistence.objects))?;
     let children = scratch.with_storage(|| child_index(ctx, &persistence.objects))?;
@@ -260,9 +257,6 @@ fn curve_namespace(
     integer_fields: &IntegerFieldIndex<'_>,
     real_fields: &RealFieldIndex<'_>,
 ) -> Result<(Vec<CurveTopologyRow>, Vec<PcurveEndpoints>), CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut elements_scope = ctx.reserve_scoped(0, "creo legacy geometry element scratch")?;
     let Some(elements) = elements_scope.with_storage(|| {
         geometry_array_elements(
@@ -525,9 +519,6 @@ fn namespace(
     namespace: LegacySurfaceNamespace,
     carriers: &mut Vec<LegacySurfaceCarrier>,
 ) -> Result<Vec<SurfaceRow>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut elements_scope = ctx.reserve_scoped(0, "creo legacy geometry element scratch")?;
     let Some(elements) = elements_scope.with_storage(|| {
         geometry_array_elements(
@@ -908,9 +899,6 @@ fn real_array_values(
     ctx: &DecodeContext<'_>,
     record: &RealRecord,
 ) -> Result<Option<Vec<f64>>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let NumericPayload::Array(array) = &record.payload else {
         return Ok(None);
     };
@@ -932,9 +920,6 @@ fn object_id_index<'a>(
     ctx: &DecodeContext<'_>,
     objects: &'a [ObjectRecord],
 ) -> Result<ObjectIdIndex<'a>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut index = BTreeMap::new();
     for object in ctx.admit_iter(objects, "creo legacy object index rows")? {
         let id =
@@ -948,9 +933,6 @@ fn child_index<'a>(
     ctx: &DecodeContext<'_>,
     objects: &'a [ObjectRecord],
 ) -> Result<ChildIndex<'a>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut index = HashMap::new();
     for object in ctx.admit_iter(objects, "creo legacy primitive index rows")? {
         if !object.name.starts_with("srf_prim_ptr(") {
@@ -1048,9 +1030,6 @@ fn local_system_slots(
     ctx: &DecodeContext<'_>,
     record: &RealRecord,
 ) -> Result<Option<[f64; 12]>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let NumericPayload::Array(array) = &record.payload else {
         return Ok(None);
     };

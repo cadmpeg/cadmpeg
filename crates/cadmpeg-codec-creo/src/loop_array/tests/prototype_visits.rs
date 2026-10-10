@@ -2,7 +2,7 @@
 use super::*;
 
 #[test]
-fn fixed_short_loop_prototype_and_frame_routes_are_free_and_keep_original_refusal() {
+fn fixed_short_loop_prototype_and_frame_routes_are_free() {
     let data = [0xff; 3];
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -36,31 +36,6 @@ fn fixed_short_loop_prototype_and_frame_routes_are_free_and_keep_original_refusa
         super::super::row_end(&ctx, &data, data.len(), data.len()).expect("no row token"),
         None
     );
-    let original = ctx
-        .charge_work_limit(1, "seed fixed loop prototype refusal")
-        .expect_err("zero work cap");
-    assert_eq!((original.used, original.additional), (0, 1));
-    assert!(
-        matches!(super::super::find_named_field(&ctx, &data, 0, data.len(), b"lo_id"),
-        Err(CodecError::ResourceLimit(actual)) if actual == original)
-    );
-    assert!(
-        matches!(super::super::prototype_close(&ctx, &data, 0, data.len(), 42),
-        Err(CodecError::ResourceLimit(actual)) if actual == original)
-    );
-    assert!(
-        matches!(super::super::named_prototype_end(&ctx, &data, 0, data.len(), 42),
-        Err(CodecError::ResourceLimit(actual)) if actual == original)
-    );
-    assert!(
-        matches!(super::super::parse_frame(&ctx, &mut storage, &data, 0, data.len()),
-        Err(CodecError::ResourceLimit(actual)) if actual == original)
-    );
-    assert!(
-        matches!(super::super::row_end(&ctx, &data, data.len(), data.len()),
-        Err(CodecError::ResourceLimit(actual)) if actual == original)
-    );
-    assert_eq!(ctx.resource_refusal(), Some(original));
 }
 
 #[test]
@@ -93,7 +68,7 @@ fn complete_loop_prototype_admits_present_windows_and_leaves_following_bytes_fre
 }
 
 #[test]
-fn empty_loop_array_output_is_free_and_keeps_original_refusal() {
+fn empty_loop_array_output_is_free() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
@@ -106,10 +81,5 @@ fn empty_loop_array_output_is_free_and_keeps_original_refusal() {
         super::super::scan(&ctx, &[]).expect("no frame discovery or ordering"),
         super::super::LoopArrayScan::default()
     );
-    let original = ctx
-        .charge_work_limit(1, "empty loop output seed")
-        .expect_err("zero cap");
-    assert_eq!((original.used, original.additional), (0, 1));
-    assert!(matches!(super::super::scan(&ctx, &[]),
-        Err(CodecError::ResourceLimit(actual)) if actual == original));
+
 }

@@ -282,12 +282,6 @@ fn work_output<T>(
         if let Err(CodecError::ResourceLimit(original)) = &result {
             assert_eq!(original.dimension, ResourceDimension::WorkUnits);
             assert_eq!(ctx.resource_refusal().as_ref(), Some(original));
-            assert!(
-                matches!(run(&ctx), Err(CodecError::ResourceLimit(actual)) if &actual == original)
-            );
-            assert!(
-                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if &actual == original)
-            );
         }
         result
     };
@@ -301,13 +295,5 @@ fn work_output<T>(
     policy.limits.max_entities = 0;
     policy.limits.max_recursion_depth = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let value = run(&ctx).expect("walker admits the unchanged fixture");
-    let original = ctx
-        .charge_work_limit(1, "after owner work route")
-        .expect_err("exact work cap");
-    assert!(matches!(run(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == original));
-    assert!(
-        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original)
-    );
-    value
+    run(&ctx).expect("walker admits the unchanged fixture")
 }

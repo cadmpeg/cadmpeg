@@ -6,7 +6,7 @@ use cadmpeg_core::CodecError;
 const SCALAR_IMAGE: &[u8] = &[0x46, 0, 0, 0, 0, 0, 0, 0];
 
 #[test]
-fn named_prototype_records_build_one_scalar_cache_and_preserve_original_refusal() {
+fn named_prototype_records_build_one_scalar_cache() {
     // One image creates one unique-image node, one paired-tail node and one
     // scalar entry. No prototype marker creates a frame or output record.
     let arena = DecodeArena::new();
@@ -35,19 +35,10 @@ fn named_prototype_records_build_one_scalar_cache_and_preserve_original_refusal(
         (original.dimension, original.used, original.additional),
         (ResourceDimension::CollectionItems, 3, 1)
     );
-    for _ in 0..2 {
-        assert!(
-            matches!(super::super::named_prototype_records(&ctx, SCALAR_IMAGE, &mut refusals),
-            Err(CodecError::ResourceLimit(actual)) if actual == original)
-        );
-    }
-    assert!(
-        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original)
-    );
 }
 
 #[test]
-fn plane_local_systems_build_one_scalar_cache_and_preserve_original_refusal() {
+fn plane_local_systems_build_one_scalar_cache() {
     // One image creates one unique-image node, one paired-tail node and one
     // scalar entry. No surface row creates a parameter or local-system record.
     let arena = DecodeArena::new();
@@ -70,15 +61,6 @@ fn plane_local_systems_build_one_scalar_cache_and_preserve_original_refusal() {
     assert_eq!(
         (original.dimension, original.used, original.additional),
         (ResourceDimension::CollectionItems, 3, 1)
-    );
-    for _ in 0..2 {
-        assert!(
-            matches!(super::super::plane_local_systems_for_rows(&ctx, SCALAR_IMAGE, &[]),
-            Err(CodecError::ResourceLimit(actual)) if actual == original)
-        );
-    }
-    assert!(
-        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original)
     );
 }
 

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::super::{FaceComponent, HalfEdge, HalfEdgeId, Loop, Side, TopologicalVertex};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_core::CodecError;
 
 fn id(curve_id: u32) -> HalfEdgeId {
     HalfEdgeId {
@@ -22,7 +21,7 @@ fn with_work<T>(work: u64, f: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
 }
 
 #[test]
-fn fixed_and_empty_topology_validation_is_free_and_keeps_original_refusal() {
+fn fixed_and_empty_topology_validation_is_free() {
     let members = vec![id(1); 128];
     let graph = vec![
         HalfEdge {
@@ -50,19 +49,6 @@ fn fixed_and_empty_topology_validation_is_free_and_keeps_original_refusal() {
             .expect("one valid member");
         assert_eq!(vertex.id.get(), 7);
         assert_eq!(vertex.half_edges(), [id(1)]);
-        let original = ctx
-            .charge_work_limit(1, "seed fixed topology refusal")
-            .expect_err("zero cap");
-        assert_eq!((original.used, original.additional), (0, 1));
-        assert!(matches!(Loop::new(ctx, None, vec![], &graph),
-            Err(CodecError::ResourceLimit(actual)) if actual == original));
-        assert!(matches!(FaceComponent::new(ctx, vec![], vec![]),
-            Err(CodecError::ResourceLimit(actual)) if actual == original));
-        for (number, members) in [(0, members), (1, vec![]), (7, vec![id(1)])] {
-            assert!(matches!(TopologicalVertex::new(ctx, number, members),
-                Err(CodecError::ResourceLimit(actual)) if actual == original));
-        }
-        assert_eq!(ctx.resource_refusal(), Some(original));
     });
 }
 

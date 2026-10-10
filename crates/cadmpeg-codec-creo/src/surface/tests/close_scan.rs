@@ -88,7 +88,7 @@ fn plane_close_fallback_counts_each_candidate_without_terminal_probe() {
 }
 
 #[test]
-fn absent_surface_close_routes_are_free_and_preserve_original_refusal() {
+fn absent_surface_close_routes_are_free() {
     let cache = ScalarCache::default();
     for count in 0..8 {
         let body = [0x71; 7];

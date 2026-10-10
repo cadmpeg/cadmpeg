@@ -388,7 +388,7 @@ fn real_scalar_expansion_visits_zero_runs_and_each_produced_value() {
 }
 
 #[test]
-fn empty_and_fixed_legacy_helper_returns_are_free_and_preserve_seed_refusal() {
+fn empty_and_fixed_legacy_helper_returns_are_free() {
     let integer_records = HashMap::new();
     let real_records = HashMap::new();
     let children = HashMap::new();
@@ -413,72 +413,57 @@ fn empty_and_fixed_legacy_helper_returns_are_free_and_preserve_seed_refusal() {
     policy.limits.max_collection_items = 0;
     policy.limits.max_recursion_depth = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    for refused in [false, true] {
-        if !refused {
-            assert!(integer_pair(&ctx, &integer_records, 0, "crv_pnt_dir")
-                .expect("missing field")
-                .is_none());
-            assert!(curve_pcurve(&ctx, &row, &topology, &real_records)
-                .expect("missing field")
-                .is_none());
-            assert!(real_vector_array(&ctx, &real_records, 0, "i_points")
-                .expect("missing field")
-                .is_none());
-            assert!(real_scalar_array(&ctx, &real_records, 0, "u_params")
-                .expect("missing field")
-                .is_none());
-        }
-        if refused {
-            ctx.charge_work_limit(1, "empty legacy helpers seed")
-                .expect_err("zero work");
-        }
-        assert!(super::super::integer_record(&integer_records, 0, "crv_id").is_none());
-        assert!(super::super::integer_field(&integer_records, 0, "crv_id").is_none());
-        assert!(super::super::real_record(&real_records, 0, "local_sys").is_none());
-        assert!(super::super::real_scalar(&real_records, 0, "radius").is_none());
-        assert!(super::super::surface_row(&row, &integer_records).is_none());
-        assert!(super::super::curve_topology_row(&row, &integer_records, [1, -1]).is_none());
-        assert!(unique_primitive(&children, 0).is_none());
-        assert!(super::super::surface_carrier(
-            &row,
-            &SurfaceRow {
-                id: 1,
-                kind: SurfaceKind::Plane,
-                feature_id: 7,
-                reversed: false,
-                boundary_type: surface::BoundaryType::Code00,
-                next_surface: 0,
-                offset: 0,
-            },
-            [0.0; 12],
-            &real_records,
-            LegacySurfaceNamespace::Visible
-        )
+    assert!(integer_pair(&ctx, &integer_records, 0, "crv_pnt_dir")
+        .expect("missing field")
         .is_none());
-        let results = [
-            object_id_index(&ctx, &[]).map(|r| r.is_empty()),
-            child_index(&ctx, &[]).map(|r| r.is_empty()),
-            geometry_array_elements(
-                &ctx,
-                &[],
-                &objects,
-                "Sld_VisGeom",
-                "active_geom",
-                "srf_array",
-            )
-            .map(|r| r.is_none()),
-            local_system_slots(&ctx, &scalar).map(|r| r.is_none()),
-            real_array_values(&ctx, &scalar).map(|r| r.is_none()),
-        ];
-        for result in results {
-            if refused {
-                let original = ctx.resource_refusal().expect("seed refusal");
-                assert!(
-                    matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original)
-                );
-            } else {
-                assert!(result.expect("no input-sized work"));
-            }
-        }
+    assert!(curve_pcurve(&ctx, &row, &topology, &real_records)
+        .expect("missing field")
+        .is_none());
+    assert!(real_vector_array(&ctx, &real_records, 0, "i_points")
+        .expect("missing field")
+        .is_none());
+    assert!(real_scalar_array(&ctx, &real_records, 0, "u_params")
+        .expect("missing field")
+        .is_none());
+    assert!(super::super::integer_record(&integer_records, 0, "crv_id").is_none());
+    assert!(super::super::integer_field(&integer_records, 0, "crv_id").is_none());
+    assert!(super::super::real_record(&real_records, 0, "local_sys").is_none());
+    assert!(super::super::real_scalar(&real_records, 0, "radius").is_none());
+    assert!(super::super::surface_row(&row, &integer_records).is_none());
+    assert!(super::super::curve_topology_row(&row, &integer_records, [1, -1]).is_none());
+    assert!(unique_primitive(&children, 0).is_none());
+    assert!(super::super::surface_carrier(
+        &row,
+        &SurfaceRow {
+            id: 1,
+            kind: SurfaceKind::Plane,
+            feature_id: 7,
+            reversed: false,
+            boundary_type: surface::BoundaryType::Code00,
+            next_surface: 0,
+            offset: 0,
+        },
+        [0.0; 12],
+        &real_records,
+        LegacySurfaceNamespace::Visible
+    )
+    .is_none());
+    let results = [
+        object_id_index(&ctx, &[]).map(|r| r.is_empty()),
+        child_index(&ctx, &[]).map(|r| r.is_empty()),
+        geometry_array_elements(
+            &ctx,
+            &[],
+            &objects,
+            "Sld_VisGeom",
+            "active_geom",
+            "srf_array",
+        )
+        .map(|r| r.is_none()),
+        local_system_slots(&ctx, &scalar).map(|r| r.is_none()),
+        real_array_values(&ctx, &scalar).map(|r| r.is_none()),
+    ];
+    for result in results {
+    assert!(result.expect("no input-sized work"));
     }
 }
