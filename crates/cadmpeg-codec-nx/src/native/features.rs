@@ -6364,9 +6364,16 @@ pub(super) fn feature_datum_plane_payloads(
         else {
             continue;
         };
-        let (lanes, _lanes_storage, _lane_tokens_storage) =
+        let (lanes, lane_tokens_storage, lanes_storage) =
             crate::om::datum_index::scan(ctx, joined.bytes())?;
-        let lane = <[_; 1]>::try_from(lanes).ok().map(|[lane]| lane);
+        let lane = match <[_; 1]>::try_from(lanes) {
+            Ok([lane]) => Some(lane_tokens_storage.commit_value(lane.into_u64())?),
+            Err(_) => {
+                drop(lane_tokens_storage);
+                None
+            }
+        };
+        drop(lanes_storage);
         let key = identity_key(ctx, &header.id, "NX datum plane payload identity")?;
         let id = ctx.format_retained(
             format_args!("nx:feature-history:datum-plane-payload#{key}"),
@@ -6384,7 +6391,7 @@ pub(super) fn feature_datum_plane_payloads(
             operation_label,
             datum_plane_header,
             content,
-            index_lane: lane.map(crate::om::datum_index::DatumIndexLane::into_u64),
+            index_lane: lane,
         });
     }
     Ok(output)

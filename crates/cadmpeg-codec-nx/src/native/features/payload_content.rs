@@ -69,8 +69,8 @@ impl<B: AsRef<[FeaturePayloadBlock]> + TryFrom<Vec<FeaturePayloadBlock>>> Featur
 
         let mut byte_len = 0u64;
         let mut ids = ids.into_iter();
-        for _ in ctx.admit_iter(&(0..ids.len()), "scan NX feature payload block ids")? {
-            let Some(id) = ids.next() else {
+        while ids.len() != 0 {
+            let Some(id) = ctx.next_charged(&mut ids, "scan NX feature payload block ids")? else {
                 return Err(ctx.refuse_codec_limit("scan NX feature payload block ids", 0, 1));
             };
             let Some((bytes, source_offset)) = ctx
@@ -83,6 +83,7 @@ impl<B: AsRef<[FeaturePayloadBlock]> + TryFrom<Vec<FeaturePayloadBlock>>> Featur
             byte_len = byte_len
                 .checked_add(length)
                 .ok_or_else(|| ctx.refuse_codec_limit("count NX feature payload bytes", 0, 1))?;
+            ctx.reserve_vec(&mut rows, 1, "NX feature payload blocks")?;
             ctx.charge_work(
                 length
                     .checked_add(1)
@@ -90,7 +91,6 @@ impl<B: AsRef<[FeaturePayloadBlock]> + TryFrom<Vec<FeaturePayloadBlock>>> Featur
                 "hash NX feature payload bytes",
             )?;
 
-            ctx.reserve_vec(&mut rows, 1, "NX feature payload blocks")?;
             hash.update(bytes);
             rows.push(FeaturePayloadBlock {
                 id,
@@ -331,6 +331,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::{FeaturePayloadBlock, FeaturePayloadContent};
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+    use std::collections::BTreeMap;
 
     #[test]
     fn payload_content_columns_stream_once_with_native_retained_limit() {
@@ -440,5 +443,34 @@ mod tests {
             Ok::<_, cadmpeg_core::CodecError>(())
         })
         .unwrap();
+    }
+
+    #[test]
+    fn payload_block_lookup_stops_before_missing_id_suffix() {
+        let ids = vec!["missing".to_owned(); 64];
+        crate::test_support::with_decode_context_over(&[],
+            |policy| policy.limits.max_work_units = 1,
+            |ctx| {
+                let rows = FeaturePayloadContent::<Vec<FeaturePayloadBlock>>::from_source(ctx, ids, &BTreeMap::new()).unwrap();
+                assert!(rows.is_none());
+                assert_eq!(ctx.resource_refusal(), None);
+            });
+    }
+
+    #[test]
+    fn payload_hash_work_follows_successful_row_storage() {
+        let blocks = BTreeMap::from([("a".to_owned(), (b"abc".as_slice(), 10))]);
+        crate::test_support::with_decode_context_over(&[], |policy| {
+            policy.limits.max_work_units = 2;
+            policy.limits.max_retained_bytes = 0;
+        }, |ctx| {
+            let error = FeaturePayloadContent::<Vec<FeaturePayloadBlock>>::from_source(ctx, ["a".to_owned()], &blocks).unwrap_err();
+            assert!(matches!(error, CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "NX feature payload blocks"));
+        });
+        let error = crate::test_support::resource_refusal_at(&[], ResourceDimension::WorkUnits,
+            "hash NX feature payload bytes", |ctx| FeaturePayloadContent::<Vec<FeaturePayloadBlock>>::from_source(ctx, ["a".to_owned()], &blocks));
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.operation == "hash NX feature payload bytes" && limit.used == 2 && limit.additional == 4));
     }
 }

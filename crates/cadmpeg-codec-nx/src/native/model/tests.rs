@@ -254,3 +254,46 @@ fn terminal_body_selection_refuses_status_iteration_work_limit() {
         },
     );
 }
+
+#[test]
+fn terminal_status_duplicates_stop_before_unvisited_suffix() {
+    let (_, _, [status]) = one_terminal_body();
+    let prefix = [status.clone(), status.clone()];
+    let error = crate::test_support::resource_refusal_at(&[], ResourceDimension::WorkUnits,
+        "test duplicate terminal status checkpoint", |ctx| {
+            assert!(terminal_feature_body_ids(ctx, &BTreeSet::new(), &[], &prefix)?.is_none());
+            ctx.charge_work(1, "test duplicate terminal status checkpoint")?;
+            Ok(())
+        });
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("work checkpoint must refuse") };
+    let statuses = vec![status; 128];
+    crate::test_support::with_decode_context_over(&[],
+        |policy| policy.limits.max_work_units = limit.used,
+        |ctx| {
+            assert!(terminal_feature_body_ids(ctx, &BTreeSet::new(), &[], &statuses).unwrap().is_none());
+            assert_eq!(ctx.resource_refusal(), None);
+        });
+}
+
+#[test]
+fn terminal_missing_status_stops_before_unvisited_binding_suffix() {
+    let (_, [binding], _) = one_terminal_body();
+    let error = crate::test_support::resource_refusal_at(&[], ResourceDimension::WorkUnits,
+        "test missing terminal status checkpoint", |ctx| {
+            assert!(terminal_feature_body_ids(ctx, &BTreeSet::new(), std::slice::from_ref(&binding), &[])?.is_none());
+            ctx.charge_work(1, "test missing terminal status checkpoint")?;
+            Ok(())
+        });
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("work checkpoint must refuse") };
+    let bindings = vec![binding; 128];
+    crate::test_support::with_decode_context_over(&[],
+        |policy| policy.limits.max_work_units = limit.used,
+        |ctx| {
+            assert!(terminal_feature_body_ids(ctx, &BTreeSet::new(), &bindings, &[]).unwrap().is_none());
+            assert_eq!(ctx.resource_refusal(), None);
+        });
+    let error = crate::test_support::resource_refusal_at(&[], ResourceDimension::WorkUnits,
+        "nx terminal body bindings", |ctx| terminal_feature_body_ids(ctx, &BTreeSet::new(), &bindings, &[]));
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "nx terminal body bindings" && limit.additional == 1));
+}
