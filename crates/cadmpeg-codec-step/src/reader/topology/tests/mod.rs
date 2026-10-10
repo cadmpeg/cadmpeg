@@ -35,3 +35,5 @@ mod early_exits;
 mod face_ancestry;
 
 mod known_length;
+
+mod index_growth;
