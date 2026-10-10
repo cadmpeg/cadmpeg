@@ -150,18 +150,15 @@ fn push_scoped_file_reference_loss(
                 message,
                 "Rhino texture file-reference loss text",
             )?;
-            ctx.charge_retained(5, "Rhino texture file-reference provenance format")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index("PRESENTATION/TEXTURE/FILE_REFERENCE".len()),
-                "Rhino texture file-reference provenance tag",
-            )?;
-            Ok::<_, CodecError>(loss.with_provenance(
-                SourceProvenance::root(
-                    "rhino",
-                    cadmpeg_core::decode::u64_from_index(source_offset),
-                )
-                .with_tag("PRESENTATION/TEXTURE/FILE_REFERENCE"),
-            ))
+            Ok::<_, CodecError>(
+                loss.with_provenance(
+                    SourceProvenance::root(
+                        "rhino",
+                        cadmpeg_core::decode::u64_from_index(source_offset),
+                    )
+                    .with_tag("PRESENTATION/TEXTURE/FILE_REFERENCE"),
+                ),
+            )
         },
         "Rhino texture file-reference losses",
     )
@@ -202,13 +199,6 @@ struct GroupRecord {
     links: Vec<String>,
 }
 
-#[derive(Debug)]
-struct GroupRecordStorage<'ctx> {
-    _name: cadmpeg_core::decode::ScopedReservation<'ctx>,
-    _source_uuid: Option<cadmpeg_core::decode::ScopedReservation<'ctx>>,
-    id: Option<cadmpeg_core::decode::ScopedReservation<'ctx>>,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum GroupIdentity {
     SourceUuid(Uuid),
@@ -219,24 +209,27 @@ impl std::fmt::Display for GroupIdentity {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::SourceUuid(id) => write!(formatter, "rhino:presentation:group#{id}"),
-            Self::ArchiveIndex(index) => write!(formatter, "rhino:presentation:group#index-{index}"),
+            Self::ArchiveIndex(index) => {
+                write!(formatter, "rhino:presentation:group#index-{index}")
+            }
         }
     }
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for GroupIdentity {
-    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(
-        std::mem::size_of::<Self>(),
-    ));
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
 
     fn decode_cost(
         &self,
         _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         _operation: &'static str,
     ) -> Result<u64, CodecError> {
-        Ok(cadmpeg_core::decode::u64_from_index(
-            std::mem::size_of::<Self>(),
-        ))
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()))
     }
 }
 
@@ -1064,8 +1057,14 @@ fn displacement_record(
     ctx.charge_work(0, "Rhino displacement record traversal")?;
     let mut projection_source = displacement.sub_items.iter();
     for _ in 0..projection_source.len() {
-        let item = ctx.next_charged(&mut projection_source, "Rhino displacement record traversal")?
-            .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
+        let item = ctx
+            .next_charged(
+                &mut projection_source,
+                "Rhino displacement record traversal",
+            )?
+            .ok_or_else(|| {
+                CodecError::malformed("Rhino presentation traversal source ended early")
+            })?;
         sub_items.push(DisplacementSubItemRecord {
             face_index: item.face_index,
             on: item.on,
@@ -1159,8 +1158,11 @@ fn shut_lining_record(
     ctx.charge_work(0, "Rhino shut lining record traversal")?;
     let mut projection_source = shut_lining.curves.iter();
     for _ in 0..projection_source.len() {
-        let curve = ctx.next_charged(&mut projection_source, "Rhino shut lining record traversal")?
-            .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
+        let curve = ctx
+            .next_charged(&mut projection_source, "Rhino shut lining record traversal")?
+            .ok_or_else(|| {
+                CodecError::malformed("Rhino presentation traversal source ended early")
+            })?;
         curves.push(ShutLiningCurveRecord {
             uuid: curve
                 .uuid
@@ -1421,8 +1423,11 @@ fn first_user_string_records(
     ctx.charge_work(0, "Rhino first user string records traversal")?;
     let mut source = class_userdata.iter();
     for _ in 0..source.len() {
-        let raw = ctx.next_charged(&mut source, "Rhino first user string records traversal")?
-            .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
+        let raw = ctx
+            .next_charged(&mut source, "Rhino first user string records traversal")?
+            .ok_or_else(|| {
+                CodecError::malformed("Rhino presentation traversal source ended early")
+            })?;
         let Some(value) = UserdataDescriptor::known(raw) else {
             continue;
         };
@@ -1444,8 +1449,11 @@ fn first_user_string_records(
     ctx.charge_work(0, "Rhino first user string records traversal")?;
     let mut source = attribute_userdata.iter();
     for _ in 0..source.len() {
-        let raw = ctx.next_charged(&mut source, "Rhino first user string records traversal")?
-            .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
+        let raw = ctx
+            .next_charged(&mut source, "Rhino first user string records traversal")?
+            .ok_or_else(|| {
+                CodecError::malformed("Rhino presentation traversal source ended early")
+            })?;
         let Some(value) = AttributeUserdataDescriptor::known(raw) else {
             continue;
         };
@@ -1527,8 +1535,14 @@ fn object_attributes_presentation(
     ctx.charge_work(0, "Rhino object attributes presentation traversal")?;
     let mut projection_source = attributes.display_materials.iter();
     for _ in 0..projection_source.len() {
-        let (viewport, material) = ctx.next_charged(&mut projection_source, "Rhino object attributes presentation traversal")?
-            .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
+        let (viewport, material) = ctx
+            .next_charged(
+                &mut projection_source,
+                "Rhino object attributes presentation traversal",
+            )?
+            .ok_or_else(|| {
+                CodecError::malformed("Rhino presentation traversal source ended early")
+            })?;
         display_materials.push([
             ctx.format_retained(
                 format_args!("{viewport}"),
@@ -1555,8 +1569,14 @@ fn object_attributes_presentation(
     ctx.charge_work(0, "Rhino object attributes presentation traversal")?;
     let mut projection_source = attributes.clipping_plane_ids.iter();
     for _ in 0..projection_source.len() {
-        let id = ctx.next_charged(&mut projection_source, "Rhino object attributes presentation traversal")?
-            .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
+        let id = ctx
+            .next_charged(
+                &mut projection_source,
+                "Rhino object attributes presentation traversal",
+            )?
+            .ok_or_else(|| {
+                CodecError::malformed("Rhino presentation traversal source ended early")
+            })?;
         clipping_plane_uuids.push(ctx.format_retained(
             format_args!("{id}"),
             "Rhino projected clipping plane UUID text",
@@ -1615,7 +1635,6 @@ fn object_attributes_presentation(
 }
 
 fn read_color_f32(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     label: &str,
 ) -> Result<[FiniteBinary32; 4], FramingError> {
@@ -1624,26 +1643,19 @@ fn read_color_f32(
     let [Some(red), Some(green), Some(blue), Some(alpha)] = color.map(FiniteBinary32::new) else {
         return Err(FramingError::structural(
             offset,
-            ctx.format_retained(
-                format_args!("{label} contains a non-finite component"),
-                "Rhino read_color_f32 text",
-            )?,
+            format!("{label} contains a non-finite component"),
         ));
     };
     Ok([red, green, blue, alpha])
 }
 
-fn finite3(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    reader: &mut BoundedReader<'_>,
-    label: &str,
-) -> Result<[FiniteReal; 3], FramingError> {
+fn finite3(reader: &mut BoundedReader<'_>, label: &str) -> Result<[FiniteReal; 3], FramingError> {
     let offset = reader.position();
     let value = [reader.f64()?, reader.f64()?, reader.f64()?];
     let [Some(x), Some(y), Some(z)] = value.map(FiniteReal::new) else {
         return Err(FramingError::structural(
             offset,
-            ctx.format_retained(format_args!("{label} is not finite"), "Rhino finite3 text")?,
+            format!("{label} is not finite"),
         ));
     };
     Ok([x, y, z])
@@ -1757,11 +1769,10 @@ fn parse_physically_based_material(
             "physically based material payload version is unsupported",
         ));
     }
-    let base_color = read_color_f32(ctx, &mut reader, "base color")?;
+    let base_color = read_color_f32(&mut reader, "base color")?;
     let brdf = reader.i32()?;
     let subsurface = read_finite(ctx, &mut reader, "subsurface")?;
-    let subsurface_scattering_color =
-        read_color_f32(ctx, &mut reader, "subsurface scattering color")?;
+    let subsurface_scattering_color = read_color_f32(&mut reader, "subsurface scattering color")?;
     let subsurface_scattering_radius =
         read_finite(ctx, &mut reader, "subsurface scattering radius")?;
     let metallic = read_finite(ctx, &mut reader, "metallic")?;
@@ -1777,7 +1788,7 @@ fn parse_physically_based_material(
     let opacity_ior = read_finite(ctx, &mut reader, "opacity IOR")?;
     let opacity = read_finite(ctx, &mut reader, "opacity")?;
     let opacity_roughness = read_finite(ctx, &mut reader, "opacity roughness")?;
-    let emission = read_color_f32(ctx, &mut reader, "emission")?;
+    let emission = read_color_f32(&mut reader, "emission")?;
     let revision = if version == 2 {
         PhysicallyBasedMaterialRevision::V2 {
             alpha: read_finite(ctx, &mut reader, "alpha")?,
@@ -1820,7 +1831,8 @@ fn parse_uuid_text(
     let mut source = value.bytes();
     ctx.charge_work(0, "Rhino UUID text traversal")?;
     for _ in 0..source.len() {
-        let byte = ctx.next_charged(&mut source, "Rhino UUID text traversal")?
+        let byte = ctx
+            .next_charged(&mut source, "Rhino UUID text traversal")?
             .ok_or_else(|| CodecError::malformed("Rhino UUID text source ended early"))?;
         if byte == b'-' {
             continue;
@@ -1927,8 +1939,11 @@ fn classify_rdk_material_payload(
     if let Some(last_child) = root.last_child() {
         let mut source = root.children();
         loop {
-            let node = ctx.next_charged(&mut source, "Rhino RDK render data search")?
-                .ok_or_else(|| CodecError::malformed("Rhino XML child source ended before its last child"))?;
+            let node = ctx
+                .next_charged(&mut source, "Rhino RDK render data search")?
+                .ok_or_else(|| {
+                    CodecError::malformed("Rhino XML child source ended before its last child")
+                })?;
             if node.is_element() && node.tag_name().name() == "render-content-manager-data" {
                 render_data = Some(node);
                 break;
@@ -1949,8 +1964,11 @@ fn classify_rdk_material_payload(
     if let Some(last_child) = render_data.last_child() {
         let mut source = render_data.children();
         loop {
-            let node = ctx.next_charged(&mut source, "Rhino RDK material search")?
-                .ok_or_else(|| CodecError::malformed("Rhino XML child source ended before its last child"))?;
+            let node = ctx
+                .next_charged(&mut source, "Rhino RDK material search")?
+                .ok_or_else(|| {
+                    CodecError::malformed("Rhino XML child source ended before its last child")
+                })?;
             if node.is_element() && node.tag_name().name() == "material" {
                 material = Some(node);
                 break;
@@ -1970,8 +1988,11 @@ fn classify_rdk_material_payload(
     ctx.charge_work(0, "Rhino RDK instance attribute search")?;
     let mut source = material.attributes();
     for _ in 0..source.len() {
-        let attribute = ctx.next_charged(&mut source, "Rhino RDK instance attribute search")?
-            .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
+        let attribute = ctx
+            .next_charged(&mut source, "Rhino RDK instance attribute search")?
+            .ok_or_else(|| {
+                CodecError::malformed("Rhino presentation traversal source ended early")
+            })?;
         if attribute.name() == "instance-id" {
             instance_id = Some(attribute.value());
             break;
@@ -2002,15 +2023,20 @@ fn legacy_rdk_material_instance_id(
     ctx.charge_work(0, "Rhino legacy rdk material instance id traversal")?;
     let mut source = userdata.iter().rev();
     for _ in 0..source.len() {
-        let raw = ctx.next_charged(&mut source, "Rhino legacy rdk material instance id traversal")?
-            .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
+        let raw = ctx
+            .next_charged(
+                &mut source,
+                "Rhino legacy rdk material instance id traversal",
+            )?
+            .ok_or_else(|| {
+                CodecError::malformed("Rhino presentation traversal source ended early")
+            })?;
         let Some(value) = raw.known() else {
             continue;
         };
         if value.class_uuid != RDK_CLASS
             || value.item_uuid != RDK_USERDATA
-            || (value.application_uuid.is_some()
-                && value.application_uuid != Some(RDK_APPLICATION))
+            || (value.application_uuid.is_some() && value.application_uuid != Some(RDK_APPLICATION))
         {
             continue;
         }
@@ -2031,15 +2057,20 @@ fn rdk_material_userdata_requires_opaque(
     ctx.charge_work(0, "Rhino rdk material userdata requires opaque traversal")?;
     let mut source = userdata.iter();
     for _ in 0..source.len() {
-        let raw = ctx.next_charged(&mut source, "Rhino rdk material userdata requires opaque traversal")?
-            .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
+        let raw = ctx
+            .next_charged(
+                &mut source,
+                "Rhino rdk material userdata requires opaque traversal",
+            )?
+            .ok_or_else(|| {
+                CodecError::malformed("Rhino presentation traversal source ended early")
+            })?;
         let Some(value) = raw.known() else {
             continue;
         };
         if value.class_uuid != RDK_CLASS
             || value.item_uuid != RDK_USERDATA
-            || (value.application_uuid.is_some()
-                && value.application_uuid != Some(RDK_APPLICATION))
+            || (value.application_uuid.is_some() && value.application_uuid != Some(RDK_APPLICATION))
         {
             continue;
         }
@@ -2072,7 +2103,8 @@ fn wide_string(
         0 if value.remaining() == 0 => String::new(),
         1 => {
             let bytes = value.take(value.remaining())?;
-            let text = ctx.validate_utf8(bytes, "validate Rhino wide string UTF-8")?
+            let text = ctx
+                .validate_utf8(bytes, "validate Rhino wide string UTF-8")?
                 .map_err(|_| {
                     FramingError::structural(value.position(), "wide string is not UTF-8")
                 })?;
@@ -2095,10 +2127,10 @@ fn class_descriptor(
     range: Range<usize>,
     archive: ArchiveVersion,
 ) -> Result<ClassDescriptor, FramingError> {
-    let (class, diagnostics_storage) = ctx.with_scoped_storage(
-        "Rhino presentation class parse scratch",
-        || parse_class_wrapper(ctx, data, range, archive, &mut Diagnostics::new()),
-    )?;
+    let (class, diagnostics_storage) = ctx
+        .with_scoped_storage("Rhino presentation class parse scratch", || {
+            parse_class_wrapper(ctx, data, range, archive, &mut Diagnostics::new())
+        })?;
     drop(diagnostics_storage);
     Ok(class)
 }
@@ -2368,12 +2400,16 @@ fn class_data_with_userdata<'ctx>(
     archive: ArchiveVersion,
     expected: Uuid,
 ) -> Result<PresentationClassData<'ctx>, FramingError> {
-    let ((class, userdata), storage) = ctx.with_scoped_storage(
-        "Rhino presentation class userdata scratch",
-        || parse_class_wrapper_with_userdata(
-            ctx, data, record.body(), archive, &mut Diagnostics::new(),
-        ),
-    )?;
+    let ((class, userdata), storage) =
+        ctx.with_scoped_storage("Rhino presentation class userdata scratch", || {
+            parse_class_wrapper_with_userdata(
+                ctx,
+                data,
+                record.body(),
+                archive,
+                &mut Diagnostics::new(),
+            )
+        })?;
     let parsed = PresentationClassData {
         range: class.class_data_range,
         userdata,
@@ -3033,99 +3069,65 @@ fn parse_group<'ctx>(
     data: &[u8],
     range: Range<usize>,
     source_offset: usize,
-) -> Result<(GroupRecord, GroupRecordStorage<'ctx>), FramingError> {
-    let mut reader = BoundedReader::new(data, range.start, range.end)?;
-    let packed = reader.u8()?;
-    if packed >> 4 != 1 {
-        return Err(FramingError::structural(
-            range.start,
-            "group version is unsupported",
-        ));
-    }
-    let index = reader.i32()?;
-    let name_bytes = crate::settings::utf16_payload(&mut reader)?;
-    let (name_storage, name) = ctx
-        .utf16le_scoped_text(
-            name_bytes,
-            name_bytes.len() / 2,
-            false,
-            "Rhino group name",
-        )
-        .map(|(name, storage)| (storage, name))?;
-    let id = if packed & 0x0f >= 1 {
-        Some(uuid(&mut reader)?)
-    } else {
-        None
-    };
-    reader.skip_remaining()?;
-    let id = id.filter(|id| !id.is_nil());
-    let (source_uuid_storage, source_uuid) = match id {
-        Some(id) => {
-            let (text, storage) =
-                ctx.format_scoped(format_args!("{id}"), "Rhino group source UUID")?;
-            (Some(storage), Some(text))
+) -> Result<(GroupRecord, cadmpeg_core::decode::ScopedReservation<'ctx>), FramingError> {
+    ctx.with_scoped_storage("Rhino group parse attempt", || {
+        let mut reader = BoundedReader::new(data, range.start, range.end)?;
+        let packed = reader.u8()?;
+        if packed >> 4 != 1 {
+            return Err(FramingError::structural(
+                range.start,
+                "group version is unsupported",
+            ));
         }
-        None => (None, None),
-    };
-    Ok((
-        GroupRecord {
+        let index = reader.i32()?;
+        let name = settings::utf16_retained(ctx, &mut reader, "Rhino group name")?;
+        let id = if packed & 0x0f >= 1 {
+            Some(uuid(&mut reader)?)
+        } else {
+            None
+        };
+        reader.skip_remaining()?;
+        let id = id.filter(|id| !id.is_nil());
+        let source_uuid = id
+            .map(|id| ctx.format_retained(format_args!("{id}"), "Rhino group source UUID"))
+            .transpose()?;
+        Ok(GroupRecord {
             id: String::new(),
-            identity: id.map_or(GroupIdentity::ArchiveIndex(index), GroupIdentity::SourceUuid),
+            identity: id.map_or(
+                GroupIdentity::ArchiveIndex(index),
+                GroupIdentity::SourceUuid,
+            ),
             source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
             archive_index: index,
             source_uuid,
             name,
             links: Vec::new(),
-        },
-        GroupRecordStorage {
-            _name: name_storage,
-            _source_uuid: source_uuid_storage,
-            id: None,
-        },
-    ))
+        })
+    })
 }
 
-/// Makes source identities unique when the archive repeats a group UUID or
-/// archive index. The serialized identity remains in `source_uuid` and
-/// `archive_index`; the suffix identifies the particular source record.
-fn assign_group_id<'ctx>(
-    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
-    group: &mut GroupRecord,
-    storage: Option<&mut GroupRecordStorage<'ctx>>,
-    id: std::fmt::Arguments<'_>,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    if let Some(storage) = storage {
-        group.id = String::new();
-        storage.id = None;
-        let (id, id_storage) = ctx.format_scoped(id, operation)?;
-        group.id = id;
-        storage.id = Some(id_storage);
-    } else {
-        group.id = ctx.format_retained(id, operation)?;
-    }
-    Ok(())
-}
-
+/// Makes group identities unique without changing their source fields.
 fn disambiguate_group_ids<'ctx>(
     ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     groups: &mut [GroupRecord],
-    mut staging: Option<&mut [GroupRecordStorage<'ctx>]>,
+    staging: &mut cadmpeg_core::decode::ScopedReservation<'ctx>,
 ) -> Result<usize, CodecError> {
     let mut workspace = ctx.reserve_scoped(0, "Rhino group identity workspace")?;
     let mut counts = HashMap::<GroupIdentity, usize>::new();
     ctx.charge_work(0, "Rhino disambiguate group ids traversal")?;
     let mut projection_source = groups[..].iter();
     for _ in 0..projection_source.len() {
-        let group = ctx.next_charged(&mut projection_source, "Rhino disambiguate group ids traversal")?
-            .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
+        let group = ctx
+            .next_charged(
+                &mut projection_source,
+                "Rhino disambiguate group ids traversal",
+            )?
+            .ok_or_else(|| {
+                CodecError::malformed("Rhino presentation traversal source ended early")
+            })?;
         let count = workspace
             .with_storage(|| {
-                ctx.entry_hash_map(
-                    &mut counts,
-                    group.identity,
-                    "Rhino group identity counts",
-                )
+                ctx.entry_hash_map(&mut counts, group.identity, "Rhino group identity counts")
             })?
             .or_default();
         *count += 1;
@@ -3135,8 +3137,14 @@ fn disambiguate_group_ids<'ctx>(
     ctx.charge_work(0, "Rhino disambiguate group ids traversal")?;
     let mut projection_source = groups[..].iter();
     for order in 0..projection_source.len() {
-        let group = ctx.next_charged(&mut projection_source, "Rhino disambiguate group ids traversal")?
-            .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
+        let group = ctx
+            .next_charged(
+                &mut projection_source,
+                "Rhino disambiguate group ids traversal",
+            )?
+            .ok_or_else(|| {
+                CodecError::malformed("Rhino presentation traversal source ended early")
+            })?;
         if ctx
             .get_hash_map(&counts, &group.identity, "Rhino group identity lookup")?
             .copied()
@@ -3151,43 +3159,39 @@ fn disambiguate_group_ids<'ctx>(
     drop(counts);
     drop(workspace);
     let changed = duplicate_indices.len();
-    ctx.charge_work(0, "Rhino duplicate group traversal")?;
-    let mut projection_source = duplicate_indices.into_iter();
-    for _ in 0..projection_source.len() {
-        let order = ctx.next_charged(&mut projection_source, "Rhino duplicate group traversal")?
-            .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
-        let group = &mut groups[order];
-        let identity = group.identity;
-        let source_offset = group.source_offset;
-        let id = format_args!(
-            "{identity}-source-offset-{source_offset:016x}-record-{order:06}"
-        );
-        assign_group_id(
-            ctx,
-            group,
-            staging.as_deref_mut().and_then(|values| values.get_mut(order)),
-            id,
-            "Rhino disambiguated group ID",
-        )?;
-    }
-    ctx.charge_work(0, "Rhino group identity assignment")?;
-    let mut projection_source = groups[..].iter_mut();
-    for order in 0..projection_source.len() {
-        let group = ctx.next_charged(&mut projection_source, "Rhino group identity assignment")?
-            .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
-        if !group.id.is_empty() {
-            continue;
+    staging.with_storage(|| {
+        ctx.charge_work(0, "Rhino duplicate group traversal")?;
+        let mut projection_source = duplicate_indices.into_iter();
+        for _ in 0..projection_source.len() {
+            let order = ctx
+                .next_charged(&mut projection_source, "Rhino duplicate group traversal")?
+                .ok_or_else(|| {
+                    CodecError::malformed("Rhino presentation traversal source ended early")
+                })?;
+            let group = &mut groups[order];
+            let identity = group.identity;
+            let source_offset = group.source_offset;
+            let id =
+                format_args!("{identity}-source-offset-{source_offset:016x}-record-{order:06}");
+            group.id = ctx.format_retained(id, "Rhino disambiguated group ID")?;
         }
-        let identity = group.identity;
-        let id = format_args!("{identity}");
-        assign_group_id(
-            ctx,
-            group,
-            staging.as_deref_mut().and_then(|values| values.get_mut(order)),
-            id,
-            "Rhino group ID",
-        )?;
-    }
+        ctx.charge_work(0, "Rhino group identity assignment")?;
+        let mut projection_source = groups[..].iter_mut();
+        for _ in 0..projection_source.len() {
+            let group = ctx
+                .next_charged(&mut projection_source, "Rhino group identity assignment")?
+                .ok_or_else(|| {
+                    CodecError::malformed("Rhino presentation traversal source ended early")
+                })?;
+            if !group.id.is_empty() {
+                continue;
+            }
+            let identity = group.identity;
+            let id = format_args!("{identity}");
+            group.id = ctx.format_retained(id, "Rhino group ID")?;
+        }
+        Ok::<_, CodecError>(())
+    })?;
     Ok(changed)
 }
 
@@ -3214,11 +3218,11 @@ fn parse_light(
     let ambient = reader.array()?;
     let diffuse = reader.array()?;
     let specular = reader.array()?;
-    let direction = finite3(ctx, &mut reader, "light direction")?;
-    let mut location = finite3(ctx, &mut reader, "light location")?;
+    let direction = finite3(&mut reader, "light direction")?;
+    let mut location = finite3(&mut reader, "light location")?;
     let spot_angle_degrees = read_finite(ctx, &mut reader, "spot angle")?;
     let mut spot_exponent = read_finite(ctx, &mut reader, "spot exponent")?;
-    let attenuation = finite3(ctx, &mut reader, "light attenuation")?;
+    let attenuation = finite3(&mut reader, "light attenuation")?;
     let shadow_intensity = read_finite(ctx, &mut reader, "shadow intensity")?;
     let index = reader.i32()?;
     let id = uuid(&mut reader)?;
@@ -3226,8 +3230,8 @@ fn parse_light(
     let mut length = [FiniteReal::ZERO; 3];
     let mut width = [FiniteReal::ZERO; 3];
     if packed & 0x0f >= 1 {
-        length = finite3(ctx, &mut reader, "light length")?;
-        width = finite3(ctx, &mut reader, "light width")?;
+        length = finite3(&mut reader, "light length")?;
+        width = finite3(&mut reader, "light width")?;
     }
     // A stored hotspot is admitted finite; an older record derives it from the
     // spot exponent, a value clamped to `[0, 1]` that no reader admits.
@@ -3325,10 +3329,11 @@ fn segments<'ctx>(
         1 << 16,
         reader.position(),
     )?;
-    let (storage, mut values) = ctx.with_scoped_storage(
-        "Rhino linetype source segment workspace",
-        || ctx.collection_vec(bytes / 12, "Rhino linetype segments"),
-    ).map(|(values, storage)| (storage, values))?;
+    let (storage, mut values) = ctx
+        .with_scoped_storage("Rhino linetype source segment workspace", || {
+            ctx.collection_vec(bytes / 12, "Rhino linetype segments")
+        })
+        .map(|(values, storage)| (storage, values))?;
     for _ in 0..bytes / 12 {
         ctx.charge_work(1, "Rhino presentation cursor traversal")
             .map_err(FramingError::from)?;
@@ -3445,8 +3450,14 @@ fn parse_linetype(
     ctx.charge_work(0, "Rhino linetype projection traversal")?;
     let mut projection_source = values.values.into_iter();
     for _ in 0..projection_source.len() {
-        let segment = ctx.next_charged(&mut projection_source, "Rhino linetype projection traversal")?
-            .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
+        let segment = ctx
+            .next_charged(
+                &mut projection_source,
+                "Rhino linetype projection traversal",
+            )?
+            .ok_or_else(|| {
+                CodecError::malformed("Rhino presentation traversal source ended early")
+            })?;
         let length_millimeters = if always {
             let scale = pattern_document_scale(binding)?;
             scaled_coordinate(segment.length.get(), scale).ok_or_else(|| {
@@ -3573,7 +3584,8 @@ impl SourceHatchLine {
         }
         let mut dashes = self.dashes.iter_mut();
         for _ in 0..dashes.len() {
-            let value = ctx.next_charged(&mut dashes, "Rhino hatch dash projection traversal")?
+            let value = ctx
+                .next_charged(&mut dashes, "Rhino hatch dash projection traversal")?
                 .ok_or_else(|| CodecError::malformed("Rhino hatch dash source ended early"))?;
             *value = scaled_coordinate(value.get(), scale).ok_or_else(|| {
                 FramingError::structural(source_offset, "scaled hatch line is invalid")
@@ -3624,10 +3636,11 @@ fn parse_hatch_pattern(
             )
             .into());
         }
-        let (storage, mut lines) = ctx.with_scoped_storage(
-            "Rhino modern hatch source workspace",
-            || ctx.collection_vec(count, "Rhino modern hatch lines"),
-        ).map(|(values, storage)| (storage, values))?;
+        let (storage, mut lines) = ctx
+            .with_scoped_storage("Rhino modern hatch source workspace", || {
+                ctx.collection_vec(count, "Rhino modern hatch lines")
+            })
+            .map(|(values, storage)| (storage, values))?;
         for _ in 0..count {
             ctx.charge_work(1, "Rhino presentation cursor traversal")
                 .map_err(FramingError::from)?;
@@ -3660,7 +3673,15 @@ fn parse_hatch_pattern(
             });
         }
         reader.skip_remaining()?;
-        (component, fill_type, description, PatternSource { values: lines, storage })
+        (
+            component,
+            fill_type,
+            description,
+            PatternSource {
+                values: lines,
+                storage,
+            },
+        )
     } else {
         let mut reader = BoundedReader::new(data, range.start, range.end)?;
         let packed = reader.u8()?;
@@ -3687,10 +3708,11 @@ fn parse_hatch_pattern(
             )
             .into());
         }
-        let (storage, mut lines) = ctx.with_scoped_storage(
-            "Rhino legacy hatch source workspace",
-            || ctx.collection_vec(count, "Rhino legacy hatch lines"),
-        ).map(|(values, storage)| (storage, values))?;
+        let (storage, mut lines) = ctx
+            .with_scoped_storage("Rhino legacy hatch source workspace", || {
+                ctx.collection_vec(count, "Rhino legacy hatch lines")
+            })
+            .map(|(values, storage)| (storage, values))?;
         for _ in 0..count {
             ctx.charge_work(1, "Rhino presentation cursor traversal")
                 .map_err(FramingError::from)?;
@@ -3710,7 +3732,10 @@ fn parse_hatch_pattern(
             },
             fill_type,
             description,
-            PatternSource { values: lines, storage },
+            PatternSource {
+                values: lines,
+                storage,
+            },
         )
     };
     let lines = if lines.values.is_empty() {
@@ -3724,8 +3749,14 @@ fn parse_hatch_pattern(
         ctx.charge_work(0, "Rhino hatch pattern projection traversal")?;
         let mut projection_source = lines.values.into_iter();
         for _ in 0..projection_source.len() {
-            let line = ctx.next_charged(&mut projection_source, "Rhino hatch pattern projection traversal")?
-                .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
+            let line = ctx
+                .next_charged(
+                    &mut projection_source,
+                    "Rhino hatch pattern projection traversal",
+                )?
+                .ok_or_else(|| {
+                    CodecError::malformed("Rhino presentation traversal source ended early")
+                })?;
             projected.push(line.into_millimeters(ctx, scale, source_offset)?);
         }
         drop(projection_source);
@@ -3770,10 +3801,7 @@ fn scaled_length(
         || {
             Err(FramingError::structural(
                 reader.position() - 8,
-                ctx.format_retained(
-                    format_args!("scaled {label} is invalid"),
-                    "Rhino scaled_length text",
-                )?,
+                format!("scaled {label} is invalid"),
             ))
         },
         Ok,
@@ -4764,23 +4792,30 @@ fn parse_texture_mapping(
     let (primitive_class_uuid, cache_requires_opaque) = if object.short() {
         (None, false)
     } else {
-        let ((primitive_uuid, cache_requires_opaque), primitive_storage) = ctx.with_scoped_storage(
-            "Rhino texture mapping primitive parse scratch",
-            || {
+        let ((primitive_uuid, cache_requires_opaque), primitive_storage) = ctx
+            .with_scoped_storage("Rhino texture mapping primitive parse scratch", || {
                 let mut warnings = Diagnostics::new();
                 let (value, userdata) = parse_class_wrapper_with_userdata(
-                    ctx, data, object.range(), archive, &mut warnings,
+                    ctx,
+                    data,
+                    object.range(),
+                    archive,
+                    &mut warnings,
                 )?;
                 let mut cache_requires_opaque = false;
                 ctx.charge_work(0, "Rhino parse texture mapping traversal")?;
                 let mut source = userdata.iter();
                 for _ in 0..source.len() {
-                    let raw = ctx.next_charged(&mut source, "Rhino parse texture mapping traversal")?
-                        .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
+                    let raw = ctx
+                        .next_charged(&mut source, "Rhino parse texture mapping traversal")?
+                        .ok_or_else(|| {
+                            CodecError::malformed("Rhino presentation traversal source ended early")
+                        })?;
                     let Some(value) = UserdataDescriptor::known(raw) else {
                         continue;
                     };
-                    if value.class_uuid == MAPPING_CRC_CACHE && value.item_uuid == MAPPING_CRC_CACHE
+                    if value.class_uuid == MAPPING_CRC_CACHE
+                        && value.item_uuid == MAPPING_CRC_CACHE
                         && parse_mapping_crc_cache(data, value.payload_range.clone()).is_err()
                     {
                         cache_requires_opaque = true;
@@ -4788,8 +4823,7 @@ fn parse_texture_mapping(
                     }
                 }
                 Ok::<_, FramingError>((value.class_uuid, cache_requires_opaque))
-            },
-        )?;
+            })?;
         drop(primitive_storage);
         (
             Some(ctx.format_retained(
@@ -5223,7 +5257,8 @@ fn parse_text_style(
         let face_bytes = reader.take(128)?;
         let windows_logfont_name =
             ctx.utf16le_lossy_text(face_bytes, 64, true, "Rhino legacy font face")?;
-        let named_description = !description.is_empty() && !description.eq_ignore_ascii_case("Default");
+        let named_description =
+            !description.is_empty() && !description.eq_ignore_ascii_case("Default");
         let postscript_name = if named_description
             && (apple_runtime || writer_version.is_some_and(|version| version > 201_802_230))
         {
@@ -5391,14 +5426,11 @@ fn admit_group_member(
     })
 }
 
-/// Keeps the record owned until its backing reservations have entered the
-/// outer owner. Tuple fields drop the record before its remaining reservations.
+/// Transfers successful record backing into the aggregate staging reservation.
 fn push_presentation_record<'ctx, T>(
     ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     staging: &mut cadmpeg_core::decode::ScopedReservation<'ctx>,
-    guard_storage: &mut cadmpeg_core::decode::ScopedReservation<'ctx>,
     records: &mut Vec<T>,
-    guards: &mut Vec<cadmpeg_core::decode::ScopedReservation<'ctx>>,
     mut record: (
         T,
         cadmpeg_core::decode::ScopedReservation<'ctx>,
@@ -5407,17 +5439,9 @@ fn push_presentation_record<'ctx, T>(
     operation: &'static str,
 ) -> Result<(), CodecError> {
     staging.with_storage(|| ctx.reserve_vec(records, 1, operation))?;
-    guard_storage.with_storage(|| {
-        ctx.reserve_vec(guards, 1, "Rhino presentation record guards")
-    })?;
-    guards.push(record.1);
-    if record.2.is_some() {
-        guard_storage.with_storage(|| {
-            ctx.reserve_vec(guards, 1, "Rhino presentation record guards")
-        })?;
-        if let Some(extra_storage) = record.2.take() {
-            guards.push(extra_storage);
-        }
+    staging.absorb(&mut record.1)?;
+    if let Some(extra_storage) = record.2.as_mut() {
+        staging.absorb(extra_storage)?;
     }
     records.push(record.0);
     Ok(())
@@ -5431,14 +5455,9 @@ pub(crate) fn install<'ctx>(
     let binding = UnitBinding::from_units(scan.metadata.settings.units.as_ref());
     let physical_scale = binding.neutral_scale();
     let mut groups_storage = ctx.reserve_scoped(0, "Rhino group staging records")?;
-    let mut group_scope_storage = ctx.reserve_scoped(0, "Rhino group staging reservations")?;
     let mut staging = ctx.reserve_scoped(0, "Rhino presentation staging records")?;
-    let mut record_guard_storage =
-        ctx.reserve_scoped(0, "Rhino presentation record guard storage")?;
     let mut group_member_workspace;
-    let mut group_storages = Vec::new();
     let mut groups = Vec::new();
-    let mut record_storages = Vec::new();
     let mut materials = Vec::new();
     let mut lights = Vec::new();
     let mut light_index_workspace = ctx.reserve_scoped(0, "Rhino light identity workspace")?;
@@ -5460,8 +5479,11 @@ pub(crate) fn install<'ctx>(
     ctx.charge_work(0, "Rhino install traversal")?;
     let mut projection_source = scan.objects[..].iter();
     for _ in 0..projection_source.len() {
-        let object = ctx.next_charged(&mut projection_source, "Rhino install traversal")?
-            .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
+        let object = ctx
+            .next_charged(&mut projection_source, "Rhino install traversal")?
+            .ok_or_else(|| {
+                CodecError::malformed("Rhino presentation traversal source ended early")
+            })?;
         if let Some(identity) = object.identity() {
             let count = object_count_workspace
                 .with_storage(|| {
@@ -5478,14 +5500,20 @@ pub(crate) fn install<'ctx>(
     ctx.charge_work(0, "Rhino install traversal")?;
     let mut projection_source = scan.tables[..].iter();
     for _ in 0..projection_source.len() {
-        let table = ctx.next_charged(&mut projection_source, "Rhino install traversal")?
-            .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
+        let table = ctx
+            .next_charged(&mut projection_source, "Rhino install traversal")?
+            .ok_or_else(|| {
+                CodecError::malformed("Rhino presentation traversal source ended early")
+            })?;
         let table_type = table.typecode & !0x0000_8000;
         ctx.charge_work(0, "Rhino install traversal")?;
         let mut projection_source = table.records[..].iter();
         for _ in 0..projection_source.len() {
-            let record = ctx.next_charged(&mut projection_source, "Rhino install traversal")?
-                .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
+            let record = ctx
+                .next_charged(&mut projection_source, "Rhino install traversal")?
+                .ok_or_else(|| {
+                    CodecError::malformed("Rhino presentation traversal source ended early")
+                })?;
             let recognized = matches!(
                 table_type,
                 GROUP_TABLE
@@ -5505,29 +5533,18 @@ pub(crate) fn install<'ctx>(
                 {
                     match parse_group(ctx, scan.data, range, record.range.start) {
                         Ok((group, group_storage)) => {
-                            if let Err(error) = groups_storage
-                                .with_storage(|| ctx.reserve_vec(&mut groups, 1, "Rhino groups"))
-                            {
-                                drop(group);
-                                drop(group_storage);
-                                return Err(error);
-                            }
-                            if let Err(error) = group_scope_storage.with_storage(|| {
-                                ctx.reserve_vec(
-                                    &mut group_storages,
-                                    1,
-                                    "Rhino group staging reservations",
-                                )
-                            }) {
-                                drop(group);
-                                drop(group_storage);
-                                return Err(error);
-                            }
-                            groups.push(group);
-                            group_storages.push(group_storage);
+                            push_presentation_record(
+                                ctx,
+                                &mut groups_storage,
+                                &mut groups,
+                                (group, group_storage, None),
+                                "Rhino groups",
+                            )?;
                             parsed = true;
                         }
-                        Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
+                        Err(FramingError::Resource(limit)) => {
+                            return Err(CodecError::ResourceLimit(limit))
+                        }
                         Err(_) => {}
                     }
                 }
@@ -5554,8 +5571,13 @@ pub(crate) fn install<'ctx>(
                     ctx.charge_work(0, "Rhino PBR userdata search")?;
                     let mut source = class.userdata.iter();
                     for _ in 0..source.len() {
-                        let raw = ctx.next_charged(&mut source, "Rhino PBR userdata search")?
-                            .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
+                        let raw = ctx
+                            .next_charged(&mut source, "Rhino PBR userdata search")?
+                            .ok_or_else(|| {
+                                CodecError::malformed(
+                                    "Rhino presentation traversal source ended early",
+                                )
+                            })?;
                         if let Some(value) = raw.known().filter(|value| {
                             value.class_uuid == PHYSICALLY_BASED_MATERIAL_USERDATA
                                 && value.item_uuid == PHYSICALLY_BASED_MATERIAL_USERDATA
@@ -5591,11 +5613,9 @@ pub(crate) fn install<'ctx>(
                     } else {
                         None
                     };
-                    let mut record_losses =
-                        ScratchVec::new(ctx, "Rhino material parse loss Vec")?;
-                    let (parsed_material, mut record_storage) = ctx.with_scoped_storage(
-                        "Rhino material record staging",
-                        || {
+                    let mut record_losses = ScratchVec::new(ctx, "Rhino material parse loss Vec")?;
+                    let (parsed_material, mut record_storage) =
+                        ctx.with_scoped_storage("Rhino material record staging", || {
                             Ok::<_, CodecError>(parse_material(
                                 ctx,
                                 scan.data,
@@ -5608,11 +5628,10 @@ pub(crate) fn install<'ctx>(
                                 },
                                 &mut record_losses,
                             ))
-                        },
-                    )?;
+                        })?;
                     match parsed_material {
                         Ok(mut material) => {
-record_losses.append_admitted(
+                            record_losses.append_admitted(
                                 ctx,
                                 &mut losses,
                                 "Rhino material parse loss copies",
@@ -5633,9 +5652,7 @@ record_losses.append_admitted(
                             push_presentation_record(
                                 ctx,
                                 &mut staging,
-                                &mut record_guard_storage,
                                 &mut materials,
-                                &mut record_storages,
                                 (material, record_storage, None),
                                 "Rhino materials",
                             )?;
@@ -5656,7 +5673,7 @@ record_losses.append_admitted(
                         Err(error) => {
                             drop(error);
                             drop(record_storage);
-record_losses.append_admitted(
+                            record_losses.append_admitted(
                                 ctx,
                                 &mut losses,
                                 "Rhino material parse loss copies",
@@ -5684,8 +5701,7 @@ record_losses.append_admitted(
                     scan.archive,
                     LIGHT,
                 ))? {
-                    let mut light_storage =
-                        ctx.reserve_scoped(0, "Rhino light record staging")?;
+                    let mut light_storage = ctx.reserve_scoped(0, "Rhino light record staging")?;
                     let light = light_storage.with_storage(|| {
                         optional_malformed(parse_light(
                             ctx,
@@ -5703,19 +5719,19 @@ record_losses.append_admitted(
                         let mut parsing_storage =
                             ctx.reserve_scoped(0, "Rhino light attribute staging")?;
                         let parsed_attributes = parsing_storage.with_storage(|| {
-                                parse_light_record_attributes(
-                                    ctx,
-                                    scan.data,
-                                    record,
-                                    scan.archive,
-                                    scan.metadata.properties.writer_version,
-                                    &mut attribute_losses,
-                                )
-                            });
+                            parse_light_record_attributes(
+                                ctx,
+                                scan.data,
+                                record,
+                                scan.archive,
+                                scan.metadata.properties.writer_version,
+                                &mut attribute_losses,
+                            )
+                        });
                         attribute_storage = Some(parsing_storage);
                         match parsed_attributes {
                             Ok(attributes) => {
-attribute_losses.append_admitted(
+                                attribute_losses.append_admitted(
                                     ctx,
                                     &mut losses,
                                     "Rhino light attribute loss copies",
@@ -5763,14 +5779,17 @@ attribute_losses.append_admitted(
                             }
                         }
                         let light = light_storage.with_storage(|| {
-                            prepare_light(ctx, &mut light_index_workspace, &mut light_identities, light)
+                            prepare_light(
+                                ctx,
+                                &mut light_index_workspace,
+                                &mut light_identities,
+                                light,
+                            )
                         })?;
                         push_presentation_record(
                             ctx,
                             &mut staging,
-                            &mut record_guard_storage,
                             &mut lights,
-                            &mut record_storages,
                             (light, light_storage, attribute_storage.take()),
                             "Rhino lights",
                         )?;
@@ -5797,9 +5816,7 @@ attribute_losses.append_admitted(
                             push_presentation_record(
                                 ctx,
                                 &mut staging,
-                                &mut record_guard_storage,
                                 &mut linetypes,
-                                &mut record_storages,
                                 (value, storage, None),
                                 "Rhino linetypes",
                             )?;
@@ -5839,9 +5856,7 @@ attribute_losses.append_admitted(
                             push_presentation_record(
                                 ctx,
                                 &mut staging,
-                                &mut record_guard_storage,
                                 &mut hatch_patterns,
-                                &mut record_storages,
                                 (value, storage, None),
                                 "Rhino hatch patterns",
                             )?;
@@ -5886,10 +5901,16 @@ attribute_losses.append_admitted(
                         ctx.charge_work(0, "Rhino dimension style userdata search")?;
                         let mut source = class.userdata.iter();
                         for _ in 0..source.len() {
-                            let raw = ctx.next_charged(&mut source, "Rhino dimension style userdata search")?
-                                .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
+                            let raw = ctx
+                                .next_charged(&mut source, "Rhino dimension style userdata search")?
+                                .ok_or_else(|| {
+                                    CodecError::malformed(
+                                        "Rhino presentation traversal source ended early",
+                                    )
+                                })?;
                             if let Some(value) = raw.known().filter(|value| {
-                                value.class_uuid == DIMSTYLE_EXTRA && value.item_uuid == DIMSTYLE_EXTRA
+                                value.class_uuid == DIMSTYLE_EXTRA
+                                    && value.item_uuid == DIMSTYLE_EXTRA
                             }) {
                                 // Fixed userdata metadata has no allocated children.
                                 extra = Some(value.clone());
@@ -5934,9 +5955,8 @@ attribute_losses.append_admitted(
                             }
                             None => None,
                         };
-                        let (value, storage) = ctx.with_scoped_storage(
-                            "Rhino V5 dimension-style staging",
-                            || {
+                        let (value, storage) =
+                            ctx.with_scoped_storage("Rhino V5 dimension-style staging", || {
                                 optional_malformed(parse_v5_dimension_style(
                                     ctx,
                                     scan.data,
@@ -5945,15 +5965,12 @@ attribute_losses.append_admitted(
                                     record.range.start,
                                     extra,
                                 ))
-                            },
-                        )?;
+                            })?;
                         if let Some(value) = value {
                             push_presentation_record(
                                 ctx,
                                 &mut staging,
-                                &mut record_guard_storage,
                                 &mut dimension_styles,
-                                &mut record_storages,
                                 (value, storage, extra_storage),
                                 "Rhino dimension styles",
                             )?;
@@ -5971,9 +5988,8 @@ attribute_losses.append_admitted(
                 } else if let Some(range) =
                     optional_malformed(class_data(ctx, scan.data, record, scan.archive, DIMSTYLE))?
                 {
-                    let (value, storage) = ctx.with_scoped_storage(
-                        "Rhino dimension-style staging",
-                        || {
+                    let (value, storage) =
+                        ctx.with_scoped_storage("Rhino dimension-style staging", || {
                             optional_malformed(parse_dimension_style(
                                 ctx,
                                 scan.data,
@@ -5982,15 +5998,12 @@ attribute_losses.append_admitted(
                                 scale,
                                 record.range.start,
                             ))
-                        },
-                    )?;
+                        })?;
                     if let Some(value) = value {
                         push_presentation_record(
                             ctx,
                             &mut staging,
-                            &mut record_guard_storage,
                             &mut dimension_styles,
-                            &mut record_storages,
                             (value, storage, None),
                             "Rhino dimension styles",
                         )?;
@@ -6005,9 +6018,8 @@ attribute_losses.append_admitted(
                     scan.archive,
                     EMBEDDED_BITMAP,
                 ))? {
-                    let (value, storage) = ctx.with_scoped_storage(
-                        "Rhino embedded image staging",
-                        || {
+                    let (value, storage) =
+                        ctx.with_scoped_storage("Rhino embedded image staging", || {
                             optional_malformed(parse_embedded_image(
                                 ctx,
                                 scan.data,
@@ -6015,15 +6027,12 @@ attribute_losses.append_admitted(
                                 scan.archive,
                                 record.range.start,
                             ))
-                        },
-                    )?;
+                        })?;
                     if let Some(value) = value {
                         push_presentation_record(
                             ctx,
                             &mut staging,
-                            &mut record_guard_storage,
                             &mut images,
-                            &mut record_storages,
                             (value, storage, None),
                             "Rhino images",
                         )?;
@@ -6036,9 +6045,8 @@ attribute_losses.append_admitted(
                     scan.archive,
                 ))? {
                     if matches!(class.class_uuid, WINDOWS_BITMAP | WINDOWS_BITMAP_EX) {
-                        let (value, storage) = ctx.with_scoped_storage(
-                            "Rhino Windows bitmap staging",
-                            || {
+                        let (value, storage) =
+                            ctx.with_scoped_storage("Rhino Windows bitmap staging", || {
                                 optional_malformed(parse_windows_bitmap(
                                     ctx,
                                     scan.data,
@@ -6047,15 +6055,12 @@ attribute_losses.append_admitted(
                                     scan.archive,
                                     record.range.start,
                                 ))
-                            },
-                        )?;
+                            })?;
                         if let Some(value) = value {
                             push_presentation_record(
                                 ctx,
                                 &mut staging,
-                                &mut record_guard_storage,
                                 &mut windows_bitmaps,
-                                &mut record_storages,
                                 (value, storage, None),
                                 "Rhino Windows bitmaps",
                             )?;
@@ -6071,9 +6076,8 @@ attribute_losses.append_admitted(
                     scan.archive,
                     TEXTURE_MAPPING,
                 ))? {
-                    let (value, storage) = ctx.with_scoped_storage(
-                        "Rhino texture-mapping staging",
-                        || {
+                    let (value, storage) =
+                        ctx.with_scoped_storage("Rhino texture-mapping staging", || {
                             optional_malformed(parse_texture_mapping(
                                 ctx,
                                 scan.data,
@@ -6081,15 +6085,12 @@ attribute_losses.append_admitted(
                                 scan.archive,
                                 record.range.start,
                             ))
-                        },
-                    )?;
+                        })?;
                     if let Some(value) = value {
                         push_presentation_record(
                             ctx,
                             &mut staging,
-                            &mut record_guard_storage,
                             &mut texture_mappings,
-                            &mut record_storages,
                             (value.value, storage, None),
                             "Rhino texture mappings",
                         )?;
@@ -6160,7 +6161,7 @@ attribute_losses.append_admitted(
                     )?;
                     match parsed_text_style {
                         Ok(value) => {
-record_losses.append_admitted(
+                            record_losses.append_admitted(
                                 ctx,
                                 &mut losses,
                                 "Rhino text-style parse loss copies",
@@ -6168,9 +6169,7 @@ record_losses.append_admitted(
                             push_presentation_record(
                                 ctx,
                                 &mut staging,
-                                &mut record_guard_storage,
                                 &mut text_styles,
-                                &mut record_storages,
                                 (value, record_storage, None),
                                 "Rhino text styles",
                             )?;
@@ -6178,12 +6177,12 @@ record_losses.append_admitted(
                         }
                         Err(FramingError::Resource(limit)) => {
                             drop(record_storage);
-                            return Err(CodecError::ResourceLimit(limit))
+                            return Err(CodecError::ResourceLimit(limit));
                         }
                         Err(error) => {
                             drop(error);
                             drop(record_storage);
-record_losses.append_admitted(
+                            record_losses.append_admitted(
                                 ctx,
                                 &mut losses,
                                 "Rhino text-style parse loss copies",
@@ -6211,14 +6210,18 @@ record_losses.append_admitted(
         &groups,
         |group| group.archive_index,
         "Rhino group index counts",
-    ).map(|(value, storage)| (storage, value))?;
+    )
+    .map(|(value, storage)| (storage, value))?;
     let mut group_members = HashMap::<i32, Vec<String>>::new();
     group_member_workspace = ctx.reserve_scoped(0, "Rhino group member workspace")?;
     ctx.charge_work(0, "Rhino install traversal")?;
     let mut projection_source = scan.objects[..].iter();
     for source_order in 0..projection_source.len() {
-        let object = ctx.next_charged(&mut projection_source, "Rhino install traversal")?
-            .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
+        let object = ctx
+            .next_charged(&mut projection_source, "Rhino install traversal")?
+            .ok_or_else(|| {
+                CodecError::malformed("Rhino presentation traversal source ended early")
+            })?;
         let Some(object) = object.framed() else {
             continue;
         };
@@ -6226,8 +6229,11 @@ record_losses.append_admitted(
             ctx.charge_work(0, "Rhino install traversal")?;
             let mut projection_source = attributes.groups[..].iter();
             for _ in 0..projection_source.len() {
-                let group = ctx.next_charged(&mut projection_source, "Rhino install traversal")?
-                    .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
+                let group = ctx
+                    .next_charged(&mut projection_source, "Rhino install traversal")?
+                    .ok_or_else(|| {
+                        CodecError::malformed("Rhino presentation traversal source ended early")
+                    })?;
                 let unique = ctx
                     .binary_search_by(
                         &group_index_counts,
@@ -6250,8 +6256,7 @@ record_losses.append_admitted(
         }
         if object.class_uuid == LIGHT {
             if let Some(scale) = physical_scale {
-                let mut light_storage =
-                    ctx.reserve_scoped(0, "Rhino light object staging")?;
+                let mut light_storage = ctx.reserve_scoped(0, "Rhino light object staging")?;
                 match light_storage.with_storage(|| {
                     parse_light(
                         ctx,
@@ -6264,14 +6269,17 @@ record_losses.append_admitted(
                 }) {
                     Ok(light) => {
                         let light = light_storage.with_storage(|| {
-                            prepare_light(ctx, &mut light_index_workspace, &mut light_identities, light)
+                            prepare_light(
+                                ctx,
+                                &mut light_index_workspace,
+                                &mut light_identities,
+                                light,
+                            )
                         })?;
                         push_presentation_record(
                             ctx,
                             &mut staging,
-                            &mut record_guard_storage,
                             &mut lights,
-                            &mut record_storages,
                             (light, light_storage, None),
                             "Rhino lights",
                         )?;
@@ -6304,10 +6312,8 @@ record_losses.append_admitted(
         }
         if let Some(attributes) = object.attributes.parsed() {
             let identity = &object.identity;
-            let mut record_losses =
-                ScratchVec::new(ctx, "Rhino object presentation loss Vec")?;
-            let mut record_storage =
-                ctx.reserve_scoped(0, "Rhino object presentation record")?;
+            let mut record_losses = ScratchVec::new(ctx, "Rhino object presentation loss Vec")?;
+            let mut record_storage = ctx.reserve_scoped(0, "Rhino object presentation record")?;
             let attributes_presentation = record_storage.with_storage(|| {
                 object_attributes_presentation(
                     ctx,
@@ -6323,7 +6329,7 @@ record_losses.append_admitted(
                     &mut record_losses,
                 )
             })?;
-record_losses.append_admitted(
+            record_losses.append_admitted(
                 ctx,
                 &mut losses,
                 "Rhino object presentation loss copies",
@@ -6363,9 +6369,7 @@ record_losses.append_admitted(
             push_presentation_record(
                 ctx,
                 &mut staging,
-                &mut record_guard_storage,
                 &mut object_presentation,
-                &mut record_storages,
                 (record, record_storage, None),
                 "Rhino object presentation records",
             )?;
@@ -6376,8 +6380,11 @@ record_losses.append_admitted(
     ctx.charge_work(0, "Rhino install traversal")?;
     let mut projection_source = scan.metadata.layers[..].iter();
     for _ in 0..projection_source.len() {
-        let layer = ctx.next_charged(&mut projection_source, "Rhino install traversal")?
-            .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
+        let layer = ctx
+            .next_charged(&mut projection_source, "Rhino install traversal")?
+            .ok_or_else(|| {
+                CodecError::malformed("Rhino presentation traversal source ended early")
+            })?;
         if let Some(id) = layer.id {
             let count = layer_count_workspace
                 .with_storage(|| {
@@ -6390,11 +6397,13 @@ record_losses.append_admitted(
     ctx.charge_work(0, "Rhino install traversal")?;
     let mut projection_source = scan.metadata.layers[..].iter();
     for _ in 0..projection_source.len() {
-        let layer = ctx.next_charged(&mut projection_source, "Rhino install traversal")?
-            .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
-        let (rendering_result, rendering_storage) = ctx.with_scoped_storage(
-            "Rhino layer rendering staging",
-            || {
+        let layer = ctx
+            .next_charged(&mut projection_source, "Rhino install traversal")?
+            .ok_or_else(|| {
+                CodecError::malformed("Rhino presentation traversal source ended early")
+            })?;
+        let (rendering_result, rendering_storage) =
+            ctx.with_scoped_storage("Rhino layer rendering staging", || {
                 Ok::<_, CodecError>(rendering_attributes(
                     ctx,
                     scan.data,
@@ -6402,8 +6411,7 @@ record_losses.append_admitted(
                     scan.archive,
                     settings::RenderingAttributesKind::Layer,
                 ))
-            },
-        )?;
+            })?;
         let mut rendering_storage = Some(rendering_storage);
         let rendering = match rendering_result {
             Ok(rendering) => rendering,
@@ -6474,10 +6482,7 @@ record_losses.append_admitted(
                     .description
                     .as_deref()
                     .map(|description| {
-                        ctx.copy_retained_text(
-                            description,
-                            "Rhino layer presentation description",
-                        )
+                        ctx.copy_retained_text(description, "Rhino layer presentation description")
                     })
                     .transpose()?,
                 iges_level: layer.iges_level,
@@ -6506,9 +6511,7 @@ record_losses.append_admitted(
         push_presentation_record(
             ctx,
             &mut staging,
-            &mut record_guard_storage,
             &mut layers,
-            &mut record_storages,
             (record, layer_storage, rendering_storage),
             "Rhino layer presentation records",
         )?;
@@ -6516,8 +6519,11 @@ record_losses.append_admitted(
     ctx.charge_work(0, "Rhino install traversal")?;
     let mut projection_source = group_index_counts[..].iter();
     for _ in 0..projection_source.len() {
-        let (index, count) = ctx.next_charged(&mut projection_source, "Rhino install traversal")?
-            .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
+        let (index, count) = ctx
+            .next_charged(&mut projection_source, "Rhino install traversal")?
+            .ok_or_else(|| {
+                CodecError::malformed("Rhino presentation traversal source ended early")
+            })?;
         if *count > 1 {
             push_presentation_loss(
                 ctx,
@@ -6531,8 +6537,7 @@ record_losses.append_admitted(
     }
     drop(group_index_counts);
     drop(group_index_workspace);
-    let disambiguated_group_count =
-        disambiguate_group_ids(ctx, &mut groups, Some(&mut group_storages))?;
+    let disambiguated_group_count = disambiguate_group_ids(ctx, &mut groups, &mut groups_storage)?;
     if disambiguated_group_count != 0 {
         push_presentation_loss(ctx, &mut losses, RhinoLossCode::DuplicateRecordResolved, format_args!(
             "{disambiguated_group_count} group source identities were disambiguated by source offset"
@@ -6541,8 +6546,11 @@ record_losses.append_admitted(
     ctx.charge_work(0, "Rhino group link traversal")?;
     let mut projection_source = groups[..].iter_mut();
     for _ in 0..projection_source.len() {
-        let group = ctx.next_charged(&mut projection_source, "Rhino group link traversal")?
-            .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
+        let group = ctx
+            .next_charged(&mut projection_source, "Rhino group link traversal")?
+            .ok_or_else(|| {
+                CodecError::malformed("Rhino presentation traversal source ended early")
+            })?;
         group.links = ctx
             .remove_hash_map(
                 &mut group_members,

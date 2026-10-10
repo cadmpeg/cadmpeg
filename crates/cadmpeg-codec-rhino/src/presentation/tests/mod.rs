@@ -1298,13 +1298,8 @@ fn group_preserves_component_identity() {
     bytes.extend([0x44; 16]);
     bytes.extend([0xaa, 0xbb]);
     let ctx = cadmpeg_test_support::service_decode_context();
-    let (group, _group_storage) = parse_group(
-        &ctx,
-        &bytes,
-        0..bytes.len(),
-        120,
-    )
-    .expect("required invariant");
+    let (group, _group_storage) =
+        parse_group(&ctx, &bytes, 0..bytes.len(), 120).expect("required invariant");
     assert_eq!(group.archive_index, 7);
     assert_eq!(group.name, "fixtures");
     assert_eq!(
@@ -1321,24 +1316,15 @@ fn duplicate_group_source_ids_are_disambiguated_without_rewriting_source_fields(
     bytes.extend(utf16_bytes("fixtures"));
     bytes.extend([0x44; 16]);
     let ctx = cadmpeg_test_support::service_decode_context();
-    let (first, first_storage) = parse_group(
-        &ctx,
-        &bytes,
-        0..bytes.len(),
-        120,
-    )
-    .expect("first group");
-    let (second, second_storage) = parse_group(
-        &ctx,
-        &bytes,
-        0..bytes.len(),
-        240,
-    )
-    .expect("second group");
+    let (first, first_storage) =
+        parse_group(&ctx, &bytes, 0..bytes.len(), 120).expect("first group");
+    let (second, second_storage) =
+        parse_group(&ctx, &bytes, 0..bytes.len(), 240).expect("second group");
+    let mut staging = ctx.reserve_scoped(0, "group test IDs").unwrap();
     let _group_storages = [first_storage, second_storage];
     let mut groups = vec![first, second];
     assert_eq!(
-        disambiguate_group_ids(&ctx, &mut groups, None)
+        disambiguate_group_ids(&ctx, &mut groups, &mut staging)
             .expect("duplicate group IDs fit the service profile"),
         2
     );
@@ -1348,44 +1334,6 @@ fn duplicate_group_source_ids_are_disambiguated_without_rewriting_source_fields(
     assert_eq!(groups[0].source_uuid, groups[1].source_uuid);
     assert!(groups[0].id.contains("source-offset-0000000000000078"));
     assert!(groups[1].id.contains("source-offset-00000000000000f0"));
-}
-
-#[test]
-fn repeated_group_disambiguation_replaces_scoped_ids() {
-    let ctx = cadmpeg_test_support::service_decode_context();
-    let mut first_bytes = vec![0x10];
-    first_bytes.extend(7_i32.to_le_bytes());
-    first_bytes.extend(utf16_bytes("first"));
-    let mut second_bytes = vec![0x10];
-    second_bytes.extend(8_i32.to_le_bytes());
-    second_bytes.extend(utf16_bytes("second"));
-    let (first, first_storage) =
-        parse_group(&ctx, &first_bytes, 0..first_bytes.len(), 120).expect("first group");
-    let (second, second_storage) =
-        parse_group(&ctx, &second_bytes, 0..second_bytes.len(), 240).expect("second group");
-    let mut groups = vec![first, second];
-    let mut storage = [first_storage, second_storage];
-
-    assert_eq!(
-        disambiguate_group_ids(&ctx, &mut groups, Some(&mut storage))
-            .expect("unique group IDs fit the service profile"),
-        0
-    );
-    assert_eq!(groups[0].id, "rhino:presentation:group#index-7");
-    assert_eq!(groups[1].id, "rhino:presentation:group#index-8");
-    groups[1].identity = groups[0].identity;
-    groups[1].archive_index = groups[0].archive_index;
-
-    assert_eq!(
-        disambiguate_group_ids(&ctx, &mut groups, Some(&mut storage))
-            .expect("duplicate group IDs fit the service profile"),
-        2
-    );
-    assert!(groups[0].id.contains("source-offset-"));
-    assert!(groups[1].id.contains("source-offset-"));
-    assert_ne!(groups[0].id, groups[1].id);
-    assert_eq!(groups[0].archive_index, 7);
-    assert_eq!(groups[1].archive_index, 7);
 }
 
 fn light_payload(packed: u8, hotspot: f64) -> Vec<u8> {
@@ -1937,8 +1885,8 @@ mod case_equality;
 
 mod searches;
 
-mod uuid_prefix;
 mod userdata_search;
+mod uuid_prefix;
 
 mod known_searches;
 
@@ -1949,3 +1897,5 @@ mod wide_utf8;
 mod hierarchy_wire;
 
 mod record_handoff;
+
+mod bounded_diagnostics;

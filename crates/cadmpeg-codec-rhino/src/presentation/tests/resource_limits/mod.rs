@@ -77,31 +77,33 @@ fn group_name_refuses_materialized_limit() {
 }
 
 #[test]
-fn group_id_refuses_retained_limit() {
+fn group_id_refuses_work_limit() {
     let mut bytes = vec![0x1f];
     bytes.extend(7_i32.to_le_bytes());
     bytes.extend(utf16_bytes("fixtures"));
     bytes.extend([0x44; 16]);
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 44;
+    policy.limits.max_work_units = u64::MAX;
+    let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "Rhino group ID",
+        None,
+    );
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
         .expect("group root admitted");
-    let (mut group, _group_storage) = crate::presentation::parse_group(
-        &ctx,
-        &bytes,
-        0..bytes.len(),
-        120,
-    )
-    .expect("name and source UUID admitted");
+    let (mut group, _group_storage) =
+        crate::presentation::parse_group(&ctx, &bytes, 0..bytes.len(), 120)
+            .expect("name and source UUID admitted");
     let error = crate::presentation::disambiguate_group_ids(
         &ctx,
         std::slice::from_mut(&mut group),
-        None,
+        &mut ctx.reserve_scoped(0, "group test IDs").unwrap(),
     )
-    .expect_err("generated group ID exceeds retained limit");
+    .expect_err("generated group ID exceeds work limit");
+    drop(probe);
     assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino group ID")
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino group ID" && refusal.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
     );
 }
 
@@ -132,8 +134,12 @@ fn group_identity_workspace_refuses_materialized_limit() {
     policy.limits.max_materialized_bytes = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root admitted");
-    let error = crate::presentation::disambiguate_group_ids(&ctx, &mut duplicate_groups(), None)
-        .expect_err("identity workspace exceeds materialized limit");
+    let error = crate::presentation::disambiguate_group_ids(
+        &ctx,
+        &mut duplicate_groups(),
+        &mut ctx.reserve_scoped(0, "group test IDs").unwrap(),
+    )
+    .expect_err("identity workspace exceeds materialized limit");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino group identity counts")
     );
@@ -155,10 +161,13 @@ fn malformed_group_releases_scoped_name_storage() {
         let error = crate::presentation::parse_group(&ctx, &bytes, 0..bytes.len(), 120)
             .expect_err("short source UUID makes the group malformed");
         let uuid_start = bytes.len() - 15;
-        assert!(matches!(error, FramingError::OutOfBounds { offset, end, bound }
-            if offset == uuid_start && end == uuid_start + 16 && bound == bytes.len()));
+        assert!(
+            matches!(error, FramingError::OutOfBounds { offset, end, bound }
+            if offset == uuid_start && end == uuid_start + 16 && bound == bytes.len())
+        );
         assert!(ctx.resource_refusal().is_none());
-        let _released = ctx.reserve_scoped(8, "released group name storage")
+        let _released = ctx
+            .reserve_scoped(8, "released group name storage")
             .expect("the rejected eight-byte name no longer occupies scratch");
     }
 }
@@ -170,8 +179,12 @@ fn group_identity_count_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root admitted");
-    let error = crate::presentation::disambiguate_group_ids(&ctx, &mut duplicate_groups(), None)
-        .expect_err("identity map exceeds collection limit");
+    let error = crate::presentation::disambiguate_group_ids(
+        &ctx,
+        &mut duplicate_groups(),
+        &mut ctx.reserve_scoped(0, "group test IDs").unwrap(),
+    )
+    .expect_err("identity map exceeds collection limit");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino group identity counts")
     );
@@ -184,34 +197,36 @@ fn duplicate_group_indices_refuse_collection_limit() {
     policy.limits.max_collection_items = 1;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root admitted");
-    let error = crate::presentation::disambiguate_group_ids(&ctx, &mut duplicate_groups(), None)
-        .expect_err("duplicate indices exceed collection limit");
+    let error = crate::presentation::disambiguate_group_ids(
+        &ctx,
+        &mut duplicate_groups(),
+        &mut ctx.reserve_scoped(0, "group test IDs").unwrap(),
+    )
+    .expect_err("duplicate indices exceed collection limit");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino duplicate group indices")
     );
 }
 
 #[test]
-fn disambiguated_group_id_refuses_retained_limit() {
-    let run = |cap| {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = cap;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root admitted");
-        crate::presentation::disambiguate_group_ids(&ctx, &mut duplicate_groups(), None)
-            .expect_err("disambiguated ID exceeds retained limit")
-    };
-    let error = run(crate::test_support::retained_limit_at(
+fn disambiguated_group_id_refuses_work_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut staging = ctx.reserve_scoped(0, "group test IDs").unwrap();
+    let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "Rhino disambiguated group ID",
-        0,
-        |cap| match run(cap) {
-            cadmpeg_core::CodecError::ResourceLimit(limit) => limit,
-            error => panic!("unexpected resource refusal: {error:?}"),
-        },
-    ));
+        None,
+    );
+    let error =
+        crate::presentation::disambiguate_group_ids(&ctx, &mut duplicate_groups(), &mut staging)
+            .unwrap_err();
+    drop(probe);
     assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino disambiguated group ID")
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino disambiguated group ID" && refusal.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
     );
 }
 
@@ -305,13 +320,17 @@ fn push_light_refusal(
         indexes.insert(Uuid::from_canonical([0x55; 16]));
     }
     let mut staging = ctx.reserve_scoped(0, "Rhino test light staging").unwrap();
-    let mut guard_storage = ctx.reserve_scoped(0, "Rhino test light guard staging").unwrap();
     let light_storage = ctx.reserve_scoped(0, "Rhino test light record").unwrap();
     crate::presentation::prepare_light(&ctx, &mut workspace, &mut indexes, light)
-        .and_then(|light| crate::presentation::push_presentation_record(
-            &ctx, &mut staging, &mut guard_storage, &mut Vec::new(), &mut Vec::new(),
-            (light, light_storage, None), "Rhino lights",
-        ))
+        .and_then(|light| {
+            crate::presentation::push_presentation_record(
+                &ctx,
+                &mut staging,
+                &mut Vec::new(),
+                (light, light_storage, None),
+                "Rhino lights",
+            )
+        })
         .expect_err("light collection or identity exceeds limit")
 }
 
@@ -999,107 +1018,107 @@ enum InstallFixture {
 }
 
 fn presentation_install_scan(fixture: InstallFixture) -> crate::container::Scan<'static> {
-        use crate::test_support::test_dump::{
-            class_wrapper, crc_chunk, minimal_document, object_record_with_attribute_userdata,
-            table, tagged_attributes,
-        };
-        let with_groups = !matches!(fixture, InstallFixture::LayersOnly);
-        let with_objects = matches!(fixture, InstallFixture::Full);
-        let with_layers = !matches!(fixture, InstallFixture::GroupsOnly);
-        let archive = ArchiveVersion::V5;
-        let mut groups = vec![0x1f];
-        groups.extend(7_i32.to_le_bytes());
-        groups.extend(utf16_bytes("fixtures"));
-        groups.extend([0x44; 16]);
-        let group = crc_chunk(
+    use crate::test_support::test_dump::{
+        class_wrapper, crc_chunk, minimal_document, object_record_with_attribute_userdata, table,
+        tagged_attributes,
+    };
+    let with_groups = !matches!(fixture, InstallFixture::LayersOnly);
+    let with_objects = matches!(fixture, InstallFixture::Full);
+    let with_layers = !matches!(fixture, InstallFixture::GroupsOnly);
+    let archive = ArchiveVersion::V5;
+    let mut groups = vec![0x1f];
+    groups.extend(7_i32.to_le_bytes());
+    groups.extend(utf16_bytes("fixtures"));
+    groups.extend([0x44; 16]);
+    let group = crc_chunk(
+        archive,
+        0x2000_8073,
+        &class_wrapper(archive, crate::presentation::GROUP.to_wire(), &groups),
+    );
+    let mut group_item = 1_i32.to_le_bytes().to_vec();
+    group_item.extend(7_i32.to_le_bytes());
+    let attributes = tagged_attributes(&[(18, group_item)], 0);
+    let object = object_record_with_attribute_userdata(
+        archive,
+        1,
+        crate::test_support::test_dump::POINT_CLASS,
+        &attributes,
+        &[],
+    );
+    let groups_in_table = if with_groups { vec![group] } else { Vec::new() };
+    let objects_in_table = if with_objects {
+        vec![object]
+    } else {
+        Vec::new()
+    };
+    let bytes = minimal_document(
+        "50",
+        &[
+            table(archive, 0x1000_0014, &[]),
+            table(archive, 0x1000_0015, &[]),
+            table(archive, 0x1000_0018, &groups_in_table),
+            table(archive, 0x1000_0013, &objects_in_table),
+        ],
+    );
+    let mut scan = crate::container::scan_owned(bytes).expect("presentation fixture scan");
+    let group_table = scan
+        .tables
+        .iter()
+        .find(|table| table.typecode == 0x1000_0018)
+        .expect("group table retained");
+    if with_groups {
+        let group_record = group_table.records.first().expect("group record retained");
+        let group_range = crate::presentation::class_data(
+            &cadmpeg_test_support::service_decode_context(),
+            scan.data,
+            group_record,
             archive,
-            0x2000_8073,
-            &class_wrapper(archive, crate::presentation::GROUP.to_wire(), &groups),
-        );
-        let mut group_item = 1_i32.to_le_bytes().to_vec();
-        group_item.extend(7_i32.to_le_bytes());
-        let attributes = tagged_attributes(&[(18, group_item)], 0);
-        let object = object_record_with_attribute_userdata(
-            archive,
-            1,
-            crate::test_support::test_dump::POINT_CLASS,
-            &attributes,
-            &[],
-        );
-        let groups_in_table = if with_groups { vec![group] } else { Vec::new() };
-        let objects_in_table = if with_objects {
-            vec![object]
-        } else {
-            Vec::new()
-        };
-        let bytes = minimal_document(
-            "50",
-            &[
-                table(archive, 0x1000_0014, &[]),
-                table(archive, 0x1000_0015, &[]),
-                table(archive, 0x1000_0018, &groups_in_table),
-                table(archive, 0x1000_0013, &objects_in_table),
-            ],
-        );
-        let mut scan = crate::container::scan_owned(bytes).expect("presentation fixture scan");
-        let group_table = scan
-            .tables
-            .iter()
-            .find(|table| table.typecode == 0x1000_0018)
-            .expect("group table retained");
-        if with_groups {
-            let group_record = group_table.records.first().expect("group record retained");
-            let group_range = crate::presentation::class_data(
-                &cadmpeg_test_support::service_decode_context(),
-                scan.data,
-                group_record,
-                archive,
-                crate::presentation::GROUP,
-            )
-            .expect("group class admitted");
-            let ctx = cadmpeg_test_support::service_decode_context();
-            let (_group, _group_storage) = crate::presentation::parse_group(
-                &ctx,
-                scan.data,
-                group_range,
-                group_record.range.start,
-            )
-            .expect("group payload admitted");
-        }
-        crate::test_support::test_dump::set_test_units(&mut scan, 1.0);
-        if with_layers {
-            scan.metadata.layers.push(settings::LayerRecord {
-                source: settings::SourceRange { range: 0..1 },
-                index: 3,
-                iges_level: None,
-                render_material_index: -1,
-                color: [1, 2, 3, 255],
-                name: "Layer".to_owned(),
-                description: Some("Description".to_owned()),
-                visible: true,
-                locked: false,
-                id: Some(Uuid::from_wire([1; 16])),
-                hierarchy: None,
-                linetype_index: None,
-                plot: None,
-                display_material_id: Some(Uuid::from_wire([2; 16])),
-                no_clipping_planes: None,
-                visible_in_new_details: None,
-                rendering_range: None,
-                extension_items: Vec::new(),
-                embedded_linetype: None,
-                embedded_section_style: None,
-                per_viewport_settings: vec![settings::LayerPerViewportSettings {
-                    viewport_id: Uuid::from_wire([3; 16]),
-                    color: None,
-                    plot_color: None,
-                    plot_weight_mm: None,
-                    visible: None,
-                    persistent_visibility: None,
-                }],
-            });
-        }
-        scan
+            crate::presentation::GROUP,
+        )
+        .expect("group class admitted");
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let (_group, _group_storage) = crate::presentation::parse_group(
+            &ctx,
+            scan.data,
+            group_range,
+            group_record.range.start,
+        )
+        .expect("group payload admitted");
+    }
+    crate::test_support::test_dump::set_test_units(&mut scan, 1.0);
+    if with_layers {
+        scan.metadata.layers.push(settings::LayerRecord {
+            source: settings::SourceRange { range: 0..1 },
+            index: 3,
+            iges_level: None,
+            render_material_index: -1,
+            color: [1, 2, 3, 255],
+            name: "Layer".to_owned(),
+            description: Some("Description".to_owned()),
+            visible: true,
+            locked: false,
+            id: Some(Uuid::from_wire([1; 16])),
+            hierarchy: None,
+            linetype_index: None,
+            plot: None,
+            display_material_id: Some(Uuid::from_wire([2; 16])),
+            no_clipping_planes: None,
+            visible_in_new_details: None,
+            rendering_range: None,
+            extension_items: Vec::new(),
+            embedded_linetype: None,
+            embedded_section_style: None,
+            per_viewport_settings: vec![settings::LayerPerViewportSettings {
+                viewport_id: Uuid::from_wire([3; 16]),
+                color: None,
+                plot_color: None,
+                plot_weight_mm: None,
+                visible: None,
+                persistent_visibility: None,
+            }],
+        });
+    }
+    scan
 }
 
 fn presentation_install_limit_operations(
@@ -1127,7 +1146,9 @@ fn presentation_install_limit_operations(
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
                 .expect("presentation root admitted");
-        match crate::presentation::install(&ctx, &scan, &mut cadmpeg_ir::document::CadIr::empty()).map(drop) {
+        match crate::presentation::install(&ctx, &scan, &mut cadmpeg_ir::document::CadIr::empty())
+            .map(drop)
+        {
             Ok(_) => return operations,
             Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
                 if refusal.dimension == dimension =>
@@ -1381,7 +1402,8 @@ fn group_member_links_are_scoped_through_native_serialization() {
                 policy.limits.max_retained_bytes = cap;
             }
             let (ctx, _) = DecodeContext::from_root_bytes(scan.data, &arena, &policy)?;
-            crate::presentation::install(&ctx, &scan, &mut cadmpeg_ir::document::CadIr::empty()).map(drop)
+            crate::presentation::install(&ctx, &scan, &mut cadmpeg_ir::document::CadIr::empty())
+                .map(drop)
         });
     }
     let mut ir = cadmpeg_ir::document::CadIr::empty();
