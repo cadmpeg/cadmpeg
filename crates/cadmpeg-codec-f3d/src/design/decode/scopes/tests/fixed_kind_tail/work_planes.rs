@@ -39,10 +39,12 @@ fn legacy_work_plane_class_380_frame_decodes_its_matrix() {
         })
         .unwrap();
     let decoded = exact_work_plane_frame(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
     )
+    .unwrap()
     .expect("class-380 WorkPlane frame");
     assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(decoded.transform_offset, 49);
@@ -89,10 +91,12 @@ fn legacy_work_plane_class_256_frame_decodes_its_opaque_prefix_lane() {
             })
             .unwrap();
         let decoded = exact_work_plane_frame(
+            &cadmpeg_test_support::service_decode_context(),
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &scope,
         )
+        .unwrap()
         .expect("class-256 WorkPlane frame");
         assert_eq!(decoded.transform, transform.try_into().unwrap());
         assert_eq!(
@@ -126,10 +130,12 @@ fn legacy_work_plane_class_256_frame_decodes_its_opaque_prefix_lane() {
         .unwrap();
     assert_eq!(
         exact_work_plane_frame(
+            &cadmpeg_test_support::service_decode_context(),
             &invalid,
             &crate::design::test_support::indexed_record_offsets_for_test(&invalid),
             &scope
-        ),
+        )
+        .unwrap(),
         None
     );
 }
@@ -202,10 +208,12 @@ fn legacy_work_plane_opaque_prefix_frames_use_class_pair_admission() {
             })
             .unwrap();
         let decoded = exact_work_plane_frame(
+            &cadmpeg_test_support::service_decode_context(),
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &scope,
         )
+        .unwrap()
         .expect("opaque-prefix WorkPlane frame");
         assert_eq!(decoded.transform, transform.try_into().unwrap());
         assert_eq!(decoded.transform_offset, u64_from_index(matrix));
@@ -238,10 +246,12 @@ fn legacy_work_plane_opaque_prefix_frames_use_class_pair_admission() {
         .unwrap();
     assert_eq!(
         exact_work_plane_frame(
+            &cadmpeg_test_support::service_decode_context(),
             &invalid,
             &crate::design::test_support::indexed_record_offsets_for_test(&invalid),
             &scope
-        ),
+        )
+        .unwrap(),
         None
     );
 }
