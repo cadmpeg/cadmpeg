@@ -334,7 +334,9 @@ fn relation_declaration_candidates_impl<'a>(
     )>,
     CodecError,
 > {
-    let (index, _index_storage) = ctx
+    let _index_storage;
+    let index;
+    (index, _index_storage) = ctx
         .with_scoped_storage("index SLDPRT relation declarations", || {
             DeclarationIndex::new(ctx, classes, scalars, intervals)
         })?;
@@ -1642,7 +1644,9 @@ fn feature_markers<'a>(
 ) -> Result<FeatureMarkers<'a>, CodecError> {
     const OPERATION: &str = "index SLDPRT relation feature entities";
     // Group the markers in offset and ordinal order so each group is ordered.
-    let (mut ordered, _ordered_storage) = ctx.with_scoped_storage(OPERATION, || {
+    let _ordered_storage;
+    let mut ordered;
+    (ordered, _ordered_storage) = ctx.with_scoped_storage(OPERATION, || {
         ctx.collect_vec(lane.sketch_entities.iter(), OPERATION)
     })?;
     ctx.sort_unstable_by_key(
