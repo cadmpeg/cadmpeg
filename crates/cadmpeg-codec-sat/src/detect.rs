@@ -50,7 +50,10 @@ pub(crate) fn classify(
 fn looks_like_text_stream(ctx: &DecodeContext<'_>, prefix: &[u8]) -> Result<bool, CodecError> {
     // The text discriminant starts with at least three decimal digits. Its
     // full first field is checked by the admitted field scan below.
-    if !prefix.get(..3).is_some_and(|bytes| bytes.iter().all(u8::is_ascii_digit)) {
+    if !prefix
+        .get(..3)
+        .is_some_and(|bytes| bytes.iter().all(u8::is_ascii_digit))
+    {
         return Ok(false);
     }
     let mut rest = prefix;
