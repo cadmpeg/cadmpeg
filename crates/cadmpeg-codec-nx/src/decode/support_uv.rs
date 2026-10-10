@@ -166,11 +166,11 @@ pub(super) fn linear_knots(
         .len()
         .checked_add(2)
         .ok_or_else(|| ctx.refuse_codec_limit("nx linear knot count", u64::MAX - 1, u64::MAX))?;
+    let mut knots = ctx.collection_vec(count, "nx linear knots")?;
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(count),
         "form nx linear knots",
     )?;
-    let mut knots = ctx.collection_vec(count, "nx linear knots")?;
     knots.extend(parameters.first().copied());
     knots.extend_from_slice(parameters);
     knots.extend(parameters.last().copied());
@@ -3443,6 +3443,33 @@ mod tests {
                 &geometry_budget,
             )
         })
+    }
+
+    #[test]
+    fn linear_knots_storage_refusal_precedes_copy_work() {
+        for dimension in [ResourceDimension::CollectionItems, ResourceDimension::RetainedBytes] {
+            crate::test_support::resource_refusal_at(&[], dimension, "nx linear knots", |ctx| {
+                let budget = GeometryWorkBudget::from_context(ctx, 100);
+                super::linear_knots(&[0.0, 1.0], &budget)
+            });
+            crate::test_support::with_decode_context_over(
+                &[],
+                |policy| {
+                    policy.limits.max_work_units = 0;
+                    match dimension {
+                        ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+                        ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
+                        _ => unreachable!(),
+                    }
+                },
+                |ctx| {
+                    let budget = GeometryWorkBudget::from_context(ctx, 100);
+                    let error = super::linear_knots(&[0.0, 1.0], &budget).unwrap_err();
+                    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                        if limit.dimension == dimension && limit.operation == "nx linear knots"));
+                },
+            );
+        }
     }
 
     #[test]
