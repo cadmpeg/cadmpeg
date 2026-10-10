@@ -244,89 +244,64 @@ fn parse_mesh(
             "mesh population exceeds remaining payload",
         ));
     }
-    let mut storage = ctx.provisional_retained("FreeCAD mesh candidate")?;
-    let (vertices, triangles) = storage.with_storage(|| {
-        let mut vertices = ctx.collection_vec(point_count, "FreeCAD mesh vertices")?;
-        let mut vertex_sources = 0..point_count;
-        while vertex_sources.len() != 0 {
-            let Some(_) = ctx.next_charged(&mut vertex_sources, "FreeCAD mesh vertex visits")?
-            else {
-                break;
-            };
-            vertices.push(reader.point3(byte_order, "mesh point")?);
+    let mut vertices = ctx.collection_vec(point_count, "FreeCAD mesh vertices")?;
+    let mut vertex_sources = 0..point_count;
+    while vertex_sources.len() != 0 {
+        let Some(_) = ctx.next_charged(&mut vertex_sources, "FreeCAD mesh vertex visits")?
+        else {
+            break;
+        };
+        vertices.push(reader.point3(byte_order, "mesh point")?);
+    }
+    // Each facet consumes three point indices and three neighbour indices (24 bytes),
+    // so the declared count cannot exceed the unread payload.
+    let facet_capacity = reader
+        .counted(
+            cadmpeg_core::decode::u64_from_index(facet_count),
+            mesh_facet::LEN,
+        )
+        .ok_or_else(|| {
+            CodecError::Malformed("mesh facet count exceeds remaining payload".into())
+        })?;
+    let mut triangles = ctx.collection_vec(facet_capacity, "FreeCAD mesh facets")?;
+    let mut facet_sources = 0..facet_count;
+    while facet_sources.len() != 0 {
+        let Some(_) = ctx.next_charged(&mut facet_sources, "FreeCAD mesh facet visits")? else {
+            break;
+        };
+        let triangle = [
+            reader.index(byte_order, point_count, "mesh facet point")?,
+            reader.index(byte_order, point_count, "mesh facet point")?,
+            reader.index(byte_order, point_count, "mesh facet point")?,
+        ];
+        // The three facet padding words are skipped, not read.
+        for _ in 0..3 {
+            reader.skip(4)?;
         }
-        // Each facet consumes three point indices and three neighbour indices (24 bytes),
-        // so the declared count cannot exceed the unread payload.
-        let facet_capacity = reader
-            .counted(
-                cadmpeg_core::decode::u64_from_index(facet_count),
-                mesh_facet::LEN,
-            )
-            .ok_or_else(|| {
-                CodecError::Malformed("mesh facet count exceeds remaining payload".into())
-            })?;
-        let mut triangles = ctx.collection_vec(facet_capacity, "FreeCAD mesh facets")?;
-        let mut facet_sources = 0..facet_count;
-        while facet_sources.len() != 0 {
-            let Some(_) = ctx.next_charged(&mut facet_sources, "FreeCAD mesh facet visits")? else {
-                break;
-            };
-            let triangle = [
-                reader.index(byte_order, point_count, "mesh facet point")?,
-                reader.index(byte_order, point_count, "mesh facet point")?,
-                reader.index(byte_order, point_count, "mesh facet point")?,
-            ];
-            // The three facet padding words are skipped, not read.
-            for _ in 0..3 {
-                reader.skip(4)?;
-            }
-            triangles.push(triangle);
+        triangles.push(triangle);
+    }
+    for _ in 0..6 {
+        let value = reader.f32(byte_order)?;
+        if !value.is_finite() {
+            return Err(CodecError::Malformed(
+                "FCStd mesh bounding box contains a non-finite value".into(),
+            ));
         }
-        for _ in 0..6 {
-            let value = reader.f32(byte_order)?;
-            if !value.is_finite() {
-                return Err(CodecError::Malformed(
-                    "FCStd mesh bounding box contains a non-finite value".into(),
-                ));
-            }
-        }
-        Ok::<_, CodecError>((vertices, triangles))
-    })?;
+    }
     reader.finish(ctx, "mesh payload")?;
-    // Format escaping diagnostics after restoring storage routing.
-    let id = storage
-        .with_storage(|| {
-            Ok::<_, CodecError>(cadmpeg_ir::tessellation::TessellationId::mint(
-                ctx.retained_suffix(&property.id, ":mesh", "FreeCAD mesh identity")?,
-            ))
-        })?
-        .map_err(|error| {
-            crate::resource::malformed_charged(
-                ctx,
-                format_args!("{error}"),
-                "FreeCAD mesh diagnostic",
-            )
-        })?;
-    let tessellation = storage
-        .with_storage(|| {
-            Ok::<_, CodecError>(Tessellation::from_parts(
-                id,
-                cadmpeg_ir::tessellation::TessellationMesh::List {
-                    vertices,
-                    triangles,
-                },
-                Vec::new(),
-            ))
-        })?
-        .map_err(|error| {
-            crate::resource::malformed_charged(
-                ctx,
-                format_args!("{error}"),
-                "FreeCAD mesh diagnostic",
-            )
-        })?;
-    let source = storage.with_storage(|| association(ctx, property))?;
-    storage.commit_value(tessellation.with_source_object(Some(source)))
+    let id = cadmpeg_ir::tessellation::TessellationId::mint(
+        ctx.retained_suffix(&property.id, ":mesh", "FreeCAD mesh identity")?,
+    ).map_err(|error| crate::resource::malformed_charged(
+        ctx, format_args!("{error}"), "FreeCAD mesh diagnostic",
+    ))?;
+    let tessellation = Tessellation::from_parts(
+        id,
+        cadmpeg_ir::tessellation::TessellationMesh::List { vertices, triangles },
+        Vec::new(),
+    ).map_err(|error| crate::resource::malformed_charged(
+        ctx, format_args!("{error}"), "FreeCAD mesh diagnostic",
+    ))?;
+    Ok(tessellation.with_source_object(Some(association(ctx, property)?)))
 }
 
 fn parse_points(
@@ -367,21 +342,12 @@ fn parse_points(
         let _ordinal_storage = ordinal.1;
         let ordinal = ordinal.0;
         let position = reader.point3(ByteOrder::Little, "point-cloud point")?;
-        let mut storage = ctx.provisional_retained("FreeCAD point-cloud candidate")?;
-        let point = storage.with_storage(|| {
-            Ok::<_, CodecError>(Point::new(
-                PointId::mint(crate::native::model_id_charged(
-                    ctx,
-                    "point",
-                    &property.id,
-                    &ordinal,
-                )?)
+        points.push(Point::new(
+            PointId::mint(crate::native::model_id_charged(ctx, "point", &property.id, &ordinal)?)
                 .map_err(CodecError::malformed)?,
-                transform_point(transform, position)?,
-                Some(association(ctx, property)?),
-            ))
-        })?;
-        points.push(storage.commit_value(point)?);
+            transform_point(transform, position)?,
+            Some(association(ctx, property)?),
+        ));
     }
     reader.finish(ctx, "point-cloud payload")?;
     Ok(())
@@ -424,7 +390,7 @@ fn point_transform(
     };
     let mut values = [0.0_f64; 16];
     let mut count = 0_usize;
-    // Splitting reads each byte once, whitespace runs included.
+    // Prepay the attribute extent before Unicode-whitespace tokenization.
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(text.len()),
         "FreeCAD point matrix token visits",
