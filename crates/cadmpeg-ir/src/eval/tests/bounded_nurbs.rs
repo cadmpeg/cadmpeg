@@ -484,10 +484,7 @@ fn pcurve_containment_admits_only_the_point_basis() {
                 let limit = result.unwrap_err();
                 assert_eq!(limit.dimension, dimension);
                 assert_eq!(limit.operation, "IR B-spline basis");
-                assert_eq!(
-                    ctx.resource_refusal(),
-                    Some(limit)
-                );
+                assert_eq!(ctx.resource_refusal(), Some(limit));
                 assert!(
                     matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
                 );

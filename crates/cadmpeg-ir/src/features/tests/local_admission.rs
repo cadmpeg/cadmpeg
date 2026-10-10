@@ -918,7 +918,6 @@ fn three_point_constructor_stops_at_a_duplicate() {
         "points must select three distinct vertex targets"
     );
     ctx.finish_session().unwrap();
-
 }
 
 #[test]

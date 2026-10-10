@@ -527,9 +527,7 @@ impl IdentityKey {
         operation: &'static str,
     ) -> Result<Self, CodecError> {
         Ok(Self(match &self.0 {
-            std::borrow::Cow::Borrowed(text) => {
-                std::borrow::Cow::Borrowed(*text)
-            }
+            std::borrow::Cow::Borrowed(text) => std::borrow::Cow::Borrowed(*text),
             std::borrow::Cow::Owned(text) => {
                 std::borrow::Cow::Owned(ctx.copy_retained_text(text, operation)?)
             }

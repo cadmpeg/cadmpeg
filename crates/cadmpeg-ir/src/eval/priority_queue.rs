@@ -70,7 +70,8 @@ impl<'ctx, 'arena, T: Ord> PriorityQueue<'ctx, 'arena, T> {
 
     pub(super) fn peek(&self) -> Result<Option<&T>, ResourceLimit> {
         if !self.values.is_empty() {
-            self.context.charge_work_limit(1, "IR priority queue peek")?;
+            self.context
+                .charge_work_limit(1, "IR priority queue peek")?;
         }
         Ok(self.values.first())
     }

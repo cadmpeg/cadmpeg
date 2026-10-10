@@ -118,11 +118,13 @@ impl<'ctx, 'arena> EvaluationAdmission<'ctx, 'arena> {
                 }));
                 let remaining = u64_from_index(parent.remaining());
                 if child.consumed() != 0 && parent.consume_child(&child).is_err() {
-                    return Err(context.refuse_codec_limit(
-                        "geometry work slice transfer",
-                        remaining,
-                        u64_from_index(work_units(child.consumed())),
-                    ).into());
+                    return Err(context
+                        .refuse_codec_limit(
+                            "geometry work slice transfer",
+                            remaining,
+                            u64_from_index(work_units(child.consumed())),
+                        )
+                        .into());
                 }
                 if child.exhausted() {
                     if let Some(limit) = context.resource_refusal() {
@@ -131,11 +133,9 @@ impl<'ctx, 'arena> EvaluationAdmission<'ctx, 'arena> {
                 }
                 result
             }
-            None => {
-                run(EvaluationAdmission::WorkSlice(EvaluationWorkSlice {
-                    policy: WorkSlicePolicy::Independent(parent),
-                }))
-            }
+            None => run(EvaluationAdmission::WorkSlice(EvaluationWorkSlice {
+                policy: WorkSlicePolicy::Independent(parent),
+            })),
         }
     }
 

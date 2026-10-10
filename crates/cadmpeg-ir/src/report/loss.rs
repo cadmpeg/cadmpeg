@@ -399,7 +399,6 @@ impl TryFrom<String> for LossNamespaceName {
     }
 }
 
-
 /// Codec-local loss identity and classification.
 ///
 /// Fields are private so the reserved `shared` namespace can be constructed

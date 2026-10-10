@@ -4918,30 +4918,36 @@ impl RevolveInputs {
             allow_multi_profile_faces,
         } = self;
         match (profile, axis, extent) {
-            (None, axis, extent) => RevolveConstruction::Unresolved(PartialRevolveConstruction::Profile {
-                axis,
-                extent,
-                solid,
-                face_maker,
-                fuse_order,
-                allow_multi_profile_faces,
-            }),
-            (Some(profile), None, extent) => RevolveConstruction::Unresolved(PartialRevolveConstruction::Axis {
-                profile,
-                extent,
-                solid,
-                face_maker,
-                fuse_order,
-                allow_multi_profile_faces,
-            }),
-            (Some(profile), Some(axis), None) => RevolveConstruction::Unresolved(PartialRevolveConstruction::Extent {
-                profile,
-                axis,
-                solid,
-                face_maker,
-                fuse_order,
-                allow_multi_profile_faces,
-            }),
+            (None, axis, extent) => {
+                RevolveConstruction::Unresolved(PartialRevolveConstruction::Profile {
+                    axis,
+                    extent,
+                    solid,
+                    face_maker,
+                    fuse_order,
+                    allow_multi_profile_faces,
+                })
+            }
+            (Some(profile), None, extent) => {
+                RevolveConstruction::Unresolved(PartialRevolveConstruction::Axis {
+                    profile,
+                    extent,
+                    solid,
+                    face_maker,
+                    fuse_order,
+                    allow_multi_profile_faces,
+                })
+            }
+            (Some(profile), Some(axis), None) => {
+                RevolveConstruction::Unresolved(PartialRevolveConstruction::Extent {
+                    profile,
+                    axis,
+                    solid,
+                    face_maker,
+                    fuse_order,
+                    allow_multi_profile_faces,
+                })
+            }
             (Some(profile), Some(axis), Some(extent)) => RevolveConstruction::Resolved {
                 profile,
                 axis,

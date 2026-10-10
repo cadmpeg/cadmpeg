@@ -370,7 +370,8 @@ fn numerical_audit_polar_derivatives_are_independent_of_radial_scale() {
         let expected_second = -(1.0 + sin * sin) / (1e200 * cos * cos * cos);
         assert!((result.tangent.unwrap().v / expected_first - 1.0).abs() <= 16.0 * f64::EPSILON);
         assert!(
-            (result.acceleration.finite().unwrap().v / expected_second - 1.0).abs() <= 16.0 * f64::EPSILON
+            (result.acceleration.finite().unwrap().v / expected_second - 1.0).abs()
+                <= 16.0 * f64::EPSILON
         );
     });
 }

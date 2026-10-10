@@ -195,7 +195,6 @@ fn homogeneous_weights_preserve_early_missing_and_empty_output() {
         assert_eq!(Homogeneous::weights(&scratch, values).unwrap(), expected);
         drop(scratch);
         ctx.finish_session().unwrap();
-
     }
 }
 
