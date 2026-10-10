@@ -117,3 +117,42 @@ fn attribute_width_cache_admits_nodes_before_insertion() {
         assert_eq!(limit.additional, amount);
     }
 }
+
+#[test]
+fn attribute_width_scan_charges_the_end_probe_after_valid_descriptors() {
+    let operation = "iges test attribute width scan";
+    let record = integer_parameter_record(1, &[322, 0, 1, 2, 10, 1, 2, 20, 1, 3]);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        operation,
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            crate::parameter::attribute_table_definition_width(&record, 0, &ctx, operation)
+        },
+    );
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected width scan end refusal");
+    };
+    assert_eq!(limit.operation, operation);
+    assert_eq!(limit.additional, 1);
+    for cap in [2, 3] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = crate::parameter::attribute_table_definition_width(&record, 2, &ctx, operation);
+        if cap == 2 {
+            let Err(CodecError::ResourceLimit(limit)) = result else {
+                panic!("expected width scan end refusal");
+            };
+            assert_eq!(limit.operation, operation);
+            assert_eq!(limit.used, 2);
+            assert_eq!(limit.additional, 1);
+        } else {
+            assert_eq!(result.unwrap(), Ok(5));
+        }
+    }
+}
