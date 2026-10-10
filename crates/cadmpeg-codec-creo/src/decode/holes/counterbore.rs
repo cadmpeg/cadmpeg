@@ -40,8 +40,7 @@ fn unique_model_surface_geometries<'a>(
     while let Some(surface) =
         ctx.next_charged(&mut surfaces, "creo counterbore model surface scan")?
     {
-        let Some(digits) = surface.id.as_str().strip_prefix("creo:visibgeom:surface#")
-        else {
+        let Some(digits) = surface.id.as_str().strip_prefix("creo:visibgeom:surface#") else {
             continue;
         };
         let Ok(surface_id) = ctx.parse_text::<u32>(digits, "creo scalar text parsing")? else {
@@ -72,7 +71,10 @@ pub(in crate::decode) fn counterbore_dimensions(
     };
     let mut generated_storage = ctx.reserve_scoped(0, "creo counterbore generated scratch")?;
     let mut generated_cylinders = BTreeSet::new();
-    for entry in ctx.admit_iter(table.entries.as_slice(), "creo counterbore generated cylinder scan")? {
+    for entry in ctx.admit_iter(
+        table.entries.as_slice(),
+        "creo counterbore generated cylinder scan",
+    )? {
         let surface_id = entry.entity_id;
         if !ctx.contains_btree_set(
             table.unique_surface_ids(),
@@ -1107,12 +1109,11 @@ fn counterbore_source_boundary_circles<const N: usize>(
 ) -> Result<[Option<CounterboreBoundaryCircle>; N], CodecError> {
     let (local_planes, _local_plane_storage) =
         ctx.with_scoped_storage("creo boundary plane scratch", || placed_planes(ctx, scan))?;
-    let (unique_edges, _edge_storage) =
-        crate::identity::uniquely_identified_rows_checked(
-            ctx,
-            &scan.curves.topology_rows,
-            |row| row.id,
-        )?;
+    let (unique_edges, _edge_storage) = crate::identity::uniquely_identified_rows_checked(
+        ctx,
+        &scan.curves.topology_rows,
+        |row| row.id,
+    )?;
     let mut curves = None;
     let mut curve_storage = ctx.reserve_scoped(0, "creo boundary curve index scratch")?;
     let mut boundary_for = |cylinder_id: u32,

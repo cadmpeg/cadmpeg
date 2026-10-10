@@ -243,11 +243,13 @@ fn profile_sketch_copy_knots_refuse_collection_limit() {
 fn profile_sketch_copy_poles_refuse_collection_limit() {
     use cadmpeg_core::decode::ResourceDimension;
 
-    let error = profile_sketch_copy_with_limit(crate::test_support::allocation_limit_at(
-        ResourceDimension::CollectionItems,
-        None,
-        profile_sketch_copy_with_limit,
-    ) - 1)
+    let error = profile_sketch_copy_with_limit(
+        crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            None,
+            profile_sketch_copy_with_limit,
+        ) - 1,
+    )
     .expect_err("two poles exceed four knot items");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
