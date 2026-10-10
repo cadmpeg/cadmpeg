@@ -3916,6 +3916,7 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
         let mut shell_scratch = ctx.reserve_scoped(0, "STEP shell scratch")?;
         let mut shell_edges = BTreeSet::new();
         let mut shell_poly_edges = Vec::new();
+        let face_start = faces.len();
         let loop_start = loops.len();
         let coedge_start = coedges.len();
         let mut face_ids = vec![];
@@ -4968,7 +4969,7 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
                             .ok_or_else(|| CodecError::malformed("STEP topology source ended early"))?;
                         let face_id =
                             face_ids[face_index].try_clone_for_decode(ctx, "step_brep_component_faces")?;
-                        faces[face_index].shell =
+                        faces[face_start + face_index].shell =
                             component_shell.try_clone_for_decode(ctx, "step_topology_identity_copy")?;
                         ctx.push_vec(&mut component_faces, face_id, "step_brep_component_faces")?;
                     }

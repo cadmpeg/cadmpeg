@@ -861,3 +861,32 @@ fn advanced_brep_mapped_representation_reuses_its_committed_solid_body() {
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
+#[test]
+fn brep_with_voids_preserves_bidirectional_face_shell_ownership() {
+    let source = include_bytes!("data/br02_outer_void_roles.p21");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode outer and void shells");
+    let model = &decoded.ir().model;
+    assert_eq!(model.shells.len(), 3);
+    assert_eq!(model.faces.len(), 3);
+    for shell in &model.shells {
+        assert_eq!(shell.faces().len(), 1);
+        for face_id in shell.faces() {
+            let face = model
+                .faces
+                .iter()
+                .find(|face| &face.id == face_id)
+                .expect("shell face exists");
+            assert_eq!(face.shell, shell.id);
+        }
+    }
+    for face in &model.faces {
+        let shell = model
+            .shells
+            .iter()
+            .find(|shell| shell.id == face.shell)
+            .expect("face shell exists");
+        assert!(shell.faces().contains(&face.id));
+    }
+}
