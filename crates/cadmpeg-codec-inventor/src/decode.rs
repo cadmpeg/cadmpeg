@@ -2155,11 +2155,15 @@ fn project_ufrx_external_reference(
             "copy Inventor UFRx reference state groups",
         )?,
         state: reference.state,
-        document_id: Some(retained_hex(
-            ctx,
-            &reference.document_id,
-            "retain Inventor UFRx document id",
-        )?),
+        document_id: if reference.document_id == [0; 16] {
+            None
+        } else {
+            Some(retained_hex(
+                ctx,
+                &reference.document_id,
+                "retain Inventor UFRx document id",
+            )?)
+        },
         database_id: retained_hex(
             ctx,
             &reference.database_id,
