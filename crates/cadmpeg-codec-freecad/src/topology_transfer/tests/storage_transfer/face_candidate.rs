@@ -83,7 +83,12 @@ fn with_face<T>(
 fn face_without_geometry_needs_no_identity_storage() {
     with_face(0, |ctx, builder, shell, face| {
         let mut ir = CadIr::empty();
-        assert_eq!(builder.append_face(&mut ir, shell, face, Transform::identity(), false).unwrap(), None);
+        assert_eq!(
+            builder
+                .append_face(&mut ir, shell, face, Transform::identity(), false)
+                .unwrap(),
+            None
+        );
         assert!(ir.model.faces.is_empty());
         assert!(ir.model.surfaces.is_empty());
         assert!(ir.model.tessellations.is_empty());
@@ -98,8 +103,18 @@ fn face_without_geometry_still_validates_topological_location() {
     with_face(0, |ctx, builder, shell, face| {
         let mut face = face.clone();
         face.location = 1.into();
-        let error = builder.append_face(&mut CadIr::empty(), shell, &face, Transform::identity(), false).unwrap_err();
-        assert!(matches!(error, CodecError::Malformed(message) if message == "table reference 1 is out of range"));
+        let error = builder
+            .append_face(
+                &mut CadIr::empty(),
+                shell,
+                &face,
+                Transform::identity(),
+                false,
+            )
+            .unwrap_err();
+        assert!(
+            matches!(error, CodecError::Malformed(message) if message == "table reference 1 is out of range")
+        );
         assert_eq!(ctx.resource_refusal(), None);
     });
 }
@@ -107,8 +122,18 @@ fn face_without_geometry_still_validates_topological_location() {
 #[test]
 fn face_without_geometry_still_validates_surface_location() {
     with_face(1, |ctx, builder, shell, face| {
-        let error = builder.append_face(&mut CadIr::empty(), shell, face, Transform::identity(), false).unwrap_err();
-        assert!(matches!(error, CodecError::Malformed(message) if message == "table reference 1 is out of range"));
+        let error = builder
+            .append_face(
+                &mut CadIr::empty(),
+                shell,
+                face,
+                Transform::identity(),
+                false,
+            )
+            .unwrap_err();
+        assert!(
+            matches!(error, CodecError::Malformed(message) if message == "table reference 1 is out of range")
+        );
         assert_eq!(ctx.resource_refusal(), None);
     });
 }

@@ -18,12 +18,19 @@ fn component_output_bytes() -> u64 {
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = MATERIALIZED_CAP;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let (data, storage) = ctx.with_scoped_storage("test baseline component output", || {
-        connected_components(&ctx, &[std::collections::BTreeSet::new()])
-    }).unwrap();
-    let output = ScopedData { data, _storage: storage };
+    let (data, storage) = ctx
+        .with_scoped_storage("test baseline component output", || {
+            connected_components(&ctx, &[std::collections::BTreeSet::new()])
+        })
+        .unwrap();
+    let output = ScopedData {
+        data,
+        _storage: storage,
+    };
     assert_eq!(output.data, vec![vec![0]]);
-    let error = ctx.reserve_scoped(MATERIALIZED_CAP, "test component output usage").unwrap_err();
+    let error = ctx
+        .reserve_scoped(MATERIALIZED_CAP, "test component output usage")
+        .unwrap_err();
     let CodecError::ResourceLimit(limit) = error else {
         panic!("live output must refuse a full-cap reservation");
     };

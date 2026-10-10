@@ -130,19 +130,29 @@ pub(crate) fn parse(
         let mut table_index_storage = ctx.reserve_scoped(0, "FreeCAD string table index")?;
         tables.push(
             StringTableRecord::from_parts_with_admission(
-                (index, owner_property, save_all, threshold,
-                source_entry
-                    .map(|name| {
-                        ctx.copy_retained_text(name, "FreeCAD string table side-entry name")
-                    })
-                    .transpose()?,
+                (
+                    index,
+                    owner_property,
+                    save_all,
+                    threshold,
+                    source_entry
+                        .map(|name| {
+                            ctx.copy_retained_text(name, "FreeCAD string table side-entry name")
+                        })
+                        .transpose()?,
                 ),
                 entries,
-                |length, operation| ctx.charge_work(cadmpeg_core::decode::u64_from_index(length), operation),
-                |seen, id| ctx.contains_btree_set(seen, &id, "FreeCAD string table component lookup"),
-                |seen, id| table_index_storage.with_storage(|| {
-                    ctx.insert_btree_set(seen, id, "FreeCAD string table index")
-                }),
+                |length, operation| {
+                    ctx.charge_work(cadmpeg_core::decode::u64_from_index(length), operation)
+                },
+                |seen, id| {
+                    ctx.contains_btree_set(seen, &id, "FreeCAD string table component lookup")
+                },
+                |seen, id| {
+                    table_index_storage.with_storage(|| {
+                        ctx.insert_btree_set(seen, id, "FreeCAD string table index")
+                    })
+                },
             )?
             .map_err(CodecError::malformed)?,
         );
@@ -1646,8 +1656,7 @@ fn parse_element_map(
     Ok(ParsedMap {
         map_id,
         postfixes,
-        maps: ElementMapNodes::from_nodes(maps, ctx)?
-        .map_err(CodecError::Malformed)?,
+        maps: ElementMapNodes::from_nodes(maps, ctx)?.map_err(CodecError::Malformed)?,
     })
 }
 

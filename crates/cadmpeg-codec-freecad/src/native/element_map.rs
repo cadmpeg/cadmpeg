@@ -53,9 +53,10 @@ impl ElementMapNodes {
         admission: &A,
     ) -> Result<Result<Self, String>, A::Error> {
         if nodes.is_empty() {
-            return Ok(Err(admission.format_retained(format_args!(
-                "maps must contain a root node"
-            ), "FreeCAD element-map validation diagnostic")?));
+            return Ok(Err(admission.format_retained(
+                format_args!("maps must contain a root node"),
+                "FreeCAD element-map validation diagnostic",
+            )?));
         }
         for (position, node) in nodes.iter().enumerate() {
             admission.charge_work(1, "FreeCAD element-map validation nodes")?;
@@ -106,7 +107,10 @@ impl ElementMapNodes {
                             }
                             first_id = false;
                         } else {
-                            admission.charge_work(cadmpeg_core::decode::u64_from_index(id.len()), "FreeCAD element-map child string-id number")?;
+                            admission.charge_work(
+                                cadmpeg_core::decode::u64_from_index(id.len()),
+                                "FreeCAD element-map child string-id number",
+                            )?;
                             if id.parse::<i64>().is_err() {
                                 valid_ids = false;
                                 break;
@@ -129,7 +133,10 @@ impl ElementMapNodes {
                         ("tag", tag),
                         ("mapIndex", map),
                     ] {
-                        admission.charge_work(cadmpeg_core::decode::u64_from_index(word.len()), "FreeCAD element-map child number")?;
+                        admission.charge_work(
+                            cadmpeg_core::decode::u64_from_index(word.len()),
+                            "FreeCAD element-map child number",
+                        )?;
                         let Ok(value) = word.parse::<i64>() else {
                             return Ok(Err(admission.format_retained(format_args!(
                                     "element-map node {node_index} group {group_name} child {child_index} has an invalid {name}"

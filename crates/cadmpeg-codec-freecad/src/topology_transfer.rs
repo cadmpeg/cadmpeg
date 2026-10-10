@@ -3843,7 +3843,10 @@ fn equivalent_exact_curve_representation(
     let Some(right_curve) = right_curve.checked_sub(1) else {
         return Ok(false);
     };
-    let curves_equal = match (tables.curves.get(left_curve), tables.curves.get(right_curve)) {
+    let curves_equal = match (
+        tables.curves.get(left_curve),
+        tables.curves.get(right_curve),
+    ) {
         (Some(left), Some(right)) => ctx.equal(left, right, "FreeCAD exact curve equality")?,
         (None, None) => true,
         _ => false,

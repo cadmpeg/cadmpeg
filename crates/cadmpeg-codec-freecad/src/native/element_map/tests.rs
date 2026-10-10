@@ -326,7 +326,7 @@ fn child_descriptor_validation_charges_decode_admission() {
         "FreeCAD element-map child string-id number",
         |ctx| {
             ElementMapNodes::from_nodes(nodes.clone(), ctx)?
-            .map_err(cadmpeg_core::CodecError::Malformed)
+                .map_err(cadmpeg_core::CodecError::Malformed)
         },
     );
 }
@@ -350,7 +350,7 @@ fn child_descriptor_diagnostic_keeps_text_and_charges_storage() {
         "FreeCAD element-map validation diagnostic",
         |ctx| {
             ElementMapNodes::from_nodes(nodes.clone(), ctx)?
-            .map_err(cadmpeg_core::CodecError::Malformed)
+                .map_err(cadmpeg_core::CodecError::Malformed)
         },
     );
 }

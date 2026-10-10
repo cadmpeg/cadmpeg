@@ -13,9 +13,7 @@ use crate::brep::{
 };
 use crate::native::{PropertyBody, PropertyFamily, PropertyRecord, RetainedXml};
 use cadmpeg_core::decode::refusal_probe::RefusalProbe;
-use cadmpeg_core::decode::{
-    DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
-};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
@@ -189,15 +187,21 @@ fn occurrence_lookup_storage_releases_before_occurrence_copies() {
             },
             GeometryIndexes::new(ctx).unwrap(),
             Some(&mut occurrences),
-        ).unwrap();
+        )
+        .unwrap();
         let _probe = RefusalProbe::arm(
             ResourceDimension::MaterializedBytes,
             "FreeCAD topology occurrence property",
             None,
         );
-        builder.bind_topology(
-            crate::brep::TextShapeKind::Edge, 1, Transform::identity(), "e",
-        ).expect("lookup scratch expires before the short occurrence copies");
+        builder
+            .bind_topology(
+                crate::brep::TextShapeKind::Edge,
+                1,
+                Transform::identity(),
+                "e",
+            )
+            .expect("lookup scratch expires before the short occurrence copies");
         drop(builder);
         assert_eq!(occurrences.records.len(), 1);
         assert_eq!(occurrences.records[0].property, "p");
@@ -359,7 +363,17 @@ fn parameterized_polygon_releases_input_storage_before_position_indexing() {
         let mut tables = tables(&tshapes);
         tables.polygons3d = &polygons;
         let mut builder = builder(ctx, &payload, tables).expect("builder");
-        assert_eq!(builder.geometry.curve_position(ctx, &ir, &CurveId::mint("fcstd:model:curve#Repair:missing").unwrap()).unwrap(), None);
+        assert_eq!(
+            builder
+                .geometry
+                .curve_position(
+                    ctx,
+                    &ir,
+                    &CurveId::mint("fcstd:model:curve#Repair:missing").unwrap()
+                )
+                .unwrap(),
+            None
+        );
         // The index is live during polygon_curve. Consumed input lanes must
         // release their storage before the curve-position index is allocated.
         let _probe = RefusalProbe::arm(
@@ -367,7 +381,9 @@ fn parameterized_polygon_releases_input_storage_before_position_indexing() {
             "FreeCAD curve positions",
             None,
         );
-        let baseline = ctx.reserve_scoped(index_bytes, "test curve index baseline").unwrap();
+        let baseline = ctx
+            .reserve_scoped(index_bytes, "test curve index baseline")
+            .unwrap();
         drop(baseline);
         let id = builder
             .polygon_curve(
@@ -557,7 +573,8 @@ fn connected_components_fanout_preserves_members_and_releases_scratch() {
             connected_components(ctx, &connectivity).expect("connected fanout"),
             vec![(0..connectivity.len()).collect::<Vec<_>>()]
         );
-        let released = ctx.reserve_scoped(MATERIALIZED_CAP, "test released connectivity scratch")
+        let released = ctx
+            .reserve_scoped(MATERIALIZED_CAP, "test released connectivity scratch")
             .expect("all traversal scratch is released");
         drop(released);
         assert_eq!(ctx.resource_refusal(), None);
