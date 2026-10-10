@@ -300,7 +300,7 @@ fn pcurve_domain_solver_refuses_fixed_domain_point() {
 }
 
 #[test]
-fn pcurve_domain_solver_refuses_retained_first_domain() {
+fn pcurve_domain_solver_refuses_first_domain_mask() {
     let a = [1.0, 0.0, 0.0];
     let b = [2.0, 0.0, 0.0];
     assert_pcurve_domain_refusal(
@@ -308,14 +308,14 @@ fn pcurve_domain_solver_refuses_retained_first_domain() {
             &[([1, 2], [a, b])],
             &BTreeMap::new(),
             &BTreeMap::new(),
-            "creo retained first pcurve domain",
+            "creo first pcurve domain mask",
         ),
-        "creo retained first pcurve domain",
+        "creo first pcurve domain mask",
     );
 }
 
 #[test]
-fn pcurve_domain_solver_refuses_retained_second_domain() {
+fn pcurve_domain_solver_refuses_second_domain_mask() {
     let a = [1.0, 0.0, 0.0];
     let b = [2.0, 0.0, 0.0];
     assert_pcurve_domain_refusal(
@@ -323,9 +323,9 @@ fn pcurve_domain_solver_refuses_retained_second_domain() {
             &[([1, 2], [a, b])],
             &BTreeMap::new(),
             &BTreeMap::new(),
-            "creo retained second pcurve domain",
+            "creo second pcurve domain mask",
         ),
-        "creo retained second pcurve domain",
+        "creo second pcurve domain mask",
     );
 }
 
