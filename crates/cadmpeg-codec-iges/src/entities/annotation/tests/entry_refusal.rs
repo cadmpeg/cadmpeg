@@ -30,7 +30,9 @@ fn annotation_fixed_text_recovery_preserves_original_refusal() {
             let result = general_note_text_valid_for_global_table(text, font, table, null, ctx);
             match original {
                 Some(first) => {
-                    assert!(matches!(result, Err(CodecError::ResourceLimit(last)) if last == first))
+                    assert!(
+                        matches!(result, Err(CodecError::ResourceLimit(last)) if last == first)
+                    );
                 }
                 None => assert_eq!(result.expect("fixed text recovery is free"), expected),
             }
@@ -51,7 +53,7 @@ fn annotation_empty_general_note_preserves_original_refusal() {
         );
         match original {
             Some(first) => {
-                assert!(matches!(result, Err(CodecError::ResourceLimit(last)) if last == first))
+                assert!(matches!(result, Err(CodecError::ResourceLimit(last)) if last == first));
             }
             None => assert!(matches!(result, Ok(false))),
         }
@@ -65,7 +67,7 @@ fn annotation_empty_new_note_preserves_original_refusal() {
         let result = new_general_note_valid(&record, &BTreeMap::new(), ctx);
         match original {
             Some(first) => {
-                assert!(matches!(result, Err(CodecError::ResourceLimit(last)) if last == first))
+                assert!(matches!(result, Err(CodecError::ResourceLimit(last)) if last == first));
             }
             None => assert!(matches!(result, Ok(false))),
         }
@@ -80,7 +82,7 @@ fn annotation_empty_leader_preserves_original_refusal() {
         let result = leader_valid_for_global_table(&entry, &record, GlobalTable::V5Later, ctx);
         match original {
             Some(first) => {
-                assert!(matches!(result, Err(CodecError::ResourceLimit(last)) if last == first))
+                assert!(matches!(result, Err(CodecError::ResourceLimit(last)) if last == first));
             }
             None => assert!(matches!(result, Ok(false))),
         }
@@ -94,7 +96,7 @@ fn annotation_empty_witness_preserves_original_refusal() {
         let result = witness_valid(&record, ctx);
         match original {
             Some(first) => {
-                assert!(matches!(result, Err(CodecError::ResourceLimit(last)) if last == first))
+                assert!(matches!(result, Err(CodecError::ResourceLimit(last)) if last == first));
             }
             None => assert!(matches!(result, Ok(false))),
         }
@@ -109,7 +111,9 @@ fn annotation_absent_pointer_preserves_original_refusal() {
             let result = pointer(&record, index, &BTreeMap::new(), ctx);
             match original {
                 Some(first) => {
-                    assert!(matches!(result, Err(CodecError::ResourceLimit(last)) if last == first))
+                    assert!(
+                        matches!(result, Err(CodecError::ResourceLimit(last)) if last == first)
+                    );
                 }
                 None => assert!(matches!(result, Ok(None))),
             }
@@ -245,7 +249,9 @@ fn cached_route_preserves_original_refusal(route: &CachedRoute) {
             };
             match original {
                 Some(first) => {
-                    assert!(matches!(result, Err(CodecError::ResourceLimit(last)) if last == first))
+                    assert!(
+                        matches!(result, Err(CodecError::ResourceLimit(last)) if last == first)
+                    );
                 }
                 None => assert_eq!(
                     result.expect("fixed cached recovery is free"),
