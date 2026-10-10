@@ -36,6 +36,8 @@ macro_rules! require {
 }
 
 #[cfg(test)]
+mod lazy_admission_tests;
+#[cfg(test)]
 mod budget_tests;
 #[cfg(test)]
 mod content_tests;
@@ -414,15 +416,6 @@ fn project_history<'c>(
             Ok::<_, CodecError>(())
         })?;
     }
-    let _records_storage;
-    let records;
-    (records, _records_storage) = ctx.unique_index(
-        history
-            .features
-            .iter()
-            .map(|feature| (feature.id.as_str(), feature)),
-        "index SLDPRT history records by identity",
-    )?;
     let source_ordered = ctx.any_by(
         &history.features,
         |feature| {
@@ -490,7 +483,6 @@ fn project_history<'c>(
                     &by_source,
                     &native_by_source,
                     &mut source_features,
-                    &records,
                     &index,
                 )?,
             ),
@@ -1251,6 +1243,31 @@ fn bind_native_construction_features(
     const OPERATION: &str = "bind SLDPRT native construction references";
     const SOURCES: &str = "index SLDPRT native construction sources";
     const TARGETS: &str = "index SLDPRT native construction features";
+    let consumes_native_reference = ctx.any_by(
+        &*features,
+        |feature| {
+            let native_planar = |profile: &PlanarProfileRef| matches!(profile, PlanarProfileRef::Native(_));
+            let native_profile = |profile: &ProfileRef| matches!(profile, ProfileRef::Planar(planar) if native_planar(planar));
+            Ok(match feature.evaluation.definition() {
+                FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) => native_profile(profile),
+                FeatureDefinition::Operation(FeatureOperation::Wrap { profile, .. }) => native_planar(profile),
+                FeatureDefinition::Operation(FeatureOperation::Revolve { construction, .. }) => construction.profile().is_some_and(native_planar),
+                FeatureDefinition::Operation(FeatureOperation::Rib { construction, .. }) => construction.profile.as_ref().is_some_and(native_planar),
+                FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) => shape.referenced_profile().is_some_and(native_planar),
+                FeatureDefinition::Operation(FeatureOperation::Loft { sections, .. }) => ctx.any_by(
+                    sections,
+                    |section| Ok(matches!(section, cadmpeg_ir::features::LoftSection::Profile(profile) if native_profile(profile))),
+                    OPERATION,
+                )?,
+                FeatureDefinition::Operation(FeatureOperation::SplitFace { tool: SplitFaceTool::Path(PathRef::Native(_)), .. }) => true,
+                _ => false,
+            })
+        },
+        OPERATION,
+    )?;
+    if !consumes_native_reference {
+        return Ok(());
+    }
     let mut scratch = ctx.reserve_scoped(0, OPERATION)?;
     let mut construction_native_refs = HashSet::new();
     for history in ctx.admit_iter(histories, "scan SLDPRT feature histories")? {
@@ -1793,7 +1810,6 @@ fn project_definition(
     by_source: &NeutralByKey<'_, '_>,
     native_by_source: &HashMap<&str, &str>,
     source_features: &mut self::solid::SourceFeatures<'_, '_>,
-    records: &self::solid::RecordsById<'_>,
     index: &HistoryIndex<'_, '_>,
 ) -> Result<FeatureDefinition, CodecError> {
     const OPERATION: &str = "project SLDPRT feature definition";
@@ -1959,7 +1975,7 @@ fn project_definition(
     } else if class == Some(FeatureClass::Scale) {
         project_scale(ctx, feature)?
     } else if class == Some(FeatureClass::Hole) {
-        project_hole(ctx, feature, &source_features.records, records)?
+        project_hole(ctx, feature, source_features)?
             .map_or_else(|| native_definition(ctx, feature), Ok)?
     } else if class == Some(FeatureClass::Revolve) {
         project_revolve(ctx, feature, native_by_source)?

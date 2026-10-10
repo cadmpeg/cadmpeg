@@ -75,57 +75,117 @@ pub(crate) fn native_parameters_match_source(
         .is_some_and(|(current, baseline)| &current == baseline))
 }
 
+/// Reverse owner suffixes with the first matching dependency's replacement.
+#[derive(Default)]
+struct OwnerSuffixNode<'text> {
+    bytes: HashMap<u8, usize>,
+    change: Option<(usize, &'text str)>,
+}
+
 pub(crate) fn apply_feature_name_changes(
     parameters: &mut [DesignParameter],
     changes: &HashMap<FeatureId, (String, String)>,
 ) -> Result<(), CodecError> {
-    let owners = parameters
-        .iter()
-        .map(|parameter| (parameter.id.clone(), parameter.owner.clone()))
-        .collect::<HashMap<_, _>>();
-    for parameter in parameters {
-        if let Some((old_owner, new_owner)) = parameter
-            .owner
-            .as_ref()
-            .and_then(|owner| changes.get(owner))
+    const OPERATION: &str = "rewrite SLDPRT feature parameter owners";
+    if parameters.is_empty() || changes.is_empty() {
+        return Ok(());
+    }
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())?;
+    let mut owners_storage = ctx.reserve_scoped(0, OPERATION)?;
+    let mut owners = HashMap::new();
+    if ctx.any_by(&*parameters, |parameter| Ok(!parameter.dependencies.is_empty()), OPERATION)? {
+    for parameter in ctx.admit_iter(&*parameters, OPERATION)? {
+        let change = parameter.owner.as_ref()
+            .map(|owner| ctx.get_hash_map(changes, owner, OPERATION))
+            .transpose()?.flatten();
+        if let Some(previous) = ctx.get_mut_hash_map(&mut owners, &parameter.id, OPERATION)? {
+            *previous = change;
+        } else if change.is_some() {
+            owners_storage.with_storage(|| {
+                let id = parameter.id.try_clone_for_decode(&ctx, OPERATION)?;
+                ctx.insert_hash_map(&mut owners, id, change, OPERATION)
+            })?;
+        }
+    }
+    }
+    for parameter in ctx.admit_iter(parameters, OPERATION)? {
+        if let Some((old_owner, new_owner)) = parameter.owner.as_ref()
+            .map(|owner| ctx.get_hash_map(changes, owner, OPERATION))
+            .transpose()?.flatten()
         {
-            if let Some(equation_id) = parameter.properties.get_mut("EquationId") {
-                if let Some(base) = equation_id.strip_suffix(&format!("@{old_owner}")) {
-                    *equation_id = format!("{base}@{new_owner}");
+            if let Some(equation_id) = ctx.get_mut_btree_map(&mut parameter.properties, "EquationId", OPERATION)? {
+                let (suffix, _suffix_storage) = ctx.format_scoped(format_args!("@{old_owner}"), OPERATION)?;
+                if let Some(base) = ctx.strip_suffix(equation_id.as_str(), suffix.as_str(), OPERATION)? {
+                    *equation_id = ctx.format_retained(format_args!("{base}@{new_owner}"), OPERATION)?;
                 }
             }
         }
-        let dependency_changes = parameter
-            .dependencies
-            .iter()
-            .filter_map(|dependency| owners.get(dependency))
-            .filter_map(|owner| owner.as_ref().and_then(|owner| changes.get(owner)))
-            .collect::<Vec<_>>();
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(
-            parameter.expression.as_bytes(),
-            &arena,
-            &DecodePolicy::service(),
-        )?;
+        let mut storage = ctx.reserve_scoped(0, OPERATION)?;
+        let mut suffixes = Vec::new();
+        for (position, dependency) in ctx.admit_iter(parameter.dependencies.as_slice(), OPERATION)?.enumerate() {
+            let Some(Some((old_owner, new_owner))) = ctx.get_hash_map(&owners, dependency, OPERATION)? else {
+                continue;
+            };
+            if suffixes.is_empty() {
+                storage.with_storage(|| ctx.push_vec(&mut suffixes, OwnerSuffixNode::default(), OPERATION))?;
+            }
+            let mut node = 0;
+            for byte in ctx.admit_iter(old_owner.as_bytes(), OPERATION)?.rev() {
+                let next = ctx.get_hash_map(&suffixes[node].bytes, byte, OPERATION)?.copied();
+                node = if let Some(next) = next {
+                    next
+                } else {
+                    let next = suffixes.len();
+                    storage.with_storage(|| {
+                        ctx.push_vec(&mut suffixes, OwnerSuffixNode::default(), OPERATION)?;
+                        ctx.insert_hash_map(&mut suffixes[node].bytes, *byte, next, OPERATION)
+                    })?;
+                    next
+                };
+            }
+            if suffixes[node].change.is_none() {
+                suffixes[node].change = Some((position, new_owner.as_str()));
+            }
+        }
+        if suffixes.is_empty() {
+            continue;
+        }
         let (tokens, token_storage) = expression_identifier_tokens(&ctx, &parameter.expression)?;
-        let aliases = tokens
-            .unwrap_or_default()
-            .into_iter()
-            .filter_map(|token| {
-                dependency_changes
-                    .iter()
-                    .find_map(|(old_owner, new_owner)| {
-                        token
-                            .value()
-                            .strip_suffix(&format!("@{old_owner}"))
-                            .map(|base| (token.value().to_owned(), format!("{base}@{new_owner}")))
-                    })
-            })
-            .collect::<HashMap<_, _>>();
+        let Some(tokens) = tokens else {
+            continue;
+        };
+        let mut aliases = HashMap::new();
+        for token in ctx.admit_iter(tokens, OPERATION)? {
+            if ctx.contains_key_hash_map(&aliases, token.value(), OPERATION)? {
+                continue;
+            }
+            let mut replacement = None;
+            let mut node = 0;
+            let mut bytes = token.value().bytes().enumerate().rev();
+            while let Some((at, byte)) = ctx.next_charged(&mut bytes, OPERATION)? {
+                if byte == b'@' {
+                    if let Some((position, new_owner)) = suffixes[node].change {
+                        if replacement.is_none_or(|(first, _, _)| position < first) {
+                            replacement = Some((position, at, new_owner));
+                        }
+                    }
+                }
+                let Some(&next) = ctx.get_hash_map(&suffixes[node].bytes, &byte, OPERATION)? else {
+                    break;
+                };
+                node = next;
+            }
+            if let Some((_, at, new_owner)) = replacement {
+                storage.with_storage(|| {
+                    let alias = ctx.copy_retained_text(token.value(), OPERATION)?;
+                    let value = ctx.format_retained(format_args!("{}@{new_owner}", &token.value()[..at]), OPERATION)?;
+                    ctx.insert_hash_map(&mut aliases, alias, value, OPERATION)
+                })?;
+            }
+        }
         drop(token_storage);
-        if let Some(rewritten) =
-            rewrite_parameter_expression(&ctx, &parameter.expression, &aliases)?
-        {
+        if let Some(rewritten) = rewrite_parameter_expression(&ctx, &parameter.expression, &aliases)? {
             parameter.expression = rewritten;
         }
     }
@@ -699,3 +759,6 @@ fn validate_compact_surface_selection_edits(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod rename_tests;

@@ -80,10 +80,13 @@ pub(crate) fn bind_unique_sketch_feature(
             })?;
         }
     }
+    if sketch_features.is_empty() {
+        return Ok(());
+    }
     let _sketch_index;
     let sketches_by_name;
     (sketches_by_name, _sketch_index) = ctx.unique_index(
-        ctx.admit_iter(sketches, BIND_OPERATION)?
+        sketches.iter()
             .filter_map(|sketch| sketch.name.as_deref().map(|name| (name, sketch))),
         BIND_OPERATION,
     )?;
@@ -241,12 +244,13 @@ pub(crate) fn bind_unique_sketch_feature(
             }));
     }
     for &(index, base_index) in ctx.admit_iter(&alias_dependencies, BIND_OPERATION)? {
-        let base = features[base_index]
-            .id
-            .try_clone_for_decode(ctx, BIND_OPERATION)?;
-        features[index]
-            .dependencies
-            .insert(ctx, base, "bind SLDPRT sketch alias dependency")?;
+        let base = &features[base_index].id;
+        if !ctx.contains(features[index].dependencies.as_slice(), base, BIND_OPERATION)? {
+            let base = base.try_clone_for_decode(ctx, BIND_OPERATION)?;
+            features[index]
+                .dependencies
+                .insert(ctx, base, "bind SLDPRT sketch alias dependency")?;
+        }
     }
     workspace.with_storage(|| ctx.append_vec(&mut bindings, &mut aliases, BIND_OPERATION))?;
     let index = BindingIndex::new(ctx, &mut workspace, &bindings)?;
@@ -877,11 +881,14 @@ fn face_owner_bodies<'a, 'ctx>(
 /// identity. The validation scan is admitted with the copy.
 fn output_body_id(ctx: &DecodeContext<'_>, id: &str) -> Result<Option<BodyId>, CodecError> {
     const OPERATION: &str = "retain SLDPRT feature output body";
-    let text = ctx.copy_retained_text(id, OPERATION)?;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(text.len()), OPERATION)?;
-    match BodyId::mint(text) {
-        Ok(body) => Ok(Some(body)),
-        Err(_) => Ok(None),
+    let (body, storage) = ctx.with_scoped_storage(OPERATION, || {
+        let text = ctx.copy_retained_text(id, OPERATION)?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(text.len()), OPERATION)?;
+        Ok::<_, CodecError>(BodyId::mint(text).ok())
+    })?;
+    match body {
+        Some(body) => Ok(Some(storage.commit_value(body)?)),
+        None => Ok(None),
     }
 }
 
@@ -918,6 +925,7 @@ pub(crate) fn derive_feature_outputs(
         face_producers,
         body_modifiers,
     } = sources;
+    if !body_modifiers.is_empty() {
     let mut scratch = ctx.reserve_scoped(0, "index SLDPRT body modifier ordinals")?;
     let mut feature_ids_by_ordinal = HashMap::<u32, Option<&str>>::new();
     for history in ctx.admit_iter(histories, "scan SLDPRT derive_feature_outputs values")? {
@@ -952,7 +960,6 @@ pub(crate) fn derive_feature_outputs(
             })?;
         }
     }
-    if !body_modifiers.is_empty() {
         // Each modified body, paired with every projected feature of its record.
         let mut features_by_native = HashMap::new();
         for (position, feature) in ctx.admit_iter(&*features, MODIFIERS)?.enumerate() {
@@ -990,13 +997,17 @@ pub(crate) fn derive_feature_outputs(
         }
         drop(features_by_native);
         for (position, body) in ctx.admit_iter(modified, MODIFIERS)? {
+            let feature = &mut features[position];
+            if ctx.any_by(
+                feature.evaluation.outputs(),
+                |existing| ctx.equal(existing.as_str(), body, OUTPUTS),
+                OUTPUTS,
+            )? {
+                continue;
+            }
             let Some(body) = output_body_id(ctx, body)? else {
                 continue;
             };
-            let feature = &mut features[position];
-            if ctx.contains(feature.evaluation.outputs(), &body, OUTPUTS)? {
-                continue;
-            }
             let mut inserted = Ok(false);
             feature.evaluation.edit(|_, outputs| {
                 inserted = outputs.insert(ctx, body, OUTPUTS);
@@ -1007,6 +1018,7 @@ pub(crate) fn derive_feature_outputs(
     if face_producers.is_empty() {
         return Ok(());
     }
+    let mut scratch = ctx.reserve_scoped(0, "SLDPRT produced body workspace")?;
     let _owners_storage;
     let owners;
     (owners, _owners_storage) = face_owner_bodies(ctx, faces, shells, regions)?;
@@ -1095,6 +1107,7 @@ pub(crate) fn derive_feature_outputs(
 #[cfg(test)]
 mod tests {
     mod produced_bodies;
+    mod lazy_admission;
     use super::{
         bind_unique_sketch_feature, derive_feature_outputs, order_features_for_regeneration,
         order_model_features_for_regeneration,

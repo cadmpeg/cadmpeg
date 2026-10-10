@@ -184,14 +184,15 @@ pub(super) fn project_equation_curve(
             .map(|value| ctx.trim_text(value, super::FEATURE_LITERAL))
             .transpose()
     };
-    let parameter = require!(trimmed("Parameter")?);
-    let x_expression = require!(trimmed("XEquation")?);
-    let y_expression = require!(trimmed("YEquation")?);
-    let z_expression = require!(trimmed("ZEquation")?);
     let start = require!(trimmed("Start")?);
     let start = require!(ctx.parse_text::<f64>(start, super::FEATURE_LITERAL)?.ok());
     let end = require!(trimmed("End")?);
     let end = require!(ctx.parse_text::<f64>(end, super::FEATURE_LITERAL)?.ok());
+    require!(cadmpeg_ir::topology::IncreasingParameterInterval::new([start, end]));
+    let parameter = require!(trimmed("Parameter")?);
+    let x_expression = require!(trimmed("XEquation")?);
+    let y_expression = require!(trimmed("YEquation")?);
+    let z_expression = require!(trimmed("ZEquation")?);
     let (curve, storage) = ctx.with_scoped_storage("retain SLDPRT equation curve", || {
         Ok::<_, CodecError>(cadmpeg_ir::features::FeatureEquationCurve::new(
             copy_reference_text(ctx, parameter)?,

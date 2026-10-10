@@ -31,7 +31,9 @@ pub(super) type RecordsById<'a> = HashMap<&'a str, Option<&'a Feature>>;
 /// Source records with a lazy index of non-origin sketches in source-key order.
 /// Repeated source keys select the last record in history order.
 pub(super) struct SourceFeatures<'f, 'c> {
-    pub(super) records: BTreeMap<crate::records::FeatureSource, &'f Feature>,
+    features: &'f [Feature],
+    records: Option<BTreeMap<crate::records::FeatureSource, &'f Feature>>,
+    by_id: Option<RecordsById<'f>>,
     profiles: Option<Vec<(crate::records::FeatureSource, &'f Feature)>>,
     storage: ScopedReservation<'c>,
 }
@@ -41,21 +43,47 @@ impl<'f, 'c> SourceFeatures<'f, 'c> {
         ctx: &'c DecodeContext<'_>,
         features: &'f [Feature],
     ) -> Result<Self, CodecError> {
-        const OPERATION: &str = "index SLDPRT source profiles";
-        let mut storage = ctx.reserve_scoped(0, OPERATION)?;
-        let mut records = BTreeMap::new();
-        for feature in ctx.admit_iter(features, OPERATION)? {
-            if let Some(source) = feature.source_id {
-                storage.with_storage(|| {
-                    ctx.insert_btree_map(&mut records, source, feature, OPERATION)
-                })?;
-            }
-        }
         Ok(Self {
-            records,
+            features,
+            records: None,
+            by_id: None,
             profiles: None,
-            storage,
+            storage: ctx.reserve_scoped(0, "SLDPRT solid lookup workspace")?,
         })
+    }
+
+    fn records(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<&BTreeMap<crate::records::FeatureSource, &'f Feature>, CodecError> {
+        if self.records.is_none() {
+            const OPERATION: &str = "index SLDPRT source profiles";
+            let mut records = BTreeMap::new();
+            for feature in ctx.admit_iter(self.features, OPERATION)? {
+                if let Some(source) = feature.source_id {
+                    self.storage.with_storage(|| ctx.insert_btree_map(&mut records, source, feature, OPERATION))?;
+                }
+            }
+            self.records = Some(records);
+        }
+        Ok(self.records.get_or_insert_default())
+    }
+
+    fn record(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        id: &str,
+    ) -> Result<Option<&'f Feature>, CodecError> {
+        if self.by_id.is_none() {
+            let (records, mut storage) = ctx.unique_index(
+                self.features.iter().map(|feature| (feature.id.as_str(), feature)),
+                "index SLDPRT history records by identity",
+            )?;
+            self.storage.absorb(&mut storage)?;
+            self.by_id = Some(records);
+        }
+        let records = self.by_id.get_or_insert_default();
+        Ok(ctx.get_hash_map(records, id, "look up SLDPRT hole profile record")?.copied().flatten())
     }
 
     fn preceding_profile(
@@ -65,8 +93,10 @@ impl<'f, 'c> SourceFeatures<'f, 'c> {
     ) -> Result<Option<&'f str>, CodecError> {
         if self.profiles.is_none() {
             const OPERATION: &str = "index SLDPRT source profiles";
+            self.records(ctx)?;
             let mut profiles = Vec::new();
-            for (&key, &feature) in ctx.admit_iter(&self.records, OPERATION)? {
+            let records = self.records.get_or_insert_default();
+            for (&key, &feature) in ctx.admit_iter(&*records, OPERATION)? {
                 if classify(feature) == Some(FeatureClass::Sketch)
                     && feature.input_class.as_deref() != Some("moOriginProfileFeature_c")
                 {
@@ -417,17 +447,13 @@ pub(super) fn project_extrude(
 pub(super) fn project_hole(
     ctx: &DecodeContext<'_>,
     feature: &Feature,
-    features_by_source: &BTreeMap<crate::records::FeatureSource, &Feature>,
-    records: &RecordsById<'_>,
+    source_features: &mut SourceFeatures<'_, '_>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     let Some((shape, profile)) = hole_shape_and_profile(ctx, feature, |key| match key {
         HoleProfileKey::Source(source) => Ok(ctx
-            .get_btree_map(features_by_source, &source, "look up SLDPRT feature source")?
+            .get_btree_map(source_features.records(ctx)?, &source, "look up SLDPRT feature source")?
             .copied()),
-        HoleProfileKey::Record(id) => Ok(ctx
-            .get_hash_map(records, id, "look up SLDPRT hole profile record")?
-            .copied()
-            .flatten()),
+        HoleProfileKey::Record(id) => source_features.record(ctx, id),
     })?
     else {
         return Ok(None);
@@ -1023,7 +1049,7 @@ mod tests {
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let index = SourceFeatures::new(&ctx, &features).unwrap();
-        assert_eq!(index.records.len(), 2);
+        assert!(index.records.is_none());
         assert!(index.profiles.is_none());
     }
 
@@ -1174,7 +1200,7 @@ mod tests {
         }
         assert_eq!(
             index
-                .records
+                .records.as_ref().unwrap()
                 .get(&FeatureSource::try_from("10").unwrap())
                 .unwrap()
                 .id,
