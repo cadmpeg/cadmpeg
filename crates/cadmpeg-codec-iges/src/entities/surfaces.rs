@@ -3816,6 +3816,7 @@ pub(super) fn project<'ctx>(
             )
         })?
         else {
+            drop(candidate_storage);
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -3833,6 +3834,8 @@ pub(super) fn project<'ctx>(
             )
         })?
         else {
+            drop(finite_u_knots);
+            drop(candidate_storage);
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -3852,18 +3855,23 @@ pub(super) fn project<'ctx>(
         };
         let u_domain = [u_lower, u_upper];
         let v_domain = [v_lower, v_upper];
-        let (Ok(u_knots), Ok(v_knots)) = (
+        let (u_knots, v_knots) = match (
             candidate_storage.with_storage(|| KnotVector::new(ctx, finite_u_knots))?,
             candidate_storage.with_storage(|| KnotVector::new(ctx, finite_v_knots))?,
-        ) else {
-            super::push_entity_loss_with_scoped_slots(
-                ctx,
-                &mut loss_slots_storage,
-                &mut losses,
-                entry,
-                format_args!("{}", "surface knot vector is decreasing"),
-            )?;
-            continue;
+        ) {
+            (Ok(u_knots), Ok(v_knots)) => (u_knots, v_knots),
+            rejected => {
+                drop(rejected);
+                drop(candidate_storage);
+                super::push_entity_loss_with_scoped_slots(
+                    ctx,
+                    &mut loss_slots_storage,
+                    &mut losses,
+                    entry,
+                    format_args!("{}", "surface knot vector is decreasing"),
+                )?;
+                continue;
+            }
         };
         let mut native_weight_storage =
             ctx.reserve_scoped(0, "iges NURBS surface weight scratch")?;
@@ -3876,6 +3884,9 @@ pub(super) fn project<'ctx>(
         })?
         else {
             drop(native_weight_storage);
+            drop(u_knots);
+            drop(v_knots);
+            drop(candidate_storage);
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -3892,6 +3903,9 @@ pub(super) fn project<'ctx>(
         )? {
             drop(native_weights);
             drop(native_weight_storage);
+            drop(u_knots);
+            drop(v_knots);
+            drop(candidate_storage);
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -3926,6 +3940,9 @@ pub(super) fn project<'ctx>(
         if polynomial && !equal_weights {
             drop(native_weights);
             drop(native_weight_storage);
+            drop(u_knots);
+            drop(v_knots);
+            drop(candidate_storage);
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -3938,6 +3955,9 @@ pub(super) fn project<'ctx>(
         if !polynomial && equal_weights {
             drop(native_weights);
             drop(native_weight_storage);
+            drop(u_knots);
+            drop(v_knots);
+            drop(candidate_storage);
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -3957,6 +3977,9 @@ pub(super) fn project<'ctx>(
         )? {
             drop(native_weights);
             drop(native_weight_storage);
+            drop(u_knots);
+            drop(v_knots);
+            drop(candidate_storage);
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -3974,6 +3997,9 @@ pub(super) fn project<'ctx>(
         let [Some(u_start), Some(u_end), Some(v_start), Some(v_end)] = ranges else {
             drop(native_weights);
             drop(native_weight_storage);
+            drop(u_knots);
+            drop(v_knots);
+            drop(candidate_storage);
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -4011,6 +4037,9 @@ pub(super) fn project<'ctx>(
         let Some(u_range) = clamp_range(range_start, [ranges[0], ranges[1]], u_domain) else {
             drop(native_weights);
             drop(native_weight_storage);
+            drop(u_knots);
+            drop(v_knots);
+            drop(candidate_storage);
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -4026,6 +4055,9 @@ pub(super) fn project<'ctx>(
         let Some(v_range) = clamp_range(range_start + 2, [ranges[2], ranges[3]], v_domain) else {
             drop(native_weights);
             drop(native_weight_storage);
+            drop(u_knots);
+            drop(v_knots);
+            drop(candidate_storage);
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -4060,6 +4092,9 @@ pub(super) fn project<'ctx>(
             Ok(transform) => transform,
             Err(error) => {
                 drop(native_weights);
+                drop(u_knots);
+                drop(v_knots);
+                drop(candidate_storage);
                 let message = error.non_resource()?;
                 super::push_entity_loss_with_scoped_slots(
                     ctx,
@@ -4158,7 +4193,9 @@ pub(super) fn project<'ctx>(
             })
         })?;
         drop(native_weights);
-        let construction = candidate_storage.with_storage(|| {
+        let mut construction_storage =
+            ctx.reserve_scoped(0, "iges NURBS surface construction scratch")?;
+        let construction = construction_storage.with_storage(|| {
             NurbsSurface::new(
                 ctx,
                 NurbsSurfaceAxis::new(u_degree, u_knots, flags[3] == Some(1)),
@@ -4168,8 +4205,12 @@ pub(super) fn project<'ctx>(
             )
         })?;
         let surface = match construction {
-            Ok(nurbs) => nurbs,
+            Ok(nurbs) => {
+                candidate_storage.absorb(&mut construction_storage)?;
+                nurbs
+            }
             Err(error) => {
+                drop(candidate_storage);
                 super::push_entity_loss_with_scoped_slots(
                     ctx,
                     &mut loss_slots_storage,
@@ -4205,6 +4246,8 @@ pub(super) fn project<'ctx>(
                 global.minimum_resolution_mm(),
             )?
             else {
+                drop(surface);
+                drop(candidate_storage);
                 super::push_entity_loss_with_scoped_slots(
                     ctx,
                     &mut loss_slots_storage,
@@ -4215,6 +4258,8 @@ pub(super) fn project<'ctx>(
                 continue 'surface;
             };
             if actual != declared {
+                drop(surface);
+                drop(candidate_storage);
                 super::push_entity_loss_with_scoped_slots(
                     ctx,
                     &mut loss_slots_storage,
