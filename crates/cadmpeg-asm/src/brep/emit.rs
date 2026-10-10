@@ -3063,7 +3063,7 @@ fn emit_revision_compound_loft_surface(
     construction: Box<EmbeddedRevisionCompoundLoft>,
     format: IdFormat,
 ) -> Result<ProceduralSurfaceDefinition, cadmpeg_core::CodecError> {
-    let convert_profile = |scope: cadmpeg_ir::ids::IdentityKey,
+    let convert_profile = |scope: &cadmpeg_ir::ids::IdentityKey,
                            profile: Vec<EmbeddedLoftProfileMember>,
                            out: &mut AsmBrep|
      -> Result<
@@ -3206,24 +3206,16 @@ fn emit_revision_compound_loft_surface(
         })
     };
     let base = brep_key!(i, ":cloft:base");
-    let mut base_copy_storage = ctx.reserve_scoped(0, "ASM profile scope identity")?;
-    let base_copy = base_copy_storage
-        .with_storage(|| base.try_clone_for_decode(ctx, "ASM profile scope identity"))?;
-    let base_profile = convert_profile(base_copy, construction.base_profile, &mut *out)?;
+    let base_profile = convert_profile(&base, construction.base_profile, &mut *out)?;
     let base_path = convert_path(base, construction.base_path, &mut *out)?;
     let entries: Vec<_> = ctx.try_collect_vec(
         ctx.admit_iter(construction.entries, "ASM compound loft sections")?
             .enumerate()
             .map(|(entry_index, entry)| {
                 let scope = brep_key!(i, ":cloft:", entry_index);
-                let mut profile_scope_storage =
-                    ctx.reserve_scoped(0, "ASM profile scope identity")?;
-                let profile_scope = profile_scope_storage.with_storage(|| {
-                    scope.try_clone_for_decode(ctx, "ASM profile scope identity")
-                })?;
                 Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::geometry::LoftSectionEntry {
                     parameter: entry.parameter,
-                    profile: convert_profile(profile_scope, entry.profile, &mut *out)?,
+                    profile: convert_profile(&scope, entry.profile, &mut *out)?,
                     path: convert_path(scope, entry.path, &mut *out)?,
                 })
             }),
@@ -3390,7 +3382,6 @@ fn emit_vertex_blend_surface(
         let Some((boundary_index, boundary)) = ctx.next_charged(&mut source_values, "ASM procedural members")? else {
             break;
         };
-        let prefix = brep_key!(i, ":vertex_boundary", boundary_index);
         let geometry = match boundary.geometry {
             EmbeddedVertexBlendBoundaryGeometry::Circle {
                 curve,
@@ -3399,6 +3390,7 @@ fn emit_vertex_blend_surface(
                 parameters,
                 sense,
             } => {
+                let prefix = brep_key!(i, ":vertex_boundary", boundary_index);
                 let id = {
                     let mut copied_storage = ctx.reserve_scoped(0, "ASM temporary identity key")?;
                     copied_storage.with_storage(|| {
@@ -3439,6 +3431,7 @@ fn emit_vertex_blend_surface(
                 sense,
                 fit_tolerance,
             } => {
+                let prefix = brep_key!(i, ":vertex_boundary", boundary_index);
                 let id = {
                     let mut copied_storage = ctx.reserve_scoped(0, "ASM temporary identity key")?;
                     copied_storage.with_storage(|| {
@@ -3475,6 +3468,7 @@ fn emit_vertex_blend_surface(
                 curve,
                 curve_endpoints,
             } => {
+                let prefix = brep_key!(i, ":vertex_boundary", boundary_index);
                 let id = brep_id!(
                     format,
                     CurveId,
