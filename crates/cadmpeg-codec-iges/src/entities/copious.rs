@@ -486,9 +486,11 @@ pub(super) fn project<'ctx>(
                     )
                 })?;
             }
-            position_storage.with_storage(|| {
-                ctx.push_vec(&mut positions, position, "iges copious positioned points")
-            })?;
+            if !presentation_form(entry.form) {
+                position_storage.with_storage(|| {
+                    ctx.push_vec(&mut positions, position, "iges copious positioned points")
+                })?;
+            }
         }
         if !tuples_valid {
             push_entity_loss_with_scoped_slots(
