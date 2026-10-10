@@ -81,5 +81,4 @@ fn empty_loop_array_output_is_free() {
         super::super::scan(&ctx, &[]).expect("no frame discovery or ordering"),
         super::super::LoopArrayScan::default()
     );
-
 }

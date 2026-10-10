@@ -1122,7 +1122,8 @@ mod tests {
             scan_with_collection_limit(persistence, limit).expect_err("collection refusal");
         assert!(
             matches!(refusal, CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems && limit.operation == operation),
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == operation),
             "missing collection refusal for {operation}"
         );
     }

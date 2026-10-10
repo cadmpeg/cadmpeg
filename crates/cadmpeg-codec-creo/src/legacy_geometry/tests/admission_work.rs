@@ -336,9 +336,8 @@ fn object_index_refuses_visit_before_id_copy_and_keeps_original_retained_refusal
         "creo legacy object index IDs",
         |ctx| object_id_index(ctx, &objects),
     );
-    assert!(
-        matches!(error, CodecError::ResourceLimit(ref refusal) if refusal.operation == "creo legacy object index IDs")
-    );
+    assert!(matches!(error, CodecError::ResourceLimit(ref refusal)
+                if refusal.operation == "creo legacy object index IDs"));
     crate::test_support::assert_work_boundaries(&["creo legacy object index rows"], |ctx| {
         object_id_index(ctx, &objects)
     });
@@ -464,6 +463,6 @@ fn empty_and_fixed_legacy_helper_returns_are_free() {
         real_array_values(&ctx, &scalar).map(|r| r.is_none()),
     ];
     for result in results {
-    assert!(result.expect("no input-sized work"));
+        assert!(result.expect("no input-sized work"));
     }
 }

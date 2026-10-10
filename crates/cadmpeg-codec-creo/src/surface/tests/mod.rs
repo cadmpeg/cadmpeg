@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
+
+use cadmpeg_core::decode::DecodeContext;
+
 mod close_scan;
 mod contours;
 mod cost;
@@ -27,7 +30,7 @@ mod traversal_visits;
 const EPS_FRAME_COMPONENT: f64 = 1.0e-12;
 
 fn frames_with_checked_cache<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ctx: &DecodeContext<'_>,
     payload: &'a [u8],
 ) -> Result<Vec<super::NamedPrototypeFrame<'a>>, cadmpeg_core::CodecError> {
     let cache = crate::scalar::ScalarCache::from_section_checked(ctx, payload)?;
@@ -35,7 +38,7 @@ fn frames_with_checked_cache<'a>(
 }
 
 fn parameters_with_checked_cache(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     rows: &[super::SurfaceRow],
 ) -> Result<Vec<super::SurfaceParameterRecord>, cadmpeg_core::CodecError> {
@@ -45,7 +48,7 @@ fn parameters_with_checked_cache(
 
 fn with_decode_ctx<T>(
     bytes: &[u8],
-    run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
+    run: impl FnOnce(&DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
 ) -> T {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::desktop();
@@ -138,9 +141,7 @@ fn positional_spline_replay_body_end(
     })
 }
 
-fn work_output<T>(
-    run: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
-) -> T {
+fn work_output<T>(run: impl Fn(&DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>) -> T {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     let capped = |cap| {

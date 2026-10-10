@@ -56,8 +56,18 @@ fn surface_named_boundary_admits_visited_positions_and_skips_scalar_interiors() 
                 let result = named_record_boundary(&ctx, SurfaceKind::Plane, payload, &cache);
                 if let Err(CodecError::ResourceLimit(resource)) = &result {
                     assert_eq!(
-                        (resource.dimension, resource.used, resource.additional, resource.operation),
-                        (ResourceDimension::WorkUnits, cap, 1, "creo surface named boundary traversal")
+                        (
+                            resource.dimension,
+                            resource.used,
+                            resource.additional,
+                            resource.operation
+                        ),
+                        (
+                            ResourceDimension::WorkUnits,
+                            cap,
+                            1,
+                            "creo surface named boundary traversal"
+                        )
                     );
                 }
                 result

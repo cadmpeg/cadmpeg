@@ -230,7 +230,9 @@ fn withholds_positional_outline_with_multiple_held_coordinates() {
 
 #[test]
 fn decodes_named_standard_plane_from_zero_slots() {
-    let data = b"\xe0\x01geom_id\0\x02\xe0\x01feat_id\0\x01outline\0\xf9\x02\x03\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0";
+    let data = b"\xe0\x01geom_id\0\x02\xe0\x01feat_id\0\x01outline\0\xf9\x02\
+        \x03\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0\x18\x46\x08\
+        \0\0\0\0\0\0\x46\x08\0\0\0\0\0\0";
     let plane = named_plane_ok(data).expect("required invariant");
     assert_eq!(plane.id, 2);
     assert_eq!(plane.feature_id, 1);
@@ -247,14 +249,16 @@ fn decodes_named_standard_plane_from_zero_slots() {
 
 #[test]
 fn withholds_named_plane_with_competing_standalone_zero_axes() {
-    let data = b"\xe0\x01geom_id\0\x02\xe0\x01feat_id\0\x01outline\0\xf9\x02\x03\x18\x46\x08\0\0\0\0\0\0\x18\x18\x46\x08\0\0\0\0\0\0\x18";
+    let data = b"\xe0\x01geom_id\0\x02\xe0\x01feat_id\0\x01outline\0\xf9\x02\
+        \x03\x18\x46\x08\0\0\0\0\0\0\x18\x18\x46\x08\0\0\0\0\0\0\x18";
 
     assert!(named_plane_ok(data).is_none());
 }
 
 #[test]
 fn named_outline_41_form_occupies_eight_bytes() {
-    let data = b"\xe0\x01geom_id\0\x02\xe0\x01feat_id\0\x01outline\0\xf9\x02\x03\x18\x41\xba\x13\x99\xa9\
+    let data =
+        b"\xe0\x01geom_id\0\x02\xe0\x01feat_id\0\x01outline\0\xf9\x02\x03\x18\x41\xba\x13\x99\xa9\
         \xb3\xd8\x74\x41\x94\xad\x7e\x6a\xb0\x34\x5e\x18\x93\x29\x5a\xfc\xd5\x60\x69\x8c\x40\x79\
         \xe9\x12\xa5\x83";
     let plane = named_plane_ok(data).expect("named plane");
@@ -389,7 +393,9 @@ fn decodes_compact_width_datum_row_identifiers() {
 
 #[test]
 fn decodes_compact_width_named_datum_identifiers() {
-    let data = b"\xe0\x01geom_id\0\x80\x80\xe0\x01feat_id\0\x81\x01outline\0\xf9\x02\x03\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0";
+    let data = b"\xe0\x01geom_id\0\x80\x80\xe0\x01feat_id\0\x81\x01outline\0\
+        \xf9\x02\x03\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0\x18\
+        \x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0";
     let plane = named_plane_ok(data).expect("compact-width named plane");
 
     assert_eq!(plane.id, 128);
@@ -688,13 +694,13 @@ fn decode_transfers_active_datum_cylinder_with_source_namespace() {
         .iter()
         .find(|surface| surface.id.as_str() == "creo:actdatums:surface#8")
         .expect("active datum cylinder surface");
-    assert!(
-        matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
-        if {
-            let radius = cylinder_surface.radius().get();
-            (radius - 0.75).abs() < EPS_DATUM_RADIUS
-        })
-    );
+    assert!(matches!(
+        surface.geometry,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
+    if {
+        let radius = cylinder_surface.radius().get();
+        (radius - 0.75).abs() < EPS_DATUM_RADIUS
+    }));
     assert_eq!(
         surface
             .source_object

@@ -122,5 +122,4 @@ fn inline_empty_and_other_family_routes_return_without_work() {
             record.has_inline_non_plane_local_system_suffix(ctx)
         });
     }
-
 }

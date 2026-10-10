@@ -135,7 +135,8 @@ fn active_datum_admits_present_preceding_frames_and_slots_without_terminal_fee()
                 |ctx| super::super::active_cylinder_frame(ctx, &row, &parameter),
             );
             assert!(matches!(error, CodecError::ResourceLimit(refusal)
-                if refusal.dimension == ResourceDimension::WorkUnits && refusal.operation == operation));
+                if refusal.dimension == ResourceDimension::WorkUnits
+                && refusal.operation == operation));
         }
     }
 }
@@ -162,7 +163,8 @@ fn named_datum_identity_searches_admit_prefixes_and_stop_at_first_missing_identi
             |ctx| named_plane(ctx, &data),
         );
         assert!(matches!(error, CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::WorkUnits && refusal.operation == operation));
+            if refusal.dimension == ResourceDimension::WorkUnits
+                && refusal.operation == operation));
     }
 }
 

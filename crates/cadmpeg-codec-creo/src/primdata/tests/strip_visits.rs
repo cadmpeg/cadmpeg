@@ -16,7 +16,6 @@ fn empty_strip_validation_is_free() {
             .expect("no span")
             .is_none()
     );
-
 }
 
 #[test]

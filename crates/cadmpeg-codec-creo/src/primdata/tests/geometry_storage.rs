@@ -62,7 +62,6 @@ fn primitive_conflicts_compare_borrowed_lanes_without_allocating_candidates() {
             .charge_work_limit(1, "after primitive conflict")
             .expect_err("exact visits");
         assert_eq!((original.used, original.additional), (need, 1));
-
     }
 }
 

@@ -370,7 +370,8 @@ fn plane_envelope_coordinates_decode_compact_positive_half() {
 
 #[test]
 fn decodes_named_plane_outline_with_zero_boundary_type() {
-    let payload = b"srf_array\0\xf8\x01\xe0\x01geom_id\0\x07\xe0\x01geom_type\0\x22\xe0\x01feat_id\0\x04\xe0\
+    let payload =
+        b"srf_array\0\xf8\x01\xe0\x01geom_id\0\x07\xe0\x01geom_type\0\x22\xe0\x01feat_id\0\x04\xe0\
         \x01orient\0\x01\xe0\x01boundary_type\0\x00\xe0\x01next_geom_ptr\0\x00\xe0\x02outline\0\
         \xf9\x02\x03\xe4\x18\xe4\xe4\xe4\x18\xe0\x00srf_prim_ptr(plane)\0\xe3";
 
@@ -391,7 +392,8 @@ fn decodes_named_plane_outline_with_zero_boundary_type() {
 
 #[test]
 fn named_plane_outline_rejects_bytes_between_the_wrapper_and_slots() {
-    let payload = b"srf_array\0\xf8\x01\xe0\x01geom_id\0\x07\xe0\x01geom_type\0\x22\xe0\x01feat_id\0\x04\xe0\
+    let payload =
+        b"srf_array\0\xf8\x01\xe0\x01geom_id\0\x07\xe0\x01geom_type\0\x22\xe0\x01feat_id\0\x04\xe0\
         \x01orient\0\x01\xe0\x01boundary_type\0\x00\xe0\x01next_geom_ptr\0\x00\xe0\x02outline\0\
         \xf9\x02\x03\xfb\xe4\x18\xe4\xe4\xe4\x18\xe0\x00srf_prim_ptr(plane)\0\xe3";
 
@@ -979,7 +981,10 @@ fn dimensioned_vectors_own_header_shaped_scalar_payloads() {
     assert!(prototype.field("id").is_none());
     assert!(matches!(
         prototype.field("tangts").map(|field| &field.value),
-        Some(SurfaceNamedValue::ScalarArray(array)) if array.dimensions() == 1 && array.count() == 3 && array.values() == [Some(1.0), Some(1.0), Some(1.0)]
+        Some(SurfaceNamedValue::ScalarArray(array))
+            if array.dimensions() == 1
+                && array.count() == 3
+                && array.values() == [Some(1.0), Some(1.0), Some(1.0)]
     ));
 }
 

@@ -787,7 +787,8 @@ fn edge_start_vertex_pair_survives_an_unresolved_successor() {
 fn scan_groups_connected_nonzero_face_references() {
     let mut payload = visibgeom_payload(0, 2);
     payload.extend_from_slice(
-        b"topol_ref_data\0\x07\x08\x04\x01\xf6\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3\x08\x08\x04\x01\xf6\x0b\x0c\x08\x08\0\0\xe3\xe1\xe3",
+        b"topol_ref_data\0\x07\x08\x04\x01\xf6\x0a\x0b\x07\x07\0\0\xe3\
+            \xe1\xe3\x08\x08\x04\x01\xf6\x0b\x0c\x08\x08\0\0\xe3\xe1\xe3",
     );
     let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
@@ -1212,7 +1213,6 @@ fn checked_topology_constructors_propagate_work_refusal() {
         .expect("one face");
     assert_eq!(component.face_ids(), [1]);
     assert!(component.curve_ids().is_empty());
-
 }
 
 #[test]

@@ -560,13 +560,11 @@ mod tests {
         scalar_arrays, triangle_strip_geometry, triangle_strips, PrimitiveArrayField,
         PrimitiveScalarArray, TriangleStripGeometry, TriangleStripGeometryError,
     };
+    use cadmpeg_core::decode::DecodeContext;
     use cadmpeg_ir::scalar::FiniteReal;
     use cadmpeg_ir::units::FiniteVector;
 
-    fn with_context<T>(
-        bytes: &[u8],
-        f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
-    ) -> T {
+    fn with_context<T>(bytes: &[u8], f: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
@@ -578,7 +576,7 @@ mod tests {
     fn with_collection_limit<T>(
         bytes: &[u8],
         limit: u64,
-        f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
+        f: impl FnOnce(&DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
     ) -> Result<T, cadmpeg_core::CodecError> {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
         let arena = DecodeArena::new();
@@ -819,7 +817,7 @@ mod tests {
     }
 
     fn work_output<T>(
-        run: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
+        run: impl Fn(&DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
     ) -> T {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_core::CodecError;
