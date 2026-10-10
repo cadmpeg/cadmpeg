@@ -1910,7 +1910,9 @@ fn visit_constraint_loci<'definition>(
     match definition {
         Constraint::CoincidentLoci { loci: members }
         | Constraint::Group { elements: members }
-        | Constraint::Text { elements: members, .. } => {
+        | Constraint::Text {
+            elements: members, ..
+        } => {
             let mut loci = members.iter();
             while loci.len() != 0 {
                 ctx.charge_work(1, "sketch constraint locus scan")?;
@@ -1952,7 +1954,11 @@ fn visit_constraint_loci<'definition>(
                 }
             }
         }
-        Constraint::SnellsLaw { incident, refracted, .. } => {
+        Constraint::SnellsLaw {
+            incident,
+            refracted,
+            ..
+        } => {
             visit(incident)?;
             visit(refracted)?;
         }
@@ -1969,7 +1975,9 @@ fn visit_spatial_constraint_entities<'definition, U, L>(
     match definition {
         SpatialConstraint::Native { .. } => {}
         SpatialConstraint::SplineGroup { entities: members }
-        | SpatialConstraint::RepeatedLineLength { entities: members, .. } => {
+        | SpatialConstraint::RepeatedLineLength {
+            entities: members, ..
+        } => {
             let mut members = members.iter();
             while members.len() != 0 {
                 ctx.charge_work(1, "spatial constraint member scan")?;
@@ -2002,7 +2010,11 @@ fn visit_spatial_constraint_entities<'definition, U, L>(
             }
         }
         SpatialConstraint::ParallelLineSetDistance { first, second, .. }
-        | SpatialConstraint::Offset { sources: first, results: second, .. } => {
+        | SpatialConstraint::Offset {
+            sources: first,
+            results: second,
+            ..
+        } => {
             for members in [first, second] {
                 let mut members = members.iter();
                 while members.len() != 0 {
@@ -2013,7 +2025,11 @@ fn visit_spatial_constraint_entities<'definition, U, L>(
                 }
             }
         }
-        SpatialConstraint::Symmetric { first, second, axis } => {
+        SpatialConstraint::Symmetric {
+            first,
+            second,
+            axis,
+        } => {
             visit(first)?;
             visit(second)?;
             visit(axis)?;

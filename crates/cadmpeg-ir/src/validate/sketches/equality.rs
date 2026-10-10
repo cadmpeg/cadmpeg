@@ -171,7 +171,8 @@ pub(super) fn geometry_equal(
                 origin: right_origin,
                 direction: right_direction,
             },
-        ) => Ok((left_origin.get(), left_direction.get()) == (right_origin.get(), right_direction.get())),
+        ) => Ok((left_origin.get(), left_direction.get())
+            == (right_origin.get(), right_direction.get())),
         (
             SketchGeometryDefinition::Circle {
                 center: left_center,
@@ -196,16 +197,16 @@ pub(super) fn geometry_equal(
                 end_angle: right_end_angle,
             },
         ) => Ok((
-                left_center.get(),
-                left_radius.get(),
-                left_start_angle.get(),
-                left_end_angle.get(),
-            ) == (
-                right_center.get(),
-                right_radius.get(),
-                right_start_angle.get(),
-                right_end_angle.get(),
-            )),
+            left_center.get(),
+            left_radius.get(),
+            left_start_angle.get(),
+            left_end_angle.get(),
+        ) == (
+            right_center.get(),
+            right_radius.get(),
+            right_start_angle.get(),
+            right_end_angle.get(),
+        )),
         (
             SketchGeometryDefinition::Ellipse {
                 center: left_center,
@@ -220,18 +221,18 @@ pub(super) fn geometry_equal(
                 bounds: right_bounds,
             },
         ) => Ok((
-                left_center.get(),
-                left_major_angle.get(),
-                left_radii.major().get(),
-                left_radii.minor().get(),
-                (*left_bounds).map(|[start, end]| [start.get(), end.get()]),
-            ) == (
-                right_center.get(),
-                right_major_angle.get(),
-                right_radii.major().get(),
-                right_radii.minor().get(),
-                (*right_bounds).map(|[start, end]| [start.get(), end.get()]),
-            )),
+            left_center.get(),
+            left_major_angle.get(),
+            left_radii.major().get(),
+            left_radii.minor().get(),
+            (*left_bounds).map(|[start, end]| [start.get(), end.get()]),
+        ) == (
+            right_center.get(),
+            right_major_angle.get(),
+            right_radii.major().get(),
+            right_radii.minor().get(),
+            (*right_bounds).map(|[start, end]| [start.get(), end.get()]),
+        )),
         (
             SketchGeometryDefinition::Hyperbola {
                 center: left_center,
@@ -248,18 +249,18 @@ pub(super) fn geometry_equal(
                 bounds: right_bounds,
             },
         ) => Ok((
-                left_center.get(),
-                left_major_angle.get(),
-                left_major_radius.get(),
-                left_minor_radius.get(),
-                (*left_bounds).map(|[start, end]| [start.get(), end.get()]),
-            ) == (
-                right_center.get(),
-                right_major_angle.get(),
-                right_major_radius.get(),
-                right_minor_radius.get(),
-                (*right_bounds).map(|[start, end]| [start.get(), end.get()]),
-            )),
+            left_center.get(),
+            left_major_angle.get(),
+            left_major_radius.get(),
+            left_minor_radius.get(),
+            (*left_bounds).map(|[start, end]| [start.get(), end.get()]),
+        ) == (
+            right_center.get(),
+            right_major_angle.get(),
+            right_major_radius.get(),
+            right_minor_radius.get(),
+            (*right_bounds).map(|[start, end]| [start.get(), end.get()]),
+        )),
         (
             SketchGeometryDefinition::Parabola {
                 vertex: left_vertex,
@@ -274,16 +275,16 @@ pub(super) fn geometry_equal(
                 bounds: right_bounds,
             },
         ) => Ok((
-                left_vertex.get(),
-                left_axis_angle.get(),
-                left_focal_length.get(),
-                (*left_bounds).map(|[start, end]| [start.get(), end.get()]),
-            ) == (
-                right_vertex.get(),
-                right_axis_angle.get(),
-                right_focal_length.get(),
-                (*right_bounds).map(|[start, end]| [start.get(), end.get()]),
-            )),
+            left_vertex.get(),
+            left_axis_angle.get(),
+            left_focal_length.get(),
+            (*left_bounds).map(|[start, end]| [start.get(), end.get()]),
+        ) == (
+            right_vertex.get(),
+            right_axis_angle.get(),
+            right_focal_length.get(),
+            (*right_bounds).map(|[start, end]| [start.get(), end.get()]),
+        )),
         _ => Ok(false),
     }
 }
@@ -712,20 +713,29 @@ mod tests {
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            assert_eq!(super::text_equal(&ctx, left, right, "sketch prefix").unwrap(), expected);
+            assert_eq!(
+                super::text_equal(&ctx, left, right, "sketch prefix").unwrap(),
+                expected
+            );
             ctx.finish_session().unwrap();
         }
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let Err(CodecError::ResourceLimit(limit)) = super::text_equal(&ctx, "aa", "ab", "sketch prefix") else {
+        let Err(CodecError::ResourceLimit(limit)) =
+            super::text_equal(&ctx, "aa", "ab", "sketch prefix")
+        else {
             panic!("second compared byte must refuse");
         };
         assert_eq!((limit.used, limit.additional), (1, 1));
         assert_eq!(limit.operation, "sketch prefix");
-        assert!(matches!(super::text_equal(&ctx, "", "", "sketch reentry"), Err(CodecError::ResourceLimit(original)) if original == limit));
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+        assert!(
+            matches!(super::text_equal(&ctx, "", "", "sketch reentry"), Err(CodecError::ResourceLimit(original)) if original == limit)
+        );
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+        );
     }
 
     #[test]
@@ -742,5 +752,4 @@ mod tests {
         assert!(!geometry_equal(&ctx, &left, &other).unwrap());
         ctx.finish_session().unwrap();
     }
-
 }

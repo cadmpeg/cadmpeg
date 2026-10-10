@@ -570,7 +570,6 @@ fn identity_grammar_admits_only_the_scalars_inspected() {
             }
         }
     }
-
 }
 
 #[test]

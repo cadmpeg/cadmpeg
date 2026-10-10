@@ -499,9 +499,10 @@ fn surface_patch_split_keeps_first_assembled_controls_through_second_refusal() {
     let surface = bilinear_surface();
     let source_ctx = cadmpeg_test_support::service_decode_context();
     let source_budget = source_ctx.work_budget(1_000_000);
-    let source = super::super::rational_surface_patches_with_budget(
-        &source_ctx, &surface, &source_budget,
-    ).unwrap().unwrap();
+    let source =
+        super::super::rational_surface_patches_with_budget(&source_ctx, &surface, &source_budget)
+            .unwrap()
+            .unwrap();
     // Two header lists hold two line polygons each. Four two-control
     // polygons and the first four-control assembly stay live at refusal.
     let live_bytes = 4 * std::mem::size_of::<ScopedRows<'_, [f64; 4]>>()
@@ -513,17 +514,24 @@ fn surface_patch_split_keeps_first_assembled_controls_through_second_refusal() {
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let budget = ctx.work_budget(1_000_000);
-        let limit = super::super::split_rational_surface_patch(
-            &ctx, &source.rows[0], split_u, &budget,
-        ).unwrap_err();
+        let limit =
+            super::super::split_rational_surface_patch(&ctx, &source.rows[0], split_u, &budget)
+                .unwrap_err();
         assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
         assert_eq!(limit.operation, "IR surface patch assembled controls");
         assert_eq!(limit.used, u64::try_from(live_bytes).unwrap());
-        assert_eq!(limit.additional, 4 * u64::try_from(std::mem::size_of::<[f64; 4]>()).unwrap());
+        assert_eq!(
+            limit.additional,
+            4 * u64::try_from(std::mem::size_of::<[f64; 4]>()).unwrap()
+        );
         assert_eq!(ctx.resource_refusal(), Some(limit));
-        assert_eq!(super::super::split_rational_surface_patch(
-            &ctx, &source.rows[0], split_u, &budget,
-        ).unwrap_err(), limit);
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+        assert_eq!(
+            super::super::split_rational_surface_patch(&ctx, &source.rows[0], split_u, &budget,)
+                .unwrap_err(),
+            limit
+        );
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+        );
     }
 }
