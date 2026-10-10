@@ -41,7 +41,7 @@ pub(crate) struct ExportTarget {
 /// `--to` at all, leaves `request` unstated so the encoder inherits from the
 /// source. The encoder resolves explicit tokens, source-dependent
 /// preservation, and delivery during planning.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(crate) struct TargetSelection {
     /// Selected output format.
     format: Format,
@@ -277,7 +277,7 @@ impl DestinationPolicy {
 }
 
 /// Policy controlling the independent conversion phases.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(crate) struct ConversionPolicy {
     /// Decode and export loss refusal.
     pub(crate) losses: LossPolicy,
@@ -289,7 +289,7 @@ pub(crate) struct ConversionPolicy {
     pub(crate) destination: DestinationPolicy,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(crate) enum ResolvedDestination {
     Stdout,
     File(PathBuf),
@@ -336,11 +336,15 @@ pub(crate) fn prepare(
         .map_err(ApplicationError::from)?;
 
     let loaded = loader::load_artifact(inputs, source.path, source.options, source.forced)?;
-    let decode_report = loaded.decode_report().cloned();
-
-    if let Some(refusal) = decode_lossy_refusal(policy.losses, decode_report.as_ref(), format) {
-        return Err(refusal.into());
-    }
+    let loaded = match loaded {
+        LoadedDocument {
+            origin: LoadOrigin::Decoded { report, .. } | LoadOrigin::Restored { report, .. },
+            ..
+        } if policy.losses.rejects_decode() && !report.losses.is_empty() => {
+            return Err(ConversionRefusal::DecodeLossRejected { format, decode_report: report }.into());
+        }
+        loaded => loaded,
+    };
 
     let validation_arena = DecodeArena::new();
     let (validation_ctx, _) =
@@ -350,29 +354,29 @@ pub(crate) fn prepare(
         inputs,
         &loaded.ir,
         loaded.fidelity(),
-        decode_report
-            .as_ref()
+        loaded
+            .decode_report()
             .map_or_else(Vec::new, |report| report.losses.clone()),
     )?;
     validation_ctx.finish_session()?;
     if !validation.is_ok() && !policy.allow_errors {
         return Err(ConversionRefusal::CheckFailed {
             operation: super::refusal::CheckOperation::Export,
-            decode_report,
+            decode_report: loaded.into_decode_report(),
             validation,
         }
         .into());
     }
 
     if format.transfers_geometry()
-        && decode_report
-            .as_ref()
+        && loaded
+            .decode_report()
             .is_some_and(|report| !report.geometry_transferred())
         && !policy.allow_empty
     {
         return Err(ConversionRefusal::EmptyGeometry {
             format,
-            decode_report,
+            decode_report: loaded.into_decode_report(),
             validation,
         }
         .into());
@@ -403,14 +407,14 @@ impl PreparedConversion {
             Err(error) => {
                 return Err(plan_refusal(
                     error,
-                    self.document.decode_report().cloned(),
+                    self.document.into_decode_report(),
                     self.validation,
                 ));
             }
         };
         if self.loss_policy.rejects_export() && !plan.report().losses.is_empty() {
             return Err(ConversionRefusal::ExportLossRejected {
-                decode_report: self.document.decode_report().cloned(),
+                decode_report: self.document.into_decode_report(),
                 validation: self.validation,
                 export_report: plan.report().clone(),
             }
@@ -436,14 +440,15 @@ impl PlannedConversion {
         &self.prepared
     }
 
-    /// Writes the destination artifact and optional CADIR sidecar.
-    pub(crate) fn write(self) -> AnyResult<ExportEmission> {
-        emit_export_plan(
+    /// Writes the artifact and sidecar, then moves the source reports to the caller.
+    pub(crate) fn write(self) -> AnyResult<(ExportEmission, Option<DecodeReport>, ValidationReport)> {
+        let emission = emit_export_plan(
             self.plan,
             self.prepared.selection.format,
             &self.prepared.destination,
             &self.prepared.document.origin,
-        )
+        )?;
+        Ok((emission, self.prepared.document.into_decode_report(), self.prepared.validation))
     }
 }
 
@@ -486,22 +491,6 @@ fn plan_refusal(
         }
         _ => ApplicationError::Operational(error.into()),
     }
-}
-
-fn decode_lossy_refusal(
-    policy: LossPolicy,
-    report: Option<&DecodeReport>,
-    format: Format,
-) -> Option<ConversionRefusal> {
-    if !policy.rejects_decode() {
-        return None;
-    }
-    let report = report?;
-    let count = report.losses.len();
-    (count > 0).then(|| ConversionRefusal::DecodeLossRejected {
-        format,
-        decode_report: report.clone(),
-    })
 }
 
 /// Emits one built plan to its destination and maintains CADIR sidecars.

@@ -5,7 +5,7 @@ use cadmpeg_ir::{report::decode::DecodeReport, CadIr, DecodeResult, SourceFideli
 use cadmpeg_registry::Selection;
 
 /// A neutral document and the source information available for later export.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub(crate) struct LoadedDocument {
     /// The format-neutral document.
     pub(crate) ir: CadIr,
@@ -14,7 +14,7 @@ pub(crate) struct LoadedDocument {
 }
 
 /// Source information attached to a loaded document.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub(crate) enum LoadOrigin {
     /// The document was loaded without native decode metadata.
     Neutral,
@@ -37,6 +37,14 @@ pub(crate) enum LoadOrigin {
 }
 
 impl LoadedDocument {
+    /// Moves the decode report out of the document and releases the other state.
+    pub(crate) fn into_decode_report(self) -> Option<DecodeReport> {
+        match self.origin {
+            LoadOrigin::Neutral => None,
+            LoadOrigin::Decoded { report, .. } | LoadOrigin::Restored { report, .. } => Some(report),
+        }
+    }
+
     /// Creates a document from a neutral CADIR payload.
     pub(crate) const fn neutral(ir: CadIr) -> Self {
         Self {

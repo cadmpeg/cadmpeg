@@ -99,6 +99,57 @@ fn prepared(
     }
 }
 
+#[test]
+fn successful_write_returns_original_source_reports() {
+    use cadmpeg_ir::report::check::{Check, Finding};
+    use cadmpeg_ir::report::decode::DecodeReport;
+    use cadmpeg_ir::report::Severity;
+    use cadmpeg_ir::SourceFidelity;
+
+    let report: DecodeReport = serde_json::from_value(serde_json::json!({
+        "identity": {"classification": "unclassified", "format": "test"},
+        "transfer": {"transfer": "full", "geometry_transferred": false},
+        "losses": [],
+        "notes": ["retained source note"]
+    }))
+    .expect("synthetic source report");
+    let expected_report = serde_json::to_value(&report).expect("report serialization");
+    let notes_buffer = report.notes.as_ptr();
+    let note_buffer = report.notes[0].as_ptr();
+    let mut conversion = prepared(
+        CadIr::empty(),
+        Format::Cadir,
+        cadmpeg_registry::build_encoder(Format::Cadir),
+        LossPolicy::Allow,
+    );
+    conversion.document = LoadedDocument::restored(
+        CadIr::empty(), report, SourceFidelity::default(),
+    );
+    conversion.validation.findings.push(Finding {
+        check: Check::Counts,
+        severity: Severity::Warning,
+        message: "retained validation note".to_owned(),
+        entity: None,
+    });
+    let expected_validation = conversion.validation.clone();
+    let findings_buffer = conversion.validation.findings.as_ptr();
+    let finding_buffer = conversion.validation.findings[0].message.as_ptr();
+    let dir = tempfile::tempdir().expect("temporary destination");
+    let output = dir.path().join("output.cadir.json");
+    conversion.destination = ResolvedDestination::File(output.clone());
+
+    let (_, report, validation) = conversion.plan().expect("CADIR plan")
+        .write().expect("CADIR emission and sidecar");
+    let report = report.expect("restored source report");
+    assert_eq!(report.notes.as_ptr(), notes_buffer);
+    assert_eq!(report.notes[0].as_ptr(), note_buffer);
+    assert_eq!(serde_json::to_value(&report).unwrap(), expected_report);
+    assert_eq!(validation.findings.as_ptr(), findings_buffer);
+    assert_eq!(validation.findings[0].message.as_ptr(), finding_buffer);
+    assert_eq!(validation, expected_validation);
+    assert!(output.is_file());
+}
+
 #[cfg(feature = "iges")]
 #[test]
 fn encoder_planning_owns_unknown_explicit_target_admission() {
