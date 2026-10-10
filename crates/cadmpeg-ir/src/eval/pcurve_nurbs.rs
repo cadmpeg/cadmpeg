@@ -308,6 +308,10 @@ fn differential_unsettled(
         if let Some(captured) = captured {
             result.higher = higher::polynomial(scratch, knots, degree, span, poles, &captured,
                 max_order.unwrap_or(2));
+        } else if degree == 1 && poles.has_weights() {
+            if let Some(order) = max_order.filter(|order| *order >= 3) {
+                result.higher = higher::linear(scratch, knots, span, poles, &basis, order);
+            }
         }
     }
     Ok(result)
