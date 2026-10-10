@@ -1102,13 +1102,15 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 0;
         policy.limits.max_work_units = visits;
-        let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
-            .expect("limited count fixture");
-        assert!(matches!(parse(&ctx, root), Err(CodecError::ResourceLimit(limit))
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(bytes, &arena, &policy).expect("limited count fixture");
+        assert!(
+            matches!(parse(&ctx, root), Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::WorkUnits
                 && limit.operation == operation
                 && limit.used == visits
-                && limit.additional == 1));
+                && limit.additional == 1)
+        );
 
         let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
             .expect("service count fixture");
@@ -1249,10 +1251,7 @@ mod tests {
 
         let mut bytes = vec![0; 1 + 4 + 4 + 4];
         push_u32(&mut bytes, 2);
-        bytes.resize(
-            bytes.len() + 2 * MIN_MODEL_STATE_PARAMETER_BYTES + 77,
-            0,
-        );
+        bytes.resize(bytes.len() + 2 * MIN_MODEL_STATE_PARAMETER_BYTES + 77, 0);
         assert_first_step_refusal(
             &bytes,
             "admit UFRxDoc model-state parameters",
@@ -1418,11 +1417,24 @@ mod tests {
         ] {
             let mut bytes = 1_u32.to_le_bytes().to_vec();
             bytes.resize(4 + minimum - 1, 0);
-            assert_entry_error(&bytes, 0, "admit UFRxDoc embedded references",
-                |ctx, root| parse_embedded_references(ctx, root, &mut Cursor::new(root), version).map(|_| ()),
-                |error| assert!(matches!(error, CodecError::Truncated {
-                    operation: "embedded-reference state values", ..
-                })));
+            assert_entry_error(
+                &bytes,
+                0,
+                "admit UFRxDoc embedded references",
+                |ctx, root| {
+                    parse_embedded_references(ctx, root, &mut Cursor::new(root), version)
+                        .map(|_| ())
+                },
+                |error| {
+                    assert!(matches!(
+                        error,
+                        CodecError::Truncated {
+                            operation: "embedded-reference state values",
+                            ..
+                        }
+                    ));
+                },
+            );
         }
     }
 
@@ -1431,18 +1443,28 @@ mod tests {
         for (version, year, extra) in [(0, 0, 0), (20, 2015, 2), (21, 2015, 3), (28, 2015, 10)] {
             let mut bytes = 1_u32.to_le_bytes().to_vec();
             bytes.resize(4 + MIN_OCCURRENCE_BYTES + extra - 1, 0);
-            assert_entry_error(&bytes, 0, "admit UFRxDoc occurrences",
-                |ctx, root| parse_occurrences(ctx, root, &mut Cursor::new(root), version, year).map(|_| ()),
+            assert_entry_error(
+                &bytes,
+                0,
+                "admit UFRxDoc occurrences",
+                |ctx, root| {
+                    parse_occurrences(ctx, root, &mut Cursor::new(root), version, year).map(|_| ())
+                },
                 |error| {
                     if version >= 28 {
                         assert!(matches!(error, CodecError::Malformed(detail)
                             if detail == "UFRxDoc occurrence extended-header padding exceeds eight words"));
                     } else {
-                        assert!(matches!(error, CodecError::Truncated {
-                            operation: "occurrence export count", ..
-                        }));
+                        assert!(matches!(
+                            error,
+                            CodecError::Truncated {
+                                operation: "occurrence export count",
+                                ..
+                            }
+                        ));
                     }
-                });
+                },
+            );
         }
     }
 
@@ -1466,11 +1488,21 @@ mod tests {
         let mut bytes = vec![0; 4];
         push_u32(&mut bytes, 1);
         bytes.resize(8 + MIN_OCCURRENCE_PROPERTY_HEADER_BYTES - 1, 0);
-        assert_entry_error(&bytes, 0, "admit UFRxDoc occurrence properties",
+        assert_entry_error(
+            &bytes,
+            0,
+            "admit UFRxDoc occurrence properties",
             |ctx, root| super::parse_occurrence_section(ctx, &mut Cursor::new(root)),
-            |error| assert!(matches!(error, CodecError::Truncated {
-                operation: "occurrence property repeated tag", ..
-            })));
+            |error| {
+                assert!(matches!(
+                    error,
+                    CodecError::Truncated {
+                        operation: "occurrence property repeated tag",
+                        ..
+                    }
+                ));
+            },
+        );
     }
 
     #[test]
@@ -1494,11 +1526,21 @@ mod tests {
     fn occurrence_settings_report_the_truncated_value_count() {
         let mut bytes = 1_u32.to_le_bytes().to_vec();
         bytes.resize(4 + MIN_OCCURRENCE_SETTING_BYTES - 1, 0);
-        assert_entry_error(&bytes, 0, "admit UFRxDoc occurrence settings",
+        assert_entry_error(
+            &bytes,
+            0,
+            "admit UFRxDoc occurrence settings",
             |ctx, root| super::parse_occurrence_settings(ctx, &mut Cursor::new(root)),
-            |error| assert!(matches!(error, CodecError::Truncated {
-                operation: "occurrence setting value", ..
-            })));
+            |error| {
+                assert!(matches!(
+                    error,
+                    CodecError::Truncated {
+                        operation: "occurrence setting value",
+                        ..
+                    }
+                ));
+            },
+        );
     }
 
     #[test]
@@ -1511,12 +1553,21 @@ mod tests {
             push_u32(&mut bytes, 2);
             bytes.resize(prefix + 4 + 2 * minimum - 1, 0);
             // The final byte is in the trailer before 2018, and in padding from 2018.
-            let expected = if year >= 2018 { "occurrence export padding" }
-                else { "occurrence export trailer" };
-            assert_entry_error(&bytes, 0, "admit UFRxDoc occurrence exports",
+            let expected = if year >= 2018 {
+                "occurrence export padding"
+            } else {
+                "occurrence export trailer"
+            };
+            assert_entry_error(
+                &bytes,
+                0,
+                "admit UFRxDoc occurrence exports",
                 |ctx, root| super::parse_occurrence_export(ctx, &mut Cursor::new(root), year),
-                |error| assert!(matches!(error, CodecError::Truncated { operation, .. }
-                    if operation == expected)));
+                |error| {
+                    assert!(matches!(error, CodecError::Truncated { operation, .. }
+                    if operation == expected));
+                },
+            );
         }
     }
 
@@ -1542,11 +1593,21 @@ mod tests {
         let mut bytes = 1_u32.to_le_bytes().to_vec();
         push_u32(&mut bytes, 1);
         bytes.resize(8 + MIN_OCCURRENCE_ITEM_HEADER_BYTES - 1, 0);
-        assert_entry_error(&bytes, 0, "admit UFRxDoc occurrence export items",
+        assert_entry_error(
+            &bytes,
+            0,
+            "admit UFRxDoc occurrence export items",
             |ctx, root| super::parse_occurrence_items(ctx, &mut Cursor::new(root)),
-            |error| assert!(matches!(error, CodecError::Truncated {
-                operation: "occurrence export item value count", ..
-            })));
+            |error| {
+                assert!(matches!(
+                    error,
+                    CodecError::Truncated {
+                        operation: "occurrence export item value count",
+                        ..
+                    }
+                ));
+            },
+        );
     }
 
     #[test]
@@ -1608,7 +1669,10 @@ mod tests {
             .expect("truncated export item context");
         assert!(matches!(
             super::parse_occurrence_items(&ctx, &mut Cursor::new(root)),
-            Err(CodecError::Truncated { operation: "occurrence export repeated tag", .. })
+            Err(CodecError::Truncated {
+                operation: "occurrence export repeated tag",
+                ..
+            })
         ));
     }
 
@@ -1636,21 +1700,41 @@ mod tests {
         bytes.extend_from_slice(&[0, 7]);
         push_u32(&mut bytes, 3);
         // One outer item visit precedes the first value visit; no repeated tag is present.
-        assert_entry_error(&bytes, 1, "admit UFRxDoc occurrence export values",
+        assert_entry_error(
+            &bytes,
+            1,
+            "admit UFRxDoc occurrence export values",
             |ctx, root| super::parse_occurrence_items(ctx, &mut Cursor::new(root)),
-            |error| assert!(matches!(error, CodecError::Truncated {
-                operation: "occurrence export repeated tag", ..
-            })));
+            |error| {
+                assert!(matches!(
+                    error,
+                    CodecError::Truncated {
+                        operation: "occurrence export repeated tag",
+                        ..
+                    }
+                ));
+            },
+        );
     }
 
     #[test]
     fn model_states_report_the_truncated_suffix() {
         let bytes = vec![0; MIN_MODEL_STATE_BYTES - 1];
-        assert_entry_error(&bytes, 0, "admit UFRxDoc model states",
+        assert_entry_error(
+            &bytes,
+            0,
+            "admit UFRxDoc model states",
             |ctx, root| super::parse_model_states(ctx, root, &mut Cursor::new(root), 1).map(|_| ()),
-            |error| assert!(matches!(error, CodecError::Truncated {
-                operation: "model-state suffix", ..
-            })));
+            |error| {
+                assert!(matches!(
+                    error,
+                    CodecError::Truncated {
+                        operation: "model-state suffix",
+                        ..
+                    }
+                ));
+            },
+        );
     }
 
     #[test]
@@ -1660,11 +1744,21 @@ mod tests {
         bytes.extend_from_slice(&[0; 77]);
         // Five empty parameters consume 5 * 15 = 75 bytes. The remaining two
         // cannot hold the sixth parameter's four-byte name count.
-        assert_entry_error(&bytes, 1, "admit UFRxDoc model-state parameters",
+        assert_entry_error(
+            &bytes,
+            1,
+            "admit UFRxDoc model-state parameters",
             |ctx, root| super::parse_model_states(ctx, root, &mut Cursor::new(root), 1).map(|_| ()),
-            |error| assert!(matches!(error, CodecError::Truncated {
-                operation: "model-state parameter name", ..
-            })));
+            |error| {
+                assert!(matches!(
+                    error,
+                    CodecError::Truncated {
+                        operation: "model-state parameter name",
+                        ..
+                    }
+                ));
+            },
+        );
     }
 
     #[test]
@@ -1716,16 +1810,21 @@ mod tests {
                         // The second entry reaches a four-byte count above 65,536.
                         let (name, at) = if field == "LOD table count" {
                             ("LOD name", lod_table_offset + 18)
-                        } else { ("header pair value", lod_table_offset + 34) };
+                        } else {
+                            ("header pair value", lod_table_offset + 34)
+                        };
                         let value = View::u32_le_at(&bytes, at).expect("fixture count word");
                         format!("UFRxDoc {name} value {value} at offset {at} exceeds 65536")
                     }
-                    "reference state-group count" =>
-                        format!("UFRxDoc {field} exceeds remaining payload"),
+                    "reference state-group count" => {
+                        format!("UFRxDoc {field} exceeds remaining payload")
+                    }
                     _ => panic!("unexpected fixture field"),
                 };
-                assert!(matches!(error, CodecError::Malformed(ref detail) if detail == &expected),
-                    "{field}: {error:?}");
+                assert!(
+                    matches!(error, CodecError::Malformed(ref detail) if detail == &expected),
+                    "{field}: {error:?}"
+                );
             }
         }
     }
@@ -1900,9 +1999,11 @@ mod tests {
         policy.limits.max_retained_bytes = 0;
         policy.limits.max_work_units = 22;
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
-        assert!(matches!(parse_stream(&ctx, root, stream_id(), &DocumentKind::Unknown),
+        assert!(
+            matches!(parse_stream(&ctx, root, stream_id(), &DocumentKind::Unknown),
             Err(CodecError::NotImplemented(detail))
-                if detail == "UFRxDoc schema 15 unknown header is not implemented"));
+                if detail == "UFRxDoc schema 15 unknown header is not implemented")
+        );
 
         // Preserve the larger cap; its two extra units are not needed.
         policy.limits.max_work_units = 24;
