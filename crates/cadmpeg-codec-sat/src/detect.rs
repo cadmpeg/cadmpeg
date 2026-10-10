@@ -48,16 +48,12 @@ pub(crate) fn classify(
 /// One pass reads the first line: each search stops at the byte it needs, so
 /// the bytes visited are at most the line and the byte after it.
 fn looks_like_text_stream(ctx: &DecodeContext<'_>, prefix: &[u8]) -> Result<bool, CodecError> {
-<<<<<<< HEAD
-    if !sat::has_text_magic(ctx, prefix)? {
-=======
     // The text discriminant starts with at least three decimal digits. Its
     // full first field is checked by the admitted field scan below.
     if !prefix
         .get(..3)
         .is_some_and(|bytes| bytes.iter().all(u8::is_ascii_digit))
     {
->>>>>>> origin/feat/illegal-states-conversion
         return Ok(false);
     }
     let mut rest = prefix;
