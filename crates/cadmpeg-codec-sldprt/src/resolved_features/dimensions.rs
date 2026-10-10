@@ -48,31 +48,31 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 const EPS_DIMENSIONS_PROJECT_RELATION_POINT_DIMENSIONED_CIRCLES_E8: f64 = 1.0e-8;
 
 #[derive(Debug, Clone)]
-struct DimensionedArcNative {
+struct DimensionedArcNative<'a> {
     center: [f64; 2],
     start: [f64; 2],
     end: [f64; 2],
-    endpoints: Option<[String; 2]>,
+    endpoints: Option<[&'a str; 2]>,
 }
 
 #[derive(Debug, Clone)]
-enum DimensionedCurveNative {
+enum DimensionedCurveNative<'a> {
     Circle { center: [f64; 2] },
-    Arc(DimensionedArcNative),
+    Arc(DimensionedArcNative<'a>),
 }
 
 struct DimensionedRelationCarrier<'a> {
     marker: &'a SketchInputEntity,
-    geometry: DimensionedCarrierGeometry,
+    geometry: DimensionedCarrierGeometry<'a>,
     construction: Option<bool>,
 }
 
-enum DimensionedCarrierGeometry {
+enum DimensionedCarrierGeometry<'a> {
     Center([f64; 2]),
-    Curve(DimensionedCurveNative),
+    Curve(DimensionedCurveNative<'a>),
 }
 
-impl DimensionedRelationCarrier<'_> {
+impl<'a> DimensionedRelationCarrier<'a> {
     fn center(&self) -> [f64; 2] {
         match &self.geometry {
             DimensionedCarrierGeometry::Center(center) => *center,
@@ -80,7 +80,7 @@ impl DimensionedRelationCarrier<'_> {
         }
     }
 
-    fn curve(&self) -> Option<&DimensionedCurveNative> {
+    fn curve(&self) -> Option<&DimensionedCurveNative<'a>> {
         match &self.geometry {
             DimensionedCarrierGeometry::Center(_) => None,
             DimensionedCarrierGeometry::Curve(curve) => Some(curve),
@@ -466,14 +466,14 @@ fn native_radial_record_for_marker(
     Ok(None)
 }
 
-impl DimensionedCurveNative {
+impl<'a> DimensionedCurveNative<'a> {
     fn center(&self) -> [f64; 2] {
         match self {
             Self::Circle { center } | Self::Arc(DimensionedArcNative { center, .. }) => *center,
         }
     }
 
-    fn arc(&self) -> Option<&DimensionedArcNative> {
+    fn arc(&self) -> Option<&DimensionedArcNative<'a>> {
         match self {
             Self::Circle { .. } => None,
             Self::Arc(arc) => Some(arc),
@@ -528,7 +528,7 @@ fn dimensioned_arc_native_geometry<'a>(
     index: &LaneMarkerIndex<'a, '_>,
     marker: &'a SketchInputEntity,
     expected_radius: f64,
-) -> Result<Option<DimensionedCurveNative>, cadmpeg_core::CodecError> {
+) -> Result<Option<DimensionedCurveNative<'a>>, cadmpeg_core::CodecError> {
     if marker.kind() != SketchInputKind::Arc {
         return Ok(None);
     }
@@ -593,9 +593,7 @@ fn dimensioned_arc_native_geometry<'a>(
         return Ok(None);
     }
     let endpoint_pair = if let [first, second] = endpoints.as_slice() {
-        let first = ctx.copy_retained_text(first.id(), DIMENSIONED_CARRIER_OPERATION)?;
-        let second = ctx.copy_retained_text(second.id(), DIMENSIONED_CARRIER_OPERATION)?;
-        Some([first, second])
+        Some([first.id(), second.id()])
     } else {
         None
     };
@@ -620,7 +618,7 @@ fn unique_linked_declared_entity_handle_arc_carrier<'a>(
     feature: &str,
     operand: &FeatureInputOperand,
     expected_radius: f64,
-) -> Result<Option<(&'a SketchInputEntity, DimensionedCurveNative)>, cadmpeg_core::CodecError> {
+) -> Result<Option<(&'a SketchInputEntity, DimensionedCurveNative<'a>)>, cadmpeg_core::CodecError> {
     if !expected_radius.is_finite() || expected_radius <= 0.0 {
         return Ok(None);
     }
@@ -688,7 +686,7 @@ fn unique_declared_entity_handle_circular_carrier<'a>(
     feature: &str,
     operand: &FeatureInputOperand,
     expected_radius: f64,
-) -> Result<Option<(&'a SketchInputEntity, DimensionedCurveNative)>, cadmpeg_core::CodecError> {
+) -> Result<Option<(&'a SketchInputEntity, DimensionedCurveNative<'a>)>, cadmpeg_core::CodecError> {
     if !expected_radius.is_finite() || expected_radius <= 0.0 {
         return Ok(None);
     }
@@ -1001,7 +999,7 @@ struct DimensionedArcGeometry {
 fn transformed_dimensioned_arc(
     ctx: &DecodeContext<'_>,
     transform: super::transforms::MarkerTransform,
-    arc: &DimensionedArcNative,
+    arc: &DimensionedArcNative<'_>,
     native_to_ir: f64,
     quantum: f64,
 ) -> Result<Option<DimensionedArcGeometry>, cadmpeg_core::CodecError> {
@@ -1058,7 +1056,7 @@ fn transformed_dimensioned_arc(
         )?;
         for index in order {
             let text = ctx
-                .copy_retained_text(&endpoints[index], "retain SLDPRT dimensioned arc endpoint")?;
+                .copy_retained_text(endpoints[index], "retain SLDPRT dimensioned arc endpoint")?;
             endpoint_refs.push(text);
         }
     }
@@ -3102,3 +3100,6 @@ mod dimensions_tests;
 
 #[cfg(test)]
 mod fixed_radial_grammar_tests;
+
+#[cfg(test)]
+mod arc_endpoint_borrow_tests;
