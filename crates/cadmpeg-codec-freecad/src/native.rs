@@ -579,8 +579,6 @@ mod tests {
         );
     }
 
-
-
     #[test]
     fn entry_reference_admission_stops_after_first_invalid_reference() {
         crate::test_support::with_service_context(&[], |ctx| {

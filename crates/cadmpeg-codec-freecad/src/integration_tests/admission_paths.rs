@@ -89,7 +89,6 @@ fn empty_orchestration_paths_use_no_work() {
     assert!(crate::semantic_losses(&ctx, &ir, &affected, Vec::new())
         .expect("no semantic sources")
         .is_empty());
-
 }
 
 fn gui_property(side_entries: Vec<String>) -> crate::native::GuiPropertyRecord {
@@ -181,7 +180,6 @@ fn empty_logical_ledger_skips_entry_and_owner_indexes() {
     crate::validate_logical_ledger(&ctx, &[], &owners, &HashSet::new(), &mut findings)
         .expect("no ledger index consumer");
     assert!(findings.is_empty());
-
 }
 
 #[test]
@@ -441,7 +439,6 @@ fn element_maps_without_identity_references_skip_both_indexes() {
     .expect("no identity-index consumers");
     assert!(findings.is_empty());
     assert_eq!(ctx.resource_refusal(), None);
-
 }
 
 #[test]

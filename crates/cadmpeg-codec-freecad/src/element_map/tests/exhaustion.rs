@@ -152,8 +152,6 @@ fn field_refusal_preserves_unvisited_suffix_and_original_fuse() {
     });
 }
 
-
-
 #[test]
 fn legacy_record_and_zero_id_ranges_preserve_grouped_names() {
     with_work(u64::MAX, |ctx| {

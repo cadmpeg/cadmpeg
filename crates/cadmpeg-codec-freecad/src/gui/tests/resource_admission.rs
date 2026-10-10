@@ -81,7 +81,6 @@ fn gui_material_properties_refuse_at_matching_collection_limit() {
     );
 }
 
-
 fn assert_gui_appearance_loss_limits(
     collection_operation: &'static str,
     text_operation: &'static str,
@@ -1910,5 +1909,9 @@ fn gui_presentation_losses_refuse_at_matching_collection_limit() {
     let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
     let gui = br#"<Document SchemaVersion="1"><Camera settings=""/><ViewProviderData Count="1"><ViewProvider name="Unknown"><Properties Count="1"><Property name="" type="App::PropertyString"><String value="value"/></Property></Properties></ViewProvider></ViewProviderData></Document>"#;
     let bytes = archive_entries(&[("Document.xml", document), ("GuiDocument.xml", gui)]);
-    assert_gui_decode_limit_at(&bytes, cadmpeg_core::decode::ResourceDimension::CollectionItems, "FCStd GUI graph losses");
+    assert_gui_decode_limit_at(
+        &bytes,
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "FCStd GUI graph losses",
+    );
 }

@@ -863,8 +863,6 @@ fn one_profile_sweep(ctx: &DecodeContext<'_>) -> Result<Option<FeatureDefinition
     super::super::sweep_definition(ctx, "Part::Sweep", &[&profile, &path], &HashMap::new())
 }
 
-
-
 #[test]
 fn single_parameter_and_sweep_skip_rotation_and_profile_deduplication() {
     with_unlimited_probe(
@@ -896,8 +894,6 @@ fn single_parameter_and_sweep_skip_rotation_and_profile_deduplication() {
             })) if path == "path-property"));
     }
 }
-
-
 
 #[test]
 fn constraint_boolean_attributes_use_the_shared_native_boolean_grammar() {

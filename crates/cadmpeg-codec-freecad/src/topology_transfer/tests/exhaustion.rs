@@ -7,8 +7,8 @@ use crate::brep::{
 };
 use crate::native::element_map::ScopedData;
 use crate::topology_transfer::{
-    connected_components, edge_endpoint_uses, referenced_pcurve_ids,
-    select_pcurve_representation, source_topology_indices, Builder, GeometryIndexes,
+    connected_components, edge_endpoint_uses, referenced_pcurve_ids, select_pcurve_representation,
+    source_topology_indices, Builder, GeometryIndexes,
 };
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLimit};
 use cadmpeg_core::CodecError;
@@ -193,8 +193,6 @@ fn empty_builder_scans_need_no_work() {
         assert_eq!(ctx.resource_refusal(), None);
     });
 }
-
-
 
 fn shape_use(shape: usize, orientation: TextOrientation) -> TextShapeUse {
     TextShapeUse {

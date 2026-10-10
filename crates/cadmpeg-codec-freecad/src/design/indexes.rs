@@ -23,10 +23,7 @@ pub(super) struct ObjectIndex<'ctx, 'arena, 'objects> {
 }
 
 impl<'ctx, 'arena, 'objects> ObjectIndex<'ctx, 'arena, 'objects> {
-    pub(super) fn new(
-        ctx: &'ctx DecodeContext<'arena>,
-        objects: &'objects [ObjectRecord],
-    ) -> Self {
+    pub(super) fn new(ctx: &'ctx DecodeContext<'arena>, objects: &'objects [ObjectRecord]) -> Self {
         Self {
             ctx,
             objects,

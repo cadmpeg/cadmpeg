@@ -667,8 +667,6 @@ fn explicit_profile_locus_failure_does_not_precharge_locus_suffix() {
     assert_eq!(ctx.resource_refusal(), Some(limit));
 }
 
-
-
 #[test]
 fn explicit_profile_relations_skip_unused_entity_index() {
     let entities = (0..8193).map(line_entity).collect::<Vec<_>>();
@@ -710,22 +708,35 @@ fn explicit_profile_relations_skip_unused_entity_index() {
 #[test]
 fn center_only_profile_coincidence_needs_no_entity_index() {
     let mut entities = (0..8193).map(line_entity).collect::<Vec<_>>();
-    for (index, center) in [Point2::new(0.0, 0.0), Point2::new(2.0, 0.0)].into_iter().enumerate() {
+    for (index, center) in [Point2::new(0.0, 0.0), Point2::new(2.0, 0.0)]
+        .into_iter()
+        .enumerate()
+    {
         entities[index].geometry = SketchGeometry::try_from(SketchGeometryDefinition::Circle {
-            center, radius: Length::new(1.0).expect("radius"),
-        }).expect("circle geometry");
+            center,
+            radius: Length::new(1.0).expect("radius"),
+        })
+        .expect("circle geometry");
     }
-    let constraint = coincident_constraint("test:test:constraint#centers", entities[0].sketch.clone(), vec![
-        SketchLocus::Center(entities[0].id().clone()), SketchLocus::Center(entities[1].id().clone()),
-    ]);
+    let constraint = coincident_constraint(
+        "test:test:constraint#centers",
+        entities[0].sketch.clone(),
+        vec![
+            SketchLocus::Center(entities[0].id().clone()),
+            SketchLocus::Center(entities[1].id().clone()),
+        ],
+    );
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     policy.limits.max_materialized_bytes = 0;
     policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("context");
     let eligible = std::collections::BTreeSet::from([0, 1]);
-    let (relations, _storage) = super::explicit_endpoint_relations(&ctx, &eligible, &entities, &[constraint]).expect("centers are not endpoints");
+    let (relations, _storage) =
+        super::explicit_endpoint_relations(&ctx, &eligible, &entities, &[constraint])
+            .expect("centers are not endpoints");
     assert!(relations.is_empty());
     assert_eq!(ctx.resource_refusal(), None);
 }
@@ -733,17 +744,29 @@ fn center_only_profile_coincidence_needs_no_entity_index() {
 #[test]
 fn empty_profile_entity_selection_skips_active_endpoint_coincidence() {
     let entities = (0..8193).map(line_entity).collect::<Vec<_>>();
-    let constraint = coincident_constraint("test:test:constraint#endpoints", entities[0].sketch.clone(), vec![
-        SketchLocus::Start(entities[0].id().clone()), SketchLocus::End(entities[1].id().clone()),
-    ]);
+    let constraint = coincident_constraint(
+        "test:test:constraint#endpoints",
+        entities[0].sketch.clone(),
+        vec![
+            SketchLocus::Start(entities[0].id().clone()),
+            SketchLocus::End(entities[1].id().clone()),
+        ],
+    );
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     policy.limits.max_materialized_bytes = 0;
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_work_units = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    let (relations, _storage) = super::explicit_endpoint_relations(&ctx, &std::collections::BTreeSet::new(), &entities, &[constraint]).expect("no eligible endpoint");
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("context");
+    let (relations, _storage) = super::explicit_endpoint_relations(
+        &ctx,
+        &std::collections::BTreeSet::new(),
+        &entities,
+        &[constraint],
+    )
+    .expect("no eligible endpoint");
     assert!(relations.is_empty());
     assert_eq!(ctx.resource_refusal(), None);
 }

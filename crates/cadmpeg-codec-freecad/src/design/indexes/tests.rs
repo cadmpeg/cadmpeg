@@ -263,8 +263,6 @@ fn body_predecessor_member_first_insertion_refuses_before_long_suffix() {
     assert_eq!(ctx.resource_refusal(), Some(limit));
 }
 
-
-
 #[test]
 fn body_predecessor_empty_members_return_no_predecessor() {
     let body = object("body", 0);

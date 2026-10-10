@@ -987,18 +987,26 @@ mod exhaustion;
 
 #[test]
 fn document_root_string_hasher_skips_unrelated_property_owners() {
-    let xml = roxmltree::Document::parse("<Document><StringHasher count='1'>1.c name</StringHasher></Document>").expect("document XML");
-    let properties = (0..4097).map(|index| {
-        let mut property = test_property("App::PropertyString", "<Property/>");
-        property.id = format!("fcstd:native:property#Unused{index}");
-        property.xml = crate::native::RetainedXml::from_text("<Property/>".into(), 1000 + index * 100).expect("property span");
-        property
-    }).collect::<Vec<_>>();
+    let xml = roxmltree::Document::parse(
+        "<Document><StringHasher count='1'>1.c name</StringHasher></Document>",
+    )
+    .expect("document XML");
+    let properties = (0..4097)
+        .map(|index| {
+            let mut property = test_property("App::PropertyString", "<Property/>");
+            property.id = format!("fcstd:native:property#Unused{index}");
+            property.xml =
+                crate::native::RetainedXml::from_text("<Property/>".into(), 1000 + index * 100)
+                    .expect("property span");
+            property
+        })
+        .collect::<Vec<_>>();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 64;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    let (tables, maps) = parse(&ctx, &xml, 1, &properties, &[]).expect("document carrier has no property owner");
+    let (tables, maps) =
+        parse(&ctx, &xml, 1, &properties, &[]).expect("document carrier has no property owner");
     assert_eq!(tables.as_slice().len(), 1);
     assert_eq!(tables.as_slice()[0].owner_property, None);
     assert!(maps.is_empty());
@@ -1007,15 +1015,29 @@ fn document_root_string_hasher_skips_unrelated_property_owners() {
 
 #[test]
 fn empty_persisted_map_keeps_record_without_topology_consumers() {
-    let property = test_property("Part::PropertyPartShape", "<Property><Part/><ElementMap file='Empty.map' count='0'/></Property>");
-    let entry = crate::test_support::entry_record("fcstd:native:entry#Empty.map".into(), "Empty.map".into(), cadmpeg_core::container::ContainerRole::Auxiliary, Vec::new(), b"0".to_vec());
-    let (_, mut maps) = test_parse(b"<Document/>", 1, &[property], &[entry]).expect("persisted empty map");
+    let property = test_property(
+        "Part::PropertyPartShape",
+        "<Property><Part/><ElementMap file='Empty.map' count='0'/></Property>",
+    );
+    let entry = crate::test_support::entry_record(
+        "fcstd:native:entry#Empty.map".into(),
+        "Empty.map".into(),
+        cadmpeg_core::container::ContainerRole::Auxiliary,
+        Vec::new(),
+        b"0".to_vec(),
+    );
+    let (_, mut maps) =
+        test_parse(b"<Document/>", 1, &[property], &[entry]).expect("persisted empty map");
     assert_eq!(maps.len(), 1);
     assert!(maps[0].maps.root().groups.is_empty());
-    let occurrences = (0..4097).map(|index| crate::topology_transfer::TopologyOccurrence {
-        property: maps[0].property.clone(), indexed_name: "Edge", source_index: index,
-        topology_id: format!("fcstd:model:edge#Unused:{index}"),
-    }).collect::<Vec<_>>();
+    let occurrences = (0..4097)
+        .map(|index| crate::topology_transfer::TopologyOccurrence {
+            property: maps[0].property.clone(),
+            indexed_name: "Edge",
+            source_index: index,
+            topology_id: format!("fcstd:model:edge#Unused:{index}"),
+        })
+        .collect::<Vec<_>>();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;

@@ -284,11 +284,21 @@ impl ElementMapNodes {
     pub(crate) fn has_topology_names(&self, ctx: &DecodeContext<'_>) -> Result<bool, CodecError> {
         let mut groups = self.root().groups.iter();
         while groups.len() != 0 {
-            let Some(group) = ctx.next_charged(&mut groups, "FreeCAD element topology consumer groups")? else { break; };
+            let Some(group) =
+                ctx.next_charged(&mut groups, "FreeCAD element topology consumer groups")?
+            else {
+                break;
+            };
             let mut chains = group.names.iter();
             while chains.len() != 0 {
-                let Some(chain) = ctx.next_charged(&mut chains, "FreeCAD element topology consumer names")? else { break; };
-                if !chain.is_empty() { return Ok(true); }
+                let Some(chain) =
+                    ctx.next_charged(&mut chains, "FreeCAD element topology consumer names")?
+                else {
+                    break;
+                };
+                if !chain.is_empty() {
+                    return Ok(true);
+                }
             }
         }
         Ok(false)

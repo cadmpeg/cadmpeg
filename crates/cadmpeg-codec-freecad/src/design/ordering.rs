@@ -356,7 +356,8 @@ pub(super) fn bind_parameter_dependencies<'ctx>(
     let mut needs_qualified = false;
     let mut consumers = parameters.iter();
     while consumers.len() != 0 && !(needs_local && needs_qualified) {
-        let Some(parameter) = ctx.next_charged(&mut consumers, "fcstd dependency consumers")? else {
+        let Some(parameter) = ctx.next_charged(&mut consumers, "fcstd dependency consumers")?
+        else {
             break;
         };
         if let Some(owner) = parameter.owner.as_ref() {
@@ -375,11 +376,13 @@ pub(super) fn bind_parameter_dependencies<'ctx>(
             |identifier| {
                 needs_local |= parameter.owner.is_some();
                 if !needs_qualified {
-                    needs_qualified = ctx.position_by(
-                        identifier.bytes(),
-                        |byte| Ok(byte == b'.'),
-                        "fcstd qualified dependency demand",
-                    )?.is_some();
+                    needs_qualified = ctx
+                        .position_by(
+                            identifier.bytes(),
+                            |byte| Ok(byte == b'.'),
+                            "fcstd qualified dependency demand",
+                        )?
+                        .is_some();
                 }
                 Ok(!(needs_local && needs_qualified))
             },
@@ -405,25 +408,27 @@ pub(super) fn bind_parameter_dependencies<'ctx>(
                 };
                 let object_names = if needs_qualified {
                     Some(match &mut object_names {
-                    Some(names) => names,
-                    slot @ None => {
-                        let mut names = HashMap::new();
-                        let mut source = objects.iter();
-                        while source.len() != 0 {
-                            let Some(object) = ctx
-                                .next_charged(&mut source, "fcstd parameter dependency objects")?
-                            else {
-                                break;
-                            };
-                            ctx.insert_hash_map(
-                                &mut names,
-                                feature_id(ctx, object)?,
-                                object.name().as_str(),
-                                "fcstd parameter dependency object names",
-                            )?;
+                        Some(names) => names,
+                        slot @ None => {
+                            let mut names = HashMap::new();
+                            let mut source = objects.iter();
+                            while source.len() != 0 {
+                                let Some(object) = ctx.next_charged(
+                                    &mut source,
+                                    "fcstd parameter dependency objects",
+                                )?
+                                else {
+                                    break;
+                                };
+                                ctx.insert_hash_map(
+                                    &mut names,
+                                    feature_id(ctx, object)?,
+                                    object.name().as_str(),
+                                    "fcstd parameter dependency object names",
+                                )?;
+                            }
+                            slot.insert(names)
                         }
-                        slot.insert(names)
-                    }
                     })
                 } else {
                     None
@@ -445,45 +450,47 @@ pub(super) fn bind_parameter_dependencies<'ctx>(
                     .flatten()
                 {
                     if needs_local {
-                    let key = (owner, name);
-                    if let Some(candidate) =
-                        ctx.get_mut_hash_map(&mut local, &key, "fcstd unique local candidates")?
-                    {
-                        *candidate = None;
-                    } else {
-                        ctx.insert_hash_map(
-                            &mut local,
-                            key,
-                            Some(&parameter.id),
-                            "fcstd unique local candidates",
-                        )?;
-                    }
-                    }
-                    if let Some(object_names) = object_names.as_ref() {
-                    if let Some(object) =
-                        ctx.get_hash_map(object_names, owner, "fcstd qualified candidate owner")?
-                    {
-                        let (mut key_storage, key);
-                        (key, key_storage) = ctx.format_scoped(
-                            format_args!("{object}.{name}"),
-                            "fcstd qualified candidate name",
-                        )?;
-                        if let Some(candidate) = ctx.get_mut_hash_map(
-                            &mut qualified,
-                            key.as_str(),
-                            "fcstd unique qualified candidates",
-                        )? {
+                        let key = (owner, name);
+                        if let Some(candidate) =
+                            ctx.get_mut_hash_map(&mut local, &key, "fcstd unique local candidates")?
+                        {
                             *candidate = None;
                         } else {
-                            qualified_key_storage.absorb(&mut key_storage)?;
                             ctx.insert_hash_map(
-                                &mut qualified,
+                                &mut local,
                                 key,
                                 Some(&parameter.id),
-                                "fcstd unique qualified candidates",
+                                "fcstd unique local candidates",
                             )?;
                         }
                     }
+                    if let Some(object_names) = object_names.as_ref() {
+                        if let Some(object) = ctx.get_hash_map(
+                            object_names,
+                            owner,
+                            "fcstd qualified candidate owner",
+                        )? {
+                            let (mut key_storage, key);
+                            (key, key_storage) = ctx.format_scoped(
+                                format_args!("{object}.{name}"),
+                                "fcstd qualified candidate name",
+                            )?;
+                            if let Some(candidate) = ctx.get_mut_hash_map(
+                                &mut qualified,
+                                key.as_str(),
+                                "fcstd unique qualified candidates",
+                            )? {
+                                *candidate = None;
+                            } else {
+                                qualified_key_storage.absorb(&mut key_storage)?;
+                                ctx.insert_hash_map(
+                                    &mut qualified,
+                                    key,
+                                    Some(&parameter.id),
+                                    "fcstd unique qualified candidates",
+                                )?;
+                            }
+                        }
                     }
                 }
             }

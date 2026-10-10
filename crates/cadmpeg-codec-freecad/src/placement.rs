@@ -409,8 +409,6 @@ mod tests {
         }
     }
 
-
-
     fn attribute_trace(
         property: &PropertyRecord,
     ) -> (

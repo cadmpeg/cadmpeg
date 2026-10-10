@@ -95,68 +95,6 @@ fn actual_visits_nonfinite_numeric_value_stops_before_long_list_suffix() {
 }
 
 #[test]
-fn actual_visits_empty_design_routes_preserve_original_refusal() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let CodecError::ResourceLimit(original) = ctx
-        .charge_work(1, "original empty-route fuse")
-        .expect_err("fuse context")
-    else {
-        panic!("resource refusal")
-    };
-    let errors = [
-        super::super::feature_state(&ctx, "State", &[])
-            .map(drop)
-            .expect_err("state fuse"),
-        super::super::native_parameters(&ctx, &[])
-            .map(drop)
-            .expect_err("native parameter fuse"),
-        super::super::external_link_indices(&ctx, None)
-            .map(drop)
-            .expect_err("link index fuse"),
-        super::super::sketch_attributes(&ctx, None)
-            .map(drop)
-            .expect_err("attribute fuse"),
-        super::super::builtin_reference_usage(&ctx, None)
-            .map(drop)
-            .expect_err("reference fuse"),
-        super::super::multi_transform_stage_seeds(
-            &ctx,
-            "stage",
-            &std::collections::HashMap::new(),
-            &[],
-            &std::collections::BTreeMap::new(),
-        )
-        .map(drop)
-        .expect_err("consumer fuse"),
-    ];
-    for error in errors {
-        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit == original));
-    }
-    let object = super::super::ObjectRecord {
-        identity: crate::native::object_identity::ObjectIdentity::try_new(
-            "fcstd:native:object#State".into(),
-            "State".into(),
-        )
-        .expect("object identity"),
-        type_name: "Part::Feature".into(),
-        persistent_id: None,
-        view_type: None,
-        attributes: std::collections::BTreeMap::new(),
-        dependencies: Vec::new(),
-        dependency_allow_partial: None,
-        order: 0,
-        data: None,
-    };
-    assert!(
-        matches!(super::super::append_operation_parameters(&ctx, &mut Vec::new(), &object, &cadmpeg_ir::features::FeatureId::mint(format!("fcstd:design:feature#{}", object.name())).expect("owner feature identity"), &[]),
-        Err(CodecError::ResourceLimit(limit)) if limit == original)
-    );
-}
-
-#[test]
 fn actual_visits_nested_constraint_failure_stops_before_long_record_suffix() {
     let mut property = super::linked_property("Sketch", "Constraints", "unused");
     property.type_name = "Sketcher::PropertyConstraintList".into();

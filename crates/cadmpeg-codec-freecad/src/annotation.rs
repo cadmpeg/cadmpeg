@@ -1594,26 +1594,51 @@ pub(crate) mod tests {
         long.extend(
             (0..=cap).map(|index| drawing_record(&format!("fcstd:native:object#Unused{index}"))),
         );
-        let measured = crate::test_support::refusal_at(ResourceDimension::WorkUnits, &[], "fcstd annotation drawing identities", |ctx| {
-            super::transfer_neutral(ctx, &mut cadmpeg_ir::document::Model::default(), &records, &[], &small)
-        });
-        let CodecError::ResourceLimit(measured) = measured else { panic!("drawing visit refusal"); };
+        let measured = crate::test_support::refusal_at(
+            ResourceDimension::WorkUnits,
+            &[],
+            "fcstd annotation drawing identities",
+            |ctx| {
+                super::transfer_neutral(
+                    ctx,
+                    &mut cadmpeg_ir::document::Model::default(),
+                    &records,
+                    &[],
+                    &small,
+                )
+            },
+        );
+        let CodecError::ResourceLimit(measured) = measured else {
+            panic!("drawing visit refusal");
+        };
         assert_eq!(measured.dimension, ResourceDimension::WorkUnits);
         assert!(measured.limit > 0);
         let run = |drawings: &[crate::native::DrawingRecord], dimension| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::default();
-            policy.limits.max_work_units = if dimension == ResourceDimension::WorkUnits { measured.limit } else { cap };
-            if dimension == ResourceDimension::MaterializedBytes { policy.limits.max_materialized_bytes = 0; }
+            policy.limits.max_work_units = if dimension == ResourceDimension::WorkUnits {
+                measured.limit
+            } else {
+                cap
+            };
+            if dimension == ResourceDimension::MaterializedBytes {
+                policy.limits.max_materialized_bytes = 0;
+            }
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
             let mut model = cadmpeg_ir::document::Model::default();
-            let error = super::transfer_neutral(&ctx, &mut model, &records, &[], drawings).expect_err("required membership work or storage refuses");
-            let CodecError::ResourceLimit(limit) = error else { panic!("resource refusal") };
+            let error = super::transfer_neutral(&ctx, &mut model, &records, &[], drawings)
+                .expect_err("required membership work or storage refuses");
+            let CodecError::ResourceLimit(limit) = error else {
+                panic!("resource refusal")
+            };
             assert_eq!(limit.dimension, dimension);
             assert_eq!(ctx.resource_refusal(), Some(limit));
             limit
         };
-        for dimension in [ResourceDimension::WorkUnits, ResourceDimension::MaterializedBytes] {
+        for dimension in [
+            ResourceDimension::WorkUnits,
+            ResourceDimension::MaterializedBytes,
+        ] {
             assert_eq!(run(&small, dimension), run(&long, dimension));
         }
     }
