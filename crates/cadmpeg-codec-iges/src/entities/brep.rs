@@ -330,20 +330,21 @@ struct PcurveEndpointCheck {
     tolerance: f64,
 }
 
-fn resolve_pcurve_uses<'a>(
-    source: &'a CadIr,
+fn resolve_pcurve_uses<'ctx, 'geometry>(
+    source: &CadIr,
     uses: &[(bool, u32)],
     support: &SurfaceSupport<'_>,
     endpoints: PcurveEndpointCheck,
-    ctx: &'a DecodeContext<'_>,
-    (model_index, composite): (
-        &mut Option<cadmpeg_ir::index::DecodeModelIndex<'a, 'a>>,
+    ctx: &'ctx DecodeContext<'_>,
+    (model_index, snapshot, composite): (
+        &mut Option<cadmpeg_ir::index::DecodeModelIndex<'ctx, 'geometry>>,
+        &'geometry super::evaluation_copy::SourceGeometrySnapshot<'ctx>,
         (
             &mut Option<super::composite::CompositeIndex>,
             &mut ScopedReservation<'_>,
         ),
     ),
-) -> Result<Option<ResolvedPcurveUses<'a>>, super::composite::CompositeCurveError> {
+) -> Result<Option<ResolvedPcurveUses<'ctx>>, super::composite::CompositeCurveError> {
     let PcurveEndpointCheck {
         start: expected_start,
         end: expected_end,
@@ -357,7 +358,8 @@ fn resolve_pcurve_uses<'a>(
     }
     // A model without procedural surface records evaluates the support directly.
     if !source.model.procedural_surfaces.is_empty() && model_index.is_none() {
-        *model_index = Some(cadmpeg_ir::index::ModelIndex::new_model_only(source, ctx)?);
+        let geometry = snapshot.model(source, ctx)?;
+        *model_index = Some(cadmpeg_ir::index::ModelIndex::new_model_only(geometry, ctx)?);
     }
     let index = model_index.as_ref();
     let (composite_index, composite_storage) = composite;
@@ -1379,6 +1381,8 @@ pub(super) fn project<'ctx>(
 
     // The session holds the document's exclusive borrow. Its identity index
     // remains unbuilt until the first body reaches commit admission.
+    let snapshot = super::evaluation_copy::SourceGeometrySnapshot::new(ctx)?;
+    let mut model_index = None;
     let source_edge_count = ir.model.edges.len();
     let mut commit_session = CommitSession::new(ir, ctx, None)?;
     let mut edges_by_curve = BTreeMap::<String, Vec<usize>>::new();
@@ -1398,7 +1402,6 @@ pub(super) fn project<'ctx>(
         let mut candidate_storage = ctx.reserve_scoped(0, "iges B-rep candidate storage")?;
         let accepted = candidate_storage.with_storage(|| -> Result<bool, CodecError> {
         let ir = commit_session.document();
-        let mut model_index = None;
         // Source edges precede explicit topology. Body commits append derived
         // edges, which must not become additional source occurrences.
         let mut radial_identity_storage = ctx.reserve_scoped(0, "iges B-rep radial identities")?;
@@ -1535,6 +1538,7 @@ pub(super) fn project<'ctx>(
                                 ctx,
                                 (
                                     &mut model_index,
+                                    &snapshot,
                                     (&mut composite_index, &mut composite_storage),
                                 ),
                             ) {
@@ -1658,6 +1662,7 @@ pub(super) fn project<'ctx>(
                             ctx,
                             (
                                 &mut model_index,
+                                    &snapshot,
                                 (&mut composite_index, &mut composite_storage),
                             ),
                         ) {
@@ -2156,7 +2161,6 @@ pub(super) fn project<'ctx>(
             visible: None,
         });
         candidate.model_mut().finalize(ctx)?;
-        drop(model_index);
         if commit_session.commit_model(candidate)?.is_err() {
             with_session_storage(ctx, || super::push_entity_loss_with_scoped_slots(
                 ctx,

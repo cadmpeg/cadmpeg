@@ -433,6 +433,8 @@ mod csg;
 pub(crate) mod curve_conversion;
 pub(crate) mod drawing;
 pub(crate) mod geometry;
+mod evaluation_copy;
+mod evaluation_sources;
 mod offsets;
 mod presentation;
 mod splines;

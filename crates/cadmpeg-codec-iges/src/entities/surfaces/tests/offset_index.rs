@@ -446,3 +446,76 @@ fn empty_offset_lookup_index_accepts_zero_budgets_and_preserves_refusal() {
     assert!(matches!(ctx.finish_session(),
         Err(CodecError::ResourceLimit(last)) if last == first));
 }
+
+fn evaluation_plane(height: f64) -> SolvedSurfaceGeometry {
+    SolvedSurfaceGeometry::Plane(cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+        cadmpeg_ir::math::Point3::new(0.0, 0.0, height),
+        cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+        cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+    ).unwrap())
+}
+
+fn append_evaluation_offset(ir: &mut CadIr, index: usize) {
+    let id = SurfaceId::mint(format!("test:model:surface#offset{index}")).unwrap();
+    let construction = ProceduralSurfaceId::mint(format!("test:model:construction#offset{index}")).unwrap();
+    let support = if index == 0 { "test:model:surface#base" } else { "test:model:surface#offset0" };
+    ir.model.procedural_surfaces.push(ProceduralSurface::new(
+        construction.clone(),
+        ProceduralSurfaceDefinition::Offset(cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+            SurfaceId::mint(support).unwrap(), 1.0, Some(0), Some(0), false,
+            cadmpeg_ir::geometry::OffsetExtension::Legacy {
+                flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {}, cache: None,
+            },
+        ).unwrap()), None,
+    ));
+    ir.model.surfaces.push(Surface {
+        id, geometry: SurfaceGeometry::Procedural {
+            construction, cache: Some(evaluation_plane(if index == 0 { 1.0 } else { 2.0 })),
+        }, source_object: None,
+    });
+}
+
+fn shared_offset_evaluation_work(count: usize) -> u64 {
+    let run = |ctx: &DecodeContext<'_>| -> Result<(), CodecError> {
+        let mut ir = CadIr::empty();
+        ir.model.surfaces.push(Surface {
+            id: SurfaceId::mint("test:model:surface#base").unwrap(),
+            geometry: SurfaceGeometry::Solved(evaluation_plane(0.0)), source_object: None,
+        });
+        append_evaluation_offset(&mut ir, 0);
+        let support = SurfaceId::mint("test:model:surface#offset0").unwrap();
+        let mut lookup_storage = ctx.reserve_scoped(0, "test offset lookups")?;
+        let lookups = lookup_storage.with_storage(|| OffsetLookups::from_ir(&ir, ctx))?;
+        let mut source_storage = ctx.reserve_scoped(0, "test offset evaluation sources")?;
+        let mut sources = None;
+        for index in 1..=count {
+            let normal = super::super::indicator_normal(&ir, &support, &lookups, (&mut sources, &mut source_storage), ctx)?;
+            assert_eq!(normal, Some(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)));
+            append_evaluation_offset(&mut ir, index);
+            source_storage.with_storage(|| sources.as_mut().unwrap().extend_surfaces(&ir, ctx))?;
+        }
+        Ok(())
+    };
+    crate::test_support::with_service_context(&[], |ctx| run(ctx).unwrap());
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits, "test shared offset evaluation work", |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            crate::test_support::with_policy_context(&[], &policy, |ctx| {
+                run(ctx)?;
+                ctx.charge_work(1, "test shared offset evaluation work")
+            })
+        },
+    );
+    let CodecError::ResourceLimit(limit) = error else { panic!("expected work accounting refusal") };
+    assert_eq!(limit.operation, "test shared offset evaluation work");
+    assert_eq!(limit.additional, 1);
+    limit.used
+}
+
+#[test]
+fn shared_seed_offset_evaluation_work_grows_below_quadratic() {
+    let small = shared_offset_evaluation_work(1024);
+    let large = shared_offset_evaluation_work(2048);
+    assert!(large < 5 * small / 2, "doubling offset evaluations: {small} -> {large}");
+}
