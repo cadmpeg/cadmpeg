@@ -56,10 +56,8 @@ impl NativeUnknownRecord {
         use cadmpeg_core::CodecError;
         let record = match record {
             Ok(record) => record,
+            Err(error) if error.resource_limit().is_some() => return Err(error.into()),
             Err(error) => {
-                if let Some(limit) = ctx.resource_refusal() {
-                    return Err(CodecError::ResourceLimit(limit));
-                }
                 return Err(CodecError::Malformed(
                     ctx.format_retained(format_args!("{error}"), operation)?,
                 ));
