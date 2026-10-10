@@ -267,3 +267,75 @@ fn freeform_surface_source_formats_the_final_scoped_tag() {
         }
     }
 }
+
+#[test]
+fn incomplete_resolved_blocks_build_no_model_indexes() {
+    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, ResourceDimension};
+    let stream = crate::test_support::test_b5::b5_closed_triangle_stream_with_native_vertex_chain();
+    let file = crate::test_support::test_container::standard_catpart_from_streams(&stream, &[]);
+    let original = crate::test_support::with_service_context(|ctx| {
+        let scan = crate::container::scan_bytes(ctx, file.as_slice()).expect("fixture container");
+        super::super::try_decode_freeform_surfaces(
+            ctx,
+            &scan,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+        .expect("source transfer")
+        .expect("populated model")
+        .ir
+    });
+    let bytes = crate::test_support::test_b2::b2_edge_block_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    crate::test_support::with_service_context(|ctx| {
+        let blocks =
+            crate::families::consolidated::records::resolve_consolidated_edge_blocks_from_records(
+                ctx,
+                &bytes,
+                &records,
+                &mut crate::nurbs::LaneRefusals::new(),
+            )
+            .expect("resolved blocks");
+        assert_eq!(blocks.len(), 1);
+        assert!(
+            crate::families::consolidated::records::consolidated_topology_edge_runs_from_records(
+                ctx, &bytes, &records
+            )
+            .expect("topology inventory")
+            .is_empty()
+        );
+    });
+    for operation in [
+        "catia_model_surface_positions",
+        "catia_freeform_points_index",
+        "catia_freeform_vertices_index",
+        "catia_zero_wire_curve_positions",
+        "catia_freeform_faces_index",
+        "catia_freeform_loops_index",
+        "catia_freeform_coedges_index",
+        "catia_freeform_edges_visits",
+    ] {
+        let mut ir = original.clone();
+        let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
+        let counts = crate::test_support::with_work_limit(u64::MAX, |ctx| {
+            super::super::append_resolved_consolidated_surface_curves(
+                &mut ir,
+                &mut cadmpeg_ir::AnnotationBuilder::new(),
+                &bytes,
+                &records,
+                super::super::FreeformSurfacePool {
+                    surfaces: &[],
+                    surface_ids: &[],
+                    surface_alias_tags: &std::collections::HashMap::new(),
+                },
+                &mut crate::nurbs::LaneRefusals::new(),
+                &mut crate::families::FamilyEntityAdmission::new(ctx),
+            )
+        })
+        .expect("no complete-run transfer consumer");
+        assert_eq!(counts.standard_edges, 0);
+        assert_eq!(counts.partner_supports, 0);
+        assert_eq!(counts.standard_face_surfaces, 0);
+        assert_eq!(counts.standard_face_pcurves, 0);
+        assert_eq!(ir.model, original.model);
+    }
+}

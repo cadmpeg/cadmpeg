@@ -207,3 +207,73 @@ fn selected_wire_carrier_preserves_retained_refusal_at_edge_insertion() {
     assert_eq!(ir.model.vertices.len(), 2);
     assert!(ir.model.edges.is_empty());
 }
+
+#[test]
+fn singleton_wire_search_selects_first_curve_without_indexing_the_tail() {
+    let (mut ir, wires) = wire_fixture(false);
+    for index in 0..128 {
+        ir.model.curves.push(Curve {
+            id: CurveId::mint(format!("catia:test:curve#unrelated-{index}"))
+                .expect("fixture identity"),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+            source_object: None,
+        });
+    }
+    ir.model.curves.push(Curve {
+        id: wires[0].0.clone(),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+        source_object: None,
+    });
+    let _probe = RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "catia_zero_wire_curve_positions",
+        None,
+    );
+    assert!(crate::test_support::with_work_limit(u64::MAX, |ctx| {
+        attach_standalone_wires(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &wires,
+            &mut super::super::FamilyEntityAdmission::new(ctx),
+        )
+    })
+    .expect("one first-match search"));
+    assert_eq!(ir.model.edges.len(), 1);
+    assert_eq!(ir.model.edges[0].curve(), Some(&wires[0].0));
+    // The wire emitter stores the end before the start. The fixture line is
+    // (2, 3, 5) + t * (1, 0, 0), with the wire interval [0, 1].
+    assert_eq!(
+        ir.model.points[0].position().get(),
+        Point3::new(3.0, 3.0, 5.0)
+    );
+    assert_eq!(
+        ir.model.points[1].position().get(),
+        Point3::new(2.0, 3.0, 5.0)
+    );
+}
+
+#[test]
+fn singleton_wire_search_propagates_work_refusal() {
+    for operation in [
+        "catia_freeform_wire_curve_search",
+        "catia_freeform_wire_curve_id_comparison",
+    ] {
+        let refused = crate::test_support::with_work_refusal(operation, |ctx| {
+            let (mut ir, wires) = wire_fixture(false);
+            let before = ir.model.clone();
+            let result = attach_standalone_wires(
+                &mut ir,
+                &mut AnnotationBuilder::new(),
+                &wires,
+                &mut super::super::FamilyEntityAdmission::new(ctx),
+            );
+            if result.is_err() {
+                assert_eq!(ir.model, before);
+            }
+            result
+        });
+        assert!(
+            matches!(refused, Err(CodecError::ResourceLimit(limit)) if limit.operation == operation)
+        );
+    }
+}

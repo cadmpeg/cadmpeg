@@ -3236,78 +3236,131 @@ pub(crate) fn b2_resolved_revolutions_from_records(
     if current.is_none() {
         return Ok(Vec::new());
     }
-    // Profile circles are indexed once by record identity and by the exact
-    // bits of their stored interval; each revolution looks both up.
     let profiles = ctx.with_scoped_storage("catia_b2_revolution_profiles", || {
-        let circles = ctx.collect_vec(
+        ctx.collect_vec(
             ctx.admit_iter(records, "catia_b2_family_record_scan")?
                 .filter_map(|record| b2_circle_from_record(data, record)),
             "catia_b2_revolution_profiles",
-        )?;
-        let mut by_identity = BTreeMap::new();
-        let mut by_interval = BTreeMap::new();
-        for (index, circle) in ctx
-            .admit_iter(&circles, "catia_b2_revolution_profile_index")?
-            .enumerate()
-        {
-            ctx.push_btree_group(
-                &mut by_identity,
-                circle.record_id,
-                index,
-                "catia_b2_revolution_identity_profiles",
-                "catia_b2_revolution_identity_profile_members",
-            )?;
-            ctx.push_btree_group(
-                &mut by_interval,
-                interval_bits(circle.range),
-                index,
-                "catia_b2_revolution_interval_profiles",
-                "catia_b2_revolution_interval_profile_members",
-            )?;
-        }
-        Ok::<_, CodecError>((circles, by_identity, by_interval))
+        )
     })?;
-    let (circles, by_identity, by_interval) = &profiles.0;
-    let mut resolved = Vec::new();
-    while let Some((revolution_index, revolution)) = current {
-        let candidate = (|| -> Result<Option<B2ResolvedRevolution>, CodecError> {
-            let interval = interval_bits(revolution.profile_range);
-            let identity_profiles = ctx
-                .get_btree_map(
-                    by_identity,
-                    &u32::from(revolution.profile_allocation_id),
-                    "catia_b2_revolution_identity_lookup",
-                )?
-                .map_or(&[][..], Vec::as_slice);
-            let profile = match identity_profiles {
-                [index] if interval_bits(circles[*index].range) == interval => {
-                    circles[*index].clone()
-                }
-                [] => {
-                    let Some(&[index]) = ctx
-                        .get_btree_map(
-                            by_interval,
-                            &interval,
-                            "catia_b2_revolution_interval_lookup",
-                        )?
-                        .map(Vec::as_slice)
-                    else {
-                        return Ok(None);
-                    };
-                    circles[index].clone()
-                }
-                _ => return Ok(None),
-            };
-            Ok(Some(B2ResolvedRevolution {
-                revolution_index,
-                revolution,
-                profile,
-            }))
-        })()?;
-        if let Some(candidate) = candidate {
-            ctx.push_vec(&mut resolved, candidate, "catia_b2_resolved_revolutions")?;
+    let circles = &profiles.0;
+    let requests = ctx.with_scoped_storage("catia_b2_revolution_requests", || {
+        let mut requests = Vec::new();
+        while let Some(revolution) = current {
+            ctx.push_vec(&mut requests, revolution, "catia_b2_revolution_requests")?;
+            current = ctx.next_charged(&mut revolutions, "catia_b2_resolved_revolution_scan")?;
         }
-        current = ctx.next_charged(&mut revolutions, "catia_b2_resolved_revolution_scan")?;
+        Ok::<_, CodecError>(requests)
+    })?;
+    // Small request populations avoid table storage and growth. Their direct
+    // searches have a fixed population bound; larger populations share one
+    // keyed table with tombstones.
+    const DIRECT_PROFILE_LOOKUPS: usize = 255;
+    let by_identity = if requests.0.len() > DIRECT_PROFILE_LOOKUPS {
+        Some(
+            ctx.unique_index(
+                circles
+                    .iter()
+                    .enumerate()
+                    .map(|(index, circle)| (circle.record_id, index)),
+                "catia_b2_revolution_identity_profiles",
+            )?,
+        )
+    } else {
+        None
+    };
+    let mut bindings = ctx.with_scoped_storage("catia_b2_revolution_bindings", || {
+        ctx.alloc_filled(requests.0.len(), None, "catia_b2_revolution_bindings")
+    })?;
+    let mut fallback = ctx.scoped_vector_storage(0, "catia_b2_revolution_fallback_requests")?;
+    for (request, (_, revolution)) in ctx
+        .admit_iter(&requests.0, "catia_b2_resolved_revolution_scan")?
+        .enumerate()
+    {
+        let identity = u32::from(revolution.profile_allocation_id);
+        let (profile, absent) = if let Some((index, _storage)) = &by_identity {
+            let found =
+                ctx.get_hash_map(index, &identity, "catia_b2_revolution_identity_lookup")?;
+            (found.and_then(Option::as_ref).copied(), found.is_none())
+        } else {
+            let mut profile = None;
+            let mut ambiguous = false;
+            let mut candidates = circles.iter().enumerate();
+            while let Some((index, circle)) =
+                ctx.next_charged(&mut candidates, "catia_b2_revolution_identity_scan")?
+            {
+                if circle.record_id == identity && profile.replace(index).is_some() {
+                    ambiguous = true;
+                    break;
+                }
+            }
+            (if ambiguous { None } else { profile }, profile.is_none())
+        };
+        if let Some(index) = profile {
+            if interval_bits(circles[index].range) == interval_bits(revolution.profile_range) {
+                bindings.0[request] = Some(index);
+            }
+        } else if absent {
+            ctx.push_scoped_vec(
+                &mut fallback.1,
+                &mut fallback.0,
+                request,
+                "catia_b2_revolution_fallback_requests",
+            )?;
+        }
+    }
+    // Interval lookup exists only for identity misses. Small populations
+    // stop on their second interval match; exact identity bindings never build it.
+    let by_interval = if fallback.0.len() > DIRECT_PROFILE_LOOKUPS {
+        Some(
+            ctx.unique_index(
+                circles
+                    .iter()
+                    .enumerate()
+                    .map(|(index, circle)| (interval_bits(circle.range), index)),
+                "catia_b2_revolution_interval_profiles",
+            )?,
+        )
+    } else {
+        None
+    };
+    for &request in ctx.admit_iter(&fallback.0, "catia_b2_revolution_fallback_visits")? {
+        let interval = interval_bits(requests.0[request].1.profile_range);
+        bindings.0[request] = if let Some((index, _storage)) = &by_interval {
+            ctx.get_hash_map(index, &interval, "catia_b2_revolution_interval_lookup")?
+                .and_then(Option::as_ref)
+                .copied()
+        } else {
+            let mut profile = None;
+            let mut candidates = circles.iter().enumerate();
+            while let Some((index, circle)) =
+                ctx.next_charged(&mut candidates, "catia_b2_revolution_interval_scan")?
+            {
+                if interval_bits(circle.range) == interval && profile.replace(index).is_some() {
+                    profile = None;
+                    break;
+                }
+            }
+            profile
+        };
+    }
+    drop((by_identity, by_interval, fallback));
+    let mut resolved = Vec::new();
+    for (request, (revolution_index, revolution)) in ctx
+        .admit_iter(requests.0, "catia_b2_resolved_revolution_scan")?
+        .enumerate()
+    {
+        if let Some(index) = bindings.0[request] {
+            ctx.push_vec(
+                &mut resolved,
+                B2ResolvedRevolution {
+                    revolution_index,
+                    revolution,
+                    profile: circles[index].clone(),
+                },
+                "catia_b2_resolved_revolutions",
+            )?;
+        }
     }
     Ok(resolved)
 }
