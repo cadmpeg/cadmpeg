@@ -79,6 +79,7 @@ fn terminal_directrix_accepts_matching_wide_finite_spans() {
 mod analytic;
 mod budget_repairs;
 mod collector_sources;
+mod construction_worklists;
 mod loops;
 mod reference_ranges;
 mod typed;

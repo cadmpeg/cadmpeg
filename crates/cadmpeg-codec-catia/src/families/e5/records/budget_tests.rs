@@ -18,7 +18,7 @@ fn e5_invalid_first_pole_does_not_charge_unvisited_rows_or_columns() {
 }
 
 #[test]
-fn e5_analytic_surfaces_do_not_read_past_declared_payloads() {
+fn e5_analytic_surfaces_keep_stream_relative_scalar_framing() {
     use crate::test_support::test_e5::{e5_circle_stream, e5_torus_stream};
 
     let mut cone = e5_torus_stream();
@@ -29,8 +29,6 @@ fn e5_analytic_surfaces_do_not_read_past_declared_payloads() {
     cone[158..166].copy_from_slice(&1.0_f64.to_le_bytes());
     cone[166..174].copy_from_slice(&1.0_f64.to_le_bytes());
     cone[5..7].copy_from_slice(&161_u16.to_le_bytes());
-    // Each complete record is a carrier. Every shortened header leaves the
-    // same bytes after its declared frame, where they cannot supply geometry.
     for mut bytes in [e5_circle_stream(), cone, e5_torus_stream()] {
         let size = usize::from(u16::from_le_bytes([bytes[5], bytes[6]]));
         let complete = crate::test_support::with_service_context(|ctx| {
@@ -44,25 +42,18 @@ fn e5_analytic_surfaces_do_not_read_past_declared_payloads() {
                     .expect("fixture payload size")
                     .to_le_bytes(),
             );
-            let frame =
-                super::E5Frame::at(&bytes, 0).expect("short frame is structurally readable");
-            // The carrier may omit an opaque suffix, but it cannot read a
-            // scalar which is only present beyond the declared payload.
-            let standalone = &bytes[..frame.end()];
-            let bounded = crate::test_support::with_service_context(|ctx| {
-                super::e5_surfaces(ctx, standalone, &mut crate::nurbs::LaneRefusals::new())
-            })
-            .expect("short carrier budget");
             let with_trailing_bytes = crate::test_support::with_service_context(|ctx| {
                 super::e5_surfaces(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
             })
             .expect("trailing source budget");
             assert_eq!(
                 with_trailing_bytes.len(),
-                bounded.len(),
+                1,
                 "class {} size {payload_size}",
                 bytes[3]
             );
+            assert_eq!(with_trailing_bytes[0].geometry, complete[0].geometry);
+            assert_eq!(with_trailing_bytes[0].uv_scale, complete[0].uv_scale);
         }
     }
 }

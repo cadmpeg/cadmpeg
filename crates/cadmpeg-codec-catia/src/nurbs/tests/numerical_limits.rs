@@ -867,3 +867,24 @@ fn rejected_reversal_retains_the_loss_without_constructor_scratch() {
         assert_eq!(refused.note_count(), 1);
     }
 }
+
+#[test]
+fn scoped_geometry_keeps_refusal_notes_in_retained_storage() {
+    crate::test_support::with_retained_limit(0, |ctx| {
+        let mut storage = ctx
+            .reserve_scoped(0, "test_geometry_scratch")
+            .expect("owner");
+        let mut refusal = LaneRefusals::new();
+        let error = storage
+            .with_storage(|| refusal.push_solver(ctx, "invalid jet", "no carrier"))
+            .expect_err("a geometry scope cannot own a report note");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("typed refusal")
+        };
+        assert_eq!(
+            limit.dimension,
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes
+        );
+        assert_eq!(limit.operation, "catia_solver_refusal_loss");
+    });
+}

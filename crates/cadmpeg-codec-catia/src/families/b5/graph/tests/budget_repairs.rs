@@ -166,7 +166,7 @@ fn b5_frame_iterator_admits_only_the_requested_frame_prefix() {
     crate::test_support::test_b5::append_b5_record(&mut bytes, 0x27, 9, &[0x80]);
     bytes.extend(std::iter::repeat_n(0, 10_000));
     crate::test_support::with_work_limit(1, |ctx| {
-        let mut frames = super::super::object_stream_frames(ctx, &bytes)?;
+        let mut frames = super::super::object_stream_frames(ctx, &bytes);
         assert_eq!(frames.next().expect("first frame")?.object_id, 9);
         Ok::<_, cadmpeg_core::CodecError>(())
     })

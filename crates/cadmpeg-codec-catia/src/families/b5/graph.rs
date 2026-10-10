@@ -1405,58 +1405,117 @@ fn parse_from_records_with_class21(
     let extrusion_offsets =
         scratch.with_storage(|| extrusion_offsets_by_carrier(ctx, &offset_constructions))?;
     let mut extrusion_surfaces = BTreeMap::<u32, B5ExtrusionSurface>::new();
-    let mut pending_extrusions = scratch.with_storage(|| {
+    let pending_extrusions = scratch.with_storage(|| {
         ctx.collect_vec(
             ctx.admit_iter(records, "catia_b5_extrusion_candidate_scan")?
                 .filter(|record| record.family == 0xb5 && record.class == 0x2c),
             "catia_b5_extrusion_candidates",
         )
     })?;
-    // Each pass resolves the extrusions whose directrix context is complete;
-    // a pass that resolves none ends the fixpoint.
-    while !pending_extrusions.is_empty() {
-        let mut changed = false;
-        let mut extrusions = pending_extrusions.iter();
-        while let Some(record) =
-            ctx.next_charged(&mut extrusions, "catia_b5_extrusion_fixpoint_scan")?
-        {
-            if budget.is_some_and(|budget| !budget.charge()) {
-                return Ok(None);
+    let mut extrusion_work_storage = ctx.reserve_scoped(0, "catia_b5_extrusion_work_scratch")?;
+    let (extrusion_dependents, mut extrusion_queue, mut remaining_sources) = extrusion_work_storage
+        .with_storage(|| {
+            let mut dependents = HashMap::<u32, Vec<usize>>::new();
+            let mut queue = BTreeSet::new();
+            let mut remaining = ctx.alloc_filled(
+                pending_extrusions.len(),
+                Some(0_usize),
+                "catia_b5_extrusion_remaining_sources",
+            )?;
+            for (index, record) in ctx
+                .admit_iter(&pending_extrusions, "catia_b5_extrusion_dependency_scan")?
+                .enumerate()
+            {
+                ctx.insert_btree_set(&mut queue, index, "catia_b5_extrusion_worklist")?;
+                if extrusion_carrier(record).is_some_and(|carrier| carrier.v_bounds.is_none()) {
+                    remaining[index] = None;
+                    if let Some(offsets) =
+                        ctx.get_btree_map(&extrusion_offsets, &record.object_id, LOOKUP)?
+                    {
+                        remaining[index] = Some(offsets.len());
+                        for offset in
+                            ctx.admit_iter(offsets, "catia_b5_extrusion_offset_dependencies")?
+                        {
+                            if offset.source_surface == record.object_id {
+                                continue;
+                            }
+                            ctx.push_hash_group(
+                                &mut dependents,
+                                offset.source_surface,
+                                index,
+                                "catia_b5_extrusion_dependency_keys",
+                                "catia_b5_extrusion_dependents",
+                            )?;
+                        }
+                    }
+                }
             }
-            let Some(extrusion) = parse_extrusion_surface_with_context(
+            Ok::<_, CodecError>((dependents, queue, remaining))
+        })?;
+    while let Some(index) = ctx
+        .next_charged(
+            &mut extrusion_queue.iter(),
+            "catia_b5_extrusion_fixpoint_scan",
+        )?
+        .copied()
+    {
+        ctx.remove_btree_set(&mut extrusion_queue, &index, "catia_b5_extrusion_worklist")?;
+        if budget.is_some_and(|budget| !budget.charge()) {
+            return Ok(None);
+        }
+        // A contextual construction needs every declared source extrusion.
+        if remaining_sources[index] != Some(0) {
+            continue;
+        }
+        let record = pending_extrusions[index];
+        let mut candidate_storage =
+            ctx.reserve_scoped(0, "catia_b5_extrusion_candidate_scratch")?;
+        let Some(extrusion) = candidate_storage.with_storage(|| {
+            parse_extrusion_surface_with_context(
                 ctx,
                 record,
                 by_id,
                 &object_stream_pcurves,
                 &extrusion_offsets,
                 &extrusion_surfaces,
-            )?
-            else {
-                continue;
-            };
-            ctx.insert_btree_map(
-                &mut extrusion_surfaces,
-                record.object_id,
-                extrusion,
-                "catia_b5_extrusion_surfaces",
-            )?;
-            changed = true;
-        }
-        if !changed {
-            break;
-        }
-        ctx.retain_vec(
-            &mut pending_extrusions,
-            |record| {
-                Ok(!ctx.contains_key_btree_map(
-                    &extrusion_surfaces,
-                    &record.object_id,
-                    "catia_b5_resolved_extrusion_filter",
-                )?)
-            },
-            "catia_b5_resolved_extrusion_filter",
+            )
+        })?
+        else {
+            continue;
+        };
+        let extrusion = candidate_storage.commit_value(extrusion)?;
+        ctx.insert_btree_map(
+            &mut extrusion_surfaces,
+            record.object_id,
+            extrusion,
+            "catia_b5_extrusion_surfaces",
         )?;
+        if let Some(dependents) =
+            ctx.get_hash_map(&extrusion_dependents, &record.object_id, LOOKUP)?
+        {
+            for &dependent in ctx.admit_iter(dependents, "catia_b5_extrusion_dependent_scan")? {
+                let Some(remaining) = remaining_sources[dependent].as_mut() else {
+                    continue;
+                };
+                // Each source enters once. Each dependency item removes one
+                // required reference.
+                *remaining -= 1;
+                if *remaining == 0 {
+                    extrusion_work_storage.with_storage(|| {
+                        ctx.insert_btree_set(
+                            &mut extrusion_queue,
+                            dependent,
+                            "catia_b5_extrusion_worklist",
+                        )
+                    })?;
+                }
+            }
+        }
     }
+    drop(extrusion_queue);
+    drop(extrusion_dependents);
+    drop(remaining_sources);
+    drop(extrusion_work_storage);
     let extrusion_pcurves = scratch.with_storage(|| {
         let mut pcurves = HashSet::new();
         for (_, extrusion) in ctx.admit_iter(
@@ -1493,140 +1552,372 @@ fn parse_from_records_with_class21(
     else {
         return Ok(None);
     };
-    let mut fixpoint = !offset_constructions.is_empty()
-        || !alias_records.is_empty()
-        || !supported_constructions.is_empty();
-    while fixpoint {
-        let Some(mut changed) = resolve_surface_aliases(
-            ctx,
-            &alias_records,
-            &alias_terminals,
-            &mut surfaces,
-            (&mut conflicting_surfaces, &mut scratch),
-            budget,
-        )?
-        else {
-            return Ok(None);
-        };
-        let mut candidates = offset_constructions.iter();
-        while let Some(offset) =
-            ctx.next_charged(&mut candidates, "catia_b5_offset_surface_fixpoint_scan")?
-        {
-            if budget.is_some_and(|budget| !budget.charge()) {
-                return Ok(None);
-            }
-            if !offset_surface_agrees(ctx, offset, &surfaces, &extrusion_surfaces, by_id)? {
-                continue;
-            }
-            // A resolved carrier is already its own entry; an unresolved one
-            // enters as its opaque record.
-            if !ctx.contains_key_btree_map(&surfaces, &offset.carrier_surface, LOOKUP)? {
-                let Some(record) = record_by_id(ctx, by_id, offset.carrier_surface, LOOKUP)? else {
-                    continue;
-                };
-                let carrier = B5Surface::Unknown {
-                    family: record.family,
-                    class: record.class,
-                    payload: ctx.copy_slice(record.payload, "catia_b5_offset_carrier_payload")?,
-                };
-                if !merge_surface_candidate(
-                    ctx,
-                    &mut surfaces,
-                    (&mut conflicting_surfaces, &mut scratch),
-                    offset.carrier_surface,
-                    carrier,
-                )? {
-                    continue;
+    // The ordered worklist visits initial candidates in phase and source order.
+    // Later visits are limited to candidates whose carrier dependencies changed.
+    let mut surface_work_storage = ctx.reserve_scoped(0, "catia_b5_surface_work_scratch")?;
+    let (surface_dependents, mut surface_queue, supported_index, mut supported_settled) =
+        surface_work_storage.with_storage(|| {
+            let mut dependents = HashMap::<u32, Vec<(u8, usize)>>::new();
+            let mut queue = BTreeSet::new();
+            for (index, record) in ctx
+                .admit_iter(&alias_records, "catia_b5_alias_dependency_scan")?
+                .enumerate()
+            {
+                let item = (0_u8, index);
+                ctx.insert_btree_set(&mut queue, item, "catia_b5_surface_worklist")?;
+                if let Some(Some(terminal)) =
+                    ctx.get_hash_map(&alias_terminals, &record.object_id, LOOKUP)?
+                {
+                    ctx.push_hash_group(
+                        &mut dependents,
+                        *terminal,
+                        item,
+                        "catia_b5_surface_dependency_keys",
+                        "catia_b5_surface_dependents",
+                    )?;
                 }
             }
-            let Some(surface_changed) = merge_surface_from(
-                ctx,
-                &mut surfaces,
-                (&mut conflicting_surfaces, &mut scratch),
-                offset.object_id,
-                offset.carrier_surface,
-            )?
-            else {
-                continue;
-            };
-            let metadata_changed =
-                ctx.get_btree_map(&offset_surfaces, &offset.object_id, LOOKUP)? != Some(offset);
-            ctx.insert_btree_map(
-                &mut offset_surfaces,
-                offset.object_id,
-                offset.clone(),
-                "catia_b5_offset_surfaces",
+            for (index, offset) in ctx
+                .admit_iter(&offset_constructions, "catia_b5_offset_dependency_scan")?
+                .enumerate()
+            {
+                let item = (1_u8, index);
+                ctx.insert_btree_set(&mut queue, item, "catia_b5_surface_worklist")?;
+                for dependency in [offset.carrier_surface, offset.source_surface] {
+                    if dependency == offset.object_id {
+                        continue;
+                    }
+                    ctx.push_hash_group(
+                        &mut dependents,
+                        dependency,
+                        item,
+                        "catia_b5_surface_dependency_keys",
+                        "catia_b5_surface_dependents",
+                    )?;
+                }
+                if let Some(cache) = record_by_id(ctx, by_id, offset.carrier_surface, LOOKUP)?
+                    .and_then(parse_offset_cache)
+                {
+                    if cache.source_surface != offset.object_id {
+                        ctx.push_hash_group(
+                            &mut dependents,
+                            cache.source_surface,
+                            item,
+                            "catia_b5_surface_dependency_keys",
+                            "catia_b5_surface_dependents",
+                        )?;
+                    }
+                }
+            }
+            for (index, construction) in ctx
+                .admit_iter(
+                    &supported_constructions,
+                    "catia_b5_supported_dependency_scan",
+                )?
+                .enumerate()
+            {
+                let item = (2_u8, index);
+                ctx.insert_btree_set(&mut queue, item, "catia_b5_surface_worklist")?;
+                for dependency in [
+                    construction.carrier_surface,
+                    construction.support_surfaces[0],
+                    construction.support_surfaces[1],
+                ] {
+                    if dependency == construction.object_id {
+                        continue;
+                    }
+                    ctx.push_hash_group(
+                        &mut dependents,
+                        dependency,
+                        item,
+                        "catia_b5_surface_dependency_keys",
+                        "catia_b5_surface_dependents",
+                    )?;
+                }
+            }
+            let index = ctx.collect_hash_map(
+                ctx.admit_iter(&supported_constructions, "catia_b5_supported_identity_scan")?
+                    .enumerate()
+                    .map(|(index, construction)| (construction.object_id, index)),
+                "catia_b5_supported_identity_index",
             )?;
-            changed |= surface_changed || metadata_changed;
-        }
-        let mut candidates = supported_constructions.iter();
-        while let Some(construction) =
-            ctx.next_charged(&mut candidates, "catia_b5_supported_surface_fixpoint_scan")?
+            let settled = ctx.alloc_filled(
+                supported_constructions.len(),
+                false,
+                "catia_b5_supported_settled",
+            )?;
+            Ok::<_, CodecError>((dependents, queue, index, settled))
+        })?;
+    // Blocked carrier chains wait until one source-ordered cycle seed has a
+    // result. Dependency wakeups then settle the cycle and its incoming chains.
+    let mut cycle_candidates = 0..supported_constructions.len();
+    let mut forced_supported = None;
+    let mut unsettled_count = supported_constructions.len();
+    loop {
+        while let Some(item) = ctx
+            .next_charged(&mut surface_queue.iter(), "catia_b5_surface_worklist_scan")?
+            .copied()
         {
+            ctx.remove_btree_set(&mut surface_queue, &item, "catia_b5_surface_worklist")?;
+            // One local unit pays for one candidate visit in any phase.
             if budget.is_some_and(|budget| !budget.charge()) {
                 return Ok(None);
             }
-            let Some(carrier) =
-                ctx.get_btree_map(&surfaces, &construction.carrier_surface, LOOKUP)?
-            else {
-                continue;
-            };
-            let parameters_match_carrier =
-                supported_surface_parameters_match_carrier(&construction.parameters, carrier);
-            let Some(surface_changed) = merge_surface_from(
-                ctx,
-                &mut surfaces,
-                (&mut conflicting_surfaces, &mut scratch),
-                construction.object_id,
-                construction.carrier_surface,
-            )?
-            else {
-                continue;
-            };
-            if parameters_match_carrier
-                && supported_surface_pcurves_match(
-                    ctx,
-                    construction,
-                    by_id,
-                    &object_stream_pcurve_candidates,
-                )?
-                && ctx.contains_key_btree_map(
-                    &surfaces,
-                    &construction.support_surfaces[0],
-                    LOOKUP,
-                )?
-                && ctx.contains_key_btree_map(
-                    &surfaces,
-                    &construction.support_surfaces[1],
-                    LOOKUP,
-                )?
-            {
-                let metadata_changed =
-                    ctx.get_btree_map(&supported_surfaces, &construction.object_id, LOOKUP)?
-                        != Some(construction);
-                ctx.insert_btree_map(
-                    &mut supported_surfaces,
-                    construction.object_id,
-                    construction.clone(),
-                    "catia_b5_supported_surfaces",
-                )?;
-                changed |= surface_changed || metadata_changed;
+            let mut changed_ids = [None, None];
+            match item {
+                (0, index) => {
+                    let record = alias_records[index];
+                    let Some(terminal) = resolved_surface_alias_terminal(
+                        ctx,
+                        record.object_id,
+                        &alias_terminals,
+                        &surfaces,
+                    )?
+                    else {
+                        continue;
+                    };
+                    let existed =
+                        ctx.contains_key_btree_map(&surfaces, &record.object_id, LOOKUP)?;
+                    let changed = merge_surface_from(
+                        ctx,
+                        &mut surfaces,
+                        (&mut conflicting_surfaces, &mut scratch),
+                        record.object_id,
+                        terminal,
+                    )?;
+                    if changed == Some(true)
+                        || changed.is_none()
+                            && existed
+                            && !ctx.contains_key_btree_map(&surfaces, &record.object_id, LOOKUP)?
+                    {
+                        changed_ids[0] = Some(record.object_id);
+                    }
+                }
+                (1, index) => {
+                    let offset = &offset_constructions[index];
+                    if !offset_surface_agrees(ctx, offset, &surfaces, &extrusion_surfaces, by_id)? {
+                        continue;
+                    }
+                    if !ctx.contains_key_btree_map(&surfaces, &offset.carrier_surface, LOOKUP)? {
+                        let Some(record) =
+                            record_by_id(ctx, by_id, offset.carrier_surface, LOOKUP)?
+                        else {
+                            continue;
+                        };
+                        let carrier = B5Surface::Unknown {
+                            family: record.family,
+                            class: record.class,
+                            payload: ctx
+                                .copy_slice(record.payload, "catia_b5_offset_carrier_payload")?,
+                        };
+                        if !merge_surface_candidate(
+                            ctx,
+                            &mut surfaces,
+                            (&mut conflicting_surfaces, &mut scratch),
+                            offset.carrier_surface,
+                            carrier,
+                        )? {
+                            continue;
+                        }
+                        changed_ids[0] = Some(offset.carrier_surface);
+                    }
+                    let existed =
+                        ctx.contains_key_btree_map(&surfaces, &offset.object_id, LOOKUP)?;
+                    let changed = merge_surface_from(
+                        ctx,
+                        &mut surfaces,
+                        (&mut conflicting_surfaces, &mut scratch),
+                        offset.object_id,
+                        offset.carrier_surface,
+                    )?;
+                    if changed == Some(true)
+                        || changed.is_none()
+                            && existed
+                            && !ctx.contains_key_btree_map(&surfaces, &offset.object_id, LOOKUP)?
+                    {
+                        changed_ids[1] = Some(offset.object_id);
+                    }
+                    if changed.is_some()
+                        && ctx.get_btree_map(&offset_surfaces, &offset.object_id, LOOKUP)?
+                            != Some(offset)
+                    {
+                        ctx.insert_btree_map(
+                            &mut offset_surfaces,
+                            offset.object_id,
+                            offset.clone(),
+                            "catia_b5_offset_surfaces",
+                        )?;
+                    }
+                }
+                (_, index) => {
+                    let construction = &supported_constructions[index];
+                    // A construction waits for its carrier construction's first
+                    // result instead of forwarding every intermediate opaque lane.
+                    let forced = forced_supported == Some(index);
+                    if forced {
+                        forced_supported = None;
+                    }
+                    if let Some(&carrier_index) =
+                        ctx.get_hash_map(&supported_index, &construction.carrier_surface, LOOKUP)?
+                    {
+                        if !supported_settled[carrier_index] && carrier_index != index && !forced {
+                            continue;
+                        }
+                    }
+                    if !supported_settled[index] {
+                        supported_settled[index] = true;
+                        unsettled_count -= 1;
+                        changed_ids[0] = Some(construction.object_id);
+                    }
+                    if let Some(carrier) =
+                        ctx.get_btree_map(&surfaces, &construction.carrier_surface, LOOKUP)?
+                    {
+                        let parameters_match_carrier = supported_surface_parameters_match_carrier(
+                            &construction.parameters,
+                            carrier,
+                        );
+                        let existed =
+                            ctx.contains_key_btree_map(&surfaces, &construction.object_id, LOOKUP)?;
+                        let changed = merge_surface_from(
+                            ctx,
+                            &mut surfaces,
+                            (&mut conflicting_surfaces, &mut scratch),
+                            construction.object_id,
+                            construction.carrier_surface,
+                        )?;
+                        if changed == Some(true)
+                            || changed.is_none()
+                                && existed
+                                && !ctx.contains_key_btree_map(
+                                    &surfaces,
+                                    &construction.object_id,
+                                    LOOKUP,
+                                )?
+                        {
+                            changed_ids[0] = Some(construction.object_id);
+                        }
+                        if changed.is_some()
+                            && parameters_match_carrier
+                            && supported_surface_pcurves_match(
+                                ctx,
+                                construction,
+                                by_id,
+                                &object_stream_pcurve_candidates,
+                            )?
+                            && ctx.contains_key_btree_map(
+                                &surfaces,
+                                &construction.support_surfaces[0],
+                                LOOKUP,
+                            )?
+                            && ctx.contains_key_btree_map(
+                                &surfaces,
+                                &construction.support_surfaces[1],
+                                LOOKUP,
+                            )?
+                            && ctx.get_btree_map(
+                                &supported_surfaces,
+                                &construction.object_id,
+                                LOOKUP,
+                            )? != Some(construction)
+                        {
+                            ctx.insert_btree_map(
+                                &mut supported_surfaces,
+                                construction.object_id,
+                                construction.clone(),
+                                "catia_b5_supported_surfaces",
+                            )?;
+                        }
+                    }
+                }
+            }
+            for changed_id in changed_ids.into_iter().flatten() {
+                if let Some(dependents) =
+                    ctx.get_hash_map(&surface_dependents, &changed_id, LOOKUP)?
+                {
+                    for &dependent in
+                        ctx.admit_iter(dependents, "catia_b5_surface_dependent_scan")?
+                    {
+                        surface_work_storage.with_storage(|| {
+                            ctx.insert_btree_set(
+                                &mut surface_queue,
+                                dependent,
+                                "catia_b5_surface_worklist",
+                            )
+                        })?;
+                    }
+                }
             }
         }
-        let Some(alias_changed) = resolve_surface_aliases(
-            ctx,
-            &alias_records,
-            &alias_terminals,
-            &mut surfaces,
-            (&mut conflicting_surfaces, &mut scratch),
-            budget,
-        )?
-        else {
+        if unsettled_count == 0 {
+            break;
+        }
+        let mut start = None;
+        while let Some(index) =
+            ctx.next_charged(&mut cycle_candidates, "catia_b5_unsettled_supported_scan")?
+        {
+            if !supported_settled[index] {
+                start = Some(index);
+                break;
+            }
+        }
+        let Some(mut current) = start else {
             return Ok(None);
         };
-        changed |= alias_changed;
-        fixpoint = changed;
+        let mut cycle_storage = ctx.reserve_scoped(0, "catia_b5_surface_cycle_scratch")?;
+        let seed = cycle_storage.with_storage(|| {
+            let mut positions = HashMap::<usize, usize>::new();
+            let mut trail = Vec::new();
+            let mut steps = 0..=supported_constructions.len();
+            while ctx
+                .next_charged(&mut steps, "catia_b5_surface_cycle_walk")?
+                .is_some()
+            {
+                // One local unit pays for one carrier identity visited.
+                if budget.is_some_and(|budget| !budget.charge()) {
+                    return Ok(None);
+                }
+                if let Some(&position) = ctx.get_hash_map(&positions, &current, LOOKUP)? {
+                    return Ok(ctx
+                        .admit_iter(&trail[position..], "catia_b5_surface_cycle_seed")?
+                        .copied()
+                        .min());
+                }
+                ctx.insert_hash_map(
+                    &mut positions,
+                    current,
+                    trail.len(),
+                    "catia_b5_surface_cycle_positions",
+                )?;
+                ctx.push_vec(&mut trail, current, "catia_b5_surface_cycle_trail")?;
+                let carrier = supported_constructions[current].carrier_surface;
+                let Some(&next) = ctx.get_hash_map(&supported_index, &carrier, LOOKUP)? else {
+                    return Ok(None);
+                };
+                if supported_settled[next] {
+                    return Ok(None);
+                }
+                current = next;
+            }
+            Ok::<_, CodecError>(None)
+        })?;
+        let Some(seed) = seed else {
+            return Ok(None);
+        };
+        drop(cycle_storage);
+        forced_supported = Some(seed);
+        surface_work_storage.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut surface_queue,
+                (2_u8, seed),
+                "catia_b5_surface_worklist",
+            )
+        })?;
     }
+    drop(surface_queue);
+    drop(surface_dependents);
+    drop(supported_index);
+    drop(supported_settled);
+    drop(surface_work_storage);
     ctx.retain_btree_map(
         &mut offset_surfaces,
         |object_id, offset| {
@@ -2118,7 +2409,7 @@ fn merge_surface_from(
             if unresolved_surface_candidate(existing) {
                 (!equal, !equal)
             } else if unresolved_surface_candidate(candidate) || equal {
-                (false, !equal)
+                (false, false)
             } else {
                 ctx.remove_btree_map(surfaces, &object_id, OPERATION)?;
                 conflict_storage.with_storage(|| {
@@ -2283,39 +2574,6 @@ fn resolved_surface_alias_terminal(
         .get_btree_map(surfaces, &terminal, OPERATION)?
         .is_some_and(|surface| !unresolved_surface_candidate(surface))
         .then_some(terminal))
-}
-
-/// Merge aliases with their current terminal carriers. Each candidate is one
-/// independent local step; core traversal and lookups debit session work.
-fn resolve_surface_aliases(
-    ctx: &DecodeContext<'_>,
-    alias_records: &[&B5Record<'_>],
-    terminals: &HashMap<u32, Option<u32>>,
-    surfaces: &mut BTreeMap<u32, B5Surface>,
-    (conflicts, conflict_storage): (&mut HashSet<u32>, &mut ScopedReservation<'_>),
-    budget: Option<&WorkBudget<'static>>,
-) -> Result<Option<bool>, CodecError> {
-    let mut changed = false;
-    let mut records = alias_records.iter();
-    while let Some(record) = ctx.next_charged(&mut records, "catia_b5_surface_alias_record_scan")? {
-        if budget.is_some_and(|budget| !budget.charge()) {
-            return Ok(None);
-        }
-        let Some(terminal) =
-            resolved_surface_alias_terminal(ctx, record.object_id, terminals, surfaces)?
-        else {
-            continue;
-        };
-        changed |= merge_surface_from(
-            ctx,
-            surfaces,
-            (&mut *conflicts, &mut *conflict_storage),
-            record.object_id,
-            terminal,
-        )?
-        .unwrap_or(false);
-    }
-    Ok(Some(changed))
 }
 
 fn object_stream_pcurve_candidate(
@@ -2681,7 +2939,7 @@ pub(in crate::families) fn edge_vertex_references(
     let mut edges = BTreeMap::new();
     let mut scratch = ctx.reserve_scoped(0, AMBIGUOUS)?;
     let mut ambiguous = HashSet::new();
-    for frame in object_stream_frames(ctx, bytes)? {
+    for frame in object_stream_frames(ctx, bytes) {
         let frame = frame?;
         if frame.family != 0xb5 || frame.class != 0x5e {
             continue;
@@ -7234,20 +7492,20 @@ fn framed_records<'a>(bytes: &'a [u8], frames: &[ObjectFrame]) -> Vec<B5Record<'
 pub(in crate::families) fn framed_ranges<'a>(
     ctx: &'a DecodeContext<'_>,
     bytes: &'a [u8],
-) -> Result<impl Iterator<Item = Result<Range<usize>, CodecError>> + 'a, CodecError> {
-    Ok(object_stream_frames(ctx, bytes)?.map(|frame| frame.map(|frame| frame.start..frame.end)))
+) -> impl Iterator<Item = Result<Range<usize>, CodecError>> + 'a {
+    object_stream_frames(ctx, bytes).map(|frame| frame.map(|frame| frame.start..frame.end))
 }
 
 /// Scan frames without allocating a frame index.
 pub(in crate::families) fn object_stream_frames<'a>(
     ctx: &'a DecodeContext<'_>,
     bytes: &'a [u8],
-) -> Result<impl Iterator<Item = Result<ObjectFrame, CodecError>> + 'a, CodecError> {
+) -> impl Iterator<Item = Result<ObjectFrame, CodecError>> + 'a {
     let mut child = None::<(usize, usize)>;
     let mut skip_until = 0usize;
     let mut failed = false;
     let mut positions = 0..bytes.len();
-    Ok(std::iter::from_fn(move || {
+    std::iter::from_fn(move || {
         if failed {
             return None;
         }
@@ -7322,14 +7580,14 @@ pub(in crate::families) fn object_stream_frames<'a>(
                 object_id,
             }));
         }
-    }))
+    })
 }
 
 pub(in crate::families) fn collect_object_stream_frames(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Vec<ObjectFrame>, CodecError> {
-    ctx.try_collect_vec(object_stream_frames(ctx, bytes)?, "catia_b5_object_frames")
+    ctx.try_collect_vec(object_stream_frames(ctx, bytes), "catia_b5_object_frames")
 }
 
 /// Return maximal contiguous top-level A8/B5 object-frame runs. A run chains

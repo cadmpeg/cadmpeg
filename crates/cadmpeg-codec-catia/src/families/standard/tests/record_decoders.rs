@@ -1661,7 +1661,7 @@ fn standard_object_evidence_rejects_cross_stream_edge_owner_conflicts() {
 fn standard_object_evidence_keeps_face_owner_from_unresolved_surface() {
     let mut stream = b5_closed_triangle_stream();
     let face = crate::test_support::with_service_context(|ctx| {
-        crate::families::b5::graph::object_stream_frames(ctx, &stream)?
+        crate::families::b5::graph::object_stream_frames(ctx, &stream)
             .find(|frame| match frame {
                 Ok(frame) => frame.class == 0x5f,
                 Err(_) => true,
@@ -1711,7 +1711,7 @@ fn standard_object_evidence_rejects_repeated_topology_namespaces() {
 fn standard_object_evidence_does_not_join_topology_across_runs() {
     let mut stream = b5_closed_triangle_stream();
     let loop_start = crate::test_support::with_service_context(|ctx| {
-        crate::families::b5::graph::object_stream_frames(ctx, &stream)?
+        crate::families::b5::graph::object_stream_frames(ctx, &stream)
             .find(|frame| match frame {
                 Ok(frame) => frame.class == 0x62,
                 Err(_) => true,

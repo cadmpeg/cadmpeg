@@ -156,13 +156,17 @@ impl LaneRefusals {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         error: &cadmpeg_ir::annotations::AnnotationIdentityCollision,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        crate::resource::push_loss(
-            ctx,
-            &mut self.notes,
-            crate::loss::CatiaLossCode::SourceAnnotationCollision,
-            format_args!("{error}"),
-            "catia_annotation_collision_loss",
-        )
+        let mut storage = ctx.provisional_retained("catia_lane_refusal_notes")?;
+        storage.with_storage(|| {
+            crate::resource::push_loss(
+                ctx,
+                &mut self.notes,
+                crate::loss::CatiaLossCode::SourceAnnotationCollision,
+                format_args!("{error}"),
+                "catia_annotation_collision_loss",
+            )
+        })?;
+        storage.commit()
     }
 
     /// Record one refusal against the record that stated it.
@@ -172,11 +176,13 @@ impl LaneRefusals {
         record: impl std::fmt::Display,
         error: &cadmpeg_ir::geometry::nurbs::NurbsError,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        crate::resource::push_loss(ctx, &mut self.notes,
+        let mut storage = ctx.provisional_retained("catia_lane_refusal_notes")?;
+        storage.with_storage(|| crate::resource::push_loss(ctx, &mut self.notes,
             crate::loss::CatiaLossCode::GeometryAnalyticPayloadInvalid,
             format_args!(
                 "A CATIA carrier record states lanes the IR carrier refuses: {record} states {error}"
-            ), "catia_nurbs_refusal_loss")
+            ), "catia_nurbs_refusal_loss"))?;
+        storage.commit()
     }
 
     /// Record one refusal a lane solver stated, against the record that stated
@@ -191,15 +197,19 @@ impl LaneRefusals {
         record: impl std::fmt::Display,
         detail: &str,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        crate::resource::push_loss(
-            ctx,
-            &mut self.notes,
-            crate::loss::CatiaLossCode::GeometryAnalyticPayloadInvalid,
-            format_args!(
+        let mut storage = ctx.provisional_retained("catia_lane_refusal_notes")?;
+        storage.with_storage(|| {
+            crate::resource::push_loss(
+                ctx,
+                &mut self.notes,
+                crate::loss::CatiaLossCode::GeometryAnalyticPayloadInvalid,
+                format_args!(
                 "A CATIA carrier record states lanes the reader cannot lower: {record} {detail}"
             ),
-            "catia_solver_refusal_loss",
-        )
+                "catia_solver_refusal_loss",
+            )
+        })?;
+        storage.commit()
     }
 
     /// Record a refused source-stated parameter range against the record that
@@ -210,17 +220,21 @@ impl LaneRefusals {
         record: impl std::fmt::Display,
         range: [f64; 2],
     ) -> Result<(), cadmpeg_core::CodecError> {
-        crate::resource::push_loss(
-            ctx,
-            &mut self.notes,
-            crate::loss::CatiaLossCode::GeometryParameterRangeInvalid,
-            format_args!(
-                "A CATIA record states a parameter range the reader refuses: \
+        let mut storage = ctx.provisional_retained("catia_lane_refusal_notes")?;
+        storage.with_storage(|| {
+            crate::resource::push_loss(
+                ctx,
+                &mut self.notes,
+                crate::loss::CatiaLossCode::GeometryParameterRangeInvalid,
+                format_args!(
+                    "A CATIA record states a parameter range the reader refuses: \
                  {record} states [{}, {}]",
-                range[0], range[1]
-            ),
-            "catia_range_refusal_loss",
-        )
+                    range[0], range[1]
+                ),
+                "catia_range_refusal_loss",
+            )
+        })?;
+        storage.commit()
     }
 }
 
