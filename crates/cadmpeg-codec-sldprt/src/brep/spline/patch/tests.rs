@@ -132,3 +132,5 @@ fn attribute_nurbs_patch_preserves_nested_descriptor_refusal() {
 
 mod homogeneous;
 mod shape;
+
+mod admission;

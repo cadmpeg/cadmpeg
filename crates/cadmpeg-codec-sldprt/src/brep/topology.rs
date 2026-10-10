@@ -1035,7 +1035,7 @@ pub(crate) fn patch_point_values(
 /// Replace one world-point record while preserving its framing.
 pub(crate) fn patch_point(buf: &mut [u8], attr: u16, xyz_m: [f64; 3]) -> bool {
     let mut selected = None;
-    for offset in 0..buf.len().saturating_sub(13) {
+    for offset in 0..buf.len().checked_sub(13).map_or(0, |end| end) {
         if let Some(point) = parse_point(buf, offset, false) {
             if point.attr == attr {
                 selected = Some(point);
