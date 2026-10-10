@@ -91,7 +91,7 @@ fn primitive_geometry_retains_only_selected_output_buffers() {
             };
             let parts = if scoped {
                 let parts = ctx
-                    .with_scoped_storage("primitive geometry parent", &parse)
+                    .with_scoped_storage("primitive geometry parent", parse)
                     .expect("scoped geometry");
                 (parts.0, Some(parts.1))
             } else {

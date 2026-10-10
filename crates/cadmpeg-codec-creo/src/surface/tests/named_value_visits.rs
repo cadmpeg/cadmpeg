@@ -5,7 +5,7 @@ use crate::surface::{
     parsed_named_surface_value, ScalarBodyRefusal, SurfaceNamedValue, SurfacePrototypeFamily,
 };
 
-fn check_steps(name: &str, body: &[u8], expected: &Option<SurfaceNamedValue>) {
+fn check_steps(name: &str, body: &[u8], expected: Option<&SurfaceNamedValue>) {
     let value = super::work_output(|ctx| {
         parsed_named_surface_value(
             ctx,
@@ -18,7 +18,7 @@ fn check_steps(name: &str, body: &[u8], expected: &Option<SurfaceNamedValue>) {
         )
         .transpose()
     });
-    assert_eq!(&value, expected);
+    assert_eq!(value.as_ref(), expected);
 }
 
 fn compact_count(count: usize) -> Vec<u8> {
@@ -40,18 +40,18 @@ fn named_compact_array_dispatch_owns_each_integer_and_skips_absent_slots() {
         check_steps(
             "dum_array",
             &body,
-            &Some(SurfaceNamedValue::CompactIntArray(vec![7; count])),
+            Some(&SurfaceNamedValue::CompactIntArray(vec![7; count])),
         );
     }
     check_steps(
         "dum_array",
         &[0xf8, 3, 0x80, 0x80, 7, 8],
-        &Some(SurfaceNamedValue::CompactIntArray(vec![128, 7, 8])),
+        Some(&SurfaceNamedValue::CompactIntArray(vec![128, 7, 8])),
     );
     // Two encoded integers and the existing scalar fallback dispatch. The
     // absent third and fourth integers cause no visit or allocation.
-    check_steps("dum_array", &[0xf8, 4, 7, 8], &None);
-    check_steps("dum_array", &[0xf8, 0x81, 1], &None);
+    check_steps("dum_array", &[0xf8, 4, 7, 8], None);
+    check_steps("dum_array", &[0xf8, 0x81, 1], None);
 }
 
 #[test]
@@ -65,7 +65,7 @@ fn named_contiguous_references_admit_exact_generated_range_before_writes() {
         check_steps(
             "c_pnts",
             &body,
-            &Some(SurfaceNamedValue::ContiguousEntityReferences(
+            Some(&SurfaceNamedValue::ContiguousEntityReferences(
                 (128..end).collect(),
             )),
         );
@@ -82,24 +82,24 @@ fn named_scalar_sequence_dispatch_stops_at_first_boundary_and_keeps_interiors() 
         } else {
             SurfaceNamedValue::ScalarSequence(vec![1.0; count])
         };
-        check_steps("data_dbls", &body, &Some(expected));
+        check_steps("data_dbls", &body, Some(&expected));
         let mut bounded = body;
         bounded.extend(std::iter::repeat_n(0xe3, 257));
 
         let expected = (count != 0).then(|| SurfaceNamedValue::ScalarSequence(vec![1.0; count]));
-        check_steps("data_dbls", &bounded, &expected);
+        check_steps("data_dbls", &bounded, expected.as_ref());
     }
     let raw = [0x46, 0x00, 0xe3, 0xe0, 0xf7, 0xe4, 0x0f, 0x18];
     let value = f64::from_bits(0x4000_e3e0_f7e4_0f18);
     check_steps(
         "data_dbls",
         &raw,
-        &Some(SurfaceNamedValue::ScalarSequence(vec![value])),
+        Some(&SurfaceNamedValue::ScalarSequence(vec![value])),
     );
     check_steps(
         "radius",
         &[0x0d, 0x0e],
-        &Some(SurfaceNamedValue::ScalarSequence(vec![0.25, 0.5])),
+        Some(&SurfaceNamedValue::ScalarSequence(vec![0.25, 0.5])),
     );
 }
 
@@ -122,6 +122,6 @@ fn named_value_empty_and_fixed_metadata_routes_preserve_original_refusal() {
         ("offset_type", &[1, 0xf1, 0xf7][..], None),
         ("data_dbls", &[0xf9][..], None),
     ] {
-        check_steps(name, body, &expected);
+        check_steps(name, body, expected.as_ref());
     }
 }
