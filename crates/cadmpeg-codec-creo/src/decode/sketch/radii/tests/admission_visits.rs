@@ -165,3 +165,45 @@ fn repeated_point_axis_reads_one_held_coordinate() {
         }
     }
 }
+
+#[test]
+fn radius_resolution_reuses_one_coordinate_solution() {
+    use crate::feature::definitions::{ScalarLane, VariableType};
+    for incomplete_point in [None, Some(2), Some(1)] {
+        let mut definition = super::arc_radius_definition([3.0, 3.0]);
+        if let Some(point_id) = incomplete_point {
+            for row in &mut definition.variables.as_mut().expect("variables").rows {
+                if row.variable_type == VariableType::V && row.key == point_id {
+                    row.value = ScalarLane::Undefined;
+                    row.guess = ScalarLane::Undefined;
+                }
+            }
+        }
+        let coordinate_walks = std::cell::Cell::new(0);
+        let radii = crate::test_support::assert_refusal_order(
+            ResourceDimension::WorkUnits,
+            &["creo saved section ordinary segment rows"],
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                let result = super::super::resolved_section_radii(&ctx, &definition);
+                if let Err(CodecError::ResourceLimit(refusal)) = &result {
+                    assert_eq!(ctx.resource_refusal(), Some(*refusal));
+                    if refusal.operation == "creo saved section ordinary segment rows" {
+                        coordinate_walks.set(coordinate_walks.get() + 1);
+                    }
+                }
+                result
+            },
+        );
+        let expected = if incomplete_point == Some(1) {
+            std::collections::BTreeMap::new()
+        } else {
+            std::collections::BTreeMap::from([(42, 3.0)])
+        };
+        assert_eq!(radii, expected);
+        assert_eq!(coordinate_walks.get(), 1);
+    }
+}

@@ -3,7 +3,7 @@
 
 use super::axis::SectionAxis;
 
-use crate::feature::definitions::VariableType;
+use crate::feature::definitions::{FeatureVariableRow, VariableType};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::{FiniteReal, PositiveLength};
@@ -637,7 +637,18 @@ pub(in crate::decode) fn section_equation_point_on_line_constraint_rows(
     for equation in equation_solver_rows
         .filter(|equation| equation.function_id == 35 && equation.arguments.len() == 9)
     {
-        let [Some(target_u), Some(target_v), Some(first_u), Some(first_v), Some(second_u), Some(second_v), Some(line_parameter), Some(first_zero), Some(second_zero)] =
+        let [
+            // Coordinate and scalar argument lanes.
+            Some(target_u),
+            Some(target_v),
+            Some(first_u),
+            Some(first_v),
+            Some(second_u),
+            Some(second_v),
+            Some(line_parameter),
+            Some(first_zero),
+            Some(second_zero),
+        ] =
             equation.arguments.as_slice()
         else {
             continue;
@@ -729,7 +740,7 @@ pub(in crate::decode) fn section_equation_point_on_line_constraint_rows(
         {
             continue;
         }
-        let zero_value = |row: &crate::feature::definitions::FeatureVariableRow| -> Result<Option<f64>, CodecError> {
+        let zero_value = |row: &FeatureVariableRow| -> Result<Option<f64>, CodecError> {
                 let equality = ctx.get_btree_map(&scalar_equality_values, &(row.variable_type, row.key), "creo section scalar equality lookup")?.copied().unwrap_or(Ok(None));
                 Ok(equality.ok().and_then(|value| reconcile_equation_value(row.value.value(), value).ok()).flatten())
             };
@@ -821,7 +832,18 @@ pub(in crate::decode) fn section_equation_equal_length_constraint_rows(
                 let ordinal = equation.arguments[index]?;
                 variables.rows.get(usize::try_from(ordinal).ok()?)
             });
-        let [Some(first_u), Some(first_v), Some(second_u), Some(second_v), Some(third_u), Some(third_v), Some(fourth_u), Some(fourth_v), Some(auxiliary)] =
+        let [
+            // Coordinate and scalar argument lanes.
+            Some(first_u),
+            Some(first_v),
+            Some(second_u),
+            Some(second_v),
+            Some(third_u),
+            Some(third_v),
+            Some(fourth_u),
+            Some(fourth_v),
+            Some(auxiliary),
+        ] =
             argument_rows
         else {
             continue;

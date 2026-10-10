@@ -305,10 +305,8 @@ mod tests {
                     assert_ne!(*value, 99, "second match stops before the tail");
                     Ok(*value == 7)
                 }, "test present unique rows").map(Option::<&i32>::copied);
-                if result.is_err() {
-                    let cadmpeg_core::CodecError::ResourceLimit(r) = result.expect_err("next present row") else {
-                        panic!("work refusal");
-                    };
+                match result {
+                    Err(cadmpeg_core::CodecError::ResourceLimit(r)) => {
                     assert_eq!(r.dimension, ResourceDimension::WorkUnits);
                     assert_eq!(r.operation, "test present unique rows");
                     assert_eq!((r.used, r.additional), (allowed, 1));
@@ -316,12 +314,15 @@ mod tests {
                     assert!(matches!(super::exactly_one_by(&ctx, &[] as &[u32], |_| panic!("absent row"),
                         "test present unique rows"), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == r));
                     Err(r.into())
-                } else {
-                    assert_eq!(result.expect("all required rows"), expected);
+                    }
+                    Err(error) => panic!("work refusal: {error:?}"),
+                    Ok(value) => {
+                    assert_eq!(value, expected);
                     assert_eq!(predicates.get(), visits);
                     let r = ctx.charge_work_limit(1, "after present unique rows").expect_err("exact cap");
                     assert_eq!((r.used, r.additional), (visits, 1));
                     Ok(expected)
+                    }
                 }
             });
             assert_eq!(found, expected);
@@ -348,21 +349,22 @@ mod tests {
                 policy.limits.max_collection_items = 0;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
                 let result = super::unique_feature_profile_definition(&ctx, &[], &transforms, 7);
-                if result.is_err() {
-                    let cadmpeg_core::CodecError::ResourceLimit(r) = result.expect_err("next transform") else {
-                        panic!("work refusal");
-                    };
+                match result {
+                    Err(cadmpeg_core::CodecError::ResourceLimit(r)) => {
                     assert_eq!(r.dimension, ResourceDimension::WorkUnits);
                     assert_eq!(r.operation, "creo unique profile transform scan");
                     assert_eq!((r.used, r.additional), (allowed, 1));
                     assert!(matches!(super::unique_feature_profile_definition(&ctx, &[], &[], 7),
                         Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == r));
                     Err(r.into())
-                } else {
-                    assert!(result.expect("visited transforms and absent definitions").is_none());
+                    }
+                    Err(error) => panic!("work refusal: {error:?}"),
+                    Ok(value) => {
+                    assert!(value.is_none());
                     let r = ctx.charge_work_limit(1, "after profile transforms").expect_err("exact cap");
                     assert_eq!((r.used, r.additional), (visits, 1));
                     Ok(())
+                    }
                 }
             });
         }

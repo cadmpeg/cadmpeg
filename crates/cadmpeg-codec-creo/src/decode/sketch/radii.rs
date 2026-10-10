@@ -16,7 +16,7 @@ use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
 use super::super::feature_history::dimensions::{
     feature_dimension_table_complete, feature_relation_table_complete,
 };
-use super::coordinates::{resolved_section_coordinates, resolved_section_points};
+use super::coordinates::resolved_section_coordinates;
 use super::equations_coordinate::{
     section_equation_function_six_distance_values, section_equation_radius_dimensions,
 };
@@ -282,7 +282,6 @@ pub(in crate::decode) fn resolved_section_radii(
             }
         }
     }
-    let points = scratch.with_storage(|| resolved_section_points(ctx, definition))?;
     if let Some(table) = definition.segments.as_ref() {
         for segment in ctx
             .admit_iter(table.rows.as_slice(), "creo radius arc rows")?
@@ -308,16 +307,20 @@ pub(in crate::decode) fn resolved_section_radii(
             let Some(center_id) = segment.center_id else {
                 continue;
             };
-            let Some(center) =
-                ctx.get_btree_map(&points, &center_id, "creo radius point lookup")?
+            let Some([Some(center_u), Some(center_v)]) = ctx
+                .get_btree_map(&radial_coordinates, &center_id, "creo radius point lookup")?
+                .copied()
             else {
                 continue;
             };
             // The two endpoint radii that resolve to a finite nonzero length.
             let mut endpoint_radii = [None; 2];
             for (slot, id) in endpoint_radii.iter_mut().zip(segment.point_ids()) {
-                if let Some(point) = ctx.get_btree_map(&points, &id, "creo radius point lookup")? {
-                    let radius = (point[0] - center[0]).hypot(point[1] - center[1]);
+                if let Some([Some(u), Some(v)]) = ctx
+                    .get_btree_map(&radial_coordinates, &id, "creo radius point lookup")?
+                    .copied()
+                {
+                    let radius = (u - center_u).hypot(v - center_v);
                     if radius.is_finite() && radius > EPS_RADIUS_NONZERO {
                         *slot = Some(radius);
                     }

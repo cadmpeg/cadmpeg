@@ -2,6 +2,7 @@
 //! Section geometry conversion from live and saved section entities.
 
 use super::axis::SectionAxis;
+use crate::feature::definitions::FeatureSavedEntity;
 use crate::feature::segment_rows::SegmentRow;
 
 use cadmpeg_core::decode::DecodeContext;
@@ -400,8 +401,10 @@ pub(in crate::decode) fn saved_section_line_geometry(
                                     ctx,
                                     definition,
                                     |entity| {
-                                        if matches!(entity, crate::feature::definitions::FeatureSavedEntity::Line(line) if line.entity_id == candidate_id)
-                                        {
+                                        let FeatureSavedEntity::Line(line) = entity else {
+                                            return Ok(ControlFlow::Continue(()));
+                                        };
+                                        if line.entity_id == candidate_id {
                                             matching_line = true;
                                             return Ok(ControlFlow::Break(()));
                                         }
