@@ -2218,12 +2218,9 @@ where
     let records = ctx
         .get_btree_map(namespace.arenas(), name, operation)?
         .map_or(&[][..], Vec::as_slice);
-    let records = ctx
-        .admit_iter(records, operation)
-        .map_err(CodecError::ResourceLimit)?;
     let wires = namespace.arena_iter_as_for_decode::<W>(ctx, name);
     ctx.try_collect_vec(
-        records.zip(wires).map(|(record, wire)| {
+        records.iter().zip(wires).map(|(record, wire)| {
             let wire = wire?;
             match convert(wire, ctx) {
                 Ok(value) => Ok(value),

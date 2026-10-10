@@ -1213,14 +1213,13 @@ fn ufrx_external_conversion_issue_refuses_before_failure_text_creation() {
         version: 0,
         flags: 0,
     };
-    let id = "inventor:ufrx:external-reference#0";
     let issue_detail = "path or a nonzero document_id is required";
-    let retained_before_issue = id.len() + 32 + 32;
     let issue_scope = "ufrx-external-reference-0";
     let issue_id = "inventor:rse:structural-issue#ufrx-external-reference-0";
-    // Retain wire text, four initial vector slots, then issue ID, scope and message.
-    let retained_needed = retained_before_issue
-        + 4 * std::mem::size_of::<StructuralIssueRecord>()
+    // Rejection retains only four issue slots and issue text:
+    // 4 * size_of::<StructuralIssueRecord>() + 55 + 25 + 41 bytes.
+    // The 34-byte wire id and two 32-byte identifiers are no longer copied.
+    let retained_needed = 4 * std::mem::size_of::<StructuralIssueRecord>()
         + issue_id.len()
         + issue_scope.len()
         + issue_detail.len();
@@ -1249,6 +1248,55 @@ fn ufrx_external_conversion_issue_refuses_before_failure_text_creation() {
     assert_eq!(issues[0].id, issue_id);
     assert_eq!(issues[0].scope, issue_scope);
     assert_eq!(issues[0].detail, issue_detail);
+}
+
+#[test]
+fn ufrx_blank_external_identity_skips_all_source_field_copies() {
+    let reference = InventorExternalReference {
+        path: "\u{2003} \t\n".into(),
+        library_id: 0,
+        library_name: "library".repeat(1024),
+        display_name: "display".repeat(1024),
+        state_groups: vec![[0; 3]; 512],
+        state: [0; 2],
+        document_id: [0; 16],
+        database_id: [0; 16],
+        reference_id: 7,
+        occurrence_count: 1,
+        version: 0,
+        flags: 0,
+    };
+    let issue_detail = "path or a nonzero document_id is required";
+    let issue_scope = "ufrx-external-reference-0";
+    let issue_id = "inventor:rse:structural-issue#ufrx-external-reference-0";
+    let mut policy = DecodePolicy::service();
+    // Only 4 issue slots + 55-byte id + 25-byte scope + 41-byte detail fit.
+    // The large rejected names and state groups have no retained allowance.
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+        4 * std::mem::size_of::<StructuralIssueRecord>()
+            + issue_id.len()
+            + issue_scope.len()
+            + issue_detail.len(),
+    );
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("issue context");
+    let mut issues = Vec::new();
+    assert!(
+        project_ufrx_external_reference(&ctx, 0, &reference, &mut issues)
+            .expect("missing identity is rejected before copies")
+            .is_none()
+    );
+    assert_eq!(issues.len(), 1);
+    assert_eq!(issues[0].id, issue_id);
+    assert_eq!(issues[0].scope, issue_scope);
+    assert_eq!(issues[0].detail, issue_detail);
+    assert!(
+        matches!(ctx.charge_retained(1, "probe rejected reference storage"),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.used == policy.limits.max_retained_bytes
+                && limit.additional == 1)
+    );
 }
 
 #[test]

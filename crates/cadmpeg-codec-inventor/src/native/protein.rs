@@ -119,18 +119,6 @@ impl ProteinRecord {
         ctx: &DecodeContext<'_>,
         namespace: &NativeNamespace,
     ) -> Result<Self, NativeConvertError> {
-        let state_count = ctx
-            .get_btree_map(
-                namespace.arenas(),
-                "protein",
-                "read Inventor Protein state cardinality",
-            )?
-            .map_or(0, Vec::len);
-        if state_count != 1 {
-            return Err(NativeConvertError::ConversionMessage(format!(
-                "Inventor native data has {state_count} Protein state records"
-            )));
-        }
         let records = namespace.arena_as_for_decode::<ProteinRecordWire>(ctx, "protein")?;
         let wire = match <[_; 1]>::try_from(records) {
             Ok([wire]) => wire,
@@ -390,7 +378,7 @@ mod tests {
     }
 
     #[test]
-    fn protein_cardinality_preflight_skips_large_wire_text_and_lookup_refusal_is_sticky() {
+    fn protein_typed_read_precedes_cardinality_and_refusal_is_sticky() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_core::CodecError;
         use cadmpeg_ir::native::NativeConvertError;
@@ -426,12 +414,31 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-        assert!(matches!(
-            ProteinRecord::read(&ctx, &namespace),
+        let storage_refusal = match ProteinRecord::read(&ctx, &namespace) {
+            Err(NativeConvertError::Resource(CodecError::ResourceLimit(limit))) => limit,
+            other => panic!("typed storage must precede cardinality: {other:?}"),
+        };
+        // An empty typed vector grows to four slots before the first wire copy.
+        assert_eq!(storage_refusal.dimension, ResourceDimension::RetainedBytes);
+        assert_eq!(storage_refusal.operation, "load typed native record");
+        assert_eq!(storage_refusal.used, 0);
+        assert_eq!(
+            storage_refusal.additional,
+            cadmpeg_core::decode::u64_from_index(
+                4 * std::mem::size_of::<super::ProteinRecordWire>()
+            )
+        );
+        assert_eq!(ctx.resource_refusal(), Some(storage_refusal));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit))
+            if limit == storage_refusal)
+        );
+
+        assert!(
+            matches!(ProteinRecord::read(&crate::native::test_ctx(), &namespace),
             Err(NativeConvertError::ConversionMessage(detail))
-                if detail == "Inventor native data has 2 Protein state records"
-        ));
-        assert_eq!(ctx.resource_refusal(), None);
+                if detail == "Inventor native data has 2 Protein state records")
+        );
 
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -439,13 +446,10 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let first_refusal = match ProteinRecord::read(&ctx, &namespace) {
             Err(NativeConvertError::Resource(CodecError::ResourceLimit(limit))) => limit,
-            other => panic!("raw cardinality lookup should refuse work: {other:?}"),
+            other => panic!("typed native copy should refuse work: {other:?}"),
         };
         assert_eq!(first_refusal.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(
-            first_refusal.operation,
-            "read Inventor Protein state cardinality"
-        );
+        assert_eq!(first_refusal.operation, "construct canonical native value");
         assert_eq!(ctx.resource_refusal(), Some(first_refusal));
         assert!(matches!(
             ProteinRecord::read(&ctx, &namespace),
@@ -453,6 +457,23 @@ mod tests {
                 if limit == first_refusal
         ));
         assert_eq!(ctx.resource_refusal(), Some(first_refusal));
+    }
+
+    #[test]
+    fn protein_invalid_first_record_precedes_cardinality() {
+        let records = [
+            serde_json::json!({"id": "inventor:protein:state#0", "state": "absent"}),
+            serde_json::json!({"id": "inventor:protein:state#1", "state": "absent", "entry_count": 0}),
+        ];
+        let ctx = crate::native::test_ctx();
+        let mut namespace = NativeNamespace::default();
+        namespace
+            .set_arena(&ctx, "protein", &records)
+            .expect("raw Protein records");
+        assert_eq!(ProteinRecord::read(&ctx, &namespace)
+            .expect_err("the invalid first Protein wire is checked before cardinality")
+            .to_string(),
+            "native arena protein: native record inventor:protein:state#0: missing field `entry_count`");
     }
 
     #[test]
