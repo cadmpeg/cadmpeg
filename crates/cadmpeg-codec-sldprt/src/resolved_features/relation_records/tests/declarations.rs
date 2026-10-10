@@ -1089,3 +1089,74 @@ fn rejected_unknown_span_does_not_suppress_a_later_valid_declaration() {
     assert_eq!(selected[0].2, FeatureInputRelationFamily::PointPointHorizontalDistance);
     assert_eq!(ctx.resource_refusal(), None);
 }
+
+fn singleton_group_fixture() -> (FeatureInputLane, crate::records::FeatureInputRelationInstance) {
+    let source = scalar(20, FeatureInputScalarRole::Driving);
+    let expected = crate::records::FeatureInputRelationInstance {
+        id: "sldprt:feature-input:relation-instance#lane:20".into(),
+        parent: "lane".into(), ordinal: 0, offset: 20,
+        family: FeatureInputRelationFamily::PointPointDistance,
+        class_ref: "class-10".into(), feature_ref: "sketch".into(),
+        scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+            vec![source.id.clone()], Some(source.id.clone()), None,
+        ).unwrap(),
+        operands: source.operands.clone(),
+    };
+    (lane(vec![class(10, "sgPntPntDist")], vec![source]), expected)
+}
+
+#[test]
+fn relation_group_phases_release_indexes_before_output_and_bindings() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    assert_eq!(std::mem::size_of::<super::super::RelationGroup<'_>>(), 80);
+    assert_eq!(std::mem::size_of::<(&str, (u64, FeatureInputRelationFamily, &str))>(), 48);
+    assert_eq!(std::mem::size_of::<(usize, &FeatureInputScalar)>(), 16);
+    let (input, expected) = singleton_group_fixture();
+    let histories = sketch_history();
+    let mut policy = DecodePolicy::service();
+    // Sketch set99, class offsets32, counts131, declarations227,
+    // four80-byte group slots and one exact16-byte scalar slot.
+    const MATERIALIZED: u64 = 99 + 32 + 131 + 227 + 4 * 80 + 16;
+    policy.limits.max_materialized_bytes = MATERIALIZED;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    for _ in 0..64 {
+        let output = relation_instances(&ctx, &histories, &input).unwrap();
+        assert_eq!(output.as_slice(), std::slice::from_ref(&expected));
+        let released = ctx.reserve_scoped(MATERIALIZED, "released relation grouping phases").unwrap();
+        drop(released);
+    }
+    assert_eq!(ctx.resource_refusal(), None);
+}
+
+#[test]
+fn relation_group_phases_refuse_actual_first_scalar_slot() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let (input, _) = singleton_group_fixture();
+    let histories = sketch_history();
+    for (dimension, cap, used, additional) in [
+        (ResourceDimension::MaterializedBytes, 824, 809, 16),
+        (ResourceDimension::CollectionItems, 7, 7, 1),
+    ] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 825;
+        match dimension {
+            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+            _ => panic!("grouping resource dimension"),
+        }
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let Err(CodecError::ResourceLimit(limit)) = relation_instances(&ctx, &histories, &input)
+        else { panic!("group scalar backing must be admitted before publication"); };
+        assert_eq!(limit.dimension, dimension);
+        assert_eq!(limit.operation, "collect SLDPRT relation scalar groups");
+        assert_eq!(limit.limit, cap);
+        assert_eq!(limit.used, used);
+        assert_eq!(limit.additional, additional);
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+        assert!(matches!(ctx.charge_work(0, "after grouping slot refusal"), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    }
+}
