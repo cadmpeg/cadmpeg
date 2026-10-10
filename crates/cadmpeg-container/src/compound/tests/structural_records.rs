@@ -67,15 +67,10 @@ fn structural_extent_gate_precedes_record_grammar_and_slot_allocation() {
     policy.limits.max_materialized_bytes = 0;
     policy.limits.max_collection_items = 0;
     with_context(partial, &policy, |ctx| {
-        let error = match StructuralRecords::<128>::new(
-            ctx,
-            partial,
-            SECTOR_SIZE,
-            3,
-            Some((&first, &rest)),
-        ) {
-            Ok(_) => panic!("later structural sector is partial"),
-            Err(error) => error,
+        let Err(error) =
+            StructuralRecords::<128>::new(ctx, partial, SECTOR_SIZE, 3, Some((&first, &rest)))
+        else {
+            panic!("later structural sector is partial")
         };
         assert!(matches!(error, CodecError::Malformed(message)
             if message == "CFB structural sector is truncated"));
