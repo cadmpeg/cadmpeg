@@ -255,3 +255,62 @@ fn closure_relative_weight_underflow_accepts_exact_work_and_releases_scratch() {
         assert_eq!(serde_json::to_value(&curve).unwrap(), before);
     }
 }
+
+#[test]
+fn shared_weights_negative_scale_is_free_and_preserves_original_refusal() {
+    let first = rail(0.0, Some(vec![-1.0, 1.0]));
+    let second = rail(1.0, None);
+    let before = (serde_json::to_value(&first).unwrap(), serde_json::to_value(&second).unwrap());
+    crate::test_support::with_entry_context(|ctx, original| {
+        // The two fixed indexed weights yield scale -1. No range visit or
+        // vector allocation executes on the nonpositive-scale return.
+        let result = super::super::projectively_shared_weights(&first, &second, ctx);
+        match original {
+            Some(first) => assert!(matches!(result,
+                Err(CodecError::ResourceLimit(last)) if last == first)),
+            None => assert!(result.unwrap().is_none()),
+        }
+        assert_eq!((serde_json::to_value(&first).unwrap(), serde_json::to_value(&second).unwrap()), before);
+    });
+}
+
+#[test]
+fn shared_weights_last_mismatch_accepts_exact_visits_without_allocation() {
+    let first = rail(0.0, Some(vec![1.0, 0.5]));
+    let second = rail(1.0, None);
+    let negative = rail(0.0, Some(vec![-1.0, 1.0]));
+    let before = (serde_json::to_value(&first).unwrap(), serde_json::to_value(&second).unwrap());
+    // Scale is 1, the first pair agrees, and the second pair differs.
+    // The matching predicate stops on that second visit before end probing.
+    for cap in [1, 2] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_entities = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = super::super::projectively_shared_weights(&first, &second, &ctx);
+        if cap == 1 {
+            let Err(CodecError::ResourceLimit(original)) = result else {
+                panic!("second actual equality visit must refuse");
+            };
+            assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(original.operation, "iges ruled shared weight equality");
+            assert_eq!((original.limit, original.used, original.additional), (1, 1, 1));
+            for _ in 0..64 {
+                for replay in [&first, &negative] {
+                    assert!(matches!(super::super::projectively_shared_weights(replay, &second, &ctx),
+                        Err(CodecError::ResourceLimit(last)) if last == original));
+                }
+            }
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == original));
+        } else {
+            assert!(result.unwrap().is_none());
+            assert!(ctx.resource_refusal().is_none());
+            ctx.finish_session().unwrap();
+        }
+        assert_eq!((serde_json::to_value(&first).unwrap(), serde_json::to_value(&second).unwrap()), before);
+    }
+}
