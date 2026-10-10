@@ -1317,7 +1317,8 @@ pub(super) fn transfer_section_entities(
             let suffix = suffix_storage.with_storage(|| {
                 section_segment_identity_suffix_admitted(ctx, unique_segment_ids, segment)
             })?;
-            let Some(id) = typed_sketch_section_curve_id_admitted(ctx, sketch_id, &suffix)? else {
+            let mut curve_storage = ctx.reserve_scoped(0, "creo placed curve candidate identity")?;
+            let Some(id) = curve_storage.with_storage(|| typed_sketch_section_curve_id_admitted(ctx, sketch_id, &suffix))? else {
                 continue;
             };
             let already_present = ctx.contains_hash_set(
@@ -1349,7 +1350,7 @@ pub(super) fn transfer_section_entities(
                 ctx,
                 ir,
                 Curve {
-                    id,
+                    id: curve_storage.commit_value(id)?,
                     geometry,
                     source_object: Some(placed_source_object(
                         ctx,
@@ -1388,7 +1389,8 @@ pub(super) fn transfer_section_entities(
                     segment.offset,
                 )
             })?;
-            let Some(id) = typed_sketch_section_curve_id_admitted(ctx, sketch_id, &suffix)? else {
+            let mut curve_storage = ctx.reserve_scoped(0, "creo placed curve candidate identity")?;
+            let Some(id) = curve_storage.with_storage(|| typed_sketch_section_curve_id_admitted(ctx, sketch_id, &suffix))? else {
                 continue;
             };
             let already_present = ctx.contains_hash_set(
@@ -1420,7 +1422,7 @@ pub(super) fn transfer_section_entities(
                 ctx,
                 ir,
                 Curve {
-                    id,
+                    id: curve_storage.commit_value(id)?,
                     geometry,
                     source_object: Some(placed_source_object(
                         ctx,
@@ -1463,7 +1465,8 @@ pub(super) fn transfer_section_entities(
                     segment.offset,
                 )
             })?;
-            let Some(id) = typed_sketch_section_curve_id_admitted(ctx, sketch_id, &suffix)? else {
+            let mut curve_storage = ctx.reserve_scoped(0, "creo placed curve candidate identity")?;
+            let Some(id) = curve_storage.with_storage(|| typed_sketch_section_curve_id_admitted(ctx, sketch_id, &suffix))? else {
                 continue;
             };
             let already_present = ctx.contains_hash_set(
@@ -1495,7 +1498,7 @@ pub(super) fn transfer_section_entities(
                 ctx,
                 ir,
                 Curve {
-                    id,
+                    id: curve_storage.commit_value(id)?,
                     geometry,
                     source_object: Some(placed_source_object(
                         ctx,
@@ -1572,6 +1575,7 @@ pub(super) fn transfer_section_entities(
 #[cfg(test)]
 mod tests {
     mod saved_storage;
+    mod placed_storage;
     mod set_owner_tests;
     use super::{
         admitted_endpoint_refs, copied_or_native_geometry, native_section_geometry,

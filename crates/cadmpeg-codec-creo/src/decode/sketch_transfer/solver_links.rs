@@ -82,6 +82,17 @@ pub(in super::super) struct RelationIncidences<'definition, 'ctx> {
 }
 
 impl<'definition, 'ctx> RelationIncidences<'definition, 'ctx> {
+    /// Build dimension joins only when the relation-row table has a consumer.
+    pub(super) fn for_dimension_rows(
+        ctx: &'ctx DecodeContext<'_>,
+        definition: &'definition FeatureDefinition,
+    ) -> Result<Option<Self>, CodecError> {
+        if definition.relations.as_ref().is_none_or(|table| table.rows.is_empty()) {
+            return Ok(None);
+        }
+        Self::new(ctx, definition).map(Some)
+    }
+
     pub(in super::super) fn new(
         ctx: &'ctx DecodeContext<'_>,
         definition: &'definition FeatureDefinition,
