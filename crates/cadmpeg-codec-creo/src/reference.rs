@@ -615,22 +615,20 @@ fn scalar_suffix<const COUNT: usize>(
         return Ok(None);
     };
     let suffix_span = row.len().min(max_span);
-    let mut starts = row.len() - suffix_span..row.len();
-    while !starts.is_empty() {
-        let Some(start) = ctx.next_charged(&mut starts, "creo reference scalar suffix scan")? else {
-            break;
-        };
-        let Some(values) = (|| {
-            let mut cursor = crate::psb::Cursor::at(row, start);
-            let mut values = [0.0; COUNT];
-            for value in &mut values {
-                *value = cursor.take_with(|data, pos| coordinate(data, pos, cache))?;
-            }
-            (cursor.pos() == row.len() && values.iter().all(|value| value.is_finite()))
-                .then_some(values)
-        })() else {
+    for start in row.len() - suffix_span..row.len() {
+        let mut cursor = crate::psb::Cursor::at(row, start);
+        let mut values = [0.0; COUNT];
+        let mut complete = true;
+        for value in &mut values {
+            let Some(decoded) = cursor.take_with(|data, pos| coordinate(data, pos, cache)) else {
+                complete = false;
+                break;
+            };
+            *value = decoded;
+        }
+        if !complete || cursor.pos() != row.len() || !values.iter().all(|value| value.is_finite()) {
             continue;
-        };
+        }
         if candidate.is_some() {
             return Ok(None);
         }
@@ -836,7 +834,8 @@ pub(crate) fn named_conics(
     let cache = ScalarCache::from_section_checked(ctx, payload)?;
     let mut result = Vec::new();
     let mut search = 0;
-    while payload.len().saturating_sub(search) >= LIST.len() {
+    while payload.len().checked_sub(search)
+        .ok_or_else(|| CodecError::malformed("Creo reference search exceeds payload"))? >= LIST.len() {
         let Some(offset) = ctx.find_bytes_in(
             payload,
             LIST,
@@ -1065,11 +1064,7 @@ fn positional_conic_local_system(
     };
     let last_end = last_end.min(body.len());
     let mut candidate = None;
-    let mut ends = first_end..=last_end;
-    while !ends.is_empty() {
-        let Some(end) = ctx.next_charged(&mut ends, "creo conic frame end scan")? else {
-            break;
-        };
+    for end in first_end..=last_end {
         let Some(tail) = body.get(end..) else {
             return Ok(None);
         };
@@ -1151,7 +1146,8 @@ pub(crate) fn positional_conics(
     let cache = ScalarCache::from_section_checked(ctx, payload)?;
     let mut result = Vec::new();
     let mut search = 0;
-    while payload.len().saturating_sub(search) >= LIST.len() {
+    while payload.len().checked_sub(search)
+        .ok_or_else(|| CodecError::malformed("Creo reference search exceeds payload"))? >= LIST.len() {
         let Some(prototype) = ctx.find_bytes_in(
             payload,
             LIST,
@@ -1244,7 +1240,8 @@ pub(crate) fn lines(
     let cache = ScalarCache::from_section_checked(ctx, payload)?;
     let mut result = Vec::new();
     let mut search = 0;
-    while payload.len().saturating_sub(search) >= PROTOTYPE.len() {
+    while payload.len().checked_sub(search)
+        .ok_or_else(|| CodecError::malformed("Creo reference search exceeds payload"))? >= PROTOTYPE.len() {
         let Some(prototype) = ctx.find_bytes_in(
             payload,
             PROTOTYPE,
@@ -1415,13 +1412,7 @@ fn matching_row_id(
     let Some(prefix) = payload.get(..close) else {
         return Ok(false);
     };
-    let mut candidates = prefix.iter().enumerate().rev().take(8);
-    while candidates.len() != 0 {
-        let Some((candidate, _)) =
-            ctx.next_charged(&mut candidates, "creo matching row prefix scan")?
-        else {
-            break;
-        };
+    for (candidate, _) in prefix.iter().enumerate().rev().take(8) {
         let Ok((previous, after)) = crate::psb::reference_id(payload, candidate) else {
             continue;
         };
@@ -1451,7 +1442,8 @@ pub(crate) fn line3d_lines(
     let cache = ScalarCache::from_section_checked(ctx, payload)?;
     let mut result = Vec::new();
     let mut search = 0;
-    while payload.len().saturating_sub(search) >= PROTOTYPE.len() {
+    while payload.len().checked_sub(search)
+        .ok_or_else(|| CodecError::malformed("Creo reference search exceeds payload"))? >= PROTOTYPE.len() {
         let Some(prototype) = ctx.find_bytes_in(
             payload,
             PROTOTYPE,
@@ -1664,7 +1656,8 @@ pub(crate) fn arc_z_circles(
     let cache = ScalarCache::from_section_checked(ctx, payload)?;
     let mut result = Vec::new();
     let mut search = 0;
-    while payload.len().saturating_sub(search) >= PROTOTYPE.len() {
+    while payload.len().checked_sub(search)
+        .ok_or_else(|| CodecError::malformed("Creo reference search exceeds payload"))? >= PROTOTYPE.len() {
         let Some(prototype) =
             ctx.find_bytes_from(payload, PROTOTYPE, search, "creo arc-z prototype search")?
         else {
