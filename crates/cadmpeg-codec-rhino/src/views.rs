@@ -556,10 +556,6 @@ fn push_list_loss(
         message,
         "Rhino view list loss message",
     )?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(tag.len()),
-        "Rhino view list loss tag",
-    )?;
     losses.push_admitted(
         ctx,
         loss.with_provenance(
@@ -579,10 +575,6 @@ fn push_view_loss(
     message: std::fmt::Arguments<'_>,
 ) -> Result<(), CodecError> {
     let loss = crate::wire::admitted_loss(ctx, code, message, "Rhino view loss message")?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(tag.len()),
-        "Rhino view loss tag",
-    )?;
     losses.push_admitted(
         ctx,
         loss.with_provenance(
@@ -1911,10 +1903,6 @@ pub(crate) fn install<'ctx>(
                             crate::loss::RhinoLossCode::PresentationRecordDropped,
                             format_args!("named construction-plane list at offset {} was omitted after parsing failed: {error}", record.range.start),
                             "Rhino view setting loss message")?;
-                        ctx.charge_retained(
-                            cadmpeg_core::decode::u64_from_index("VIEW/NAMED_CPLANES".len()),
-                            "Rhino view setting loss tag",
-                        )?;
                         losses.push_admitted(
                             ctx,
                             loss.with_provenance(

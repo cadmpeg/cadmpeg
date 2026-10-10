@@ -77,14 +77,15 @@ fn group_name_refuses_materialized_limit() {
 }
 
 #[test]
-fn group_id_refuses_retained_limit() {
+fn group_id_refuses_work_limit() {
     let mut bytes = vec![0x1f];
     bytes.extend(7_i32.to_le_bytes());
     bytes.extend(utf16_bytes("fixtures"));
     bytes.extend([0x44; 16]);
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 44;
+    policy.limits.max_work_units = u64::MAX;
+    let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(cadmpeg_core::decode::ResourceDimension::WorkUnits, "Rhino group ID", None);
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
         .expect("group root admitted");
     let (mut group, _group_storage) = crate::presentation::parse_group(
@@ -97,11 +98,12 @@ fn group_id_refuses_retained_limit() {
     let error = crate::presentation::disambiguate_group_ids(
         &ctx,
         std::slice::from_mut(&mut group),
-        None,
+        &mut ctx.reserve_scoped(0, "group test IDs").unwrap(),
     )
-    .expect_err("generated group ID exceeds retained limit");
+    .expect_err("generated group ID exceeds work limit");
+    drop(probe);
     assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino group ID")
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino group ID" && refusal.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
     );
 }
 
@@ -132,7 +134,7 @@ fn group_identity_workspace_refuses_materialized_limit() {
     policy.limits.max_materialized_bytes = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root admitted");
-    let error = crate::presentation::disambiguate_group_ids(&ctx, &mut duplicate_groups(), None)
+    let error = crate::presentation::disambiguate_group_ids(&ctx, &mut duplicate_groups(), &mut ctx.reserve_scoped(0, "group test IDs").unwrap())
         .expect_err("identity workspace exceeds materialized limit");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino group identity counts")
@@ -170,7 +172,7 @@ fn group_identity_count_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root admitted");
-    let error = crate::presentation::disambiguate_group_ids(&ctx, &mut duplicate_groups(), None)
+    let error = crate::presentation::disambiguate_group_ids(&ctx, &mut duplicate_groups(), &mut ctx.reserve_scoped(0, "group test IDs").unwrap())
         .expect_err("identity map exceeds collection limit");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino group identity counts")
@@ -184,7 +186,7 @@ fn duplicate_group_indices_refuse_collection_limit() {
     policy.limits.max_collection_items = 1;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root admitted");
-    let error = crate::presentation::disambiguate_group_ids(&ctx, &mut duplicate_groups(), None)
+    let error = crate::presentation::disambiguate_group_ids(&ctx, &mut duplicate_groups(), &mut ctx.reserve_scoped(0, "group test IDs").unwrap())
         .expect_err("duplicate indices exceed collection limit");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino duplicate group indices")
@@ -192,27 +194,17 @@ fn duplicate_group_indices_refuse_collection_limit() {
 }
 
 #[test]
-fn disambiguated_group_id_refuses_retained_limit() {
-    let run = |cap| {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = cap;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root admitted");
-        crate::presentation::disambiguate_group_ids(&ctx, &mut duplicate_groups(), None)
-            .expect_err("disambiguated ID exceeds retained limit")
-    };
-    let error = run(crate::test_support::retained_limit_at(
-        "Rhino disambiguated group ID",
-        0,
-        |cap| match run(cap) {
-            cadmpeg_core::CodecError::ResourceLimit(limit) => limit,
-            error => panic!("unexpected resource refusal: {error:?}"),
-        },
-    ));
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino disambiguated group ID")
-    );
+fn disambiguated_group_id_refuses_work_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut staging = ctx.reserve_scoped(0, "group test IDs").unwrap();
+    let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits, "Rhino disambiguated group ID", None);
+    let error = crate::presentation::disambiguate_group_ids(&ctx, &mut duplicate_groups(), &mut staging).unwrap_err();
+    drop(probe);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino disambiguated group ID" && refusal.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
 
 fn light_refusal(
@@ -305,11 +297,10 @@ fn push_light_refusal(
         indexes.insert(Uuid::from_canonical([0x55; 16]));
     }
     let mut staging = ctx.reserve_scoped(0, "Rhino test light staging").unwrap();
-    let mut guard_storage = ctx.reserve_scoped(0, "Rhino test light guard staging").unwrap();
     let light_storage = ctx.reserve_scoped(0, "Rhino test light record").unwrap();
     crate::presentation::prepare_light(&ctx, &mut workspace, &mut indexes, light)
         .and_then(|light| crate::presentation::push_presentation_record(
-            &ctx, &mut staging, &mut guard_storage, &mut Vec::new(), &mut Vec::new(),
+            &ctx, &mut staging, &mut Vec::new(),
             (light, light_storage, None), "Rhino lights",
         ))
         .expect_err("light collection or identity exceeds limit")

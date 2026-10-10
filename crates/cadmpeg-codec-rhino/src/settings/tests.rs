@@ -1124,3 +1124,4 @@ fn every_standard_unit_reads_its_scale_from_the_admitted_table() {
 }
 
 mod bounded_diagnostics;
+mod metadata_lifetimes;
