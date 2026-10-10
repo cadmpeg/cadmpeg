@@ -12,7 +12,7 @@ fn isolated_expression_components_charge_only_present_stack_entries() {
         // Each vertex has one visited fill, one root, two forward pops,
         // one component fill, one mark reset, one finish and one reverse pop.
         // Both stacks fit their initial capacities; growth moves no entries.
-        let total = 8 * count as u64;
+        let total = 8 * cadmpeg_core::decode::u64_from_index(count);
         crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, &[], |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
@@ -110,18 +110,20 @@ fn expression_source_projection_admits_each_index_once() {
         (vec!["é", "β"], "é\nβ"),
     ] {
         let lines = source_lines(&text);
-        let count = lines.len() as u64;
+        let count = cadmpeg_core::decode::u64_from_index(lines.len());
         // One projection, one length pass and one output pass per line;
         // then exactly the source and separating newline UTF-8 bytes.
-        let total = 3 * count + expected.len() as u64;
-        let reference_bytes = (lines.len() * std::mem::size_of::<&str>()) as u64;
+        let output_bytes = cadmpeg_core::decode::u64_from_index(expected.len());
+        let total = 3 * count + output_bytes;
+        let reference_bytes =
+            cadmpeg_core::decode::u64_from_index(lines.len() * std::mem::size_of::<&str>());
         crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, &[], |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
             policy.limits.max_materialized_bytes = reference_bytes;
             policy.limits.max_collection_items = count;
-            policy.limits.max_retained_bytes = expected.len() as u64;
+            policy.limits.max_retained_bytes = output_bytes;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
             let result = super::super::curve_expression_source_text(&ctx, &lines);
             let (original, admitted) = if cap == total {
@@ -191,7 +193,7 @@ fn expression_source_slots_refuse_before_view_allocation() {
 #[test]
 fn expression_source_view_bytes_refuse_before_allocation() {
     let lines = source_lines(&["a", "bc"]);
-    let bytes = (lines.len() * std::mem::size_of::<&str>()) as u64;
+    let bytes = cadmpeg_core::decode::u64_from_index(lines.len() * std::mem::size_of::<&str>());
     let error = crate::test_support::last_refusal_at(
         &[],
         ResourceDimension::MaterializedBytes,

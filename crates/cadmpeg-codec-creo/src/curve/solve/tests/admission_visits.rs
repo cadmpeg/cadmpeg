@@ -249,7 +249,7 @@ fn nonlinear_smooth_expression_stops_before_unneeded_tail() {
 fn nonlinear_equation_smoothness_visits_present_rows_until_first_failure() {
     let equation = |left: &str| crate::curve::CurveExpressionEquation {
         left: left.to_owned(),
-        right: "".to_owned(),
+        right: String::new(),
         dependencies: Vec::new(),
         offset: 0,
     };
