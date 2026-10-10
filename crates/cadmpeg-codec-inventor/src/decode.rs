@@ -2112,12 +2112,31 @@ fn project_ufrx_external_reference(
     reference: &crate::external_reference::InventorExternalReference,
     issues: &mut Vec<StructuralIssueRecord>,
 ) -> Result<Option<ExternalReferenceRecord>, CodecError> {
+    let wire_ordinal = record_ordinal(ctx, ordinal, "Inventor UFRx external ordinal")?;
+    if reference.document_id == [0; 16] {
+        let mut has_path = false;
+        for character in reference.path.chars() {
+            ctx.charge_work(1, "validate path")?;
+            if !character.is_whitespace() {
+                has_path = true;
+                break;
+            }
+        }
+        if !has_path {
+            return admit_ufrx_record(
+                ctx,
+                Err(CodecError::malformed("path or a nonzero document_id is required")),
+                format_args!("ufrx-external-reference-{ordinal}"),
+                issues,
+            );
+        }
+    }
     let admitted = ExternalReferenceRecordWire {
         id: ctx.format_retained(
             format_args!("inventor:ufrx:external-reference#{ordinal}"),
             "retain Inventor UFRx external reference id",
         )?,
-        ordinal: record_ordinal(ctx, ordinal, "Inventor UFRx external ordinal")?,
+        ordinal: wire_ordinal,
         path: ctx.copy_retained_text(&reference.path, "retain Inventor UFRx external path")?,
         library_id: reference.library_id,
         library_name: ctx.copy_retained_text(
