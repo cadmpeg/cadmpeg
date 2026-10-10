@@ -414,12 +414,9 @@ fn b2_offset_source_scan_refuses_even_without_carriers() {
     let offsets = crate::families::b2::records::b2_offset_supports(
         &crate::test_support::test_b2::b2_offset_support_stream(),
     );
+    let carriers: &[crate::families::a5a8::records::FreeformSurface] = &[];
     crate::test_support::with_work_limit(0, |ctx| {
-        let result = crate::families::b2::records::offset_support_carriers(
-            ctx,
-            &offsets,
-            &[] as &[crate::families::a5a8::records::FreeformSurface],
-        );
+        let result = crate::families::b2::records::offset_support_carriers(ctx, &offsets, carriers);
         let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = result else {
             panic!("offset source scan work refusal required")
         };
