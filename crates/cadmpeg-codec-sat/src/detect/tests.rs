@@ -75,6 +75,43 @@ fn detection_is_content_based() {
 }
 
 #[test]
+fn text_header_line_holds_exactly_four_integer_fields_then_a_digit() {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    for (bytes, expected) in [
+        (&b"700 0 6 0\n3"[..], true),
+        (b"700 0 6 0\r\n3", true),
+        (b"700 0\t6 0  \n3", true),
+        (b"700 0 6\n3 4", false),
+        (b"700 0 6 0 1\n3", false),
+        (b"700 0 6 0", false),
+        (b"700 0 6 0 ", false),
+        (b"700 0 6 0\n", false),
+        (b"700 0 6 0\nx", false),
+        (b"700 0 x 0\n3", false),
+    ] {
+        assert_eq!(
+            super::looks_like_text_stream(&ctx, bytes).expect("service admission"),
+            expected,
+            "{}",
+            String::from_utf8_lossy(bytes)
+        );
+    }
+}
+
+#[test]
+fn text_header_detection_visits_only_the_first_line() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let mut bytes = b"700 0 6 0\n3".to_vec();
+    bytes.resize(1 << 20, b'7');
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 64;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+    assert!(super::looks_like_text_stream(&ctx, &bytes).expect("the first line fits the budget"));
+}
+
+#[test]
 fn inspect_reports_the_stream_kind_and_header_facts() {
     let summary = SatCodec
         .inspect(
@@ -159,4 +196,69 @@ fn sat_header_attributes_admit_retained_text_and_collection_slots() {
         .expect_err("attribute admission uses the caller budget");
         assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == dimension));
     }
+}
+
+#[test]
+fn text_header_magic_uses_the_admitted_first_field_scan() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let bytes = vec![b'7'; 1 << 20];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("input");
+    let error = super::looks_like_text_stream(&ctx, &bytes)
+        .expect_err("the digit run must be admitted before scanning");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("work refusal expected");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(limit.operation, "SAT text header line");
+    assert_eq!(limit.used, 0);
+    assert_eq!(limit.additional, 1);
+    assert_eq!(ctx.resource_refusal(), Some(limit));
+    assert!(matches!(super::looks_like_text_stream(&ctx, &bytes),
+        Err(CodecError::ResourceLimit(original)) if original == limit));
+    let service = cadmpeg_test_support::service_decode_context();
+    for invalid in [
+        &b"70 0 6 0\n3"[..],
+        b"700\t0 6 0\n3",
+        b"700x 0 6 0\n3",
+        b" 700 0 6 0\n3",
+    ] {
+        assert!(!super::looks_like_text_stream(&service, invalid).expect("invalid discriminant"));
+    }
+    assert!(super::looks_like_text_stream(&service, b"000700 0 6 0\n3")
+        .expect("leading zeroes preserve decimal magic"));
+}
+
+#[test]
+fn text_header_detection_has_an_exact_first_line_work_boundary() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    // First field: one separator probe, four extent probes, three UTF-8
+    // bytes, three integer bytes. Each later field: two separator probes,
+    // two extent probes, one UTF-8 byte and one integer byte. Final newline:
+    // one probe. The fixed three-digit discriminant requires no scan charge.
+    const WORK: u64 = (1 + 4 + 3 + 3) + 3 * (2 + 2 + 1 + 1) + 1;
+    let mut bytes = b"700 0 6 0\n3".to_vec();
+    bytes.resize(1 << 20, b'7');
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = WORK;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("input");
+    assert!(super::looks_like_text_stream(&ctx, &bytes).expect("exact header work fits"));
+    let error = ctx
+        .charge_work(1, "after exact first line")
+        .expect_err("no unused work");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits && limit.used == WORK));
+    policy.limits.max_work_units = WORK - 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("input");
+    let error = super::looks_like_text_stream(&ctx, &bytes).expect_err("newline probe cannot fit");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "SAT text header line"
+            && limit.used == WORK - 1 && limit.additional == 1));
 }

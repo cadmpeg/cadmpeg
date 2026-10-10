@@ -450,8 +450,7 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         };
         let (ctx, root) = DecodeContext::read_root(reader, &arena, &policy, false)?;
         let result = self.inspect_impl(&ctx, root);
-        ctx.finish_session()?;
-        let result = result?;
+        let result = ctx.finish(result)?;
         if result.format() != C::FORMAT.as_str() {
             return Err(CodecError::WrongFormat(format!(
                 "codec {:?} inspected a {:?} container",
@@ -471,8 +470,7 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         let (ctx, root) =
             DecodeContext::read_root(reader, &arena, &options.policy, options.container_only)?;
         let result = self.decode_with_context(&ctx, root, options);
-        ctx.finish_session()?;
-        result
+        ctx.finish(result)
     }
 
     fn decode_with_context(
