@@ -110,6 +110,57 @@ fn short_closed_line_components_skip_profile_entity_id_copies() {
 }
 
 #[test]
+fn open_line_component_admits_only_the_next_member() {
+    let sketch = cadmpeg_ir::sketches::SketchId::mint("inventor:test:sketch#1").expect("sketch id");
+    let lines = [
+        ("inventor:test:entity#1", "point-a", "point-b"),
+        ("inventor:test:entity#2", "point-b", "point-c"),
+    ]
+    .map(|(id, start, end)| {
+        cadmpeg_ir::sketches::SketchEntity::new(
+            cadmpeg_ir::sketches::SketchEntityId::mint(id).expect("entity id"),
+            sketch.clone(),
+            cadmpeg_ir::sketches::SketchGeometry::try_from(
+                cadmpeg_ir::sketches::SketchGeometryDefinition::Line {
+                    start: cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                    end: cadmpeg_ir::math::Point2::new(1.0, 0.0),
+                },
+            )
+            .expect("line geometry"),
+        )
+        .with_endpoint_refs(vec![start.into(), end.into()])
+    });
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    // The component has two members. The first wrong-degree endpoint needs
+    // one member visit; the second member is not prepaid by this check.
+    let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "visit Inventor line component",
+        Some(1),
+    );
+    let error = super::super::build_profiles(&ctx, &lines.each_ref())
+        .expect_err("the first component member is admitted separately");
+    drop(probe);
+    assert!(matches!(&error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "visit Inventor line component"
+            && limit.additional == 1));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit))
+        if matches!(&error, CodecError::ResourceLimit(original) if original == &limit))
+    );
+
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service context");
+    assert!(super::super::build_profiles(&ctx, &lines.each_ref())
+        .expect("open component has no profile")
+        .is_empty());
+}
+
+#[test]
 fn closed_line_profile_preserves_promotion_and_original_refusal() {
     let sketch = cadmpeg_ir::sketches::SketchId::mint("inventor:test:sketch#1").expect("sketch id");
     let lines = [

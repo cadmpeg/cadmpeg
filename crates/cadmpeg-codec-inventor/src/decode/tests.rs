@@ -31,6 +31,51 @@ fn validation_findings(ir: &cadmpeg_ir::CadIr) -> Vec<cadmpeg_ir::report::check:
 }
 
 #[test]
+fn decode_scopes_parsed_container_storage() {
+    let bytes = primary_envelope_fixture();
+    let arena = DecodeArena::new();
+    let (setup, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("container setup context");
+    let container =
+        crate::container::InventorContainer::open(&setup, root).expect("parsed container");
+    let (output, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("output context");
+    let expected = super::decode_container(&output, &container).expect("output projection");
+    let cadmpeg_core::CodecError::ResourceLimit(output_limit) = output
+        .charge_retained(u64::MAX, "measure decoded output storage")
+        .expect_err("the measurement exceeds the retained allowance")
+    else {
+        panic!("retained output measurement must be a resource refusal");
+    };
+    assert_eq!(output_limit.dimension, ResourceDimension::RetainedBytes);
+    assert!(output_limit.used > 0);
+
+    let mut policy = DecodePolicy::service();
+    // Let R be the output-only retained cost. The route must fit R, rather
+    // than R plus parsed-container storage C. Temporary C is released on return.
+    policy.limits.max_retained_bytes = output_limit.used;
+    policy.limits.max_materialized_bytes = 1024 * 1024;
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("exact output context");
+    let actual = super::decode(&ctx, root).expect("only output storage is retained");
+    assert_eq!(actual, expected);
+    drop(
+        ctx.reserve_scoped(
+            policy.limits.max_materialized_bytes,
+            "reuse parsed container storage",
+        )
+        .expect("all temporary storage is released"),
+    );
+    assert!(
+        matches!(ctx.charge_retained(1, "probe decoded output storage"),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.used == output_limit.used
+                && limit.additional == 1)
+    );
+}
+
+#[test]
 fn built_in_properties_are_selected_by_embedded_set_identity() {
     assert_eq!(
         built_in_property_name("Design Tracking Properties", 5),

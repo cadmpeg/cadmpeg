@@ -3,11 +3,57 @@
 use cadmpeg_container::compound::CompoundSnapshot;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, Confidence};
+use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence};
 
 use super::{classify, insert_attribute, summary_note, InventorContainer};
 use crate::test_support::test_fixtures::{fixture, primary_envelope_fixture_with_broken_metadata};
 use crate::InventorCodec;
+
+#[test]
+fn inspection_scopes_parsed_container_storage() {
+    let bytes = crate::test_support::test_fixtures::primary_envelope_fixture();
+    let arena = DecodeArena::new();
+    let (setup, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("container setup context");
+    let container = InventorContainer::open(&setup, root).expect("parsed container");
+    let (output, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("output context");
+    let expected = container.summary(&output).expect("summary projection");
+    let CodecError::ResourceLimit(output_limit) = output
+        .charge_retained(u64::MAX, "measure inspection output storage")
+        .expect_err("the measurement exceeds the retained allowance")
+    else {
+        panic!("retained output measurement must be a resource refusal");
+    };
+    assert_eq!(output_limit.dimension, ResourceDimension::RetainedBytes);
+    assert!(output_limit.used > 0);
+
+    let mut policy = DecodePolicy::service();
+    // Let R be the summary-only retained cost. The route must fit R, rather
+    // than R plus parsed-container storage C. Temporary C is released on return.
+    policy.limits.max_retained_bytes = output_limit.used;
+    policy.limits.max_materialized_bytes = 1024 * 1024;
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("exact output context");
+    let actual = InventorCodec
+        .inspect_impl(&ctx, root)
+        .expect("only summary storage is retained");
+    assert_eq!(actual, expected);
+    drop(
+        ctx.reserve_scoped(
+            policy.limits.max_materialized_bytes,
+            "reuse parsed container storage",
+        )
+        .expect("all temporary storage is released"),
+    );
+    assert!(
+        matches!(ctx.charge_retained(1, "probe inspection output storage"),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.used == output_limit.used
+                && limit.additional == 1)
+    );
+}
 
 #[test]
 fn summary_segment_walk_refuses_only_the_next_source_step() {

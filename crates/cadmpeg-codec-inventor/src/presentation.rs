@@ -222,11 +222,15 @@ fn project_default_bindings(
             "match Inventor default rendering token",
         )? && style.identity.record_ordinal == ordinal
         {
-            // The old ordered candidate pass deduplicated by this exact key.
-            // Keep its first source match without materializing and sorting indices.
-            if selected_style.is_none() {
-                selected_style = Some(style);
+            if selected_style.is_some() {
+                return Ok(PresentationProjection {
+                    appearances: Vec::new(),
+                    bindings: Vec::new(),
+                    unresolved_defaults: 1,
+                    unresolved_face_overrides: BTreeMap::new(),
+                });
             }
+            selected_style = Some(style);
         }
     }
     let Some(style) = selected_style else {
@@ -1873,7 +1877,7 @@ mod tests {
     }
 
     #[test]
-    fn default_binding_style_scan_keeps_first_duplicate_identity() {
+    fn default_binding_style_scan_rejects_duplicate_identity() {
         let default_bytes = default_style_fixture();
         let style_bytes = rendering_style_fixture();
         let arena = DecodeArena::new();
@@ -1918,10 +1922,11 @@ mod tests {
             std::slice::from_ref(&appearance),
             std::slice::from_ref(&body),
         )
-        .expect("duplicate rendering identities collapse to the first match");
+        .expect("ambiguous rendering identities leave the default unresolved");
 
-        assert_eq!(projection.unresolved_defaults, 0);
-        assert_eq!(projection.bindings.len(), 1);
+        assert_eq!(projection.unresolved_defaults, 1);
+        assert!(projection.appearances.is_empty());
+        assert!(projection.bindings.is_empty());
         ctx.finish_session()
             .expect("duplicate style identity scan leaves the session clean");
     }
