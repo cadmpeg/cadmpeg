@@ -1203,6 +1203,31 @@ impl DesignWorkPointRule {
         self.form.inputs()
     }
 
+    /// Visit actual vertex recipes after admitting each counted native input.
+    pub(crate) fn for_each_vertex_recipe_for_decode(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+        mut visit: impl FnMut(&mut DesignVertexRecipe) -> Result<(), CodecError>,
+    ) -> Result<(), CodecError> {
+        ctx.charge_work(0, operation)?;
+        let counted = matches!(self.form, DesignWorkPointRuleForm::Native { .. });
+        let mut inputs = self.form.inputs_mut().iter_mut();
+        while let Some(input) = if counted {
+            ctx.next_charged(&mut inputs, operation)?
+        } else {
+            inputs.next()
+        } {
+            if let Some(DesignWorkPointInputCarrier::VertexRecipe { recipe }) = input.carrier.as_deref_mut() {
+                let visited = visit(recipe);
+                ctx.charge_work(0, operation)?;
+                visited?;
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
     pub(crate) fn vertex_recipes_mut(&mut self) -> impl Iterator<Item = &mut DesignVertexRecipe> {
         self.form.inputs_mut().iter_mut().filter_map(|input| {
             match input.carrier.as_deref_mut()? {
@@ -1354,3 +1379,6 @@ impl DesignWorkPointInput {
 mod serialize;
 
 mod identity_rewrite;
+
+#[cfg(test)]
+mod tests;
