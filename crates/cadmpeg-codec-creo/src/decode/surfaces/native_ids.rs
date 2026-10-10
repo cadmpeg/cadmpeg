@@ -17,24 +17,15 @@ impl<'rows, 'ctx, T> UniqueRows<'rows, 'ctx, T> {
         identity: impl Fn(&T) -> Option<u32>,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
-        let mut storage = ctx.reserve_scoped(0, operation)?;
-        let mut indexed = HashMap::new();
-        storage.with_storage(|| {
-            for row in ctx.admit_iter(rows, operation)? {
-                let Some(identity) = identity(row) else {
-                    continue;
-                };
-                match ctx.entry_hash_map(&mut indexed, identity, operation)? {
-                    std::collections::hash_map::Entry::Vacant(entry) => {
-                        entry.insert(Some(row));
-                    }
-                    std::collections::hash_map::Entry::Occupied(mut entry) => {
-                        *entry.get_mut() = None;
-                    }
-                }
-            }
-            Ok::<_, CodecError>(())
-        })?;
+        let (indexed, storage) = if rows.is_empty() {
+            (HashMap::new(), ctx.reserve_scoped(0, operation)?)
+        } else {
+            ctx.unique_index(
+                ctx.admit_iter(rows, operation)?
+                    .filter_map(|row| identity(row).map(|id| (id, row))),
+                operation,
+            )?
+        };
         Ok(Self {
             rows: indexed,
             _storage: storage,

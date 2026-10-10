@@ -431,7 +431,26 @@ fn brep_fixed_curve_namespace_charges_only_the_record_visit() {
     let mut ir = typed_curve_id_fixture();
     ir.model.curves.truncate(1);
     ir.model.curves[0].id = CurveId::mint("creo:other:curve#7").expect("fixture identity");
-    for cap in [0, 1] {
+    let run = |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        model_typed_nonlinear_curve_ids(
+            &ctx,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+    };
+    let below = crate::test_support::allocation_limit_at(
+        ResourceDimension::WorkUnits,
+        Some("creo model typed nonlinear curve ids curves traversal"),
+        run,
+    );
+    for cap in [below, 1] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = cap;
@@ -440,7 +459,9 @@ fn brep_fixed_curve_namespace_charges_only_the_record_visit() {
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let result = model_typed_nonlinear_curve_ids(
-            &ctx, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            &ctx,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
         );
         if cap == 1 {
             assert!(result.expect("one existing record visit").is_empty());
@@ -449,7 +470,10 @@ fn brep_fixed_curve_namespace_charges_only_the_record_visit() {
                 panic!("record visit must refuse");
             };
             assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(refusal.operation, "creo model typed nonlinear curve ids curves traversal");
+            assert_eq!(
+                refusal.operation,
+                "creo model typed nonlinear curve ids curves traversal"
+            );
             assert_eq!(refusal.used, 0);
             assert_eq!(refusal.additional, 1);
             assert!(matches!(model_typed_nonlinear_curve_ids(
@@ -464,7 +488,26 @@ fn brep_fixed_curve_namespace_keeps_numeric_suffix_admission() {
     let mut ir = typed_curve_id_fixture();
     ir.model.curves.truncate(1);
     ir.model.curves[0].id = CurveId::mint("creo:visibgeom:curve#x").expect("fixture identity");
-    for cap in [1, 2] {
+    let run = |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        model_typed_nonlinear_curve_ids(
+            &ctx,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+    };
+    let below = crate::test_support::allocation_limit_at(
+        ResourceDimension::WorkUnits,
+        Some("creo nonlinear curve number"),
+        run,
+    );
+    for cap in [below, 2] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = cap;
@@ -473,10 +516,14 @@ fn brep_fixed_curve_namespace_keeps_numeric_suffix_admission() {
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let result = model_typed_nonlinear_curve_ids(
-            &ctx, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            &ctx,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
         );
         if cap == 2 {
-            assert!(result.expect("record visit plus one suffix byte").is_empty());
+            assert!(result
+                .expect("record visit plus one suffix byte")
+                .is_empty());
         } else {
             assert!(matches!(result, Err(CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::WorkUnits

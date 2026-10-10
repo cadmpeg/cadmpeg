@@ -75,6 +75,30 @@ fn shell_component_face_traversal_refuses_before_pop() {
 }
 
 #[test]
+fn disconnected_shell_faces_admit_each_tree_removal() {
+    let shells = crate::test_support::assert_work_boundaries(
+        &["creo B-rep shell component face removal"],
+        |ctx| {
+            split_neutral_component_shells(
+                ctx,
+                &[1, 2, 3],
+                &BTreeSet::new(),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+            )
+        },
+    );
+    assert_eq!(
+        shells,
+        [1, 2, 3].map(|face| NeutralShellSpec {
+            faces: vec![face],
+            wire_curves: BTreeSet::new(),
+        })
+    );
+}
+
+#[test]
 fn brep_remaining_face_nodes_refuse_collection_limit() {
     assert_refusal(
         &split_error("creo B-rep remaining face nodes", false, false, false),

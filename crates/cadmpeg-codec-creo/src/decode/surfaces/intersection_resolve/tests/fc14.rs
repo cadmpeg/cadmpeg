@@ -8,11 +8,14 @@ fn record() -> crate::curve::FcCurveCoordinates {
         subtype: 0x14,
         body: Vec::new(),
         values_mm: Vec::new(),
-        tokens: vec![crate::curve::FcCurveCoordinateToken {
-            value_mm: -3.0,
-            raw: vec![0x2d, 0x08, 0, 0, 0, 0, 0, 0],
-            offset: 0,
-        }; 4],
+        tokens: vec![
+            crate::curve::FcCurveCoordinateToken {
+                value_mm: -3.0,
+                raw: vec![0x2d, 0x08, 0, 0, 0, 0, 0, 0],
+                offset: 0,
+            };
+            4
+        ],
         opaque_spans: Vec::new(),
         offset: 0,
     }
@@ -21,7 +24,34 @@ fn record() -> crate::curve::FcCurveCoordinates {
 #[test]
 fn fc14_fixed_token_comparison_uses_four_visits_and_no_storage() {
     let record = record();
-    for cap in [3, 4] {
+    let run = |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        super::super::fc14_held_coordinate(&ctx, Some(&record))
+    };
+    crate::test_support::assert_refusal_order(
+        ResourceDimension::WorkUnits,
+        &["creo FC14 coordinate tokens"; 4],
+        run,
+    );
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "creo FC14 coordinate tokens",
+        |ctx| super::super::fc14_held_coordinate(ctx, Some(&record)),
+    );
+    let CodecError::ResourceLimit(last) = error else {
+        panic!("work refusal");
+    };
+    assert_eq!((last.used, last.additional), (3, 1));
+    let below = last.limit;
+    // Refusal location comes from the walker; four present visits remain the exact success bound.
+    for cap in [below, 4] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = cap;
@@ -50,12 +80,17 @@ fn fc14_fixed_token_comparison_uses_four_visits_and_no_storage() {
 fn fc14_stops_at_disagreement_and_does_not_visit_tail() {
     let mut record = record();
     record.tokens[1].raw[1] = 1;
-    record.tokens.extend(std::iter::repeat_n(record.tokens[0].clone(), 64));
+    record
+        .tokens
+        .extend(std::iter::repeat_n(record.tokens[0].clone(), 64));
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 2;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    assert_eq!(super::super::fc14_held_coordinate(&ctx, Some(&record)).expect("two visits"), None);
+    assert_eq!(
+        super::super::fc14_held_coordinate(&ctx, Some(&record)).expect("two visits"),
+        None
+    );
 }
 
 #[test]
@@ -67,30 +102,48 @@ fn fc14_missing_and_incomplete_routes_charge_only_present_tokens() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = u64::try_from(count).expect("fixed count");
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        assert_eq!(super::super::fc14_held_coordinate(&ctx, Some(&record)).expect("actual visits"), None);
+        assert_eq!(
+            super::super::fc14_held_coordinate(&ctx, Some(&record)).expect("actual visits"),
+            None
+        );
     }
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    assert_eq!(super::super::fc14_held_coordinate(&ctx, None).expect("missing record"), None);
+    assert_eq!(
+        super::super::fc14_held_coordinate(&ctx, None).expect("missing record"),
+        None
+    );
 }
 
 #[test]
 fn fc14_refuses_nonfinite_values_and_non_world_token_widths() {
     for value in [f64::INFINITY, f64::NAN] {
         let mut record = record();
-        for token in &mut record.tokens { token.value_mm = value; }
-        assert_eq!(crate::decode::with_test_decode_ctx(|ctx| {
-            super::super::fc14_held_coordinate(ctx, Some(&record))
-        }).expect("visited finite gate"), None);
+        for token in &mut record.tokens {
+            token.value_mm = value;
+        }
+        assert_eq!(
+            crate::decode::with_test_decode_ctx(|ctx| {
+                super::super::fc14_held_coordinate(ctx, Some(&record))
+            })
+            .expect("visited finite gate"),
+            None
+        );
     }
     for width in [7, 9] {
         let mut record = record();
-        for token in &mut record.tokens { token.raw.resize(width, 0); }
-        assert_eq!(crate::decode::with_test_decode_ctx(|ctx| {
-            super::super::fc14_held_coordinate(ctx, Some(&record))
-        }).expect("fixed width gate"), None);
+        for token in &mut record.tokens {
+            token.raw.resize(width, 0);
+        }
+        assert_eq!(
+            crate::decode::with_test_decode_ctx(|ctx| {
+                super::super::fc14_held_coordinate(ctx, Some(&record))
+            })
+            .expect("fixed width gate"),
+            None
+        );
     }
 }
 
@@ -109,5 +162,8 @@ fn fc14_ignored_tokens_each_use_one_visit() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 7;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    assert_eq!(super::super::fc14_held_coordinate(&ctx, Some(&record)).expect("seven visits"), Some(-3.0));
+    assert_eq!(
+        super::super::fc14_held_coordinate(&ctx, Some(&record)).expect("seven visits"),
+        Some(-3.0)
+    );
 }

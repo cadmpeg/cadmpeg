@@ -25,7 +25,7 @@ pub(in super::super) fn carrier_intersection_curve(
     second: CarrierEquation,
 ) -> Option<(CurveGeometry, &'static str)> {
     match (first, second) {
-        (CarrierEquation::Plane(first), CarrierEquation::Plane(second)) => (|| {
+        (CarrierEquation::Plane(first), CarrierEquation::Plane(second)) => {
             let direction = cross(first.normal, second.normal);
             let denominator = dot(direction, direction);
             if denominator <= EPS_PLANE_INTERSECTION_DENOMINATOR {
@@ -49,9 +49,9 @@ pub(in super::super) fn carrier_intersection_curve(
                 )),
                 "plane_intersection_line",
             ))
-        })(),
+        }
         (CarrierEquation::Plane(plane), CarrierEquation::Cylinder(cylinder))
-        | (CarrierEquation::Cylinder(cylinder), CarrierEquation::Plane(plane)) => (|| {
+        | (CarrierEquation::Cylinder(cylinder), CarrierEquation::Plane(plane)) => {
             let normal = normalize(plane.normal)?;
             let axis = normalize(cylinder.axis)?;
             let cosine = dot(normal, axis);
@@ -115,9 +115,9 @@ pub(in super::super) fn carrier_intersection_curve(
                 )),
                 "plane_cylinder_ellipse",
             ))
-        })(),
+        }
         (CarrierEquation::Plane(plane), CarrierEquation::Sphere(sphere))
-        | (CarrierEquation::Sphere(sphere), CarrierEquation::Plane(plane)) => (|| {
+        | (CarrierEquation::Sphere(sphere), CarrierEquation::Plane(plane)) => {
             let normal = normalize(plane.normal)?;
             let signed_distance = dot(
                 normal,
@@ -151,7 +151,7 @@ pub(in super::super) fn carrier_intersection_curve(
                 )),
                 "plane_sphere_circle",
             ))
-        })(),
+        }
         (CarrierEquation::Plane(plane), CarrierEquation::Cone(cone))
         | (CarrierEquation::Cone(cone), CarrierEquation::Plane(plane)) => {
             let normal = normalize(plane.normal)?;
@@ -235,7 +235,7 @@ pub(in super::super) fn carrier_intersection_curve(
             plane_cone_conic(plane, cone)
         }
         (CarrierEquation::Plane(plane), CarrierEquation::Torus(torus))
-        | (CarrierEquation::Torus(torus), CarrierEquation::Plane(plane)) => (|| {
+        | (CarrierEquation::Torus(torus), CarrierEquation::Plane(plane)) => {
             let normal = normalize(plane.normal)?;
             let axis = normalize(torus.axis)?;
             if (dot(normal, axis).abs() - 1.0).abs() > EPS_AXIS_ORTHO {
@@ -264,8 +264,8 @@ pub(in super::super) fn carrier_intersection_curve(
                 )),
                 "plane_torus_tangent_circle",
             ))
-        })(),
-        (CarrierEquation::Cylinder(first), CarrierEquation::Cylinder(second)) => (|| {
+        }
+        (CarrierEquation::Cylinder(first), CarrierEquation::Cylinder(second)) => {
             let first_axis = normalize(first.axis)?;
             let second_axis = normalize(second.axis)?;
             let alignment = dot(first_axis, second_axis);
@@ -308,8 +308,8 @@ pub(in super::super) fn carrier_intersection_curve(
                 )),
                 "parallel_cylinder_tangent_line",
             ))
-        })(),
-        (CarrierEquation::Sphere(first), CarrierEquation::Sphere(second)) => (|| {
+        }
+        (CarrierEquation::Sphere(first), CarrierEquation::Sphere(second)) => {
             let center_delta: [f64; 3] =
                 std::array::from_fn(|index| second.center[index] - first.center[index]);
             let distance = center_delta[0]
@@ -352,9 +352,9 @@ pub(in super::super) fn carrier_intersection_curve(
                 )),
                 "sphere_intersection_circle",
             ))
-        })(),
+        }
         (CarrierEquation::Cylinder(cylinder), CarrierEquation::Sphere(sphere))
-        | (CarrierEquation::Sphere(sphere), CarrierEquation::Cylinder(cylinder)) => (|| {
+        | (CarrierEquation::Sphere(sphere), CarrierEquation::Cylinder(cylinder)) => {
             let axis = normalize(cylinder.axis)?;
             let relative: [f64; 3] =
                 std::array::from_fn(|index| sphere.center[index] - cylinder.origin[index]);
@@ -381,9 +381,9 @@ pub(in super::super) fn carrier_intersection_curve(
                 )),
                 "coaxial_cylinder_sphere_circle",
             ))
-        })(),
+        }
         (CarrierEquation::Cylinder(cylinder), CarrierEquation::Torus(torus))
-        | (CarrierEquation::Torus(torus), CarrierEquation::Cylinder(cylinder)) => (|| {
+        | (CarrierEquation::Torus(torus), CarrierEquation::Cylinder(cylinder)) => {
             let cylinder_axis = normalize(cylinder.axis)?;
             let torus_axis = normalize(torus.axis)?;
             if (dot(cylinder_axis, torus_axis).abs() - 1.0).abs() > EPS_AXIS_ORTHO {
@@ -424,9 +424,9 @@ pub(in super::super) fn carrier_intersection_curve(
                 )),
                 "coaxial_cylinder_torus_tangent_circle",
             ))
-        })(),
+        }
         (CarrierEquation::Cone(cone), CarrierEquation::Sphere(sphere))
-        | (CarrierEquation::Sphere(sphere), CarrierEquation::Cone(cone)) => (|| {
+        | (CarrierEquation::Sphere(sphere), CarrierEquation::Cone(cone)) => {
             if !circular_cone(cone) {
                 return None;
             }
@@ -478,9 +478,9 @@ pub(in super::super) fn carrier_intersection_curve(
                 )),
                 "coaxial_cone_sphere_tangent_circle",
             ))
-        })(),
+        }
         (CarrierEquation::Sphere(sphere), CarrierEquation::Torus(torus))
-        | (CarrierEquation::Torus(torus), CarrierEquation::Sphere(sphere)) => (|| {
+        | (CarrierEquation::Torus(torus), CarrierEquation::Sphere(sphere)) => {
             let axis = normalize(torus.axis)?;
             let relative: [f64; 3] =
                 std::array::from_fn(|index| torus.center[index] - sphere.center[index]);
@@ -531,8 +531,8 @@ pub(in super::super) fn carrier_intersection_curve(
                 )),
                 "coaxial_sphere_torus_tangent_circle",
             ))
-        })(),
-        (CarrierEquation::Torus(first), CarrierEquation::Torus(second)) => (|| {
+        }
+        (CarrierEquation::Torus(first), CarrierEquation::Torus(second)) => {
             let first_axis = normalize(first.axis)?;
             let second_axis = normalize(second.axis)?;
             if (dot(first_axis, second_axis).abs() - 1.0).abs() > EPS_AXIS_ORTHO {
@@ -590,7 +590,7 @@ pub(in super::super) fn carrier_intersection_curve(
                 )),
                 "coaxial_tori_tangent_circle",
             ))
-        })(),
+        }
         (
             CarrierEquation::Cone(_),
             CarrierEquation::Cylinder(_) | CarrierEquation::Cone(_) | CarrierEquation::Torus(_),
