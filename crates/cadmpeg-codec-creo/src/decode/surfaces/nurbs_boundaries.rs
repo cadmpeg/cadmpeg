@@ -63,9 +63,10 @@ pub(in super::super) struct NurbsCurveCandidate<'ctx> {
 
 impl NurbsCurveCandidate<'_> {
     pub(in super::super) fn into_geometry(self) -> Result<CurveGeometry, CodecError> {
-        self.storage.commit_value(CurveGeometry::Solved(
-            SolvedCurveGeometry::Nurbs(self.curve),
-        ))
+        self.storage
+            .commit_value(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                self.curve,
+            )))
     }
 }
 
@@ -221,8 +222,8 @@ fn nurbs_surface_boundaries<'ctx>(
             nurbs.u_periodic()
         };
         boundaries[ordinal] = Some(NurbsSurfaceBoundary {
-            storage,
             curve,
+            storage,
             along_u,
             fixed_index,
             transverse_periodic,
@@ -275,8 +276,7 @@ fn visit_surface_poles(
         NurbsPoleGrid::Rational { rows } => {
             let mut row_iter = rows.iter();
             while row_iter.len() != 0 {
-                let Some(row) =
-                    ctx.next_charged(&mut row_iter, "creo NURBS rational grid rows")?
+                let Some(row) = ctx.next_charged(&mut row_iter, "creo NURBS rational grid rows")?
                 else {
                     break;
                 };
@@ -1025,9 +1025,6 @@ pub(in super::super) fn cubic_extrusion_plane_generator_curve<'ctx>(
     plane: PlaneEquation,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<NurbsCurveCandidate<'ctx>>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     fn recognize<'ctx>(
         ctx: &'ctx DecodeContext<'_>,
         nurbs: &NurbsSurface,
@@ -1156,13 +1153,8 @@ pub(in super::super) fn cubic_extrusion_plane_generator_curve<'ctx>(
         });
         let [cubic, quadratic, linear, constant] = plane_distance_coefficients(signed);
         let weight_scale = weights.iter().copied().fold(1.0, f64::max);
-        let roots = cubic_unit_interval_roots(
-            cubic,
-            quadratic,
-            linear,
-            constant,
-            tolerance * weight_scale,
-        );
+        let roots =
+            cubic_unit_interval_roots(cubic, quadratic, linear, constant, tolerance * weight_scale);
         let [parameter] = roots.as_slice() else {
             return None;
         };
@@ -1269,6 +1261,9 @@ pub(in super::super) fn cubic_extrusion_plane_generator_curve<'ctx>(
         };
         Some(Ok(NurbsCurveCandidate { curve, storage }))
     }
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut refusal = crate::lane_refusal::LaneRefusals::new();
     let recognized = recognize(ctx, nurbs, surface_id, plane, &mut refusal).transpose();
     let refused = refusal.take_records_checked()?;
@@ -1290,6 +1285,7 @@ mod tests {
 
     #[test]
     fn nurbs_grid_visits_admit_only_present_rows_and_poles() {
+        const GRID_VISITS: u64 = 2 + 2 * 2;
         for rational in [false, true] {
             let surface = NurbsSurface::from_lanes(
                 &cadmpeg_test_support::service_decode_context(),
@@ -1303,52 +1299,91 @@ mod tests {
                     rational.then(|| vec![vec![1.0; 2]; 2]),
                 ),
                 false,
-            ).expect("fixture admission").expect("two-by-two grid");
-            let row_operation = if rational { "creo NURBS rational grid rows" }
-                else { "creo NURBS polynomial grid rows" };
-            let pole_operation = if rational { "creo NURBS rational grid poles" }
-                else { "creo NURBS polynomial grid poles" };
+            )
+            .expect("fixture admission")
+            .expect("two-by-two grid");
+            let row_operation = if rational {
+                "creo NURBS rational grid rows"
+            } else {
+                "creo NURBS polynomial grid rows"
+            };
+            let pole_operation = if rational {
+                "creo NURBS rational grid poles"
+            } else {
+                "creo NURBS polynomial grid poles"
+            };
             // One row visit precedes its two pole visits; there are two rows.
-            const GRID_VISITS: u64 = 2 + 2 * 2;
             let run = |cap| {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_work_units = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
                 super::visit_surface_poles(&ctx, &surface, |_, _| Ok(true))
             };
             let first_row = crate::test_support::allocation_limit_at(
-                ResourceDimension::WorkUnits, Some(row_operation), run,
+                ResourceDimension::WorkUnits,
+                Some(row_operation),
+                run,
             );
             let first_pole = crate::test_support::allocation_limit_at(
-                ResourceDimension::WorkUnits, Some(pole_operation), run,
+                ResourceDimension::WorkUnits,
+                Some(pole_operation),
+                run,
             );
             let last = crate::test_support::last_refusal_at(
-                &[], ResourceDimension::WorkUnits, pole_operation,
+                &[],
+                ResourceDimension::WorkUnits,
+                pole_operation,
                 |ctx| super::visit_surface_poles(ctx, &surface, |_, _| Ok(true)),
             );
-            let cadmpeg_core::CodecError::ResourceLimit(last) = last else { panic!("pole refusal"); };
-            assert_eq!((first_row, first_pole, last.used, last.additional), (0, 1, GRID_VISITS - 1, 1));
-            for (allowed, stop_first) in [(first_row, false), (first_pole, false), (last.limit, false),
-                (GRID_VISITS, false), (2, true)] {
+            let cadmpeg_core::CodecError::ResourceLimit(last) = last else {
+                panic!("pole refusal");
+            };
+            assert_eq!(
+                (first_row, first_pole, last.used, last.additional),
+                (0, 1, GRID_VISITS - 1, 1)
+            );
+            for (allowed, stop_first) in [
+                (first_row, false),
+                (first_pole, false),
+                (last.limit, false),
+                (GRID_VISITS, false),
+                (2, true),
+            ] {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_work_units = allowed;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
                 let mut indices = Vec::new();
                 let result = super::visit_surface_poles(&ctx, &surface, |index, _| {
                     indices.push(index);
                     Ok(!stop_first)
                 });
                 if allowed < GRID_VISITS && !stop_first {
-                    let cadmpeg_core::CodecError::ResourceLimit(original) = result
-                        .expect_err("next present grid visit exceeds cap") else {
-                            panic!("expected resource refusal");
-                        };
+                    let cadmpeg_core::CodecError::ResourceLimit(original) =
+                        result.expect_err("next present grid visit exceeds cap")
+                    else {
+                        panic!("expected resource refusal");
+                    };
                     assert_eq!(original.dimension, ResourceDimension::WorkUnits);
-                    assert_eq!(original.operation, if allowed == 0 { row_operation } else { pole_operation });
+                    assert_eq!(
+                        original.operation,
+                        if allowed == 0 {
+                            row_operation
+                        } else {
+                            pole_operation
+                        }
+                    );
                     assert_eq!((original.used, original.additional), (allowed, 1));
-                    assert_eq!(indices, match allowed { 0 | 1 => vec![], _ => vec![0, 1, 2] });
+                    assert_eq!(
+                        indices,
+                        match allowed {
+                            0 | 1 => vec![],
+                            _ => vec![0, 1, 2],
+                        }
+                    );
                     let mut visited = false;
                     assert!(matches!(super::visit_surface_poles(&ctx, &surface, |_, _| {
                         visited = true;
@@ -1357,8 +1392,16 @@ mod tests {
                     assert!(!visited);
                 } else {
                     result.expect("only executed rows and poles are admitted");
-                    assert_eq!(indices, if stop_first { vec![0] } else { vec![0, 1, 2, 3] });
-                    let original = ctx.charge_work_limit(1, "after exact grid visits")
+                    assert_eq!(
+                        indices,
+                        if stop_first {
+                            vec![0]
+                        } else {
+                            vec![0, 1, 2, 3]
+                        }
+                    );
+                    let original = ctx
+                        .charge_work_limit(1, "after exact grid visits")
                         .expect_err("all allowed visits were consumed");
                     assert_eq!((original.used, original.additional), (allowed, 1));
                 }
@@ -1369,11 +1412,18 @@ mod tests {
     #[test]
     fn fixed_nurbs_curve_mismatch_is_free_and_preserves_refusal() {
         let fixture_ctx = cadmpeg_test_support::service_decode_context();
-        let make_curve = |weights| super::NurbsCurve::from_lanes(
-            &fixture_ctx, 1, vec![0.0, 0.0, 1.0, 1.0],
-            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-            weights, false,
-        ).expect("fixture admission").expect("valid degree-one curve");
+        let make_curve = |weights| {
+            super::NurbsCurve::from_lanes(
+                &fixture_ctx,
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+                weights,
+                false,
+            )
+            .expect("fixture admission")
+            .expect("valid degree-one curve")
+        };
         let polynomial = make_curve(None);
         let rational = make_curve(Some(vec![1.0, 1.0]));
         let arena = DecodeArena::new();
@@ -1383,12 +1433,17 @@ mod tests {
         policy.limits.max_retained_bytes = 0;
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        assert!(!super::nurbs_curves_match(&ctx, &polynomial, &rational, false, EPS_TEST_VALUE)
-            .expect("fixed pole-kind mismatch"));
-        let original = ctx.charge_work_limit(1, "seed curve mismatch refusal")
+        assert!(
+            !super::nurbs_curves_match(&ctx, &polynomial, &rational, false, EPS_TEST_VALUE)
+                .expect("fixed pole-kind mismatch")
+        );
+        let original = ctx
+            .charge_work_limit(1, "seed curve mismatch refusal")
             .expect_err("zero work cap");
-        assert!(matches!(super::nurbs_curves_match(&ctx, &polynomial, &rational, false, EPS_TEST_VALUE),
-            Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) if refusal == original));
+        assert!(
+            matches!(super::nurbs_curves_match(&ctx, &polynomial, &rational, false, EPS_TEST_VALUE),
+            Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) if refusal == original)
+        );
     }
 
     #[test]
@@ -1918,13 +1973,23 @@ mod tests {
         policy.limits.max_retained_bytes = 0;
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        let plane = super::PlaneEquation { origin: [0.0; 3], normal: [1.0, 0.0, 0.0] };
+        let plane = super::PlaneEquation {
+            origin: [0.0; 3],
+            normal: [1.0, 0.0, 0.0],
+        };
         let mut losses = Vec::new();
         assert!(super::cubic_extrusion_plane_generator_curve(
-            &ctx, &surface, 7, plane, &mut losses,
-        ).expect("degree-one surface has no cubic generator").is_none());
+            &ctx,
+            &surface,
+            7,
+            plane,
+            &mut losses,
+        )
+        .expect("degree-one surface has no cubic generator")
+        .is_none());
         assert!(losses.is_empty());
-        let original = ctx.charge_work_limit(1, "seed cubic generator refusal")
+        let original = ctx
+            .charge_work_limit(1, "seed cubic generator refusal")
             .expect_err("zero work limit");
         assert!(matches!(super::cubic_extrusion_plane_generator_curve(
             &ctx, &surface, 7, plane, &mut losses,
@@ -1936,16 +2001,22 @@ mod tests {
     fn nurbs_boundary_promotion_retains_only_the_selected_curve_backing() {
         let (surface, _) = shared_generator_surfaces();
         let below = crate::test_support::allocation_limit_at(
-            ResourceDimension::RetainedBytes, Some("creo NURBS boundary curve storage"),
+            ResourceDimension::RetainedBytes,
+            Some("creo NURBS boundary curve storage"),
             |cap| {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_materialized_bytes = FOUR_RATIONAL_BOUNDARIES_BYTES;
                 policy.limits.max_retained_bytes = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
                 let [first, second, third, fourth] = super::nurbs_surface_boundaries(
-                    &ctx, &surface, 7, &mut crate::lane_refusal::LaneRefusals::new(),
-                )?.expect("four scoped boundaries");
+                    &ctx,
+                    &surface,
+                    7,
+                    &mut crate::lane_refusal::LaneRefusals::new(),
+                )?
+                .expect("four scoped boundaries");
                 drop((second, third, fourth));
                 first.into_curve()
             },
@@ -1955,28 +2026,43 @@ mod tests {
             let mut policy = DecodePolicy::service();
             policy.limits.max_materialized_bytes = FOUR_RATIONAL_BOUNDARIES_BYTES;
             policy.limits.max_retained_bytes = retained;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
             let [first, second, third, fourth] = super::nurbs_surface_boundaries(
-                &ctx, &surface, 7, &mut crate::lane_refusal::LaneRefusals::new(),
-            ).expect("four scoped boundaries").expect("rational surface");
+                &ctx,
+                &surface,
+                7,
+                &mut crate::lane_refusal::LaneRefusals::new(),
+            )
+            .expect("four scoped boundaries")
+            .expect("rational surface");
             drop((second, third, fourth));
             let result = first.into_curve();
             if retained < RATIONAL_BOUNDARY_BYTES {
-                let cadmpeg_core::CodecError::ResourceLimit(original) = result
-                    .expect_err("selected curve exceeds retained capacity") else {
-                        panic!("expected resource refusal");
-                    };
+                let cadmpeg_core::CodecError::ResourceLimit(original) =
+                    result.expect_err("selected curve exceeds retained capacity")
+                else {
+                    panic!("expected resource refusal");
+                };
                 assert_eq!(original.dimension, ResourceDimension::RetainedBytes);
                 assert_eq!(original.operation, "creo NURBS boundary curve storage");
-                assert_eq!((original.used, original.additional), (0, RATIONAL_BOUNDARY_BYTES));
+                assert_eq!(
+                    (original.used, original.additional),
+                    (0, RATIONAL_BOUNDARY_BYTES)
+                );
                 assert_eq!(ctx.resource_refusal(), Some(original));
             } else {
                 let curve = result.expect("one selected curve fits retained capacity");
                 assert_eq!(curve.degree(), 1);
                 assert_eq!(curve.knots().as_slice(), &[0.0, 0.0, 1.0, 1.0]);
-                assert_eq!(curve.control_points().into_iter()
-                    .map(cadmpeg_ir::features::FinitePoint3::get).collect::<Vec<_>>(),
-                    [Point3::new(-1.0, 0.0, 0.0), Point3::new(-1.0, 0.0, 1.0)]);
+                assert_eq!(
+                    curve
+                        .control_points()
+                        .into_iter()
+                        .map(cadmpeg_ir::features::FinitePoint3::get)
+                        .collect::<Vec<_>>(),
+                    [Point3::new(-1.0, 0.0, 0.0), Point3::new(-1.0, 0.0, 1.0)]
+                );
             }
         }
     }
@@ -1986,23 +2072,30 @@ mod tests {
         let (surface, _) = shared_generator_surfaces();
         let last = std::cell::Cell::new(None);
         crate::test_support::assert_refusal_order(
-            ResourceDimension::MaterializedBytes, &["creo NURBS boundary knots"; 4],
+            ResourceDimension::MaterializedBytes,
+            &["creo NURBS boundary knots"; 4],
             |cap| {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_materialized_bytes = cap;
                 policy.limits.max_retained_bytes = 0;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
                 let result = super::nurbs_surface_boundaries(
-                    &ctx, &surface, 7, &mut crate::lane_refusal::LaneRefusals::new(),
-                ).map(|boundaries| {
+                    &ctx,
+                    &surface,
+                    7,
+                    &mut crate::lane_refusal::LaneRefusals::new(),
+                )
+                .map(|boundaries| {
                     drop(boundaries.expect("four scoped boundaries"));
                 });
                 match &result {
                     Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
-                        if refusal.operation == "creo NURBS boundary knots" => {
-                            last.set(Some(*refusal));
-                        }
+                        if refusal.operation == "creo NURBS boundary knots" =>
+                    {
+                        last.set(Some(*refusal));
+                    }
                     _ => {}
                 }
                 result
@@ -2011,8 +2104,10 @@ mod tests {
         let refusal = last.into_inner().expect("fourth knot copy refuses");
         assert_eq!(refusal.dimension, ResourceDimension::MaterializedBytes);
         assert_eq!(refusal.operation, "creo NURBS boundary knots");
-        assert_eq!((refusal.used, refusal.additional),
-            (FOUR_RATIONAL_BOUNDARIES_BYTES - 4 * 8, 4 * 8));
+        assert_eq!(
+            (refusal.used, refusal.additional),
+            (FOUR_RATIONAL_BOUNDARIES_BYTES - 4 * 8, 4 * 8)
+        );
     }
 
     #[test]
@@ -2023,20 +2118,33 @@ mod tests {
         policy.limits.max_materialized_bytes = FOUR_RATIONAL_BOUNDARIES_BYTES;
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        let mut parent = ctx.reserve_scoped(0, "NURBS boundary parent").expect("empty parent");
-        let geometry = parent.with_storage(|| {
-            let [first, second, third, fourth] = super::nurbs_surface_boundaries(
-                &ctx, &surface, 7, &mut crate::lane_refusal::LaneRefusals::new(),
-            )?.expect("four rational boundaries");
-            drop((second, third, fourth));
-            first.into_candidate().into_geometry()
-        }).expect("selected geometry remains under parent storage");
-        assert!(matches!(geometry,
-            super::CurveGeometry::Solved(super::SolvedCurveGeometry::Nurbs(_))));
+        let mut parent = ctx
+            .reserve_scoped(0, "NURBS boundary parent")
+            .expect("empty parent");
+        let geometry = parent
+            .with_storage(|| {
+                let [first, second, third, fourth] = super::nurbs_surface_boundaries(
+                    &ctx,
+                    &surface,
+                    7,
+                    &mut crate::lane_refusal::LaneRefusals::new(),
+                )?
+                .expect("four rational boundaries");
+                drop((second, third, fourth));
+                first.into_candidate().into_geometry()
+            })
+            .expect("selected geometry remains under parent storage");
+        assert!(matches!(
+            geometry,
+            super::CurveGeometry::Solved(super::SolvedCurveGeometry::Nurbs(_))
+        ));
         drop(geometry);
         drop(parent);
-        ctx.reserve_scoped(FOUR_RATIONAL_BOUNDARIES_BYTES, "after NURBS boundary parent")
-            .expect("parent and geometry released all boundary backing");
+        ctx.reserve_scoped(
+            FOUR_RATIONAL_BOUNDARIES_BYTES,
+            "after NURBS boundary parent",
+        )
+        .expect("parent and geometry released all boundary backing");
     }
 
     #[test]
@@ -2222,13 +2330,8 @@ mod tests {
             [linear.stated(), constant.stated()],
             [20.700_000_000_000_003, -8.9]
         );
-        let roots = super::cubic_unit_interval_roots(
-            cubic,
-            quadratic,
-            linear,
-            constant,
-            EPS_TEST_VALUE,
-        );
+        let roots =
+            super::cubic_unit_interval_roots(cubic, quadratic, linear, constant, EPS_TEST_VALUE);
         assert_eq!(roots.as_slice(), [-constant.stated() / linear.stated()]);
 
         // Plane distances that are exactly quadratic in the polygon index. The
@@ -2241,13 +2344,8 @@ mod tests {
             [quadratic.stated(), linear.stated(), constant.stated()],
             [0.300_000_000_000_000_04, 0.0, -0.1]
         );
-        let roots = super::cubic_unit_interval_roots(
-            cubic,
-            quadratic,
-            linear,
-            constant,
-            EPS_TEST_VALUE,
-        );
+        let roots =
+            super::cubic_unit_interval_roots(cubic, quadratic, linear, constant, EPS_TEST_VALUE);
         assert_eq!(roots.len(), 1);
         assert!((roots[0] - (1.0f64 / 3.0).sqrt()).abs() <= EPS_TEST_ROOT);
     }

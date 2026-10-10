@@ -127,9 +127,11 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
     let edge_vertices = workspace.with_storage(|| {
         crate::topology::edge_vertex_pairs(ctx, &scan.topology.half_edge_vertex_incidence)
     })?;
-    let unique_rows_parts = crate::identity::uniquely_identified_rows_checked(ctx, &scan.curves.topology_rows, |row| {
-            row.id
-        })?;
+    let unique_rows_parts = crate::identity::uniquely_identified_rows_checked(
+        ctx,
+        &scan.curves.topology_rows,
+        |row| row.id,
+    )?;
     let _unique_rows_storage = unique_rows_parts.1;
     let unique_rows = unique_rows_parts.0;
     for row in ctx
@@ -369,9 +371,11 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
         extrusion_plane_section_generator_count: 0,
         shared_extrusion_generator_count: 0,
     };
-    let unique_rows_parts = crate::identity::uniquely_identified_rows_checked(ctx, &scan.curves.topology_rows, |row| {
-            row.id
-        })?;
+    let unique_rows_parts = crate::identity::uniquely_identified_rows_checked(
+        ctx,
+        &scan.curves.topology_rows,
+        |row| row.id,
+    )?;
     let _unique_rows_storage = unique_rows_parts.1;
     let unique_rows = unique_rows_parts.0;
     for row in ctx
@@ -407,7 +411,8 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
                     id.as_str(),
                 )?
                 .unique_position()
-                .map(|index| source_carriers.surface_geometry(&ir.model.surfaces[index])).transpose()
+                .map(|index| source_carriers.surface_geometry(&ir.model.surfaces[index]))
+                .transpose()
         };
         let Some(first_geometry) = geometry(first.id)? else {
             continue;
@@ -766,20 +771,26 @@ mod tests {
         let expected = u64::try_from(copies * (node_bytes + "creo:visibgeom:curve#10".len()))
             .expect("fixture storage fits");
         let allowance = ctx.policy().limits.max_materialized_bytes;
-        let _padding = ctx.reserve_scoped(allowance - expected, "evidence accounting probe")
+        let _padding = ctx
+            .reserve_scoped(allowance - expected, "evidence accounting probe")
             .expect("only evidence storage remains live");
-        let refusal = ctx.reserve_scoped(1, "evidence accounting probe")
+        let refusal = ctx
+            .reserve_scoped(1, "evidence accounting probe")
             .expect_err("all materialized bytes are accounted");
-        assert!(matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
-                && resource.used == allowance && resource.additional == 1));
+                && resource.used == allowance && resource.additional == 1)
+        );
     }
 
     #[test]
     fn carrier_transfer_identity_copy_accounts_materialized_bytes() {
         use cadmpeg_core::decode::ResourceDimension;
         let cap = crate::test_support::allocation_limit_at(
-            ResourceDimension::MaterializedBytes, None, |cap| {
+            ResourceDimension::MaterializedBytes,
+            None,
+            |cap| {
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_materialized_bytes = cap;
                 carrier_transfer_with_limits(policy)
@@ -791,14 +802,23 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_materialized_bytes = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let mut storage = ctx.reserve_scoped(0, "creo curve evidence workspace").expect("scope");
+        let mut storage = ctx
+            .reserve_scoped(0, "creo curve evidence workspace")
+            .expect("scope");
         let result = transfer_carrier_intersection_curves(
-            &ctx, &scan, &mut ir, &mut AnnotationBuilder::new(), &BTreeSet::new(),
-            &mut crate::decode::source_carriers::SourceUnitCarriers::default(), &mut storage,
-        ).expect("service transfer");
-        assert_eq!(result, BTreeSet::from([
-            CurveId::mint("creo:visibgeom:curve#10").expect("valid curve ID"),
-        ]));
+            &ctx,
+            &scan,
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &BTreeSet::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+            &mut storage,
+        )
+        .expect("service transfer");
+        assert_eq!(
+            result,
+            BTreeSet::from([CurveId::mint("creo:visibgeom:curve#10").expect("valid curve ID"),])
+        );
         assert_curve_evidence_storage(&ctx, 1);
         drop(result);
         drop(storage);
@@ -1374,7 +1394,9 @@ mod tests {
     fn nurbs_boundary_identity_copies_account_materialized_bytes() {
         use cadmpeg_core::decode::ResourceDimension;
         let cap = crate::test_support::allocation_limit_at(
-            ResourceDimension::MaterializedBytes, None, |cap| {
+            ResourceDimension::MaterializedBytes,
+            None,
+            |cap| {
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_materialized_bytes = cap;
                 nurbs_boundary_transfer_with_limits(policy)
@@ -1386,14 +1408,21 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_materialized_bytes = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let mut storage = ctx.reserve_scoped(0, "creo curve evidence workspace").expect("scope");
+        let mut storage = ctx
+            .reserve_scoped(0, "creo curve evidence workspace")
+            .expect("scope");
         let result = transfer_nurbs_boundary_curves(
-            &ctx, &scan, &mut ir, &mut AnnotationBuilder::new(), &mut Vec::new(),
-            &mut crate::decode::source_carriers::SourceUnitCarriers::default(), &mut storage,
-        ).expect("service boundary transfer");
-        let expected = BTreeSet::from([
-            CurveId::mint("creo:visibgeom:curve#10").expect("valid curve ID"),
-        ]);
+            &ctx,
+            &scan,
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &mut Vec::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+            &mut storage,
+        )
+        .expect("service boundary transfer");
+        let expected =
+            BTreeSet::from([CurveId::mint("creo:visibgeom:curve#10").expect("valid curve ID")]);
         assert_eq!(result.ids, expected);
         assert_eq!(result.endpoint_witnesses, expected);
         assert_curve_evidence_storage(&ctx, 2);

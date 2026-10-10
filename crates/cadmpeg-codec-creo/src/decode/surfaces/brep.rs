@@ -815,7 +815,9 @@ fn merge_body_components(
         return Ok(Vec::new());
     };
     while components.len() != 0 {
-        let Some(component) = ctx.next_charged(&mut components, "creo B-rep merged component traversal")? else {
+        let Some(component) =
+            ctx.next_charged(&mut components, "creo B-rep merged component traversal")?
+        else {
             break;
         };
         ctx.extend_vec(
@@ -879,10 +881,13 @@ fn split_neutral_component_shells(
     }
     let mut shell_specs = Vec::new();
     while !remaining_faces.is_empty() {
-        let Some(start) = ctx.next_charged(
-            &mut remaining_faces.iter(),
-            "creo B-rep shell component face visits",
-        )?.copied() else {
+        let Some(start) = ctx
+            .next_charged(
+                &mut remaining_faces.iter(),
+                "creo B-rep shell component face visits",
+            )?
+            .copied()
+        else {
             break;
         };
         ctx.remove_btree_set(
@@ -901,9 +906,10 @@ fn split_neutral_component_shells(
         pending.push(start);
         while !pending.is_empty() {
             let Some(face_id) = ctx.next_charged(
-            &mut std::iter::from_fn(|| pending.pop()),
-            "creo B-rep pending shell face traversal",
-        )? else {
+                &mut std::iter::from_fn(|| pending.pop()),
+                "creo B-rep pending shell face traversal",
+            )?
+            else {
                 break;
             };
             let Some(neighbours) =
@@ -953,7 +959,9 @@ fn split_neutral_component_shells(
         let mut matching_shell = None;
         let mut shells = shell_specs.iter().enumerate();
         while shells.len() != 0 {
-            let Some((index, shell)) = ctx.next_charged(&mut shells, "creo B-rep wire shell search")? else {
+            let Some((index, shell)) =
+                ctx.next_charged(&mut shells, "creo B-rep wire shell search")?
+            else {
                 break;
             };
             if ctx.any_by(
@@ -1019,7 +1027,9 @@ fn component_is_closed(
     }
     let mut curves = component_face_curves.iter();
     while curves.len() != 0 {
-        let Some(curve_id) = ctx.next_charged(&mut curves, "creo B-rep closed component curve traversal")? else {
+        let Some(curve_id) =
+            ctx.next_charged(&mut curves, "creo B-rep closed component curve traversal")?
+        else {
             break;
         };
         let mut faces_used = [None; 2];
@@ -1301,7 +1311,9 @@ fn ordered_two_edge_circle_loops<'a>(
     let center_uv = cadmpeg_ir::math::Point2::from(center_uv);
     let mut pairs = circle_loops.iter().zip(polygons);
     while pairs.len() != 0 {
-        let Some((circle, polygon)) = ctx.next_charged(&mut pairs, "creo B-rep circle loop traversal")? else {
+        let Some((circle, polygon)) =
+            ctx.next_charged(&mut pairs, "creo B-rep circle loop traversal")?
+        else {
             break;
         };
         let [first, second] = polygon.as_slice() else {
@@ -1331,7 +1343,9 @@ fn ordered_two_edge_circle_loops<'a>(
     }
     let mut circles = circle_loops.iter().enumerate();
     while circles.len() != 0 {
-        let Some((index, first)) = ctx.next_charged(&mut circles, "creo B-rep circle radius traversal")? else {
+        let Some((index, first)) =
+            ctx.next_charged(&mut circles, "creo B-rep circle radius traversal")?
+        else {
             break;
         };
         if ctx.any_by(
@@ -1391,7 +1405,9 @@ fn native_parameter_loop_polygon(
     let mut segments = Vec::new();
     let mut visits = lp.half_edges().iter();
     while visits.len() != 0 {
-        let Some(half_edge) = ctx.next_charged(&mut visits, "creo B-rep loop half edge traversal")? else {
+        let Some(half_edge) =
+            ctx.next_charged(&mut visits, "creo B-rep loop half edge traversal")?
+        else {
             break;
         };
         let Some(binding) = ctx.get_btree_map(incidence, half_edge, "creo incidence lookup")?
@@ -1517,7 +1533,8 @@ fn ordered_native_parameter_face_loops<'a>(
         )?;
         polygons.push(polygon);
     }
-    let mut input_storage = ctx.reserve_scoped(0, "creo native face ordering candidate references")?;
+    let mut input_storage =
+        ctx.reserve_scoped(0, "creo native face ordering candidate references")?;
     let mut copied_loops = Vec::new();
     input_storage.with_storage(|| {
         ctx.extend_from_slice(&mut copied_loops, loops, "creo native face loop references")
@@ -1683,7 +1700,9 @@ impl<'a> BrepFaceCandidateIndexes<'a> {
         }
         ctx.retain_btree_map(
             &mut loops_by_face,
-            |face_id, _| Ok::<_, cadmpeg_core::CodecError>(is_neutral_face_reference(scan, *face_id)),
+            |face_id, _| {
+                Ok::<_, cadmpeg_core::CodecError>(is_neutral_face_reference(scan, *face_id))
+            },
             "creo B-rep neutral loop faces",
         )?;
         let mut model_surface_counts = BTreeMap::new();
@@ -1752,7 +1771,8 @@ impl BrepEdgeIndexes {
         ir: &CadIr,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         let mut edge_vertices = BTreeMap::new();
-        let unique_rows_parts = crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)?;
+        let unique_rows_parts =
+            crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)?;
         let _unique_rows_storage = unique_rows_parts.1;
         let unique_rows = unique_rows_parts.0;
         for row in ctx
@@ -2710,7 +2730,9 @@ pub(in super::super) fn transfer_native_brep<'ctx>(
         let mut has_unresolved_boundary_vertices = false;
         let mut visits = loops.iter();
         while visits.len() != 0 {
-            let Some(lp) = ctx.next_charged(&mut visits, "creo B-rep unresolved boundary loop traversal")? else {
+            let Some(lp) =
+                ctx.next_charged(&mut visits, "creo B-rep unresolved boundary loop traversal")?
+            else {
                 break;
             };
             if ctx.any_by(
@@ -2747,7 +2769,9 @@ pub(in super::super) fn transfer_native_brep<'ctx>(
         let mut has_ambiguous_boundary_curve = false;
         let mut visits = loops.iter();
         while visits.len() != 0 {
-            let Some(lp) = ctx.next_charged(&mut visits, "creo B-rep ambiguous boundary loop traversal")? else {
+            let Some(lp) =
+                ctx.next_charged(&mut visits, "creo B-rep ambiguous boundary loop traversal")?
+            else {
                 break;
             };
             if ctx.any_by(
@@ -2780,7 +2804,8 @@ pub(in super::super) fn transfer_native_brep<'ctx>(
         let mut two_edge_loops_are_proven = true;
         let mut visits = loops.iter();
         while visits.len() != 0 {
-            let Some(lp) = ctx.next_charged(&mut visits, "creo B-rep two edge loop traversal")? else {
+            let Some(lp) = ctx.next_charged(&mut visits, "creo B-rep two edge loop traversal")?
+            else {
                 break;
             };
             if lp.half_edges().len() != 2 {
@@ -3773,13 +3798,12 @@ pub(in super::super) fn transfer_native_brep<'ctx>(
                             else {
                                 break 'projected None;
                             };
-                            let curve_id_parts =
-                                crate::identity::compose_scoped::<CurveId>(
-                                    ctx,
-                                    &crate::identity::VISIBGEOM_CURVE,
-                                    half_edge.curve_id,
-                                    "creo B-rep planar curve query",
-                                )?;
+                            let curve_id_parts = crate::identity::compose_scoped::<CurveId>(
+                                ctx,
+                                &crate::identity::VISIBGEOM_CURVE,
+                                half_edge.curve_id,
+                                "creo B-rep planar curve query",
+                            )?;
                             let _curve_storage = curve_id_parts.1;
                             let curve_id = curve_id_parts.0;
                             let Some(curve_position) = curves_index
@@ -3836,18 +3860,13 @@ pub(in super::super) fn transfer_native_brep<'ctx>(
                                     .map(|geometry| (geometry, "projected_parallel_conic_pcurve"))
                                 })
                                 .or_else(|| {
-                                    meridian_circle_pcurve(
-                                        source_surface,
-                                        source_curve,
-                                    )
-                                    .map(|geometry| (geometry, "projected_meridian_pcurve"))
+                                    meridian_circle_pcurve(source_surface, source_curve)
+                                        .map(|geometry| (geometry, "projected_meridian_pcurve"))
                                 })
                                 .or_else(|| {
-                                    ruled_generator_line_pcurve(
-                                        source_surface,
-                                        source_curve,
+                                    ruled_generator_line_pcurve(source_surface, source_curve).map(
+                                        |geometry| (geometry, "projected_ruled_generator_pcurve"),
                                     )
-                                    .map(|geometry| (geometry, "projected_ruled_generator_pcurve"))
                                 })
                             else {
                                 break 'projected None;

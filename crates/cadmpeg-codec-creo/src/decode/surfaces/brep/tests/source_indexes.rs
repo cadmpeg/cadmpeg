@@ -440,11 +440,15 @@ fn brep_fixed_curve_namespace_charges_only_the_record_visit() {
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         model_typed_nonlinear_curve_ids(
-            &ctx, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            &ctx,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
     };
     let below = crate::test_support::allocation_limit_at(
-        ResourceDimension::WorkUnits, Some("creo model typed nonlinear curve ids curves traversal"), run,
+        ResourceDimension::WorkUnits,
+        Some("creo model typed nonlinear curve ids curves traversal"),
+        run,
     );
     for cap in [below, 1] {
         let arena = DecodeArena::new();
@@ -455,7 +459,9 @@ fn brep_fixed_curve_namespace_charges_only_the_record_visit() {
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let result = model_typed_nonlinear_curve_ids(
-            &ctx, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            &ctx,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
         );
         if cap == 1 {
             assert!(result.expect("one existing record visit").is_empty());
@@ -464,7 +470,10 @@ fn brep_fixed_curve_namespace_charges_only_the_record_visit() {
                 panic!("record visit must refuse");
             };
             assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(refusal.operation, "creo model typed nonlinear curve ids curves traversal");
+            assert_eq!(
+                refusal.operation,
+                "creo model typed nonlinear curve ids curves traversal"
+            );
             assert_eq!(refusal.used, 0);
             assert_eq!(refusal.additional, 1);
             assert!(matches!(model_typed_nonlinear_curve_ids(
@@ -488,11 +497,15 @@ fn brep_fixed_curve_namespace_keeps_numeric_suffix_admission() {
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         model_typed_nonlinear_curve_ids(
-            &ctx, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            &ctx,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
     };
     let below = crate::test_support::allocation_limit_at(
-        ResourceDimension::WorkUnits, Some("creo nonlinear curve number"), run,
+        ResourceDimension::WorkUnits,
+        Some("creo nonlinear curve number"),
+        run,
     );
     for cap in [below, 2] {
         let arena = DecodeArena::new();
@@ -503,10 +516,14 @@ fn brep_fixed_curve_namespace_keeps_numeric_suffix_admission() {
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let result = model_typed_nonlinear_curve_ids(
-            &ctx, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            &ctx,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
         );
         if cap == 2 {
-            assert!(result.expect("record visit plus one suffix byte").is_empty());
+            assert!(result
+                .expect("record visit plus one suffix byte")
+                .is_empty());
         } else {
             assert!(matches!(result, Err(CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::WorkUnits
