@@ -31,7 +31,7 @@ fn lower_profile_tier_holds_an_admitted_nonnegative_magnitude() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("empty test root fits policy");
     entity.doubles.insert("ToleranceLowerTier".into(), 0.0);
-    let projected = project_lower_profile_tier(&ctx, &reference, &entity, &BTreeMap::new(), None)
+    let projected = project_lower_profile_tier(&ctx, &reference, &entity, &BTreeMap::new(), &crate::swift::ProjectionGeometry::new(&ctx, None, None, None))
         .expect("lower tier fits policy")
         .expect("zero is a valid lower tier");
     let PmiDefinition::GeometricTolerance { magnitude, .. } = projected.definition else {
@@ -41,7 +41,7 @@ fn lower_profile_tier_holds_an_admitted_nonnegative_magnitude() {
 
     entity.doubles.insert("ToleranceLowerTier".into(), -1.0);
     assert!(
-        project_lower_profile_tier(&ctx, &reference, &entity, &BTreeMap::new(), None)
+        project_lower_profile_tier(&ctx, &reference, &entity, &BTreeMap::new(), &crate::swift::ProjectionGeometry::new(&ctx, None, None, None))
             .expect("invalid lower tier fits policy")
             .is_none()
     );
@@ -49,7 +49,7 @@ fn lower_profile_tier_holds_an_admitted_nonnegative_magnitude() {
         .doubles
         .insert("ToleranceLowerTier".into(), f64::INFINITY);
     assert!(
-        project_lower_profile_tier(&ctx, &reference, &entity, &BTreeMap::new(), None)
+        project_lower_profile_tier(&ctx, &reference, &entity, &BTreeMap::new(), &crate::swift::ProjectionGeometry::new(&ctx, None, None, None))
             .expect("invalid lower tier fits policy")
             .is_none()
     );
@@ -1068,5 +1068,162 @@ fn swift_empty_projection_skips_feature_and_provenance_work() {
     let projection = annotations(&ctx, &scan, &mut Default::default(), None).unwrap();
     assert!(projection.annotations.is_empty());
     assert!(projection.unsupported_loss.unwrap().contains("GdtAnalysisIncompleteAnnotationRoster"));
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn swift_discarded_entity_candidates_release_their_storage() {
+    let mut payload = Vec::new();
+    for _ in 0..64 { encode_entity(&super::entity("GdtPlane"), &mut payload); }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 1024 * 1024;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(parse_unique_root(&ctx, &payload).unwrap().is_none());
+    let all_scratch = ctx.reserve_scoped(policy.limits.max_materialized_bytes, "reuse SWIFT discovery scratch").unwrap();
+    drop(all_scratch);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn swift_root_discovery_checks_nested_and_property_root_tokens() {
+    let nested_root = Entity { class: crate::swift::ROOT_CLASS.into(), ..Entity::default() };
+    let mut root = nested_root.clone();
+    root.related.push(RelatedObject { name: "Nested".into(), class: nested_root.class.clone(), entity: nested_root });
+    let mut payload = Vec::new();
+    encode_entity(&root, &mut payload);
+    let ctx = cadmpeg_test_support::service_decode_context();
+    assert!(parse_unique_root(&ctx, &payload).unwrap().is_none());
+    let root = Entity { class: crate::swift::ROOT_CLASS.into(), ..Entity::default() };
+    let mut embedded = Vec::new();
+    encode_entity(&root, &mut embedded);
+    let embedded = String::from_utf8(embedded).unwrap();
+    let mut root = root;
+    root.strings.insert("Embedded".into(), embedded);
+    let mut payload = Vec::new();
+    encode_entity(&root, &mut payload);
+    let ctx = cadmpeg_test_support::service_decode_context();
+    assert!(parse_unique_root(&ctx, &payload).unwrap().is_none());
+}
+
+#[test]
+fn swift_discovery_holds_only_the_selected_tree_storage() {
+    let mut root = Entity { class: crate::swift::ROOT_CLASS.into(), ..Entity::default() };
+    for index in 0..64 {
+        root.features.references.push(super::reference(&format!("F{index}"), "GdtPlane"));
+        root.features.entities.push(super::entity("GdtPlane"));
+    }
+    let mut payload = Vec::new();
+    encode_entity(&root, &mut payload);
+    let live_storage = |discover| {
+        let arena = DecodeArena::new();
+        let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::MaterializedBytes, "measure selected SWIFT tree", |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            policy.limits.max_retained_bytes = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            let (parsed, storage) = ctx.with_scoped_storage("selected SWIFT test tree", || {
+                if discover { parse_unique_root(&ctx, &payload) }
+                else { crate::swift::parse_entity(&ctx, &mut cadmpeg_core::decode::View::over_retained(&payload), 0) }
+            })?;
+            assert_eq!(parsed.as_ref().unwrap().features.entities.len(), 64);
+            let measurement = ctx.reserve_scoped(u64::MAX / 2, "measure selected SWIFT tree")?;
+            drop((measurement, parsed, storage));
+            Ok(())
+        });
+        let CodecError::ResourceLimit(limit) = error else { panic!("measurement refusal"); };
+        limit.used
+    };
+    assert_eq!(live_storage(true), live_storage(false));
+}
+
+#[test]
+fn swift_suppressed_roster_skips_geometry_indexes_and_provenance() {
+    let mut root = Entity { class: crate::swift::ROOT_CLASS.into(), ..Entity::default() };
+    let mut annotation = super::entity("GdtFlatness");
+    annotation.integers.insert("IsSuppressed".into(), 1);
+    root.annotations.references.push(super::reference("A10", "GdtFlatness"));
+    root.annotations.entities.push(annotation);
+    assert_geometry_indexes_skipped(root.clone(), None);
+    let source = source_with_swift_root(&root);
+    let scan = crate::test_support::container::scan(&source);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(ResourceDimension::WorkUnits, "format SWIFT PMI identity", None);
+    let mut provenance = Default::default();
+    let projection = annotations(&ctx, &scan, &mut provenance, None).unwrap();
+    assert!(projection.annotations.is_empty());
+    assert!(provenance.provenance.is_empty());
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn swift_explicit_nominal_skips_native_pattern_index() {
+    use super::identity::pattern_hole_features;
+    let mut root = Entity { class: crate::swift::ROOT_CLASS.into(), ..Entity::default() };
+    let mut annotation = super::entity("GdtDiameter");
+    annotation.doubles.insert("Nominal".into(), 4.0);
+    annotation.features.references.push(super::reference("F10", "GdtCylinder"));
+    root.annotations.references.push(super::reference("A10", "GdtDiameter"));
+    root.annotations.entities.push(annotation);
+    root.features.references.push(super::reference("F10", "GdtCylinder"));
+    root.features.entities.push(super::entity("GdtCylinder"));
+    let source = source_with_swift_root(&root);
+    let scan = crate::test_support::container::scan(&source);
+    let features = pattern_hole_features();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(ResourceDimension::WorkUnits, "swift pattern hole candidates", None);
+    let projection = annotations(&ctx, &scan, &mut Default::default(), Some(crate::swift::GeometryProjectionInputs { topology: crate::swift::PrimaryTopology { bodies: &[], faces: &[], edges: &[], vertices: &[] }, face_bridge_sequences: &[], edge_use_sequences: &[], vertex_use_sequences: &[], features: &features })).unwrap();
+    assert_eq!(projection.annotations.len(), 1);
+    assert_eq!(dimension_nominal(&projection.annotations, "A10"), length(4.0));
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn swift_suppressed_roster_skips_populated_feature_index() {
+    let mut root = Entity { class: crate::swift::ROOT_CLASS.into(), ..Entity::default() };
+    for index in 0..64 {
+        root.features.references.push(super::reference(&format!("F{index}"), "GdtPlane"));
+        root.features.entities.push(super::entity("GdtPlane"));
+    }
+    let mut annotation = super::entity("GdtFlatness");
+    annotation.integers.insert("IsSuppressed".into(), 1);
+    annotation.features.references.push(super::reference("F0", "GdtPlane"));
+    root.annotations.references.push(super::reference("A10", "GdtFlatness"));
+    root.annotations.entities.push(annotation);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(ResourceDimension::WorkUnits, "index SWIFT features", None);
+    let projection = crate::swift::project_with_topology(&ctx, &root, None, &[], None, None).unwrap();
+    assert!(projection.annotations.is_empty());
+    assert!(projection.unsupported.is_empty());
+    drop(projection);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn swift_discarded_stream_roots_release_their_storage() {
+    let root = Entity { class: crate::swift::ROOT_CLASS.into(), ..Entity::default() };
+    let mut payload = Vec::new();
+    encode_entity(&root, &mut payload);
+    let mut source = source_with_swift_root(&root);
+    source.extend(crate::test_support::container::make_block(0x41, "SWIFT/OtherSchema", &payload));
+    let scan = crate::test_support::container::scan(&source);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 1024 * 1024;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(crate::swift::scan_root(&ctx, &scan).unwrap().is_none());
+    let all_scratch = ctx.reserve_scoped(policy.limits.max_materialized_bytes, "reuse SWIFT stream discovery scratch").unwrap();
+    drop(all_scratch);
     ctx.finish_session().unwrap();
 }
