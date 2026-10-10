@@ -10,7 +10,7 @@ use cadmpeg_ir::geometry::{
     SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::Vector3;
-use cadmpeg_ir::tessellation::TessellationError;
+use cadmpeg_ir::tessellation::{TessellationError, TessellationMesh};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 use cadmpeg_ir::CadIr;
@@ -135,7 +135,7 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
             .model
             .bodies
             .iter()
-            .map(|body| (body.id.clone(), body.transform.unwrap_or_default()))
+            .map(|body| (&body.id, body.transform.unwrap_or_default()))
             .collect::<HashMap<_, _>>();
         let mut values = transforms.values();
         let sole_transform = match (values.next(), values.next()) {
@@ -166,7 +166,14 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
                     CodecError::malformed(format_args!("invalid transformed tessellation: {error}"))
                 }
             })?;
-            if !mesh.vertex_normals().is_empty() || !mesh.per_corner_normals().is_empty() {
+            let has_normals = match mesh.mesh() {
+                TessellationMesh::ShadedList { vertices, .. } => !vertices.is_empty(),
+                TessellationMesh::CornerShadedList { triangles, .. } => !triangles.is_empty(),
+                // Every strip mesh has a strip of at least three shaded rows.
+                TessellationMesh::ShadedStrips { .. } => true,
+                TessellationMesh::List { .. } | TessellationMesh::Strips { .. } => false,
+            };
+            if has_normals {
                 mesh.edit_normals(|normal| {
                     *normal = transform
                         .apply_vector(*normal)
@@ -192,13 +199,13 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
     Ok(())
 }
 
-fn assign(
-    assignments: &mut HashMap<String, Transform>,
-    id: &str,
+fn assign<'a>(
+    assignments: &mut HashMap<&'a str, Transform>,
+    id: &'a str,
     transform: Transform,
 ) -> Result<(), CodecError> {
     if assignments
-        .insert(id.to_string(), transform)
+        .insert(id, transform)
         .is_some_and(|current| current != transform)
     {
         return Err(CodecError::NotImplemented(format!(
@@ -642,5 +649,79 @@ mod tests {
             .map(cadmpeg_ir::features::FinitePoint3::get),
             Ok(Point3::new(0.0, 0.0, -2.0))
         );
+    }
+
+    #[test]
+    fn body_rotation_preserves_all_mesh_normal_carriers_and_empty_lists() {
+        use cadmpeg_ir::features::FiniteVector3;
+        use cadmpeg_ir::tessellation::{Tessellation, TessellationId, TessellationMesh};
+        use cadmpeg_ir::ids::BodyId;
+        use cadmpeg_ir::topology::Body;
+        let positions = vec![
+            Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+        ];
+        let normals = vec![Vector3::new(1.0, 0.0, 0.0); 3];
+        let meshes = [
+            (TessellationMesh::from_list_lanes(positions.clone(), vec![[0, 1, 2]], None).unwrap(), false, false, false),
+            (TessellationMesh::from_list_lanes(positions.clone(), vec![[0, 1, 2]], Some(normals.clone())).unwrap(), true, false, false),
+            (TessellationMesh::from_corner_lanes(positions.clone(), vec![[0, 1, 2]], Some(normals.clone())).unwrap(), false, true, false),
+            (TessellationMesh::from_strip_lanes(positions.clone(), None, &[3]).unwrap(), false, false, false),
+            (TessellationMesh::from_strip_lanes(positions, Some(normals), &[3]).unwrap(), true, false, false),
+            (TessellationMesh::from_list_lanes(Vec::new(), Vec::new(), Some(Vec::new())).unwrap(), false, false, true),
+            (TessellationMesh::from_corner_lanes(Vec::new(), Vec::new(), Some(Vec::new())).unwrap(), false, false, true),
+        ];
+        let rotation = Transform::affine([
+            [0.0, -1.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ]).unwrap();
+        for (mesh, shaded, corner, empty) in meshes {
+            let body = BodyId::mint("synthetic:test:id#body").unwrap();
+            let id = TessellationId::mint("synthetic:test:id#mesh").unwrap();
+            let mut tessellation = Tessellation::new(id.clone(), mesh, Vec::new()).unwrap();
+            let kind = std::mem::discriminant(tessellation.mesh());
+            tessellation.body = Some(body.clone());
+            let mut ir = cadmpeg_ir::CadIr::empty();
+            ir.model.bodies.push(Body {
+                id: body.clone(), kind: Default::default(), regions: Vec::new(),
+                transform: Some(rotation), name: None, color: None, visible: None,
+            });
+            ir.model.tessellations.push(tessellation);
+            super::bake(&mut ir).unwrap();
+            let mesh = &ir.model.tessellations[0];
+            assert_eq!(mesh.id, id);
+            assert_eq!(mesh.body, Some(body));
+            assert_eq!(std::mem::discriminant(mesh.mesh()), kind);
+            assert_eq!(ir.model.bodies[0].transform, None);
+            let points: Vec<_> = mesh.vertices().into_iter().map(FinitePoint3::get).collect();
+            assert_eq!(points, if empty { Vec::new() } else { vec![
+                Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0),
+                Point3::new(-1.0, 0.0, 0.0),
+            ] });
+            let vertex_normals: Vec<_> = mesh.vertex_normals().into_iter().map(FiniteVector3::get).collect();
+            let corner_normals: Vec<_> = mesh.per_corner_normals().into_iter().map(FiniteVector3::get).collect();
+            let expected = vec![Vector3::new(0.0, 1.0, 0.0); 3];
+            assert_eq!(vertex_normals, if shaded { expected.clone() } else { Vec::new() });
+            assert_eq!(corner_normals, if corner { expected } else { Vec::new() });
+        }
+    }
+
+    #[test]
+    fn transform_assignments_borrow_identities_and_preserve_conflict_state() {
+        let id = String::from("source-entity");
+        let mut assignments = std::collections::HashMap::new();
+        super::assign(&mut assignments, id.as_str(), Transform::identity()).unwrap();
+        super::assign(&mut assignments, id.as_str(), Transform::identity()).unwrap();
+        assert_eq!(assignments.len(), 1);
+        assert_eq!(assignments.keys().next().unwrap().as_ptr(), id.as_ptr());
+        let translated = Transform::affine([
+            [1.0, 0.0, 0.0, 1.0], [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ]).unwrap();
+        let error = super::assign(&mut assignments, id.as_str(), translated).unwrap_err();
+        assert!(matches!(error, CodecError::NotImplemented(message)
+            if message == "entity source-entity is shared by bodies with different transforms"));
+        // The original insert precedes refusal and leaves the new assignment.
+        assert_eq!(assignments.get(id.as_str()), Some(&translated));
     }
 }
