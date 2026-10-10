@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::scalar::ScalarCache;
-use crate::surface::{
-    decode_inline_selector_cylinder_envelope, plane_envelope_has_one_held_coordinate, SurfaceKind,
-};
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use crate::surface::{decode_inline_selector_cylinder_envelope, SurfaceKind};
 
 #[test]
 fn selector_envelope_fixed_axes_are_free() {
@@ -33,17 +30,8 @@ fn selector_envelope_fixed_axes_are_free() {
         }
         body.push(0xe3);
         for kind in [SurfaceKind::Cylinder, SurfaceKind::Plane] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = 0;
-            policy.limits.max_materialized_bytes = 0;
-            policy.limits.max_retained_bytes = 0;
-            policy.limits.max_collection_items = 0;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let run = || {
-                decode_inline_selector_cylinder_envelope(&ctx, kind, &body, &ScalarCache::default())
-            };
-            let envelope = run().expect("fixed envelope needs no resources");
+            let envelope =
+                decode_inline_selector_cylinder_envelope(kind, &body, &ScalarCache::default());
             if kind == SurfaceKind::Cylinder && accepted {
                 let envelope = envelope.expect("at most one absent radial span");
                 assert_eq!(envelope.axial, [-4.0, 4.0]);
@@ -65,31 +53,5 @@ fn selector_envelope_fixed_axes_are_free() {
                 assert!(envelope.is_none());
             }
         }
-    }
-}
-
-#[test]
-fn plane_envelope_fixed_pairs_admit_only_actual_byte_comparisons() {
-    const PAIRS: [[usize; 2]; 3] = [[0, 3], [1, 4], [2, 5]];
-    for (bytes, expected) in [
-        ([b"a".as_slice(), b"b", b"d", b"a", b"c", b"e"], true),
-        ([b"a".as_slice(), b"bc", b"", b"a", b"bc", b""], false),
-        (
-            [
-                b"abcdefg".as_slice(),
-                b"abc",
-                b"x",
-                b"abcdefg",
-                b"abd",
-                b"y",
-            ],
-            true,
-        ),
-        ([b"".as_slice(); 6], false),
-    ] {
-        let slots = bytes.map(|bytes| (None, bytes));
-        let actual =
-            super::work_output(|ctx| plane_envelope_has_one_held_coordinate(ctx, &slots, PAIRS));
-        assert_eq!(actual, expected);
     }
 }

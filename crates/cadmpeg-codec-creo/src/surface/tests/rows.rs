@@ -1390,8 +1390,8 @@ fn tabulated_cylinder_control_point_field_expands_contiguous_ids() {
     let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
 
     assert_eq!(
-        records[0].tabulated_cylinder_control_point_ids(),
-        Some([80, 81, 82, 83])
+        records[0].field("c_pnts").map(|field| &field.value),
+        Some(&SurfaceNamedValue::ContiguousEntityReferences(vec![80, 81, 82, 83]))
     );
 }
 

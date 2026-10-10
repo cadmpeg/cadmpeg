@@ -472,44 +472,6 @@ impl SurfacePrototypeRecord {
             PrototypeField::Missing | PrototypeField::Many => None,
         }
     }
-
-    /// Return the chart-origin vector carried by a `tab_cyl` local system.
-    pub(crate) fn tabulated_cylinder_chart_origin(&self) -> Option<[f64; 3]> {
-        if self.family != SurfacePrototypeFamily::Extrusion(ExtrusionLabel::TabulatedCylinder) {
-            return None;
-        }
-        let SurfaceNamedValue::ScalarArray(array) = &self.field("local_sys")?.value else {
-            return None;
-        };
-        if array.dimensions() != 4 || array.count() != 3 {
-            return None;
-        }
-        let values = array.values();
-        if values.iter().all(|value| value.is_some_and(f64::is_finite)) {
-            return Some([values[9]?, values[10]?, values[11]?]);
-        }
-        let compact_chart = values[..7]
-            .iter()
-            .all(|value| value.is_some_and(|value| value == 0.0))
-            && values[7..10]
-                .iter()
-                .all(|value| value.is_some_and(f64::is_finite))
-            && values[10..12].iter().all(Option::is_none);
-        compact_chart.then_some([values[7]?, values[8]?, values[9]?])
-    }
-
-    /// Return the four contiguous control-point IDs in a `tab_cyl` prototype.
-    pub(crate) fn tabulated_cylinder_control_point_ids(&self) -> Option<[u32; 4]> {
-        if self.family != SurfacePrototypeFamily::Extrusion(ExtrusionLabel::TabulatedCylinder) {
-            return None;
-        }
-        let SurfaceNamedValue::ContiguousEntityReferences(entity_ids) =
-            &self.field("c_pnts")?.value
-        else {
-            return None;
-        };
-        entity_ids.as_slice().try_into().ok()
-    }
 }
 
 /// Structural boundary that terminates a positional surface parameter body.
@@ -798,37 +760,33 @@ fn take_spline_vectors(
 }
 
 fn take_spline_mixed_derivatives(
-    _ctx: &DecodeContext<'_>,
     body: &[u8],
     cursor: &mut usize,
     cache: &scalar::ScalarCache,
-) -> Result<Option<[[f64; 3]; 4]>, CodecError> {
-    let Some(remaining) = body.len().checked_sub(*cursor) else {
-        return Ok(None);
-    };
+) -> Option<[[f64; 3]; 4]> {
+    let remaining = body.len().checked_sub(*cursor)?;
     if remaining < 12 {
-        return Ok(None);
+        return None;
     }
     let mut derivatives = [[0.0; 3]; 4];
     for derivative in &mut derivatives {
         for slot in derivative {
-            let Some((Some(value), next)) = named_spline_scalar_slot(
+            let (value, next) = named_spline_scalar_slot(
                 &SurfacePrototypeFamily::Spline(SplineLabel::Spline),
                 "end_uv_deriv",
                 body,
                 *cursor,
                 cache,
-            ) else {
-                return Ok(None);
-            };
+            )?;
+            let value = value?;
             if next <= *cursor {
-                return Ok(None);
+                return None;
             }
             *slot = value;
             *cursor = next;
         }
     }
-    Ok(Some(derivatives))
+    Some(derivatives)
 }
 
 fn parse_positional_spline_replay(
@@ -884,7 +842,7 @@ fn parse_positional_spline_replay(
     else {
         return Ok(None);
     };
-    let Some(mixed_derivatives) = take_spline_mixed_derivatives(ctx, body, &mut cursor, cache)?
+    let Some(mixed_derivatives) = take_spline_mixed_derivatives(body, &mut cursor, cache)
     else {
         return Ok(None);
     };
@@ -4223,7 +4181,7 @@ fn named_prototype_frames<'a>(
             let token = token?;
             let token_offset = close + 2 + token.offset;
             if token.kind == psb::TokenKind::NamedRecord
-                && named_record_length(ctx, payload, token_offset)? == Some(token.length)
+                && named_record_length(payload, token_offset) == Some(token.length)
             {
                 position_scope.with_storage(|| {
                     ctx.reserve_vec(&mut named, 1, "creo named prototype field positions")
@@ -4234,7 +4192,7 @@ fn named_prototype_frames<'a>(
         for token_offset in
             ctx.admit_iter(close + 2..record_end, "creo named prototype byte traversal")?
         {
-            let Some(length) = named_record_length(ctx, payload, token_offset)? else {
+            let Some(length) = named_record_length(payload, token_offset) else {
                 continue;
             };
             let name_start = token_offset + 2;
@@ -4840,34 +4798,26 @@ fn split_cylinder_outline_bounds(
         .then_some(bounds)
 }
 
-fn named_record_length(
-    ctx: &DecodeContext<'_>,
-    body: &[u8],
-    offset: usize,
-) -> Result<Option<usize>, CodecError> {
+fn named_record_length(body: &[u8], offset: usize) -> Option<usize> {
+    const MAX_NAME_BYTES: usize = 96;
     if body.get(offset) != Some(&psb::token::NAMED_RECORD)
         || body
             .get(offset + 1)
             .is_none_or(|field_type| *field_type > 0x24)
     {
-        return Ok(None);
+        return None;
     }
-    let mut name = body[offset + 2..].iter().take(96).enumerate();
-    while name.len() != 0 {
-        let Some((index, byte)) = ctx.next_charged(&mut name, "creo surface name prefix scan")?
-        else {
-            break;
-        };
+    for (index, byte) in body[offset + 2..].iter().take(MAX_NAME_BYTES).enumerate() {
         if *byte == 0 {
-            return Ok((index > 0).then_some(index + 3));
+            return (index > 0).then_some(index + 3);
         }
         if (index == 0 && !byte.is_ascii_alphabetic())
             || (!byte.is_ascii_alphanumeric() && !matches!(byte, b'_' | b'(' | b')'))
         {
-            return Ok(None);
+            return None;
         }
     }
-    Ok(None)
+    None
 }
 
 fn named_record_boundary(
@@ -4896,7 +4846,7 @@ fn named_record_boundary(
                 continue;
             }
         }
-        if named_record_length(ctx, body, cursor)?.is_some() {
+        if named_record_length(body, cursor).is_some() {
             return Ok(Some(cursor));
         }
         if let Some((_, next)) = decode_row_scalar(kind, body, cursor, cache) {
@@ -4979,7 +4929,7 @@ fn inline_surface_body(
     let standard_envelope = decode_inline_surface_envelope(kind, body, cache);
     let four_bound_envelope = decode_inline_four_bound_cylinder_envelope(kind, body, cache);
     let referenced_envelope = decode_inline_referenced_cylinder_envelope(kind, body, cache);
-    let selector_envelope = decode_inline_selector_cylinder_envelope(ctx, kind, body, cache)?;
+    let selector_envelope = decode_inline_selector_cylinder_envelope(kind, body, cache);
     let Some(envelope) = standard_envelope
         .or(four_bound_envelope)
         .or(referenced_envelope)
@@ -5421,74 +5371,64 @@ fn decode_inline_four_bound_cylinder_envelope(
 }
 
 fn decode_inline_selector_cylinder_envelope(
-    _ctx: &DecodeContext<'_>,
     kind: SurfaceKind,
     body: &[u8],
     cache: &scalar::ScalarCache,
-) -> Result<Option<InlineSurfaceEnvelope>, CodecError> {
-    let candidate = (|| {
-        (kind == SurfaceKind::Cylinder).then_some(())?;
-        let selector_end = |cursor: usize| match body.get(cursor..) {
-            Some([0x00, 0x11, 0x13, ..]) => Some(cursor + 3),
-            Some([0x11..=0x14 | 0x17 | 0x18 | 0x20, ..]) => Some(cursor + 1),
-            _ => None,
-        };
-        let decode_coordinate = |cursor| {
-            if body.get(cursor) == Some(&0x18) {
-                return Some((0.0, cursor + 1));
-            }
-            let (value, next) =
-                scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)?;
-            let value = -value;
-            value.is_finite().then_some((value, next))
-        };
-        let mut cursor = selector_end(0)?;
-        let (first_axial, next) = decode_coordinate(cursor)?;
-        cursor = selector_end(next)?;
-        let (second_axial, next) = decode_coordinate(cursor)?;
-        cursor = next;
-        (first_axial != second_axial).then_some(())?;
-
-        let mut corners = [[None; 3]; 2];
-        for coordinate in corners.iter_mut().flatten() {
-            if matches!(body.get(cursor), Some(0x92 | 0xda)) {
-                body.get(cursor..cursor.checked_add(7)?)?;
-                cursor += 7;
-                continue;
-            }
-            let (decoded, next) = decode_coordinate(cursor)?;
-            *coordinate = Some(decoded);
-            cursor = next;
+) -> Option<InlineSurfaceEnvelope> {
+    (kind == SurfaceKind::Cylinder).then_some(())?;
+    let selector_end = |cursor: usize| match body.get(cursor..) {
+        Some([0x00, 0x11, 0x13, ..]) => Some(cursor + 3),
+        Some([0x11..=0x14 | 0x17 | 0x18 | 0x20, ..]) => Some(cursor + 1),
+        _ => None,
+    };
+    let decode_coordinate = |cursor| {
+        if body.get(cursor) == Some(&0x18) {
+            return Some((0.0, cursor + 1));
         }
-        let close = inline_surface_envelope_close(body, cursor)?;
-        let axial_span = (second_axial - first_axial).abs();
-        let spans =
-            std::array::from_fn::<_, 3, _>(|axis| Some(corners[1][axis]? - corners[0][axis]?));
-        let mut axial_axes = (0..3)
-            .filter(|axis| spans[*axis].is_some_and(|span| inline_close(span.abs(), axial_span)));
-        let axis_index = axial_axes.next()?;
-        axial_axes.next().is_none().then_some(())?;
-        let mut radial = (0..3).filter(|axis| *axis != axis_index);
-        let radial_axes = [radial.next()?, radial.next()?];
-        radial.next().is_none().then_some(())?;
-        Some((
-            InlineSurfaceEnvelope {
-                axial: [first_axial, second_axial],
-                corners,
-                close,
-            },
-            radial_axes,
-            spans,
-        ))
-    })();
-    let Some((envelope, radial_axes, spans)) = candidate else {
-        return Ok(None);
+        let (value, next) =
+            scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)?;
+        let value = -value;
+        value.is_finite().then_some((value, next))
+    };
+    let mut cursor = selector_end(0)?;
+    let (first_axial, next) = decode_coordinate(cursor)?;
+    cursor = selector_end(next)?;
+    let (second_axial, next) = decode_coordinate(cursor)?;
+    cursor = next;
+    (first_axial != second_axial).then_some(())?;
+
+    let mut corners = [[None; 3]; 2];
+    for coordinate in corners.iter_mut().flatten() {
+        if matches!(body.get(cursor), Some(0x92 | 0xda)) {
+            body.get(cursor..cursor.checked_add(7)?)?;
+            cursor += 7;
+            continue;
+        }
+        let (decoded, next) = decode_coordinate(cursor)?;
+        *coordinate = Some(decoded);
+        cursor = next;
+    }
+    let close = inline_surface_envelope_close(body, cursor)?;
+    let axial_span = (second_axial - first_axial).abs();
+    let spans =
+        std::array::from_fn::<_, 3, _>(|axis| Some(corners[1][axis]? - corners[0][axis]?));
+    let mut axial_axes = (0..3)
+        .filter(|axis| spans[*axis].is_some_and(|span| inline_close(span.abs(), axial_span)));
+    let axis_index = axial_axes.next()?;
+    axial_axes.next().is_none().then_some(())?;
+    let mut radial = (0..3).filter(|axis| *axis != axis_index);
+    let radial_axes = [radial.next()?, radial.next()?];
+    radial.next().is_none().then_some(())?;
+    let envelope = InlineSurfaceEnvelope {
+        axial: [first_axial, second_axial],
+        corners,
+        close,
     };
     let absent = radial_axes
         .iter()
         .filter(|axis| spans[**axis].is_none())
         .count();
-    Ok((absent <= 1).then_some(envelope))
+    (absent <= 1).then_some(envelope)
 }
 
 fn decode_inline_referenced_cylinder_envelope(
@@ -7793,14 +7733,14 @@ fn plane_envelope_compound_close(
     // the compact prefix has one marker and eight such slots. The final
     // positive-DICT scalar consumes seven bytes. No later close can qualify.
     const MAX_ENVELOPE_CLOSE: usize = 9 * 8 + 7;
-    for (offset, byte) in body.iter().take(MAX_ENVELOPE_CLOSE + 1).enumerate() {
+    'closes: for (offset, byte) in body.iter().take(MAX_ENVELOPE_CLOSE + 1).enumerate() {
         if *byte != psb::token::COMPOUND_CLOSE {
             continue;
         }
         let Some(positive_start) = offset.checked_sub(7) else {
             continue;
         };
-        let Some((positive_value, positive_end)) =
+        let Some((_, positive_end)) =
             scalar::decode_positive_dict(body, positive_start)
         else {
             continue;
@@ -7809,45 +7749,43 @@ fn plane_envelope_compound_close(
             continue;
         }
         let prefix = &body[..positive_start];
-        let (slots, pairs) = if prefix.first() == Some(&0x0e) {
-            let Some(slots) = complete_plane_envelope_slots(ctx, &prefix[1..], 8, cache)? else {
-                continue;
-            };
-            (slots, [[3, 6], [4, 7], [5, 8]])
-        } else if let Some(slots) = complete_plane_envelope_slots(ctx, prefix, 9, cache)? {
-            (slots, [[4, 7], [5, 8], [6, 9]])
+        let (prefix, count, pairs) = if prefix.first() == Some(&0x0e) {
+            (&prefix[1..], 8, [[3, 6], [4, 7], [5, 8]])
         } else {
-            continue;
+            (prefix, 9, [[4, 7], [5, 8], [6, 9]])
         };
-        let mut slots = slots;
-        ctx.reserve_vec(&mut slots.slots, 1, "creo plane envelope close token slot")?;
-        slots
-            .slots
-            .push((Some(positive_value), &body[positive_start..positive_end]));
-        let axis_aligned = plane_envelope_has_one_held_coordinate(ctx, &slots.slots, pairs)?;
-        if axis_aligned || plane_envelope_boundary_has_local_system(ctx, body, offset, cache)? {
+        let mut tokens = [&[][..]; 10];
+        let mut cursor = 0;
+        for token in &mut tokens[..count] {
+            let decoded = match prefix.get(cursor) {
+                Some(0x0e) => Some((0.5, cursor + 1)),
+                Some(0x18) if cursor + 1 == prefix.len() => Some((0.0, cursor + 1)),
+                _ => scalar::decode_in_surface_row_lane(prefix, cursor, cache),
+            };
+            let Some((_, next)) = decoded else {
+                continue 'closes;
+            };
+            let Some(raw) = prefix.get(cursor..next) else {
+                continue 'closes;
+            };
+            *token = raw;
+            cursor = next;
+        }
+        if cursor != prefix.len() {
+            continue;
+        }
+        tokens[count] = &body[positive_start..positive_end];
+        let held_coordinates = pairs
+            .into_iter()
+            .filter(|[first, second]| tokens[*first] == tokens[*second])
+            .count();
+        if held_coordinates == 1
+            || plane_envelope_boundary_has_local_system(ctx, body, offset, cache)?
+        {
             return Ok(Some(offset));
         }
     }
     Ok(None)
-}
-
-fn plane_envelope_has_one_held_coordinate(
-    ctx: &DecodeContext<'_>,
-    slots: &[(Option<f64>, &[u8])],
-    pairs: [[usize; 2]; 3],
-) -> Result<bool, CodecError> {
-    let mut count = 0usize;
-    for [first, second] in pairs {
-        if ctx.equal_bytes(
-            slots[first].1,
-            slots[second].1,
-            "creo plane envelope held coordinate bytes",
-        )? {
-            count += 1;
-        }
-    }
-    Ok(count == 1)
 }
 
 fn plane_envelope_boundary_has_local_system(
