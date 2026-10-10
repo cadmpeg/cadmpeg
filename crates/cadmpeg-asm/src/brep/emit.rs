@@ -3399,19 +3399,12 @@ fn emit_vertex_blend_surface(
                 sense,
             } => {
                 let prefix = brep_key!(i, ":vertex_boundary", boundary_index);
-                let id = {
-                    let mut copied_storage = ctx.reserve_scoped(0, "ASM temporary identity key")?;
-                    copied_storage.with_storage(|| {
-                        Ok::<_, cadmpeg_core::CodecError>(brep_id!(
-                            format,
-                            CurveId,
-                            "procedural_surface",
-                            prefix
-                                .try_clone_for_decode(ctx, "ASM temporary identity key")?
-                                .then(cadmpeg_ir::identity_key!(":curve"))
-                        ))
-                    })
-                }?;
+                let id = brep_id!(
+                    format,
+                    CurveId,
+                    "procedural_surface",
+                    prefix.then(cadmpeg_ir::identity_key!(":curve"))
+                );
                 charged_push!(
                     ctx,
                     out.curves,
@@ -3440,19 +3433,12 @@ fn emit_vertex_blend_surface(
                 fit_tolerance,
             } => {
                 let prefix = brep_key!(i, ":vertex_boundary", boundary_index);
-                let id = {
-                    let mut copied_storage = ctx.reserve_scoped(0, "ASM temporary identity key")?;
-                    copied_storage.with_storage(|| {
-                        Ok::<_, cadmpeg_core::CodecError>(brep_id!(
-                            format,
-                            SurfaceId,
-                            "procedural_surface",
-                            prefix
-                                .try_clone_for_decode(ctx, "ASM temporary identity key")?
-                                .then(cadmpeg_ir::identity_key!(":surface"))
-                        ))
-                    })
-                }?;
+                let id = brep_id!(
+                    format,
+                    SurfaceId,
+                    "procedural_surface",
+                    prefix.then(cadmpeg_ir::identity_key!(":surface"))
+                );
                 charged_push!(
                     ctx,
                     out.surfaces,
