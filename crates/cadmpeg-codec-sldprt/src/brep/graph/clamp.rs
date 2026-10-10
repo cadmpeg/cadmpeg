@@ -405,10 +405,34 @@ pub(super) fn clamp_nurbs_curve_to_domain(
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     domain: [f64; 2],
 ) -> Result<Option<cadmpeg_ir::geometry::nurbs::NurbsCurve>, NurbsPcurveFailure> {
-    let Some(lanes) = clamped_conversion_lanes(ctx, curve, domain)? else {
-        return Ok(None);
-    };
-    Ok(Some(lanes.into_curve(curve.degree())??))
+    let mut candidate_storage = ctx.reserve_scoped(0, "hold clamped NURBS output candidate")?;
+    let candidate = candidate_storage.with_storage(|| {
+        let Some(lanes) = clamped_conversion_lanes(ctx, curve, domain)? else {
+            return Ok(None);
+        };
+        Ok::<_, cadmpeg_core::CodecError>(Some(lanes.into_curve(curve.degree())?))
+    })?;
+    match candidate {
+        Some(Ok(curve)) => Ok(Some(candidate_storage.commit_value(curve)?)),
+        Some(Err(mut error)) => {
+            use cadmpeg_ir::geometry::nurbs::NurbsError;
+            let text = match &mut error {
+                NurbsError::Structure(text) | NurbsError::EditRefused(text) => Some(text),
+                NurbsError::WeightLaneLength { field, .. } | NurbsError::UnusableWeight { field, .. } => Some(field),
+                NurbsError::ResourceLimit(_) => None,
+            };
+            // The diagnostic escapes both this candidate and any comparison
+            // workspace around the caller. Its copy has session storage.
+            let mut diagnostic_storage = ctx.provisional_retained("retain clamped NURBS refusal")?;
+            if let Some(text) = text {
+                let copy = diagnostic_storage.with_storage(|| ctx.copy_retained_text(text, "copy clamped NURBS refusal"))?;
+                *text = copy;
+            }
+            drop(candidate_storage);
+            Err(diagnostic_storage.commit_value(error)?.into())
+        }
+        None => Ok(None),
+    }
 }
 
 #[cfg(test)]
