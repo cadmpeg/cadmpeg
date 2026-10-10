@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::decode::DecodeContext;
+
 /// A complete bicubic interpolation grid: points, ordered parameters,
 /// boundary derivatives and corner mixed derivatives that agree in length.
 #[derive(Debug, Clone, PartialEq)]
@@ -13,7 +15,7 @@ pub(crate) struct InterpolationGrid {
 }
 
 fn finite_vectors(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ctx: &DecodeContext<'_>,
     vectors: &[[f64; 3]],
     operation: &'static str,
 ) -> Result<bool, cadmpeg_core::CodecError> {
@@ -25,7 +27,7 @@ fn finite_vectors(
 }
 
 fn valid_grid_points(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ctx: &DecodeContext<'_>,
     points: &[[f64; 3]],
     u_parameters: &[f64],
     v_parameters: &[f64],
@@ -54,7 +56,7 @@ impl InterpolationGrid {
     /// Admits a complete finite grid with increasing parameters and matching
     /// point and boundary-derivative counts.
     pub(crate) fn try_new(
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        ctx: &DecodeContext<'_>,
         points: Vec<[f64; 3]>,
         u_parameters: Vec<f64>,
         v_parameters: Vec<f64>,
@@ -96,7 +98,7 @@ impl InterpolationGrid {
 
     /// Selects boundary derivatives from a complete finite source grid.
     pub(crate) fn from_full_tangent_grid(
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        ctx: &DecodeContext<'_>,
         points: Vec<[f64; 3]>,
         u_parameters: Vec<f64>,
         v_parameters: Vec<f64>,
@@ -513,7 +515,7 @@ mod tests {
     }
 
     fn work_output<T>(
-        run: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
+        run: impl Fn(&DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
     ) -> T {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_core::CodecError;
