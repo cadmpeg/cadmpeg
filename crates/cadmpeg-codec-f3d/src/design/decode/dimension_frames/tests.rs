@@ -1954,3 +1954,5 @@ mod presentation_session;
 mod callback_boundaries;
 
 mod admitted_iterators;
+
+mod entry_boundaries;

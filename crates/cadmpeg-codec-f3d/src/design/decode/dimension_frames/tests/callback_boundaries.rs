@@ -14,7 +14,7 @@ use std::collections::HashMap;
 const ORIGINAL: &str = "original F3D dimension callback refusal";
 
 /// Typed record inputs for the edge matcher, without a byte-file admission claim.
-fn edge_inputs() -> (DesignDimensionRecipeRecord, DesignEdgeOperand) {
+pub(super) fn edge_inputs() -> (DesignDimensionRecipeRecord, DesignEdgeOperand) {
     let operand = DesignEdgeOperand::try_new(DesignEdgeOperandDraft {
         id: "f3d:Design/BulkStream.dat:edge-operand#100".into(),
         scope_record_index: 12, scope_reference_ordinal: 0,

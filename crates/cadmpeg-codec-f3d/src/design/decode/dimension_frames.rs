@@ -946,6 +946,7 @@ pub(crate) fn decode_recipe_references_charged(
     prefix: &[u8],
     prefix_offset: u64,
 ) -> Result<Vec<crate::records::dimensions::DesignRecipeReference>, CodecError> {
+    ctx.charge_work(0, "F3D recipe reference decode entry")?;
     if !recipe_reference_header(prefix) {
         return Ok(Vec::new());
     }
@@ -977,6 +978,7 @@ fn decode_standard_recipe_references(
     prefix: &[u8],
     prefix_offset: u64,
 ) -> Result<Option<Vec<crate::records::dimensions::DesignRecipeReference>>, CodecError> {
+    ctx.charge_work(0, "F3D standard recipe reference entry")?;
     if View::u32_le_at(prefix, 22).is_none_or(|value| value == 0) {
         return Ok(None);
     }
@@ -1013,6 +1015,7 @@ fn decode_paired_recipe_references(
     prefix: &[u8],
     prefix_offset: u64,
 ) -> Result<Option<Vec<crate::records::dimensions::DesignRecipeReference>>, CodecError> {
+    ctx.charge_work(0, "F3D paired recipe reference entry")?;
     const MINIMUM_PAIR_SIZE: usize = 42;
 
     let Some(pair_count) = View::u32_le_at(prefix, 18).map(index_from_u32) else {
@@ -1089,6 +1092,7 @@ fn decode_grouped_recipe_references(
     prefix_offset: u64,
     group_count: usize,
 ) -> Result<Option<Vec<crate::records::dimensions::DesignRecipeReference>>, CodecError> {
+    ctx.charge_work(0, "F3D grouped recipe reference entry")?;
     const MINIMUM_PACKED_OPERAND_SIZE: usize = 17;
     const GROUP_COUNT_WORD_SIZE: usize = 4;
 
@@ -1147,6 +1151,7 @@ pub(in crate::design) fn is_paired_recipe_reference_frame(
     ctx: &DecodeContext<'_>,
     prefix: &[u8],
 ) -> Result<bool, CodecError> {
+    ctx.charge_work(0, "F3D paired recipe frame entry")?;
     if !recipe_reference_header(prefix)
         || View::u32_le_at(prefix, grouped_recipe::GROUP_COUNT) != Some(2)
     {
@@ -1200,6 +1205,7 @@ pub(crate) fn is_grouped_recipe_reference_frame(
     ctx: &DecodeContext<'_>,
     prefix: &[u8],
 ) -> Result<bool, CodecError> {
+    ctx.charge_work(0, "F3D grouped recipe frame entry")?;
     if !recipe_reference_header(prefix) {
         return Ok(false);
     }
@@ -1285,6 +1291,7 @@ fn scan_recipe_reference_operand<'prefix>(
     at: usize,
     token_frame: RecipeReferenceTokenFrame,
 ) -> Result<Option<ScannedRecipeReferenceOperand<'prefix>>, CodecError> {
+    ctx.charge_work(0, "F3D recipe operand scan entry")?;
     let Some(selector) = View::u32_le_at(prefix, at).filter(|value| *value != 0) else {
         return Ok(None);
     };
@@ -1375,6 +1382,7 @@ fn length_prefixed_token<'p>(
     prefix: &'p [u8],
     count_at: usize,
 ) -> Result<Option<(&'p str, usize, usize)>, CodecError> {
+    ctx.charge_work(0, "F3D length-prefixed recipe token entry")?;
     let Some(length) = View::u32_le_at(prefix, count_at)
         .map(index_from_u32)
         .filter(|length| *length <= 2000)
@@ -1460,6 +1468,7 @@ fn decimal_integer_digits(token: &[u8]) -> Option<&[u8]> {
 
 /// Whether `token` is a decimal integer, charging each digit it tests.
 fn is_decimal_integer_token(ctx: &DecodeContext<'_>, token: &[u8]) -> Result<bool, CodecError> {
+    ctx.charge_work(0, "F3D decimal recipe token entry")?;
     let Some(digits) = decimal_integer_digits(token) else {
         return Ok(false);
     };
@@ -1474,6 +1483,7 @@ fn is_decimal_integer_token(ctx: &DecodeContext<'_>, token: &[u8]) -> Result<boo
 /// a counted run of nonzero references closed by four or six zero bytes that
 /// ends the prefix.
 fn recipe_reference_suffix(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<bool, CodecError> {
+    ctx.charge_work(0, "F3D recipe suffix entry")?;
     if bytes == [0; 4] {
         return Ok(true);
     }
@@ -1767,6 +1777,7 @@ fn program_has_operand_tail(
     record: &DesignDimensionRecipeRecord,
     operand: &DesignEdgeOperand,
 ) -> Result<bool, CodecError> {
+    ctx.charge_work(0, "F3D dimension recipe operand tail entry")?;
     let Some(tail) = operand
         .recipe_program
         .get(7..)
@@ -1842,6 +1853,7 @@ fn record_containing<'bytes>(
     end: usize,
     member_offset: usize,
 ) -> Result<Option<(IndexedRecordHeader<'bytes>, usize)>, CodecError> {
+    ctx.charge_work(0, "F3D containing dimension record entry")?;
     if start > member_offset || member_offset >= end {
         return Ok(None);
     }
@@ -1867,6 +1879,7 @@ pub(super) fn contiguous_i32_program(
     start: usize,
     end: usize,
 ) -> Result<Option<Vec<i32>>, CodecError> {
+    ctx.charge_work(0, "F3D contiguous recipe program entry")?;
     let Some(view) = View::over_retained(bytes).child(start, end) else {
         return Ok(None);
     };
@@ -2070,6 +2083,7 @@ fn parse_dimension_locus_pair(
     geometry_indices: &[u32],
     records: &IndexedRecordOffsets,
 ) -> Result<Option<DesignDimensionLocusPair>, CodecError> {
+    ctx.charge_work(0, "F3D dimension locus pair entry")?;
     let Some(header) = indexed_record_header_at(bytes, start) else {
         return Ok(None);
     };
@@ -2324,6 +2338,7 @@ fn parse_dimension_null_locus_pair(
     geometry_indices: &[u32],
     records: &IndexedRecordOffsets,
 ) -> Result<Option<DesignDimensionLocusPair>, CodecError> {
+    ctx.charge_work(0, "F3D dimension null locus pair entry")?;
     let Some(header) = indexed_record_header_at(bytes, start) else {
         return Ok(None);
     };
@@ -2793,6 +2808,7 @@ fn parse_dimension_annotation_frame(
     companion_record_index: Option<u32>,
     inputs: &AnnotationFrameInputs<'_>,
 ) -> Result<Option<DesignDimensionAnnotationFrame>, CodecError> {
+    ctx.charge_work(0, "F3D dimension annotation frame entry")?;
     let Some(header) = indexed_record_header_at(bytes, start) else {
         return Ok(None);
     };
@@ -2952,6 +2968,7 @@ fn annotation_tail(
     operands: &[DesignDimensionAnnotationOperand],
     inputs: &AnnotationFrameInputs<'_>,
 ) -> Result<Option<AnnotationTail>, CodecError> {
+    ctx.charge_work(0, "F3D dimension annotation tail entry")?;
     let Some(last) = paired_at
         .checked_sub(15)
         .filter(|last| annotation_at <= *last)
@@ -3069,6 +3086,7 @@ fn annotation_return_members(
     count: usize,
     inputs: &AnnotationFrameInputs<'_>,
 ) -> Result<Option<[NonZeroU32; 64]>, CodecError> {
+    ctx.charge_work(0, "F3D dimension annotation members entry")?;
     let mut members = [NonZeroU32::MIN; 64];
     for (ordinal, member) in members.iter_mut().take(count).enumerate() {
         let cursor = at + ordinal * 11;
@@ -3793,6 +3811,7 @@ fn parse_dimension_locus_group(
     geometry_indices: &[u32],
     sketch_entities: &[u32],
 ) -> Result<Option<DesignDimensionLocusGroup>, CodecError> {
+    ctx.charge_work(0, "F3D dimension locus group entry")?;
     let Some(header) = indexed_record_header_at(bytes, start) else {
         return Ok(None);
     };
