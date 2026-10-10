@@ -238,25 +238,6 @@ fn schema_identifier_iteration_refusal_stays_error() {
 }
 
 #[test]
-fn schema_oid_words_preserve_unicode_whitespace_and_byte_slices() {
-    let ctx = cadmpeg_test_support::service_decode_context();
-    for value in [
-        "",
-        "iso 39",
-        "\tiso\n39\r",
-        "\u{2003}iso\u{a0}39\u{85}",
-        "iso\0 39",
-        "iso 39 é",
-    ] {
-        let expected: Vec<_> = value.split_whitespace().collect();
-        let actual: Vec<_> = super::schema_oid_components(&ctx, value)
-            .collect::<Result<Vec<_>, _>>()
-            .expect("byte offsets fit the input");
-        assert_eq!(actual, expected, "{value:?}");
-    }
-}
-
-#[test]
 fn schema_identifier_trim_preserves_refusal() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
@@ -406,8 +387,11 @@ fn component_number_separator_does_not_admit_the_suffix_after_an_open_parenthesi
     // One invalid name character and one separator visit precede the missing closer.
     policy.limits.max_work_units = 2;
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        assert!(matches!(super::schema_oid_component_form(&ctx, &component).expect("visited prefix fits"),
-            super::ComponentForm::Invalid));
-        ctx.finish_session().expect("no resource refusal");
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    assert!(matches!(
+        super::schema_oid_component_form(&ctx, &component).expect("visited prefix fits"),
+        super::ComponentForm::Invalid
+    ));
+    ctx.finish_session().expect("no resource refusal");
 }

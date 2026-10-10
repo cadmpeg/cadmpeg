@@ -105,8 +105,8 @@ impl AdmittedSchemaIdentifier {
         let Some((_, Some(object_identifier))) = split_schema_identifier(ctx, self.text())? else {
             return Ok(None);
         };
-        let mut components = schema_oid_components(ctx, object_identifier);
-        let Some(first) = components.next().transpose()? else {
+        let mut components = object_identifier.split_whitespace();
+        let Some(first) = components.next() else {
             return Ok(None);
         };
         let Some(root) = schema_oid_root_number(ctx, first)? else {
@@ -119,7 +119,6 @@ impl AdmittedSchemaIdentifier {
             "step_schema_object_identifier_components",
         )?;
         for component in components {
-            let component = component?;
             let ComponentForm::Number(number) = schema_oid_component_form(ctx, component)? else {
                 return Ok(None);
             };
@@ -202,8 +201,11 @@ pub(crate) fn split_schema_identifier<'a>(
     identifier: &'a str,
 ) -> Result<Option<(&'a str, Option<&'a str>)>, CodecError> {
     let identifier = ctx.trim_text(identifier, "STEP schema identifier trim")?;
-    let Some(separator) =
-        ctx.position_by(identifier.as_bytes(), |byte| Ok(*byte == b'{'), "STEP schema identifier brace split")?
+    let Some(separator) = ctx.position_by(
+        identifier.as_bytes(),
+        |byte| Ok(*byte == b'{'),
+        "STEP schema identifier brace split",
+    )?
     else {
         return Ok(Some((identifier, None)));
     };
@@ -261,21 +263,16 @@ fn schema_object_identifier_form<'a>(
     ctx: &'a DecodeContext<'_>,
     value: &'a str,
 ) -> Result<ObjectIdentifierForm<'a>, CodecError> {
-    let mut components = schema_oid_components(ctx, value);
-    let Some(first) = components.next().transpose()? else {
+    let mut components = value.split_whitespace();
+    let Some(first) = components.next() else {
         return Ok(ObjectIdentifierForm::Invalid);
     };
-    let Some(second) = components.next().transpose()? else {
+    let Some(second) = components.next() else {
         return Ok(ObjectIdentifierForm::Invalid);
     };
     let root = schema_oid_root_number(ctx, first)?;
     let mut out_of_range = None;
-    for (index, component) in [Ok(first), Ok(second)]
-        .into_iter()
-        .chain(components)
-        .enumerate()
-    {
-        let component = component?;
+    for (index, component) in [first, second].into_iter().chain(components).enumerate() {
         let form = schema_oid_component_form(ctx, component)?;
         if matches!(form, ComponentForm::Invalid) {
             return Ok(ObjectIdentifierForm::Invalid);
@@ -289,39 +286,6 @@ fn schema_object_identifier_form<'a>(
             ObjectIdentifierForm::ComponentOutOfRange(component)
         }),
     )
-}
-
-/// Splits Unicode whitespace while charging each visited character.
-fn schema_oid_components<'a>(
-    ctx: &'a DecodeContext<'a>,
-    value: &'a str,
-) -> impl Iterator<Item = Result<&'a str, CodecError>> + 'a {
-    let mut at = 0;
-    let mut failed = false;
-    std::iter::from_fn(move || {
-        if failed {
-            return None;
-        }
-        let mut start = None;
-        while at < value.len() {
-            if let Err(error) = ctx.charge_work(1, "STEP schema OID characters") {
-                failed = true;
-                return Some(Err(error));
-            }
-            let end = at;
-            // The next scalar spans at most four bytes of a validated string.
-            let character = value[at..].chars().next()?;
-            at += character.len_utf8();
-            if character.is_whitespace() {
-                if let Some(start) = start {
-                    return Some(Ok(&value[start..end]));
-                }
-            } else {
-                start.get_or_insert(end);
-            }
-        }
-        start.map(|start| Ok(&value[start..at]))
-    })
 }
 
 /// The admission form of one object identifier component.
@@ -344,8 +308,11 @@ fn schema_oid_component_form<'a>(
     if valid_schema_oid_name(ctx, component)? {
         return Ok(ComponentForm::Unnumbered);
     }
-    let Some(separator) =
-        ctx.position_by(component.as_bytes(), |byte| Ok(*byte == b'('), "STEP schema object identifier number split")?
+    let Some(separator) = ctx.position_by(
+        component.as_bytes(),
+        |byte| Ok(*byte == b'('),
+        "STEP schema object identifier number split",
+    )?
     else {
         return schema_oid_number_form(ctx, component);
     };

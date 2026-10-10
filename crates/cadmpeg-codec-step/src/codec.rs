@@ -62,7 +62,7 @@ impl CodecBackend for StepCodec {
         if archive::has_root_marker(ctx, view)? {
             return Ok(Confidence::Medium);
         }
-        if is_part26_hdf5(ctx, prefix)? {
+        if is_part26_hdf5(prefix) {
             return Ok(Confidence::Medium);
         }
         if is_part28_xml(ctx, prefix)? {
@@ -159,8 +159,9 @@ fn inspect_exchange(
     if codec.detect_impl(ctx, root)? == Confidence::No {
         return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
     }
-    let mut parsed = parse::parse_with_context(bytes, ctx, "STEP inspect parsed graph storage")?;
-    inspect_parsed_exchange(bytes, ctx, &mut parsed.exchange, &parsed.diagnostics, None)
+    let mut graph_storage = ctx.reserve_scoped(0, "STEP inspect parsed graph storage")?;
+    let (mut exchange, diagnostics) = parse::parse_with_context(bytes, ctx, &mut graph_storage)?;
+    inspect_parsed_exchange(bytes, ctx, &mut exchange, &diagnostics, None)
 }
 
 fn inspect_parsed_exchange(
@@ -184,25 +185,28 @@ fn inspect_parsed_exchange(
         error => Err(error),
     })?;
     let matched = matched.try_clone_for_decode(ctx, "STEP inspection retained dialect")?;
-    let build_entries = || inspect_logical_entries(ctx, exchange, &opaque_offsets, &decoded.body.notes);
+    let build_entries =
+        || inspect_logical_entries(ctx, exchange, &opaque_offsets, &decoded.body.notes);
     let entries = match logical_storage {
         Some(storage) => storage.with_storage(build_entries),
         None => build_entries(),
-    }.or_else(|error| match error {
+    }
+    .or_else(|error| match error {
         CodecError::Malformed(message) => Err(CodecError::Malformed(
             ctx.copy_retained_text(&message, "STEP inspection logical entry error")?,
         )),
         error => Err(error),
     })?;
-    let (_schema_storage, schema) =
-        ctx.with_scoped_storage("STEP inspect schema text storage", || {
+    let (_schema_storage, schema) = ctx
+        .with_scoped_storage("STEP inspect schema text storage", || {
             let identifiers = exchange.joined_schema_identifiers(ctx)?;
             if identifiers.is_empty() {
                 ctx.copy_retained_text("unspecified", "STEP inspect unspecified schema text")
             } else {
                 Ok(identifiers)
             }
-        }).map(|(schema, storage)| (storage, schema))?;
+        })
+        .map(|(schema, storage)| (storage, schema))?;
     let dialect = matched.dialect();
     let mut notes = Vec::new();
     ctx.push_vec(
@@ -216,7 +220,8 @@ fn inspect_parsed_exchange(
     let mut visited_items = (diagnostics).iter();
     ctx.charge_work(0, "STEP inspect parsed exchange traversal")?;
     for _ in 0..visited_items.len() {
-        let diagnostic = ctx.next_charged(&mut visited_items, "STEP inspect parsed exchange traversal")?
+        let diagnostic = ctx
+            .next_charged(&mut visited_items, "STEP inspect parsed exchange traversal")?
             .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
         let note = ctx.format_retained(
             format_args!("{}", diagnostic.message),
@@ -311,15 +316,19 @@ fn inspect_logical_entries(
     let mut visited_items = (exchange.data()).iter().enumerate();
     ctx.charge_work(0, "STEP inspect parsed exchange traversal")?;
     for _ in 0..visited_items.len() {
-        let (index, section) = ctx.next_charged(&mut visited_items, "STEP inspect parsed exchange traversal")?
+        let (index, section) = ctx
+            .next_charged(&mut visited_items, "STEP inspect parsed exchange traversal")?
             .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
         let mut counts_storage = ctx.reserve_scoped(0, "STEP inspect unknown count storage")?;
         let mut counts = BTreeMap::<&str, usize>::new();
         let mut visited_items = ((section.records)[..]).iter();
         ctx.charge_work(0, "STEP inspect parsed exchange traversal")?;
         for _ in 0..visited_items.len() {
-            let id = ctx.next_charged(&mut visited_items, "STEP inspect parsed exchange traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
+            let id = ctx
+                .next_charged(&mut visited_items, "STEP inspect parsed exchange traversal")?
+                .ok_or_else(|| {
+                    CodecError::malformed("STEP bounded traversal source ended early")
+                })?;
             let record = ctx
                 .get_btree_map(exchange.records(), id, "STEP inspect record lookup")?
                 .ok_or_else(|| CodecError::malformed("DATA section names no record"))?;
@@ -333,8 +342,11 @@ fn inspect_logical_entries(
             let mut visited_items = (record.partials[..]).iter();
             ctx.charge_work(0, "STEP inspect parsed exchange traversal")?;
             for _ in 0..visited_items.len() {
-                let partial = ctx.next_charged(&mut visited_items, "STEP inspect parsed exchange traversal")?
-                    .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
+                let partial = ctx
+                    .next_charged(&mut visited_items, "STEP inspect parsed exchange traversal")?
+                    .ok_or_else(|| {
+                        CodecError::malformed("STEP bounded traversal source ended early")
+                    })?;
                 let name = partial.name.as_str();
                 counts_storage.with_storage(|| {
                     match ctx.entry_btree_map(&mut counts, name, "step_inspect_unknown_counts")? {
@@ -383,11 +395,14 @@ fn inspect_logical_entries(
     let mut notes = dependency_notes.iter();
     ctx.charge_work(0, "STEP inspect dependency traversal")?;
     for _ in 0..notes.len() {
-        let note = ctx.next_charged(&mut notes, "STEP inspect dependency traversal")?
+        let note = ctx
+            .next_charged(&mut notes, "STEP inspect dependency traversal")?
             .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
         if note.starts_with("external document ") || note.starts_with("external source ") {
             ctx.push_scoped_vec(
-                &mut dependency_storage, &mut external_dependencies, note.as_str(),
+                &mut dependency_storage,
+                &mut external_dependencies,
+                note.as_str(),
                 "STEP inspect dependency slots",
             )?;
         }
@@ -429,7 +444,8 @@ fn inspect_logical_entries(
     let mut visited_items = (exchange.signatures()).iter().enumerate();
     ctx.charge_work(0, "STEP inspect parsed exchange traversal")?;
     for _ in 0..visited_items.len() {
-        let (index, signature) = ctx.next_charged(&mut visited_items, "STEP inspect parsed exchange traversal")?
+        let (index, signature) = ctx
+            .next_charged(&mut visited_items, "STEP inspect parsed exchange traversal")?
             .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
         ctx.push_vec(
             &mut entries,
@@ -518,12 +534,17 @@ fn inspect_zip(
     if StepCodec::default().detect_impl(ctx, root_view)? == Confidence::No {
         return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
     }
-    let mut parsed =
-        parse::parse_with_context(root_bytes, ctx, "STEP inspect parsed graph storage")?;
-    let resource_notes = archive::root_reference_notes(ctx, archive, &parsed.exchange);
+    let mut graph_storage = ctx.reserve_scoped(0, "STEP inspect parsed graph storage")?;
+    let (mut exchange, diagnostics) =
+        parse::parse_with_context(root_bytes, ctx, &mut graph_storage)?;
+    let resource_notes = archive::root_reference_notes(ctx, archive, &exchange);
     let mut logical_storage = ctx.reserve_scoped(0, "STEP ZIP logical summary storage")?;
     let mut inspected = inspect_parsed_exchange(
-        root_bytes, ctx, &mut parsed.exchange, &parsed.diagnostics, Some(&mut logical_storage),
+        root_bytes,
+        ctx,
+        &mut exchange,
+        &diagnostics,
+        Some(&mut logical_storage),
     )?;
     let resource_notes = resource_notes?;
     let entry_count = archive.entries().len();
@@ -534,43 +555,13 @@ fn inspect_zip(
     )?;
     drop(std::mem::take(&mut inspected.entries));
     drop(logical_storage);
-    let (role_buffer, mut role_storage) = ctx.scoped_vector_storage::<ContainerRole>(
-        archive.entries().len(),
-        "STEP ZIP entry role storage",
-    )?;
-    let mut roles = role_buffer;
-    let mut visited_items = (archive.entries()).iter();
-    ctx.charge_work(0, "STEP ZIP role classification visits")?;
-    for _ in 0..visited_items.len() {
-        let entry = ctx.next_charged(&mut visited_items, "STEP ZIP role classification visits")?
-            .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
-        let role = archive::classify_entry(ctx, entry.name.as_str())?;
-        ctx.push_scoped_vec(
-            &mut role_storage,
-            &mut roles,
-            role,
-            "STEP ZIP entry role slots",
-        )?;
-    }
     let mut entries = archive.container_entries(ctx, |_| ContainerRole::Ancillary)?;
-    let mut visited_items = (roles.as_slice()).iter().enumerate();
-    ctx.charge_work(0, "STEP ZIP summary role assignment visits")?;
-    for _ in 0..visited_items.len() {
-        let (index, role) = ctx.next_charged(&mut visited_items, "STEP ZIP summary role assignment visits")?
-            .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
-        let entry = entries.get_mut(index).map_or_else(
-            || {
-                Err(CodecError::Malformed(ctx.copy_retained_text(
-                    "ZIP summary entry count differs from archive entry count",
-                    "STEP ZIP role assignment invariant",
-                )?))
-            },
-            Ok,
-        )?;
-        entry.role = *role;
+    for entry in ctx.admit_iter(
+        entries.as_mut_slice(),
+        "STEP ZIP role classification visits",
+    )? {
+        entry.role = archive::classify_entry(ctx, &entry.name)?;
     }
-    drop(roles);
-    drop(role_storage);
     if let Some(root_entry) = ctx.find_by(
         entries.iter_mut(),
         |entry| Ok(entry.name == archive::ROOT_NAME),
@@ -625,14 +616,15 @@ fn decode_zip(
     let archive = &opened.archive;
     let root_view = opened.view;
     let root_data_offset = opened.data_start;
-    let parsed =
-        parse::parse_with_context(root_view.window(), ctx, "STEP ZIP parsed graph storage")?;
-    let resource_notes = archive::root_reference_notes(ctx, archive, &parsed.exchange)?;
+    let mut graph_storage = ctx.reserve_scoped(0, "STEP ZIP parsed graph storage")?;
+    let (exchange, diagnostics) =
+        parse::parse_with_context(root_view.window(), ctx, &mut graph_storage)?;
+    let resource_notes = archive::root_reference_notes(ctx, archive, &exchange)?;
     let entry_count = archive.entries().len();
     let mut decoded = reader::decode_exchange(
         root_view.window(),
-        parsed.exchange,
-        &parsed.diagnostics,
+        exchange,
+        &diagnostics,
         ctx,
         reader::Packaging::Zip {
             entry_count,
@@ -652,27 +644,23 @@ fn decode_zip(
     Ok(decoded)
 }
 
-pub(crate) fn is_part26_hdf5(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-) -> Result<bool, CodecError> {
+pub(crate) fn is_part26_hdf5(bytes: &[u8]) -> bool {
     const SIGNATURE: &[u8] = b"\x89HDF\r\n\x1a\n";
     if bytes.starts_with(SIGNATURE) {
-        return Ok(true);
+        return true;
     }
 
     let mut offset = 512;
     while offset < bytes.len() {
-        ctx.charge_work(1, "STEP HDF5 signature offset traversal")?;
         if bytes[offset..].starts_with(SIGNATURE) {
-            return Ok(true);
+            return true;
         }
         let Some(next) = offset.checked_mul(2) else {
             break;
         };
         offset = next;
     }
-    Ok(false)
+    false
 }
 
 pub(crate) fn is_part28_xml(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<bool, CodecError> {
@@ -1029,10 +1017,14 @@ mod tests {
         policy.limits.max_retained_bytes = 0;
         policy.limits.max_materialized_bytes = 1_048_576;
         crate::test_support::with_policy_context(INSPECTION_TEXT_SOURCE, &policy, |source, ctx| {
-            let parsed = crate::parse::parse_with_context(source, ctx, "test parsed graph")
-                .expect("temporary graph needs no retained allowance");
-            assert_eq!(parsed.exchange.records().len(), 1);
-            drop(parsed);
+            let mut graph_storage = ctx.reserve_scoped(0, "test parsed graph").expect("scope");
+            let (exchange, diagnostics) =
+                crate::parse::parse_with_context(source, ctx, &mut graph_storage)
+                    .expect("temporary graph needs no retained allowance");
+            assert_eq!(exchange.records().len(), 1);
+            drop(exchange);
+            drop(diagnostics);
+            drop(graph_storage);
             ctx.reserve_scoped(policy.limits.max_materialized_bytes, "test released graph")
                 .expect("dropping the graph releases its reservation");
         });
@@ -1528,62 +1520,62 @@ mod tests {
     }
 
     #[test]
-    fn hdf5_offset_probes_admit_each_visit_and_preserve_the_original_refusal() {
-        const LAST_OFFSET: usize = 4096;
-        let mut bytes = vec![0; LAST_OFFSET + 8];
-        bytes[LAST_OFFSET..].copy_from_slice(b"\x89HDF\r\n\x1a\n");
-        for limit in [3, 4] {
-            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-            policy.limits.max_work_units = limit;
-            let arena = cadmpeg_core::decode::DecodeArena::new();
-            let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-                let result = super::is_part26_hdf5(&ctx, &bytes);
-                if limit == 4 {
-                    assert!(result.expect("four offset visits reach the signature"));
-                    ctx.finish_session().expect("all probes fit");
-                } else {
-                    let CodecError::ResourceLimit(refusal) = result.expect_err("fourth probe refuses") else {
-                        panic!("work refusal required");
-                    };
-                    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
-                    assert_eq!(refusal.operation, "STEP HDF5 signature offset traversal");
-                    assert_eq!(refusal.used, 3);
-                    assert_eq!(ctx.resource_refusal(), Some(refusal));
-                    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == refusal));
-                }
-        }
-    }
-
-    #[test]
     fn fixed_hdf5_signature_checks_need_no_offset_work() {
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_work_units = 0;
-        for bytes in [b"\x89HDF\r\n\x1a\n".as_slice(), &[0; 512]] {
+        let mut at_offset = vec![0; 4096 + 8];
+        at_offset[4096..].copy_from_slice(b"\x89HDF\r\n\x1a\n");
+        for (bytes, expected) in [
+            (b"\x89HDF\r\n\x1a\n".as_slice(), true),
+            (&[0; 512], false),
+            (&at_offset, true),
+        ] {
             let arena = cadmpeg_core::decode::DecodeArena::new();
             let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).expect("root");
-                assert_eq!(super::is_part26_hdf5(&ctx, bytes).expect("no input-controlled probes"), bytes.starts_with(b"\x89HDF\r\n\x1a\n"));
-                ctx.finish_session().expect("fixed checks do not refuse work");
+            assert_eq!(super::is_part26_hdf5(bytes), expected);
+            ctx.finish_session()
+                .expect("fixed checks do not refuse work");
         }
     }
 
     #[test]
     fn logical_inspection_entries_can_use_only_scoped_storage_until_their_drop() {
-        let (exchange, _) = crate::test_support::with_service_context(INSPECTION_TEXT_SOURCE, crate::parse::parse_inner).expect("exchange");
-        let opaque_offsets = exchange.records().values().map(|record| record.span.start).collect();
+        let (exchange, _) = crate::test_support::with_service_context(
+            INSPECTION_TEXT_SOURCE,
+            crate::parse::parse_inner,
+        )
+        .expect("exchange");
+        let opaque_offsets = exchange
+            .records()
+            .values()
+            .map(|record| record.span.start)
+            .collect();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_retained_bytes = 0;
         policy.limits.max_materialized_bytes = 1_048_576;
         crate::test_support::with_policy_context(&[], &policy, |_, ctx| {
-            let (entries, storage) = ctx.with_scoped_storage("test logical entries", || {
-                super::inspect_logical_entries(ctx, &exchange, &opaque_offsets, &[])
-            }).expect("discarded logical summary needs no retained allowance");
+            let (entries, storage) = ctx
+                .with_scoped_storage("test logical entries", || {
+                    super::inspect_logical_entries(ctx, &exchange, &opaque_offsets, &[])
+                })
+                .expect("discarded logical summary needs no retained allowance");
             assert_eq!(entries.len(), 2);
             assert_eq!(entries[0].name, "HEADER");
             assert_eq!(entries[1].name, "DATA[0]");
-            assert_eq!(entries[1].attributes.get("unknown_entities").map(String::as_str), Some("ITEM:1"));
+            assert_eq!(
+                entries[1]
+                    .attributes
+                    .get("unknown_entities")
+                    .map(String::as_str),
+                Some("ITEM:1")
+            );
             drop(entries);
             drop(storage);
-            ctx.reserve_scoped(policy.limits.max_materialized_bytes, "test released logical entries").expect("all logical-entry backing is released");
+            ctx.reserve_scoped(
+                policy.limits.max_materialized_bytes,
+                "test released logical entries",
+            )
+            .expect("all logical-entry backing is released");
         });
     }
 }

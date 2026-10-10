@@ -813,26 +813,22 @@ impl<'a> Builder<'a> {
                 hidden_binding_ids.contains(binding.id.as_str()),
             ));
         }
-        for body in &ir.model.bodies {
-            let body_id = body.id.as_str();
-            let Some(spec) = body_colors.get(body_id) else {
-                continue;
-            };
+        for (body_id, spec) in &body_colors {
             if styled_bodies.contains(body_id) {
                 continue;
             }
             let mut targets = self
                 .body_item_refs
-                .get(body_id)
+                .get(*body_id)
                 .cloned()
                 .unwrap_or_default();
             if targets.is_empty() {
-                targets.extend(self.body_shape_refs.get(body_id).copied());
+                targets.extend(self.body_shape_refs.get(*body_id).copied());
             }
             if targets.is_empty() {
                 continue;
             }
-            if let Some(binding_ids) = body_candidates.get(body_id) {
+            if let Some(binding_ids) = body_candidates.get(*body_id) {
                 self.written_appearance_bindings
                     .extend(binding_ids.iter().map(|(_, id)| (*id).clone()));
             }
@@ -840,7 +836,11 @@ impl<'a> Builder<'a> {
                 .appearance
                 .and_then(|appearance| appearance.name.as_deref())
                 .unwrap_or("");
-            let style = if body.kind == BodyKind::Wire {
+            let style = if self
+                .bodies
+                .get(*body_id)
+                .is_some_and(|body| body.kind == BodyKind::Wire)
+            {
                 if spec.appearance.is_none() && spec.color.a() < 1.0 {
                     self.loss(
                         StepLossCode::WireBodyTransparencyOmitted,

@@ -138,7 +138,7 @@ fn accepts_cms_ber_indefinite_lengths() {
 fn accepts_ber_contextual_subject_key_identifier_and_octet_string() {
     assert_eq!(
         crate::test_support::with_service_context(&[], |_, ctx| {
-            let mut extents = super::BerExtents::new(ctx)?;
+            let mut extents = std::collections::BTreeMap::new();
             super::validate_signer_identifier(
                 ctx,
                 &mut extents,
@@ -151,7 +151,7 @@ fn accepts_ber_contextual_subject_key_identifier_and_octet_string() {
     );
     assert_eq!(
         crate::test_support::with_service_context(&[], |_, ctx| {
-            let mut extents = super::BerExtents::new(ctx)?;
+            let mut extents = std::collections::BTreeMap::new();
             super::validate_octet_string(
                 ctx,
                 &mut extents,

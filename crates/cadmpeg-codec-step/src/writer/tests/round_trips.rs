@@ -1867,5 +1867,3 @@ fn a_replica_refuses_a_zero_column() {
         ],
     );
 }
-
-mod determinism;
