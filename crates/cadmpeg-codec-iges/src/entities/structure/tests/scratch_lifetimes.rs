@@ -276,3 +276,79 @@ fn rejected_instance_definition_releases_valid_point_storage_per_attempt() {
 fn rejected_instance_points_release_storage_per_attempt() {
     assert_rejected_candidate_storage(RejectedCandidate::InstancePoint);
 }
+
+fn sheet_identity_storage_refusal(at_table: bool, collection: bool) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, ResourceDimension};
+    use cadmpeg_ir::report::loss::LossNote;
+    use std::mem::{align_of, size_of};
+    let bytes = crate::test_support::test_owned::owned_test_file(&[]);
+    let global = crate::test_support::with_service_context(&bytes, |setup| {
+        let scan = crate::card::scan_with_context(&bytes, setup).unwrap();
+        let (global, _, _) = crate::global::parse(&scan, setup).unwrap();
+        global.length_context().unwrap()
+    });
+    let input = record(vec![TokenValue::Integer(406), TokenValue::Integer(2),
+        TokenValue::Integer(2), TokenValue::String(b"C".to_vec())], 4);
+    let directory = [directory_entry(406, 33)];
+    let entries = BTreeMap::from([(1, &directory[0])]);
+    let records = BTreeMap::from([(1, &input)]);
+    // A singleton borrowed identity table has four SwissTable buckets,
+    // alignment padding, four bucket controls and sixteen trailing controls.
+    let table = u64::try_from(4 * size_of::<((i64, &[u8]), Option<u32>)>()
+        + align_of::<((i64, &[u8]), Option<u32>)>().max(16) - 1 + 4 + 16).unwrap();
+    let slots = if size_of::<LossNote>() <= 1024 { 4 } else { 1 };
+    let loss_slots = u64::try_from(slots * size_of::<LossNote>()).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    if collection {
+        policy.limits.max_collection_items = 0;
+    } else {
+        policy.limits.max_materialized_bytes = table - u64::from(at_table);
+    }
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let mut sequences = super::super::super::geometry::SourceSequences::default();
+    let result = super::super::project(&mut ir, &directory, (&entries, &records),
+        &BTreeMap::new(), &global, &ctx, &mut sequences);
+    let first = match result.as_ref() {
+        Err(CodecError::ResourceLimit(first)) => *first,
+        _ => panic!("sheet table or following loss slots must refuse"),
+    };
+    drop(result);
+    if collection {
+        assert_eq!(first.dimension, ResourceDimension::CollectionItems);
+        assert_eq!(first.operation, "iges sheet identity index");
+        assert_eq!((first.limit, first.used, first.additional), (0, 0, 1));
+    } else {
+        assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
+        if at_table {
+            assert_eq!(first.operation, "iges sheet identity index");
+            assert_eq!((first.limit, first.used, first.additional), (table - 1, 0, table));
+        } else {
+            assert_eq!(first.operation, "iges entity loss slots");
+            assert_eq!((first.limit, first.used, first.additional), (table, table, loss_slots));
+        }
+    }
+    for _ in 0..64 {
+        for replay in [&directory[..], &[]] {
+            assert!(matches!(super::super::project(&mut ir, replay, (&entries, &records),
+                &BTreeMap::new(), &global, &ctx, &mut sequences),
+                Err(CodecError::ResourceLimit(last)) if last == first));
+            assert_eq!(ir, cadmpeg_ir::CadIr::empty());
+        }
+    }
+    assert!(matches!(ctx.finish_session(),
+        Err(CodecError::ResourceLimit(last)) if last == first));
+}
+
+#[test]
+fn sheet_identity_index_refuses_exact_first_table_storage_and_item() {
+    sheet_identity_storage_refusal(true, false);
+    sheet_identity_storage_refusal(true, true);
+}
+
+#[test]
+fn sheet_identity_index_holds_only_table_backing_before_recovery() {
+    sheet_identity_storage_refusal(false, false);
+}

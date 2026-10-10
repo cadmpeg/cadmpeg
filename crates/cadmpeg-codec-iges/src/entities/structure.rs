@@ -24,7 +24,7 @@ use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Loop, Region, Sense, Shell};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 const DEFAULT_DIMENSION_UNITS_CHARACTER_SET: i64 = 1;
 const LEGACY_PLANE_NORMAL_EPSILON: f64 = 1.0e-10;
@@ -3470,10 +3470,9 @@ pub(super) fn project<'ctx>(
             33 => {
                 let identity = record.integer(2).zip(record.string(3));
                 if sheet_identities.is_none() {
-                    let mut identity_storage;
-                    let (mut identities, result_identity_storage) =
-                        ctx.temporary_vec(0, "iges sheet identity index inputs")?;
-                    identity_storage = result_identity_storage;
+                    let mut identity_storage =
+                        ctx.reserve_scoped(0, "iges sheet identity index")?;
+                    let mut identities = HashMap::<(i64, &[u8]), Option<u32>>::new();
                     let mut directory_entries = directory.iter();
                     while !directory_entries.as_slice().is_empty() {
                         let Some(candidate) =
@@ -3494,19 +3493,26 @@ pub(super) fn project<'ctx>(
                         if let Some(identity) =
                             identity_record.integer(2).zip(identity_record.string(3))
                         {
-                            ctx.push_scoped_vec(
-                                &mut identity_storage,
+                            if let Some(previous) = ctx.get_mut_hash_map(
                                 &mut identities,
-                                (identity, candidate.sequence),
-                                "iges sheet identity index inputs",
-                            )?;
+                                &identity,
+                                "iges sheet identity index",
+                            )? {
+                                *previous = None;
+                            } else {
+                                // discarded-value: the sheet identity was absent before insertion.
+                                let _ = identity_storage.with_storage(|| {
+                                    ctx.insert_hash_map(
+                                        &mut identities,
+                                        identity,
+                                        Some(candidate.sequence),
+                                        "iges sheet identity index",
+                                    )
+                                })?;
+                            }
                         }
                     }
-                    sheet_identities = Some(ctx.unique_index(
-                        ctx.admit_iter(&identities, "iges sheet identity index inputs")?
-                            .copied(),
-                        "iges sheet identity index",
-                    )?);
+                    sheet_identities = Some((identities, identity_storage));
                 }
                 let unique_identity = match identity {
                     Some(identity) => match &sheet_identities {
