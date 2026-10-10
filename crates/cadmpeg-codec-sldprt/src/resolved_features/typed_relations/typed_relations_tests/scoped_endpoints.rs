@@ -9,8 +9,7 @@ use cadmpeg_core::CodecError;
 const ROSTER_BYTES: u64 = 4 * std::mem::size_of::<&SketchInputEntity>() as u64;
 
 fn centered_source() -> (Vec<u8>, [SketchInputEntity; 3]) {
-    let mut payload = Vec::new();
-    payload.resize(142 + SKETCH_MARKER.len(), 0);
+    let mut payload = [0; 142 + SKETCH_MARKER.len()].to_vec();
     payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
     payload[5..13].fill(0xff);
     payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);

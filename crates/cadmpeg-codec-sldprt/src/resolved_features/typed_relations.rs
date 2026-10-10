@@ -7,10 +7,11 @@ use super::endpoints::{
     copy_endpoint_markers, extended_compact_indexed_curve_endpoint_indices,
     extended_direct_object_line_endpoint_ids, extended_shifted_construction_line_endpoint_indices,
     legacy_marker104_arc_center, legacy_terminal_profile_endpoint_offset,
-    marker_profile_curve_role, roster_curve_endpoint_markers, single_marker, sort_endpoint_markers,
+    marker_profile_curve_role, roster_curve_endpoint_markers, roster_curve_endpoint_markers_lazy, single_marker, sort_endpoint_markers,
     wide_indexed_curve_endpoint_indices, wide_indexed_curve_record_is_complete,
     CompactIndexedCurveRecordEnd, MarkerMatch,
 };
+use super::endpoints::geometry_index::{MarkerGeometryIndex, MarkerPrefixIndex};
 use super::markers::{
     compact_legacy_142_profile_curve_endpoints, finite_coordinate_pair, inline_arc_coordinates,
     legacy_extended_profile_curve_kind, marker_is_geometry_locus, marker_native_code,
@@ -2699,6 +2700,47 @@ impl<'roster, 'a, 'ctx> CurveMarkers<'roster, 'a, 'ctx> {
     }
 }
 
+/// A supplied geometry index or a pass cache that is filled only for a layout query.
+pub(super) enum CurveEndpointGeometry<'index, 'a, 'payload, 'ctx> {
+    Borrowed(&'index MarkerGeometryIndex<'a, 'payload, 'ctx>),
+    Cached {
+        ctx: &'ctx DecodeContext<'ctx>,
+        payload: &'payload [u8],
+        cache: &'index mut Option<MarkerGeometryIndex<'a, 'payload, 'ctx>>,
+    },
+}
+
+impl<'a, 'payload, 'ctx> CurveEndpointGeometry<'_, 'a, 'payload, 'ctx> {
+    fn get(
+        &mut self,
+        markers: &[&'a SketchInputEntity],
+    ) -> Result<&MarkerGeometryIndex<'a, 'payload, 'ctx>, CodecError> {
+        match self {
+            Self::Borrowed(geometry) => Ok(*geometry),
+            Self::Cached { ctx, payload, cache } => match cache {
+                Some(geometry) => Ok(geometry),
+                None => Ok(cache.insert(MarkerGeometryIndex::new(
+                    ctx, markers, MarkerPrefixIndex::new(ctx, payload)?,
+                )?)),
+            },
+        }
+    }
+
+    fn roster(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        payload: &[u8],
+        curve: &SketchInputEntity,
+        markers: &[&'a SketchInputEntity],
+        index: Option<&CurveMarkers<'_, 'a, '_>>,
+    ) -> Result<Vec<&'a SketchInputEntity>, CodecError> {
+        match self {
+            Self::Borrowed(geometry) => roster_curve_endpoint_markers(ctx, payload, curve, markers, geometry, index),
+            Self::Cached { ctx, payload, cache } => roster_curve_endpoint_markers_lazy(ctx, payload, curve, markers, cache, index),
+        }
+    }
+}
+
 /// Resolves a curve against a lane index built once for the pass. Direct object
 /// and reverse-link endpoints use keyed groups. Layout rosters retain their
 /// original source order.
@@ -2708,7 +2750,7 @@ pub(super) fn marker_curve_endpoint_markers_in<'a>(
     curve: &'a SketchInputEntity,
     markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
     index: &CurveMarkers<'_, 'a, '_>,
-    geometry: &super::endpoints::geometry_index::MarkerGeometryIndex<'a, '_, '_>,
+    geometry: CurveEndpointGeometry<'_, 'a, '_, '_>,
 ) -> Result<Vec<&'a SketchInputEntity>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT marker curve endpoints";
     let feature = curve.feature_ref.as_deref();
@@ -2775,7 +2817,7 @@ pub(super) fn marker_curve_endpoint_markers<'a>(
     curve: &'a SketchInputEntity,
     markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
     markers: &[&'a SketchInputEntity],
-    geometry: &super::endpoints::geometry_index::MarkerGeometryIndex<'a, '_, '_>,
+    geometry: &MarkerGeometryIndex<'a, '_, '_>,
 ) -> Result<Vec<&'a SketchInputEntity>, CodecError> {
     if let Some(endpoints) = extended_direct_object_line_endpoints(ctx, payload, curve, markers)? {
         return copy_endpoint_markers(ctx, &endpoints);
@@ -2802,7 +2844,7 @@ pub(super) fn marker_curve_endpoint_markers<'a>(
         markers_by_id,
         markers,
         None,
-        geometry,
+        CurveEndpointGeometry::Borrowed(geometry),
     )
 }
 
@@ -2813,9 +2855,10 @@ fn marker_curve_endpoint_layout_fallback_from<'a>(
     markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
     markers: &[&'a SketchInputEntity],
     index: Option<&CurveMarkers<'_, 'a, '_>>,
-    geometry: &super::endpoints::geometry_index::MarkerGeometryIndex<'a, '_, '_>,
+    mut geometry: CurveEndpointGeometry<'_, 'a, '_, '_>,
 ) -> Result<Vec<&'a SketchInputEntity>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT marker curve endpoints";
+    let full_roster = index.map_or(markers, |index| index.roster);
     let shifted = usize::try_from(curve.offset()).ok().and_then(|offset| {
         extended_shifted_construction_line_endpoint_indices(payload, offset)
             .map(|indices| (offset, indices))
@@ -2860,7 +2903,7 @@ fn marker_curve_endpoint_layout_fallback_from<'a>(
                     payload,
                     curve,
                     Some(56),
-                    geometry,
+                    geometry.get(full_roster)?,
                 )?
             };
             Ok::<_, CodecError>(endpoints)
@@ -2894,17 +2937,16 @@ fn marker_curve_endpoint_layout_fallback_from<'a>(
     {
         return copy_endpoint_markers(ctx, &endpoints);
     }
-    let roster = index.map_or(markers, |index| index.roster);
     let (endpoints_storage, endpoints);
     (endpoints, endpoints_storage) = ctx.with_scoped_storage(OPERATION, || {
-        roster_curve_endpoint_markers(ctx, payload, curve, roster, geometry, index)
+        geometry.roster(ctx, payload, curve, full_roster, index)
     })?;
     if endpoints.len() == 2 {
         if let Some(direct) = legacy_marker104_arc_endpoints(ctx, payload, curve, markers)? {
             let roster = [endpoints[0], endpoints[1]];
-            if legacy_marker104_arc_center(ctx, payload, curve, markers, roster, geometry)?
+            if legacy_marker104_arc_center(ctx, payload, curve, markers, roster, geometry.get(full_roster)?)?
                 .is_none()
-                && legacy_marker104_arc_center(ctx, payload, curve, markers, direct, geometry)?
+                && legacy_marker104_arc_center(ctx, payload, curve, markers, direct, geometry.get(full_roster)?)?
                     .is_some()
             {
                 drop((endpoints, endpoints_storage));
