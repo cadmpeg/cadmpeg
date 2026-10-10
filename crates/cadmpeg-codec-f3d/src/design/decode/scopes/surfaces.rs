@@ -4,17 +4,17 @@
 use cadmpeg_core::decode::u64_from_index;
 
 use super::shared_frames::exact_fixed_scalar;
+use super::shared_frames::exact_same_segment_record_reference;
+use super::shared_frames::find_frame;
 use super::shared_frames::marked_record_reference;
-use crate::bytes::lp_ascii_filtered_view;
-use crate::bytes::take_reference;
+use crate::design::decode::byte_fields::{bytes_at, zeros_at};
 use crate::design::decode::operands::parse_construction_operand_group;
 use crate::design::decode::operands::ConstructionOperandGroupParse;
 use crate::design::decode::operands::RecordFrame;
-use crate::design::decode::sketch::IndexedRecordOffsets;
-use crate::design::decode::text::fixed_relaxed_guid_text;
-use crate::design::design_feature_family;
-use crate::design::DesignFeatureFamily;
-use crate::records::feature::scope::DesignParameterScope;
+use crate::design::decode::reference_runs::{admit_reference_values, reference_position};
+use crate::design::decode::sketch::{indexed_record_header_at, IndexedRecordOffsets};
+use crate::design::decode::text::{fixed_guid_ascii, retain_class_tag};
+use crate::records::feature::scope::{DesignParameterScope, DesignScopePayload};
 use crate::records::feature::surface_ops::DesignRuledSurfaceCorner;
 use crate::records::feature::surface_ops::DesignRuledSurfaceMethod;
 use crate::records::feature::surface_ops::DesignRuledSurfaceOperation;
@@ -23,11 +23,13 @@ use crate::records::feature::surface_ops::DesignSurfaceExtendOperation;
 use crate::records::feature::surface_ops::DesignSurfaceOffsetOperation;
 use crate::records::feature::surface_ops::DesignSurfaceOffsetSupport;
 use crate::records::feature::surface_ops::DesignSurfaceStitchOperation;
+use crate::records::mesh::DesignRelaxedGuidText;
+use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::extrude_selection::DesignOperandRole;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
-use std::collections::HashSet;
+use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 
 pub(super) fn exact_surface_extend_operation(
     ctx: &DecodeContext<'_>,
@@ -35,15 +37,10 @@ pub(super) fn exact_surface_extend_operation(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Result<Option<DesignSurfaceExtendOperation>, CodecError> {
-    let Some(operation) = exact_surface_boundary_operation(
-        ctx,
-        bytes,
-        records,
-        scope,
-        DesignFeatureFamily::SurfaceExtend,
-        8,
-    )?
-    else {
+    if !matches!(scope.payload(), DesignScopePayload::SurfaceExtend(_)) {
+        return Ok(None);
+    }
+    let Some(operation) = exact_surface_boundary_operation(ctx, bytes, records, scope, 8)? else {
         return Ok(None);
     };
     if operation.distance.get() <= 0.0 {
@@ -64,7 +61,7 @@ pub(super) fn exact_surface_extend_operation(
         boundary_record_index: operation.boundary_record_index,
         boundary_reference_record_index: operation.boundary_reference_record_index,
         boundary_reference_offset: operation.boundary_reference_offset,
-        edge_record_indices: operation.edge_record_indices,
+        edge_record_indices: boundary_edge_record_indices(ctx, scope)?,
         tolerance: operation.tolerance,
         tolerance_offset: operation.tolerance_offset,
     }))
@@ -76,144 +73,161 @@ pub(super) fn exact_surface_offset_operation(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Result<Option<DesignSurfaceOffsetOperation>, CodecError> {
+    if !matches!(scope.payload(), DesignScopePayload::SurfaceOffset(_)) {
+        return Ok(None);
+    }
     if let Some(operation) = exact_surface_offset_face_groups(ctx, bytes, records, scope)? {
         return Ok(Some(operation));
     }
-    let Some(operation) = exact_surface_boundary_operation(
-        ctx,
-        bytes,
-        records,
-        scope,
-        DesignFeatureFamily::SurfaceOffset,
-        65,
-    )?
-    else {
+    let Some(operation) = exact_surface_boundary_operation(ctx, bytes, records, scope, 65)? else {
         return Ok(None);
     };
-    Ok(
-        (operation.mode == 1).then_some(DesignSurfaceOffsetOperation {
-            distance: operation.distance,
-            distance_offset: operation.distance_offset,
-            distance_record_index: operation.distance_record_index,
-            support: DesignSurfaceOffsetSupport::BoundaryCarrier {
-                boundary_record_index: operation.boundary_record_index,
-                boundary_reference_record_index: operation.boundary_reference_record_index,
-                boundary_reference_offset: operation.boundary_reference_offset,
-                edge_record_indices: operation.edge_record_indices,
-                tolerance: operation.tolerance,
-                tolerance_offset: operation.tolerance_offset,
-            },
-        }),
-    )
+    if operation.mode != 1 {
+        return Ok(None);
+    }
+    Ok(Some(DesignSurfaceOffsetOperation {
+        distance: operation.distance,
+        distance_offset: operation.distance_offset,
+        distance_record_index: operation.distance_record_index,
+        support: DesignSurfaceOffsetSupport::BoundaryCarrier {
+            boundary_record_index: operation.boundary_record_index,
+            boundary_reference_record_index: operation.boundary_reference_record_index,
+            boundary_reference_offset: operation.boundary_reference_offset,
+            edge_record_indices: boundary_edge_record_indices(ctx, scope)?,
+            tolerance: operation.tolerance,
+            tolerance_offset: operation.tolerance_offset,
+        },
+    }))
 }
 
+/// A `SurfaceOffset` whose support references are profile face groups and
+/// their members. Every support reference is either a group or a member of
+/// exactly one group.
 fn exact_surface_offset_face_groups(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Result<Option<DesignSurfaceOffsetOperation>, CodecError> {
-    let parsed = (|| {
-        if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::SurfaceOffset) {
-            return None;
-        }
-        let distance_record_index = scope.reference_members().values().next()?;
-        let support_reference_count = scope.reference_members().len() - 1;
-        if support_reference_count == 0 {
-            return None;
-        }
-        let scalar = exact_fixed_scalar(bytes, records, *distance_record_index)?;
-        if scalar.owner_record_index != Some(scope.record_index) || scalar.ordinal != 0 {
-            return None;
-        }
+    let references = scope.reference_members();
+    let Some(&distance_record_index) = references.values().next() else {
+        return Ok(None);
+    };
+    let support_reference_count = references.len() - 1;
+    if support_reference_count == 0 {
+        return Ok(None);
+    }
+    let Some(scalar) = exact_fixed_scalar(ctx, bytes, records, distance_record_index)? else {
+        return Ok(None);
+    };
+    if scalar.owner_record_index != Some(scope.record_index) || scalar.ordinal != 0 {
+        return Ok(None);
+    }
 
-        let mut group_record_indices = Vec::new();
-        let mut covered_references = HashSet::new();
-        for (scope_reference_ordinal, record_index) in scope
-            .reference_members()
-            .values()
-            .copied()
-            .enumerate()
-            .skip(1)
-        {
-            let group = exact_construction_operand_group(
-                ctx,
-                bytes,
-                records,
-                scope,
-                u32::try_from(scope_reference_ordinal).ok()?,
-                record_index,
-            );
-            let Some(group) = group else {
-                continue;
+    // A record is covered once as a group or a group member. It is tracked at
+    // the first table position that lists it.
+    let (mut covered, _covered_storage) =
+        ctx.with_scoped_storage("track F3D surface offset covered references", || {
+            ctx.alloc_filled(
+                references.len(),
+                false,
+                "track F3D surface offset covered references",
+            )
+        })?;
+    let mut covered_count = 0usize;
+    let mut cover = |record_index: u32| -> Result<bool, CodecError> {
+        let Some(position) = reference_position(
+            ctx,
+            references,
+            |value| Ok(*value == record_index),
+            "find F3D surface offset support reference",
+        )?
+        else {
+            return Ok(false);
+        };
+        let Some(slot) = covered.get_mut(position) else {
+            return Ok(false);
+        };
+        if std::mem::replace(slot, true) {
+            return Ok(false);
+        }
+        covered_count += 1;
+        Ok(true)
+    };
+    let mut group_record_indices = Vec::new();
+    let mut scope_reference_ordinal = 0usize;
+    let refused = reference_position(
+        ctx,
+        references,
+        |&record_index| {
+            let ordinal = scope_reference_ordinal;
+            scope_reference_ordinal += 1;
+            if ordinal == 0 {
+                return Ok(false);
+            }
+            let Ok(ordinal) = u32::try_from(ordinal) else {
+                return Ok(true);
             };
-            let group = match group {
-                Ok(group) => group,
-                Err(error) => return Some(Err(error)),
+            // Only the group's record index is kept, so the parsed group is
+            // held under scoped storage.
+            let (group, _group_storage) =
+                ctx.with_scoped_storage("f3d surface offset face group candidate", || {
+                    exact_construction_operand_group(
+                        ctx,
+                        bytes,
+                        records,
+                        scope,
+                        ordinal,
+                        record_index,
+                    )
+                })?;
+            let Some(group) = group else {
+                return Ok(false);
             };
             if group.role() != DesignOperandRole::PROFILE
                 || group.frame.opaque_index.get() != 252
                 || group.members().is_empty()
-                || covered_references.contains(&group.record_index)
+                || !cover(group.record_index)?
             {
-                return None;
+                return Ok(true);
             }
-
-            if let Err(error) = ctx.reserve_set(
-                &mut covered_references,
-                1,
-                "f3d surface offset covered reference",
-            ) {
-                return Some(Err(error));
+            let member_refused = ctx.any_by(
+                group.members(),
+                |member| {
+                    // Every member is a support reference other than the distance owner.
+                    Ok(member.value == distance_record_index || !cover(member.value)?)
+                },
+                "scan F3D surface offset group members",
+            )?;
+            if member_refused {
+                return Ok(true);
             }
-            covered_references.insert(group.record_index);
-            for member in group.members().iter().map(|member| &member.value) {
-                if *member == *distance_record_index
-                    || !scope
-                        .reference_members()
-                        .values()
-                        .skip(1)
-                        .any(|value| value == member)
-                    || covered_references.contains(member)
-                {
-                    return None;
-                }
-
-                if let Err(error) = ctx.reserve_set(
-                    &mut covered_references,
-                    1,
-                    "f3d surface offset covered reference",
-                ) {
-                    return Some(Err(error));
-                }
-                covered_references.insert(*member);
-            }
-
-            if let Err(error) = ctx.reserve_vec(
+            ctx.push_vec(
                 &mut group_record_indices,
-                1,
+                group.record_index,
                 "f3d surface offset face group",
-            ) {
-                return Some(Err(error));
-            }
-            group_record_indices.push(group.record_index);
-        }
-        if group_record_indices.is_empty() || covered_references.len() != support_reference_count {
-            return None;
-        }
-
-        Some(Ok(DesignSurfaceOffsetOperation {
-            distance: scalar.value,
-            distance_offset: scalar.value_offset,
-            distance_record_index: *distance_record_index,
-            support: DesignSurfaceOffsetSupport::FaceGroups {
-                group_record_indices,
-            },
-        }))
-    })();
-    parsed.transpose()
+            )?;
+            Ok(false)
+        },
+        "scan F3D surface offset support references",
+    )?;
+    if refused.is_some()
+        || group_record_indices.is_empty()
+        || covered_count != support_reference_count
+    {
+        return Ok(None);
+    }
+    Ok(Some(DesignSurfaceOffsetOperation {
+        distance: scalar.value,
+        distance_offset: scalar.value_offset,
+        distance_record_index,
+        support: DesignSurfaceOffsetSupport::FaceGroups {
+            group_record_indices,
+        },
+    }))
 }
 
+/// The only construction operand group among the frames of `record_index`.
 fn exact_construction_operand_group(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
@@ -221,38 +235,57 @@ fn exact_construction_operand_group(
     scope: &DesignParameterScope,
     scope_reference_ordinal: u32,
     record_index: u32,
-) -> Option<
-    Result<crate::records::topology::construction::DesignConstructionOperandGroup, CodecError>,
-> {
+) -> Result<Option<DesignConstructionOperandGroup>, CodecError> {
+    // The search stops at an unreadable header or a second group.
     let mut candidate = None;
-    for (start, _) in records.frames(record_index) {
-        let (class_tag, after_tag) =
-            lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
-        if after_tag != start + 7 {
-            continue;
-        }
-        let header = RecordFrame {
-            record_index,
-            class_tag: crate::design::decode::text::class_tag_from_view(class_tag).ok()?,
-            byte_offset: u64::try_from(start).ok()?,
-        };
-        match parse_construction_operand_group(ctx, bytes, scope, scope_reference_ordinal, &header)
-        {
-            ConstructionOperandGroupParse::Complete(group) => {
-                if candidate.replace(*group).is_some() {
-                    return None;
+    let stopped = find_frame(
+        ctx,
+        records,
+        record_index,
+        |start, _| {
+            let Some(header) = indexed_record_header_at(bytes, start) else {
+                return Ok(true);
+            };
+            // The group parser borrows the frame header; the group keeps its own copy.
+            let (class_tag, _class_tag_storage) =
+                ctx.with_scoped_storage("copy F3D surface offset group class tag", || {
+                    retain_class_tag(
+                        ctx,
+                        *header.class_tag,
+                        "copy F3D surface offset group class tag",
+                    )
+                })?;
+            let header = RecordFrame {
+                record_index,
+                class_tag,
+                byte_offset: u64_from_index(start),
+            };
+            match parse_construction_operand_group(
+                ctx,
+                bytes,
+                scope,
+                scope_reference_ordinal,
+                &header,
+            )? {
+                ConstructionOperandGroupParse::Complete(group) => {
+                    Ok(candidate.replace(*group).is_some())
                 }
+                ConstructionOperandGroupParse::NotAGroup
+                | ConstructionOperandGroupParse::Unclosed => Ok(false),
             }
-            ConstructionOperandGroupParse::Refused(error) => return Some(Err(error)),
-            ConstructionOperandGroupParse::NotAGroup | ConstructionOperandGroupParse::Unclosed => {}
-        }
+        },
+        "scan F3D surface offset group frames",
+    )?;
+    if stopped.is_some() {
+        return Ok(None);
     }
-    candidate.map(Ok)
+    Ok(candidate)
 }
 
-#[derive(Clone)]
+/// The scalar fields of a boundary-carrier surface operation. Its edges are
+/// the scope's references after the distance owner and the boundary record.
 struct ExactSurfaceBoundaryOperation {
-    distance: cadmpeg_ir::scalar::FiniteReal,
+    distance: FiniteReal,
     distance_offset: u64,
     distance_record_index: u32,
     mode: u32,
@@ -260,8 +293,7 @@ struct ExactSurfaceBoundaryOperation {
     boundary_record_index: u32,
     boundary_reference_record_index: u32,
     boundary_reference_offset: u64,
-    edge_record_indices: Vec<u32>,
-    tolerance: cadmpeg_ir::scalar::PositiveReal,
+    tolerance: PositiveReal,
     tolerance_offset: u64,
 }
 
@@ -270,197 +302,223 @@ fn exact_surface_boundary_operation(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
-    family: DesignFeatureFamily,
     boundary_kind: u32,
 ) -> Result<Option<ExactSurfaceBoundaryOperation>, CodecError> {
-    let parsed = (|| {
-        if design_feature_family(&scope.kind()) != Some(family) {
-            return None;
-        }
-        let mut references = scope.reference_members().values();
-        let distance_record_index = references.next()?;
-        let boundary_record_index = references.next()?;
-        let edge_record_indices = references;
-        if edge_record_indices.len() == 0 {
-            return None;
-        }
-        let scalar = exact_fixed_scalar(bytes, records, *distance_record_index)?;
-        if scalar.owner_record_index != Some(scope.record_index)
-            || scalar.ordinal != 0
-            || records
-                .frames(*distance_record_index)
-                .filter(|(start, end)| {
-                    end.checked_sub(*start) == Some(104)
-                        && lp_ascii_filtered_view(bytes, *start, 0..=2000, u8::is_ascii_graphic)
-                            .is_some_and(|(class_tag, after_tag)| {
-                                after_tag == *start + 7
-                                    && class_tag.len() == 3
-                                    && class_tag.bytes().all(|byte| byte.is_ascii_digit())
-                            })
-                        && bytes.get(*start + 11..*start + 19) == Some(&[0; 8])
-                        && bytes.get(*start + 19..*start + 24) == Some(&[1, 1, 0, 0, 0])
-                        && marked_record_reference(bytes, *start + 24) == Some(scope.record_index)
-                        && bytes.get(*start + 29..*start + 35) == Some(&[0; 6])
-                        && bytes.get(*start + 35..*start + 40) == Some(&[0; 5])
-                        && marked_record_reference(bytes, *start + 48)
-                            == distance_record_index.checked_sub(1)
-                        && bytes.get(*start + 53..*start + 59) == Some(&[0; 6])
-                        && View::u32_le_at(bytes, *start + 59).is_some_and(|value| value != 0)
-                        && bytes.get(*start + 63..*start + 67) == Some(&[0; 4])
-                        && marked_record_reference(bytes, *start + 67) == Some(scope.record_index)
-                        && bytes.get(*start + 72..*start + 78) == Some(&[0; 6])
-                        && bytes.get(*start + 78..*start + 81) == Some(&[1, 0, 0])
-                        && marked_record_reference(bytes, *start + 81)
-                            == distance_record_index.checked_add(1)
-                        && bytes.get(*start + 86..*start + 93) == Some(&[0; 7])
-                        && marked_record_reference(bytes, *start + 93) == Some(scope.record_index)
-                        && bytes.get(*start + 98..*start + 104) == Some(&[0; 6])
-                })
-                .count()
-                != 1
-        {
-            return None;
-        }
-        let mut candidate = None;
-        for (start, end) in records.frames(*boundary_record_index) {
-            let parsed = (|| {
-                let member_bytes = edge_record_indices.len().checked_mul(11)?;
-                let tail = start.checked_add(25)?.checked_add(member_bytes)?;
-                (end.checked_sub(start)? == 113usize.checked_add(member_bytes)?).then_some(())?;
-                let (class_tag, after_tag) =
-                    lp_ascii_filtered_view(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
-                if after_tag != start + 7
-                    || class_tag.len() != 3
-                    || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
-                    || bytes.get(start + 11..start + 21)? != [0; 10]
-                    || View::u32_le_at(bytes, start + 21)?
-                        != u32::try_from(edge_record_indices.len()).ok()?
-                    || edge_record_indices
-                        .clone()
-                        .enumerate()
-                        .any(|(ordinal, record_index)| {
-                            marked_record_reference(bytes, start + 25 + ordinal * 11)
-                                != Some(*record_index)
-                        })
-                    || bytes.get(tail..tail + 2)? != [0; 2]
-                    || bytes.get(tail + 11..tail + 21)? != [0; 10]
-                    || View::u32_le_at(bytes, tail + 21)? != boundary_kind
-                    || bytes.get(tail + 25..tail + 35)? != [0; 10]
-                    || View::u32_le_at(bytes, tail + 35)? != 210
-                    || View::u32_le_at(bytes, tail + 47)? != 210
-                    || marked_record_reference(bytes, tail + 51)
-                        != boundary_record_index.checked_add(2)
-                    || bytes.get(tail + 56..tail + 62)? != [0; 6]
-                    || bytes.get(tail + 62..tail + 65)? != [1, 0, 0]
-                    || marked_record_reference(bytes, tail + 65)
-                        != boundary_record_index.checked_add(1)
-                    || bytes.get(tail + 70..tail + 77)? != [0; 7]
-                    || marked_record_reference(bytes, tail + 77) != Some(scope.record_index)
-                    || bytes.get(tail + 82..tail + 88)? != [0; 6]
-                {
-                    return None;
-                }
-                let mode = View::u32_le_at(bytes, tail + 2)?;
-                let boundary_reference_record_index = marked_record_reference(bytes, tail + 6)?;
-                let tolerance =
-                    cadmpeg_ir::scalar::PositiveReal::new(View::f64_le_at(bytes, tail + 39)?)?;
-                Some((
-                    mode,
-                    u64::try_from(tail + 2).ok()?,
-                    boundary_reference_record_index,
-                    u64::try_from(tail + 6).ok()?,
-                    tolerance,
-                    u64::try_from(tail + 39).ok()?,
-                ))
-            })();
-            if let Some(parsed) = parsed {
-                if candidate.replace(parsed).is_some() {
-                    return None;
-                }
-            }
-        }
-        let (
-            mode,
-            mode_offset,
-            boundary_reference_record_index,
-            boundary_reference_offset,
-            tolerance,
-            tolerance_offset,
-        ) = candidate?;
-        Some((
-            scalar,
-            *distance_record_index,
-            *boundary_record_index,
-            edge_record_indices,
-            mode,
-            mode_offset,
-            boundary_reference_record_index,
-            boundary_reference_offset,
-            tolerance,
-            tolerance_offset,
-        ))
-    })();
-    let Some((
-        scalar,
-        distance_record_index,
-        boundary_record_index,
-        edge_record_indices,
-        mode,
-        mode_offset,
-        boundary_reference_record_index,
-        boundary_reference_offset,
-        tolerance,
-        tolerance_offset,
-    )) = parsed
+    let references = scope.reference_members();
+    let mut values = references.values();
+    let (Some(&distance_record_index), Some(&boundary_record_index)) =
+        (values.next(), values.next())
     else {
         return Ok(None);
     };
-
-    let mut edges = Vec::new();
-    ctx.reserve_vec(
-        &mut edges,
-        edge_record_indices.len(),
-        "f3d surface boundary edges",
+    let edge_count = values.len();
+    if edge_count == 0 {
+        return Ok(None);
+    }
+    let Some(scalar) = exact_fixed_scalar(ctx, bytes, records, distance_record_index)? else {
+        return Ok(None);
+    };
+    if scalar.owner_record_index != Some(scope.record_index) || scalar.ordinal != 0 {
+        return Ok(None);
+    }
+    let mut distance_frame_count = 0usize;
+    for (start, end) in records.frames(ctx, distance_record_index)? {
+        if end.checked_sub(start) == Some(104)
+            && distance_frame_matches(bytes, start, distance_record_index, scope.record_index)
+        {
+            distance_frame_count += 1;
+        }
+    }
+    if distance_frame_count != 1 {
+        return Ok(None);
+    }
+    let mut candidate = None;
+    let second = find_frame(
+        ctx,
+        records,
+        boundary_record_index,
+        |start, end| {
+            let Some(tail) = boundary_frame_tail(
+                bytes,
+                start,
+                end,
+                edge_count,
+                boundary_kind,
+                boundary_record_index,
+                scope.record_index,
+            ) else {
+                return Ok(false);
+            };
+            // The frame lists the edges in reference-table order after its header.
+            let mut ordinal = 0usize;
+            let mismatch = reference_position(
+                ctx,
+                references,
+                |record_index| {
+                    let Some(edge) = ordinal.checked_sub(2) else {
+                        ordinal += 1;
+                        return Ok(false);
+                    };
+                    ordinal += 1;
+                    Ok(marked_record_reference(bytes, start + 25 + edge * 11)
+                        != Some(*record_index))
+                },
+                "validate F3D surface boundary edge references",
+            )?;
+            Ok(mismatch.is_none() && candidate.replace(tail).is_some())
+        },
+        "scan F3D surface boundary frames",
     )?;
-    edges.extend(edge_record_indices.copied());
+    if second.is_some() {
+        return Ok(None);
+    }
+    let Some(tail) = candidate else {
+        return Ok(None);
+    };
     Ok(Some(ExactSurfaceBoundaryOperation {
         distance: scalar.value,
         distance_offset: scalar.value_offset,
         distance_record_index,
-        mode,
-        mode_offset,
+        mode: tail.mode,
+        mode_offset: tail.mode_offset,
         boundary_record_index,
-        boundary_reference_record_index,
-        boundary_reference_offset,
-        edge_record_indices: edges,
-        tolerance,
-        tolerance_offset,
+        boundary_reference_record_index: tail.boundary_reference_record_index,
+        boundary_reference_offset: tail.boundary_reference_offset,
+        tolerance: tail.tolerance,
+        tolerance_offset: tail.tolerance_offset,
     }))
 }
 
+/// Whether the 104-byte distance frame at `start` is owned by the scope and
+/// names its neighbouring records.
+fn distance_frame_matches(
+    bytes: &[u8],
+    start: usize,
+    distance_record_index: u32,
+    scope_record_index: u32,
+) -> bool {
+    zeros_at::<8>(bytes, start + 11)
+        && bytes_at::<5>(bytes, start + 19) == Some(&[1, 1, 0, 0, 0])
+        && marked_record_reference(bytes, start + 24) == Some(scope_record_index)
+        && zeros_at::<6>(bytes, start + 29)
+        && zeros_at::<5>(bytes, start + 35)
+        && marked_record_reference(bytes, start + 48) == distance_record_index.checked_sub(1)
+        && zeros_at::<6>(bytes, start + 53)
+        && View::u32_le_at(bytes, start + 59).is_some_and(|value| value != 0)
+        && zeros_at::<4>(bytes, start + 63)
+        && marked_record_reference(bytes, start + 67) == Some(scope_record_index)
+        && zeros_at::<6>(bytes, start + 72)
+        && bytes_at::<3>(bytes, start + 78) == Some(&[1, 0, 0])
+        && marked_record_reference(bytes, start + 81) == distance_record_index.checked_add(1)
+        && zeros_at::<7>(bytes, start + 86)
+        && marked_record_reference(bytes, start + 93) == Some(scope_record_index)
+        && zeros_at::<6>(bytes, start + 98)
+}
+
+struct BoundaryFrameTail {
+    mode: u32,
+    mode_offset: u64,
+    boundary_reference_record_index: u32,
+    boundary_reference_offset: u64,
+    tolerance: PositiveReal,
+    tolerance_offset: u64,
+}
+
+/// The fixed fields of the boundary frame from `start` to `end` that follow
+/// its `edge_count` edge references.
+fn boundary_frame_tail(
+    bytes: &[u8],
+    start: usize,
+    end: usize,
+    edge_count: usize,
+    boundary_kind: u32,
+    boundary_record_index: u32,
+    scope_record_index: u32,
+) -> Option<BoundaryFrameTail> {
+    let member_bytes = edge_count.checked_mul(11)?;
+    let tail = start.checked_add(25)?.checked_add(member_bytes)?;
+    if end.checked_sub(start)? != 113usize.checked_add(member_bytes)?
+        || !zeros_at::<10>(bytes, start + 11)
+        || View::u32_le_at(bytes, start + 21)? != u32::try_from(edge_count).ok()?
+        || !zeros_at::<2>(bytes, tail)
+        || !zeros_at::<10>(bytes, tail + 11)
+        || View::u32_le_at(bytes, tail + 21)? != boundary_kind
+        || !zeros_at::<10>(bytes, tail + 25)
+        || View::u32_le_at(bytes, tail + 35)? != 210
+        || View::u32_le_at(bytes, tail + 47)? != 210
+        || marked_record_reference(bytes, tail + 51) != boundary_record_index.checked_add(2)
+        || !zeros_at::<6>(bytes, tail + 56)
+        || bytes_at::<3>(bytes, tail + 62)? != &[1, 0, 0]
+        || marked_record_reference(bytes, tail + 65) != boundary_record_index.checked_add(1)
+        || !zeros_at::<7>(bytes, tail + 70)
+        || marked_record_reference(bytes, tail + 77) != Some(scope_record_index)
+        || !zeros_at::<6>(bytes, tail + 82)
+    {
+        return None;
+    }
+    Some(BoundaryFrameTail {
+        mode: View::u32_le_at(bytes, tail + 2)?,
+        mode_offset: u64::try_from(tail + 2).ok()?,
+        boundary_reference_record_index: marked_record_reference(bytes, tail + 6)?,
+        boundary_reference_offset: u64::try_from(tail + 6).ok()?,
+        tolerance: PositiveReal::new(View::f64_le_at(bytes, tail + 39)?)?,
+        tolerance_offset: u64::try_from(tail + 39).ok()?,
+    })
+}
+
+/// The boundary edges: the scope's references after the distance owner and
+/// the boundary record.
+fn boundary_edge_record_indices(
+    ctx: &DecodeContext<'_>,
+    scope: &DesignParameterScope,
+) -> Result<Vec<u32>, CodecError> {
+    ctx.collect_vec(
+        admit_reference_values(
+            ctx,
+            scope.reference_members(),
+            "copy F3D surface boundary edges",
+        )?
+        .skip(2)
+        .copied(),
+        "f3d surface boundary edges",
+    )
+}
+
 pub(super) fn exact_surface_stitch_operation(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope_record_index: u32,
     references: &[u32],
-) -> Option<DesignSurfaceStitchOperation> {
+) -> Result<Option<DesignSurfaceStitchOperation>, CodecError> {
+    let [.., tolerance_record_index, settings_record_index] = references else {
+        return Ok(None);
+    };
     if references.len() < 4 || !references.len().is_multiple_of(2) {
-        return None;
+        return Ok(None);
     }
-    let tolerance_record_index = references[references.len() - 2];
-    let settings_record_index = references[references.len() - 1];
-    let scalar = exact_fixed_scalar(bytes, records, tolerance_record_index)?;
+    let Some(scalar) = exact_fixed_scalar(ctx, bytes, records, *tolerance_record_index)? else {
+        return Ok(None);
+    };
     if scalar.owner_record_index != Some(scope_record_index) || scalar.ordinal != 0 {
-        return None;
+        return Ok(None);
     }
-    let gap_tolerance = cadmpeg_ir::scalar::PositiveReal::new(scalar.value.get())?;
-    Some(DesignSurfaceStitchOperation {
+    let Some(gap_tolerance) = PositiveReal::new(scalar.value.get()) else {
+        return Ok(None);
+    };
+    Ok(Some(DesignSurfaceStitchOperation {
         gap_tolerance,
         gap_tolerance_offset: scalar.value_offset,
-        tolerance_record_index,
-        settings_record_index,
-    })
+        tolerance_record_index: *tolerance_record_index,
+        settings_record_index: *settings_record_index,
+    }))
 }
+
+/// The direction entity identity that marks an absent direction.
+const ABSENT_DIRECTION_ENTITY: [u8; 36] = *b"00000000-0000-0000-0000-000000000000";
+
+/// Largest record count of one ruled-surface reference list.
+const MAX_RULED_SURFACE_REFERENCES: usize = 100_000;
 
 pub(super) fn exact_ruled_surface_operation(
     ctx: &DecodeContext<'_>,
@@ -470,133 +528,187 @@ pub(super) fn exact_ruled_surface_operation(
     reference_count_at: usize,
     reference_members: &[u32],
 ) -> Result<Option<DesignRuledSurfaceOperation>, CodecError> {
-    let parsed = (|| {
-        if bytes.get(start.checked_add(11)?..start.checked_add(20)?)? != [0; 9] {
-            return None;
-        }
-        let method_offset = start.checked_add(20)?;
-        let method = match View::u32_le_at(bytes, method_offset)? {
-            0 => DesignRuledSurfaceMethod::Tangent,
-            1 => DesignRuledSurfaceMethod::Normal,
-            2 => DesignRuledSurfaceMethod::Direction,
-            _ => return None,
-        };
-        if bytes.get(start.checked_add(24)?..start.checked_add(27)?)? != [0; 3] {
-            return None;
-        }
-        let alternate_face_offset = start.checked_add(27)?;
-        let alternate_face = match bytes.get(alternate_face_offset)? {
-            0 => false,
-            1 => true,
-            _ => return None,
-        };
-        let fixed_reference = |at: usize| {
-            let mut cursor = at;
-            let reference = take_reference(bytes, &mut cursor)?;
-            (cursor == at.checked_add(11)?).then(|| u32::try_from(reference.local()?.0).ok())?
-        };
-        let angle_owner_record_index = fixed_reference(start.checked_add(28)?)?;
-        let distance_owner_record_index = fixed_reference(start.checked_add(39)?)?;
-        let corner_offset = start.checked_add(50)?;
-        let corner = match View::u32_le_at(bytes, corner_offset)? {
-            0 => DesignRuledSurfaceCorner::Rounded,
-            1 => DesignRuledSurfaceCorner::Mitered,
-            _ => return None,
-        };
-        let take_reference_list = |mut cursor: usize| {
-            let count = usize::try_from(View::u32_le_at(bytes, cursor)?).ok()?;
-            if count > 100_000 {
-                return None;
-            }
-            cursor = cursor.checked_add(4)?;
+    let Some(prologue) = ruled_surface_prologue(bytes, start) else {
+        return Ok(None);
+    };
+    // The distance and angle owners lead the ordered reference table.
+    if reference_members.first() != Some(&prologue.distance_owner_record_index)
+        || reference_members.get(1) != Some(&prologue.angle_owner_record_index)
+    {
+        return Ok(None);
+    }
+    let Some(edge_groups_at) = start.checked_add(54) else {
+        return Ok(None);
+    };
+    let Some((mut edge_group_record_indices, cursor)) =
+        ruled_surface_reference_list(ctx, bytes, edge_groups_at)?
+    else {
+        return Ok(None);
+    };
+    let (Some(0), Some(auxiliary_at)) = (View::u32_le_at(bytes, cursor), cursor.checked_add(4))
+    else {
+        return Ok(None);
+    };
+    let Some((auxiliary_record_indices, cursor)) =
+        ruled_surface_reference_list(ctx, bytes, auxiliary_at)?
+    else {
+        return Ok(None);
+    };
+    let (Some(0), Some(trailing_at)) = (View::u32_le_at(bytes, cursor), cursor.checked_add(4))
+    else {
+        return Ok(None);
+    };
+    let Some((trailing_edge_groups, cursor)) =
+        ruled_surface_reference_list(ctx, bytes, trailing_at)?
+    else {
+        return Ok(None);
+    };
+    ctx.extend_vec(
+        &mut edge_group_record_indices,
+        trailing_edge_groups,
+        "f3d ruled surface merged edge groups",
+    )?;
+    if edge_group_record_indices.is_empty() {
+        return Ok(None);
+    }
+    let Some((direction_entity, direction_end)) = fixed_guid_ascii(bytes, cursor) else {
+        return Ok(None);
+    };
+    if direction_end.checked_add(3) != Some(reference_count_at)
+        || !zeros_at::<3>(bytes, direction_end)
+        || paired_at <= reference_count_at
+    {
+        return Ok(None);
+    }
+    if !ctx.all_by(
+        &edge_group_record_indices,
+        |record_index| {
+            ctx.contains(
+                reference_members,
+                record_index,
+                "find F3D ruled surface listed edge group",
+            )
+        },
+        "validate F3D ruled surface edge groups",
+    )? {
+        return Ok(None);
+    }
+    let direction_entity_id = if direction_entity == ABSENT_DIRECTION_ENTITY {
+        None
+    } else {
+        let text = std::str::from_utf8(&direction_entity)
+            .map_err(|_| CodecError::malformed("validated F3D relaxed GUID is not ASCII"))?;
+        Some(
+            DesignRelaxedGuidText::try_from(
+                ctx.copy_retained_text(text, "retain F3D ruled surface direction entity")?,
+            )
+            .map_err(CodecError::malformed)?,
+        )
+    };
+    Ok(Some(DesignRuledSurfaceOperation {
+        method: prologue.method,
+        method_offset: u64_from_index(prologue.method_offset),
+        corner: prologue.corner,
+        corner_offset: u64_from_index(prologue.corner_offset),
+        alternate_face: prologue.alternate_face,
+        alternate_face_offset: u64_from_index(prologue.alternate_face_offset),
+        angle_owner_record_index: prologue.angle_owner_record_index,
+        distance_owner_record_index: prologue.distance_owner_record_index,
+        edge_group_record_indices,
+        auxiliary_record_indices,
+        direction_entity_id,
+    }))
+}
 
-            let mut records = Vec::new();
-            if let Err(error) = ctx.reserve_vec(&mut records, count, "f3d ruled surface references")
-            {
-                return Some(Err(error));
-            }
-            for _ in 0..count {
-                records.push(match fixed_reference(cursor) {
-                    Some(record) => record,
-                    None => return None,
-                });
-                cursor = cursor.checked_add(11)?;
-            }
-            Some(Ok((records, cursor)))
-        };
-        let (mut edge_group_record_indices, mut cursor) =
-            match take_reference_list(start.checked_add(54)?)? {
-                Ok(value) => value,
-                Err(error) => return Some(Err(error)),
-            };
-        if View::u32_le_at(bytes, cursor)? != 0 {
-            return None;
-        }
-        cursor = cursor.checked_add(4)?;
-        let (auxiliary_record_indices, next) = match take_reference_list(cursor)? {
-            Ok(value) => value,
-            Err(error) => return Some(Err(error)),
-        };
-        cursor = next;
-        if View::u32_le_at(bytes, cursor)? != 0 {
-            return None;
-        }
-        cursor = cursor.checked_add(4)?;
-        let (trailing_edge_groups, next) = match take_reference_list(cursor)? {
-            Ok(value) => value,
-            Err(error) => return Some(Err(error)),
-        };
-        cursor = next;
+/// The fixed fields before the reference lists of a `SurfaceRuled` frame.
+struct RuledSurfacePrologue {
+    method: DesignRuledSurfaceMethod,
+    method_offset: usize,
+    alternate_face: bool,
+    alternate_face_offset: usize,
+    angle_owner_record_index: u32,
+    distance_owner_record_index: u32,
+    corner: DesignRuledSurfaceCorner,
+    corner_offset: usize,
+}
 
-        if let Err(error) = ctx.reserve_vec(
-            &mut edge_group_record_indices,
-            trailing_edge_groups.len(),
-            "f3d ruled surface merged edge groups",
-        ) {
-            return Some(Err(error));
-        }
-        edge_group_record_indices.extend(trailing_edge_groups);
-        let (direction_entity_id, direction_end) = match fixed_relaxed_guid_text(ctx, bytes, cursor)
-        {
-            Ok(Some(value)) => value,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
+fn ruled_surface_prologue(bytes: &[u8], start: usize) -> Option<RuledSurfacePrologue> {
+    if !zeros_at::<9>(bytes, start.checked_add(11)?) {
+        return None;
+    }
+    let method_offset = start.checked_add(20)?;
+    let method = match View::u32_le_at(bytes, method_offset)? {
+        0 => DesignRuledSurfaceMethod::Tangent,
+        1 => DesignRuledSurfaceMethod::Normal,
+        2 => DesignRuledSurfaceMethod::Direction,
+        _ => return None,
+    };
+    if !zeros_at::<3>(bytes, start.checked_add(24)?) {
+        return None;
+    }
+    let alternate_face_offset = start.checked_add(27)?;
+    let alternate_face = match bytes.get(alternate_face_offset)? {
+        0 => false,
+        1 => true,
+        _ => return None,
+    };
+    let (angle_owner_record_index, _) =
+        exact_same_segment_record_reference(bytes, start.checked_add(28)?)?;
+    let (distance_owner_record_index, _) =
+        exact_same_segment_record_reference(bytes, start.checked_add(39)?)?;
+    let corner_offset = start.checked_add(50)?;
+    let corner = match View::u32_le_at(bytes, corner_offset)? {
+        0 => DesignRuledSurfaceCorner::Rounded,
+        1 => DesignRuledSurfaceCorner::Mitered,
+        _ => return None,
+    };
+    Some(RuledSurfacePrologue {
+        method,
+        method_offset,
+        alternate_face,
+        alternate_face_offset,
+        angle_owner_record_index,
+        distance_owner_record_index,
+        corner,
+        corner_offset,
+    })
+}
+
+/// The counted list of eleven-byte record references at `count_at` and the
+/// offset after it. A count the bytes cannot supply is no list.
+fn ruled_surface_reference_list(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    count_at: usize,
+) -> Result<Option<(Vec<u32>, usize)>, CodecError> {
+    let Some(count) =
+        View::u32_le_at(bytes, count_at).and_then(|count| usize::try_from(count).ok())
+    else {
+        return Ok(None);
+    };
+    let Some(first) = count_at.checked_add(4) else {
+        return Ok(None);
+    };
+    let Some(end) = count
+        .checked_mul(11)
+        .and_then(|length| first.checked_add(length))
+    else {
+        return Ok(None);
+    };
+    if count > MAX_RULED_SURFACE_REFERENCES || end > bytes.len() {
+        return Ok(None);
+    }
+    // The count is read from the frame, so each reference is admitted as the
+    // scan reaches it; the scan stops at the first unmarked one.
+    let mut records = Vec::new();
+    for ordinal in 0..count {
+        ctx.charge_work(1, "read F3D ruled surface references")?;
+        let Some((record_index, _)) =
+            exact_same_segment_record_reference(bytes, first + ordinal * 11)
+        else {
+            return Ok(None);
         };
-        let direction_absent =
-            direction_entity_id.as_str() == "00000000-0000-0000-0000-000000000000";
-        if direction_end.checked_add(3)? != reference_count_at
-            || bytes.get(direction_end..reference_count_at)? != [0; 3]
-            || paired_at <= reference_count_at
-        {
-            return None;
-        }
-        let direction_entity_id = if direction_absent {
-            None
-        } else {
-            Some(direction_entity_id)
-        };
-        if reference_members.first() != Some(&distance_owner_record_index)
-            || reference_members.get(1) != Some(&angle_owner_record_index)
-            || edge_group_record_indices.is_empty()
-            || edge_group_record_indices
-                .iter()
-                .any(|record_index| !reference_members.contains(record_index))
-        {
-            return None;
-        }
-        Some(Ok(DesignRuledSurfaceOperation {
-            method,
-            method_offset: u64_from_index(method_offset),
-            corner,
-            corner_offset: u64_from_index(corner_offset),
-            alternate_face,
-            alternate_face_offset: u64_from_index(alternate_face_offset),
-            angle_owner_record_index,
-            distance_owner_record_index,
-            edge_group_record_indices,
-            auxiliary_record_indices,
-            direction_entity_id,
-        }))
-    })();
-    parsed.transpose()
+        ctx.push_vec(&mut records, record_index, "f3d ruled surface references")?;
+    }
+    Ok(Some((records, end)))
 }

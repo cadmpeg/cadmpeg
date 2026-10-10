@@ -189,16 +189,19 @@ fn sketch_text_output_refuses_collection_limit() {
         1
     );
 
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 4;
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let error = crate::design::decode::sketch::decode_sketch_texts_from_stream(
-        &ctx,
-        &bytes,
-        &meta,
-        "Design/BulkStream.dat",
-    )
-    .unwrap_err();
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::CollectionItems,
+        "f3d sketch text records",
+        0,
+        |ctx| {
+            crate::design::decode::sketch::decode_sketch_texts_from_stream(
+                ctx,
+                &bytes,
+                &meta,
+                "Design/BulkStream.dat",
+            )
+        },
+    );
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -590,25 +593,23 @@ fn sketch_records_use_the_primary_index_live_copy() {
 
 #[test]
 fn sketch_point_indices_and_output_refuse_collection_limits() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
 
     let (bytes, meta, _, _, _, _) = indexed_sketch_fixture();
-    for (limit, operation) in [
-        (21, "f3d sketch point frame index"),
-        (26, "f3d sketch point type index"),
-        (31, "f3d sketch point output"),
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = crate::design::decode::sketch::decode_sketch_points_from_stream(
-            &ctx,
-            &bytes,
-            &meta,
-            "Design/BulkStream.dat",
-        )
-        .expect_err("collection limit must refuse point decode");
+    for operation in ["f3d sketch point frame index", "f3d sketch point output"] {
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::CollectionItems,
+            operation,
+            0,
+            |ctx| {
+                crate::design::decode::sketch::decode_sketch_points_from_stream(
+                    ctx,
+                    &bytes,
+                    &meta,
+                    "Design/BulkStream.dat",
+                )
+            },
+        );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
             if failure.dimension == ResourceDimension::CollectionItems
@@ -619,20 +620,22 @@ fn sketch_point_indices_and_output_refuse_collection_limits() {
 
 #[test]
 fn sketch_curve_output_refuses_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
 
     let (bytes, meta, _, _, _, _) = indexed_sketch_fixture();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 21;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = crate::design::decode::sketch::decode_sketch_curve_identities_from_stream(
-        &ctx,
-        &bytes,
-        &meta,
-        "Design/BulkStream.dat",
-    )
-    .expect_err("collection limit must refuse curve decode");
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::CollectionItems,
+        "f3d sketch curve output",
+        0,
+        |ctx| {
+            crate::design::decode::sketch::decode_sketch_curve_identities_from_stream(
+                ctx,
+                &bytes,
+                &meta,
+                "Design/BulkStream.dat",
+            )
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
         if failure.dimension == ResourceDimension::CollectionItems

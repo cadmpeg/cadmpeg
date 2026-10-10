@@ -19,7 +19,9 @@ fn nx_shell_completeness_requires_each_construction_field() {
         resolve_intersections: None,
         allow_self_intersections: None,
     });
-    assert!(shell_definition_is_incomplete(&incomplete));
+    assert!(crate::decode::feature_completeness::decode_check(|ctx| {
+        shell_definition_is_incomplete(ctx, &incomplete)
+    }));
 
     let complete = FeatureDefinition::Operation(FeatureOperation::Shell {
         bodies: Some(BodySelection::Bodies(
@@ -39,6 +41,8 @@ fn nx_shell_completeness_requires_each_construction_field() {
         resolve_intersections: Some(true),
         allow_self_intersections: Some(false),
     });
-    assert!(!shell_definition_is_incomplete(&complete));
+    assert!(!crate::decode::feature_completeness::decode_check(|ctx| {
+        shell_definition_is_incomplete(ctx, &complete)
+    }));
     assert_eq!(complete.body_output_family(), Some("shell"));
 }

@@ -57,6 +57,25 @@ fn ruled_surface_operation_reads_mode_parameters_and_ordered_edge_groups() {
     assert_eq!(operation.auxiliary_record_indices, [99]);
     assert_eq!(operation.direction_entity_id, None);
 
+    let target_operation = "find F3D ruled surface listed edge group";
+    // Three visited references select record13; the second lookup starts at request9.
+    for (skip, additional) in [(0, 1), (1, 4), (2, 4), (9, 1), (10, 4), (11, 4)] {
+        let refusal = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            target_operation,
+            skip,
+            |ctx| {
+                exact_ruled_surface_operation(ctx, &bytes, 0, 366, 186, &[11, 12, 13, 14, 15, 16])
+                    .map(|_| ())
+            },
+        );
+        assert!(
+            matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == target_operation && limit.additional == additional)
+        );
+    }
+
     bytes[20..24].copy_from_slice(&2u32.to_le_bytes());
     for (ordinal, byte) in b"01234567-89ab-cdef-0123-456789abcdef".iter().enumerate() {
         bytes[111 + ordinal * 2] = *byte;
@@ -118,12 +137,16 @@ fn surface_stitch_tolerance_uses_its_fixed_scope_owned_frame() {
     indexed_header(&mut bytes, *b"258", 301);
 
     assert_eq!(
-        exact_surface_stitch_operation(
-            &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-            12,
-            &[100, 200, 300, 301]
-        ),
+        crate::design::test_support::with_test_decode_context(|ctx| {
+            exact_surface_stitch_operation(
+                ctx,
+                &bytes,
+                &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+                12,
+                &[100, 200, 300, 301],
+            )
+            .unwrap()
+        }),
         Some(DesignSurfaceStitchOperation {
             gap_tolerance: cadmpeg_ir::scalar::PositiveReal::new(0.01).unwrap(),
             gap_tolerance_offset: 40,
@@ -834,6 +857,23 @@ fn base_feature_scope_decodes_class_409_262_result_body_variants() {
     assert_eq!(metadata_record, 701);
     assert_eq!(metadata_record_offset, u64_from_index(prefix + 33));
     assert_eq!(metadata_field, [0; 6]);
+    let operation = "f3d BaseFeature 409/262 metadata field";
+    for (dimension, additional) in [
+        (cadmpeg_core::decode::ResourceDimension::WorkUnits, 6),
+        (cadmpeg_core::decode::ResourceDimension::CollectionItems, 6),
+        (cadmpeg_core::decode::ResourceDimension::RetainedBytes, 6),
+    ] {
+        let refusal = crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
+            exact_base_feature_construction(ctx, &zero_body, &zero_scope).map(|_| ())
+        });
+        assert!(matches!(
+            refusal,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == dimension
+                    && limit.operation == operation
+                    && limit.additional == additional
+        ));
+    }
 
     let mut nonzero_padding = zero_body.clone();
     nonzero_padding[prefix + 47] = 1;
@@ -1143,6 +1183,23 @@ fn base_feature_scope_decodes_class_444_263_result_body_variants() {
     assert_eq!(metadata_record, 701);
     assert_eq!(metadata_record_offset, u64_from_index(prefix + 33));
     assert_eq!(metadata_field, [0; 14]);
+    let operation = "f3d BaseFeature 444/263 metadata tail";
+    for (dimension, additional) in [
+        (cadmpeg_core::decode::ResourceDimension::WorkUnits, 14),
+        (cadmpeg_core::decode::ResourceDimension::CollectionItems, 14),
+        (cadmpeg_core::decode::ResourceDimension::RetainedBytes, 14),
+    ] {
+        let refusal = crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
+            exact_base_feature_construction(ctx, &zero_body, &zero_scope).map(|_| ())
+        });
+        assert!(matches!(
+            refusal,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == dimension
+                    && limit.operation == operation
+                    && limit.additional == additional
+        ));
+    }
 
     let mut nonzero_tail = zero_body.clone();
     nonzero_tail[prefix + 41] = 1;
