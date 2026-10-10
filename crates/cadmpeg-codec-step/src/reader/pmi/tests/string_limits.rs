@@ -64,12 +64,40 @@ pmi_string_limit_test!(
     "#1=(DATUM('') SHAPE_ASPECT('datum name','',#2,.F.));#2=ITEM();",
     RetainedBytes
 );
-// Recognized form spelling is scratch; rectangle has nine bytes.
-pmi_string_limit_test!(
-    datum_target_form_refuses_materialized_limit,
-    "#1=DATUM_TARGET('','rectangle',#2,.F.,'');#2=ITEM();",
-    MaterializedBytes
-);
+#[test]
+fn datum_target_form_refuses_materialized_limit() {
+    let source = source("#1=DATUM_TARGET('','rectangle',#2,.F.,'');#2=ITEM();");
+    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("valid datum target exchange");
+    let record = exchange.records().get(&1).expect("datum target");
+    // The nine-byte form copy is below full-decode setup's materialized peak.
+    // Isolate its owner so the limit can refuse this actual scratch boundary.
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        "step_string_text",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+                let mut losses = Vec::new();
+                let reports = std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture")?);
+                let mut storage = ctx.reserve_scoped(0, "form fixture")?;
+                let parameter = super::super::shape_aspect_parameter(ctx, record, 1)?.expect("target form parameter");
+                let form = super::super::super::decode_text_scoped(
+                    &exchange, parameter, (&mut losses, &reports), 1,
+                    ("datum target form", crate::loss::StepLossCode::MetadataStringInvalid),
+                    ctx, &mut storage,
+                )?.expect("decoded form");
+                assert_eq!(super::super::datum_target_form(&form, ctx)?, cadmpeg_ir::pmi::DatumTargetForm::Rectangle);
+                assert!(losses.is_empty());
+                Ok(())
+            })
+        },
+    );
+    assert!(matches!(Err::<(), CodecError>(error),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::MaterializedBytes
+                && refusal.operation == "step_string_text"));
+}
 pmi_string_limit_test!(
     datum_target_identification_refuses_retained_limit,
     "#1=DATUM_TARGET('','',#2,.F.,'identifier');#2=ITEM();",
