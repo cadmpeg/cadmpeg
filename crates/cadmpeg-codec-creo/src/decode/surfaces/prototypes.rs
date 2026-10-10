@@ -149,6 +149,34 @@ fn prototype_vector_array(
     Ok(Some(triples))
 }
 
+fn prototype_mixed_derivatives(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    record: &crate::surface::SurfacePrototypeRecord,
+) -> Result<Option<[[f64; 3]; 4]>, cadmpeg_core::CodecError> {
+    let Some(field) = prototype_field(ctx, record, "end_uv_deriv")? else {
+        return Ok(None);
+    };
+    let crate::surface::SurfaceNamedValue::ScalarArray(array) = &field.value else {
+        return Ok(None);
+    };
+    if array.count() != 3 {
+        return Ok(None);
+    }
+    let Ok(values) = <&[Option<f64>; 12]>::try_from(array.values()) else {
+        return Ok(None);
+    };
+    let mut derivatives = [[0.0; 3]; 4];
+    for (derivative, coordinates) in derivatives.iter_mut().zip(values.chunks_exact(3)) {
+        for (slot, value) in derivative.iter_mut().zip(coordinates) {
+            let Some(value) = *value else {
+                return Ok(None);
+            };
+            *slot = value;
+        }
+    }
+    Ok(Some(derivatives))
+}
+
 fn prototype_parameter_array(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     record: &crate::surface::SurfacePrototypeRecord,
@@ -197,10 +225,7 @@ fn prototype_spline_nurbs(
         let Some(v_derivatives) = prototype_vector_array(ctx, record, "end_v_tangts")? else {
             return Ok(None);
         };
-        let Some(mixed) = prototype_vector_array(ctx, record, "end_uv_deriv")? else {
-            return Ok(None);
-        };
-        let Ok(mixed_derivatives) = <[[f64; 3]; 4]>::try_from(mixed) else {
+        let Some(mixed_derivatives) = prototype_mixed_derivatives(ctx, record)? else {
             return Ok(None);
         };
         crate::interpolation_grid::InterpolationGrid::try_new(

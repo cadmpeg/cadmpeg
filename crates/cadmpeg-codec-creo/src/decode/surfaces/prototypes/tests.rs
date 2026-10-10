@@ -3,6 +3,7 @@ use cadmpeg_test_support::wire;
 mod association;
 mod local_frame;
 mod admission_visits;
+mod mixed_derivatives;
 
 use std::io::Cursor;
 
