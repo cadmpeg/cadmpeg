@@ -124,14 +124,34 @@ mod tests {
     #[test]
     fn numeric_array_admits_only_present_extents_and_runs() {
         let payload = crate::test_support::assert_work_boundaries(
-            &["creo numeric array extent validation", "creo numeric array run validation"],
-            |ctx| NumericPayload::array(ctx, vec![2, 2],
-                vec![NumericRun { count: 2, value: 7 }, NumericRun { count: 2, value: 9 }]),
-        ).expect("complete array");
+            &[
+                "creo numeric array extent validation",
+                "creo numeric array run validation",
+            ],
+            |ctx| {
+                NumericPayload::array(
+                    ctx,
+                    vec![2, 2],
+                    vec![
+                        NumericRun { count: 2, value: 7 },
+                        NumericRun { count: 2, value: 9 },
+                    ],
+                )
+            },
+        )
+        .expect("complete array");
         assert_eq!(payload.element_count(), 4);
-        let NumericPayload::Array(array) = payload else { panic!("expected numeric array"); };
+        let NumericPayload::Array(array) = payload else {
+            panic!("expected numeric array");
+        };
         assert_eq!(array.dimensions(), &[2, 2]);
-        assert_eq!(array.runs(), &[NumericRun { count: 2, value: 7 }, NumericRun { count: 2, value: 9 }]);
+        assert_eq!(
+            array.runs(),
+            &[
+                NumericRun { count: 2, value: 7 },
+                NumericRun { count: 2, value: 9 }
+            ]
+        );
     }
 
     #[test]
@@ -147,16 +167,21 @@ mod tests {
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         assert!(NumericPayload::<u32>::array(&ctx, Vec::new(), Vec::new())
-            .expect("empty lanes do no input-sized work").is_none());
-        let original = ctx.charge_work_limit(1, "seed empty numeric array refusal")
+            .expect("empty lanes do no input-sized work")
+            .is_none());
+        let original = ctx
+            .charge_work_limit(1, "seed empty numeric array refusal")
             .expect_err("zero work cap");
         assert_eq!((original.used, original.additional), (0, 1));
-        assert!(matches!(NumericPayload::<u32>::array(&ctx, Vec::new(), Vec::new()),
-            Err(CodecError::ResourceLimit(refusal)) if refusal == original));
+        assert!(
+            matches!(NumericPayload::<u32>::array(&ctx, Vec::new(), Vec::new()),
+            Err(CodecError::ResourceLimit(refusal)) if refusal == original)
+        );
         let payload = crate::test_support::assert_work_boundaries(
             &["creo numeric array extent validation"],
             |ctx| NumericPayload::<u32>::array(ctx, vec![0], Vec::new()),
-        ).expect("complete zero extent");
+        )
+        .expect("complete zero extent");
         assert_eq!(payload.element_count(), 0);
     }
 }

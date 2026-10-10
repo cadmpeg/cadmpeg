@@ -219,7 +219,9 @@ fn topology_face_ids_refuse_before_distinct_node_insertion() {
 #[test]
 fn named_datum_plane_refuses_before_aggregate_growth() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    let payload = b"\xe0\x01geom_id\0\x02\xe0\x01feat_id\0\x01outline\0\xf9\x02\x03\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0";
+    let payload = b"\xe0\x01geom_id\0\x02\xe0\x01feat_id\0\x01outline\0\xf9\x02\x03\x18\
+        \x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0\x18\x46\x08\0\0\0\0\0\0\x46\
+        \x08\0\0\0\0\0\0";
     let section =
         super::Section::scan_for_test("ActDatums".to_string(), 0, payload.len(), None, payload)
             .expect("bounded datum section");
@@ -397,11 +399,8 @@ fn feature_geometry_table_aggregation_refuses_before_vec_growth() {
         super::feature_geometry_tables(&ctx, &[], std::slice::from_ref(&row))
             .map(|tables| tables.len())
     };
-    let admitted = crate::test_support::allocation_limit_at(
-        ResourceDimension::CollectionItems,
-        None,
-        run,
-    );
+    let admitted =
+        crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, None, run);
     assert_eq!(run(admitted).expect("one aggregate record admitted"), 1);
     let boundary = crate::test_support::allocation_limit_at(
         ResourceDimension::CollectionItems,
@@ -493,11 +492,8 @@ fn revolution_extent_aggregation_refuses_before_vec_growth() {
         )
         .map(|records| records.len())
     };
-    let admitted = crate::test_support::allocation_limit_at(
-        ResourceDimension::CollectionItems,
-        None,
-        run,
-    );
+    let admitted =
+        crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, None, run);
     assert_eq!(run(admitted).expect("one aggregate record admitted"), 1);
     let boundary = crate::test_support::allocation_limit_at(
         ResourceDimension::CollectionItems,
@@ -527,11 +523,8 @@ fn feature_definition_aggregation_refuses_before_vec_growth() {
             .expect("root feature input is admitted");
         super::feature_definitions(&ctx, std::slice::from_ref(&section)).map(|rows| rows.len())
     };
-    let admitted = crate::test_support::allocation_limit_at(
-        ResourceDimension::CollectionItems,
-        None,
-        run,
-    );
+    let admitted =
+        crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, None, run);
     assert_eq!(run(admitted).expect("one aggregate record admitted"), 1);
     let boundary = crate::test_support::allocation_limit_at(
         ResourceDimension::CollectionItems,
@@ -596,8 +589,8 @@ fn depdb_recipe_row_refuses_before_vec_growth() {
         Some("creo DEPDB recipe rows"),
         |items| depdb_recipe_rows_with_limits(items, u64::MAX),
     );
-    let error = depdb_recipe_rows_with_limits(boundary, u64::MAX)
-        .expect_err("row needs a vector item");
+    let error =
+        depdb_recipe_rows_with_limits(boundary, u64::MAX).expect_err("row needs a vector item");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo DEPDB recipe rows"));
@@ -934,12 +927,12 @@ fn feature_row_definition_refuses_before_vec_growth() {
             .expect("feature row is admitted");
         super::feature_row_definitions(&ctx, std::slice::from_ref(&row))
     };
-    let admitted = crate::test_support::allocation_limit_at(
-        ResourceDimension::CollectionItems,
-        None,
-        run,
+    let admitted =
+        crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, None, run);
+    assert_eq!(
+        run(admitted).expect("one aggregate record admitted").len(),
+        1
     );
-    assert_eq!(run(admitted).expect("one aggregate record admitted").len(), 1);
     let boundary = crate::test_support::allocation_limit_at(
         ResourceDimension::CollectionItems,
         Some("creo feature row definitions"),
@@ -1251,8 +1244,8 @@ fn container_framing_misses_and_text_copies_refuse_work() {
 
 mod unit_selection;
 
-mod work_admission;
 mod visit_boundaries;
+mod work_admission;
 
 #[test]
 fn toc_header_utf8_refuses_before_invalid_header() {
@@ -1260,7 +1253,16 @@ fn toc_header_utf8_refuses_before_invalid_header() {
         &[],
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "creo UTF-8 validation",
-        |ctx| super::toc_sections(ctx, &mut ctx.reserve_scoped(0, "test section roster storage").expect("empty storage"), b"#UGC_TOC\xff\n", 0),
+        |ctx| {
+            super::toc_sections(
+                ctx,
+                &mut ctx
+                    .reserve_scoped(0, "test section roster storage")
+                    .expect("empty storage"),
+                b"#UGC_TOC\xff\n",
+                0,
+            )
+        },
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -1335,7 +1337,16 @@ fn section_name_utf8_refuses_work() {
         &[],
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "creo UTF-8 validation",
-        |ctx| super::scan_sections(ctx, &mut ctx.reserve_scoped(0, "test section roster storage").expect("empty storage"), b"\n#Body\n", 0),
+        |ctx| {
+            super::scan_sections(
+                ctx,
+                &mut ctx
+                    .reserve_scoped(0, "test section roster storage")
+                    .expect("empty storage"),
+                b"\n#Body\n",
+                0,
+            )
+        },
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -1350,7 +1361,16 @@ fn legacy_toc_value_utf8_refuses_before_invalid_fields() {
         &[],
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "creo UTF-8 validation",
-        |ctx| super::legacy_toc_sections(ctx, &mut ctx.reserve_scoped(0, "test section roster storage").expect("empty storage"), b"\n@Toc 1 0\n\xff\n", 0),
+        |ctx| {
+            super::legacy_toc_sections(
+                ctx,
+                &mut ctx
+                    .reserve_scoped(0, "test section roster storage")
+                    .expect("empty storage"),
+                b"\n@Toc 1 0\n\xff\n",
+                0,
+            )
+        },
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -1365,7 +1385,16 @@ fn legacy_toc_array_utf8_refuses_before_invalid_fields() {
         &[],
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "creo UTF-8 validation",
-        |ctx| super::legacy_toc_sections(ctx, &mut ctx.reserve_scoped(0, "test section roster storage").expect("empty storage"), b"\n@Toc 1 0\n0 1 ->\n@entry 2 1\n\xff\n", 0),
+        |ctx| {
+            super::legacy_toc_sections(
+                ctx,
+                &mut ctx
+                    .reserve_scoped(0, "test section roster storage")
+                    .expect("empty storage"),
+                b"\n@Toc 1 0\n0 1 ->\n@entry 2 1\n\xff\n",
+                0,
+            )
+        },
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)

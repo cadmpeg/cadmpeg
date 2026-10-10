@@ -113,12 +113,11 @@ fn cmnm_fixed_length_field_rejects_invalid_text() {
     }
 }
 
-
 #[test]
 fn identity_owner_selection_drops_before_reference_index_growth() {
+    use super::super::FeatureIdentityIndex;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_core::CodecError;
-    use super::super::FeatureIdentityIndex;
 
     let row = FeatureRow {
         feature_id: 7,
@@ -142,22 +141,43 @@ fn identity_owner_selection_drops_before_reference_index_growth() {
         policy.limits.max_materialized_bytes = allowed;
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        FeatureIdentityIndex::new(&ctx, std::slice::from_ref(&row), &structural,
-            &[], std::slice::from_ref(&reference)).map(drop)
+        FeatureIdentityIndex::new(
+            &ctx,
+            std::slice::from_ref(&row),
+            &structural,
+            &[],
+            std::slice::from_ref(&reference),
+        )
+        .map(drop)
     };
-    let cap = crate::test_support::allocation_limit_at(ResourceDimension::MaterializedBytes, None, run);
-    let below = crate::test_support::allocation_limit_at(ResourceDimension::MaterializedBytes,
-        Some("creo reference identity kinds"), run);
+    let cap =
+        crate::test_support::allocation_limit_at(ResourceDimension::MaterializedBytes, None, run);
+    let below = crate::test_support::allocation_limit_at(
+        ResourceDimension::MaterializedBytes,
+        Some("creo reference identity kinds"),
+        run,
+    );
     let expected_live = {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_materialized_bytes = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let mut storage = ctx.reserve_scoped(0, "test one identity table").expect("storage");
+        let mut storage = ctx
+            .reserve_scoped(0, "test one identity table")
+            .expect("storage");
         let mut map = std::collections::HashMap::<u32, u8>::new();
-        storage.with_storage(|| ctx.insert_hash_map(&mut map, 7, FeatureIdentityIndex::DATUM,
-            "test one identity table")).expect("one live reference table");
-        let resource = ctx.reserve_scoped_limit(cap + 1, "probe one identity table")
+        storage
+            .with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut map,
+                    7,
+                    FeatureIdentityIndex::DATUM,
+                    "test one identity table",
+                )
+            })
+            .expect("one live reference table");
+        let resource = ctx
+            .reserve_scoped_limit(cap + 1, "probe one identity table")
             .expect_err("read actual admitted storage");
         resource.used
     };
@@ -167,9 +187,15 @@ fn identity_owner_selection_drops_before_reference_index_growth() {
         policy.limits.max_materialized_bytes = allowed;
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let result = ctx.with_scoped_storage("identity selection parent", ||
-            FeatureIdentityIndex::new(&ctx, std::slice::from_ref(&row), &structural,
-                &[], std::slice::from_ref(&reference)));
+        let result = ctx.with_scoped_storage("identity selection parent", || {
+            FeatureIdentityIndex::new(
+                &ctx,
+                std::slice::from_ref(&row),
+                &structural,
+                &[],
+                std::slice::from_ref(&reference),
+            )
+        });
         if allowed == below {
             assert!(matches!(result, Err(CodecError::ResourceLimit(resource))
                 if resource.dimension == ResourceDimension::MaterializedBytes
@@ -178,10 +204,18 @@ fn identity_owner_selection_drops_before_reference_index_growth() {
             continue;
         }
         let (index, storage) = result.expect("owner last-use refund admits reference growth");
-        assert!(index.contains(&ctx, &row, &structural).expect("datum identity"));
+        assert!(index
+            .contains(&ctx, &row, &structural)
+            .expect("datum identity"));
         let mut index = Some(index);
-        let live = if probe_while_live { expected_live } else { drop(index.take()); 0 };
-        let resource = ctx.reserve_scoped_limit(cap + 1, "after identity owner selection")
+        let live = if probe_while_live {
+            expected_live
+        } else {
+            drop(index.take());
+            0
+        };
+        let resource = ctx
+            .reserve_scoped_limit(cap + 1, "after identity owner selection")
             .expect_err("read actual live index storage");
         assert_eq!(resource.dimension, ResourceDimension::MaterializedBytes);
         assert_eq!(resource.used, live);
@@ -193,24 +227,39 @@ fn identity_owner_selection_drops_before_reference_index_growth() {
 #[test]
 fn datum_identity_index_omits_zero_reference_masks() {
     for count in [1, 256] {
-        let rows = (1..=count).map(|feature_id| FeatureRow {
-            feature_id, root_schema_class: Some(SchemaClass::DatumPlane),
-            stream_offset: 0, body: vec![0; 2].try_into().expect("body"),
-            body_offset: 0, offset: 0,
-        }).collect::<Vec<_>>();
-        let references = (1..=count).map(|feature_id| FeatureReferenceName {
-            feature_id, name_bytes: b"arbitrary".to_vec(), own_reference_id: 0,
-            reference_type: 0, offset: 0,
-        }).collect::<Vec<_>>();
+        let rows = (1..=count)
+            .map(|feature_id| FeatureRow {
+                feature_id,
+                root_schema_class: Some(SchemaClass::DatumPlane),
+                stream_offset: 0,
+                body: vec![0; 2].try_into().expect("body"),
+                body_offset: 0,
+                offset: 0,
+            })
+            .collect::<Vec<_>>();
+        let references = (1..=count)
+            .map(|feature_id| FeatureReferenceName {
+                feature_id,
+                name_bytes: b"arbitrary".to_vec(),
+                own_reference_id: 0,
+                reference_type: 0,
+                offset: 0,
+            })
+            .collect::<Vec<_>>();
         crate::decode::with_test_decode_ctx(|ctx| {
             let structural = std::collections::BTreeSet::new();
-            let index = super::super::FeatureIdentityIndex::new(ctx, &rows, &structural, &[], &references)?;
+            let index =
+                super::super::FeatureIdentityIndex::new(ctx, &rows, &structural, &[], &references)?;
             assert!(index.reference_kinds.is_empty());
-            for row in &rows { assert!(!index.contains(ctx, row, &structural)?); }
-            let resource = ctx.reserve_scoped_limit(u64::MAX, "zero-mask index storage")
+            for row in &rows {
+                assert!(!index.contains(ctx, row, &structural)?);
+            }
+            let resource = ctx
+                .reserve_scoped_limit(u64::MAX, "zero-mask index storage")
                 .expect_err("read live index storage");
             assert_eq!(resource.used, 0);
             Ok::<_, cadmpeg_core::CodecError>(())
-        }).expect("zero-mask identities need no surviving index storage");
+        })
+        .expect("zero-mask identities need no surviving index storage");
     }
 }

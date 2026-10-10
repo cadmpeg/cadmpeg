@@ -312,9 +312,13 @@ fn type_10_strings_decode_null_bytes_and_direct_element_arrays() {
             accepted_value_indices: vec![0, 1],
         }
     );
-    let array = serde_json::to_value(&persistence.string_values[4].payload).expect("string array wire");
+    let array =
+        serde_json::to_value(&persistence.string_values[4].payload).expect("string array wire");
     assert_eq!(array["complete"], true);
-    assert_eq!(array["values"].as_array().expect("supported values").len(), 2);
+    assert_eq!(
+        array["values"].as_array().expect("supported values").len(),
+        2
+    );
     let StringPayload::Scalar { value } = &persistence.string_values[3].payload else {
         panic!("byte string scalar");
     };
@@ -331,8 +335,11 @@ fn type_10_strings_retain_incomplete_arrays_and_withhold_continuations() {
 
     assert_eq!(persistence.string_values.len(), 1);
     assert_eq!(persistence.incomplete_string_array_count, 1);
-    assert_eq!(serde_json::to_value(&persistence.string_values[0].payload)
-        .expect("incomplete array wire")["complete"], false);
+    assert_eq!(
+        serde_json::to_value(&persistence.string_values[0].payload).expect("incomplete array wire")
+            ["complete"],
+        false
+    );
     assert_eq!(persistence.unresolved_string_value_count, 1);
     assert_eq!(
         persistence.string_values[0].payload,
@@ -500,27 +507,39 @@ fn type_0_objects_retain_incomplete_and_opaque_forms() {
 fn rejected_array_dimensions_release_each_candidate() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     for nested in [false, true] {
-        let cap = crate::test_support::allocation_limit_at(ResourceDimension::MaterializedBytes, None, |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_materialized_bytes = cap;
-            policy.limits.max_retained_bytes = 0;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            super::super::array_dimensions(&ctx, b"[1]x")
-        });
+        let cap = crate::test_support::allocation_limit_at(
+            ResourceDimension::MaterializedBytes,
+            None,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_materialized_bytes = cap;
+                policy.limits.max_retained_bytes = 0;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                super::super::array_dimensions(&ctx, b"[1]x")
+            },
+        );
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_materialized_bytes = cap;
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let mut storage = ctx.reserve_scoped(0, "rejected dimensions parent").expect("storage");
+        let mut storage = ctx
+            .reserve_scoped(0, "rejected dimensions parent")
+            .expect("storage");
         for _ in 0..256 {
             let candidate = if nested {
                 storage.with_storage(|| super::super::array_dimensions(&ctx, b"[1]x"))
-            } else { super::super::array_dimensions(&ctx, b"[1]x") };
-            assert_eq!(candidate.expect("rejected dimension backing released"), None);
+            } else {
+                super::super::array_dimensions(&ctx, b"[1]x")
+            };
+            assert_eq!(
+                candidate.expect("rejected dimension backing released"),
+                None
+            );
         }
-        let resource = ctx.reserve_scoped_limit(u64::MAX, "rejected dimensions release")
+        let resource = ctx
+            .reserve_scoped_limit(u64::MAX, "rejected dimensions release")
             .expect_err("read live storage");
         assert_eq!(resource.used, 0);
     }
@@ -530,25 +549,40 @@ fn rejected_array_dimensions_release_each_candidate() {
 fn rejected_numeric_continuations_release_each_candidate() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     let bytes = b"$7,invalid";
-    let cap = crate::test_support::allocation_limit_at(ResourceDimension::MaterializedBytes, None, |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = cap;
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        super::super::continuation_numeric_runs(&ctx, bytes, super::super::signed_integer)
-    });
+    let cap = crate::test_support::allocation_limit_at(
+        ResourceDimension::MaterializedBytes,
+        None,
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            policy.limits.max_retained_bytes = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            super::super::continuation_numeric_runs(&ctx, bytes, super::super::signed_integer)
+        },
+    );
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = cap;
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let mut storage = ctx.reserve_scoped(0, "rejected numeric parent").expect("storage");
+    let mut storage = ctx
+        .reserve_scoped(0, "rejected numeric parent")
+        .expect("storage");
     for _ in 0..256 {
-        assert_eq!(storage.with_storage(|| super::super::continuation_numeric_runs(
-            &ctx, bytes, super::super::signed_integer)).expect("rejected runs release"), None);
+        assert_eq!(
+            storage
+                .with_storage(|| super::super::continuation_numeric_runs(
+                    &ctx,
+                    bytes,
+                    super::super::signed_integer
+                ))
+                .expect("rejected runs release"),
+            None
+        );
     }
-    let resource = ctx.reserve_scoped_limit(u64::MAX, "rejected continuation release")
+    let resource = ctx
+        .reserve_scoped_limit(u64::MAX, "rejected continuation release")
         .expect_err("read live storage");
     assert_eq!(resource.used, 0);
 }
@@ -557,31 +591,57 @@ fn rejected_numeric_continuations_release_each_candidate() {
 fn rejected_numeric_payloads_release_dimensions_and_runs() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     for continuation in [false, true] {
-        let row = if continuation { "0 1 [3]\n$7,8,\n" } else { "0 1 [1]\n1 1 2*7\n" };
+        let row = if continuation {
+            "0 1 [3]\n$7,8,\n"
+        } else {
+            "0 1 [1]\n1 1 2*7\n"
+        };
         let bytes = format!("@numbers 1 1\n{}", row.repeat(256)).into_bytes();
-        let scope = crate::decode::with_test_decode_ctx(|ctx|
-            super::super::scan_scope(ctx, &bytes, 0..bytes.len())).expect("synthetic scope");
+        let scope = crate::decode::with_test_decode_ctx(|ctx| {
+            super::super::scan_scope(ctx, &bytes, 0..bytes.len())
+        })
+        .expect("synthetic scope");
         let parents = std::collections::HashMap::new();
-        let cap = crate::test_support::allocation_limit_at(ResourceDimension::MaterializedBytes, None, |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_materialized_bytes = cap;
-            policy.limits.max_retained_bytes = 0;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            super::super::numeric_records(&ctx, &bytes, std::slice::from_ref(&scope),
-                super::super::ValueKind::INTEGER, super::super::signed_integer, &parents)
-        });
+        let cap = crate::test_support::allocation_limit_at(
+            ResourceDimension::MaterializedBytes,
+            None,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_materialized_bytes = cap;
+                policy.limits.max_retained_bytes = 0;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                super::super::numeric_records(
+                    &ctx,
+                    &bytes,
+                    std::slice::from_ref(&scope),
+                    super::super::ValueKind::INTEGER,
+                    super::super::signed_integer,
+                    &parents,
+                )
+            },
+        );
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_materialized_bytes = cap;
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let result = super::super::numeric_records(&ctx, &bytes, std::slice::from_ref(&scope),
-            super::super::ValueKind::INTEGER, super::super::signed_integer, &parents)
-            .expect("rejected payloads refund scratch");
+        let result = super::super::numeric_records(
+            &ctx,
+            &bytes,
+            std::slice::from_ref(&scope),
+            super::super::ValueKind::INTEGER,
+            super::super::signed_integer,
+            &parents,
+        )
+        .expect("rejected payloads refund scratch");
         assert!(result.rows.is_empty());
-        assert_eq!(result.unresolved_count, if continuation { 256 } else { 512 });
-        let resource = ctx.reserve_scoped_limit(u64::MAX, "numeric payload release")
+        assert_eq!(
+            result.unresolved_count,
+            if continuation { 256 } else { 512 }
+        );
+        let resource = ctx
+            .reserve_scoped_limit(u64::MAX, "numeric payload release")
             .expect_err("read live backing");
         assert_eq!(resource.used, 0);
     }

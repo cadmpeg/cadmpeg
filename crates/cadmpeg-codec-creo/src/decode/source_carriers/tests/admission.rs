@@ -20,14 +20,20 @@ fn source_sketch_geometry_refuses_nurbs_copy_limit() {
         .expect("fixture pcurve construction admission")
         .expect("source NURBS"),
     );
-    let copy = crate::test_support::assert_refusal_order(ResourceDimension::CollectionItems,
-        &["creo source sketch geometry copy", "creo source sketch geometry copy"], |cap| {
+    let copy = crate::test_support::assert_refusal_order(
+        ResourceDimension::CollectionItems,
+        &[
+            "creo source sketch geometry copy",
+            "creo source sketch geometry copy",
+        ],
+        |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_collection_items = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
             geometry.try_clone_for_decode(&ctx, "creo source sketch geometry copy")
-        });
+        },
+    );
     assert_eq!(copy, geometry);
 }
 
@@ -48,17 +54,27 @@ fn source_sketch_geometry_refuses_text_and_native_retained_limits() {
         cadmpeg_core::text::NonBlankString::try_from("native").expect("native kind"),
     );
     for (geometry, operations) in [
-        (&text, ["creo source sketch geometry copy", "creo source sketch geometry copy"].as_slice()),
+        (
+            &text,
+            [
+                "creo source sketch geometry copy",
+                "creo source sketch geometry copy",
+            ]
+            .as_slice(),
+        ),
         (&native, ["creo source sketch geometry copy"].as_slice()),
     ] {
-        let copy = crate::test_support::assert_refusal_order(ResourceDimension::RetainedBytes,
-            operations, |cap| {
+        let copy = crate::test_support::assert_refusal_order(
+            ResourceDimension::RetainedBytes,
+            operations,
+            |cap| {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_retained_bytes = cap;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
                 geometry.try_clone_for_decode(&ctx, "creo source sketch geometry copy")
-            });
+            },
+        );
         assert_eq!(&copy, geometry);
     }
 }
@@ -72,8 +88,14 @@ fn source_sketch_geometry_refuses_external_reference_copies() {
     })
     .expect("external source geometry");
     for (dimension, operations) in [
-        (ResourceDimension::CollectionItems, ["creo source sketch geometry copy"].as_slice()),
-        (ResourceDimension::RetainedBytes, ["creo source sketch geometry copy"; 5].as_slice()),
+        (
+            ResourceDimension::CollectionItems,
+            ["creo source sketch geometry copy"].as_slice(),
+        ),
+        (
+            ResourceDimension::RetainedBytes,
+            ["creo source sketch geometry copy"; 5].as_slice(),
+        ),
     ] {
         let copy = crate::test_support::assert_refusal_order(dimension, operations, |cap| {
             let arena = DecodeArena::new();

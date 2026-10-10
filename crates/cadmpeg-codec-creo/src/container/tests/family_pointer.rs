@@ -18,8 +18,9 @@ fn assert_bounded_pointer(payload: &[u8], completion: &[u8], expected: Option<Fa
         bytes.extend_from_slice(POINTER_LABEL);
         bytes.push(0xe1);
         bytes.extend(std::iter::repeat_n(b'x', tail_len));
-        let section = Section::scan_for_test("FamilyInf".into(), PREFIX.len(), section_end,
-            None, &bytes).expect("bounded family section");
+        let section =
+            Section::scan_for_test("FamilyInf".into(), PREFIX.len(), section_end, None, &bytes)
+                .expect("bounded family section");
         let expected = expected.map(|pointer| FamilyTableRecord {
             pointer,
             offset: PREFIX.len() + HEADER.len() + POINTER_LABEL.len(),
@@ -35,9 +36,16 @@ fn assert_bounded_pointer(payload: &[u8], completion: &[u8], expected: Option<Fa
         policy.limits.max_retained_bytes = 0;
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        assert_eq!(family_table(&ctx, std::slice::from_ref(&section)).expect("borrowed pointer search"), expected);
-        let refusal = crate::test_support::last_refusal_at(&[], ResourceDimension::WorkUnits,
-            "find Creo family table", |ctx| family_table(ctx, std::slice::from_ref(&section)));
+        assert_eq!(
+            family_table(&ctx, std::slice::from_ref(&section)).expect("borrowed pointer search"),
+            expected
+        );
+        let refusal = crate::test_support::last_refusal_at(
+            &[],
+            ResourceDimension::WorkUnits,
+            "find Creo family table",
+            |ctx| family_table(ctx, std::slice::from_ref(&section)),
+        );
         let cadmpeg_core::CodecError::ResourceLimit(refusal) = refusal else {
             panic!("family pointer work boundary");
         };

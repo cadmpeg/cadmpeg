@@ -5,7 +5,10 @@ use crate::test_support::{build_toc_section_prt, jpeg_payload, unix_compress_lit
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 fn assert_positive_work(scan: &ContainerScan<'_>, operations: &[&str]) {
-    assert!(crate::test_support::assert_work_boundaries(operations, |ctx| has_thumbnail(ctx, scan)));
+    assert!(crate::test_support::assert_work_boundaries(
+        operations,
+        |ctx| has_thumbnail(ctx, scan)
+    ));
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = 0;
@@ -45,10 +48,10 @@ fn raw_jpeg_witness_skips_unrelated_expanded_sections() {
     assert_eq!(scan.framing.expanded_sections.len(), 1);
     assert_eq!(scan.framing.expanded_sections[0].name, "Body");
     assert_eq!(scan.framing.expanded_sections[0].data, b"ABC");
-    assert_positive_work(&scan, &[
-        "creo thumbnail section selection",
-        "find Creo thumbnail",
-    ]);
+    assert_positive_work(
+        &scan,
+        &["creo thumbnail section selection", "find Creo thumbnail"],
+    );
 }
 
 #[test]
@@ -61,10 +64,13 @@ fn compressed_jpeg_witness_uses_expanded_payload_search() {
     assert_eq!(scan.framing.expanded_sections.len(), 1);
     assert_eq!(scan.framing.expanded_sections[0].name, NAME);
     assert_eq!(scan.framing.expanded_sections[0].data, jpeg);
-    assert_positive_work(&scan, &[
-        "creo thumbnail section selection",
-        "creo expanded section selection",
-        "creo expanded section name comparison",
-        "find Creo expanded thumbnail",
-    ]);
+    assert_positive_work(
+        &scan,
+        &[
+            "creo thumbnail section selection",
+            "creo expanded section selection",
+            "creo expanded section name comparison",
+            "find Creo expanded thumbnail",
+        ],
+    );
 }

@@ -2,12 +2,11 @@
 use super::super::{sketch_records, sketch_section_point_records};
 use crate::decode::native_records::CreoSketchSectionPoint;
 use crate::feature::definitions::{
-    DefinitionIdentity, FeatureDefinition, FeatureSectionPoint, FeatureVariableRow, FeatureVariableTable,
-    ScalarLane, VariableType,
+    DefinitionIdentity, FeatureDefinition, FeatureSectionPoint, FeatureVariableRow,
+    FeatureVariableTable, ScalarLane, VariableType,
 };
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
-
 
 fn definition(with_variables: bool) -> FeatureDefinition {
     FeatureDefinition {
@@ -27,12 +26,36 @@ fn definition(with_variables: bool) -> FeatureDefinition {
                     offset: 2,
                 },
                 vec![
-                    FeatureSectionPoint { point_id: 7, u: Some(1.0), v: Some(2.0) },
-                    FeatureSectionPoint { point_id: 3, u: Some(3.0), v: Some(4.0) },
-                    FeatureSectionPoint { point_id: 4, u: Some(2.0), v: None },
-                    FeatureSectionPoint { point_id: 5, u: None, v: Some(6.0) },
-                    FeatureSectionPoint { point_id: 6, u: None, v: None },
-                    FeatureSectionPoint { point_id: 7, u: Some(2.0), v: Some(2.0) },
+                    FeatureSectionPoint {
+                        point_id: 7,
+                        u: Some(1.0),
+                        v: Some(2.0),
+                    },
+                    FeatureSectionPoint {
+                        point_id: 3,
+                        u: Some(3.0),
+                        v: Some(4.0),
+                    },
+                    FeatureSectionPoint {
+                        point_id: 4,
+                        u: Some(2.0),
+                        v: None,
+                    },
+                    FeatureSectionPoint {
+                        point_id: 5,
+                        u: None,
+                        v: Some(6.0),
+                    },
+                    FeatureSectionPoint {
+                        point_id: 6,
+                        u: None,
+                        v: None,
+                    },
+                    FeatureSectionPoint {
+                        point_id: 7,
+                        u: Some(2.0),
+                        v: Some(2.0),
+                    },
                 ],
             )
         }),
@@ -69,11 +92,21 @@ fn sketch_point_absence_is_free_and_preserves_original_refusal() {
     policy.limits.max_materialized_bytes = 0;
     policy.limits.max_recursion_depth = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let mut storage = ctx.reserve_scoped(0, "point projection storage").expect("empty storage");
-    assert!(sketch_section_point_records(&ctx, &definition, &mut storage).expect("absent variables").is_empty());
-    let original = ctx.charge_collection_items_limit(1, "after absent sketch points").expect_err("zero items");
-    assert!(matches!(sketch_section_point_records(&ctx, &definition, &mut storage),
-        Err(CodecError::ResourceLimit(actual)) if actual == original));
+    let mut storage = ctx
+        .reserve_scoped(0, "point projection storage")
+        .expect("empty storage");
+    assert!(
+        sketch_section_point_records(&ctx, &definition, &mut storage)
+            .expect("absent variables")
+            .is_empty()
+    );
+    let original = ctx
+        .charge_collection_items_limit(1, "after absent sketch points")
+        .expect_err("zero items");
+    assert!(
+        matches!(sketch_section_point_records(&ctx, &definition, &mut storage),
+        Err(CodecError::ResourceLimit(actual)) if actual == original)
+    );
     assert_eq!(ctx.resource_refusal(), Some(original));
 }
 
@@ -86,46 +119,71 @@ fn sketch_point_indices_release_while_projection_backing_stays_live() {
             variables.rows.truncate(2);
             variables.declared_count = 2;
         }
-        let cap = crate::test_support::allocation_limit_at(ResourceDimension::MaterializedBytes, None, |allowed| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_materialized_bytes = allowed;
-            policy.limits.max_retained_bytes = 0;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let mut storage = ctx.reserve_scoped(0, "point projection storage")?;
-            sketch_section_point_records(&ctx, &definition, &mut storage)
-        });
+        let cap = crate::test_support::allocation_limit_at(
+            ResourceDimension::MaterializedBytes,
+            None,
+            |allowed| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_materialized_bytes = allowed;
+                policy.limits.max_retained_bytes = 0;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                let mut storage = ctx.reserve_scoped(0, "point projection storage")?;
+                sketch_section_point_records(&ctx, &definition, &mut storage)
+            },
+        );
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 0;
         policy.limits.max_materialized_bytes = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let mut storage = ctx.reserve_scoped(0, "point projection storage").expect("storage");
-        let points = sketch_section_point_records(&ctx, &definition, &mut storage).expect("scoped points");
+        let mut storage = ctx
+            .reserve_scoped(0, "point projection storage")
+            .expect("storage");
+        let points =
+            sketch_section_point_records(&ctx, &definition, &mut storage).expect("scoped points");
         assert_eq!(points.len(), point_count);
         if point_count == 5 {
-            assert_eq!(serde_json::to_value(&points).expect("serialize"), expected_points());
+            assert_eq!(
+                serde_json::to_value(&points).expect("serialize"),
+                expected_points()
+            );
         } else {
-            assert_eq!(serde_json::to_value(&points).expect("serialize"),
-                serde_json::json!([{"point_id": 7, "state": "resolved", "u": 1.0, "v": 2.0}]));
+            assert_eq!(
+                serde_json::to_value(&points).expect("serialize"),
+                serde_json::json!([{"point_id": 7, "state": "resolved", "u": 1.0, "v": 2.0}])
+            );
         }
-        let backing = u64::try_from(points.capacity() * std::mem::size_of::<CreoSketchSectionPoint>())
-            .expect("actual point backing");
-        let remaining = ctx.reserve_scoped(cap.checked_sub(backing).expect("peak includes output"),
-            "point scratch released").expect("only output backing remains");
+        let backing =
+            u64::try_from(points.capacity() * std::mem::size_of::<CreoSketchSectionPoint>())
+                .expect("actual point backing");
+        let remaining = ctx
+            .reserve_scoped(
+                cap.checked_sub(backing).expect("peak includes output"),
+                "point scratch released",
+            )
+            .expect("only output backing remains");
         drop(remaining);
         drop(points);
         drop(storage);
-        ctx.reserve_scoped(cap, "point projection released").expect("all backing released");
+        ctx.reserve_scoped(cap, "point projection released")
+            .expect("all backing released");
     }
 }
 
 #[test]
 fn sketch_point_collection_prefixes_preserve_exact_original_refusal() {
     let definition = definition(true);
-    let points = crate::test_support::assert_refusal_order(ResourceDimension::CollectionItems,
-        &["creo reconciled point ID nodes", "creo reconciled point nodes", "creo ambiguous point nodes",
-            "creo sketch section point ID nodes", "creo sketch section point records"], |cap| {
+    let points = crate::test_support::assert_refusal_order(
+        ResourceDimension::CollectionItems,
+        &[
+            "creo reconciled point ID nodes",
+            "creo reconciled point nodes",
+            "creo ambiguous point nodes",
+            "creo sketch section point ID nodes",
+            "creo sketch section point records",
+        ],
+        |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_collection_items = cap;
@@ -133,8 +191,12 @@ fn sketch_point_collection_prefixes_preserve_exact_original_refusal() {
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
             let mut storage = ctx.reserve_scoped(0, "point projection storage")?;
             sketch_section_point_records(&ctx, &definition, &mut storage)
-        });
-    assert_eq!(serde_json::to_value(&points).expect("serialize"), expected_points());
+        },
+    );
+    assert_eq!(
+        serde_json::to_value(&points).expect("serialize"),
+        expected_points()
+    );
 }
 
 #[test]
@@ -171,11 +233,15 @@ fn sketch_projection_keeps_resolved_point_maps_scoped() {
     assert_eq!(records.len(), 1);
     let value = serde_json::to_value(&records[0]).expect("serialize");
     assert_eq!(value["section_points"], expected_points());
-    assert_eq!(value["variables"][12]["resolved_value"], serde_json::json!(2.0));
+    assert_eq!(
+        value["variables"][12]["resolved_value"],
+        serde_json::json!(2.0)
+    );
     assert!(value["variables"][13]["resolved_value"].is_null());
     drop(records);
     drop(storage);
-    let resource = ctx.reserve_scoped_limit(u64::MAX, "sketch projection released")
+    let resource = ctx
+        .reserve_scoped_limit(u64::MAX, "sketch projection released")
         .expect_err("probe released scratch and output");
     assert_eq!(resource.used, 0);
 }
@@ -188,14 +254,20 @@ fn sketch_equation_projection_is_scoped_and_preserves_wire_rows() {
         \xe0\x08arg_arr\0\xf8\x02\x2f\x08\
         \xe0\x01aux_data\0\xf6\
         \xf1\xf7\x80\x9f\xe2";
-    let bodies = [b"\x01\x04\x11\x12\xf6\xe2".as_slice(),
+    let bodies = [
+        b"\x01\x04\x11\x12\xf6\xe2".as_slice(),
         b"\x02\x05\xf8\x04\x13\xe4\xe5\xf6\xe2".as_slice(),
-        b"\x03\x06\xf8\x02\xf6\x14\xf6\xe2".as_slice()];
+        b"\x03\x06\xf8\x02\xf6\x14\xf6\xe2".as_slice(),
+    ];
     let mut definition = definition(true);
     definition.offset = 100;
     definition.body = prefix.to_vec();
-    for body in bodies { definition.body.extend_from_slice(body); }
-    definition.body.extend_from_slice(b"\xe0\x02scale\0\x99\x88");
+    for body in bodies {
+        definition.body.extend_from_slice(body);
+    }
+    definition
+        .body
+        .extend_from_slice(b"\xe0\x02scale\0\x99\x88");
     let mut scan = crate::test_support::empty_container_scan();
     scan.features.definitions.push(definition);
     let arena = DecodeArena::new();
@@ -206,21 +278,29 @@ fn sketch_equation_projection_is_scoped_and_preserves_wire_rows() {
     assert_eq!(records.len(), 1);
     let wire = serde_json::to_value(&records[0]).expect("sketch wire");
     let equations = wire["equations"].as_array().expect("equation wire array");
-    assert_eq!(equations.capacity(), equations.len(), "known row count reserves wire rows once");
-    assert_eq!(wire["equations"], serde_json::json!([
-        {"equation_id": 1, "function_id": 4, "explicit_argument_count": null,
-         "arguments": [17, 18], "arguments_body": [17, 18], "auxiliary_body": [246],
-         "body": bodies[0], "offset": 100 + prefix.len()},
-        {"equation_id": 2, "function_id": 5, "explicit_argument_count": 4,
-         "arguments": [19, 1, 0, 0], "arguments_body": [19, 228, 229], "auxiliary_body": [246],
-         "body": bodies[1], "offset": 100 + prefix.len() + bodies[0].len()},
-        {"equation_id": 3, "function_id": 6, "explicit_argument_count": 2,
-         "arguments": [null, 20], "arguments_body": [246, 20], "auxiliary_body": [246],
-         "body": bodies[2], "offset": 100 + prefix.len() + bodies[0].len() + bodies[1].len()}
-    ]));
+    assert_eq!(
+        equations.capacity(),
+        equations.len(),
+        "known row count reserves wire rows once"
+    );
+    assert_eq!(
+        wire["equations"],
+        serde_json::json!([
+            {"equation_id": 1, "function_id": 4, "explicit_argument_count": null,
+             "arguments": [17, 18], "arguments_body": [17, 18], "auxiliary_body": [246],
+             "body": bodies[0], "offset": 100 + prefix.len()},
+            {"equation_id": 2, "function_id": 5, "explicit_argument_count": 4,
+             "arguments": [19, 1, 0, 0], "arguments_body": [19, 228, 229], "auxiliary_body": [246],
+             "body": bodies[1], "offset": 100 + prefix.len() + bodies[0].len()},
+            {"equation_id": 3, "function_id": 6, "explicit_argument_count": 2,
+             "arguments": [null, 20], "arguments_body": [246, 20], "auxiliary_body": [246],
+             "body": bodies[2], "offset": 100 + prefix.len() + bodies[0].len() + bodies[1].len()}
+        ])
+    );
     drop(records);
     drop(storage);
-    let resource = ctx.reserve_scoped_limit(u64::MAX, "equation projection release")
+    let resource = ctx
+        .reserve_scoped_limit(u64::MAX, "equation projection release")
         .expect_err("read live backing");
     assert_eq!(resource.used, 0);
 }

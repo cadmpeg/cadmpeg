@@ -101,30 +101,39 @@ fn parent_feature_arrays_reject_truncated_counts_and_entries() {
 #[test]
 fn loop_array_section_duplicates_copy_only_surviving_names() {
     let data = b"loop_array\0";
-let sections =
+    let sections =
         [Section::scan_for_test("VisibGeom".into(), 0, data.len(), None, data).expect("section")];
-let selected = crate::decode::with_test_decode_ctx(|ctx|
-super::super::loop_array_sections(ctx, &sections, &sections, &[]))
-.expect("two identical loop section witnesses");
-assert_eq!(selected.len(), 1);
-assert_eq!(selected[0].section.raw_name(), "VisibGeom");
-assert_eq!(selected[0].section.offset(), 0);
-assert_eq!(selected[0].region, data);
+    let selected = crate::decode::with_test_decode_ctx(|ctx| {
+        super::super::loop_array_sections(ctx, &sections, &sections, &[])
+    })
+    .expect("two identical loop section witnesses");
+    assert_eq!(selected.len(), 1);
+    assert_eq!(selected[0].section.raw_name(), "VisibGeom");
+    assert_eq!(selected[0].section.offset(), 0);
+    assert_eq!(selected[0].region, data);
     let retained = selected[0].section.raw_name.capacity()
         + selected.capacity() * std::mem::size_of::<super::super::ScannedSection<'_>>();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_retained_bytes = u64::try_from(retained).expect("one surviving name");
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let bounded = super::super::loop_array_sections(&ctx, &sections, &sections, &[])
         .expect("duplicate selections copy only one name");
     assert_eq!(bounded.len(), 1);
-    assert_eq!(bounded[0].section.raw_name(), selected[0].section.raw_name());
+    assert_eq!(
+        bounded[0].section.raw_name(),
+        selected[0].section.raw_name()
+    );
     assert_eq!(bounded[0].section.offset(), selected[0].section.offset());
     assert_eq!(bounded[0].region, selected[0].region);
-    let resource = ctx.charge_retained_limit(u64::MAX, "loop section live names").expect_err("read live names");
-    assert_eq!(resource.used, u64::try_from(retained).expect("actual vector and name backing"));
-
+    let resource = ctx
+        .charge_retained_limit(u64::MAX, "loop section live names")
+        .expect_err("read live names");
+    assert_eq!(
+        resource.used,
+        u64::try_from(retained).expect("actual vector and name backing")
+    );
 }
 
 #[test]
@@ -179,7 +188,13 @@ fn appended_legacy_pcurve_deduplication_refuses_work() {
             }];
             let original = pcurves.clone();
             pcurves.push(pcurves[0].clone());
-            super::super::append_legacy_curve_witnesses(ctx, &mut topology, &mut pcurves, &[], &[])?;
+            super::super::append_legacy_curve_witnesses(
+                ctx,
+                &mut topology,
+                &mut pcurves,
+                &[],
+                &[],
+            )?;
             assert!(topology.is_empty());
             assert_eq!(pcurves, original);
             Ok::<_, CodecError>(())
@@ -343,23 +358,50 @@ fn completed_feature_ids_retain_only_the_ordered_output() {
 #[test]
 fn legacy_toc_fixed_count_prefix_is_free() {
     let bytes = b"\n@Toc 1 0\n0 1 ->\n@entry 2 10\n1 2 [1]\n";
-    assert!(crate::decode::with_test_decode_ctx(|ctx| super::super::legacy_toc_sections(
-        ctx, &mut ctx.reserve_scoped(0, "test section roster storage")?, bytes, 0))
-        .expect("valid count with absent rows").is_empty());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| super::super::legacy_toc_sections(
+            ctx,
+            &mut ctx.reserve_scoped(0, "test section roster storage")?,
+            bytes,
+            0
+        ))
+        .expect("valid count with absent rows")
+        .is_empty()
+    );
     let malformed = b"\n@Toc 1 0\n0 1 ->\n@entry 2 10\n1 2 [x\n";
-    let refusal = crate::test_support::last_refusal_at(&[],
-        cadmpeg_core::decode::ResourceDimension::WorkUnits, "creo text field boundary", |ctx|
-        super::super::legacy_toc_sections(ctx,
-            &mut ctx.reserve_scoped(0, "test section roster storage")?, malformed, 0));
-    let cadmpeg_core::CodecError::ResourceLimit(refusal) = refusal else { panic!("field boundary"); };
+    let refusal = crate::test_support::last_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo text field boundary",
+        |ctx| {
+            super::super::legacy_toc_sections(
+                ctx,
+                &mut ctx.reserve_scoped(0, "test section roster storage")?,
+                malformed,
+                0,
+            )
+        },
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(refusal) = refusal else {
+        panic!("field boundary");
+    };
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = refusal.used.checked_add(refusal.additional).expect("field work");
+    policy.limits.max_work_units = refusal
+        .used
+        .checked_add(refusal.additional)
+        .expect("field work");
     policy.limits.max_materialized_bytes = 0;
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let mut storage = ctx.reserve_scoped(0, "test section roster storage").expect("storage");
-    assert!(super::super::legacy_toc_sections(&ctx, &mut storage, malformed, 0)
-        .expect("fixed count prefix adds no work").is_empty());
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let mut storage = ctx
+        .reserve_scoped(0, "test section roster storage")
+        .expect("storage");
+    assert!(
+        super::super::legacy_toc_sections(&ctx, &mut storage, malformed, 0)
+            .expect("fixed count prefix adds no work")
+            .is_empty()
+    );
 }

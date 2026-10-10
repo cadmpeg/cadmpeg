@@ -1005,13 +1005,18 @@ fn source_sketch_nurbs_copy_refuses_knots_and_poles_separately() {
         );
         let copied = crate::test_support::assert_refusal_order(
             cadmpeg_core::decode::ResourceDimension::CollectionItems,
-            &["creo source sketch geometry copy", "creo source sketch geometry copy"], |cap| {
+            &[
+                "creo source sketch geometry copy",
+                "creo source sketch geometry copy",
+            ],
+            |cap| {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_collection_items = cap;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
                 geometry.try_clone_for_decode(&ctx, "creo source sketch geometry copy")
-            });
+            },
+        );
         assert_eq!(copied, geometry);
     }
 }

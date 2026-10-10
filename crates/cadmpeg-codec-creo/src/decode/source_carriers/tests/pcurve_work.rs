@@ -21,13 +21,20 @@ fn pcurve_normalization_propagates_owned_scaling_work_refusal() {
         .expect("fixture pcurve construction admission")
         .expect("curve"),
     };
-    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::WorkUnits,
-        "IR pcurve pole coordinate scaling work", |ctx| {
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "IR pcurve pole coordinate scaling work",
+        |ctx| {
             let mut ir = CadIr::empty();
-            let result = SourceUnitCarriers::push_pcurve(ctx, &mut ir, pcurve.clone(), Some([2.0, 3.0]));
-            if result.is_err() { assert!(ir.model.pcurves.is_empty()); }
+            let result =
+                SourceUnitCarriers::push_pcurve(ctx, &mut ir, pcurve.clone(), Some([2.0, 3.0]));
+            if result.is_err() {
+                assert!(ir.model.pcurves.is_empty());
+            }
             result
-        });
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.operation == "IR pcurve pole coordinate scaling work"));
     let mut ir = CadIr::empty();
