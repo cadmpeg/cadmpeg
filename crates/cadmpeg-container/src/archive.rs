@@ -324,6 +324,11 @@ impl<'a, 'ctx> ArchiveSnapshot<'a, 'ctx> {
         ctx: &DecodeContext<'_>,
         name: &str,
     ) -> Result<Option<&EntryRecord>, CodecError> {
+        Ok(self.ordinal(ctx, name)?.map(|index| &self.entries[index]))
+    }
+
+    /// Finds the central-directory ordinal of an exact archive name.
+    fn ordinal(&self, ctx: &DecodeContext<'_>, name: &str) -> Result<Option<usize>, CodecError> {
         let found = ctx.binary_search_by(
             &self.by_name,
             |&index| {
@@ -335,56 +340,48 @@ impl<'a, 'ctx> ArchiveSnapshot<'a, 'ctx> {
             },
             "ZIP entry lookup",
         )?;
-        Ok(found
-            .ok()
-            .map(|position| &self.entries[self.by_name[position]]))
+        Ok(found.ok().map(|position| self.by_name[position]))
     }
 
     /// Opens an exact entry name as a borrowed stored slice or budgeted expanded view.
     pub fn open(&self, ctx: &DecodeContext<'a>, name: &str) -> Result<View<'a>, CodecError> {
-        let Some(entry) = self.entry(ctx, name)? else {
+        let Some(index) = self.ordinal(ctx, name)? else {
             return Err(structural_error(
                 ctx,
                 format_args!("ZIP entry {name} is absent"),
             ));
         };
+        let entry = &self.entries[index];
         let end = entry.data_end()?;
         let archive_start = cadmpeg_core::decode::u64_from_index(self.root.start());
         let absolute_start = archive_start.checked_add(entry.data_start).ok_or_else(|| {
-            structural_error(
-                ctx,
-                format_args!("ZIP data range overflows for {}", entry.name),
-            )
+            CodecError::malformed(format_args!("ZIP data range overflows for entry {index}"))
         })?;
         let absolute_end = archive_start.checked_add(end).ok_or_else(|| {
-            structural_error(
-                ctx,
-                format_args!("ZIP data range overflows for {}", entry.name),
-            )
+            CodecError::malformed(format_args!("ZIP data range overflows for entry {index}"))
         })?;
         let range = ByteRange {
             start: absolute_start,
             end: absolute_end,
         };
         match entry.compression {
-            ZipCompression::Stored => self.open_stored(ctx, entry, range),
+            ZipCompression::Stored => self.open_stored(ctx, index, entry, range),
             ZipCompression::Deflate => {
-                let source = self.compressed_source(ctx, entry, range)?;
+                let source = self.compressed_source(index, range)?;
                 ctx.charge_work(
                     cadmpeg_core::decode::u64_from_index(source.window().len()),
                     "ZIP compressed input",
                 )?;
                 let mut decoder = flate2::read::DeflateDecoder::new(source.window());
-                let view = Self::open_expanded(ctx, entry, |chunk| {
+                let view = Self::open_expanded(ctx, index, entry, |chunk| {
                     ctx.charge_work(
                         cadmpeg_core::decode::u64_from_index(chunk.len()),
                         "ZIP expansion step",
                     )?;
                     let read = decoder.read(chunk).map_err(|error| {
-                        structural_error(
-                            ctx,
-                            format_args!("cannot inflate {}: {error}", entry.name),
-                        )
+                        CodecError::malformed(format_args!(
+                            "cannot inflate ZIP entry {index}: {error}"
+                        ))
                     })?;
                     ctx.charge_work(
                         cadmpeg_core::decode::u64_from_index(read),
@@ -401,59 +398,53 @@ impl<'a, 'ctx> ArchiveSnapshot<'a, 'ctx> {
                 Ok(view)
             }
             ZipCompression::Zstd => {
-                let source = self.compressed_source(ctx, entry, range)?;
+                let source = self.compressed_source(index, range)?;
                 let mut decoder = ctx.open_zstd(source)?;
-                Self::open_expanded(ctx, entry, |chunk| decoder.read_chunk(chunk))
+                Self::open_expanded(ctx, index, entry, |chunk| decoder.read_chunk(chunk))
             }
         }
     }
 
-    fn compressed_source(
-        &self,
-        ctx: &DecodeContext<'_>,
-        entry: &EntryRecord,
-        range: ByteRange,
-    ) -> Result<View<'a>, CodecError> {
+    fn compressed_source(&self, index: usize, range: ByteRange) -> Result<View<'a>, CodecError> {
         let start = usize::try_from(range.start)
             .map_err(|_| CodecError::Malformed("ZIP data offset does not fit memory".into()))?;
         let end = usize::try_from(range.end)
             .map_err(|_| CodecError::Malformed("ZIP data offset does not fit memory".into()))?;
         self.root.child(start, end).ok_or_else(|| {
-            structural_error(
-                ctx,
-                format_args!("ZIP data range escapes archive for {}", entry.name),
-            )
+            CodecError::malformed(format_args!(
+                "ZIP data range escapes archive for entry {index}"
+            ))
         })
     }
 
     fn open_stored(
         &self,
         ctx: &DecodeContext<'a>,
+        index: usize,
         entry: &EntryRecord,
         range: ByteRange,
     ) -> Result<View<'a>, CodecError> {
-        let view = self.compressed_source(ctx, entry, range)?;
+        let view = self.compressed_source(index, range)?;
         if cadmpeg_core::decode::u64_from_index(view.window().len()) != entry.uncompressed_size {
-            return Err(structural_error(
-                ctx,
-                format_args!("stored size mismatch for {}", entry.name),
-            ));
+            return Err(CodecError::malformed(format_args!(
+                "stored size mismatch for ZIP entry {index}"
+            )));
         }
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(view.window().len()),
             "ZIP payload CRC",
         )?;
         if crc32fast::hash(view.window()) != entry.crc32 {
-            return Err(structural_error(
-                ctx,
-                format_args!("CRC mismatch for {}", entry.name),
-            ));
+            return Err(CodecError::malformed(format_args!(
+                "CRC mismatch for ZIP entry {index}"
+            )));
         }
         ctx.register_slice(self.root, range)
     }
 
     fn open_expanded(
         ctx: &DecodeContext<'a>,
+        index: usize,
         entry: &EntryRecord,
         mut read_chunk: impl FnMut(&mut [u8]) -> Result<usize, CodecError>,
     ) -> Result<View<'a>, CodecError> {
@@ -473,10 +464,9 @@ impl<'a, 'ctx> ArchiveSnapshot<'a, 'ctx> {
             "ZIP payload CRC",
         )?;
         if crc32fast::hash(view.window()) != entry.crc32 {
-            return Err(structural_error(
-                ctx,
-                format_args!("CRC mismatch for {}", entry.name),
-            ));
+            return Err(CodecError::malformed(format_args!(
+                "CRC mismatch for ZIP entry {index}"
+            )));
         }
         Ok(view)
     }
@@ -1657,7 +1647,7 @@ mod tests {
         policy.limits.max_work_units = 2 + 2 * 16 * 1024 + 2 * 4;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("fresh root");
         let mut reader = Cursor::new(b"part");
-        let error = ArchiveSnapshot::open_expanded(&ctx, entry, |chunk| {
+        let error = ArchiveSnapshot::open_expanded(&ctx, 0, entry, |chunk| {
             ctx.charge_work(
                 cadmpeg_core::decode::u64_from_index(chunk.len()),
                 "ZIP expansion step",
