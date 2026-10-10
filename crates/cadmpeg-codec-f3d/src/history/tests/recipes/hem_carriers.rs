@@ -418,8 +418,6 @@ fn hem_geometry_fixture() -> (
 
 mod reached_carrier;
 
-mod empty_geometry;
-
 #[test]
 fn hem_direction_keeps_incident_loops_in_scratch() {
     let (previous, transition, cylinders) = hem_source_fixture();

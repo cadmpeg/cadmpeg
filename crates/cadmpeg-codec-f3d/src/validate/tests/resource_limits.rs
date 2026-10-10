@@ -112,7 +112,8 @@ fn validation_design_header_index_refuses_collection_limit() {
                 }],
                 ..crate::native::F3dNative::default()
             };
-            let error = super::super::Ctx::new(&ir, &native, &ctx).err().unwrap();
+            let context = super::super::Ctx::new(&ir, &native, &ctx).unwrap();
+            let error = context.headers().err().unwrap();
 
             Err::<(), cadmpeg_core::CodecError>(error)
         },
@@ -758,6 +759,7 @@ fn scoped_validation_result_releases_storage_and_spares_retained_budget() {
         policy.limits.max_materialized_bytes = 1 << 20;
         let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut ctx = super::super::Ctx::new(&ir, &native, service).unwrap();
+        ctx.headers().unwrap();
         ctx.decode = &decode;
         let mut findings = Vec::new();
         let (groups, storage) =
