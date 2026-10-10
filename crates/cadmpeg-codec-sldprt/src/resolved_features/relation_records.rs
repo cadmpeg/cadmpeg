@@ -448,11 +448,7 @@ pub(super) fn relation_instances(
     let mut sketch_features = HashSet::new();
     for history in ctx.admit_iter(histories, "index SLDPRT relation records")? {
         for feature in ctx.admit_iter(&history.features, "index SLDPRT relation records")? {
-            if ctx.eq_ignore_ascii_case(
-                feature.xml_tag.as_str(),
-                "Sketch",
-                "match SLDPRT sketch feature tags",
-            )? {
+            if feature.xml_tag.eq_ignore_ascii_case("Sketch") {
                 temporary_storage.with_storage(|| {
                     ctx.insert_hash_set(
                         &mut sketch_features,
@@ -1259,13 +1255,7 @@ pub(super) fn circle_dimension_handle_driver<'a>(
                 next_relation_offset.map_or(class.offset, |limit: u64| limit.min(class.offset)),
             );
         }
-        if class.offset > first.offset
-            && ctx.equal(
-                class.name.as_str(),
-                "sgEntHandle",
-                "match SLDPRT circle handle class",
-            )?
-        {
+        if class.offset > first.offset && class.name == "sgEntHandle" {
             temporary_storage.with_storage(|| {
                 ctx.push_vec(
                     &mut handle_offsets,
@@ -2629,6 +2619,109 @@ mod relation_records_tests {
                 content: Vec::new(),
             }],
         }]
+    }
+
+    #[test]
+    fn circle_handle_literal_pays_only_actual_source_work() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        let mut display = circle_scalar(0, "", FeatureInputScalarRole::Display, None);
+        display.id = "s".into();
+        display.feature_ref = None;
+        let input = lane(
+            vec![class(1, "sgEntHandlf"), class(2, "sgEntHandlg"), class(3, "sgEntHandlh")],
+            vec![display],
+        );
+        let relation = crate::records::FeatureInputRelationInstance {
+            id: "relation".into(), parent: "lane".into(), ordinal: 0, offset: 0,
+            family: FeatureInputRelationFamily::CircleDiameter,
+            class_ref: "class".into(), feature_ref: "sketch".into(),
+            scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+                vec!["s".into()], None, Some("s".into()),
+            ).unwrap(),
+            operands: Vec::new(),
+        };
+        // One scalar visit; singleton sort 1 + 1 + (8 + 2*8)*2*8;
+        // one lookup visit and two ID bytes; three classes; one driver visit.
+        const WORK: u64 = 394;
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 32; // four borrowed scalar slots
+        policy.limits.max_collection_items = 64;
+        policy.limits.max_work_units = WORK * 64;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        for _ in 0..64 {
+            assert!(circle_dimension_handle_driver(&ctx, &relation, &input).unwrap().is_none());
+        }
+        assert_eq!(ctx.resource_refusal(), None);
+
+        // The core probe searches only budgets marked unlimited. Keep this
+        // independent negative control separate from the finite-work proof.
+        let mut probe_policy = policy.clone();
+        probe_policy.limits.max_work_units = u64::MAX;
+        let probe_arena = DecodeArena::new();
+        let (probe_ctx, _) = DecodeContext::from_root_bytes(&[], &probe_arena, &probe_policy).unwrap();
+        let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            ResourceDimension::WorkUnits, "match SLDPRT circle handle class", None,
+        );
+        assert!(circle_dimension_handle_driver(&probe_ctx, &relation, &input).unwrap().is_none());
+        assert_eq!(probe_ctx.resource_refusal(), None);
+        let CodecError::ResourceLimit(limit) = probe_ctx
+            .charge_work(1, "match SLDPRT circle handle class").unwrap_err()
+        else { panic!("fixed comparison must leave its probe armed"); };
+        assert_eq!(limit.operation, "match SLDPRT circle handle class");
+        assert_eq!(limit.used, WORK);
+        assert_eq!(limit.additional, 1);
+        assert_eq!(probe_ctx.resource_refusal(), Some(limit));
+        drop(probe);
+
+        policy.limits.max_work_units = WORK - 1;
+        policy.limits.max_collection_items = 1;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = match circle_dimension_handle_driver(&ctx, &relation, &input) {
+            Err(error) => error,
+            Ok(_) => panic!("one below executed source work must refuse"),
+        };
+        let CodecError::ResourceLimit(limit) = error else { panic!("resource refusal"); };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "match SLDPRT circle handle driver");
+        assert_eq!(limit.used, WORK - 1);
+        assert_eq!(limit.additional, 1);
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    }
+
+    #[test]
+    fn sketch_literal_case_fold_keeps_relation_identity_and_probe() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        for tag in ["Sketch", "sKeTcH", "SKETCH"] {
+            let mut history = sketch_history();
+            history[0].features[0].xml_tag = tag.into();
+            let driving = scalar(20, FeatureInputScalarRole::Driving);
+            let input = lane(vec![class(10, "sgPntPntHorDist")], vec![driving]);
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = u64::MAX; // mark the budget searched by the probe
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+                ResourceDimension::WorkUnits, "match SLDPRT sketch feature tags", None,
+            );
+            let instances = relation_instances(&ctx, &history, &input).unwrap();
+            let [relation] = instances.as_slice() else { panic!("one declared relation"); };
+            assert_eq!(relation.family, FeatureInputRelationFamily::PointPointHorizontalDistance);
+            assert_eq!(relation.scalar_refs(), ["scalar-20"]);
+            assert_eq!(relation.feature_ref, "sketch");
+            assert_eq!(ctx.resource_refusal(), None);
+            let CodecError::ResourceLimit(limit) = ctx
+                .charge_work(1, "match SLDPRT sketch feature tags").unwrap_err()
+            else { panic!("fixed case folding must leave its probe armed"); };
+            assert_eq!(limit.operation, "match SLDPRT sketch feature tags");
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(limit.additional, 1);
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        }
     }
 
     #[test]
