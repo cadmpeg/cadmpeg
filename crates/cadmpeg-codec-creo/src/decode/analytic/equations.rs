@@ -455,7 +455,10 @@ impl<T: Copy + Default> QuarticPolynomial<T> {
         if coefficients.len() > 5 {
             return None;
         }
-        let mut result = Self { coefficients: [T::default(); 5], len: coefficients.len() };
+        let mut result = Self {
+            coefficients: [T::default(); 5],
+            len: coefficients.len(),
+        };
         result.coefficients[..result.len].copy_from_slice(coefficients);
         Some(result)
     }
@@ -468,9 +471,13 @@ impl<T> QuarticPolynomial<T> {
 }
 
 fn polynomial_value(coefficients: &QuarticPolynomial<BoundedCoefficient>, parameter: f64) -> f64 {
-    coefficients.as_slice().iter().rev().fold(0.0, |value, coefficient| {
-        value.mul_add(parameter, coefficient.value)
-    })
+    coefficients
+        .as_slice()
+        .iter()
+        .rev()
+        .fold(0.0, |value, coefficient| {
+            value.mul_add(parameter, coefficient.value)
+        })
 }
 
 fn operation_rounding_bound(value: f64) -> f64 {
@@ -485,11 +492,18 @@ fn polynomial_value_and_bound(
     coefficients: &QuarticPolynomial<BoundedCoefficient>,
     parameter: f64,
 ) -> (f64, f64) {
-    coefficients.as_slice().iter().rev().fold((0.0, 0.0), |(value, bound), coefficient| {
-        let next_value = value.mul_add(parameter, coefficient.value);
-        let propagated = bound.mul_add(parameter.abs(), coefficient.bound);
-        (next_value, inflate_positive_bound(propagated + operation_rounding_bound(next_value)))
-    })
+    coefficients
+        .as_slice()
+        .iter()
+        .rev()
+        .fold((0.0, 0.0), |(value, bound), coefficient| {
+            let next_value = value.mul_add(parameter, coefficient.value);
+            let propagated = bound.mul_add(parameter.abs(), coefficient.bound);
+            (
+                next_value,
+                inflate_positive_bound(propagated + operation_rounding_bound(next_value)),
+            )
+        })
 }
 
 fn polynomial_value_bound(
@@ -500,8 +514,11 @@ fn polynomial_value_bound(
     let (coefficient_error, evaluation_terms, _) = coefficients.as_slice().iter().fold(
         (0.0, 0.0, 1.0),
         |(coefficient_error, evaluation_terms, power), coefficient| {
-            (coefficient.bound.mul_add(power, coefficient_error),
-             coefficient.value.abs().mul_add(power, evaluation_terms), power * magnitude)
+            (
+                coefficient.bound.mul_add(power, coefficient_error),
+                coefficient.value.abs().mul_add(power, evaluation_terms),
+                power * magnitude,
+            )
         },
     );
     coefficient_error + cancellation_bound(evaluation_terms)
@@ -516,24 +533,32 @@ fn polynomial_interval_value_bound(
     let mut derivative = *coefficients;
     let mut parameter_error_power = 1.0;
     let mut factorial = 1.0;
-    for order in 1..coefficients.len {
+    for &order_factor in POLYNOMIAL_POWERS.iter().take(coefficients.len).skip(1) {
         let mut next_derivative = QuarticPolynomial {
-            coefficients: [BoundedCoefficient::default(); 5], len: derivative.len - 1,
+            coefficients: [BoundedCoefficient::default(); 5],
+            len: derivative.len - 1,
         };
-        for power in 1..derivative.len {
+        for (power, &factor) in POLYNOMIAL_POWERS
+            .iter()
+            .enumerate()
+            .take(derivative.len)
+            .skip(1)
+        {
             let coefficient = derivative.coefficients[power];
-            // Both order and power are in 1..=4.
-            let factor = POLYNOMIAL_POWERS[power];
+            // Derivative powers are in 1..=4.
             let value = coefficient.value * factor;
             next_derivative.coefficients[power - 1] = BoundedCoefficient {
                 value,
-                bound: inflate_positive_bound(coefficient.bound * factor + operation_rounding_bound(value)),
+                bound: inflate_positive_bound(
+                    coefficient.bound * factor + operation_rounding_bound(value),
+                ),
             };
         }
         derivative = next_derivative;
         parameter_error_power *= parameter_error;
-        factorial *= POLYNOMIAL_POWERS[order];
-        let (derivative_value, derivative_bound) = polynomial_value_and_bound(&derivative, parameter);
+        factorial *= order_factor;
+        let (derivative_value, derivative_bound) =
+            polynomial_value_and_bound(&derivative, parameter);
         let term = inflate_positive_bound(
             (derivative_value.abs() + derivative_bound) * parameter_error_power / factorial,
         );
@@ -542,13 +567,24 @@ fn polynomial_interval_value_bound(
     bound
 }
 
-fn polynomial_sign(coefficients: &QuarticPolynomial<BoundedCoefficient>, parameter: f64) -> Option<bool> {
+fn polynomial_sign(
+    coefficients: &QuarticPolynomial<BoundedCoefficient>,
+    parameter: f64,
+) -> Option<bool> {
     let (value, bound) = polynomial_value_and_bound(coefficients, parameter);
-    (value.is_finite() && bound.is_finite() && value.abs() > bound).then_some(value.is_sign_positive())
+    (value.is_finite() && bound.is_finite() && value.abs() > bound)
+        .then_some(value.is_sign_positive())
 }
 
-fn polynomial_is_exactly_zero(coefficients: &QuarticPolynomial<BoundedCoefficient>, parameter: f64) -> bool {
-    if coefficients.as_slice().iter().any(|coefficient| coefficient.bound != 0.0) {
+fn polynomial_is_exactly_zero(
+    coefficients: &QuarticPolynomial<BoundedCoefficient>,
+    parameter: f64,
+) -> bool {
+    if coefficients
+        .as_slice()
+        .iter()
+        .any(|coefficient| coefficient.bound != 0.0)
+    {
         return false;
     }
     let mut value = 0.0;
@@ -558,15 +594,29 @@ fn polynomial_is_exactly_zero(coefficients: &QuarticPolynomial<BoundedCoefficien
         let parameter_exponent = parameter_bits & F64_EXPONENT_MASK;
         let parameter_fraction = parameter_bits & !F64_EXPONENT_MASK;
         let parameter_is_power_of_two = parameter_magnitude.is_finite()
-            && if parameter_exponent == 0 { parameter_fraction.is_power_of_two() } else { parameter_fraction == 0 };
-        if value != 0.0 && parameter != 0.0 && !parameter_is_power_of_two { return false; }
+            && if parameter_exponent == 0 {
+                parameter_fraction.is_power_of_two()
+            } else {
+                parameter_fraction == 0
+            };
+        if value != 0.0 && parameter != 0.0 && !parameter_is_power_of_two {
+            return false;
+        }
         let product = value * parameter;
-        if !product.is_finite() || (value != 0.0 && parameter != 0.0 && product / parameter != value) { return false; }
+        if !product.is_finite()
+            || (value != 0.0 && parameter != 0.0 && product / parameter != value)
+        {
+            return false;
+        }
         let sum = product + coefficient.value;
-        if !sum.is_finite() { return false; }
+        if !sum.is_finite() {
+            return false;
+        }
         let product_part = sum - coefficient.value;
         let coefficient_part = sum - product_part;
-        if (product - product_part) + (coefficient.value - coefficient_part) != 0.0 { return false; }
+        if (product - product_part) + (coefficient.value - coefficient_part) != 0.0 {
+            return false;
+        }
         value = sum;
     }
     value == 0.0
@@ -622,9 +672,19 @@ struct PolynomialRoots {
 }
 
 impl PolynomialRoots {
-    fn new() -> Self { Self { roots: [PolynomialRoot::default(); 15], len: 0 } }
-    fn push(&mut self, root: PolynomialRoot) { self.roots[self.len] = root; self.len += 1; }
-    fn as_slice(&self) -> &[PolynomialRoot] { &self.roots[..self.len] }
+    fn new() -> Self {
+        Self {
+            roots: [PolynomialRoot::default(); 15],
+            len: 0,
+        }
+    }
+    fn push(&mut self, root: PolynomialRoot) {
+        self.roots[self.len] = root;
+        self.len += 1;
+    }
+    fn as_slice(&self) -> &[PolynomialRoot] {
+        &self.roots[..self.len]
+    }
 }
 
 /// Return finite certified roots and derivative-station candidates in ascending order.
@@ -635,8 +695,12 @@ impl PolynomialRoots {
 /// states roots of order `1 / residue` that no exact polynomial has; a real
 /// leading coefficient dropped loses the roots it carries.
 fn real_polynomial_roots(coefficients: &QuarticPolynomial<BoundedCoefficient>) -> PolynomialRoots {
-    if coefficients.len == 0 { return PolynomialRoots::new(); }
-    let largest = coefficients.as_slice().iter()
+    if coefficients.len == 0 {
+        return PolynomialRoots::new();
+    }
+    let largest = coefficients
+        .as_slice()
+        .iter()
         .map(|coefficient| coefficient.value.abs())
         .fold(0.0, f64::max);
     if largest == 0.0 || !largest.is_finite() {
@@ -658,7 +722,8 @@ fn real_polynomial_roots(coefficients: &QuarticPolynomial<BoundedCoefficient>) -
         coefficient.bound /= scale;
     }
     while scaled.len > 1 {
-        let should_trim = scaled.as_slice()
+        let should_trim = scaled
+            .as_slice()
             .last()
             .is_some_and(|coefficient| coefficient.value.abs() <= coefficient.bound);
         if !should_trim {
@@ -667,7 +732,9 @@ fn real_polynomial_roots(coefficients: &QuarticPolynomial<BoundedCoefficient>) -
         scaled.len -= 1;
     }
     let degree = scaled.len - 1;
-    if degree == 0 { return PolynomialRoots::new(); }
+    if degree == 0 {
+        return PolynomialRoots::new();
+    }
     if degree == 1 {
         // The pop loop stopped because the leading coefficient is outside its
         // own bound, so the difference below is positive. The exact root is
@@ -688,17 +755,26 @@ fn real_polynomial_roots(coefficients: &QuarticPolynomial<BoundedCoefficient>) -
         });
         return roots;
     }
-    let mut derivative = QuarticPolynomial { coefficients: [BoundedCoefficient::default(); 5], len: degree };
-    for power in 1..scaled.len {
+    let mut derivative = QuarticPolynomial {
+        coefficients: [BoundedCoefficient::default(); 5],
+        len: degree,
+    };
+    for (power, &factor) in POLYNOMIAL_POWERS
+        .iter()
+        .enumerate()
+        .take(scaled.len)
+        .skip(1)
+    {
         let coefficient = scaled.coefficients[power];
-        let factor = POLYNOMIAL_POWERS[power];
         derivative.coefficients[power - 1] = BoundedCoefficient {
-            value: coefficient.value * factor, bound: coefficient.bound * factor,
+            value: coefficient.value * factor,
+            bound: coefficient.bound * factor,
         };
     }
     let leading = scaled.coefficients[degree].value.abs() - scaled.coefficients[degree].bound;
     let bound = 1.0
-        + scaled.coefficients[..degree].iter()
+        + scaled.coefficients[..degree]
+            .iter()
             .map(|coefficient| coefficient.value.abs() + coefficient.bound)
             .fold(0.0, f64::max)
             / leading;
@@ -712,7 +788,9 @@ fn real_polynomial_roots(coefficients: &QuarticPolynomial<BoundedCoefficient>) -
     let mut gap_lower_sign = polynomial_sign(&scaled, gap_lower);
     let mut gaps = [(0.0, None, 0.0, None); 8];
     let mut gap_count = 0;
-    for station in derivative_roots.as_slice().iter()
+    for station in derivative_roots
+        .as_slice()
+        .iter()
         .filter(|root| root.value.is_finite() && root.value > -bound && root.value < bound)
     {
         let station = PolynomialRoot {
@@ -829,7 +907,12 @@ fn real_polynomial_roots(coefficients: &QuarticPolynomial<BoundedCoefficient>) -
     // Stable insertion order over at most fifteen candidates uses no heap scratch.
     for end in 1..roots.len {
         let mut index = end;
-        while index > 0 && roots.roots[index - 1].value.total_cmp(&roots.roots[index].value).is_gt() {
+        while index > 0
+            && roots.roots[index - 1]
+                .value
+                .total_cmp(&roots.roots[index].value)
+                .is_gt()
+        {
             roots.roots.swap(index - 1, index);
             index -= 1;
         }
@@ -842,11 +925,17 @@ fn polynomial_product(
     second: &SylvesterEntry,
 ) -> Option<QuarticPolynomial<f64>> {
     let count = first.len.checked_add(second.len)?.checked_sub(1)?;
-    if count > 5 { return None; }
-    let mut product = QuarticPolynomial { coefficients: [0.0; 5], len: count };
+    if count > 5 {
+        return None;
+    }
+    let mut product = QuarticPolynomial {
+        coefficients: [0.0; 5],
+        len: count,
+    };
     for (first_power, first_coefficient) in first.as_slice().iter().enumerate() {
         for (second_power, second_coefficient) in second.as_slice().iter().enumerate() {
-            product.coefficients[first_power + second_power] += first_coefficient * second_coefficient;
+            product.coefficients[first_power + second_power] +=
+                first_coefficient * second_coefficient;
         }
     }
     Some(product)
@@ -946,13 +1035,22 @@ fn sylvester_polynomial(
     matrix: &[[Option<SylvesterEntry>; 4]; 4],
     sign: impl Fn(f64) -> f64,
 ) -> Result<QuarticPolynomial<f64>, CodecError> {
-    let mut determinant = QuarticPolynomial { coefficients: [0.0; 5], len: 0 };
+    let mut determinant = QuarticPolynomial {
+        coefficients: [0.0; 5],
+        len: 0,
+    };
     for (permutation, permutation_sign) in QUARTIC_RESULTANT_PERMUTATIONS {
-        if (0..4).any(|row| matrix[row][permutation[row]].is_none()) { continue; }
-        let mut term = QuarticPolynomial { coefficients: [1.0, 0.0, 0.0, 0.0, 0.0], len: 1 };
+        if (0..4).any(|row| matrix[row][permutation[row]].is_none()) {
+            continue;
+        }
+        let mut term = QuarticPolynomial {
+            coefficients: [1.0, 0.0, 0.0, 0.0, 0.0],
+            len: 1,
+        };
         for factor in (0..4).filter_map(|row| matrix[row][permutation[row]].as_ref()) {
-            term = polynomial_product(&term, factor)
-                .ok_or_else(|| CodecError::malformed("Creo conic determinant exceeds degree four"))?;
+            term = polynomial_product(&term, factor).ok_or_else(|| {
+                CodecError::malformed("Creo conic determinant exceeds degree four")
+            })?;
         }
         determinant.len = determinant.len.max(term.len);
         for (index, coefficient) in term.as_slice().iter().copied().enumerate() {
@@ -966,10 +1064,19 @@ fn conic_resultant(
     first: PlaneConicEquation,
     second: PlaneConicEquation,
 ) -> Result<QuarticPolynomial<BoundedCoefficient>, CodecError> {
-    let values = sylvester_polynomial(&sylvester_matrix(first, second, Coefficient::stated), |sign| sign)?;
-    let terms = sylvester_polynomial(&sylvester_matrix(first, second, Coefficient::terms), f64::abs)?;
+    let values = sylvester_polynomial(
+        &sylvester_matrix(first, second, Coefficient::stated),
+        |sign| sign,
+    )?;
+    let terms = sylvester_polynomial(
+        &sylvester_matrix(first, second, Coefficient::terms),
+        f64::abs,
+    )?;
     let len = values.len.min(terms.len);
-    let mut result = QuarticPolynomial { coefficients: [BoundedCoefficient::default(); 5], len };
+    let mut result = QuarticPolynomial {
+        coefficients: [BoundedCoefficient::default(); 5],
+        len,
+    };
     for index in 0..len {
         result.coefficients[index] = BoundedCoefficient {
             value: values.coefficients[index],
@@ -1286,7 +1393,9 @@ pub(super) fn common_plane_conic_parameters(
     first: PlaneConicEquation,
     second: PlaneConicEquation,
 ) -> Result<Vec<[f64; 2]>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() { return Err(CodecError::ResourceLimit(refusal)); }
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(CodecError::ResourceLimit(refusal));
+    }
     let resultant = conic_resultant(first, second)?;
     let mut parameters = Vec::<[f64; 2]>::new();
     let roots = real_polynomial_roots(&resultant);
@@ -1316,7 +1425,9 @@ pub(super) fn common_plane_conic_parameters(
                     <= plane_conic_residual_bound(second, refined)
                 && !parameters.iter().any(|known| {
                     // At most fifteen root candidates each supply four v candidates.
-                    (known[0] - candidate[0]).abs().max((known[1] - candidate[1]).abs())
+                    (known[0] - candidate[0])
+                        .abs()
+                        .max((known[1] - candidate[1]).abs())
                         <= EPS_PARAM_UNIQUE * scale
                 })
             {
@@ -1385,7 +1496,9 @@ pub(in crate::decode) fn intersect_two_planes_with_torus(
     second: PlaneEquation,
     torus: TorusEquation,
 ) -> Result<Vec<[f64; 3]>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() { return Err(CodecError::ResourceLimit(refusal)); }
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(CodecError::ResourceLimit(refusal));
+    }
     let Some((line_origin, direction)) = plane_intersection_line(first, second) else {
         return Ok(Vec::new());
     };
@@ -1440,7 +1553,10 @@ pub(in crate::decode) fn intersect_two_planes_with_torus(
         bound: POLYNOMIAL_ERROR_FACTOR * cancellation_bound(polynomial_terms[power]),
     });
     let mut points = Vec::new();
-    let polynomial = QuarticPolynomial { coefficients: polynomial, len: 5 };
+    let polynomial = QuarticPolynomial {
+        coefficients: polynomial,
+        len: 5,
+    };
     let roots = real_polynomial_roots(&polynomial);
     for root in roots.as_slice() {
         let point = std::array::from_fn(|index| {
@@ -1749,16 +1865,28 @@ mod tests {
     const REF_DIRECTION: [f64; 3] = [1.0, 0.0, 0.0];
 
     fn polynomial_roots(coefficients: &[BoundedCoefficient]) -> Vec<super::PolynomialRoot> {
-        let polynomial = super::QuarticPolynomial::from_slice(coefficients).expect("degree at most four");
-        super::real_polynomial_roots(&polynomial).as_slice().to_vec()
+        let polynomial =
+            super::QuarticPolynomial::from_slice(coefficients).expect("degree at most four");
+        super::real_polynomial_roots(&polynomial)
+            .as_slice()
+            .to_vec()
     }
 
     #[test]
     fn polynomial_roots_have_fixed_workspace() {
         let coefficients = [
-            BoundedCoefficient { value: -1.0, bound: 0.0 },
-            BoundedCoefficient { value: 0.0, bound: 0.0 },
-            BoundedCoefficient { value: 1.0, bound: 0.0 },
+            BoundedCoefficient {
+                value: -1.0,
+                bound: 0.0,
+            },
+            BoundedCoefficient {
+                value: 0.0,
+                bound: 0.0,
+            },
+            BoundedCoefficient {
+                value: 1.0,
+                bound: 0.0,
+            },
         ];
         let roots = polynomial_roots(&coefficients);
         assert_eq!(roots.len(), 2);
@@ -1826,9 +1954,18 @@ mod tests {
     #[test]
     fn polynomial_leading_coefficient_trim_uses_fixed_workspace() {
         let coefficients = [
-            BoundedCoefficient { value: -1.0, bound: 0.0 },
-            BoundedCoefficient { value: 1.0, bound: 0.0 },
-            BoundedCoefficient { value: 0.0, bound: 0.0 },
+            BoundedCoefficient {
+                value: -1.0,
+                bound: 0.0,
+            },
+            BoundedCoefficient {
+                value: 1.0,
+                bound: 0.0,
+            },
+            BoundedCoefficient {
+                value: 0.0,
+                bound: 0.0,
+            },
         ];
         let roots = polynomial_roots(&coefficients);
         assert_eq!(roots.len(), 1);
@@ -1907,7 +2044,12 @@ mod tests {
     fn conic_resultant_coefficients_have_fixed_workspace() {
         let first = dense_conic([1.0, 2.0, 3.0, 5.0, 7.0, 11.0]);
         let second = dense_conic([13.0, -3.0, 2.0, -17.0, 4.0, -6.0]);
-        assert_eq!(super::conic_resultant(first, second).expect("quartic resultant").len, 5);
+        assert_eq!(
+            super::conic_resultant(first, second)
+                .expect("quartic resultant")
+                .len,
+            5
+        );
     }
 
     #[test]
@@ -2018,7 +2160,10 @@ mod tests {
     #[test]
     fn polynomial_product_has_fixed_workspace() {
         let first = super::QuarticPolynomial::from_slice(&[1.0, 2.0]).expect("linear polynomial");
-        let second = super::SylvesterEntry { coefficients: [3.0, 4.0, 0.0], len: 2 };
+        let second = super::SylvesterEntry {
+            coefficients: [3.0, 4.0, 0.0],
+            len: 2,
+        };
         let product = super::polynomial_product(&first, &second).expect("quadratic product");
         assert_eq!(product.as_slice(), [3.0, 10.0, 8.0]);
     }
@@ -2027,11 +2172,18 @@ mod tests {
     fn polynomial_determinant_has_fixed_workspace() {
         let matrix = std::array::from_fn(|row| {
             std::array::from_fn(|column| {
-                (row == column).then_some(super::SylvesterEntry { coefficients: [1.0, 0.0, 0.0], len: 1 })
+                (row == column).then_some(super::SylvesterEntry {
+                    coefficients: [1.0, 0.0, 0.0],
+                    len: 1,
+                })
             })
         });
-        assert_eq!(super::sylvester_polynomial(&matrix, |value| value)
-            .expect("degree-zero determinant").as_slice(), [1.0]);
+        assert_eq!(
+            super::sylvester_polynomial(&matrix, |value| value)
+                .expect("degree-zero determinant")
+                .as_slice(),
+            [1.0]
+        );
     }
 
     #[test]
@@ -2197,7 +2349,8 @@ mod tests {
         let resultant = super::conic_resultant(
             dense_conic([1.0, 2.0, 3.0, 5.0, 7.0, 11.0]),
             dense_conic([13.0, -3.0, 2.0, -17.0, 4.0, -6.0]),
-        ).expect("conic resultant");
+        )
+        .expect("conic resultant");
         assert_eq!(resultant.len, 5);
         assert!(resultant.coefficients[4].value != 0.0);
     }
