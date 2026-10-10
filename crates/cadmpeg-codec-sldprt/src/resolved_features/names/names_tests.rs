@@ -207,3 +207,90 @@ fn class_mismatch_does_not_scan_the_remaining_payload() {
     };
     assert!(!super::class_declarations_match(&ctx, &payload, "lane", &[actual]).unwrap());
 }
+
+fn one_name_payload() -> Vec<u8> {
+    let mut payload = super::super::NAME_MARKER.to_vec();
+    // One U+0800 unit occupies three bytes after strict UTF-16 decoding.
+    payload.extend_from_slice(&[1, 0, 8]);
+    payload
+}
+
+const ONE_NAME_PARENT: &str = "lane";
+const ONE_NAME_ID: &str = "sldprt:feature-input:name#lane:0";
+const ONE_NAME_VALUE: &str = "\u{800}";
+
+fn one_name_storage() -> (u64, u64) {
+    // Both text copies and formatted identity have exact byte backing.
+    // The first FeatureInputName vector growth admits four actual slots.
+    let text = cadmpeg_core::decode::u64_from_index(
+        ONE_NAME_PARENT.len() + ONE_NAME_ID.len() + ONE_NAME_VALUE.len(),
+    );
+    let slots = cadmpeg_core::decode::u64_from_index(
+        4 * std::mem::size_of::<crate::records::FeatureInputName>(),
+    );
+    (text, slots)
+}
+
+#[test]
+fn object_names_retire_decoded_text_before_returned_record_storage() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let payload = one_name_payload();
+    let (text, slots) = one_name_storage();
+    let need = text + slots;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = need;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+    for _ in 0..64 {
+        let storage;
+        let names;
+        (names, storage) = ctx
+            .with_scoped_storage("hold test name records", || {
+                object_names(&ctx, &payload, ONE_NAME_PARENT)
+            })
+            .unwrap();
+        let [name] = names.as_slice() else {
+            panic!("expected one native name record");
+        };
+        assert_eq!(name.id, ONE_NAME_ID);
+        assert_eq!(name.parent, ONE_NAME_PARENT);
+        assert_eq!(name.value, ONE_NAME_VALUE);
+        assert_eq!(name.ordinal, 0);
+        assert_eq!(name.offset, 0);
+        assert_eq!(name.object_id, None);
+        drop((names, storage));
+        let reuse = ctx.reserve_scoped(need, "reuse all name storage").unwrap();
+        drop(reuse);
+    }
+}
+
+#[test]
+fn object_name_record_growth_refuses_at_exact_output_peak_and_stays_sticky() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let payload = one_name_payload();
+    let (text, slots) = one_name_storage();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = text + slots - 1;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+    let error = ctx
+        .with_scoped_storage("hold refused test name records", || {
+            object_names(&ctx, &payload, ONE_NAME_PARENT)
+        })
+        .unwrap_err();
+    let CodecError::ResourceLimit(first) = error else {
+        panic!("expected name record growth refusal");
+    };
+    assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
+    assert_eq!(first.operation, "collect SLDPRT feature input names");
+    assert_eq!(first.used, text);
+    assert_eq!(first.additional, slots);
+    assert_eq!(ctx.resource_refusal(), Some(first.clone()));
+    let CodecError::ResourceLimit(next) = ctx.reserve_scoped(0, "sticky name refusal").unwrap_err() else {
+        panic!("expected original name refusal");
+    };
+    assert_eq!(next, first);
+}
