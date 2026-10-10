@@ -1734,23 +1734,21 @@ fn legacy_relation_evaluation<'a>(
             let Some(parameter) = crate::native::relation_symbol_parameter(ctx, symbol)? else {
                 continue;
             };
-            if legacy_symbol_matches_input(ctx, symbol, parameter)? {
-                relation_scratch.with_storage(|| {
+            relation_scratch.with_storage(|| {
+                ctx.insert_hash_set(
+                    &mut symbol_parameters,
+                    parameter,
+                    "catia_legacy_formula_symbol_index",
+                )?;
+                if symbol.len() != parameter.len() {
                     ctx.insert_hash_set(
                         &mut symbol_parameters,
-                        parameter,
+                        symbol.as_str(),
                         "catia_legacy_formula_symbol_index",
                     )?;
-                    if symbol.len() != parameter.len() {
-                        ctx.insert_hash_set(
-                            &mut symbol_parameters,
-                            symbol.as_str(),
-                            "catia_legacy_formula_symbol_index",
-                        )?;
-                    }
-                    Ok::<_, cadmpeg_core::CodecError>(())
-                })?;
-            }
+                }
+                Ok::<_, cadmpeg_core::CodecError>(())
+            })?;
         }
     }
     if symbol_parameters.is_empty() && !relation.inputs.is_empty() {
@@ -1830,34 +1828,6 @@ fn legacy_relation_evaluation<'a>(
             evaluated,
             dependencies,
         }))
-}
-
-fn legacy_symbol_matches_input(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    symbol: &str,
-    input: &str,
-) -> Result<bool, cadmpeg_core::CodecError> {
-    const OPERATION: &str = "catia_legacy_symbol_ordinal_visits";
-    let Some(suffix) = ctx.strip_prefix(symbol, input, "catia_legacy_symbol_prefix_checks")? else {
-        return Ok(false);
-    };
-    let suffix = ctx.trim_start_matches(
-        suffix,
-        |character| Ok(character.is_ascii_whitespace()),
-        "catia_legacy_symbol_suffix_whitespace",
-    )?;
-    if suffix.is_empty() {
-        return Ok(true);
-    }
-    let Some(ordinal) = suffix.strip_prefix('/') else {
-        return Ok(false);
-    };
-    Ok(!ordinal.is_empty()
-        && ctx.all_by(
-            ordinal.as_bytes(),
-            |byte| Ok(byte.is_ascii_digit()),
-            OPERATION,
-        )?)
 }
 
 fn legacy_output_assignment_expression<'a>(

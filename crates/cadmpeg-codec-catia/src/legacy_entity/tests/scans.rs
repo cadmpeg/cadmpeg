@@ -5,6 +5,114 @@ use super::super::*;
 use cadmpeg_core::decode::{refusal_probe::RefusalProbe, ResourceDimension};
 
 #[test]
+fn legacy_run_indexes_wait_for_value_or_relation_queries() {
+    const COUNT: u32 = 64;
+    let mut bytes = Vec::new();
+    for entity_id in 1..=COUNT {
+        super::identity(&mut bytes, entity_id);
+        bytes.extend_from_slice(&[5, b'n', b'a', b'm', b'e', 0xd1, 0]);
+        bytes.extend_from_slice(TEXT_OPEN);
+        bytes.extend_from_slice(&[6, b'L', b'a', b'b', b'e', b'l', 0xfe]);
+    }
+    bytes.extend_from_slice(CATALOG_OPEN);
+    for operation in [
+        "catia_legacy_name_fields",
+        "catia_legacy_relation_identity_ids",
+    ] {
+        let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
+        crate::test_support::with_work_limit(u64::MAX, |ctx| {
+            let runs = parse_runs(ctx, &bytes)?;
+            assert_eq!(runs.len(), 1);
+            let run = &runs[0];
+            assert_eq!(
+                run.role_selectors.len(),
+                usize::try_from(COUNT).expect("count")
+            );
+            assert_eq!(
+                run.text_fields.len(),
+                usize::try_from(COUNT).expect("count")
+            );
+            for (index, field) in run.text_fields.iter().enumerate() {
+                assert_eq!(field.entity_id, u32::try_from(index + 1).expect("identity"));
+                assert_eq!(field.value, "Label");
+                assert_eq!(
+                    field.role.as_ref().expect("role").name.literal(),
+                    Some("name")
+                );
+            }
+            assert!(run.scalar_values.is_empty());
+            assert!(run.string_values.is_empty());
+            assert!(run.integer_values.is_empty());
+            assert!(run.relations.is_empty());
+            assert_eq!(ctx.resource_refusal(), None);
+            Ok::<_, cadmpeg_core::CodecError>(())
+        })
+        .expect("unqueried run indexes have no input-sized work");
+    }
+}
+
+#[test]
+fn legacy_relation_identity_index_waits_for_matching_role_selectors() {
+    let identities = (1..=4096)
+        .map(|entity_id| LegacyEntityIdentity {
+            offset: usize::try_from(entity_id).expect("identity") * 8,
+            entity_id,
+            lead: CatiaLegacyIdentityLead::Lead81,
+        })
+        .collect::<Vec<_>>();
+    for (body, parameter_role) in [
+        (2, LegacyRoleName::Literal("param".to_owned())),
+        (1, LegacyRoleName::Selector(3)),
+    ] {
+        let fields = [
+            LegacyTextField {
+                offset: 0,
+                entity_id: 1,
+                encoding: LegacyTextEncoding::U8InclusiveLength,
+                role: Some(LegacyRoleSelector {
+                    offset: 0,
+                    entity_id: 1,
+                    name: LegacyRoleName::Literal("body".to_owned()),
+                    encoding: LegacyRoleSelectorEncoding::Paged,
+                    selector: body,
+                    field_code: None,
+                }),
+                value: "#1_ + 2".to_owned(),
+            },
+            LegacyTextField {
+                offset: 1,
+                entity_id: 1,
+                encoding: LegacyTextEncoding::U8InclusiveLength,
+                role: Some(LegacyRoleSelector {
+                    offset: 1,
+                    entity_id: 1,
+                    name: parameter_role,
+                    encoding: LegacyRoleSelectorEncoding::Paged,
+                    selector: 4,
+                    field_code: None,
+                }),
+                value: "(#1_ : #In Real) : Real".to_owned(),
+            },
+        ];
+        let _probe = RefusalProbe::arm(
+            ResourceDimension::WorkUnits,
+            "catia_legacy_relation_identity_ids",
+            None,
+        );
+        crate::test_support::with_work_limit(u64::MAX, |ctx| {
+            let relations = parse_relations(ctx, &fields, &identities)?;
+            assert_eq!(relations.len(), 1);
+            assert_eq!(relations[0].expression, "#1_ + 2");
+            assert_eq!(relations[0].type_signature, "(#1_ : #In Real) : Real");
+            assert_eq!(relations[0].parameter_entity_id, None);
+            assert_eq!(ctx.resource_refusal(), None);
+            Ok::<_, cadmpeg_core::CodecError>(())
+        })
+        .expect("a mismatched body or unresolved param never queries identity membership");
+    }
+}
+
+#[test]
 fn legacy_small_scalar_and_role_sorts_skip_constant_work() {
     for count in 0..=2 {
         let mut scalar_bytes = Vec::new();
@@ -112,8 +220,8 @@ fn legacy_role_uniqueness_stops_at_second_matches_before_the_tail() {
         });
     }
     // Grouping visits all fields; role searches visit 2 body and 4 param slots.
-    // Sixteen extra units include those six visits and empty identity collection.
-    let cap = u64::try_from(fields.len() + 16).expect("fixture work");
+    // Six search visits and one group end probe are the only extra work.
+    let cap = u64::try_from(fields.len() + 7).expect("fixture work");
     assert!(
         crate::test_support::with_work_limit(cap, |ctx| parse_relations(ctx, &fields, &[]))
             .expect("role searches leave the tail unread")

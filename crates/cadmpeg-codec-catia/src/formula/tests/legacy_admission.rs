@@ -439,6 +439,52 @@ fn formula_legacy_empty_symbol_index_does_not_admit_unread_names() {
 }
 
 #[test]
+fn formula_legacy_symbol_index_skips_producer_validation() {
+    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, ResourceDimension};
+    for symbol in ["#1_", "#1_/12", "#1_ /12"] {
+        let (mut relation, candidates, ids) = relation_fixture(1);
+        relation.expression = symbol.to_owned();
+        let names = std::collections::HashMap::from([("#1_", Some(ids[0].clone()))]);
+        for operation in [
+            "catia_legacy_symbol_prefix_checks",
+            "catia_legacy_symbol_suffix_whitespace",
+            "catia_legacy_symbol_ordinal_visits",
+        ] {
+            let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
+            crate::test_support::with_work_limit(u64::MAX, |ctx| {
+                let result =
+                    super::super::legacy_relation_evaluation(ctx, &relation, &names, &candidates)?
+                        .expect("complete symbol binding");
+                assert_eq!(result.dependencies, ids);
+                assert_eq!(result.source_type, "Real");
+                assert_eq!(result.expression, symbol);
+                assert_eq!(result.evaluated.scalar().expect("scalar").value(), 1.0);
+                assert_eq!(ctx.resource_refusal(), None);
+                Ok::<_, cadmpeg_core::CodecError>(())
+            })
+            .expect("the producer already validates the complete symbol");
+        }
+    }
+}
+
+#[test]
+fn formula_legacy_symbol_index_preserves_producer_rejections() {
+    for symbol in ["#1_/", "#1_/x", "#2_"] {
+        let (mut relation, candidates, ids) = relation_fixture(1);
+        relation.expression = symbol.to_owned();
+        let names = std::collections::HashMap::from([("#1_", Some(ids[0].clone()))]);
+        assert!(
+            crate::test_support::with_service_context(|ctx| {
+                super::super::legacy_relation_evaluation(ctx, &relation, &names, &candidates)
+            })
+            .expect("producer and membership reject an incomplete ordinal or different input")
+            .is_none(),
+            "{symbol}"
+        );
+    }
+}
+
+#[test]
 fn formula_legacy_empty_inputs_skip_row_admission() {
     use cadmpeg_core::decode::{refusal_probe::RefusalProbe, ResourceDimension};
     let (mut relation, candidates, _) = relation_fixture(0);
