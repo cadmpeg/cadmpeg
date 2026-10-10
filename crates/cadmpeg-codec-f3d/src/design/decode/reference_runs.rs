@@ -26,9 +26,19 @@ pub(in crate::design::decode) fn reference_position<T, O>(
     mut predicate: impl FnMut(&T) -> Result<bool, CodecError>,
     operation: &'static str,
 ) -> Result<Option<usize>, CodecError> {
-    match (run.unlocated_values(), run.located_rows()) {
-        (Some(values), _) => ctx.position_by(values, predicate, operation),
-        (None, Some(rows)) => ctx.position_by(rows, |row| predicate(&row.value), operation),
-        (None, None) => Ok(None),
+    ctx.charge_work(0, operation)?;
+    let mut checked_predicate = |value: &T| {
+        let result = predicate(value);
+        ctx.charge_work(0, operation)?;
+        result
+    };
+    let (values, rows) = run.storage_slices();
+    if values.is_empty() {
+        ctx.position_by(rows, |row| checked_predicate(&row.value), operation)
+    } else {
+        ctx.position_by(values, checked_predicate, operation)
     }
 }
+
+#[cfg(test)]
+mod tests;

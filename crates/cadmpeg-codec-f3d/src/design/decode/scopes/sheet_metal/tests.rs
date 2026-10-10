@@ -62,23 +62,29 @@ fn hem_scope_binds_parameters_edge_groups_and_rule_radius() {
             bend_radius: 0.25,
         });
 
-        let operation = crate::design::decode::scopes::sheet_metal::exact_hem_operation(
+        let operation = crate::test_support::with_decode_context(|ctx| {
+            crate::design::decode::scopes::sheet_metal::exact_hem_operation(
+            ctx,
             &frame.bytes,
             0,
             frame.paired_at,
             &reference_run(&references),
             &source_kinds(&[(301, "HemGap"), (304, "HemLength")]),
         )
+        })
         .unwrap()
         .expect("fixed Hem operation");
         let located_references = located_reference_run(&references);
-        let located_operation = crate::design::decode::scopes::sheet_metal::exact_hem_operation(
+        let located_operation = crate::test_support::with_decode_context(|ctx| {
+            crate::design::decode::scopes::sheet_metal::exact_hem_operation(
+            ctx,
             &frame.bytes,
             0,
             frame.paired_at,
             &located_references,
             &source_kinds(&[(301, "HemGap"), (304, "HemLength")]),
         )
+        })
         .unwrap()
         .expect("fixed Hem operation with located references");
         assert_eq!(located_operation, operation);
@@ -119,24 +125,30 @@ fn hem_scope_refuses_a_frame_whose_owner_slot_is_absent() {
     frame.bytes[at + 1] = 1;
     frame.bytes[at + 2..at + 6].copy_from_slice(&304u32.to_le_bytes());
     assert!(
-        crate::design::decode::scopes::sheet_metal::exact_hem_operation(
+        crate::test_support::with_decode_context(|ctx| {
+            crate::design::decode::scopes::sheet_metal::exact_hem_operation(
+            ctx,
             &frame.bytes,
             0,
             frame.paired_at,
             &reference_run(&references),
             &source_kinds(&[(301, "HemGap"), (304, "HemLength")]),
         )
+        })
         .unwrap()
         .is_none()
     );
     assert!(
-        crate::design::decode::scopes::sheet_metal::exact_hem_operation(
+        crate::test_support::with_decode_context(|ctx| {
+            crate::design::decode::scopes::sheet_metal::exact_hem_operation(
+            ctx,
             &frame.bytes,
             0,
             frame.paired_at,
             &reference_run(&references),
             &source_kinds(&[(301, "HemGap"), (301, "HemGap"), (304, "HemLength")]),
         )
+        })
         .unwrap()
         .is_none()
     );
@@ -146,13 +158,16 @@ fn hem_scope_refuses_a_frame_whose_owner_slot_is_absent() {
 fn hem_scope_reads_the_rolled_owner_layout() {
     let references = [708, 717, 720, 724, 775, 788, 790, 793];
     let frame = rolled_hem_frame();
-    let operation = crate::design::decode::scopes::sheet_metal::exact_hem_operation(
+    let operation = crate::test_support::with_decode_context(|ctx| {
+            crate::design::decode::scopes::sheet_metal::exact_hem_operation(
+            ctx,
         &frame.bytes,
         0,
         frame.paired_at,
         &reference_run(&references),
         &source_kinds(&[(775, "HemRadius"), (788, "HemAngle")]),
     )
+        })
     .unwrap()
     .expect("rolled Hem operation");
     assert_eq!(
@@ -164,13 +179,16 @@ fn hem_scope_reads_the_rolled_owner_layout() {
     );
     assert_eq!(operation.bend_radius.get(), 0.25);
     assert_eq!(operation.bend_radius_offset, 160);
-    let located_operation = crate::design::decode::scopes::sheet_metal::exact_hem_operation(
+    let located_operation = crate::test_support::with_decode_context(|ctx| {
+            crate::design::decode::scopes::sheet_metal::exact_hem_operation(
+            ctx,
         &frame.bytes,
         0,
         frame.paired_at,
         &located_reference_run(&references),
         &source_kinds(&[(775, "HemRadius"), (788, "HemAngle")]),
     )
+        })
     .unwrap()
     .expect("rolled Hem operation with located references");
     assert_eq!(located_operation, operation);
@@ -180,13 +198,16 @@ fn hem_scope_reads_the_rolled_owner_layout() {
 fn hem_scope_reads_the_teardrop_owner_layout() {
     let references = [703, 706, 708, 717, 720, 724, 775, 777, 780];
     let frame = teardrop_hem_frame();
-    let operation = crate::design::decode::scopes::sheet_metal::exact_hem_operation(
+    let operation = crate::test_support::with_decode_context(|ctx| {
+            crate::design::decode::scopes::sheet_metal::exact_hem_operation(
+            ctx,
         &frame.bytes,
         0,
         frame.paired_at,
         &reference_run(&references),
         &source_kinds(&[(703, "HemGap"), (706, "HemLength"), (775, "HemRadius")]),
     )
+        })
     .unwrap()
     .expect("teardrop Hem operation");
     assert_eq!(
@@ -199,13 +220,16 @@ fn hem_scope_reads_the_teardrop_owner_layout() {
     );
     assert_eq!(operation.bend_radius.get(), 0.25);
     assert_eq!(operation.bend_radius_offset, 170);
-    let located_operation = crate::design::decode::scopes::sheet_metal::exact_hem_operation(
+    let located_operation = crate::test_support::with_decode_context(|ctx| {
+            crate::design::decode::scopes::sheet_metal::exact_hem_operation(
+            ctx,
         &frame.bytes,
         0,
         frame.paired_at,
         &located_reference_run(&references),
         &source_kinds(&[(703, "HemGap"), (706, "HemLength"), (775, "HemRadius")]),
     )
+        })
     .unwrap()
     .expect("teardrop Hem operation with located references");
     assert_eq!(located_operation, operation);
@@ -226,13 +250,16 @@ fn hem_scope_refuses_an_owner_layout_whose_parameter_kinds_name_another_form() {
     });
 
     assert!(
-        crate::design::decode::scopes::sheet_metal::exact_hem_operation(
+        crate::test_support::with_decode_context(|ctx| {
+            crate::design::decode::scopes::sheet_metal::exact_hem_operation(
+            ctx,
             &frame.bytes,
             0,
             frame.paired_at,
             &reference_run(&references),
             &source_kinds(&[(301, "HemRadius"), (304, "HemAngle")]),
         )
+        })
         .unwrap()
         .is_none()
     );
@@ -543,3 +570,5 @@ mod binding {
         ));
     }
 }
+
+mod callback_refusal;

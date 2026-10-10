@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Native feature inputs with complete record frames.
+//! Typed native feature inputs for membership; byte-file admission is separate.
 
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use crate::records::recipes::ConstructionRecipeKind;

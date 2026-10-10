@@ -3,8 +3,8 @@
 //!
 //! Every form read here lists at most `MAX_SHEET_METAL_REFERENCES` ordered
 //! references and names its roles at fixed offsets, so the frame readers do
-//! fixed work and need no decode context. Binding a `Hem` to its parameter
-//! kinds searches the decoded parameter owners and is charged.
+//! fixed work. Hem binding uses the caller context for parameter-owner
+//! searches and the original refusal after each parameter-kind callback.
 
 use super::shared_frames::marked_record_reference;
 use crate::design::decode::byte_fields::zeros_at;
@@ -832,12 +832,14 @@ fn edge_flange_to_object_operation_at(
 /// recovered by agreement, so all candidates are evaluated and a frame that
 /// admits more than one is refused.
 fn exact_hem_operation(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     paired_at: usize,
     references: &ReferenceRun<u32>,
     has_kind: &impl Fn(u32, &str) -> Result<bool, CodecError>,
 ) -> Result<Option<DesignHemOperation>, CodecError> {
+    ctx.charge_work(0, "F3D Hem operation boundary")?;
     let mut resolved = None;
     for header_shift in SHEET_METAL_HEADER_SHIFTS {
         let candidates = [
@@ -846,7 +848,7 @@ fn exact_hem_operation(
             hem_gap_length_radius_operation_at(bytes, start, paired_at, references, header_shift),
         ];
         for candidate in candidates.into_iter().flatten() {
-            if !hem_parameter_kinds_match(&candidate, has_kind)? {
+            if !hem_parameter_kinds_match(ctx, &candidate, has_kind)? {
                 continue;
             }
             if resolved.replace(candidate).is_some() {
@@ -858,27 +860,33 @@ fn exact_hem_operation(
 }
 
 fn hem_parameter_kinds_match(
+    ctx: &DecodeContext<'_>,
     operation: &DesignHemOperation,
     has_kind: &impl Fn(u32, &str) -> Result<bool, CodecError>,
 ) -> Result<bool, CodecError> {
+    let checked_has_kind = |record_index, expected: &str| {
+        let result = has_kind(record_index, expected);
+        ctx.charge_work(0, "F3D Hem parameter kind boundary")?;
+        result
+    };
     match operation.parameter_owners {
         DesignHemParameterOwners::GapLength {
             gap_owner_record_index,
             length_owner_record_index,
-        } => Ok(has_kind(gap_owner_record_index, "HemGap")?
-            && has_kind(length_owner_record_index, "HemLength")?),
+        } => Ok(checked_has_kind(gap_owner_record_index, "HemGap")?
+            && checked_has_kind(length_owner_record_index, "HemLength")?),
         DesignHemParameterOwners::RadiusAngle {
             radius_owner_record_index,
             angle_owner_record_index,
-        } => Ok(has_kind(radius_owner_record_index, "HemRadius")?
-            && has_kind(angle_owner_record_index, "HemAngle")?),
+        } => Ok(checked_has_kind(radius_owner_record_index, "HemRadius")?
+            && checked_has_kind(angle_owner_record_index, "HemAngle")?),
         DesignHemParameterOwners::GapLengthRadius {
             gap_owner_record_index,
             length_owner_record_index,
             radius_owner_record_index,
-        } => Ok(has_kind(gap_owner_record_index, "HemGap")?
-            && has_kind(length_owner_record_index, "HemLength")?
-            && has_kind(radius_owner_record_index, "HemRadius")?),
+        } => Ok(checked_has_kind(gap_owner_record_index, "HemGap")?
+            && checked_has_kind(length_owner_record_index, "HemLength")?
+            && checked_has_kind(radius_owner_record_index, "HemRadius")?),
     }
 }
 
@@ -943,6 +951,7 @@ pub(super) fn bind_hem_operation_from_parameters(
         Ok(second.is_none() && first_kind_matches == Some(true))
     };
     let construction = exact_hem_operation(
+        ctx,
         bytes,
         start,
         paired_at,
