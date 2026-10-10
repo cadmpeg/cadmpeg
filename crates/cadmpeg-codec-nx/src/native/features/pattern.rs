@@ -938,7 +938,7 @@ pub(in crate::native) fn feature_pattern_references(
                 continue;
             };
             let layout = decoded.layout();
-            let mut decoded_references = decoded.into_references().into_iter();
+            let mut decoded_references = decoded.into_references();
             let ordinals = ctx.admit_iter(
                 &(0..decoded_references.len()),
                 "visit NX pattern references",

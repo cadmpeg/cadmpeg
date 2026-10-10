@@ -122,7 +122,8 @@ pub(super) fn emit_topology(
         }
         Ok(std::ops::ControlFlow::Continue(()))
     };
-    let _ = graph.visit_body_shape_shells(ctx, BodyShapeShellVisitor::Faces(&mut visit_shell))?;
+    let _shell_visit =
+        graph.visit_body_shape_shells(ctx, BodyShapeShellVisitor::Faces(&mut visit_shell))?;
     ctx.charge_work(1, "nx topology body shells")?;
     let mut face_loop_rings: BTreeMap<u32, Vec<(u32, Vec<u32>)>> = BTreeMap::new();
     let mut face_loop_failures: BTreeMap<u32, FaceLoopFailure> = BTreeMap::new();
