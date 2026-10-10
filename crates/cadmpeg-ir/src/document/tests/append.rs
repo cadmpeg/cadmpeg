@@ -183,16 +183,22 @@ fn append_parent_handoff_observes_callback_fuse_after_returned_success() {
     let ctx = cadmpeg_test_support::service_decode_context();
     let mut refusal = None;
     let result = ir.try_append(&ctx, staged.model, staged.native, |combined| {
-        assert!(combined.model.feature_regeneration_parent(
-            &"test:append:feature#child".try_into().unwrap()
-        ).is_some());
-        refusal = Some(ctx.charge_work(u64::MAX / 2, "test append handoff refusal")
-            .expect_err("callback fuses the original session"));
+        assert!(combined
+            .model
+            .feature_regeneration_parent(&"test:append:feature#child".try_into().unwrap())
+            .is_some());
+        refusal = Some(
+            ctx.charge_work(u64::MAX / 2, "test append handoff refusal")
+                .expect_err("callback fuses the original session"),
+        );
         Ok(Ok::<(), ()>(()))
     });
     let refusal = refusal.expect("callback reached the real combined state");
     assert_eq!(result.unwrap_err().to_string(), refusal.to_string());
-    assert_eq!(ctx.finish_session().unwrap_err().to_string(), refusal.to_string());
+    assert_eq!(
+        ctx.finish_session().unwrap_err().to_string(),
+        refusal.to_string()
+    );
     assert_eq!(ir, before);
 }
 

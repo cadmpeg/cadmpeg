@@ -213,9 +213,17 @@ mod tests {
             let original = super::clamped_nurbs_pcurve_endpoint_frames(&ctx, &curve).unwrap_err();
             assert_eq!(original.dimension, ResourceDimension::WorkUnits);
             assert_eq!(original.operation, operation);
-            assert_eq!((original.limit, original.used, original.additional), (cap, cap, 1));
-            assert_eq!(super::clamped_nurbs_pcurve_endpoint_frames(&ctx, &curve), Err(original));
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original));
+            assert_eq!(
+                (original.limit, original.used, original.additional),
+                (cap, cap, 1)
+            );
+            assert_eq!(
+                super::clamped_nurbs_pcurve_endpoint_frames(&ctx, &curve),
+                Err(original)
+            );
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original)
+            );
         }
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();

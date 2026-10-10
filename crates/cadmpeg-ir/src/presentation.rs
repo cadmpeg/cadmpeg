@@ -142,8 +142,10 @@ impl PresentationDocument {
 
 impl Serialize for PresentationDocument {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let fields = 1 + usize::from(self.schema_version.is_some())
-            + usize::from(self.active_view.is_some()) + usize::from(!self.states.is_empty())
+        let fields = 1
+            + usize::from(self.schema_version.is_some())
+            + usize::from(self.active_view.is_some())
+            + usize::from(!self.states.is_empty())
             + usize::from(self.native_ref.is_some());
         let mut wire = serializer.serialize_struct("PresentationDocumentWire", fields)?;
         wire.serialize_field("id", &self.id)?;
@@ -565,37 +567,62 @@ mod tests {
             let mut document = PresentationDocument::new(
                 PresentationId::mint("test:presentation:document#é🦀").unwrap(),
             );
-            if mask & 1 != 0 { document.schema_version = Some(0); }
-            if mask & 2 != 0 { document.active_view = Some("view\n\t\"🦀".to_owned()); }
-            if mask & 4 != 0 {
-                document.set_states(vec![PresentationState {
-                    kind: PresentationStateKind::Camera(CameraState {
-                        position: Some(crate::units::FiniteVector::new([-0.0, 2.0, 3.0]).unwrap()),
-                        orientation: None,
-                        properties: BTreeMap::from([(
-                            cadmpeg_core::nonblank_literal!("propertyé"), "camera\n🦀".to_owned(),
-                        )]),
-                    }),
-                    order: 9,
-                    attributes: BTreeMap::from([(
-                        cadmpeg_core::nonblank_literal!("attribute🦀"), "value\t\"".to_owned(),
-                    )]),
-                    assets: vec!["asseté".to_owned(), "asset\n🦀".to_owned()],
-                }]).unwrap();
+            if mask & 1 != 0 {
+                document.schema_version = Some(0);
             }
-            if mask & 8 != 0 { document.native_ref = Some("native\né🦀".to_owned()); }
+            if mask & 2 != 0 {
+                document.active_view = Some("view\n\t\"🦀".to_owned());
+            }
+            if mask & 4 != 0 {
+                document
+                    .set_states(vec![PresentationState {
+                        kind: PresentationStateKind::Camera(CameraState {
+                            position: Some(
+                                crate::units::FiniteVector::new([-0.0, 2.0, 3.0]).unwrap(),
+                            ),
+                            orientation: None,
+                            properties: BTreeMap::from([(
+                                cadmpeg_core::nonblank_literal!("propertyé"),
+                                "camera\n🦀".to_owned(),
+                            )]),
+                        }),
+                        order: 9,
+                        attributes: BTreeMap::from([(
+                            cadmpeg_core::nonblank_literal!("attribute🦀"),
+                            "value\t\"".to_owned(),
+                        )]),
+                        assets: vec!["asseté".to_owned(), "asset\n🦀".to_owned()],
+                    }])
+                    .unwrap();
+            }
+            if mask & 8 != 0 {
+                document.native_ref = Some("native\né🦀".to_owned());
+            }
             // The original derived wire pins field order, value shape and omission.
             let expected = super::PresentationDocumentWire {
-                id: document.id.clone(), schema_version: document.schema_version,
-                active_view: document.active_view.clone(), states: document.states.clone(),
+                id: document.id.clone(),
+                schema_version: document.schema_version,
+                active_view: document.active_view.clone(),
+                states: document.states.clone(),
                 native_ref: document.native_ref.clone(),
             };
             let bytes = serde_json::to_vec(&document).unwrap();
             assert_eq!(bytes, serde_json::to_vec(&expected).unwrap());
-            assert_eq!(serde_json::to_string_pretty(&document).unwrap(), serde_json::to_string_pretty(&expected).unwrap());
-            assert_eq!(serde_json::from_slice::<PresentationDocument>(&bytes).unwrap(), document);
+            assert_eq!(
+                serde_json::to_string_pretty(&document).unwrap(),
+                serde_json::to_string_pretty(&expected).unwrap()
+            );
+            assert_eq!(
+                serde_json::from_slice::<PresentationDocument>(&bytes).unwrap(),
+                document
+            );
             let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-            for (field, bit) in [("schema_version", 1), ("active_view", 2), ("states", 4), ("native_ref", 8)] {
+            for (field, bit) in [
+                ("schema_version", 1),
+                ("active_view", 2),
+                ("states", 4),
+                ("native_ref", 8),
+            ] {
                 assert_eq!(value.get(field).is_some(), mask & bit != 0);
             }
         }

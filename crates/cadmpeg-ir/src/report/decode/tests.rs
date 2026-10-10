@@ -124,7 +124,9 @@ fn formatted_occupied_coverage_releases_name_without_retaining_another_key() {
     let mut coverage = Coverage::default();
     let prior = cadmpeg_test_support::service_decode_context();
     coverage.record_indexed(&prior, indexed, 4, 7).unwrap();
-    coverage.record_hex_byte(&prior, hexadecimal, 0x0a, 7).unwrap();
+    coverage
+        .record_hex_byte(&prior, hexadecimal, 0x0a, 7)
+        .unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
@@ -132,11 +134,17 @@ fn formatted_occupied_coverage_releases_name_without_retaining_another_key() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     for count in [8, 9] {
         coverage.record_indexed(&ctx, indexed, 4, count).unwrap();
-        coverage.record_hex_byte(&ctx, hexadecimal, 0x0a, count).unwrap();
+        coverage
+            .record_hex_byte(&ctx, hexadecimal, 0x0a, count)
+            .unwrap();
         assert_eq!(coverage.get("type_4_count"), Some(&count));
         assert_eq!(coverage.get("type_0a_count"), Some(&count));
-        let released = ctx.reserve_scoped(EMPTY_ROOT_MATERIALIZED_ALLOWANCE,
-            "check formatted name release").unwrap();
+        let released = ctx
+            .reserve_scoped(
+                EMPTY_ROOT_MATERIALIZED_ALLOWANCE,
+                "check formatted name release",
+            )
+            .unwrap();
         drop(released);
     }
     ctx.finish_session().unwrap();
@@ -474,7 +482,6 @@ fn decode_transfer_verification_preserves_the_first_unresolved_target() {
     }
 }
 
-
 #[test]
 fn decode_report_borrowed_serialization_preserves_wire_order_and_omissions() {
     use super::DecodeReportWire;
@@ -525,7 +532,10 @@ fn decode_report_borrowed_serialization_preserves_wire_order_and_omissions() {
             };
             let bytes = serde_json::to_vec(&report).unwrap();
             assert_eq!(bytes, serde_json::to_vec(&expected).unwrap());
-            assert_eq!(serde_json::from_slice::<DecodeReport>(&bytes).unwrap(), report);
+            assert_eq!(
+                serde_json::from_slice::<DecodeReport>(&bytes).unwrap(),
+                report
+            );
             let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
             assert_eq!(value.get("coverage").is_some(), has_coverage);
             assert_eq!(value.get("transfer_ledger").is_some(), has_ledger);

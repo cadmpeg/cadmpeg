@@ -530,9 +530,9 @@ impl FaceLoops {
     }
 
     /// Ordered loop ids: outer first when the face states one.
-    pub fn iter(&self) -> std::iter::Chain<
-        std::option::IntoIter<&LoopId>, std::slice::Iter<'_, LoopId>,
-    > {
+    pub fn iter(
+        &self,
+    ) -> std::iter::Chain<std::option::IntoIter<&LoopId>, std::slice::Iter<'_, LoopId>> {
         self.into_iter()
     }
 
@@ -595,9 +595,8 @@ impl PartialEq<FaceLoops> for Vec<LoopId> {
 
 impl<'a> IntoIterator for &'a FaceLoops {
     type Item = &'a LoopId;
-    type IntoIter = std::iter::Chain<
-        std::option::IntoIter<&'a LoopId>, std::slice::Iter<'a, LoopId>,
-    >;
+    type IntoIter =
+        std::iter::Chain<std::option::IntoIter<&'a LoopId>, std::slice::Iter<'a, LoopId>>;
 
     fn into_iter(self) -> Self::IntoIter {
         let (outer, rest) = match self {
@@ -1792,12 +1791,15 @@ mod tests {
         for loops in &fixtures {
             let expected = match loops {
                 FaceLoops::Unspecified { loops } => loops.iter().collect::<Vec<_>>(),
-                FaceLoops::Classified { outer, inner } => std::iter::once(outer).chain(inner.iter()).collect(),
+                FaceLoops::Classified { outer, inner } => {
+                    std::iter::once(outer).chain(inner.iter()).collect()
+                }
             };
             // This exact type carries only optional/slice iterator state.
             // No Box or trait object can satisfy this assignment.
             let mut iterator: std::iter::Chain<
-                std::option::IntoIter<&LoopId>, std::slice::Iter<'_, LoopId>,
+                std::option::IntoIter<&LoopId>,
+                std::slice::Iter<'_, LoopId>,
             > = loops.iter();
             assert_eq!(iterator.size_hint(), (expected.len(), Some(expected.len())));
             for (index, member) in expected.iter().enumerate() {
@@ -1808,12 +1810,16 @@ mod tests {
             assert_eq!(iterator.next(), None);
             assert_eq!(iterator.next(), None);
             let via_trait: std::iter::Chain<
-                std::option::IntoIter<&LoopId>, std::slice::Iter<'_, LoopId>,
+                std::option::IntoIter<&LoopId>,
+                std::slice::Iter<'_, LoopId>,
             > = loops.into_iter();
             assert!(via_trait.eq(expected.iter().copied()));
             assert_eq!(loops.len(), expected.len());
             assert_eq!(loops.is_empty(), expected.is_empty());
-            assert_eq!(loops.to_vec(), expected.into_iter().cloned().collect::<Vec<_>>());
+            assert_eq!(
+                loops.to_vec(),
+                expected.into_iter().cloned().collect::<Vec<_>>()
+            );
         }
     }
 

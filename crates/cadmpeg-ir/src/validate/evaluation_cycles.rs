@@ -17,7 +17,9 @@ fn curve_dependencies(definition: &ProceduralCurveDefinition) -> [Option<&str>; 
         ProceduralCurveDefinition::Replica { source, .. } => [Some(source.as_str()), None, None],
         ProceduralCurveDefinition::Subset(payload) => [Some(payload.source().as_str()), None, None],
         ProceduralCurveDefinition::TolerantIntersection {
-            construction, parameterization: Some(_), ..
+            construction,
+            parameterization: Some(_),
+            ..
         } => [
             Some(construction.supports()[0].as_str()),
             Some(construction.supports()[1].as_str()),
@@ -29,19 +31,43 @@ fn curve_dependencies(definition: &ProceduralCurveDefinition) -> [Option<&str>; 
 
 fn surface_dependencies(definition: &ProceduralSurfaceDefinition) -> [Option<&str>; 3] {
     match definition {
-        ProceduralSurfaceDefinition::AxisRevolution(payload) => [Some(payload.directrix().as_str()), None, None],
-        ProceduralSurfaceDefinition::Extrusion(payload) => [Some(payload.directrix().as_str()), None, None],
-        ProceduralSurfaceDefinition::LinearSweep(payload) => [Some(payload.directrix().as_str()), None, None],
-        ProceduralSurfaceDefinition::Revolution(payload) => [Some(payload.directrix().as_str()), None, None],
-        ProceduralSurfaceDefinition::Ruled { first, second, .. } => [Some(first.as_str()), Some(second.as_str()), None],
-        ProceduralSurfaceDefinition::Sum(payload) => [Some(payload.first().as_str()), Some(payload.second().as_str()), None],
-        ProceduralSurfaceDefinition::Sweep(payload) if payload.native().is_some() => [Some(payload.profile().as_str()), Some(payload.spine().as_str()), None],
+        ProceduralSurfaceDefinition::AxisRevolution(payload) => {
+            [Some(payload.directrix().as_str()), None, None]
+        }
+        ProceduralSurfaceDefinition::Extrusion(payload) => {
+            [Some(payload.directrix().as_str()), None, None]
+        }
+        ProceduralSurfaceDefinition::LinearSweep(payload) => {
+            [Some(payload.directrix().as_str()), None, None]
+        }
+        ProceduralSurfaceDefinition::Revolution(payload) => {
+            [Some(payload.directrix().as_str()), None, None]
+        }
+        ProceduralSurfaceDefinition::Ruled { first, second, .. } => {
+            [Some(first.as_str()), Some(second.as_str()), None]
+        }
+        ProceduralSurfaceDefinition::Sum(payload) => [
+            Some(payload.first().as_str()),
+            Some(payload.second().as_str()),
+            None,
+        ],
+        ProceduralSurfaceDefinition::Sweep(payload) if payload.native().is_some() => [
+            Some(payload.profile().as_str()),
+            Some(payload.spine().as_str()),
+            None,
+        ],
         ProceduralSurfaceDefinition::Blend(payload) => {
             if let Some(native) = payload.native() {
                 let [first, second] = &native.sides;
                 [
-                    first.surface.as_ref().map(|support| support.surface.as_str()),
-                    second.surface.as_ref().map(|support| support.surface.as_str()),
+                    first
+                        .surface
+                        .as_ref()
+                        .map(|support| support.surface.as_str()),
+                    second
+                        .surface
+                        .as_ref()
+                        .map(|support| support.surface.as_str()),
                     Some(native.slice.as_str()),
                 ]
             } else {
@@ -51,16 +77,30 @@ fn surface_dependencies(definition: &ProceduralSurfaceDefinition) -> [Option<&st
         ProceduralSurfaceDefinition::VariableBlend(payload) => {
             let [first, second] = &payload.construction().sides;
             [
-                first.surface.as_ref().map(|support| support.surface.as_str()),
-                second.surface.as_ref().map(|support| support.surface.as_str()),
+                first
+                    .surface
+                    .as_ref()
+                    .map(|support| support.surface.as_str()),
+                second
+                    .surface
+                    .as_ref()
+                    .map(|support| support.surface.as_str()),
                 None,
             ]
         }
-        ProceduralSurfaceDefinition::CurveBounded { support, .. } => [Some(support.as_str()), None, None],
+        ProceduralSurfaceDefinition::CurveBounded { support, .. } => {
+            [Some(support.as_str()), None, None]
+        }
         ProceduralSurfaceDefinition::Replica { source, .. } => [Some(source.as_str()), None, None],
-        ProceduralSurfaceDefinition::Subset(payload) => [Some(payload.support().as_str()), None, None],
-        ProceduralSurfaceDefinition::ParallelOffset(payload) => [Some(payload.support().as_str()), None, None],
-        ProceduralSurfaceDefinition::Offset(payload) => [Some(payload.support().as_str()), None, None],
+        ProceduralSurfaceDefinition::Subset(payload) => {
+            [Some(payload.support().as_str()), None, None]
+        }
+        ProceduralSurfaceDefinition::ParallelOffset(payload) => {
+            [Some(payload.support().as_str()), None, None]
+        }
+        ProceduralSurfaceDefinition::Offset(payload) => {
+            [Some(payload.support().as_str()), None, None]
+        }
         _ => [None; 3],
     }
 }

@@ -2025,21 +2025,11 @@ impl CadIr {
         let key = ctx.copy_retained_text("unknowns", "native unknown arena key")?;
         let records = records.1.commit_value(records.0)?;
         if let Some(namespace) = self.native.0.get_mut(format) {
-            ctx.insert_btree_map(
-                namespace.arenas_mut(),
-                key,
-                records,
-                "native unknown arena",
-            )?;
+            ctx.insert_btree_map(namespace.arenas_mut(), key, records, "native unknown arena")?;
         } else {
             let format = ctx.copy_retained_text(format, "native unknown namespace key")?;
             let mut namespace = crate::native::NativeNamespace::default();
-            ctx.insert_btree_map(
-                namespace.arenas_mut(),
-                key,
-                records,
-                "native unknown arena",
-            )?;
+            ctx.insert_btree_map(namespace.arenas_mut(), key, records, "native unknown arena")?;
             ctx.insert_btree_map(
                 &mut self.native.0,
                 format,

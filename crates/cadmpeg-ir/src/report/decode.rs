@@ -106,8 +106,8 @@ struct DecodeReportWire {
 impl Serialize for DecodeReport {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let coverage = self.coverage.as_map();
-        let fields = 4 + usize::from(!coverage.is_empty())
-            + usize::from(!self.transfer_ledger.is_empty());
+        let fields =
+            4 + usize::from(!coverage.is_empty()) + usize::from(!self.transfer_ledger.is_empty());
         let mut wire = serializer.serialize_struct("DecodeReportWire", fields)?;
         wire.serialize_field("identity", &self.classification)?;
         wire.serialize_field("transfer", &self.transfer)?;
@@ -474,7 +474,6 @@ impl Coverage {
     fn from_wire(entries: BTreeMap<String, usize>) -> Self {
         Self { entries }
     }
-
 }
 
 impl Extend<(CoverageKey, usize)> for Coverage {

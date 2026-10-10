@@ -588,7 +588,9 @@ impl JsonPreview {
                 '\n' => self.write_str("\\n")?,
                 '\u{c}' => self.write_str("\\f")?,
                 '\r' => self.write_str("\\r")?,
-                character if character <= '\u{1f}' => write!(self, "\\u{:04x}", u32::from(character))?,
+                character if character <= '\u{1f}' => {
+                    write!(self, "\\u{:04x}", u32::from(character))?
+                }
                 character => self.write_char(character)?,
             }
         }
@@ -979,16 +981,26 @@ mod tests {
     fn comparison_preview_preserves_json_escaping_and_utf8_boundaries() {
         fn expected(value: &Value) -> String {
             let text = value.to_string();
-            let end = text.char_indices()
+            let end = text
+                .char_indices()
                 .take_while(|(offset, _)| *offset < super::PREVIEW_BYTES)
-                .last().map_or(0, |(offset, character)| offset + character.len_utf8());
-            if end < text.len() { format!("{}…", &text[..end]) } else { text }
+                .last()
+                .map_or(0, |(offset, character)| offset + character.len_utf8());
+            if end < text.len() {
+                format!("{}…", &text[..end])
+            } else {
+                text
+            }
         }
         let controls: String = (0..=31).map(char::from).collect();
         let mut values = vec![
-            Value::Null, Value::Bool(true), Value::Bool(false),
-            serde_json::json!(i64::MIN), serde_json::json!(u64::MAX),
-            serde_json::json!(-0.0), serde_json::json!(f64::MAX),
+            Value::Null,
+            Value::Bool(true),
+            Value::Bool(false),
+            serde_json::json!(i64::MIN),
+            serde_json::json!(u64::MAX),
+            serde_json::json!(-0.0),
+            serde_json::json!(f64::MAX),
             serde_json::json!(f64::MIN_POSITIVE),
             Value::String(format!("{controls}\"\\é🦀")),
             serde_json::json!({"\"\\\n": [null, false, 1.25, {"é": "🦀"}]}),
@@ -998,7 +1010,9 @@ mod tests {
                 values.push(Value::String(format!("{}{suffix}", "x".repeat(prefix))));
             }
         }
-        values.push(Value::Array((0..100).map(|_| serde_json::json!("é\n")).collect()));
+        values.push(Value::Array(
+            (0..100).map(|_| serde_json::json!("é\n")).collect(),
+        ));
         for value in values {
             assert_eq!(super::truncate(&value), expected(&value), "{value:?}");
         }
@@ -1007,10 +1021,18 @@ mod tests {
     #[test]
     fn comparison_preview_stops_before_nested_suffixes() {
         let mut value = Value::Null;
-        for _ in 0..256 { value = Value::Array(vec![value]); }
-        assert_eq!(super::truncate(&value), format!("{}…", "[".repeat(super::PREVIEW_BYTES)));
+        for _ in 0..256 {
+            value = Value::Array(vec![value]);
+        }
+        assert_eq!(
+            super::truncate(&value),
+            format!("{}…", "[".repeat(super::PREVIEW_BYTES))
+        );
         let value = serde_json::json!({"a": "x".repeat(1024), "b": value});
-        assert_eq!(super::truncate(&value), format!("{{\"a\":\"{}…", "x".repeat(super::PREVIEW_BYTES - 6)));
+        assert_eq!(
+            super::truncate(&value),
+            format!("{{\"a\":\"{}…", "x".repeat(super::PREVIEW_BYTES - 6))
+        );
     }
 
     #[test]
@@ -1033,5 +1055,4 @@ mod tests {
             assert_eq!(actual.2, fractional, "{text}");
         }
     }
-
 }
