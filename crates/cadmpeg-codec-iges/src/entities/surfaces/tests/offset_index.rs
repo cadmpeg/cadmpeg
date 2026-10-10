@@ -144,10 +144,9 @@ fn offset_unowned_procedural_index_refuses_first_and_last_actual_source_visits()
     for count in [1, 64] {
         let ir = unowned_procedural_surfaces(count);
         for visited in [0, count - 1] {
-            // The current shared unique_index implementation has one charged
-            // exhausted probe for its empty owner input. This control isolates
-            // the following source walk; it does not certify that shared probe.
-            let before_source = 1 + u64::try_from(visited).unwrap()
+            // With no carrier owners, only visited procedural records and
+            // their current shared key lookup costs precede this source step.
+            let before_source = u64::try_from(visited).unwrap()
                 * (1 + u64::try_from(PROCEDURAL_ID.len()).unwrap());
             assert_refusal(&ir, before_source, "iges offset procedural index traversal", 1);
         }
@@ -305,4 +304,52 @@ fn offset_repeated_construction_owners_exclude_procedural_lookup() {
     drop(lookups);
     drop(storage);
     ctx.finish_session().unwrap();
+}
+
+#[test]
+fn offset_solved_surface_index_completes_without_owner_source_revisit() {
+    for count in [1, 64] {
+        let ir = duplicate_surfaces(count);
+        let original = ir.model.clone();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = completed_duplicate_prefix(count);
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut storage = ctx.reserve_scoped(0, "test single offset surface pass").unwrap();
+        let lookups = storage.with_storage(|| OffsetLookups::from_ir(&ir, &ctx)).unwrap();
+        assert_eq!(lookups.surfaces.get(&ir.model.surfaces[0].id), Some(&(0, count - 1)));
+        assert!(lookups.procedural.is_empty());
+        assert_eq!(ir.model, original);
+        drop(lookups);
+        drop(storage);
+        ctx.finish_session().unwrap();
+    }
+}
+
+#[test]
+fn empty_offset_lookup_index_accepts_zero_budgets_and_preserves_refusal() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_entities = 0;
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let lookups = OffsetLookups::from_ir(&CadIr::empty(), &ctx).unwrap();
+    assert!(lookups.surfaces.is_empty());
+    assert!(lookups.procedural.is_empty());
+    drop(lookups);
+    let first = match ctx.charge_work(1, "test original empty offset refusal") {
+        Err(CodecError::ResourceLimit(first)) => first,
+        _ => panic!("establish original refusal"),
+    };
+    for _ in 0..64 {
+        assert!(matches!(OffsetLookups::from_ir(&CadIr::empty(), &ctx),
+            Err(CodecError::ResourceLimit(last)) if last == first));
+    }
+    assert!(matches!(ctx.finish_session(),
+        Err(CodecError::ResourceLimit(last)) if last == first));
 }

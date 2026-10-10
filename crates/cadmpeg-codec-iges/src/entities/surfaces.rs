@@ -35,7 +35,7 @@ use cadmpeg_ir::scalar::{
 use cadmpeg_ir::topology::IncreasingParameterInterval;
 use cadmpeg_ir::units::{FiniteVector, OrthonormalFrame3, UnitVector3};
 use cadmpeg_ir::CadIr;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 const EPS_SURFACES_SIMILARITY_ORIENTATION_E10: f64 = 1.0e-10;
 
@@ -1582,6 +1582,8 @@ impl OffsetLookups {
             return Err(CodecError::from(refusal));
         }
         let mut surfaces = BTreeMap::new();
+        let mut owner_storage = ctx.reserve_scoped(0, "iges offset unique owners")?;
+        let mut owners = HashMap::<&str, Option<&SurfaceId>>::new();
         let mut source_index_entries = ir.model.surfaces.iter().enumerate();
         while source_index_entries.len() != 0 {
             let Some((position, surface)) =
@@ -1607,19 +1609,27 @@ impl OffsetLookups {
                     "iges offset surface index nodes",
                 )?;
             }
+            if let Some(construction) = surface.geometry.procedural_construction() {
+                let key = construction.as_str();
+                if let Some(previous) = ctx.get_mut_hash_map(
+                    &mut owners,
+                    key,
+                    "iges offset unique owners",
+                )? {
+                    *previous = None;
+                } else {
+                    // discarded-value: the construction key was absent before insertion.
+                    let _ = owner_storage.with_storage(|| {
+                        ctx.insert_hash_map(
+                            &mut owners,
+                            key,
+                            Some(&surface.id),
+                            "iges offset unique owners",
+                        )
+                    })?;
+                }
+            }
         }
-        let _owner_storage;
-        let (owners, result_owner_storage) = ctx.unique_index(
-            ctx.admit_iter(&ir.model.surfaces, "iges offset owner traversal")?
-                .filter_map(|surface| {
-                    surface
-                        .geometry
-                        .procedural_construction()
-                        .map(|construction| (construction.as_str(), &surface.id))
-                }),
-            "iges offset unique owners",
-        )?;
-        _owner_storage = result_owner_storage;
         let mut procedural = BTreeMap::new();
         let mut source_index_entries = ir.model.procedural_surfaces.iter().enumerate();
         while source_index_entries.len() != 0 {
