@@ -260,3 +260,5 @@ fn work_point_query_duplicate_edge_state_is_absent_before_later_vertex_state() {
         assert_eq!(ctx.resource_refusal(), None);
     });
 }
+
+mod callback_refusal;

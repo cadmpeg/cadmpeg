@@ -128,13 +128,18 @@ fn visit_revolve_face_candidates<'source>(
         && ctx.any_by(&operand.recipe_references, |reference| {
             Ok(!reference.candidate_faces.is_empty() || !reference.alternate_selector_faces.is_empty())
         }, "select F3D Revolve candidate lane")?;
+    let mut visit_with_original_refusal = |face: &'source cadmpeg_ir::ids::FaceId| {
+        let result = visit(face);
+        ctx.charge_work(0, "visit F3D Revolve face candidate")?;
+        result
+    };
     if use_referenced {
         ctx.all_by(&operand.recipe_references, |reference| {
-            Ok(ctx.all_by(&reference.candidate_faces, &mut visit, "visit F3D Revolve face candidate")?
-                && ctx.all_by(&reference.alternate_selector_faces, &mut visit, "visit F3D Revolve face candidate")?)
+            Ok(ctx.all_by(&reference.candidate_faces, &mut visit_with_original_refusal, "visit F3D Revolve face candidate")?
+                && ctx.all_by(&reference.alternate_selector_faces, &mut visit_with_original_refusal, "visit F3D Revolve face candidate")?)
         }, "visit F3D Revolve candidate reference")
     } else {
-        ctx.all_by(crate::design::face_resolve::face_operand_candidates(operand), visit, "visit F3D Revolve face candidate")
+        ctx.all_by(crate::design::face_resolve::face_operand_candidates(operand), visit_with_original_refusal, "visit F3D Revolve face candidate")
     }
 }
 
@@ -673,7 +678,9 @@ impl<'a> ScopeHistoryGraph<'a> {
                         "Design scope history-state dependency is cyclic".into(),
                     ));
                 }
-                if projected(candidate)? {
+                let accepted = projected(candidate);
+                ctx.charge_work(0, "visit F3D projected predecessor candidate")?;
+                if accepted? {
                     return Ok(ScopeHistoryPredecessor::Scope(candidate));
                 }
                 if !ctx.insert_hash_set(
@@ -2095,7 +2102,9 @@ fn visit_work_point_history_states(
             Some(DesignWorkPointInputCarrier::WorkPlane { .. } | DesignWorkPointInputCarrier::SketchPoint { .. }) | None => None,
         };
         if let Some(state) = state {
-            if !visit(state)? {
+            let result = visit(state);
+            ctx.charge_work(0, "visit F3D WorkPoint history state")?;
+            if !result? {
                 return Ok(false);
             }
         }

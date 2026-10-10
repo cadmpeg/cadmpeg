@@ -215,3 +215,5 @@ fn history_lookup_lifetime_predecessor_key_one_below_keeps_original_refusal() {
         assert!(matches!(graph.predecessor(ctx, &scopes[7], |_| Ok(true)), Err(CodecError::ResourceLimit(later)) if later == original));
     });
 }
+
+mod callback_refusal;
