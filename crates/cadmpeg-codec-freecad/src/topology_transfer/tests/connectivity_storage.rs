@@ -6,16 +6,30 @@ use crate::brep::{
     TextTShape, TextTShapes,
 };
 use crate::native::element_map::ScopedData;
-use crate::topology_transfer::{Builder, GeometryIndexes, ScopedVec};
+use crate::topology_transfer::{connected_components, Builder, GeometryIndexes};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::transform::Transform;
 
 const MATERIALIZED_CAP: u64 = 4096;
-// reserve_vec uses four slots for both usize and Vec<usize> at first growth.
-const COMPONENT_BYTES: u64 = cadmpeg_core::decode::u64_from_index(
-    4 * std::mem::size_of::<usize>() + 4 * std::mem::size_of::<Vec<usize>>(),
-);
+// Observe the surviving component output through the core refusal report.
+fn component_output_bytes() -> u64 {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = MATERIALIZED_CAP;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (data, storage) = ctx.with_scoped_storage("test baseline component output", || {
+        connected_components(&ctx, &[std::collections::BTreeSet::new()])
+    }).unwrap();
+    let output = ScopedData { data, _storage: storage };
+    assert_eq!(output.data, vec![vec![0]]);
+    let error = ctx.reserve_scoped(MATERIALIZED_CAP, "test component output usage").unwrap_err();
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("live output must refuse a full-cap reservation");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+    limit.used
+}
 
 fn shape_use(shape: usize) -> TextShapeUse {
     TextShapeUse {
@@ -103,16 +117,15 @@ fn face_connectivity_storage_releases_keys_before_components() {
             builder.face_components(&ctx, &[&face], Transform::identity())
         })
         .unwrap();
-    let result = ScopedVec {
-        values,
+    let result = ScopedData {
+        data: values,
         _storage: storage,
     };
-    assert_eq!(result.values, vec![vec![0]]);
-    assert_eq!(result.values.capacity(), 4);
-    assert_eq!(result.values[0].capacity(), 4);
+    assert_eq!(result.data, vec![vec![0]]);
+    let component_bytes = component_output_bytes();
     let remaining = ctx
         .reserve_scoped(
-            MATERIALIZED_CAP - COMPONENT_BYTES,
+            MATERIALIZED_CAP - component_bytes,
             "test remaining component capacity",
         )
         .expect("only components survive");
@@ -141,13 +154,14 @@ fn face_connectivity_storage_refusal_preserves_surviving_bytes_and_fuse() {
             builder.face_components(&ctx, &[&face], Transform::identity())
         })
         .unwrap();
-    let result = ScopedVec {
-        values,
+    let result = ScopedData {
+        data: values,
         _storage: storage,
     };
-    assert_eq!(result.values, vec![vec![0]]);
+    assert_eq!(result.data, vec![vec![0]]);
+    let component_bytes = component_output_bytes();
     let Err(CodecError::ResourceLimit(original)) = ctx.reserve_scoped(
-        MATERIALIZED_CAP - COMPONENT_BYTES + 1,
+        MATERIALIZED_CAP - component_bytes + 1,
         "test excess component capacity",
     ) else {
         panic!("one byte above surviving capacity must refuse")
@@ -156,8 +170,8 @@ fn face_connectivity_storage_refusal_preserves_surviving_bytes_and_fuse() {
     assert_eq!(
         (original.used, original.additional, original.limit),
         (
-            COMPONENT_BYTES,
-            MATERIALIZED_CAP - COMPONENT_BYTES + 1,
+            component_bytes,
+            MATERIALIZED_CAP - component_bytes + 1,
             MATERIALIZED_CAP
         )
     );

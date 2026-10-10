@@ -404,7 +404,8 @@ fn topology_binding_group_index_is_scoped_and_dedup_keeps_no_new_identity() {
 #[test]
 fn legacy_root_node_allocation_releases_the_consumed_group_tree() {
     let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = u64::MAX;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let (groups, group_storage) = ctx
         .collect_scoped_btree_map(

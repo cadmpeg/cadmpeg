@@ -97,7 +97,7 @@ fn inline_element_map_does_not_build_property_owners() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let probe = RefusalProbe::arm(
         ResourceDimension::WorkUnits,
-        "FreeCAD property ownership input",
+        "FreeCAD property ownership endpoints",
         None,
     );
     let (_, maps) = super::parse_bytes(
