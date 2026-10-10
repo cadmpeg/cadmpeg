@@ -267,7 +267,7 @@ fn emit_carrier_surface(
             }
             DecodedProceduralSurfaceDefinition::Compound { components } => {
                 let component_ids = ctx.try_collect_vec(
-                    ctx.admit_iter(components, "ASM procedural members")?
+                    components.into_iter()
                         .enumerate()
                         .map(|(component, item)| -> Result<_, cadmpeg_core::CodecError> {
                             Ok({
@@ -1052,9 +1052,9 @@ fn emit_loft_surface(
         cadmpeg_core::CodecError,
     > {
         let entries = ctx.try_collect_vec(
-                ctx.admit_iter(entries, "ASM procedural members")?.enumerate().map(|(entry_index, entry)| {
+                entries.into_iter().enumerate().map(|(entry_index, entry)| {
                     let profile = ctx.try_collect_vec(
-                        ctx.admit_iter(entry.profile, "ASM procedural members")?.enumerate().map(
+                        entry.profile.into_iter().enumerate().map(
                             |(member_index, member)| -> Result<_, cadmpeg_core::CodecError> {
                                 Ok({
                                     let curve = brep_id!(
@@ -1129,7 +1129,7 @@ fn emit_loft_surface(
                         )),
                     )?;
                     let auxiliaries = ctx.try_collect_vec(
-                        ctx.admit_iter(entry.path.auxiliaries, "ASM procedural members")?.enumerate().map(
+                        entry.path.auxiliaries.into_iter().enumerate().map(
                             |(auxiliary_index, geometry)| -> Result<_, cadmpeg_core::CodecError> {
                                 Ok({
                                     let id = brep_id!(
@@ -1234,7 +1234,7 @@ fn emit_compound_loft_surface(
         cadmpeg_core::CodecError,
     > {
         let members = ctx.try_collect_vec(
-            ctx.admit_iter(scale.members, "ASM procedural members")?
+            scale.members.into_iter()
                 .enumerate()
                 .map(
                     |(member_index, member)| -> Result<_, cadmpeg_core::CodecError> {
@@ -1332,7 +1332,7 @@ fn emit_compound_loft_surface(
             }
         );
         let auxiliaries = ctx.try_collect_vec(
-            ctx.admit_iter(scale.auxiliaries, "ASM procedural members")?
+            scale.auxiliaries.into_iter()
                 .enumerate()
                 .map(|(index, geometry)| -> Result<_, cadmpeg_core::CodecError> {
                     Ok({
@@ -1527,7 +1527,7 @@ fn emit_scaled_compound_loft_surface(
         cadmpeg_core::CodecError,
     > {
         let members = ctx.try_collect_vec(
-            ctx.admit_iter(scale.members, "ASM procedural members")?
+            scale.members.into_iter()
                 .enumerate()
                 .map(
                     |(member_index, member)| -> Result<_, cadmpeg_core::CodecError> {
@@ -1625,7 +1625,7 @@ fn emit_scaled_compound_loft_surface(
             }
         );
         let auxiliaries = ctx.try_collect_vec(
-            ctx.admit_iter(scale.auxiliaries, "ASM procedural members")?
+            scale.auxiliaries.into_iter()
                 .enumerate()
                 .map(|(index, geometry)| -> Result<_, cadmpeg_core::CodecError> {
                     Ok({
@@ -2001,7 +2001,7 @@ fn emit_law_surface(
         embedded.primary,
     )?;
     let additional = ctx.try_collect_vec(
-        ctx.admit_iter(embedded.additional, "ASM additional law formulas")?
+        embedded.additional.into_iter()
             .enumerate()
             .map(|(index, formula)| {
                 map_formula(&mut *out, brep_key!("additional:", index), formula)
@@ -2086,7 +2086,7 @@ fn emit_skin_surface(
             tail,
         } => {
             let profiles = ctx.try_collect_vec(
-                ctx.admit_iter(profiles, "ASM procedural members")?
+                profiles.into_iter()
                     .enumerate()
                     .map(|(index, profile)| -> Result<_, cadmpeg_core::CodecError> {
                         Ok({
@@ -2212,11 +2212,11 @@ fn emit_net_surface(
          entries: Vec<EmbeddedLoftSectionEntry>|
          -> Result<cadmpeg_ir::geometry::LoftSection, cadmpeg_core::CodecError> {
             let entries = ctx.try_collect_vec(
-                ctx.admit_iter(entries, "ASM procedural members")?
+                entries.into_iter()
                     .enumerate()
                     .map(|(entry_index, entry)| {
                         let profile = ctx.try_collect_vec(
-                        ctx.admit_iter(entry.profile, "ASM procedural members")?.enumerate().map(
+                        entry.profile.into_iter().enumerate().map(
                             |(member_index, member)| -> Result<_, cadmpeg_core::CodecError> {
                                 Ok({
                                     let curve = brep_id!(
@@ -2293,7 +2293,7 @@ fn emit_net_surface(
                             )),
                         )?;
                         let auxiliaries = ctx.try_collect_vec(
-                            ctx.admit_iter(entry.path.auxiliaries, "ASM procedural members")?
+                            entry.path.auxiliaries.into_iter()
                                 .enumerate()
                                 .map(|(index, geometry)| -> Result<_, cadmpeg_core::CodecError> {
                                     Ok({
@@ -3085,7 +3085,7 @@ fn emit_revision_compound_loft_surface(
         cadmpeg_core::CodecError,
     > {
         ctx.try_collect_vec(
-            ctx.admit_iter(profile, "ASM procedural members")?
+            profile.into_iter()
                 .enumerate()
                 .map(
                     |(member_index, member)| -> Result<_, cadmpeg_core::CodecError> {
@@ -3171,7 +3171,7 @@ fn emit_revision_compound_loft_surface(
             })
         })?;
         let auxiliaries = ctx.try_collect_vec(
-            ctx.admit_iter(path.auxiliaries, "ASM procedural members")?
+            path.auxiliaries.into_iter()
                 .enumerate()
                 .map(
                     |(auxiliary_index, geometry)| -> Result<_, cadmpeg_core::CodecError> {
@@ -3223,7 +3223,7 @@ fn emit_revision_compound_loft_surface(
     let base_profile = convert_profile(&base, construction.base_profile, &mut *out)?;
     let base_path = convert_path(base, construction.base_path, &mut *out)?;
     let entries: Vec<_> = ctx.try_collect_vec(
-        ctx.admit_iter(construction.entries, "ASM compound loft sections")?
+        construction.entries.into_iter()
             .enumerate()
             .map(|(entry_index, entry)| {
                 let scope = brep_key!(i, ":cloft:", entry_index);
@@ -4169,7 +4169,7 @@ fn emit_carrier_curve(
                         },
                     ) => {
                         let components = ctx.try_collect_vec(
-                            ctx.admit_iter(components, "ASM procedural members")?
+                            components.into_iter()
                                 .enumerate()
                                 .map(
                                     |(component, curve)| -> Result<_, cadmpeg_core::CodecError> {
@@ -4799,7 +4799,7 @@ fn emit_law_curve(
         extension: embedded.extension,
         primary: map_formula(cadmpeg_ir::identity_key!("primary"), embedded.primary)?,
         additional: ctx.try_collect_vec(
-            ctx.admit_iter(embedded.additional, "ASM additional law formulas")?
+            embedded.additional.into_iter()
                 .enumerate()
                 .map(|(index, formula)| map_formula(brep_key!("additional:", index), formula)),
             "ASM law curve additional formulas",
