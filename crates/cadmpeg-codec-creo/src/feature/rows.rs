@@ -611,7 +611,12 @@ fn round_replay_short_scalar(
     }
     let mut offset = start;
     while offset < end {
-        ctx.next_charged(&mut (offset..end), "creo round replay scalar traversal")?;
+        let fixed = matches!(body.get(offset), Some(0xe0 | 0x19 | 0x28 | 0x32 | 0x37 | 0x41
+            | 0x31 | 0x4f | 0x90 | 0xd5 | 0xd7 | 0x18))
+            || scalar::decode(body, offset).is_some();
+        if fixed {
+            ctx.next_charged(&mut (offset..end), "creo round replay scalar traversal")?;
+        }
         if body.get(offset) == Some(&0x29)
             && scalar::decode(body, offset).is_some_and(|(value, after)| {
                 after == offset + 3 && after <= end && value.is_finite()
