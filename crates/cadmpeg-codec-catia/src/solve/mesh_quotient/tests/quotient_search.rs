@@ -943,13 +943,13 @@ fn common_full_quotient_refuses_each_collection_limit() {
         Ok::<_, CodecError>((
             result,
             [
-                crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0))
+                crate::test_support::with_service_context(|ctx| quotient.root(ctx, 0))
                     .expect("service forest traversal"),
-                crate::test_support::with_service_context(|ctx| quotient.find(ctx, 1))
+                crate::test_support::with_service_context(|ctx| quotient.root(ctx, 1))
                     .expect("service forest traversal"),
-                crate::test_support::with_service_context(|ctx| quotient.find(ctx, 2))
+                crate::test_support::with_service_context(|ctx| quotient.root(ctx, 2))
                     .expect("service forest traversal"),
-                crate::test_support::with_service_context(|ctx| quotient.find(ctx, 3))
+                crate::test_support::with_service_context(|ctx| quotient.root(ctx, 3))
                     .expect("service forest traversal"),
             ],
         ))
@@ -1009,7 +1009,7 @@ fn quotient_pair_domains_propagate_through_shared_components() {
         .edge_domains_viable(&ctx, &[vec![[0, 2]], vec![[0, 3], [1, 4]],])
         .expect("service resource budget"));
     assert_eq!(quotient.domains()[root][..], [0]);
-    let third_root = crate::test_support::with_service_context(|ctx| quotient.find(ctx, 3))
+    let third_root = crate::test_support::with_service_context(|ctx| quotient.root(ctx, 3))
         .expect("service forest traversal");
     assert_eq!(quotient.domains()[third_root][..], [3]);
 }

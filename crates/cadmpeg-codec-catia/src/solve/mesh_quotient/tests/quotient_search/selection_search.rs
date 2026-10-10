@@ -440,21 +440,21 @@ fn mesh_selection_merges_corner_equations_common_to_every_option() {
         .propagate_forced_face_equations(&mut quotient)
         .expect("service resource budget"));
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 1))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 1))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 2))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 2))
             .expect("service forest traversal")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 3))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 3))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 4))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 4))
             .expect("service forest traversal")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 5))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 5))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 0))
             .expect("service forest traversal")
     );
     assert_eq!(
@@ -515,9 +515,9 @@ fn mesh_selection_merges_equations_common_to_every_assignment() {
         .propagate_forced_face_equations(&mut quotient)
         .expect("service resource budget"));
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 1))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 1))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 2))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 2))
             .expect("service forest traversal")
     );
     assert_eq!(
@@ -582,15 +582,15 @@ fn mesh_selection_common_equations_ignore_infeasible_assignments() {
         .propagate_forced_face_equations(&mut quotient)
         .expect("service resource budget"));
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 1))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 1))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 2))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 2))
             .expect("service forest traversal")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 3))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 3))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 0))
             .expect("service forest traversal")
     );
     assert_eq!(
