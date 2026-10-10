@@ -33,7 +33,10 @@ fn legacy_field_bound_roles_keep_one_admitted_backing() {
         let backing = COUNT * std::mem::size_of::<LegacyRoleSelector>();
         let roles = crate::test_support::with_retained_limit(
             u64::try_from(backing).expect("role backing"),
-            |ctx| parse_role_selectors(ctx, &bytes, 0, bytes.len(), 19),
+            |ctx| {
+                parse_role_selectors(ctx, &bytes, 0, bytes.len(), 19)
+                    .and_then(|(values, storage)| storage.commit_value(values))
+            },
         )
         .expect("only the destination role backing is retained");
         assert_roles(&roles);
@@ -41,7 +44,10 @@ fn legacy_field_bound_roles_keep_one_admitted_backing() {
         // Each role has one output slot. The large stable sort has two index slots.
         let roles = crate::test_support::with_collection_limit(
             u64::try_from(3 * COUNT).expect("role and sort slots"),
-            |ctx| parse_role_selectors(ctx, &bytes, 0, bytes.len(), 19),
+            |ctx| {
+                parse_role_selectors(ctx, &bytes, 0, bytes.len(), 19)
+                    .and_then(|(values, storage)| storage.commit_value(values))
+            },
         )
         .expect("field roles have no intermediate collection slots");
         assert_roles(&roles);
@@ -52,8 +58,10 @@ fn legacy_field_bound_roles_keep_one_admitted_backing() {
             u64::try_from(backing + backing / 2).expect("growth overlap"),
             |ctx| {
                 let mut parent = ctx.reserve_scoped(0, "test role parent")?;
-                let roles = parent
-                    .with_storage(|| parse_role_selectors(ctx, &bytes, 0, bytes.len(), 19))?;
+                let roles = parent.with_storage(|| {
+                    parse_role_selectors(ctx, &bytes, 0, bytes.len(), 19)
+                        .and_then(|(values, storage)| storage.commit_value(values))
+                })?;
                 assert_roles(&roles);
                 assert_eq!(ctx.resource_refusal(), None);
                 drop(roles);
@@ -78,7 +86,8 @@ fn legacy_role_end_index_waits_for_a_bounded_field_header() {
         for operation in ["catia_legacy_role_end_visits", "catia_legacy_role_ends"] {
             let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
             crate::test_support::with_work_limit(u64::MAX, |ctx| {
-                let roles = parse_role_selectors(ctx, &bytes, 0, bytes.len(), 19)?;
+                let roles = parse_role_selectors(ctx, &bytes, 0, bytes.len(), 19)
+                    .and_then(|(values, storage)| storage.commit_value(values))?;
                 assert_eq!(roles.len(), COUNT);
                 for (index, role) in roles.iter().enumerate() {
                     assert_eq!(role.offset, index * 7);
@@ -105,6 +114,7 @@ fn legacy_role_end_snapshot_preserves_literal_boundary_precedence() {
     let bytes = record.repeat(COUNT);
     let roles = crate::test_support::with_service_context(|ctx| {
         parse_role_selectors(ctx, &bytes, 0, bytes.len(), 19)
+            .and_then(|(values, storage)| storage.commit_value(values))
     })
     .expect("one membership snapshot");
     assert_eq!(roles.len(), COUNT);
@@ -116,6 +126,7 @@ fn legacy_role_end_snapshot_preserves_literal_boundary_precedence() {
     for operation in ["catia_legacy_role_end_visits", "catia_legacy_role_ends"] {
         let error = crate::test_support::with_work_refusal(operation, |ctx| {
             parse_role_selectors(ctx, &bytes, 0, bytes.len(), 19)
+                .and_then(|(values, storage)| storage.commit_value(values))
         })
         .expect_err("a queried snapshot keeps visit and key admission");
         assert!(

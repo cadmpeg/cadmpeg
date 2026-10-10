@@ -27,13 +27,15 @@ fn legacy_small_scalar_and_role_sorts_skip_constant_work() {
             let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
             crate::test_support::with_work_limit(u64::MAX, |ctx| {
                 if is_role {
-                    let roles = parse_role_selectors(ctx, &role_bytes, 0, role_bytes.len(), 1)?;
+                    let roles = parse_role_selectors(ctx, &role_bytes, 0, role_bytes.len(), 1)
+                        .and_then(|(values, storage)| storage.commit_value(values))?;
                     assert_eq!(roles.len(), count);
                     for (index, role) in roles.iter().enumerate() {
                         assert_eq!(role.offset, index * 7);
                     }
                 } else {
-                    let values = parse_scalar_values(ctx, &scalar_bytes, 0, scalar_bytes.len(), 1)?;
+                    let values = parse_scalar_values(ctx, &scalar_bytes, 0, scalar_bytes.len(), 1)
+                        .and_then(|(values, storage)| storage.commit_value(values))?;
                     assert_eq!(
                         values.iter().map(|value| value.offset).collect::<Vec<_>>(),
                         expected
@@ -65,9 +67,11 @@ fn legacy_small_scalar_and_role_sorts_skip_constant_work() {
         let error = crate::test_support::with_work_refusal(operation, |ctx| {
             if is_role {
                 parse_role_selectors(ctx, &role_bytes, 0, role_bytes.len(), 1)
+                    .and_then(|(values, storage)| storage.commit_value(values))
                     .map(|values| values.len())
             } else {
                 parse_scalar_values(ctx, &scalar_bytes, 0, scalar_bytes.len(), 1)
+                    .and_then(|(values, storage)| storage.commit_value(values))
                     .map(|values| values.len())
             }
         })
