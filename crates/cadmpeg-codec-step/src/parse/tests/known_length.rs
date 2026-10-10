@@ -8,8 +8,8 @@ use cadmpeg_core::CodecError;
 
 use super::super::{
     schema_names_for_matching, schema_object_identifier_diagnostics, try_clone_value,
-    validate_header_data_references, AdmittedSchemaIdentifier, EntityIndex, ParseError,
-    ValidationError, Value, EntityIds,
+    validate_header_data_references, AdmittedSchemaIdentifier, EntityIds, EntityIndex, ParseError,
+    ValidationError, Value,
 };
 
 fn empty_policy(work: u64) -> DecodePolicy {
@@ -45,7 +45,9 @@ fn empty_value_copy_visits_only_its_root() {
 fn empty_value_copy_preserves_original_refusal() {
     let policy = empty_policy(0);
     crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
-        let original = ctx.charge_work(1, "STEP original refusal").expect_err("zero work");
+        let original = ctx
+            .charge_work(1, "STEP original refusal")
+            .expect_err("zero work");
         let error = try_clone_value(&Value::List(Vec::new()), ctx, "STEP empty value copy")
             .expect_err("refused session stays refused");
         let (CodecError::ResourceLimit(original), CodecError::ResourceLimit(refusal)) =
@@ -62,8 +64,8 @@ fn empty_value_copy_preserves_original_refusal() {
 fn empty_entity_union_has_no_terminal_visit_or_storage() {
     let policy = empty_policy(0);
     crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
-        let ids = EntityIndex::ordered_ids(&[], ctx)
-            .expect("an empty union needs no visits or backing");
+        let ids =
+            EntityIndex::ordered_ids(&[], ctx).expect("an empty union needs no visits or backing");
         assert_eq!(ids.len(), 0);
         assert!(matches!(&ids, EntityIds::Borrowed(_)));
         assert!(ctx.resource_refusal().is_none());
@@ -95,13 +97,13 @@ fn empty_schema_matching_names_have_no_terminal_visit_or_storage() {
 fn empty_parser_traversals_preserve_original_refusal() {
     let policy = empty_policy(0);
     crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
-        let CodecError::ResourceLimit(original) =
-            ctx.charge_work(1, "STEP original refusal").expect_err("zero work")
+        let CodecError::ResourceLimit(original) = ctx
+            .charge_work(1, "STEP original refusal")
+            .expect_err("zero work")
         else {
             panic!("the original failure must be a resource refusal");
         };
-        let Err(CodecError::ResourceLimit(union)) = EntityIndex::ordered_ids(&[], ctx)
-        else {
+        let Err(CodecError::ResourceLimit(union)) = EntityIndex::ordered_ids(&[], ctx) else {
             panic!("empty union must keep the original refusal");
         };
         let Err(ValidationError::Resource(CodecError::ResourceLimit(header))) =
@@ -142,8 +144,9 @@ fn schema_diagnostics_have_no_empty_or_valid_terminal_visit() {
 fn empty_schema_diagnostics_report_original_refusal_once() {
     let policy = empty_policy(0);
     crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
-        let CodecError::ResourceLimit(original) =
-            ctx.charge_work(1, "STEP original refusal").expect_err("zero work")
+        let CodecError::ResourceLimit(original) = ctx
+            .charge_work(1, "STEP original refusal")
+            .expect_err("zero work")
         else {
             panic!("the original failure must be a resource refusal");
         };

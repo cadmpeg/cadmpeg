@@ -1260,17 +1260,40 @@ fn zip_entry_extension_search_preserves_refusal() {
 #[test]
 fn zip_uri_operations_preserve_refusal() {
     for (base, uri, operation) in [
-        (ROOT_NAME, "part?key=value#target", "STEP ZIP URI fragment split"),
-        (ROOT_NAME, "part?key=value#target", "STEP ZIP URI query split"),
+        (
+            ROOT_NAME,
+            "part?key=value#target",
+            "STEP ZIP URI fragment split",
+        ),
+        (
+            ROOT_NAME,
+            "part?key=value#target",
+            "STEP ZIP URI query split",
+        ),
         ("parts/base", "child", "STEP ZIP base member reverse split"),
-        (ROOT_NAME, "part#target", "STEP ZIP fragment separator containment"),
-        (ROOT_NAME, "directory/part", "STEP ZIP member separator character"),
+        (
+            ROOT_NAME,
+            "part#target",
+            "STEP ZIP fragment separator containment",
+        ),
+        (
+            ROOT_NAME,
+            "directory/part",
+            "STEP ZIP member separator character",
+        ),
     ] {
         crate::test_support::resource_refusal_at(
-            &[], cadmpeg_core::decode::ResourceDimension::WorkUnits, operation, |_, ctx| {
+            &[],
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            operation,
+            |_, ctx| {
                 let result = resolve_uri_for_test(ctx, base, uri).map(|_| ());
                 if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result {
-                    assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal), "{operation}: {base} {uri}");
+                    assert_eq!(
+                        ctx.resource_refusal().as_ref(),
+                        Some(refusal),
+                        "{operation}: {base} {uri}"
+                    );
                 }
                 result
             },
@@ -1303,16 +1326,32 @@ fn zip_reference_note_operations_preserve_refusal() {
     for (query, fragment, operation) in [
         (None, None, "step_zip_reference_note"),
         (Some("query"), None, "STEP ZIP reference query character"),
-        (None, Some("fragment"), "STEP ZIP reference fragment character"),
+        (
+            None,
+            Some("fragment"),
+            "STEP ZIP reference fragment character",
+        ),
     ] {
         crate::test_support::resource_refusal_at(
-            &[], cadmpeg_core::decode::ResourceDimension::WorkUnits, operation, |_, ctx| {
+            &[],
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            operation,
+            |_, ctx| {
                 let result = super::push_reference_note(
-                    ctx, &mut Vec::new(), "resource ", crate::parse::ReferenceName::Entity(7),
-                    "part", query, fragment,
+                    ctx,
+                    &mut Vec::new(),
+                    "resource ",
+                    crate::parse::ReferenceName::Entity(7),
+                    "part",
+                    query,
+                    fragment,
                 );
                 if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result {
-                    assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal), "{operation}: {query:?} {fragment:?}");
+                    assert_eq!(
+                        ctx.resource_refusal().as_ref(),
+                        Some(refusal),
+                        "{operation}: {query:?} {fragment:?}"
+                    );
                 }
                 result
             },

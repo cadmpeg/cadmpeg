@@ -15,6 +15,8 @@ use super::super::{
     Value,
 };
 
+const ANCHOR_TEST_COLLECTION_LIMIT: u64 = 4096;
+
 #[test]
 fn nested_value_copy_refuses_inner_collection_limit() {
     let value = Value::List(vec![Value::List(vec![Value::Integer(1)])]);
@@ -615,9 +617,13 @@ fn anchor_list_slots_are_admitted_before_vector_allocation() {
     limited.limits.max_collection_items = 8;
     let (ctx, _) = DecodeContext::from_root_bytes(b"anchor", &arena, &limited)
         .expect("root fits exact slot allowance");
-    assert_eq!(AnchorResolver::new(&anchors, &ctx).expect("resolver")
-        .resolve_root(&value).expect("each of the eight child slots is admitted once"), value);
-
+    assert_eq!(
+        AnchorResolver::new(&anchors, &ctx)
+            .expect("resolver")
+            .resolve_root(&value)
+            .expect("each of the eight child slots is admitted once"),
+        value
+    );
 }
 
 #[test]
@@ -639,13 +645,13 @@ fn anchor_memo_entry_is_admitted_before_the_clone() {
         anchors["a"]
     );
     let mut limited = service;
-    limited.limits.max_collection_items = 9;
+    limited.limits.max_collection_items = 3;
     let (ctx, _) = DecodeContext::from_root_bytes(b"anchor", &arena, &limited)
         .expect("root fits selected profile");
     let error = AnchorResolver::new(&anchors, &ctx)
         .expect("empty resolver scope fits")
         .resolve_root(&value)
-        .expect_err("memo entry exceeds nine prior admitted items");
+        .expect_err("memo entry exceeds one stack slot and two child slots");
     assert!(
         matches!(error, ResolveError::Resource(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "step_anchor_memo_entry")
     );
@@ -1108,16 +1114,24 @@ fn parser_bounds_exponential_anchor_expansion() {
     let source = format!(
         "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;{anchors}ENDSEC;DATA;#1=ITEM(<a39>);ENDSEC;END-ISO-10303-21;"
     );
-    let error =
-        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
-            .unwrap_err();
-    assert!(matches!(
-        error,
-        crate::parse::ParseError::Resource(CodecError::ResourceLimit(limit))
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.used <= limit.limit
-                && limit.additional > limit.limit - limit.used
-    ));
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = ANCHOR_TEST_COLLECTION_LIMIT;
+    let error = crate::test_support::with_policy_context(
+        source.as_bytes(),
+        &policy,
+        crate::parse::parse_inner,
+    )
+    .unwrap_err();
+    assert!(
+        matches!(
+            &error,
+            crate::parse::ParseError::Resource(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.used <= limit.limit
+                    && limit.additional > limit.limit - limit.used
+        ),
+        "{error:?}"
+    );
 }
 
 #[test]
@@ -1134,16 +1148,24 @@ fn parser_bounds_aggregate_anchor_materialization() {
     let source = format!(
         "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;{anchors}ENDSEC;DATA;{records}ENDSEC;END-ISO-10303-21;"
     );
-    let error =
-        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
-            .unwrap_err();
-    assert!(matches!(
-        error,
-        crate::parse::ParseError::Resource(CodecError::ResourceLimit(limit))
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.used <= limit.limit
-                && limit.additional > limit.limit - limit.used
-    ));
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = ANCHOR_TEST_COLLECTION_LIMIT;
+    let error = crate::test_support::with_policy_context(
+        source.as_bytes(),
+        &policy,
+        crate::parse::parse_inner,
+    )
+    .unwrap_err();
+    assert!(
+        matches!(
+            &error,
+            crate::parse::ParseError::Resource(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.used <= limit.limit
+                    && limit.additional > limit.limit - limit.used
+        ),
+        "{error:?}"
+    );
 }
 
 #[test]
@@ -1206,7 +1228,8 @@ fn schema_name_match_trim_preserves_refusal() {
 fn matching_schema_identifier_trim_preserves_refusal() {
     let service = cadmpeg_test_support::service_decode_context();
     let admitted = super::super::AdmittedSchemaIdentifier::admit(&service, " AP242 ".into())
-        .expect("admission").expect("schema name");
+        .expect("admission")
+        .expect("schema name");
     cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::WorkUnits,
         "STEP matching schema identifier trim",
@@ -1214,9 +1237,10 @@ fn matching_schema_identifier_trim_preserves_refusal() {
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
             crate::test_support::with_policy_context(&[], &policy, |_, ctx| {
-                let result = super::super::schema_names_for_matching(std::slice::from_ref(&admitted), ctx)
-                    .map(|_| ())
-                    .or_else(|error| Err(error.into_codec_error(ctx)?));
+                let result =
+                    super::super::schema_names_for_matching(std::slice::from_ref(&admitted), ctx)
+                        .map(|_| ())
+                        .or_else(|error| Err(error.into_codec_error(ctx)?));
                 if let Err(CodecError::ResourceLimit(refusal)) = &result {
                     assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
                 }

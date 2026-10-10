@@ -161,8 +161,10 @@ fn retained_uri_lexeme_reuses_its_byte_buffer_without_temporary_storage() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = 0;
     policy.limits.max_retained_bytes = 9;
-    assert_eq!(lex_under_policy(b"<part/path>", policy, false).expect("one retained buffer"),
-        super::TokenKind::Resource("part/path".into()));
+    assert_eq!(
+        lex_under_policy(b"<part/path>", policy, false).expect("one retained buffer"),
+        super::TokenKind::Resource("part/path".into())
+    );
 }
 
 #[test]
@@ -537,7 +539,6 @@ fn integer_number_parse_preserves_refusal() {
     );
 }
 
-
 #[test]
 fn normalized_retained_character_preserves_refusal() {
     cadmpeg_test_support::refusal::resource_limit_at(
@@ -675,8 +676,15 @@ fn normalized_measurement_and_emission_preserve_controls_and_numeric_mapping() {
     let input = b"a\x01b\x02c";
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 3;
-    assert_eq!(lex_under_policy(input, policy, false).expect("three normalized bytes"),
-        super::TokenKind::Name("ABC".into()));
-    assert_eq!(lex_under_policy(b"1\x01D\x02+\x033", DecodePolicy::service(), false).expect("Fortran exponent"),
-        super::TokenKind::Real(cadmpeg_ir::scalar::FiniteReal::new(1000.0).expect("finite fixture")));
+    assert_eq!(
+        lex_under_policy(input, policy, false).expect("three normalized bytes"),
+        super::TokenKind::Name("ABC".into())
+    );
+    assert_eq!(
+        lex_under_policy(b"1\x01D\x02+\x033", DecodePolicy::service(), false)
+            .expect("Fortran exponent"),
+        super::TokenKind::Real(
+            cadmpeg_ir::scalar::FiniteReal::new(1000.0).expect("finite fixture")
+        )
+    );
 }
