@@ -1850,3 +1850,5 @@ fn composite_trim_multiplicity_refuses_work_before_scan() {
 }
 
 mod local_limits;
+
+mod entry_refusal;
