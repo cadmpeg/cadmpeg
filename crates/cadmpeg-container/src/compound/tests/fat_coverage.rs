@@ -115,9 +115,8 @@ fn present_wrong_fat_role_word_is_malformed() {
         CompoundPrefixProbe::Malformed("CFB allocation sector has the wrong role marker".into())
     );
     with_context(&file, &DecodePolicy::service(), |ctx| {
-        let error = CompoundSnapshot::new(ctx, View::over_retained(&file))
-            .err()
-            .expect("known wrong role");
+        let error =
+            CompoundSnapshot::new(ctx, View::over_retained(&file)).expect_err("known wrong role");
         assert!(matches!(error, CodecError::Malformed(_)));
         assert_eq!(ctx.resource_refusal(), None);
     });
@@ -194,7 +193,7 @@ fn discovered_fat_id_backing_observes_actual_growth_and_releases_failed_probe() 
                         cadmpeg_core::decode::u64_from_index(old_bytes)
                     )
                 );
-                assert_eq!(ctx.resource_refusal(), Some(first.clone()));
+                assert_eq!(ctx.resource_refusal(), Some(first));
                 let error = probe_directory_availability(&ctx, root)
                     .err()
                     .expect("sticky refusal");

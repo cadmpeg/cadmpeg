@@ -103,7 +103,7 @@ fn snapshot_keeps_only_source_derived_navigation_storage() {
         + 21
         + 3 * 4 * size_of::<Vec<u16>>()
         + 4 * 8 * size_of::<u16>()
-        + 8 * size_of::<u32>()
+        + size_of::<[u32; 8]>()
         + index_nodes;
     for (file, live_bytes) in [(&regular, regular_bytes), (&mini, mini_bytes)] {
         let arena = DecodeArena::new();
