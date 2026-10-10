@@ -3428,7 +3428,9 @@ pub(super) fn parasolid_attribute_definitions(
         payloads.commit()?;
         for definition in ctx.admit_iter(scanned, "NX attribute definitions")? {
             ctx.reserve_vec(&mut records, 1, "NX attribute definitions")?;
-            let name = definition.name.try_into_owned_for_decode(ctx, "retain NX attribute definition name")?;
+            let name = definition
+                .name
+                .try_into_owned_for_decode(ctx, "retain NX attribute definition name")?;
             let id = parasolid_record_id(
                 ctx,
                 stream_ordinal,
@@ -3937,7 +3939,9 @@ pub(super) fn parasolid_entity_value_records(
                 u32::from(record.xmt),
                 record.offset,
             )?;
-            let value = record.value.try_into_owned_for_decode(ctx, "retain NX Parasolid string value")?;
+            let value = record
+                .value
+                .try_into_owned_for_decode(ctx, "retain NX Parasolid string value")?;
             records.strings.push(ParasolidEntity54StringRecord {
                 id,
                 stream_ordinal: ordinal,

@@ -448,28 +448,54 @@ mod tests {
     #[test]
     fn payload_block_lookup_stops_before_missing_id_suffix() {
         let ids = vec!["missing".to_owned(); 64];
-        crate::test_support::with_decode_context_over(&[],
+        crate::test_support::with_decode_context_over(
+            &[],
             |policy| policy.limits.max_work_units = 1,
             |ctx| {
-                let rows = FeaturePayloadContent::<Vec<FeaturePayloadBlock>>::from_source(ctx, ids, &BTreeMap::new()).unwrap();
+                let rows = FeaturePayloadContent::<Vec<FeaturePayloadBlock>>::from_source(
+                    ctx,
+                    ids,
+                    &BTreeMap::new(),
+                )
+                .unwrap();
                 assert!(rows.is_none());
                 assert_eq!(ctx.resource_refusal(), None);
-            });
+            },
+        );
     }
 
     #[test]
     fn payload_hash_work_follows_successful_row_storage() {
         let blocks = BTreeMap::from([("a".to_owned(), (b"abc".as_slice(), 10))]);
-        crate::test_support::with_decode_context_over(&[], |policy| {
-            policy.limits.max_work_units = 2;
-            policy.limits.max_retained_bytes = 0;
-        }, |ctx| {
-            let error = FeaturePayloadContent::<Vec<FeaturePayloadBlock>>::from_source(ctx, ["a".to_owned()], &blocks).unwrap_err();
-            assert!(matches!(error, CodecError::ResourceLimit(limit)
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_work_units = 2;
+                policy.limits.max_retained_bytes = 0;
+            },
+            |ctx| {
+                let error = FeaturePayloadContent::<Vec<FeaturePayloadBlock>>::from_source(
+                    ctx,
+                    ["a".to_owned()],
+                    &blocks,
+                )
+                .unwrap_err();
+                assert!(matches!(error, CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "NX feature payload blocks"));
-        });
-        let error = crate::test_support::resource_refusal_at(&[], ResourceDimension::WorkUnits,
-            "hash NX feature payload bytes", |ctx| FeaturePayloadContent::<Vec<FeaturePayloadBlock>>::from_source(ctx, ["a".to_owned()], &blocks));
+            },
+        );
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            ResourceDimension::WorkUnits,
+            "hash NX feature payload bytes",
+            |ctx| {
+                FeaturePayloadContent::<Vec<FeaturePayloadBlock>>::from_source(
+                    ctx,
+                    ["a".to_owned()],
+                    &blocks,
+                )
+            },
+        );
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.operation == "hash NX feature payload bytes" && limit.used == 2 && limit.additional == 4));
     }
