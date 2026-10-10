@@ -103,3 +103,25 @@ fn history_geometry_empty_source_keeps_its_original_context_refusal() {
     assert!(ir.model.features.is_empty());
     assert_eq!(ctx.finish_session().expect_err("original fuse").to_string(), original.to_string());
 }
+
+#[test]
+fn scan_history_diagnostics_stay_scoped_until_report_construction() {
+    const SCRATCH_BYTES: u64 = 1 << 20;
+    let records = vec![crate::container::Record::short(0x2000_8071, 0..0, 0); 32];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = SCRATCH_BYTES;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut warnings = Diagnostics::new();
+    let parsed = super::super::parse_records(&ctx, &[], &records, ArchiveVersion::V8, &mut warnings, 0x1000_0026)
+        .expect("scan messages and staging consume no retained storage");
+    assert_eq!(warnings.len(), records.len());
+    assert_eq!(parsed.opaque_records.len(), records.len());
+    assert!(warnings.iter().all(|note| note.message == "history record at 0 degraded: framing error at 0: invalid history table record"));
+    drop(warnings);
+    drop(parsed);
+    let reusable = ctx.reserve_scoped(SCRATCH_BYTES, "next scan diagnostics").expect("scan storage released");
+    drop(reusable);
+    ctx.finish_session().unwrap();
+}

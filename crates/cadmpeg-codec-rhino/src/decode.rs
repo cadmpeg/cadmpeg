@@ -1760,8 +1760,10 @@ impl<'a> DecodeContext<'a> {
                 continue;
             };
             let key = key_buffer;
+            let mut dimension_storage = self.expand.ctx().reserve_scoped(0, "Rhino dimension fields")?;
             match crate::dimensions::decode(
                 self.expand.ctx(),
+                &mut dimension_storage,
                 self.scan.data,
                 object.class_uuid,
                 object.class_data_range.clone(),
@@ -1827,6 +1829,7 @@ impl<'a> DecodeContext<'a> {
                     let object = self.session.unknowns()[source_order].id().as_str();
                     let (annotation, unresolved) = match crate::dimensions::project(
                         self.expand.ctx(),
+                        &mut dimension_storage,
                         &dimension,
                         key.as_str(),
                         (!identity.name.is_empty()).then_some(identity.name.as_str()),
@@ -1931,8 +1934,10 @@ impl<'a> DecodeContext<'a> {
         // Hatch owns values allocated by the userdata install. Declare its
         // backing guard first so `hatch` drops before the guard on every exit.
         let _gradient_storage;
+        let mut loops_storage = ctx.reserve_scoped(0, "Rhino hatch loops")?;
         let mut hatch = match crate::hatch::decode(
             self.expand,
+            &mut loops_storage,
             object.class_data_range.clone(),
             scale,
             self.archive(),
@@ -1975,6 +1980,7 @@ impl<'a> DecodeContext<'a> {
         }
         let crate::hatch::HatchUserdataInstall {
             errors,
+            _error_storage: error_storage,
             _gradient_storage: gradient_storage,
         } = crate::hatch::apply_userdata(
             ctx,
@@ -2004,6 +2010,7 @@ impl<'a> DecodeContext<'a> {
             )?;
         }
         drop(errors);
+        drop(error_storage);
         let Some((key_buffer, _key_storage)) = self.checked_object_key(identity, source_order)? else {
             return Ok(());
         };
@@ -4044,11 +4051,10 @@ impl<'a> DecodeContext<'a> {
             },
             "Rhino commit traversal",
         )?;
-        append_report_losses(
-            ctx,
-            &mut self.report.typed_losses,
-            crate::annotations::install(ctx, self.scan, self.session.document_mut()?)?,
-        )?;
+        let mut loss_storage = ctx.reserve_scoped(0, "Rhino annotations loss backing")?;
+        let losses = crate::annotations::install(ctx, &mut loss_storage, self.scan, self.session.document_mut()?)?;
+        ctx.extend_vec(&mut self.report.typed_losses, losses, "Rhino typed decode losses")?;
+        drop(loss_storage);
         let document_data =
             crate::document_data::install(ctx, self.scan, self.session.document_mut()?)?;
         append_report_losses(ctx, &mut self.report.typed_losses, document_data.losses)?;
@@ -4067,11 +4073,10 @@ impl<'a> DecodeContext<'a> {
             |(), source| self.retain_opaque_record(source),
             "Rhino presentation source traversal",
         )?;
-        append_report_losses(
-            ctx,
-            &mut self.report.typed_losses,
-            crate::product::install(ctx, self.scan, self.session.document_mut()?)?,
-        )?;
+        let mut loss_storage = ctx.reserve_scoped(0, "Rhino product loss backing")?;
+        let losses = crate::product::install(ctx, &mut loss_storage, self.scan, self.session.document_mut()?)?;
+        ctx.extend_vec(&mut self.report.typed_losses, losses, "Rhino typed decode losses")?;
+        drop(loss_storage);
         let views = crate::views::install(ctx, self.scan, self.session.document_mut()?)?;
         append_report_losses(ctx, &mut self.report.typed_losses, views.losses)?;
         ctx.fold(
