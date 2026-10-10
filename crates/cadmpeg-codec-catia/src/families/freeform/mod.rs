@@ -440,7 +440,11 @@ pub(super) fn try_decode_freeform_surfaces(
                     refusal,
                 )
             }) {
-                Ok((graph, storage)) => (storage, graph),
+                Ok((Some(graph), storage)) => (Some(storage), Some(graph)),
+                Ok((None, storage)) => {
+                    drop(storage);
+                    (None, None)
+                }
                 Err(error) => return Some(Err(error)),
             };
         let face_terminal_controls = admitted!(b5_graph
@@ -759,28 +763,39 @@ pub(super) fn try_decode_freeform_surfaces(
         let b5_faces = b5_graph
             .as_ref()
             .map_or(&[][..], |graph| graph.faces.as_slice());
-        let b5_face_object_ids = admitted!(ctx.collect_vec(
-            admitted!(ctx.admit_iter(b5_faces, "catia_freeform_b5_face_id_source_visits"))
-                .map(|face| face.object_id),
-            "catia_freeform_b5_face_ids"
+        let b5_face_object_ids = admitted!(ctx.with_scoped_storage(
+            "catia_freeform_b5_face_id_workspace",
+            || ctx.collect_vec(
+                ctx.admit_iter(b5_faces, "catia_freeform_b5_face_id_source_visits")?
+                    .map(|face| face.object_id),
+                "catia_freeform_b5_face_ids",
+            )
         ));
-        let b5_loop_object_ids = if let Some(graph) = &b5_graph {
-            admitted!(ctx.collect_vec(
-                admitted!(ctx.admit_iter(&graph.loops, "catia_freeform_b5_loop_id_source_visits"))
-                    .map(|(object_id, _)| *object_id),
-                "catia_freeform_b5_loop_ids"
-            ))
-        } else {
-            Vec::new()
-        };
-        let census_face_object_ids = admitted!(ctx.collect_vec(
-            admitted!(ctx.admit_iter(
-                &census_object_records,
-                "catia_freeform_census_face_id_source_visits"
-            ))
-            .filter(|record| record.class == B5_FACE_CLASS)
-            .map(|record| record.object_id),
-            "catia_freeform_census_face_ids"
+        let b5_loop_object_ids = admitted!(ctx.with_scoped_storage(
+            "catia_freeform_b5_loop_id_workspace",
+            || {
+                if let Some(graph) = &b5_graph {
+                    ctx.collect_vec(
+                        ctx.admit_iter(&graph.loops, "catia_freeform_b5_loop_id_source_visits")?
+                            .map(|(object_id, _)| *object_id),
+                        "catia_freeform_b5_loop_ids",
+                    )
+                } else {
+                    Ok(Vec::new())
+                }
+            }
+        ));
+        let census_face_object_ids = admitted!(ctx.with_scoped_storage(
+            "catia_freeform_census_face_id_workspace",
+            || ctx.collect_vec(
+                ctx.admit_iter(
+                    &census_object_records,
+                    "catia_freeform_census_face_id_source_visits"
+                )?
+                .filter(|record| record.class == B5_FACE_CLASS)
+                .map(|record| record.object_id),
+                "catia_freeform_census_face_ids",
+            )
         ));
         let mut topology_ir = CadIr::empty();
         let mut topology_annotations =
@@ -812,6 +827,7 @@ pub(super) fn try_decode_freeform_surfaces(
                 Ok(transferred) => transferred,
                 Err(error) => return Some(Err(error)),
             };
+            drop(b5_graph_storage);
             if transferred {
                 match neutral_model_is_admissible(ctx, &mut topology_ir, &unknowns) {
                     Ok(admissible) => admissible,
@@ -821,9 +837,9 @@ pub(super) fn try_decode_freeform_surfaces(
                 false
             }
         } else {
+            drop(b5_graph_storage);
             false
         };
-        drop(b5_graph_storage);
         if topology_transferred {
             ir = topology_ir;
             annotations = admitted!(topology_annotations.into_retained());
@@ -1087,8 +1103,8 @@ pub(super) fn try_decode_freeform_surfaces(
                 "The B5 reference graph is closed; face sense and body kind use a deterministic \
              topology gauge because their source fields remain unresolved. Gauged b5 03 5f face \
              records, by object id ({}): {}.",
-                b5_face_object_ids.len(),
-                identity_statement(&b5_face_object_ids)
+                b5_face_object_ids.0.len(),
+                identity_statement(&b5_face_object_ids.0)
             ),
                     "catia_freeform_topology_loss"
                 ));
@@ -1102,10 +1118,10 @@ pub(super) fn try_decode_freeform_surfaces(
              nodes and unresolved endpoint lifts remain outside the connected graph. Transferred \
              b5 03 5f face records, by object id ({}): {}. Transferred b5 03 62 loop records, by \
              object id ({}): {}.",
-            b5_face_object_ids.len(),
-            identity_statement(&b5_face_object_ids),
-            b5_loop_object_ids.len(),
-            identity_statement(&b5_loop_object_ids)
+            b5_face_object_ids.0.len(),
+            identity_statement(&b5_face_object_ids.0),
+            b5_loop_object_ids.0.len(),
+            identity_statement(&b5_loop_object_ids.0)
         ),
                     "catia_freeform_topology_loss"
                 ));
@@ -1130,13 +1146,16 @@ pub(super) fn try_decode_freeform_surfaces(
                         "Object-stream and consolidated NURBS carriers were decoded, but the \
              face/loop/pcurve/edge graph did not close. Unclosed b5 03 5f face records, by object \
              id ({}): {}. The records stay inside retained record {payload_id}.",
-                        census_face_object_ids.len(),
-                        identity_statement(&census_face_object_ids)
+                        census_face_object_ids.0.len(),
+                        identity_statement(&census_face_object_ids.0)
                     ),
                     "catia_freeform_topology_loss"
                 ));
             }
         }
+        drop(b5_face_object_ids);
+        drop(b5_loop_object_ids);
+        drop(census_face_object_ids);
         if let Err(error) = insert_unresolved_carrier_loss(ctx, &ir, &mut losses) {
             return Some(Err(error));
         }
@@ -1715,11 +1734,8 @@ fn freeform_surface_carriers(
         .admit_iter(resolved, "catia_freeform_surface_carrier_visits")?
         .chain(ctx.admit_iter(a5, "catia_freeform_surface_carrier_visits")?)
     {
-        let (source_object, source_tag) = freeform_surface_source(ctx, &surface)?;
-        let source_tag = ctx.format_retained(
-            format_args!("freeform:{source_tag}"),
-            "catia_freeform_surface_source_tag",
-        )?;
+        let (source_object, source_tag) = freeform_surface_source(ctx, &surface, "freeform:")?;
+        let source_tag = source_tag.1.commit_value(source_tag.0)?;
         ctx.push_vec(
             &mut surfaces,
             FreeformSurfaceCarrier {
@@ -1827,22 +1843,29 @@ fn freeform_surface_carriers(
     Ok(surfaces)
 }
 
-fn freeform_surface_source(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+fn freeform_surface_source<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     surface: &crate::families::a5a8::records::FreeformSurface,
-) -> Result<(cadmpeg_ir::SourceObjectAssociation, String), cadmpeg_core::CodecError> {
+    prefix: &'static str,
+) -> Result<
+    (
+        cadmpeg_ir::SourceObjectAssociation,
+        (String, cadmpeg_core::decode::ScopedReservation<'ctx>),
+    ),
+    cadmpeg_core::CodecError,
+> {
     Ok(match surface.identity {
         Some(object_id) => (
             cgm_source(ctx, "surface", object_id)?,
-            ctx.format_retained(
-                format_args!("object_id:{object_id:08x}"),
+            ctx.format_scoped(
+                format_args!("{prefix}object_id:{object_id:08x}"),
                 "catia_freeform_surface_source_tag",
             )?,
         ),
         None => (
             cgm_source_key(ctx, "a5-surface-frame", format_args!("{:010}", surface.pos))?,
-            ctx.format_retained(
-                format_args!("frame_offset:{:010}", surface.pos),
+            ctx.format_scoped(
+                format_args!("{prefix}frame_offset:{:010}", surface.pos),
                 "catia_freeform_surface_source_tag",
             )?,
         ),
@@ -2074,7 +2097,8 @@ pub(super) fn append_freeform_surface_pools(
         .context()
         .admit_iter(&surfaces, "catia_freeform_support_surfaces")?
     {
-        let (source_object, source_tag) = freeform_surface_source(admission.context(), surface)?;
+        let (source_object, source_tag) =
+            freeform_surface_source(admission.context(), surface, "")?;
         let index = ir.model.surfaces.len();
         let id = crate::resource::compose_index_id(
             admission.context(),
@@ -2099,9 +2123,10 @@ pub(super) fn append_freeform_surface_pools(
             &id,
             "object_stream_a8_03_or_consolidated_a5_03",
             u64_from_index(surface.pos),
-            source_tag,
+            &source_tag.0,
             Exactness::ByteExact,
         )?;
+        drop(source_tag);
         admission.reserve_entity(&mut ir.model.surfaces, "catia_family_emit_surfaces")?;
         ir.model.surfaces.push(Surface {
             id,
