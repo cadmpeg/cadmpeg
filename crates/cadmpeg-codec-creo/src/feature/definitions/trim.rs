@@ -1066,7 +1066,6 @@ pub(super) fn trim_vertex_table(
     };
     cursor = first_marker;
 
-    let mut geometry_storage = ctx.reserve_scoped(0, "creo trim geometry cache")?;
     let mut geometry = None;
     let mut rows = Vec::new();
     while cursor < region_end {
@@ -1084,15 +1083,13 @@ pub(super) fn trim_vertex_table(
                 {
                     ctx.reserve_vec(&mut rows, 1, "creo trim vertex rows")?;
                     rows.push(FeatureTrimVertex {
-                        section_coordinates: geometry_storage.with_storage(|| {
-                            trim_vertex_intersection(
-                                ctx,
-                                &entities,
-                                segments,
-                                variables,
-                                &mut geometry,
-                            )
-                        })?,
+                        section_coordinates: trim_vertex_intersection(
+                            ctx,
+                            &entities,
+                            segments,
+                            variables,
+                            &mut geometry,
+                        )?,
                         vertex_id,
                         entities,
                         offset: cursor,
@@ -1115,15 +1112,13 @@ pub(super) fn trim_vertex_table(
                     {
                         ctx.reserve_vec(&mut rows, 1, "creo trim vertex rows")?;
                         rows.push(FeatureTrimVertex {
-                            section_coordinates: geometry_storage.with_storage(|| {
-                                trim_vertex_intersection(
-                                    ctx,
-                                    &entities,
-                                    segments,
-                                    variables,
-                                    &mut geometry,
-                                )
-                            })?,
+                            section_coordinates: trim_vertex_intersection(
+                                ctx,
+                                &entities,
+                                segments,
+                                variables,
+                                &mut geometry,
+                            )?,
                             vertex_id,
                             entities,
                             offset: next,
@@ -1150,9 +1145,9 @@ pub(super) fn trim_vertex_table(
         };
         ctx.reserve_vec(&mut rows, 1, "creo trim vertex rows")?;
         rows.push(FeatureTrimVertex {
-            section_coordinates: geometry_storage.with_storage(|| {
-                trim_vertex_intersection(ctx, &entities, segments, variables, &mut geometry)
-            })?,
+            section_coordinates: trim_vertex_intersection(
+                ctx, &entities, segments, variables, &mut geometry,
+            )?,
             vertex_id,
             entities,
             offset: row_offset,
@@ -1199,7 +1194,6 @@ pub(super) fn positional_trim_vertex_table(
     else {
         return Ok(None);
     };
-    let mut geometry_storage = ctx.reserve_scoped(0, "creo trim geometry cache")?;
     let mut geometry = None;
     let mut rows = Vec::new();
     let mut cursor = rows_start;
@@ -1226,9 +1220,9 @@ pub(super) fn positional_trim_vertex_table(
         };
         ctx.reserve_vec(&mut rows, 1, "creo trim vertex rows")?;
         rows.push(FeatureTrimVertex {
-            section_coordinates: geometry_storage.with_storage(|| {
-                trim_vertex_intersection(ctx, &entities, segments, variables, &mut geometry)
-            })?,
+            section_coordinates: trim_vertex_intersection(
+                ctx, &entities, segments, variables, &mut geometry,
+            )?,
             vertex_id,
             entities,
             offset: row_offset,
@@ -1534,11 +1528,8 @@ pub(super) fn entity_intersection(
     segments: Option<&FeatureSegmentTable>,
     variables: Option<&FeatureVariableTable>,
 ) -> Result<Option<[f64; 2]>, CodecError> {
-    let mut storage = ctx.reserve_scoped(0, "creo trim geometry cache")?;
     let mut geometry = None;
-    storage.with_storage(|| {
-        entity_intersection_cached(ctx, entity_ids, segments, variables, &mut geometry)
-    })
+    entity_intersection_cached(ctx, entity_ids, segments, variables, &mut geometry)
 }
 
 fn entity_intersection_cached<'ctx>(
