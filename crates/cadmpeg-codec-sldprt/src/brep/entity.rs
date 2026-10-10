@@ -492,18 +492,21 @@ fn linked_colors<'ctx>(
         }
     }
     let mut colors = LinkedColors::new();
-    let mut summaries = BTreeMap::<usize, BTreeMap<u16, RunColor>>::new();
-    // The escape changes record length by one byte. The tag excludes two
-    // valid starts one byte apart, so each suffix has at most one predecessor.
-    // Move its reduction to that predecessor instead of copying or replaying it.
-    for (&at, &(attr, color, end)) in ctx
-        .admit_iter(&records, "reduce Parasolid color runs")?
-        .rev()
-    {
-        let mut summary = ctx
-            .remove_btree_map(&mut summaries, &end, INDEX)?
-            .unwrap_or_default();
-        run_storage
+    // The optional escape makes a record 32 or 33 bytes long. Its tag
+    // excludes valid starts one byte apart, so each suffix has at most one
+    // predecessor. Reduce each terminal chain without an outer summary map.
+    for (&tail, &record) in ctx.admit_iter(&records, "select Parasolid color run tails")?.rev() {
+        if ctx.contains_key_btree_map(&records, &record.2, INDEX)? {
+            continue;
+        }
+        let mut summary_storage = ctx.reserve_scoped(0, "hold Parasolid color suffix reduction")?;
+        let mut summary = BTreeMap::<u16, RunColor>::new();
+        let mut at = tail;
+        let mut record = record;
+        loop {
+            ctx.charge_work(1, "reduce Parasolid color runs")?;
+            let (attr, color, _) = record;
+        summary_storage
             .with_storage(|| ctx.entry_btree_map(&mut summary, attr, INDEX))?
             .and_modify(|run| {
                 run.agreed &= run.color == color;
@@ -551,7 +554,20 @@ fn linked_colors<'ctx>(
                 }
             }
         }
-        run_storage.with_storage(|| ctx.insert_btree_map(&mut summaries, at, summary, INDEX))?;
+            let mut predecessor = None;
+            for width in [32, 33] {
+                let Some(start) = at.checked_sub(width) else { continue; };
+                if let Some(&candidate) = ctx.get_btree_map(&records, &start, INDEX)? {
+                    if candidate.2 == at {
+                        predecessor = Some((start, candidate));
+                        break;
+                    }
+                }
+            }
+            let Some((start, next)) = predecessor else { break; };
+            at = start;
+            record = next;
+        }
     }
     Ok((colors, storage))
 }
@@ -688,6 +704,46 @@ mod tests {
     };
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
+
+
+    #[test]
+    fn long_color_suffix_holds_one_reduction_and_releases_its_backing() {
+        use super::Color;
+        use std::collections::{BTreeMap, BTreeSet};
+        let mut bytes = Vec::new();
+        for index in 0..4096 {
+            bytes.extend_from_slice(&[0, 0x53]);
+            if index % 2 == 0 { bytes.push(0xff); }
+            bytes.extend_from_slice(&3_u32.to_be_bytes());
+            bytes.extend_from_slice(&800_u16.to_be_bytes());
+            for value in [0.25_f64, 0.5, 0.75] { bytes.extend_from_slice(&value.to_be_bytes()); }
+        }
+        let parents = [EntityRecord { attr: 700, seq: 4, disc: 16,
+            refs: References { at: 0, count: 0, stride: 2 }, end: 0 }];
+        let requested = BTreeMap::from([(700, BTreeSet::from([800]))]);
+        type Record = (u16, Color, usize);
+        // Core insertion bounds a tree by (n - 1) / 5 + 1 nodes. Source
+        // parents, one reduction and the output index fit in the extra 4 KiB.
+        let node = 11 * (std::mem::size_of::<usize>() + std::mem::size_of::<Record>())
+            + 16 * std::mem::size_of::<usize>() + 2 * std::mem::align_of::<Record>();
+        let peak = u64::try_from(((4096 - 1) / 5 + 1) * node + 4096).unwrap();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = peak;
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let storage;
+        let colors;
+        (colors, storage) = linked_colors(&ctx, &bytes, &parents, &requested).unwrap();
+        assert_eq!(colors.len(), 1);
+        let color = &colors[&(700, 800)];
+        assert!(color.agreed);
+        assert_eq!((color.current.offset, color.current.parent_seq), (0, 4));
+        assert_eq!(color.current.color, super::color_record(&bytes, 0).unwrap().1);
+        drop((colors, storage));
+        drop(ctx.reserve_scoped(peak, "test color suffix scratch release").unwrap());
+        ctx.finish_session().unwrap();
+    }
     const FACE_COLOR_FAMILY: &str = "SDL/TYSA_COLOUR";
 
     fn refs(

@@ -170,19 +170,45 @@ fn patch_curve_multiplicity_comparison_admits_work() {
 }
 
 #[test]
-fn missing_patch_surface_descriptor_skips_array_discovery() {
+fn missing_or_incompatible_patch_surface_descriptor_skips_array_discovery() {
+    let original = compact_counted_nurbs_surface_carrier(10, 11, 20);
+    let baseline = cadmpeg_test_support::service_decode_context();
+    let carriers = scan_surface_carriers(&baseline, &original, &mut Vec::new()).unwrap();
+    let Some(SolvedSurfaceGeometry::Nurbs(surface)) = carriers[&10].geometry.solved() else { panic!("surface") };
+    for missing in [false, true] {
+        let mut bytes = original.clone();
+        if missing {
+            let mut p = 2;
+            if bytes[p] == 0xff { p += 1; }
+            bytes[p + 17..p + 19].copy_from_slice(&65000_u16.to_be_bytes());
+        } else {
+            let mut body = bytes.windows(2).position(|window| window == [0, 0x7e]).unwrap() + 2;
+            if bytes[body] == 0xff { body += 1; }
+            let count = body + crate::layout::bspline_surface_descriptor::U_POLE_COUNT;
+            bytes[count..count + 4].copy_from_slice(&3_u32.to_be_bytes());
+        }
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &probe_policy()).unwrap();
+        let operation = "scan Parasolid spline arrays";
+        let probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
+        assert_eq!(patch_nurbs_surface(&ctx, &mut bytes, 0, surface, surface, 0.001).unwrap(), None);
+        assert!(matches!(ctx.charge_work(1, operation), Err(CodecError::ResourceLimit(_))));
+        drop(probe);
+    }
+}
+
+#[test]
+fn truncated_patch_surface_wrapper_skips_descriptor_index() {
     let mut bytes = compact_counted_nurbs_surface_carrier(10, 11, 20);
     let baseline = cadmpeg_test_support::service_decode_context();
     let carriers = scan_surface_carriers(&baseline, &bytes, &mut Vec::new()).unwrap();
     let Some(SolvedSurfaceGeometry::Nurbs(surface)) = carriers[&10].geometry.solved() else { panic!("surface") };
-    let mut p = 2;
-    if bytes[p] == 0xff { p += 1; }
-    bytes[p + 17..p + 19].copy_from_slice(&65000_u16.to_be_bytes());
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &probe_policy()).unwrap();
-    let operation = "scan Parasolid spline arrays";
+    let operation = "scan Parasolid surface descriptors";
     let probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
-    assert_eq!(patch_nurbs_surface(&ctx, &mut bytes, 0, surface, surface, 0.001).unwrap(), None);
+    let offset = bytes.len();
+    assert_eq!(patch_nurbs_surface(&ctx, &mut bytes, offset, surface, surface, 0.001).unwrap(), None);
     assert!(matches!(ctx.charge_work(1, operation), Err(CodecError::ResourceLimit(_))));
     drop(probe);
 }
