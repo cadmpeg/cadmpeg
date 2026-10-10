@@ -81,7 +81,11 @@ fn unique_feature_match_for_decode<'source, T>(
     let mut source = source.iter();
     let first = ctx.find_map(
         &mut source,
-        |value| Ok(predicate(value)?.then_some(value)),
+        |value| {
+            let matched = predicate(value);
+            ctx.charge_work(0, operation)?;
+            Ok(matched?.then_some(value))
+        },
         operation,
     )?;
     let Some(first) = first else {
@@ -89,7 +93,11 @@ fn unique_feature_match_for_decode<'source, T>(
     };
     let second = ctx.find_map(
         &mut source,
-        |value| Ok(predicate(value)?.then_some(value)),
+        |value| {
+            let matched = predicate(value);
+            ctx.charge_work(0, operation)?;
+            Ok(matched?.then_some(value))
+        },
         operation,
     )?;
     Ok(second.is_none().then_some(first))
