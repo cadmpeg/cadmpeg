@@ -259,7 +259,10 @@ pub(super) fn project_pattern(
 
 pub(crate) fn parse_count(ctx: &DecodeContext<'_>, value: &str) -> Result<Option<u32>, CodecError> {
     let value = ctx.trim_text(value, "trim SLDPRT pattern count")?;
-    Ok(ctx.parse_text::<u32>(value, "parse SLDPRT pattern count")?.ok().filter(|count| *count > 0))
+    Ok(ctx
+        .parse_text::<u32>(value, "parse SLDPRT pattern count")?
+        .ok()
+        .filter(|count| *count > 0))
 }
 
 #[cfg(test)]

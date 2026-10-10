@@ -796,7 +796,11 @@ pub(super) fn indexed_name_for_decode(
     prefix: &str,
 ) -> Result<bool, CodecError> {
     indexed_name_with(name, prefix, |suffix| {
-        ctx.all_by(suffix, |byte| Ok(byte.is_ascii_digit()), "scan SLDPRT fillet radius digits")
+        ctx.all_by(
+            suffix,
+            |byte| Ok(byte.is_ascii_digit()),
+            "scan SLDPRT fillet radius digits",
+        )
     })
 }
 
@@ -805,7 +809,10 @@ fn indexed_name_with<E>(
     prefix: &str,
     digits: impl FnOnce(&[u8]) -> Result<bool, E>,
 ) -> Result<bool, E> {
-    let Some(suffix) = name.strip_prefix(prefix).filter(|suffix| !suffix.is_empty()) else {
+    let Some(suffix) = name
+        .strip_prefix(prefix)
+        .filter(|suffix| !suffix.is_empty())
+    else {
         return Ok(false);
     };
     digits(suffix.as_bytes())

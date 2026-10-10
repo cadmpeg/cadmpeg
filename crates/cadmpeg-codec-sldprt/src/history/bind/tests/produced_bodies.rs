@@ -78,9 +78,18 @@ fn produced_body_membership_preserves_actual_refusals() {
     let histories = [history()];
     let producers = [(model.faces[0].id.as_str(), 700)];
     for (dimension, operation) in [
-        (ResourceDimension::MaterializedBytes, "index SLDPRT face owner shells"),
-        (ResourceDimension::CollectionItems, "collect SLDPRT produced bodies"),
-        (ResourceDimension::MaterializedBytes, "validate distinct decoded members"),
+        (
+            ResourceDimension::MaterializedBytes,
+            "index SLDPRT face owner shells",
+        ),
+        (
+            ResourceDimension::CollectionItems,
+            "collect SLDPRT produced bodies",
+        ),
+        (
+            ResourceDimension::MaterializedBytes,
+            "validate distinct decoded members",
+        ),
     ] {
         let error = cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
             let mut policy = DecodePolicy::service();
@@ -93,19 +102,32 @@ fn produced_body_membership_preserves_actual_refusals() {
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let mut features = [projected()];
             let result = derive_feature_outputs(
-                &ctx, &mut features, &histories,
-                FeatureOutputSources { face_producers: &producers, body_modifiers: &[] },
-                &model.faces, &model.shells, &model.regions,
+                &ctx,
+                &mut features,
+                &histories,
+                FeatureOutputSources {
+                    face_producers: &producers,
+                    body_modifiers: &[],
+                },
+                &model.faces,
+                &model.shells,
+                &model.regions,
             );
             if let Err(CodecError::ResourceLimit(limit)) = &result {
                 assert!(features[0].evaluation.outputs().is_empty());
                 assert_eq!(ctx.resource_refusal(), Some(*limit));
-                assert!(matches!(ctx.charge_work(0, "after produced body refusal"), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit));
-                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit));
+                assert!(
+                    matches!(ctx.charge_work(0, "after produced body refusal"), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit)
+                );
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit)
+                );
             }
             result
         });
-        let CodecError::ResourceLimit(limit) = error else { panic!("required produced body backing refuses before publication"); };
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("required produced body backing refuses before publication");
+        };
         assert_eq!(limit.dimension, dimension);
         assert_eq!(limit.operation, operation);
     }

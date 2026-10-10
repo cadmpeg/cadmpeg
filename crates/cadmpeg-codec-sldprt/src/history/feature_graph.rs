@@ -16,8 +16,7 @@ pub(crate) fn validate_feature_graph(
             features,
             |feature| Ok(!valid_xml_name(ctx, &feature.xml_tag)?),
             "scan SLDPRT validate_feature_graph values",
-        )?
-        {
+        )? {
             return Err(CodecError::Malformed(
                 "invalid feature XML element name".into(),
             ));
@@ -69,27 +68,27 @@ pub(crate) fn validate_feature_graph(
             "scan SLDPRT validate_feature_graph values",
         )? {
             if let Some(source_walk) = &mut source_walk {
-            source_walk.walk(
-                ctx,
-                features,
-                position,
-                &by_id,
-                crate::records::Feature::parent_source_id,
-                ("feature references missing parent", "feature parent cycle"),
-            )?;
+                source_walk.walk(
+                    ctx,
+                    features,
+                    position,
+                    &by_id,
+                    crate::records::Feature::parent_source_id,
+                    ("feature references missing parent", "feature parent cycle"),
+                )?;
             }
             if let Some(tree_walk) = &mut tree_walk {
-            tree_walk.walk(
-                ctx,
-                features,
-                position,
-                &by_record,
-                crate::records::Feature::tree_parent_record_id,
-                (
-                    "feature references missing tree parent",
-                    "feature tree cycle",
-                ),
-            )?;
+                tree_walk.walk(
+                    ctx,
+                    features,
+                    position,
+                    &by_record,
+                    crate::records::Feature::tree_parent_record_id,
+                    (
+                        "feature references missing tree parent",
+                        "feature tree cycle",
+                    ),
+                )?;
             }
         }
         Ok(())

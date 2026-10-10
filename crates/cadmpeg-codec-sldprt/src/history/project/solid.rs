@@ -61,7 +61,9 @@ impl<'f, 'c> SourceFeatures<'f, 'c> {
             let mut records = BTreeMap::new();
             for feature in ctx.admit_iter(self.features, OPERATION)? {
                 if let Some(source) = feature.source_id {
-                    self.storage.with_storage(|| ctx.insert_btree_map(&mut records, source, feature, OPERATION))?;
+                    self.storage.with_storage(|| {
+                        ctx.insert_btree_map(&mut records, source, feature, OPERATION)
+                    })?;
                 }
             }
             self.records = Some(records);
@@ -76,14 +78,19 @@ impl<'f, 'c> SourceFeatures<'f, 'c> {
     ) -> Result<Option<&'f Feature>, CodecError> {
         if self.by_id.is_none() {
             let (records, mut storage) = ctx.unique_index(
-                self.features.iter().map(|feature| (feature.id.as_str(), feature)),
+                self.features
+                    .iter()
+                    .map(|feature| (feature.id.as_str(), feature)),
                 "index SLDPRT history records by identity",
             )?;
             self.storage.absorb(&mut storage)?;
             self.by_id = Some(records);
         }
         let records = self.by_id.get_or_insert_default();
-        Ok(ctx.get_hash_map(records, id, "look up SLDPRT hole profile record")?.copied().flatten())
+        Ok(ctx
+            .get_hash_map(records, id, "look up SLDPRT hole profile record")?
+            .copied()
+            .flatten())
     }
 
     fn preceding_profile(
@@ -451,7 +458,11 @@ pub(super) fn project_hole(
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     let Some((shape, profile)) = hole_shape_and_profile(ctx, feature, |key| match key {
         HoleProfileKey::Source(source) => Ok(ctx
-            .get_btree_map(source_features.records(ctx)?, &source, "look up SLDPRT feature source")?
+            .get_btree_map(
+                source_features.records(ctx)?,
+                &source,
+                "look up SLDPRT feature source",
+            )?
             .copied()),
         HoleProfileKey::Record(id) => source_features.record(ctx, id),
     })?
@@ -1200,7 +1211,9 @@ mod tests {
         }
         assert_eq!(
             index
-                .records.as_ref().unwrap()
+                .records
+                .as_ref()
+                .unwrap()
                 .get(&FeatureSource::try_from("10").unwrap())
                 .unwrap()
                 .id,

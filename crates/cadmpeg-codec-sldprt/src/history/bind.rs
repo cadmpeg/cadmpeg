@@ -86,7 +86,8 @@ pub(crate) fn bind_unique_sketch_feature(
     let _sketch_index;
     let sketches_by_name;
     (sketches_by_name, _sketch_index) = ctx.unique_index(
-        sketches.iter()
+        sketches
+            .iter()
             .filter_map(|sketch| sketch.name.as_deref().map(|name| (name, sketch))),
         BIND_OPERATION,
     )?;
@@ -245,11 +246,17 @@ pub(crate) fn bind_unique_sketch_feature(
     }
     for &(index, base_index) in ctx.admit_iter(&alias_dependencies, BIND_OPERATION)? {
         let base = &features[base_index].id;
-        if !ctx.contains(features[index].dependencies.as_slice(), base, BIND_OPERATION)? {
+        if !ctx.contains(
+            features[index].dependencies.as_slice(),
+            base,
+            BIND_OPERATION,
+        )? {
             let base = base.try_clone_for_decode(ctx, BIND_OPERATION)?;
-            features[index]
-                .dependencies
-                .insert(ctx, base, "bind SLDPRT sketch alias dependency")?;
+            features[index].dependencies.insert(
+                ctx,
+                base,
+                "bind SLDPRT sketch alias dependency",
+            )?;
         }
     }
     workspace.with_storage(|| ctx.append_vec(&mut bindings, &mut aliases, BIND_OPERATION))?;
@@ -926,40 +933,42 @@ pub(crate) fn derive_feature_outputs(
         body_modifiers,
     } = sources;
     if !body_modifiers.is_empty() {
-    let mut scratch = ctx.reserve_scoped(0, "index SLDPRT body modifier ordinals")?;
-    let mut feature_ids_by_ordinal = HashMap::<u32, Option<&str>>::new();
-    for history in ctx.admit_iter(histories, "scan SLDPRT derive_feature_outputs values")? {
-        let index = HistoryIndex::new(ctx, &history.features)?;
-        let mut ordinal = 0_u32;
-        for record in ctx.admit_iter(&history.features, "classify SLDPRT body modifier ordinals")? {
-            if index.is_metadata(ctx, record)? {
-                continue;
-            }
-            ordinal = ordinal.checked_add(1).ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "index SLDPRT body modifier ordinals",
-                    u64::MAX - 1,
-                    u64::MAX,
-                )
-            })?;
-            if let Some(previous) = ctx.get_mut_hash_map(
-                &mut feature_ids_by_ordinal,
-                &ordinal,
-                "index SLDPRT body modifier ordinals",
-            )? {
-                *previous = None;
-                continue;
-            }
-            scratch.with_storage(|| {
-                ctx.insert_hash_map(
+        let mut scratch = ctx.reserve_scoped(0, "index SLDPRT body modifier ordinals")?;
+        let mut feature_ids_by_ordinal = HashMap::<u32, Option<&str>>::new();
+        for history in ctx.admit_iter(histories, "scan SLDPRT derive_feature_outputs values")? {
+            let index = HistoryIndex::new(ctx, &history.features)?;
+            let mut ordinal = 0_u32;
+            for record in
+                ctx.admit_iter(&history.features, "classify SLDPRT body modifier ordinals")?
+            {
+                if index.is_metadata(ctx, record)? {
+                    continue;
+                }
+                ordinal = ordinal.checked_add(1).ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "index SLDPRT body modifier ordinals",
+                        u64::MAX - 1,
+                        u64::MAX,
+                    )
+                })?;
+                if let Some(previous) = ctx.get_mut_hash_map(
                     &mut feature_ids_by_ordinal,
-                    ordinal,
-                    Some(record.id.as_str()),
+                    &ordinal,
                     "index SLDPRT body modifier ordinals",
-                )
-            })?;
+                )? {
+                    *previous = None;
+                    continue;
+                }
+                scratch.with_storage(|| {
+                    ctx.insert_hash_map(
+                        &mut feature_ids_by_ordinal,
+                        ordinal,
+                        Some(record.id.as_str()),
+                        "index SLDPRT body modifier ordinals",
+                    )
+                })?;
+            }
         }
-    }
         // Each modified body, paired with every projected feature of its record.
         let mut features_by_native = HashMap::new();
         for (position, feature) in ctx.admit_iter(&*features, MODIFIERS)?.enumerate() {
@@ -1106,8 +1115,8 @@ pub(crate) fn derive_feature_outputs(
 
 #[cfg(test)]
 mod tests {
-    mod produced_bodies;
     mod lazy_admission;
+    mod produced_bodies;
     use super::{
         bind_unique_sketch_feature, derive_feature_outputs, order_features_for_regeneration,
         order_model_features_for_regeneration,

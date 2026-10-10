@@ -94,45 +94,70 @@ pub(crate) fn apply_feature_name_changes(
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())?;
     let mut owners_storage = ctx.reserve_scoped(0, OPERATION)?;
     let mut owners = HashMap::new();
-    if ctx.any_by(&*parameters, |parameter| Ok(!parameter.dependencies.is_empty()), OPERATION)? {
-    for parameter in ctx.admit_iter(&*parameters, OPERATION)? {
-        let change = parameter.owner.as_ref()
-            .map(|owner| ctx.get_hash_map(changes, owner, OPERATION))
-            .transpose()?.flatten();
-        if let Some(previous) = ctx.get_mut_hash_map(&mut owners, &parameter.id, OPERATION)? {
-            *previous = change;
-        } else if change.is_some() {
-            owners_storage.with_storage(|| {
-                let id = parameter.id.try_clone_for_decode(&ctx, OPERATION)?;
-                ctx.insert_hash_map(&mut owners, id, change, OPERATION)
-            })?;
+    if ctx.any_by(
+        &*parameters,
+        |parameter| Ok(!parameter.dependencies.is_empty()),
+        OPERATION,
+    )? {
+        for parameter in ctx.admit_iter(&*parameters, OPERATION)? {
+            let change = parameter
+                .owner
+                .as_ref()
+                .map(|owner| ctx.get_hash_map(changes, owner, OPERATION))
+                .transpose()?
+                .flatten();
+            if let Some(previous) = ctx.get_mut_hash_map(&mut owners, &parameter.id, OPERATION)? {
+                *previous = change;
+            } else if change.is_some() {
+                owners_storage.with_storage(|| {
+                    let id = parameter.id.try_clone_for_decode(&ctx, OPERATION)?;
+                    ctx.insert_hash_map(&mut owners, id, change, OPERATION)
+                })?;
+            }
         }
     }
-    }
     for parameter in ctx.admit_iter(parameters, OPERATION)? {
-        if let Some((old_owner, new_owner)) = parameter.owner.as_ref()
+        if let Some((old_owner, new_owner)) = parameter
+            .owner
+            .as_ref()
             .map(|owner| ctx.get_hash_map(changes, owner, OPERATION))
-            .transpose()?.flatten()
+            .transpose()?
+            .flatten()
         {
-            if let Some(equation_id) = ctx.get_mut_btree_map(&mut parameter.properties, "EquationId", OPERATION)? {
-                let (suffix, _suffix_storage) = ctx.format_scoped(format_args!("@{old_owner}"), OPERATION)?;
-                if let Some(base) = ctx.strip_suffix(equation_id.as_str(), suffix.as_str(), OPERATION)? {
-                    *equation_id = ctx.format_retained(format_args!("{base}@{new_owner}"), OPERATION)?;
+            if let Some(equation_id) =
+                ctx.get_mut_btree_map(&mut parameter.properties, "EquationId", OPERATION)?
+            {
+                let (suffix, _suffix_storage) =
+                    ctx.format_scoped(format_args!("@{old_owner}"), OPERATION)?;
+                if let Some(base) =
+                    ctx.strip_suffix(equation_id.as_str(), suffix.as_str(), OPERATION)?
+                {
+                    *equation_id =
+                        ctx.format_retained(format_args!("{base}@{new_owner}"), OPERATION)?;
                 }
             }
         }
         let mut storage = ctx.reserve_scoped(0, OPERATION)?;
         let mut suffixes = Vec::new();
-        for (position, dependency) in ctx.admit_iter(parameter.dependencies.as_slice(), OPERATION)?.enumerate() {
-            let Some(Some((old_owner, new_owner))) = ctx.get_hash_map(&owners, dependency, OPERATION)? else {
+        for (position, dependency) in ctx
+            .admit_iter(parameter.dependencies.as_slice(), OPERATION)?
+            .enumerate()
+        {
+            let Some(Some((old_owner, new_owner))) =
+                ctx.get_hash_map(&owners, dependency, OPERATION)?
+            else {
                 continue;
             };
             if suffixes.is_empty() {
-                storage.with_storage(|| ctx.push_vec(&mut suffixes, OwnerSuffixNode::default(), OPERATION))?;
+                storage.with_storage(|| {
+                    ctx.push_vec(&mut suffixes, OwnerSuffixNode::default(), OPERATION)
+                })?;
             }
             let mut node = 0;
             for byte in ctx.admit_iter(old_owner.as_bytes(), OPERATION)?.rev() {
-                let next = ctx.get_hash_map(&suffixes[node].bytes, byte, OPERATION)?.copied();
+                let next = ctx
+                    .get_hash_map(&suffixes[node].bytes, byte, OPERATION)?
+                    .copied();
                 node = if let Some(next) = next {
                     next
                 } else {
@@ -179,13 +204,18 @@ pub(crate) fn apply_feature_name_changes(
             if let Some((_, at, new_owner)) = replacement {
                 storage.with_storage(|| {
                     let alias = ctx.copy_retained_text(token.value(), OPERATION)?;
-                    let value = ctx.format_retained(format_args!("{}@{new_owner}", &token.value()[..at]), OPERATION)?;
+                    let value = ctx.format_retained(
+                        format_args!("{}@{new_owner}", &token.value()[..at]),
+                        OPERATION,
+                    )?;
                     ctx.insert_hash_map(&mut aliases, alias, value, OPERATION)
                 })?;
             }
         }
         drop(token_storage);
-        if let Some(rewritten) = rewrite_parameter_expression(&ctx, &parameter.expression, &aliases)? {
+        if let Some(rewritten) =
+            rewrite_parameter_expression(&ctx, &parameter.expression, &aliases)?
+        {
             parameter.expression = rewritten;
         }
     }
