@@ -122,11 +122,9 @@ impl PmDcReference {
                 qualifiers.len()
             )));
         }
-        // The lengths are equal, so the admitted index traversal bounds the
-        // qualifier side of the zip.
-        let indices = ctx.admit_iter(indices, "visit Inventor PmDc reference indices")?;
         ctx.try_collect_vec(
             indices
+                .iter()
                 .copied()
                 .zip(qualifiers.iter().copied())
                 .map(|(index, qualified)| {
@@ -936,6 +934,23 @@ mod tests {
         assert!(
             matches!(super::u32_list(&ctx, &mut Cursor::new(root), 2, "test"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes)
         );
+    }
+
+    #[test]
+    fn reference_zip_charges_one_source_step_per_pair() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // Two pairs plus the collector's end probe: 2 + 1 = 3 work units.
+        policy.limits.max_work_units = 3;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("zip context");
+        let references = super::PmDcReference::zip(&ctx, &[1, 2], &[false, true])
+            .expect("one traversal fits");
+        assert_eq!(references[0].index(), 1);
+        assert_eq!(references[1].index(), 2);
+        assert!(references[1].qualified());
+        assert!(matches!(ctx.charge_work(1, "probe reference zip"),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits && limit.used == 3));
     }
 
     #[test]

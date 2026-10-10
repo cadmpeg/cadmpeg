@@ -121,12 +121,9 @@ where
     let records = ctx
         .get_btree_map(namespace.arenas(), arena, "find Inventor UFRx record arena")?
         .map_or(&[][..], Vec::as_slice);
-    let records = ctx
-        .admit_iter(records, operation)
-        .map_err(CodecError::from)?;
     let wires = namespace.arena_iter_as_for_decode::<Wire>(ctx, arena);
     ctx.try_collect_vec(
-        records.zip(wires).map(|(record, wire)| {
+        records.iter().zip(wires).map(|(record, wire)| {
             let wire = wire?;
             match convert(wire, ctx) {
                 Ok(record) => Ok(record),
@@ -151,12 +148,10 @@ where
         .get_btree_map(namespace.arenas(), arena, "find Inventor UFRx record arena")?
         .map_or(&[][..], Vec::as_slice);
     let count = records.len();
-    let records = ctx
-        .admit_iter(records, operation)
-        .map_err(CodecError::from)?;
     let wires = namespace.arena_iter_as_for_decode::<Wire>(ctx, arena);
     let mut first = None;
-    for (record, wire) in records.zip(wires) {
+    let mut source = records.iter().zip(wires);
+    while let Some((record, wire)) = ctx.next_charged(&mut source, operation)? {
         let wire = wire?;
         let value = match convert(wire, ctx) {
             Ok(value) => value,
