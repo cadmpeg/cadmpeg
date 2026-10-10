@@ -26,7 +26,8 @@ use super::transforms::{
 };
 use super::typed_relations::{
     current_undetailed_bounded_curve_is_line, marker_curve_endpoint_markers_in,
-    marker_relation_definition, marker_relation_is_inactive_in, CurveEndpointGeometry, CurveMarkers, RelationMarkers,
+    marker_relation_definition, marker_relation_is_inactive_in, CurveEndpointGeometry,
+    CurveMarkers, RelationMarkers,
 };
 use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
@@ -75,11 +76,15 @@ pub(super) fn is_reference_relation_parameter_in(
         &parameter.properties,
         RELATION_PARAMETER_ROLE_PROPERTY,
         "resolve SLDPRT relation parameter role",
-    )? else {
+    )?
+    else {
         return Ok(false);
     };
-    ctx.equal(role.as_str(), RELATION_PARAMETER_ROLE_REFERENCE,
-        "match SLDPRT relation parameter role")
+    ctx.equal(
+        role.as_str(),
+        RELATION_PARAMETER_ROLE_REFERENCE,
+        "match SLDPRT relation parameter role",
+    )
 }
 
 fn relation_native_kind(family: FeatureInputRelationFamily) -> cadmpeg_core::text::NonBlankString {
@@ -1316,7 +1321,11 @@ pub(crate) fn project_relation_point_geometry(
                         marker,
                         &markers_by_id,
                         curve_index,
-                        CurveEndpointGeometry::Cached { ctx, payload: &lane.native_payload, cache: &mut geometry },
+                        CurveEndpointGeometry::Cached {
+                            ctx,
+                            payload: &lane.native_payload,
+                            cache: &mut geometry,
+                        },
                     )
                 })?;
             if endpoints.len() != 2 && linked_curve_handle {
@@ -1864,7 +1873,11 @@ pub(crate) fn project_relation_solved_line_geometry(
                             marker,
                             markers_by_id,
                             curve_index,
-                            CurveEndpointGeometry::Cached { ctx, payload: &lane.native_payload, cache: &mut geometry },
+                            CurveEndpointGeometry::Cached {
+                                ctx,
+                                payload: &lane.native_payload,
+                                cache: &mut geometry,
+                            },
                         )
                     })?;
                 let [first, second] = endpoints.as_slice() else {
@@ -2216,9 +2229,15 @@ pub(crate) fn project_relation_solved_line_geometry(
                                 let resolved = (|| -> Result<_, cadmpeg_core::CodecError> {
                                     let Some(markers) = fallback_line_markers(
                                         operand.entity_index,
-                                        if prefer_marker_endpoints { "resolve SLDPRT solved-line point markers" }
-                                        else { "reuse SLDPRT solved-line point markers" },
-                                    )? else { return Ok(None); };
+                                        if prefer_marker_endpoints {
+                                            "resolve SLDPRT solved-line point markers"
+                                        } else {
+                                            "reuse SLDPRT solved-line point markers"
+                                        },
+                                    )?
+                                    else {
+                                        return Ok(None);
+                                    };
                                     Ok(transformed_line(markers)?
                                         .and_then(|(start, end)| candidate(start, end))
                                         .map(|line| (markers, line)))
@@ -2227,10 +2246,16 @@ pub(crate) fn project_relation_solved_line_geometry(
                             }
                         };
                         // Cached geometry is a Line with fixed fields and no child storage.
-                        cached.as_ref().map(|(markers, line)| (*markers, line.clone()))
+                        cached
+                            .as_ref()
+                            .map(|(markers, line)| (*markers, line.clone()))
                     };
                     let Some((markers, line)) = selected else {
-                        return Ok((Vec::new(), ctx.reserve_scoped(0, operation)?, used_marker_endpoints));
+                        return Ok((
+                            Vec::new(),
+                            ctx.reserve_scoped(0, operation)?,
+                            used_marker_endpoints,
+                        ));
                     };
                     storage.with_storage(|| {
                         ctx.push_vec(&mut lines, (operand, markers, line), operation)
@@ -2361,8 +2386,8 @@ pub(crate) fn project_relation_solved_line_geometry(
                             .zip(selected)
                         {
                             let reference_storage;
-                let geometry_ref;
-                (geometry_ref, reference_storage) = ctx.format_scoped(
+                            let geometry_ref;
+                            (geometry_ref, reference_storage) = ctx.format_scoped(
                                 format_args!(
                                     "{}:solver-line:{}",
                                     relation.feature_ref, operand.entity_index
@@ -2447,7 +2472,9 @@ pub(crate) fn project_relation_solved_line_geometry(
                                     )?,
                                 )
                                 .with_construction(true)
-                                .with_geometry_ref(Some(reference_storage.commit_value(geometry_ref)?))
+                                .with_geometry_ref(Some(
+                                    reference_storage.commit_value(geometry_ref)?,
+                                ))
                                 .with_endpoint_refs(endpoint_refs),
                             );
                         }
@@ -3442,7 +3469,11 @@ pub(super) fn declared_entity_handle_owner<'a>(
             let Some(class) = selected_class else {
                 return Ok(false);
             };
-            if !ctx.equal(class.name.as_str(), "sgEntHandle", "match SLDPRT entity-handle class")? {
+            if !ctx.equal(
+                class.name.as_str(),
+                "sgEntHandle",
+                "match SLDPRT entity-handle class",
+            )? {
                 return Ok(false);
             }
             if owner.is_some() {
@@ -3540,7 +3571,11 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
     let Some(entity_class) = entity_class else {
         return Ok(None);
     };
-    if !ctx.equal(entity_class.name.as_str(), "sgEntHandle", "match SLDPRT slot entity-handle class")? {
+    if !ctx.equal(
+        entity_class.name.as_str(),
+        "sgEntHandle",
+        "match SLDPRT slot entity-handle class",
+    )? {
         return Ok(None);
     }
     let bounds = (|| -> Result<_, cadmpeg_core::CodecError> {
@@ -3549,8 +3584,11 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
             ctx.find_by(
                 &mut classes,
                 |class| {
-                    Ok(ctx.equal(class.name.as_str(), "sgSlotHandle", "match SLDPRT slot-handle class")?
-                        && class.offset > entity_class.offset
+                    Ok(ctx.equal(
+                        class.name.as_str(),
+                        "sgSlotHandle",
+                        "match SLDPRT slot-handle class",
+                    )? && class.offset > entity_class.offset
                         && class.offset < marker.offset())
                 },
                 DIMENSIONED_HANDLE_OPERATION,
@@ -4515,7 +4553,8 @@ pub(crate) fn project_relation_bindings(
             let mut typed_inactive = None;
             let typed_definition = match typed_definition {
                 Some(definition) if reference_parameter => {
-                    let inactive = relation_constraint_is_inactive_in(ctx, parameter, &definition, &profile)?;
+                    let inactive =
+                        relation_constraint_is_inactive_in(ctx, parameter, &definition, &profile)?;
                     if inactive {
                         None
                     } else {

@@ -625,17 +625,19 @@ where
                 let (translations, _storage) =
                     ctx.with_scoped_storage(OPERATION, || score(axes))?;
                 for (translation, count) in ctx.admit_iter(translations, OPERATION)? {
-                    scored_storage.with_storage(|| ctx.push_vec(
-                        &mut scored,
-                        (
-                            MarkerTransform {
-                                translation,
-                                ..axes
-                            },
-                            count,
-                        ),
-                        OPERATION,
-                    ))?;
+                    scored_storage.with_storage(|| {
+                        ctx.push_vec(
+                            &mut scored,
+                            (
+                                MarkerTransform {
+                                    translation,
+                                    ..axes
+                                },
+                                count,
+                            ),
+                            OPERATION,
+                        )
+                    })?;
                 }
             }
         }

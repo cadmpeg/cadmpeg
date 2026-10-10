@@ -309,10 +309,18 @@ fn linked_relation_line_skips_geometry_index_construction() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = u64::MAX;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, "index SLDPRT marker geometry", None);
+    let _probe = RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "index SLDPRT marker geometry",
+        None,
+    );
     project_marker_line(&ctx).unwrap();
-    let CodecError::ResourceLimit(limit) = ctx.charge_work(1, "index SLDPRT marker geometry").unwrap_err()
-    else { panic!("linked endpoints must leave the geometry-index probe armed"); };
+    let CodecError::ResourceLimit(limit) = ctx
+        .charge_work(1, "index SLDPRT marker geometry")
+        .unwrap_err()
+    else {
+        panic!("linked endpoints must leave the geometry-index probe armed");
+    };
     assert_eq!(limit.operation, "index SLDPRT marker geometry");
     assert_eq!(limit.additional, 1);
     assert_eq!(ctx.resource_refusal(), Some(limit));
@@ -324,41 +332,72 @@ fn existing_solver_lines(ctx: &DecodeContext<'_>, dynamic: bool) -> Result<(), C
     lane.relation_instances[0].operands = vec![operand(0, None), operand(1, None)];
     if dynamic {
         for operand in &mut lane.relation_instances[0].operands {
-            operand.kind = FeatureInputOperandKind::Native(crate::records::operand_tag::NativeOperandTag::try_from(0x1234).unwrap());
+            operand.kind = FeatureInputOperandKind::Native(
+                crate::records::operand_tag::NativeOperandTag::try_from(0x1234).unwrap(),
+            );
         }
     }
     lane.sketch_entities = vec![
-        point("first-start", 0, 0.0, 0.0), point("first-end", 1, 2.0, 0.0),
-        point("second-start", 2, 0.0, 1.0), point("second-end", 3, 2.0, 1.0),
+        point("first-start", 0, 0.0, 0.0),
+        point("first-end", 1, 2.0, 0.0),
+        point("second-start", 2, 0.0, 1.0),
+        point("second-end", 3, 2.0, 1.0),
     ];
     let mut parameter = parameter();
     parameter.owner = Some(feature.id.clone());
-    if dynamic { parameter.value = Some(ParameterValue::Length(Length::new(2.0).unwrap())); }
+    if dynamic {
+        parameter.value = Some(ParameterValue::Length(Length::new(2.0).unwrap()));
+    }
     let second_y = if dynamic { 2.0 } else { 1.0 };
-    let mut entities: Vec<_> = [0.0, second_y].into_iter().enumerate().map(|(index, y)| {
-        SketchEntity::new(
-            SketchEntityId::mint(format!("synthetic:test:entity#existing-{index}")).unwrap(),
-            sketch.id.clone(),
-            SketchGeometry::try_from(SketchGeometryDefinition::Line {
-                start: Point2::new(0.0, y), end: Point2::new(2.0, y),
-            }).unwrap(),
-        ).with_construction(true).with_geometry_ref(Some(format!("feature:solver-line:{index}")))
-    }).collect();
+    let mut entities: Vec<_> = [0.0, second_y]
+        .into_iter()
+        .enumerate()
+        .map(|(index, y)| {
+            SketchEntity::new(
+                SketchEntityId::mint(format!("synthetic:test:entity#existing-{index}")).unwrap(),
+                sketch.id.clone(),
+                SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                    start: Point2::new(0.0, y),
+                    end: Point2::new(2.0, y),
+                })
+                .unwrap(),
+            )
+            .with_construction(true)
+            .with_geometry_ref(Some(format!("feature:solver-line:{index}")))
+        })
+        .collect();
     if dynamic {
         // Three noncollinear native anchors select one identity frame even
         // though the existing second line differs from its fallback pair.
-        for (native_ref, u, v) in [("first-start", 0.0, 0.0), ("first-end", 2.0, 0.0), ("second-start", 0.0, 1.0)] {
-            entities.push(SketchEntity::new(
-                SketchEntityId::mint(format!("synthetic:test:entity#anchor-{native_ref}")).unwrap(),
-                sketch.id.clone(),
-                SketchGeometry::try_from(SketchGeometryDefinition::Point { position: Point2::new(u, v) }).unwrap(),
-            ).with_native_ref(Some(native_ref.into())));
+        for (native_ref, u, v) in [
+            ("first-start", 0.0, 0.0),
+            ("first-end", 2.0, 0.0),
+            ("second-start", 0.0, 1.0),
+        ] {
+            entities.push(
+                SketchEntity::new(
+                    SketchEntityId::mint(format!("synthetic:test:entity#anchor-{native_ref}"))
+                        .unwrap(),
+                    sketch.id.clone(),
+                    SketchGeometry::try_from(SketchGeometryDefinition::Point {
+                        position: Point2::new(u, v),
+                    })
+                    .unwrap(),
+                )
+                .with_native_ref(Some(native_ref.into())),
+            );
         }
     }
     let before = entities.clone();
     for _ in 0..8 {
-        project_relation_solved_line_geometry(ctx, &mut entities, std::slice::from_ref(&sketch),
-            std::slice::from_ref(&feature), std::slice::from_ref(&parameter), std::slice::from_ref(&lane))?;
+        project_relation_solved_line_geometry(
+            ctx,
+            &mut entities,
+            std::slice::from_ref(&sketch),
+            std::slice::from_ref(&feature),
+            std::slice::from_ref(&parameter),
+            std::slice::from_ref(&lane),
+        )?;
         assert_eq!(entities, before);
     }
     Ok(())
@@ -371,11 +410,19 @@ fn duplicate_solver_reference_storage(dynamic: bool) {
     policy.limits.max_materialized_bytes = EMPTY_INPUT_WORKSPACE_BYTES;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     existing_solver_lines(&ctx, dynamic).unwrap();
-    ctx.reserve_scoped(policy.limits.max_materialized_bytes, "reuse duplicate solver workspace").unwrap();
+    ctx.reserve_scoped(
+        policy.limits.max_materialized_bytes,
+        "reuse duplicate solver workspace",
+    )
+    .unwrap();
     ctx.finish_session().unwrap();
-    let operation = if dynamic { "format SLDPRT dynamic solver-line reference" }
-        else { "format SLDPRT solver-line reference" };
-    let error = crate::test_support::work_refusal_at(operation, |ctx| existing_solver_lines(ctx, dynamic));
+    let operation = if dynamic {
+        "format SLDPRT dynamic solver-line reference"
+    } else {
+        "format SLDPRT solver-line reference"
+    };
+    let error =
+        crate::test_support::work_refusal_at(operation, |ctx| existing_solver_lines(ctx, dynamic));
     assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.operation == operation));
 }
 
@@ -389,31 +436,77 @@ fn duplicate_dynamic_solver_lines_release_lookup_strings_without_retained_charge
     duplicate_solver_reference_storage(true);
 }
 
-fn mixed_solver_retry(ctx: &DecodeContext<'_>, expected: f64, missing_fallback: bool) -> Result<(), CodecError> {
+fn mixed_solver_retry(
+    ctx: &DecodeContext<'_>,
+    expected: f64,
+    missing_fallback: bool,
+) -> Result<(), CodecError> {
     let (sketch, feature, mut lane) = planar_fixture();
     lane.relation_instances[0].family = FeatureInputRelationFamily::LineLineDistance;
-    lane.relation_instances[0].operands = vec![operand(0, Some("line")), operand(if missing_fallback { 100 } else { 1 }, None)];
+    lane.relation_instances[0].operands = vec![
+        operand(0, Some("line")),
+        operand(if missing_fallback { 100 } else { 1 }, None),
+    ];
     lane.sketch_entities = vec![
-        point("fallback-0-start", 0, 0.0, 0.0), point("fallback-0-end", 1, 10.0, 0.0),
-        point("fallback-1-start", 2, 0.0, 5.0), point("fallback-1-end", 3, 10.0, 5.0),
-        point("explicit-start", 4, 0.0, 20.0), point("explicit-end", 5, 10.0, 20.0),
+        point("fallback-0-start", 0, 0.0, 0.0),
+        point("fallback-0-end", 1, 10.0, 0.0),
+        point("fallback-1-start", 2, 0.0, 5.0),
+        point("fallback-1-end", 3, 10.0, 5.0),
+        point("explicit-start", 4, 0.0, 20.0),
+        point("explicit-end", 5, 10.0, 20.0),
     ];
     let mut line = SketchInputEntity::new("line", "lane", 6, 20, SketchInputKind::LineOrCircle);
     line.feature_ref = Some("feature".into());
-    line.links = SketchInputLinks::new(0, ["explicit-start", "explicit-end"].into_iter().enumerate()
-        .map(|(index, entity_ref)| SketchInputLink { local_id: u16::try_from(index).unwrap(), entity_ref: entity_ref.into() }).collect());
+    line.links = SketchInputLinks::new(
+        0,
+        ["explicit-start", "explicit-end"]
+            .into_iter()
+            .enumerate()
+            .map(|(index, entity_ref)| SketchInputLink {
+                local_id: u16::try_from(index).unwrap(),
+                entity_ref: entity_ref.into(),
+            })
+            .collect(),
+    );
     lane.sketch_entities.push(line);
     let mut parameter = parameter();
     parameter.owner = Some(feature.id.clone());
     parameter.value = Some(ParameterValue::Length(Length::new(expected).unwrap()));
     let mut entities = Vec::new();
-    project_relation_solved_line_geometry(ctx, &mut entities, &[sketch], &[feature], &[parameter], &[lane])?;
+    project_relation_solved_line_geometry(
+        ctx,
+        &mut entities,
+        &[sketch],
+        &[feature],
+        &[parameter],
+        &[lane],
+    )?;
     if expected == 5.0 && !missing_fallback {
         assert_eq!(entities.len(), 2);
-        assert_eq!(entities[0].endpoint_refs, ["fallback-0-start", "fallback-0-end"]);
-        assert_eq!(entities[1].endpoint_refs, ["fallback-1-start", "fallback-1-end"]);
-        assert_eq!(entities[0].geometry, SketchGeometry::try_from(SketchGeometryDefinition::Line { start: Point2::new(0.0, 0.0), end: Point2::new(10.0, 0.0) }).unwrap());
-        assert_eq!(entities[1].geometry, SketchGeometry::try_from(SketchGeometryDefinition::Line { start: Point2::new(0.0, 5.0), end: Point2::new(10.0, 5.0) }).unwrap());
+        assert_eq!(
+            entities[0].endpoint_refs,
+            ["fallback-0-start", "fallback-0-end"]
+        );
+        assert_eq!(
+            entities[1].endpoint_refs,
+            ["fallback-1-start", "fallback-1-end"]
+        );
+        assert_eq!(
+            entities[0].geometry,
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                start: Point2::new(0.0, 0.0),
+                end: Point2::new(10.0, 0.0)
+            })
+            .unwrap()
+        );
+        assert_eq!(
+            entities[1].geometry,
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                start: Point2::new(0.0, 5.0),
+                end: Point2::new(10.0, 5.0)
+            })
+            .unwrap()
+        );
     } else {
         assert!(entities.is_empty());
     }
@@ -433,11 +526,23 @@ fn invalid_mixed_solver_retry_keeps_scratch_scoped_and_geometry_unbuilt() {
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_materialized_bytes = EMPTY_INPUT_WORKSPACE_BYTES;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let probe = RefusalProbe::arm(ResourceDimension::WorkUnits, "index SLDPRT marker geometry", None);
+    let probe = RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "index SLDPRT marker geometry",
+        None,
+    );
     mixed_solver_retry(&ctx, 2.0, false).unwrap();
-    ctx.reserve_scoped(policy.limits.max_materialized_bytes, "reuse mixed retry workspace").unwrap();
-    let CodecError::ResourceLimit(limit) = ctx.charge_work(1, "index SLDPRT marker geometry").unwrap_err()
-    else { panic!("solved linked endpoints must leave the geometry-index probe armed"); };
+    ctx.reserve_scoped(
+        policy.limits.max_materialized_bytes,
+        "reuse mixed retry workspace",
+    )
+    .unwrap();
+    let CodecError::ResourceLimit(limit) = ctx
+        .charge_work(1, "index SLDPRT marker geometry")
+        .unwrap_err()
+    else {
+        panic!("solved linked endpoints must leave the geometry-index probe armed");
+    };
     assert_eq!(limit.operation, "index SLDPRT marker geometry");
     drop(probe);
 }
@@ -450,7 +555,11 @@ fn mixed_solver_retry_preserves_failed_fallback_resolution() {
     policy.limits.max_materialized_bytes = EMPTY_INPUT_WORKSPACE_BYTES;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     mixed_solver_retry(&ctx, 2.0, true).unwrap();
-    ctx.reserve_scoped(policy.limits.max_materialized_bytes, "reuse failed fallback workspace").unwrap();
+    ctx.reserve_scoped(
+        policy.limits.max_materialized_bytes,
+        "reuse failed fallback workspace",
+    )
+    .unwrap();
     ctx.finish_session().unwrap();
 }
 
