@@ -11,7 +11,7 @@ use crate::records::{
     FeatureInputRelationFamily, FeatureInputRelationInstance, FeatureInputScalar,
     FeatureInputScalarRole,
 };
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -1681,6 +1681,7 @@ fn push_point_candidate<'a>(
     ctx: &DecodeContext<'_>,
     candidates: &mut Vec<&'a crate::records::SketchInputEntity>,
     seen: &mut HashSet<&'a str>,
+    seen_storage: &mut ScopedReservation<'_>,
     candidate: Option<&'a crate::records::SketchInputEntity>,
 ) -> Result<(), CodecError> {
     let Some(candidate) = candidate else {
@@ -1689,10 +1690,11 @@ fn push_point_candidate<'a>(
     if !is_finite_point(candidate) {
         return Ok(());
     }
-    if ctx.contains_hash_set(seen, candidate.id(), "check SLDPRT relation point identity")? {
+    if !seen_storage.with_storage(|| {
+        ctx.insert_hash_set(seen, candidate.id(), "index SLDPRT relation point identity")
+    })? {
         return Ok(());
     }
-    ctx.insert_hash_set(seen, candidate.id(), "index SLDPRT relation point identity")?;
     ctx.push_vec(
         candidates,
         candidate,
@@ -1728,11 +1730,13 @@ fn dynamic_point_candidates<'a>(
         return Ok(candidates);
     }
     let mut candidates = Vec::new();
+    let mut seen_storage = ctx.reserve_scoped(0, "SLDPRT dynamic point identity workspace")?;
     let mut seen = HashSet::new();
     push_point_candidate(
         ctx,
         &mut candidates,
         &mut seen,
+        &mut seen_storage,
         entities.get(address).copied(),
     )?;
     let mut finite_index = 0usize;
@@ -1750,14 +1754,16 @@ fn dynamic_point_candidates<'a>(
         },
         "find SLDPRT coordinate point candidate",
     )?;
-    push_point_candidate(ctx, &mut candidates, &mut seen, coordinate_point)?;
+    push_point_candidate(ctx, &mut candidates, &mut seen, &mut seen_storage, coordinate_point)?;
     for entity in ctx.admit_iter(entities, "match SLDPRT dynamic point identities")? {
         if entity.object_index() == Some(u32::from(operand.entity_index))
             || entity.local_id() == Some(u32::from(operand.entity_index))
         {
-            push_point_candidate(ctx, &mut candidates, &mut seen, Some(entity))?;
+            push_point_candidate(ctx, &mut candidates, &mut seen, &mut seen_storage, Some(entity))?;
         }
     }
+    drop(seen);
+    drop(seen_storage);
     ctx.sort_unstable_by(
         &mut candidates,
         |value| value.id(),
@@ -2384,6 +2390,118 @@ pub(super) fn legacy_scalar_layout(payload: &[u8], trailer_offset: usize) -> boo
     payload.get(trailer_offset..trailer_offset + 3) == Some(&[0, 0, 0])
         && payload.get(trailer_offset + 7..trailer_offset + 24) == Some(&[0; 17])
         && payload.get(trailer_offset + 24..trailer_offset + 30) == Some(&[0x0f, 0, 0, 0, 2, 0])
+}
+
+#[cfg(test)]
+mod point_candidate_tests {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use crate::records::{FeatureInputOperand, FeatureInputOperandKind, SketchInputEntity, SketchInputKind};
+
+    fn fixture() -> ([SketchInputEntity; 2], FeatureInputOperand) {
+        let mut first = SketchInputEntity::new("a", "lane", 0, 0, SketchInputKind::Point);
+        first.coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.0, 0.0]);
+        let mut second = SketchInputEntity::new("b", "lane", 1, 1, SketchInputKind::Point)
+            .with_test_identity(Some(0), None);
+        second.coordinates_m = cadmpeg_ir::units::FiniteVector::new([1.0, 0.0]);
+        ([first, second], FeatureInputOperand {
+            offset: 0,
+            reference_ref: "reference".into(),
+            kind: FeatureInputOperandKind::D6,
+            entity_index: 0,
+            entity_ref: None,
+        })
+    }
+
+    #[test]
+    fn point_identity_table_ends_before_returned_candidates() {
+        assert_eq!(std::mem::size_of::<&str>(), 16);
+        assert_eq!(std::mem::size_of::<&SketchInputEntity>(), 8);
+        let (markers, operand) = fixture();
+        let roster = [&markers[0], &markers[1]];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // Four &str buckets, fifteen alignment bytes and twenty control bytes.
+        policy.limits.max_materialized_bytes = 99;
+        // The returned Vec starts with four borrowed-pointer slots.
+        policy.limits.max_retained_bytes = 32;
+        policy.limits.max_collection_items = 4;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let candidates = super::dynamic_point_candidates(&ctx, &roster, &operand, true).unwrap();
+        assert_eq!(candidates.len(), 2);
+        assert!(std::ptr::eq(candidates[0], &markers[0]));
+        assert!(std::ptr::eq(candidates[1], &markers[1]));
+        let released = ctx.reserve_scoped(99, "released point identity table").unwrap();
+        drop(released);
+        assert_eq!(ctx.resource_refusal(), None);
+        drop(candidates);
+    }
+
+    #[test]
+    fn scoped_point_candidates_release_their_identity_table_each_call() {
+        let (markers, operand) = fixture();
+        let roster = [&markers[0], &markers[1]];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 99 + 32;
+        policy.limits.max_collection_items = 4 * 64;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        for _ in 0..64 {
+            let storage;
+            let candidates;
+            (candidates, storage) = ctx.with_scoped_storage("point candidate test", || {
+                super::dynamic_point_candidates(&ctx, &roster, &operand, true)
+            }).unwrap();
+            assert_eq!(candidates.len(), 2);
+            assert!(std::ptr::eq(candidates[0], &markers[0]));
+            assert!(std::ptr::eq(candidates[1], &markers[1]));
+            let released = ctx.reserve_scoped(99, "released point identity table").unwrap();
+            drop(released);
+            drop(candidates);
+            drop(storage);
+            let released = ctx.reserve_scoped(131, "released point candidates").unwrap();
+            drop(released);
+        }
+        assert_eq!(ctx.resource_refusal(), None);
+    }
+
+    #[test]
+    fn point_candidate_storage_refuses_before_growth_and_stays_fused() {
+        let (markers, operand) = fixture();
+        let roster = [&markers[0], &markers[1]];
+        for (dimension, cap, used, additional, operation) in [
+            (ResourceDimension::MaterializedBytes, 98, 0, 99, "index SLDPRT relation point identity"),
+            (ResourceDimension::RetainedBytes, 31, 0, 32, "collect SLDPRT dynamic point candidates"),
+            (ResourceDimension::CollectionItems, 3, 3, 1, "collect SLDPRT dynamic point candidates"),
+        ] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = 99;
+            policy.limits.max_retained_bytes = 32;
+            policy.limits.max_collection_items = 4;
+            match dimension {
+                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
+                ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
+                ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+                _ => panic!("point candidate storage dimension"),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let Err(CodecError::ResourceLimit(limit)) =
+                super::dynamic_point_candidates(&ctx, &roster, &operand, true)
+            else { panic!("point candidate storage refusal"); };
+            assert_eq!(limit.dimension, dimension);
+            assert_eq!(limit.operation, operation);
+            assert_eq!(limit.limit, cap);
+            assert_eq!(limit.used, used);
+            assert_eq!(limit.additional, additional);
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+            assert!(matches!(ctx.charge_work(0, "after point candidate storage refusal"),
+                Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky))
+                if sticky == limit));
+        }
+    }
 }
 
 #[cfg(test)]
