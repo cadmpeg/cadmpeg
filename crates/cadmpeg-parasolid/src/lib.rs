@@ -215,32 +215,18 @@ impl std::fmt::Display for Carrier {
 ///
 /// Identity comes from this shared schema-token map so hosts cannot disagree
 /// about the identity of the same declaration.
-fn schema_row(ctx: &DecodeContext<'_>, schema: &str) -> Result<DialectId, CodecError> {
-    Ok(
-        if ctx.eq_ignore_ascii_case(
-            schema,
-            "SCH_SW_33103_11000",
-            "Parasolid schema row comparison",
-        )? {
-            PARASOLID_SCH_SW_33103
-        } else if ctx.eq_ignore_ascii_case(
-            schema,
-            "SCH_SW_32001_11000",
-            "Parasolid schema row comparison",
-        )? {
-            PARASOLID_SCH_SW_32001
-        } else if let Some((_, suffix)) =
-            ctx.rsplit_once(schema, "_", "Parasolid schema format suffix")?
-        {
-            if ctx.eq_ignore_ascii_case(suffix, "13006", "Parasolid schema suffix comparison")? {
-                PARASOLID_FORMAT_13006
-            } else {
-                PARASOLID_UNKNOWN
-            }
-        } else {
-            PARASOLID_UNKNOWN
-        },
-    )
+fn schema_row(schema: &str) -> DialectId {
+    // Each comparison has a fixed literal extent. Only the final six bytes
+    // can select the format row; no source-wide suffix search is needed.
+    if schema.eq_ignore_ascii_case("SCH_SW_33103_11000") {
+        PARASOLID_SCH_SW_33103
+    } else if schema.eq_ignore_ascii_case("SCH_SW_32001_11000") {
+        PARASOLID_SCH_SW_32001
+    } else if schema.ends_with("_13006") {
+        PARASOLID_FORMAT_13006
+    } else {
+        PARASOLID_UNKNOWN
+    }
 }
 
 /// Classify one schema-bearing Parasolid stream and record its host carrier.
@@ -257,7 +243,7 @@ pub fn classify_layer(
     instance: LayerInstance,
     verified: &[DialectId],
 ) -> Result<ClassifiedLayer, CodecError> {
-    let id = schema_row(ctx, schema.value())?;
+    let id = schema_row(schema.value());
     let mut declared = BTreeMap::new();
     let schema_key = cadmpeg_core::nonblank_const!("schema");
     ctx.insert_btree_map(
@@ -280,11 +266,9 @@ pub fn classify_layer(
     let matched = if ctx.any_by(
         verified,
         |candidate| {
-            ctx.equal(
-                candidate.as_str(),
-                id.as_str(),
-                "compare Parasolid verified row",
-            )
+            // schema_row selects one of four fixed literals. Unequal lengths
+            // are free; equal lengths bound the comparison by that literal.
+            Ok(candidate.as_str() == id.as_str())
         },
         "scan Parasolid verified rows",
     )? {
@@ -620,6 +604,108 @@ mod tests {
     }
 
     #[test]
+    fn schema_token_searches_have_exact_early_match_work_boundaries() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        for prefixed in [false, true] {
+            let mut bytes = if prefixed {
+                b"\x08SCH_TEST".to_vec()
+            } else {
+                b"SCH_TEST\0".to_vec()
+            };
+            bytes.resize(1 << 20, 0);
+            // Ordinary: one marker window, four token-body bytes and its
+            // delimiter, then eight UTF-8 bytes. Prefixed: two marker windows,
+            // eight grammar bytes and its end probe, then eight UTF-8 bytes.
+            let work = if prefixed {
+                2 + 8 + 1 + 8
+            } else {
+                1 + 4 + 1 + 8
+            };
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = work;
+            let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("input");
+            let token = if prefixed {
+                find_u8_length_prefixed_schema_token(&ctx, &bytes)
+            } else {
+                find_schema_token(&ctx, &bytes)
+            }
+            .expect("exact early token work")
+            .expect("token");
+            assert_eq!(token.value(), "SCH_TEST");
+            assert_eq!(token.offset, usize::from(prefixed));
+            assert!(matches!(ctx.charge_work(1, "after exact token"),
+                Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits && limit.used == work));
+            policy.limits.max_work_units = work - 1;
+            let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("input");
+            let error = if prefixed {
+                find_u8_length_prefixed_schema_token(&ctx, &bytes)
+            } else {
+                find_schema_token(&ctx, &bytes)
+            }
+            .expect_err("UTF-8 validation cannot fit");
+            let CodecError::ResourceLimit(limit) = error else {
+                panic!("work refusal expected");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(limit.operation, "Parasolid schema token UTF-8");
+            assert_eq!(limit.used, work - 8);
+            assert_eq!(limit.additional, 8);
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        }
+    }
+
+    #[test]
+    fn schema_marker_misses_charge_each_window_and_the_end_probe() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        // Nine four-byte windows and one end probe; the marker comparison has
+        // a fixed four-byte extent and needs no input-sized child charge.
+        const WORK: u64 = 12 - 4 + 1 + 1;
+        let bytes = [0_u8; 12];
+        for prefixed in [false, true] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = WORK;
+            let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("input");
+            let token = if prefixed {
+                find_u8_length_prefixed_schema_token(&ctx, &bytes)
+            } else {
+                find_schema_token(&ctx, &bytes)
+            }
+            .expect("all windows and end probe fit");
+            assert!(token.is_none());
+            policy.limits.max_work_units = WORK - 1;
+            let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("input");
+            let error = if prefixed {
+                find_u8_length_prefixed_schema_token(&ctx, &bytes)
+            } else {
+                find_schema_token(&ctx, &bytes)
+            }
+            .expect_err("end probe is admitted before advancing");
+            let CodecError::ResourceLimit(limit) = error else {
+                panic!("work refusal expected");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(
+                limit.operation,
+                if prefixed {
+                    "Parasolid prefixed schema marker search"
+                } else {
+                    "Parasolid schema marker search"
+                }
+            );
+            assert_eq!(limit.used, WORK - 1);
+            assert_eq!(limit.additional, 1);
+            assert!(matches!(find_schema_token(&ctx, &bytes),
+                Err(CodecError::ResourceLimit(original)) if original == limit));
+        }
+    }
+
+    #[test]
     fn schema_token_searches_pay_only_for_the_bytes_they_visit() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
         let mut prologue = b"SCH_TEST\0".to_vec();
@@ -668,6 +754,133 @@ mod tests {
             assert_eq!(matched.matched().declared()[DECLARED_CARRIER], "stream@12");
             assert_eq!(matched.matched().instance(), None);
         }
+    }
+
+    #[test]
+    fn schema_row_uses_only_fixed_name_and_suffix_grammar() {
+        for (schema, expected) in [
+            ("SCH_sw_33103_11000", PARASOLID_SCH_SW_33103),
+            ("SCH_Sw_32001_11000", PARASOLID_SCH_SW_32001),
+            ("SCH_X_13006", PARASOLID_FORMAT_13006),
+            ("SCH_13006_1", super::PARASOLID_UNKNOWN),
+            ("SCH_X_113006", super::PARASOLID_UNKNOWN),
+            ("SCH_X_13006_", super::PARASOLID_UNKNOWN),
+            ("13006", super::PARASOLID_UNKNOWN),
+        ] {
+            assert_eq!(super::schema_row(schema), expected);
+        }
+    }
+
+    #[test]
+    fn schema_row_classification_does_not_scan_unrelated_prefix_bytes() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let work = |schema: &str, expected: DialectId| {
+            let arena = DecodeArena::new();
+            let policy = DecodePolicy::service();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("input");
+            let layer = classify_layer(
+                &ctx,
+                token(schema),
+                carrier("stream@12"),
+                LayerInstance::Sole,
+                &[],
+            )
+            .expect("classification");
+            assert_eq!(layer.matched().dialect(), &expected);
+            assert_eq!(layer.matched().declared()[DECLARED_SCHEMA], schema);
+            assert_eq!(layer.matched().declared()[DECLARED_CARRIER], "stream@12");
+            assert_eq!(layer.matched().instance(), None);
+            let error = ctx
+                .charge_work(
+                    policy.limits.max_work_units + 1,
+                    "probe classification work",
+                )
+                .expect_err("probe always exceeds the allowance");
+            let CodecError::ResourceLimit(limit) = error else {
+                panic!("work refusal");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+            let original = classify_layer(
+                &ctx,
+                token(schema),
+                carrier("stream@12"),
+                LayerInstance::Sole,
+                &[],
+            )
+            .expect_err("classification must preserve original refusal");
+            assert!(matches!(original, CodecError::ResourceLimit(original) if original == limit));
+            limit.used
+        };
+        let baseline = work("SCH_TEST", super::PARASOLID_UNKNOWN);
+        for suffix in ["_13006", "_13006_1", ""] {
+            let schema = format!("SCH_{}{suffix}", "X".repeat(1 << 20));
+            let expected = if suffix == "_13006" {
+                PARASOLID_FORMAT_13006
+            } else {
+                super::PARASOLID_UNKNOWN
+            };
+            assert_eq!(work(&schema, expected), baseline);
+        }
+        assert_eq!(work("SCH_sw_33103_11000", PARASOLID_SCH_SW_33103), baseline);
+    }
+
+    #[test]
+    fn verified_row_scan_charges_only_visited_slots() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let long =
+            DialectId::parse(format!("other:{}", "a".repeat(1 << 20))).expect("fixture dialect");
+        let work = |verified: &[DialectId], expected: Admission| {
+            let arena = DecodeArena::new();
+            let policy = DecodePolicy::service();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("input");
+            let layer = classify_layer(
+                &ctx,
+                token("SCH_SW_33103_11000"),
+                carrier("stream@12"),
+                LayerInstance::Sole,
+                verified,
+            )
+            .expect("classification");
+            assert_eq!(layer.matched().dialect(), &PARASOLID_SCH_SW_33103);
+            assert_eq!(layer.matched().admission(), &expected);
+            let error = ctx
+                .charge_work(policy.limits.max_work_units + 1, "probe verified row work")
+                .expect_err("probe exceeds the allowance");
+            let CodecError::ResourceLimit(limit) = error else {
+                panic!("work refusal");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+            assert!(
+                matches!(classify_layer(&ctx, token("SCH_SW_33103_11000"), carrier("stream@12"),
+                LayerInstance::Sole, verified), Err(CodecError::ResourceLimit(original)) if original == limit)
+            );
+            limit.used
+        };
+        // The empty scan pays its end probe. A first-slot match pays one
+        // visit; each additional visited slot or miss end adds one step.
+        let baseline = work(&[], Admission::Residual);
+        assert_eq!(
+            work(&[PARASOLID_SCH_SW_33103, long.clone()], Admission::Admitted),
+            baseline
+        );
+        assert_eq!(
+            work(&[PARASOLID_SCH_SW_32001], Admission::Residual),
+            baseline + 1
+        );
+        assert_eq!(
+            work(std::slice::from_ref(&long), Admission::Residual),
+            baseline + 1
+        );
+        assert_eq!(
+            work(&[long, PARASOLID_SCH_SW_33103], Admission::Admitted),
+            baseline + 1
+        );
     }
 
     #[test]
