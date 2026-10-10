@@ -181,16 +181,29 @@ impl<'model, 'ctx, 'arena> ProjectionGeometry<'model, 'ctx, 'arena> {
     fn resolve(&self, identifier: &str) -> Result<Option<&TopologyTarget<'model>>, CodecError> {
         const OPERATION: &str = "resolve SWIFT topology identifier";
         if self.supplied_topology.is_none() {
-            let Some(inputs) = &self.inputs else { return Ok(None); };
-            if inputs.topology.bodies.is_empty() && inputs.topology.faces.is_empty()
-                && inputs.topology.edges.is_empty() && inputs.topology.vertices.is_empty() {
+            let Some(inputs) = &self.inputs else {
+                return Ok(None);
+            };
+            if inputs.topology.bodies.is_empty()
+                && inputs.topology.faces.is_empty()
+                && inputs.topology.edges.is_empty()
+                && inputs.topology.vertices.is_empty()
+            {
                 return Ok(None);
             }
         }
-        let Some((lane, suffix)) = self.ctx.rsplit_once(identifier, ":", OPERATION)? else { return Ok(None); };
-        if lane.is_empty() || suffix.is_empty() { return Ok(None); }
-        let Ok(suffix) = self.ctx.parse_text::<u64>(suffix, OPERATION)? else { return Ok(None); };
-        let Some(topology) = self.topology()? else { return Ok(None); };
+        let Some((lane, suffix)) = self.ctx.rsplit_once(identifier, ":", OPERATION)? else {
+            return Ok(None);
+        };
+        if lane.is_empty() || suffix.is_empty() {
+            return Ok(None);
+        }
+        let Ok(suffix) = self.ctx.parse_text::<u64>(suffix, OPERATION)? else {
+            return Ok(None);
+        };
+        let Some(topology) = self.topology()? else {
+            return Ok(None);
+        };
         topology.resolve_key(self.ctx, suffix)
     }
 
@@ -1911,7 +1924,8 @@ fn project_datum<'index, 'feature: 'index>(
     ctx: &DecodeContext<'_>,
     id: PmiId,
     entity: &Entity,
-    feature_index: impl FnOnce() -> Result<&'index BTreeMap<&'feature str, &'feature Entity>, CodecError>,
+    feature_index: impl FnOnce()
+        -> Result<&'index BTreeMap<&'feature str, &'feature Entity>, CodecError>,
     geometry: &ProjectionGeometry<'_, '_, '_>,
 ) -> Result<Option<PmiAnnotation>, CodecError> {
     let Some(identification) = ctx
@@ -2070,7 +2084,14 @@ fn project_dimension<'index, 'feature: 'index>(
         None
     };
     let implicit_nominal = if explicit_nominal.is_none() {
-        implicit_dimension_nominal(ctx, counterbores, entity, feature_index()?, rendered, geometry)?
+        implicit_dimension_nominal(
+            ctx,
+            counterbores,
+            entity,
+            feature_index()?,
+            rendered,
+            geometry,
+        )?
     } else {
         None
     };
