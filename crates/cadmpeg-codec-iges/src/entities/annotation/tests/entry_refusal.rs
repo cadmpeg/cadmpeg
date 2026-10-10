@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::entities::annotation::{dimension_children_valid, general_note_text_valid_for_global_table,
-    general_note_valid_for_global_table, leader_valid_for_global_table, new_general_note_valid,
-    pointer, witness_valid, general_symbol_note_valid, sectioned_area_valid,
-    AnnotationValidation, SectionedAreaContext, SectionedAreaGeometryCache};
+use crate::entities::annotation::{
+    dimension_children_valid, general_note_text_valid_for_global_table,
+    general_note_valid_for_global_table, general_symbol_note_valid, leader_valid_for_global_table,
+    new_general_note_valid, pointer, sectioned_area_valid, witness_valid, AnnotationValidation,
+    SectionedAreaContext, SectionedAreaGeometryCache,
+};
 use crate::global::GlobalTable;
 use crate::parameter::{ParameterRecord, Token, TokenValue};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -27,7 +29,11 @@ fn annotation_fixed_text_recovery_preserves_original_refusal() {
         ] {
             let result = general_note_text_valid_for_global_table(text, font, table, null, ctx);
             match original {
-                Some(first) => assert!(matches!(result, Err(CodecError::ResourceLimit(last)) if last == first)),
+                Some(first) => {
+                    assert!(
+                        matches!(result, Err(CodecError::ResourceLimit(last)) if last == first)
+                    );
+                }
                 None => assert_eq!(result.expect("fixed text recovery is free"), expected),
             }
         }
@@ -38,9 +44,17 @@ fn annotation_fixed_text_recovery_preserves_original_refusal() {
 fn annotation_empty_general_note_preserves_original_refusal() {
     let record = empty_record();
     crate::test_support::with_entry_context(|ctx, original| {
-        let result = general_note_valid_for_global_table(&record, &BTreeMap::new(), GlobalTable::V5Later, 0, ctx);
+        let result = general_note_valid_for_global_table(
+            &record,
+            &BTreeMap::new(),
+            GlobalTable::V5Later,
+            0,
+            ctx,
+        );
         match original {
-            Some(first) => assert!(matches!(result, Err(CodecError::ResourceLimit(last)) if last == first)),
+            Some(first) => {
+                assert!(matches!(result, Err(CodecError::ResourceLimit(last)) if last == first));
+            }
             None => assert!(matches!(result, Ok(false))),
         }
     });
@@ -52,7 +66,9 @@ fn annotation_empty_new_note_preserves_original_refusal() {
     crate::test_support::with_entry_context(|ctx, original| {
         let result = new_general_note_valid(&record, &BTreeMap::new(), ctx);
         match original {
-            Some(first) => assert!(matches!(result, Err(CodecError::ResourceLimit(last)) if last == first)),
+            Some(first) => {
+                assert!(matches!(result, Err(CodecError::ResourceLimit(last)) if last == first));
+            }
             None => assert!(matches!(result, Ok(false))),
         }
     });
@@ -65,7 +81,9 @@ fn annotation_empty_leader_preserves_original_refusal() {
     crate::test_support::with_entry_context(|ctx, original| {
         let result = leader_valid_for_global_table(&entry, &record, GlobalTable::V5Later, ctx);
         match original {
-            Some(first) => assert!(matches!(result, Err(CodecError::ResourceLimit(last)) if last == first)),
+            Some(first) => {
+                assert!(matches!(result, Err(CodecError::ResourceLimit(last)) if last == first));
+            }
             None => assert!(matches!(result, Ok(false))),
         }
     });
@@ -77,7 +95,9 @@ fn annotation_empty_witness_preserves_original_refusal() {
     crate::test_support::with_entry_context(|ctx, original| {
         let result = witness_valid(&record, ctx);
         match original {
-            Some(first) => assert!(matches!(result, Err(CodecError::ResourceLimit(last)) if last == first)),
+            Some(first) => {
+                assert!(matches!(result, Err(CodecError::ResourceLimit(last)) if last == first));
+            }
             None => assert!(matches!(result, Ok(false))),
         }
     });
@@ -90,7 +110,11 @@ fn annotation_absent_pointer_preserves_original_refusal() {
         for index in [0, 1, usize::MAX] {
             let result = pointer(&record, index, &BTreeMap::new(), ctx);
             match original {
-                Some(first) => assert!(matches!(result, Err(CodecError::ResourceLimit(last)) if last == first)),
+                Some(first) => {
+                    assert!(
+                        matches!(result, Err(CodecError::ResourceLimit(last)) if last == first)
+                    );
+                }
                 None => assert!(matches!(result, Ok(None))),
             }
         }
@@ -127,14 +151,34 @@ enum CachedRoute {
 }
 
 // Construct each owner in the caller session before inducing its refusal.
-fn cached_route_preserves_original_refusal(route: CachedRoute) {
+fn cached_route_preserves_original_refusal(route: &CachedRoute) {
     let ir = CadIr::empty();
-    let record = ParameterRecord::from_test_tokens(1, 1..2, Vec::new(), 2,
-        vec![Token { value: TokenValue::Integer(228), span: 0..0 },
-            Token { value: TokenValue::Integer(0), span: 0..0 }], Vec::new());
-    for dimension in [None, Some(ResourceDimension::WorkUnits), Some(ResourceDimension::CollectionItems),
-        Some(ResourceDimension::MaterializedBytes), Some(ResourceDimension::RetainedBytes),
-        Some(ResourceDimension::Entities), Some(ResourceDimension::RecursionDepth)] {
+    let record = ParameterRecord::from_test_tokens(
+        1,
+        1..2,
+        Vec::new(),
+        2,
+        vec![
+            Token {
+                value: TokenValue::Integer(228),
+                span: 0..0,
+            },
+            Token {
+                value: TokenValue::Integer(0),
+                span: 0..0,
+            },
+        ],
+        Vec::new(),
+    );
+    for dimension in [
+        None,
+        Some(ResourceDimension::WorkUnits),
+        Some(ResourceDimension::CollectionItems),
+        Some(ResourceDimension::MaterializedBytes),
+        Some(ResourceDimension::RetainedBytes),
+        Some(ResourceDimension::Entities),
+        Some(ResourceDimension::RecursionDepth),
+    ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 0;
@@ -145,34 +189,74 @@ fn cached_route_preserves_original_refusal(route: CachedRoute) {
         policy.limits.max_recursion_depth = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let mut validation = AnnotationValidation::new(&ctx).expect("empty validation owner");
-        let mut geometry = SectionedAreaGeometryCache::new(&ir, &ctx).expect("empty geometry owner");
+        let mut geometry =
+            SectionedAreaGeometryCache::new(&ir, &ctx).expect("empty geometry owner");
         let original = dimension.map(|dimension| {
             let result = match dimension {
                 ResourceDimension::WorkUnits => ctx.charge_work(1, "annotation original refusal"),
-                ResourceDimension::CollectionItems => ctx.charge_collection_items(1, "annotation original refusal"),
-                ResourceDimension::MaterializedBytes => ctx.reserve_scoped(1, "annotation original refusal").map(|_| ()),
-                ResourceDimension::RetainedBytes => ctx.charge_retained(1, "annotation original refusal"),
-                ResourceDimension::Entities => ctx.charge_entities(1, "annotation original refusal"),
-                ResourceDimension::RecursionDepth => ctx.enter_nested("annotation original refusal").map(|_| ()),
+                ResourceDimension::CollectionItems => {
+                    ctx.charge_collection_items(1, "annotation original refusal")
+                }
+                ResourceDimension::MaterializedBytes => ctx
+                    .reserve_scoped(1, "annotation original refusal")
+                    .map(|_| ()),
+                ResourceDimension::RetainedBytes => {
+                    ctx.charge_retained(1, "annotation original refusal")
+                }
+                ResourceDimension::Entities => {
+                    ctx.charge_entities(1, "annotation original refusal")
+                }
+                ResourceDimension::RecursionDepth => {
+                    ctx.enter_nested("annotation original refusal").map(|_| ())
+                }
                 _ => panic!("test dimension"),
             };
-            let Err(CodecError::ResourceLimit(first)) = result else { panic!("original refusal"); };
+            let Err(CodecError::ResourceLimit(first)) = result else {
+                panic!("original refusal");
+            };
             assert_eq!(first.dimension, dimension);
             first
         });
         for _ in 0..64 {
             let result = match route {
-                CachedRoute::Coplanarity => geometry.curve_coplanar(1,
-                    (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)), -1.0, &ctx),
-                CachedRoute::Symbol => general_symbol_note_valid(&record, &BTreeMap::new(),
-                    &BTreeMap::new(), 0, GlobalTable::V5Later, &mut validation),
-                CachedRoute::Area => sectioned_area_valid(&mut geometry, &record, &BTreeMap::new(),
-                    2, SectionedAreaContext { global_table: GlobalTable::V5Later,
-                        transform: Transform::identity(), length_factor: 1.0, resolution: 0.0 }, &ctx),
+                CachedRoute::Coplanarity => geometry.curve_coplanar(
+                    1,
+                    (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)),
+                    -1.0,
+                    &ctx,
+                ),
+                CachedRoute::Symbol => general_symbol_note_valid(
+                    &record,
+                    &BTreeMap::new(),
+                    &BTreeMap::new(),
+                    0,
+                    GlobalTable::V5Later,
+                    &mut validation,
+                ),
+                CachedRoute::Area => sectioned_area_valid(
+                    &mut geometry,
+                    &record,
+                    &BTreeMap::new(),
+                    2,
+                    SectionedAreaContext {
+                        global_table: GlobalTable::V5Later,
+                        transform: Transform::identity(),
+                        length_factor: 1.0,
+                        resolution: 0.0,
+                    },
+                    &ctx,
+                ),
             };
             match original {
-                Some(first) => assert!(matches!(result, Err(CodecError::ResourceLimit(last)) if last == first)),
-                None => assert_eq!(result.expect("fixed cached recovery is free"), matches!(route, CachedRoute::Symbol)),
+                Some(first) => {
+                    assert!(
+                        matches!(result, Err(CodecError::ResourceLimit(last)) if last == first)
+                    );
+                }
+                None => assert_eq!(
+                    result.expect("fixed cached recovery is free"),
+                    matches!(route, CachedRoute::Symbol)
+                ),
             }
             assert!(validation.primary.is_empty());
             assert!(validation.width_sums.is_empty());
@@ -182,7 +266,9 @@ fn cached_route_preserves_original_refusal(route: CachedRoute) {
         drop(geometry);
         drop(validation);
         match original {
-            Some(first) => assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)),
+            Some(first) => assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
+            ),
             None => ctx.finish_session().expect("fresh fixed routes finish"),
         }
     }
@@ -190,15 +276,15 @@ fn cached_route_preserves_original_refusal(route: CachedRoute) {
 
 #[test]
 fn annotation_invalid_resolution_preserves_original_refusal() {
-    cached_route_preserves_original_refusal(CachedRoute::Coplanarity);
+    cached_route_preserves_original_refusal(&CachedRoute::Coplanarity);
 }
 
 #[test]
 fn annotation_default_symbol_note_preserves_original_refusal() {
-    cached_route_preserves_original_refusal(CachedRoute::Symbol);
+    cached_route_preserves_original_refusal(&CachedRoute::Symbol);
 }
 
 #[test]
 fn annotation_unsupported_area_preserves_original_refusal() {
-    cached_route_preserves_original_refusal(CachedRoute::Area);
+    cached_route_preserves_original_refusal(&CachedRoute::Area);
 }

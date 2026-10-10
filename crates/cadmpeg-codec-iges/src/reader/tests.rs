@@ -90,11 +90,11 @@ fn quarantined_placement_rejections_refuse_node_limit() {
     directory[0].entity_type = 408;
     directory[0].form = 0;
     let quarantined = std::collections::BTreeSet::from([directory[0].sequence]);
-    let mut projection = crate::entities::geometry::Projection::default();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut projection = crate::entities::geometry::Projection::default();
     assert!(matches!(
         super::mark_quarantined_placements(&ctx, &mut projection, &directory, &quarantined),
         Err(CodecError::ResourceLimit(limit))
@@ -102,8 +102,11 @@ fn quarantined_placement_rejections_refuse_node_limit() {
                 && limit.operation == "iges quarantined placement rejections"
     ));
 
+    assert!(projection.placement_rejections.is_empty());
+    drop(projection);
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let mut projection = crate::entities::geometry::Projection::default();
     super::mark_quarantined_placements(&ctx, &mut projection, &directory, &quarantined).unwrap();
     assert_eq!(
         projection.placement_rejections.get(&directory[0].sequence),

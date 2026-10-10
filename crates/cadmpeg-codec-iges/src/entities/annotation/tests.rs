@@ -717,9 +717,7 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
             let mut geometry = super::SectionedAreaGeometryCache::new(&ir, decode_ctx).unwrap();
             decode_ctx.all_by(
                 [1, 3],
-                |sequence| {
-                    geometry.curve_coplanar(sequence, pattern_plane, 0.001, decode_ctx)
-                },
+                |sequence| geometry.curve_coplanar(sequence, pattern_plane, 0.001, decode_ctx),
                 "test section boundary traversal",
             )
         }
@@ -745,9 +743,7 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
             let mut geometry = super::SectionedAreaGeometryCache::new(&ir, decode_ctx).unwrap();
             decode_ctx.all_by(
                 [1, 3],
-                |sequence| {
-                    geometry.curve_coplanar(sequence, pattern_plane, 0.001, decode_ctx)
-                },
+                |sequence| geometry.curve_coplanar(sequence, pattern_plane, 0.001, decode_ctx),
                 "test section boundary traversal",
             )
         }
@@ -810,7 +806,7 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
                     global_table: GlobalTable::V4_0,
                     transform: Transform::identity(),
                     length_factor: 1.0,
-                    resolution: 0.001
+                    resolution: 0.001,
                 },
                 decode_ctx,
             )
@@ -827,7 +823,7 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
                     global_table: GlobalTable::V5_0,
                     transform: Transform::identity(),
                     length_factor: 1.0,
-                    resolution: 0.001
+                    resolution: 0.001,
                 },
                 decode_ctx,
             )
@@ -867,7 +863,7 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
                     global_table: GlobalTable::V5_0,
                     transform: translated_pattern_plane,
                     length_factor: 1.0,
-                    resolution: 0.001
+                    resolution: 0.001,
                 },
                 decode_ctx,
             )
@@ -908,17 +904,28 @@ fn sectioned_area_coplanarity_cache_uses_curve_plane_and_resolution_identity() {
                 None,
             );
             assert!(geometry.curve_coplanar(1, plane, 0.001, ctx).unwrap());
+            for origin in [Point3::new(1.0, 0.0, 0.0), Point3::new(0.0, -2.0, -0.0)] {
+                assert!(geometry
+                    .curve_coplanar(1, (origin, plane.1), 0.001, ctx)
+                    .unwrap());
+                assert!(geometry
+                    .curve_coplanar(1, (origin, plane.1.scale(-1.0)), 0.001, ctx)
+                    .unwrap());
+            }
         }
         assert!(!geometry.curve_coplanar(3, plane, 0.001, ctx).unwrap());
 
-        let offset_plane = (
-            Point3::new(0.0, 0.0, 0.0005),
-            Vector3::new(0.0, 0.0, 1.0),
-        );
-        assert!(geometry.curve_coplanar(1, offset_plane, 0.001, ctx).unwrap());
-        assert!(!geometry.curve_coplanar(1, offset_plane, 0.0001, ctx).unwrap());
+        let offset_plane = (Point3::new(0.0, 0.0, 0.0005), Vector3::new(0.0, 0.0, 1.0));
+        assert!(geometry
+            .curve_coplanar(1, offset_plane, 0.001, ctx)
+            .unwrap());
+        assert!(!geometry
+            .curve_coplanar(1, offset_plane, 0.0001, ctx)
+            .unwrap());
         let orthogonal_plane = (plane.0, Vector3::new(1.0, 0.0, 0.0));
-        assert!(!geometry.curve_coplanar(1, orthogonal_plane, 0.001, ctx).unwrap());
+        assert!(!geometry
+            .curve_coplanar(1, orthogonal_plane, 0.001, ctx)
+            .unwrap());
     });
 }
 
@@ -939,7 +946,7 @@ fn sectioned_area_coplanarity_cache_lookup_propagates_work_refusal() {
         source_object: None,
     });
     let plane = (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0));
-    cadmpeg_test_support::refusal::resource_limit_at(
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::WorkUnits,
         "iges section coplanarity proof lookup",
         |cap| {
@@ -951,6 +958,12 @@ fn sectioned_area_coplanarity_cache_lookup_propagates_work_refusal() {
             geometry.curve_coplanar(1, plane, 0.001, &ctx)?;
             geometry.curve_coplanar(1, plane, 0.001, &ctx).map(|_| ())
         },
+    );
+    let key_work =
+        u64::try_from(std::mem::size_of::<u32>() + 6 * std::mem::size_of::<u64>()).unwrap();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "iges section coplanarity proof lookup" && limit.additional == key_work)
     );
 }
 
@@ -1155,7 +1168,10 @@ fn annotation_pointer_lookup_checks_odd_directory_entries_under_context() {
         )
     };
     crate::test_support::with_service_context(&[], |ctx| {
-        assert_eq!(super::pointer(&record(3), 1, &entries, ctx).unwrap(), Some(3));
+        assert_eq!(
+            super::pointer(&record(3), 1, &entries, ctx).unwrap(),
+            Some(3)
+        );
         assert_eq!(super::pointer(&record(4), 1, &entries, ctx).unwrap(), None);
         assert_eq!(super::pointer(&record(5), 1, &entries, ctx).unwrap(), None);
     });
@@ -1643,8 +1659,8 @@ fn cached_flag_note_and_leader_validation_skips_parameter_record_queries() {
 
 #[test]
 fn shared_note_and_leader_validation_stays_linear() {
-    let count = 2_000;
     const MAX_WORK_PER_NOTE_AND_FLAG_PAIR: u64 = 144;
+    let count = 2_000;
     let mut note_entry = leader_entry(0);
     note_entry.entity_type = 212;
     note_entry.sequence = 1;
@@ -1720,7 +1736,7 @@ fn shared_note_and_leader_validation_stays_linear() {
     // primary-cache searches, two one-leader scans and one width-cache search
     // (136 units). The first note, leader and width validations scan their
     // counted fields once and fit inside this per-pair allowance.
-    policy.limits.max_work_units = count as u64 * MAX_WORK_PER_NOTE_AND_FLAG_PAIR;
+    policy.limits.max_work_units = u64::try_from(count).unwrap() * MAX_WORK_PER_NOTE_AND_FLAG_PAIR;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut validation = super::AnnotationValidation::new(&ctx).unwrap();
     for _ in 0..count {
@@ -1768,18 +1784,15 @@ fn sectioned_area_shared_geometry_index_stays_linear() {
     }
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    // The prior 4,096-unit model query and active-set envelope remains. The
-    // proof cache adds at most three searches of a 60-byte key at 44
-    // comparisons (7,920 units), plus one maximum B-tree node insertion
-    // (2,577 units), for 14,593 units per distinct proof.
+    // The cap bounds total index and distinct-boundary proof work linearly.
     policy.limits.max_work_units = 2_000 * MAX_WORK_PER_BOUNDARY;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut geometry = super::SectionedAreaGeometryCache::new(&ir, &ctx).unwrap();
     let plane = (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0));
     for sequence in (1..=2_000_u32).map(|index| index * 2 - 1) {
-        assert!(
-            geometry.curve_coplanar(sequence, plane, 0.001, &ctx).unwrap()
-        );
+        assert!(geometry
+            .curve_coplanar(sequence, plane, 0.001, &ctx)
+            .unwrap());
     }
     drop(geometry);
     ctx.finish_session().unwrap();
@@ -1835,9 +1848,8 @@ fn noncoplanar_section_boundary_skips_island_geometry_work() {
     );
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    // Two admitted Directory searches per island add 16 units each. Keep the
-    // previous 30,000-unit early-exit envelope after accounting for the
-    // boundary searches, cache insertion and boundary cache hit.
+    // The cap allows directory checks for every island and one boundary proof.
+    // A cached noncoplanar boundary stops before island geometry.
     policy.limits.max_work_units = 352_653;
     policy.limits.max_recursion_depth = u64::MAX;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
@@ -1868,3 +1880,5 @@ fn noncoplanar_section_boundary_skips_island_geometry_work() {
 }
 
 mod entry_refusal;
+
+mod plane_cache;

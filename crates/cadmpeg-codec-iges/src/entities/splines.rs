@@ -266,8 +266,10 @@ pub(super) fn project<'ctx>(
         let mut records = BTreeMap::new();
         let mut source_index_entries = parameters.iter();
         while source_index_entries.len() != 0 {
-            let Some(record) =
-                ctx.next_charged(&mut source_index_entries, "iges splines parameter index traversal")?
+            let Some(record) = ctx.next_charged(
+                &mut source_index_entries,
+                "iges splines parameter index traversal",
+            )?
             else {
                 break;
             };
@@ -281,8 +283,10 @@ pub(super) fn project<'ctx>(
         let mut entries = BTreeMap::new();
         let mut directory_entries = directory.iter();
         while !directory_entries.as_slice().is_empty() {
-            let Some(entry) =
-                ctx.next_charged(&mut directory_entries, "iges splines directory index traversal")?
+            let Some(entry) = ctx.next_charged(
+                &mut directory_entries,
+                "iges splines directory index traversal",
+            )?
             else {
                 break;
             };
@@ -467,12 +471,20 @@ pub(super) fn project<'ctx>(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{message}"))?;
+                super::push_entity_loss_with_scoped_slots(
+                    ctx,
+                    &mut loss_slots_storage,
+                    &mut losses,
+                    entry,
+                    format_args!("{message}"),
+                )?;
                 continue;
             }
         };
         let control_count = segment_count * 3 + 1;
-        let mut control_points = ctx.collection_vec(control_count, "iges spline curve controls")?;
+        let mut candidate_storage = ctx.reserve_scoped(0, "iges spline curve candidate")?;
+        let mut control_points = candidate_storage
+            .with_storage(|| ctx.collection_vec(control_count, "iges spline curve controls"))?;
         let mut continuous = true;
         let precision = global.real_precision();
         let resolution = global.minimum_resolution_mm();
@@ -481,7 +493,11 @@ pub(super) fn project<'ctx>(
         let mut previous_terminal_curvature = None;
         let mut segments = coefficients.chunks_exact(12).enumerate();
         while segments.len() != 0 || ctx.resource_refusal().is_some() {
-            let Some((segment, admitted_values)) = ctx.next_charged(&mut segments, "iges spline curve segments")? else { break; };
+            let Some((segment, admitted_values)) =
+                ctx.next_charged(&mut segments, "iges spline curve segments")?
+            else {
+                break;
+            };
             let values: [f64; 12] = std::array::from_fn(|index| admitted_values[index].get());
             let width = breakpoints[segment + 1].get() - breakpoints[segment].get();
             let width_interval = declared_interval(
@@ -727,7 +743,9 @@ pub(super) fn project<'ctx>(
                 ),
             )?;
         }
-        let mut knots = ctx.collection_vec(segment_count * 3 + 5, "iges spline curve knots")?;
+        let mut knots = candidate_storage.with_storage(|| {
+            ctx.collection_vec(segment_count * 3 + 5, "iges spline curve knots")
+        })?;
         knots.extend([breakpoints[0].get(); 4]);
         for breakpoint in ctx.admit_iter(
             &breakpoints[1..segment_count],
@@ -736,12 +754,13 @@ pub(super) fn project<'ctx>(
             knots.extend([breakpoint.get(); 3]);
         }
         knots.extend([breakpoints[segment_count].get(); 4]);
-        let construction = match KnotVector::new(ctx, knots)? {
-            Err(error) => Err(error),
-            Ok(knots) => {
-                NurbsCurve::from_checked_lanes(ctx, 3, knots, control_points, None, false)?
-            }
-        };
+        let construction =
+            candidate_storage.with_storage(|| match KnotVector::new(ctx, knots)? {
+                Err(error) => Ok(Err(error)),
+                Ok(knots) => {
+                    NurbsCurve::from_checked_lanes(ctx, 3, knots, control_points, None, false)
+                }
+            })?;
         let nurbs = match construction {
             Ok(nurbs) => nurbs,
             Err(error) => {
@@ -773,11 +792,23 @@ pub(super) fn project<'ctx>(
             )?;
             continue;
         };
-        ctx.reserve_scoped_vec(&mut wire_slots_storage, &mut wire_edges, 1, "iges spline wire edge slots")?;
+        candidate_storage.commit()?;
+        ctx.reserve_scoped_vec(
+            &mut wire_slots_storage,
+            &mut wire_edges,
+            1,
+            "iges spline wire edge slots",
+        )?;
         wire_edges.push(edge);
         super::push_attributed_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, IgesLossCode::SplineHeaderNotTransferred,
             format_args!("Type 112 curve type, continuity, and dimensionality are retained only in native parameters"))?;
-        ctx.insert_scoped_btree_set(&mut decoded_storage, &mut decoded, entry.sequence, "iges splines decoded sequences", "iges splines decoded sequences")?;
+        ctx.insert_scoped_btree_set(
+            &mut decoded_storage,
+            &mut decoded,
+            entry.sequence,
+            "iges splines decoded sequences",
+            "iges splines decoded sequences",
+        )?;
     }
 
     let mut directory_entries = directory.iter();
@@ -998,7 +1029,13 @@ pub(super) fn project<'ctx>(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{message}"))?;
+                super::push_entity_loss_with_scoped_slots(
+                    ctx,
+                    &mut loss_slots_storage,
+                    &mut losses,
+                    entry,
+                    format_args!("{message}"),
+                )?;
                 continue;
             }
         };
@@ -1055,10 +1092,18 @@ pub(super) fn project<'ctx>(
         let mut valid = true;
         let mut u_patches = 0..u_segments;
         'patches: while !u_patches.is_empty() || ctx.resource_refusal().is_some() {
-            let Some(u_patch) = ctx.next_charged(&mut u_patches, "iges spline surface u patches")? else { break; };
+            let Some(u_patch) =
+                ctx.next_charged(&mut u_patches, "iges spline surface u patches")?
+            else {
+                break;
+            };
             let mut v_patches = 0..v_segments;
             while !v_patches.is_empty() || ctx.resource_refusal().is_some() {
-                let Some(v_patch) = ctx.next_charged(&mut v_patches, "iges spline surface v patches")? else { break; };
+                let Some(v_patch) =
+                    ctx.next_charged(&mut v_patches, "iges spline surface v patches")?
+                else {
+                    break;
+                };
                 let Some(block_index) = u_patch
                     .checked_mul(block_columns)
                     .and_then(|value| value.checked_add(v_patch))
@@ -1175,8 +1220,10 @@ pub(super) fn project<'ctx>(
             return Err(refusal.into());
         }
         let mut source_values = IntoIterator::into_iter(0..u_count);
-        while source_values.len() != 0 {
-            let Some(u_index) = ctx.next_charged(&mut source_values, "iges spline surface pole row traversal")? else {
+        while !source_values.is_empty() {
+            let Some(u_index) =
+                ctx.next_charged(&mut source_values, "iges spline surface pole row traversal")?
+            else {
                 break;
             };
             let mut row = ctx.collection_vec(v_count, "iges spline surface pole row controls")?;
@@ -1238,7 +1285,13 @@ pub(super) fn project<'ctx>(
             IgesLossCode::SplineHeaderNotTransferred,
             format_args!("Type 114 curve and patch types are retained only in native parameters"),
         )?;
-        ctx.insert_scoped_btree_set(&mut decoded_storage, &mut decoded, entry.sequence, "iges splines decoded sequences", "iges splines decoded sequences")?;
+        ctx.insert_scoped_btree_set(
+            &mut decoded_storage,
+            &mut decoded,
+            entry.sequence,
+            "iges splines decoded sequences",
+            "iges splines decoded sequences",
+        )?;
     }
 
     Ok(WireProjectionOutcome {

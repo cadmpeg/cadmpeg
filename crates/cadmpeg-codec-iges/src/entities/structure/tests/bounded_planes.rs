@@ -626,6 +626,9 @@ fn plane_nurbs_weight_validation_charges_only_rational_poles() {
 
 #[test]
 fn repeated_plane_boundaries_reuse_the_complete_geometric_proof() {
+    type Key = super::super::PlaneBoundaryKey;
+    type Proof = super::super::PlaneBoundaryProof<'static>;
+
     let bytes = bounded_plane_entity_file(GLOBAL_V5_0, 100, "100,0,0,0,1,0,1,0;");
     let decoded = decode(bytes.clone());
     let scan = crate::test_support::scan(&bytes).unwrap();
@@ -641,18 +644,24 @@ fn repeated_plane_boundaries_reuse_the_complete_geometric_proof() {
     let directory_entries =
         u64::try_from(directory.len()).expect("directory length fits work units");
     let directory_search_work = directory_entries
-        .checked_mul(
-            u64::try_from(std::mem::size_of::<u32>()).expect("u32 size fits work units"),
-        )
+        .checked_mul(u64::try_from(std::mem::size_of::<u32>()).expect("u32 size fits work units"))
         .and_then(|work| work.checked_mul(3))
         .expect("three directory searches fit work units");
     let mut policy = DecodePolicy::service();
-    // The former 10,000-unit cap covers the fixture's directory/index and
-    // geometric proof work. The 20,000 loop calls are bounded by one-key
-    // 60-byte cache searches; the two later misses cost 60 and 120. Each of
-    // the three proof misses checks one u32 directory key, with at most one
-    // comparison per directory entry.
-    policy.limits.max_work_units = 10_000 + 20_000 * 60 + 60 + 2 * 60 + directory_search_work;
+    // One resolved plane key compares a sequence, discriminant, and five u64 lanes.
+    // Three proof misses also search the directory by one u32 key.
+    let key_work =
+        u64::try_from(std::mem::size_of::<u32>() + 6 * std::mem::size_of::<u64>()).unwrap();
+    let alignment = std::mem::align_of::<Key>()
+        .max(std::mem::align_of::<Proof>())
+        .max(std::mem::align_of::<usize>());
+    let cache_node_bytes = 11 * (std::mem::size_of::<Key>() + std::mem::size_of::<Proof>())
+        + 16 * std::mem::size_of::<usize>()
+        + 2 * alignment;
+    // Two inserts pay three and one node passes.
+    let cache_insertion_work = u64::try_from(4 * cache_node_bytes).unwrap();
+    policy.limits.max_work_units =
+        10_000 + 20_000 * key_work + 3 * key_work + directory_search_work + cache_insertion_work;
     crate::test_support::with_policy_context(&bytes, &policy, |ctx| {
         let index = ModelIndex::build(decoded.ir(), cadmpeg_ir::index::StandardIndex);
         let plane = super::super::plane_carrier(&index, 1, ctx)
@@ -664,10 +673,20 @@ fn repeated_plane_boundaries_reuse_the_complete_geometric_proof() {
                 .reserve_scoped(0, "iges plane boundary proof cache")
                 .unwrap(),
         };
-        for _ in 0..20_000 {
+        for index_in_plane in 0..20_000 {
+            let origin = Point3::new(
+                f64::from(index_in_plane),
+                -f64::from(index_in_plane),
+                plane.0.z,
+            );
+            let normal = if index_in_plane % 2 == 0 {
+                plane.1
+            } else {
+                plane.1.scale(-1.0)
+            };
             assert!(super::super::plane_boundary_edge(
                 &index,
-                plane,
+                (origin, normal),
                 3,
                 &entries,
                 0.001,
@@ -713,41 +732,25 @@ fn repeated_plane_boundaries_reuse_the_complete_geometric_proof() {
                 proven: std::collections::BTreeMap::new(),
                 storage: ctx.reserve_scoped(0, "iges plane boundary proof cache")?,
             };
-            super::super::plane_boundary_edge(
-                &index,
-                plane,
-                3,
-                &entries,
-                0.001,
-                ctx,
-                &mut proofs,
-            )
-            .map(|_| ())
-            .map_err(|error| {
-                error
-                    .message()
-                    .expect_err("initial plane boundary proof must succeed")
-            })?;
-            super::super::plane_boundary_edge(
-                &index,
-                plane,
-                3,
-                &entries,
-                0.001,
-                ctx,
-                &mut proofs,
-            )
-            .map(|_| ())
-            .map_err(|error| {
-                error
-                    .message()
-                    .expect_err("plane boundary proof cache lookup is the tested boundary")
-            })
+            super::super::plane_boundary_edge(&index, plane, 3, &entries, 0.001, ctx, &mut proofs)
+                .map(|_| ())
+                .map_err(|error| {
+                    error
+                        .message()
+                        .expect_err("initial plane boundary proof must succeed")
+                })?;
+            super::super::plane_boundary_edge(&index, plane, 3, &entries, 0.001, ctx, &mut proofs)
+                .map(|_| ())
+                .map_err(|error| {
+                    error
+                        .message()
+                        .expect_err("plane boundary proof cache lookup is the tested boundary")
+                })
         })
     };
     let operation = "iges plane boundary proof cache lookup";
     let probed = {
-        let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, Some(60));
+        let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, Some(key_work));
         run_cache_lookup(u64::MAX)
     };
     let limit = match probed {
@@ -757,7 +760,7 @@ fn repeated_plane_boundaries_reuse_the_complete_geometric_proof() {
     };
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
     assert_eq!(limit.operation, operation);
-    assert_eq!(limit.additional, 60);
+    assert_eq!(limit.additional, key_work);
     let need = limit
         .used
         .checked_add(limit.additional)
