@@ -12,21 +12,7 @@ fn counted_name(units: &[u16]) -> [u8; 128] {
 }
 
 #[test]
-fn earlier_counted_name_terminator_rejects_before_text_work_or_storage() {
-    for units in [&[0x41, 0, 0x42, 0][..], &[0, 0x42, 0][..]] {
-        let bytes = counted_name(units);
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 1;
-        policy.limits.max_materialized_bytes = 0;
-        policy.limits.max_retained_bytes = u64::try_from(std::mem::size_of::<DirectorySlot>())
-            .expect("one parsed slot");
-        with_context(&bytes, &policy, |ctx| {
-            let error = parse_directory(ctx, &bytes, CompoundVersion::V3).expect_err("earlier null");
-            assert!(matches!(error, CodecError::Malformed(message)
-                if message == "CFB directory name has an earlier terminator"));
-            assert_eq!(ctx.resource_refusal(), None);
-        });
-    }
+fn counted_name_text_decode_preserves_charged_refusal() {
     let bytes = counted_name(&[0x41, 0x58, 0x42, 0]);
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 1;
@@ -64,7 +50,7 @@ fn directory_name_accepts_the_full_31_unit_content_width() {
 }
 
 #[test]
-fn name_field_rejection_preserves_original_fused_refusal() {
+fn directory_record_admission_preserves_original_refusal() {
     let bytes = counted_name(&[0x41, 0, 0x42, 0]);
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
@@ -76,33 +62,6 @@ fn name_field_rejection_preserves_original_fused_refusal() {
         assert_eq!(ctx.resource_refusal(), Some(first));
     });
 }
-
-#[test]
-fn alternate_minor_version_preserves_full_and_prefix_recovery() {
-    for mut file in [fixture(), fixture_v4()] {
-        let expected = probe(&file);
-        for minor in [0, 0x003e, 0x1234] {
-            put_u16(&mut file, 24, minor);
-            assert_eq!(probe(&file), expected);
-            with_context(&file, &DecodePolicy::service(), |ctx| {
-                let snapshot = CompoundSnapshot::new(ctx, cadmpeg_core::decode::View::over_retained(&file))
-                    .expect("minor version is advisory");
-                let path = if snapshot.major_version() == 3 { "Store/Large" } else { "Wide" };
-                let stream = snapshot.stream(ctx, path).expect("lookup").expect("regular stream");
-                assert_eq!(snapshot.open(ctx, stream).expect("unchanged payload").window().len(), 4096);
-            });
-        }
-        put_u16(&mut file, 28, 0);
-        assert!(matches!(probe(&file), CompoundPrefixProbe::Malformed(_)));
-        with_context(&file, &DecodePolicy::service(), |ctx| {
-            let error = CompoundSnapshot::new(ctx, cadmpeg_core::decode::View::over_retained(&file))
-                .expect_err("mandatory byte order still rejects");
-            assert!(matches!(error, CodecError::Malformed(message)
-                if message == "invalid CFB header identity or byte order"));
-        });
-    }
-}
-
 
 #[test]
 fn counted_name_width_needs_no_decoded_text_rescan() {
@@ -194,7 +153,7 @@ fn sibling_comparison_admits_only_reached_unit_pairs() {
         (same.as_str(), later.as_str(), Ordering::Less, 62_u64 + 1),
         (same.as_str(), same.as_str(), Ordering::Equal, 62 + 31 + 1),
         ("😀", "😁", Ordering::Less, 8 + 2),
-        ("ᾠ", "ᾨ", Ordering::Equal, 6 + 1 + 1),
+        ("ᾠ", "ᾨ", Ordering::Less, 6 + 1),
     ] {
         for limit in [exact_work, exact_work - 1] {
             let mut policy = DecodePolicy::service();
@@ -293,6 +252,46 @@ fn path_key_stops_before_unvisited_scalars_after_item_refusal() {
             }
             assert_eq!((refusal.used, refusal.additional), (0, 1));
             assert_eq!(ctx.resource_refusal(), Some(refusal));
+        });
+    }
+}
+
+#[test]
+fn accepts_counted_names_with_an_earlier_nul() {
+    for (units, expected) in [(&[0x41, 0, 0x42, 0][..], "A\0B"), (&[0, 0x42, 0][..], "\0B")] {
+        let bytes = counted_name(units);
+        with_context(&bytes, &DecodePolicy::service(), |ctx| {
+            let entries = parse_directory(ctx, &bytes, CompoundVersion::V3).expect("counted NUL content is accepted");
+            assert_eq!(entries[0].live().expect("live entry").name.as_str(), expected);
+        });
+    }
+}
+
+#[test]
+fn rejects_alternate_minor_versions_in_full_parse_and_prefix_probe() {
+    for mut file in [fixture(), fixture_v4()] {
+        for minor in [0, 0x1234] {
+            put_u16(&mut file, 24, minor);
+            assert_eq!(probe(&file), CompoundPrefixProbe::Malformed("invalid CFB header".into()));
+            with_context(&file, &DecodePolicy::service(), |ctx| {
+                let error = parse_state(ctx, &file).expect_err("minor version must be 0x003e");
+                assert!(matches!(error, CodecError::Malformed(message)
+                    if message == "invalid CFB header identity or byte order"));
+            });
+        }
+    }
+}
+
+#[test]
+fn rejects_invalid_byte_order_in_full_parse_and_prefix_probe() {
+    for mut file in [fixture(), fixture_v4()] {
+        put_u16(&mut file, 28, 0);
+        assert!(matches!(probe(&file), CompoundPrefixProbe::Malformed(_)));
+        with_context(&file, &DecodePolicy::service(), |ctx| {
+            let error = CompoundSnapshot::new(ctx, cadmpeg_core::decode::View::over_retained(&file))
+                .expect_err("mandatory byte order rejects");
+            assert!(matches!(error, CodecError::Malformed(message)
+                if message == "invalid CFB header identity or byte order"));
         });
     }
 }

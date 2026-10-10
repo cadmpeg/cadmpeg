@@ -25,12 +25,16 @@ pub(crate) mod directory_entry {
     /// Offset of `child` (`u32`, little-endian). Spec §1.
     pub(crate) const CHILD: usize = 76;
     /// Offset of `clsid` (`bytes[16]`). Spec §1.
+    #[cfg(test)]
     pub(crate) const CLSID: usize = 80;
     /// Offset of `state_bits` (`u32`, little-endian). Spec §1.
+    #[cfg(test)]
     pub(crate) const STATE_BITS: usize = 96;
     /// Offset of `creation_time` (`u64`, little-endian). Spec §1.
+    #[cfg(test)]
     pub(crate) const CREATION_TIME: usize = 100;
     /// Offset of `modified_time` (`u64`, little-endian). Spec §1.
+    #[cfg(test)]
     pub(crate) const MODIFIED_TIME: usize = 108;
     /// Offset of `start_sector` (`u32`, little-endian). Spec §1.
     pub(crate) const START_SECTOR: usize = 116;

@@ -82,90 +82,12 @@ fn accepts_an_unallocated_entry_with_only_nostream_links() {
 }
 
 #[test]
-fn rejects_unallocated_entries_with_other_pointer_or_metadata_values() {
-    let mut valid = [0_u8; directory_layout::LEN];
-    initialize_empty_directory_entries(&mut valid);
-    for offset in [directory_layout::LEFT, directory_layout::RIGHT, directory_layout::CHILD] {
-        let mut bytes = valid;
-        put_u32(&mut bytes, offset, 0);
-        assert_malformed(
-            &bytes,
-            CompoundVersion::V3,
-            "invalid CFB unallocated directory entry",
-        );
-    }
-    let mut bytes = valid;
-    bytes[directory_layout::CLSID] = 1;
-    assert_malformed(
-        &bytes,
-        CompoundVersion::V3,
-        "invalid CFB unallocated directory entry",
-    );
-}
-
-#[test]
-fn rejects_streams_with_child_link_clsid_or_timestamps() {
-    let mut bytes = stream_entry();
-    put_u32(&mut bytes, directory_layout::CHILD, 0);
-    assert_malformed(
-        &bytes,
-        CompoundVersion::V3,
-        "invalid CFB stream directory fields",
-    );
-
-    for offset in [
-        directory_layout::CLSID,
-        directory_layout::CREATION_TIME,
-        directory_layout::MODIFIED_TIME,
-    ] {
-        let mut bytes = stream_entry();
-        bytes[offset] = 1;
-        assert_malformed(
-            &bytes,
-            CompoundVersion::V3,
-            "invalid CFB stream directory fields",
-        );
-    }
-}
-
-#[test]
 fn accepts_nonzero_stream_state_bits() {
     let mut bytes = stream_entry();
     bytes[directory_layout::STATE_BITS] = 1;
     let entries = parse_record(&bytes, CompoundVersion::V3)
         .expect("stream State Bits are SHOULD-zero");
     assert!(entries[0].live().is_some());
-}
-
-#[test]
-fn storage_start_and_effective_size_must_be_zero() {
-    let mut bytes = storage_entry();
-    put_u32(&mut bytes, directory_layout::START_SECTOR, 1);
-    assert_malformed(
-        &bytes,
-        CompoundVersion::V3,
-        "invalid CFB storage directory fields",
-    );
-
-    let mut bytes = storage_entry();
-    bytes[directory_layout::STREAM_SIZE] = 1;
-    assert_malformed(
-        &bytes,
-        CompoundVersion::V3,
-        "invalid CFB storage directory fields",
-    );
-
-    let mut v3_storage = storage_entry();
-    v3_storage[directory_layout::STREAM_SIZE + 4] = 1;
-    let entries = parse_record(&v3_storage, CompoundVersion::V3)
-        .expect("v3 ignores the uninitialized high size DWORD");
-    assert_eq!(entries[0].live().expect("live storage").size, 0);
-
-    assert_malformed(
-        &v3_storage,
-        CompoundVersion::V4,
-        "invalid CFB storage directory fields",
-    );
 }
 
 #[test]
@@ -234,15 +156,46 @@ fn accepts_meaningful_storage_metadata() {
 }
 
 #[test]
-fn root_creation_time_must_be_zero_but_other_metadata_remains_valid() {
+fn accepts_stale_stream_child_clsid_and_timestamps() {
+    for version in [CompoundVersion::V3, CompoundVersion::V4] {
+        let mut bytes = stream_entry();
+        put_u32(&mut bytes, directory_layout::CHILD, 0);
+        bytes[directory_layout::CLSID] = 1;
+        bytes[directory_layout::CREATION_TIME] = 1;
+        bytes[directory_layout::MODIFIED_TIME] = 1;
+        let entries = parse_record(&bytes, version).expect("stale stream metadata is accepted");
+        let entry = entries[0].live().expect("live stream");
+        assert_eq!(entry.child, 0);
+        assert_eq!(entry.size, 0);
+        assert_eq!(entry.start_sector, END_OF_CHAIN);
+    }
+}
+
+#[test]
+fn accepts_nonzero_storage_start_and_effective_size() {
+    let mut bytes = storage_entry();
+    put_u32(&mut bytes, directory_layout::START_SECTOR, END_OF_CHAIN);
+    set_entry_size(&mut bytes, 0xdead_beef_0000_0001);
+    for (version, size) in [(CompoundVersion::V3, 1), (CompoundVersion::V4, 0xdead_beef_0000_0001)] {
+        let entries = parse_record(&bytes, version).expect("storage allocation fields are accepted");
+        let entry = entries[0].live().expect("live storage");
+        assert_eq!(entry.start_sector, END_OF_CHAIN);
+        assert_eq!(entry.size, size);
+    }
+}
+
+#[test]
+fn accepts_nonzero_root_creation_time() {
     let mut bytes = root_entry();
     bytes[directory_layout::CREATION_TIME] = 1;
-    assert_malformed(
-        &bytes,
-        CompoundVersion::V3,
-        "invalid CFB root directory fields",
-    );
+    for version in [CompoundVersion::V3, CompoundVersion::V4] {
+        let entries = parse_record(&bytes, version).expect("root creation time is accepted");
+        assert_eq!(entries[0].live().expect("live root").name.as_str(), "Root Entry");
+    }
+}
 
+#[test]
+fn accepts_root_clsid_state_bits_and_modified_time() {
     let mut bytes = root_entry();
     bytes[directory_layout::CLSID] = 1;
     bytes[directory_layout::STATE_BITS] = 1;
@@ -250,4 +203,13 @@ fn root_creation_time_must_be_zero_but_other_metadata_remains_valid() {
     let entries = parse_record(&bytes, CompoundVersion::V3)
         .expect("root CLSID, State Bits and Modified Time are meaningful");
     assert!(entries[0].live().is_some());
+}
+
+#[test]
+fn v3_storage_ignores_the_high_size_dword() {
+    let mut v3_storage = storage_entry();
+    v3_storage[directory_layout::STREAM_SIZE + 4] = 1;
+    let entries = parse_record(&v3_storage, CompoundVersion::V3)
+        .expect("v3 ignores the uninitialized high size DWORD");
+    assert_eq!(entries[0].live().expect("live storage").size, 0);
 }
