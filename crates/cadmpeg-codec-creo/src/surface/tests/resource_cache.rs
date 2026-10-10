@@ -30,6 +30,30 @@ fn named_prototype_records_build_one_scalar_cache_and_preserve_original_refusal(
     assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original));
 }
 
+#[test]
+fn plane_local_systems_build_one_scalar_cache_and_preserve_original_refusal() {
+    // One image creates one unique-image node, one paired-tail node and one
+    // scalar entry. No surface row creates a parameter or local-system record.
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 3;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_entities = 0;
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(SCALAR_IMAGE, &arena, &policy).expect("root");
+    assert!(super::super::plane_local_systems_for_rows(&ctx, SCALAR_IMAGE, &[])
+        .expect("one cache uses three collection items").is_empty());
+    let original = ctx.charge_collection_items_limit(1, "after single plane local-system cache")
+        .expect_err("three admitted items fill the cap");
+    assert_eq!((original.dimension, original.used, original.additional),
+        (ResourceDimension::CollectionItems, 3, 1));
+    for _ in 0..2 {
+        assert!(matches!(super::super::plane_local_systems_for_rows(&ctx, SCALAR_IMAGE, &[]),
+            Err(CodecError::ResourceLimit(actual)) if actual == original));
+    }
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original));
+}
+
 fn run_with_collection_limit<T>(
     limit: u64,
     run: impl FnOnce(&DecodeContext<'_>) -> Result<T, CodecError>,
@@ -148,13 +172,13 @@ fn named_prototype_scalar_cache_refuses_before_hashset_growth() {
 #[test]
 fn positional_parameter_scalar_cache_refuses_before_hashset_growth() {
     assert!(run_with_collection_limit(3, |ctx| {
-        super::super::parameter_records_for_rows(ctx, SCALAR_IMAGE, &[])
+        super::parameters_with_checked_cache(ctx, SCALAR_IMAGE, &[])
     })
     .expect("service collection budget admits scalar cache")
     .is_empty());
     assert_scalar_cache_refusal(
         &run_with_collection_limit(0, |ctx| {
-            super::super::parameter_records_for_rows(ctx, SCALAR_IMAGE, &[])
+            super::parameters_with_checked_cache(ctx, SCALAR_IMAGE, &[])
         })
         .expect_err("scalar image needs a HashSet item"),
     );
