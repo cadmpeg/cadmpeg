@@ -2958,65 +2958,53 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
         } = inputs;
 
         // Roots whose pair, point-degree support, or ordered corner can change.
-        let affected_roots = |root: usize,
-                              assigned: &[Option<usize>]|
-         -> Result<Vec<usize>, CodecError> {
-            const AFFECTED: &str = "catia_coordinate_closure_affected_roots";
-            let mut affected = Vec::new();
-            for &edge in ctx.admit_iter(&root_edges[root], AFFECTED)? {
-                ctx.extend_from_slice(&mut affected, &edges[edge], AFFECTED)?;
-                let Some(incidence) = incidence else {
-                    continue;
-                };
-                for face in distinct_faces(incidence.edge_faces[edge]) {
-                    for endpoint in edges[edge] {
-                        for &point in ctx.admit_iter(&domains[endpoint], AFFECTED)? {
-                            if let Some(support) = ctx.get_btree_map(
-                                &incidence.point_supports[face],
-                                &point,
-                                AFFECTED,
-                            )? {
-                                for &other in ctx.admit_iter(&support.roots, AFFECTED)? {
-                                    if assigned[other].is_none() {
-                                        ctx.push_vec(&mut affected, other, AFFECTED)?;
+        let affected_roots =
+            |root: usize, assigned: &[Option<usize>]| -> Result<Vec<usize>, CodecError> {
+                const AFFECTED: &str = "catia_coordinate_closure_affected_roots";
+                let mut affected = Vec::new();
+                for &edge in ctx.admit_iter(&root_edges[root], AFFECTED)? {
+                    ctx.extend_from_slice(&mut affected, &edges[edge], AFFECTED)?;
+                    let Some(incidence) = incidence else {
+                        continue;
+                    };
+                    for face in distinct_faces(incidence.edge_faces[edge]) {
+                        for endpoint in edges[edge] {
+                            for &point in ctx.admit_iter(&domains[endpoint], AFFECTED)? {
+                                if let Some(support) = ctx.get_btree_map(
+                                    &incidence.point_supports[face],
+                                    &point,
+                                    AFFECTED,
+                                )? {
+                                    for &other in ctx.admit_iter(&support.roots, AFFECTED)? {
+                                        if assigned[other].is_none() {
+                                            ctx.push_vec(&mut affected, other, AFFECTED)?;
+                                        }
                                     }
                                 }
                             }
                         }
                     }
                 }
-            }
-            if let Some(ordered) = ordered {
-                ordered.borrow().affected_roots(ctx, root, &mut affected)?;
-            }
-            if let Some(incidence) = incidence {
-                // Compact connectivity constraints couple every root on the face.
-                for &edge in ctx.admit_iter(&root_edges[root], AFFECTED)? {
-                    for face in distinct_faces(incidence.edge_faces[edge]) {
-                        if !matches!(
-                            incidence.boundary_domains[face],
-                            MeshFaceBoundaryDomain::Ordered(_)
-                        ) {
-                            for &edge in ctx.admit_iter(&incidence.face_edges[face], AFFECTED)? {
-                                ctx.extend_from_slice(&mut affected, &edges[edge], AFFECTED)?;
-                            }
-                        }
-                    }
+                if let Some(ordered) = ordered {
+                    ordered.borrow().affected_roots(ctx, root, &mut affected)?;
                 }
-            }
-            if affected.len() <= 2 {
-                affected.sort_unstable();
-            } else {
-                ctx.sort_unstable_by(&mut affected, |root| root, Ord::cmp, AFFECTED)?;
-            }
-            ctx.dedup_vec(&mut affected, AFFECTED)?;
-            ctx.retain_vec(
-                &mut affected,
-                |other| Ok(*other != root && assigned[*other].is_none()),
-                AFFECTED,
-            )?;
-            Ok(affected)
-        };
+                // Global connectivity reaches its fixed point in the complete
+                // scan after local pair, degree, and corner propagation stops.
+                if affected.len() == 2 {
+                    if affected[0] > affected[1] {
+                        affected.swap(0, 1);
+                    }
+                } else if affected.len() > 2 {
+                    ctx.sort_unstable_by(&mut affected, |root| root, Ord::cmp, AFFECTED)?;
+                }
+                ctx.dedup_vec(&mut affected, AFFECTED)?;
+                ctx.retain_vec(
+                    &mut affected,
+                    |other| Ok(*other != root && assigned[*other].is_none()),
+                    AFFECTED,
+                )?;
+                Ok(affected)
+            };
 
         let _depth = ctx.enter_nested("catia_coordinate_closure_walk")?;
         if solutions.len() > 1 || *exhausted {
@@ -3380,9 +3368,12 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                     }
                 }
             };
-            if scanned_roots.len() <= 2 {
-                scanned_roots.sort_unstable_by_key(|value| (domains[*value].len(), *value));
-            } else {
+            if scanned_roots.len() == 2 {
+                let key = |root: usize| (domains[root].len(), root);
+                if key(scanned_roots[0]) > key(scanned_roots[1]) {
+                    scanned_roots.swap(0, 1);
+                }
+            } else if scanned_roots.len() > 2 {
                 ctx.sort_unstable_by_key(
                     &mut scanned_roots,
                     |value| (domains[*value].len(), *value),
