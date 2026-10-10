@@ -1942,6 +1942,7 @@ fn map_law_expression(
                     break;
                 };
                 mapped.push({
+                    let _depth = ctx.enter_nested("ASM law expression operand")?;
                     let mut path_copy_storage =
                         ctx.reserve_scoped(0, "ASM temporary identity key")?;
                     let path_copy = path_copy_storage.with_storage(|| {
