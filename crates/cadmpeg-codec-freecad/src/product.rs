@@ -1069,7 +1069,9 @@ fn parse_placement_list(
     let mut positions = list_layout::<7>(view, "PlacementList")?;
     let mut placements = ctx.collection_vec(positions.len(), "fcstd product placement list")?;
     while positions.len() != 0 {
-        let Some(positions) = ctx.next_charged(&mut positions, "fcstd product placement positions")? else {
+        let Some(positions) =
+            ctx.next_charged(&mut positions, "fcstd product placement positions")?
+        else {
             break;
         };
         let [px, py, pz, qx, qy, qz, qw] = positions.map(read_real);
@@ -1102,7 +1104,8 @@ fn parse_vector_list(
     let mut positions = list_layout::<3>(view, "ScaleList")?;
     let mut vectors = ctx.collection_vec(positions.len(), "fcstd product scale list")?;
     while positions.len() != 0 {
-        let Some(positions) = ctx.next_charged(&mut positions, "fcstd product scale positions")? else {
+        let Some(positions) = ctx.next_charged(&mut positions, "fcstd product scale positions")?
+        else {
             break;
         };
         let [x, y, z] = positions.map(read_real);
