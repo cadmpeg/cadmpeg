@@ -1929,7 +1929,9 @@ fn linear_nurbs_is_simple_closed(
     let Some(projected) = storage.with_storage(|| plane_coordinates(&points, plane, ctx))? else {
         return Ok(false);
     };
-    Ok(!planar_polyline_has_self_intersection(&projected, margin, ctx)?)
+    Ok(!planar_polyline_has_self_intersection(
+        &projected, margin, ctx,
+    )?)
 }
 
 fn analytic_curve_is_simple_closed(
@@ -2018,8 +2020,13 @@ fn bounded_plane_curve_is_simple(
                         )?;
                         return Ok(false);
                     };
-                    let valid =
-                        bounded_plane_curve_is_simple(geometry, context, false, None, (active, margin));
+                    let valid = bounded_plane_curve_is_simple(
+                        geometry,
+                        context,
+                        false,
+                        None,
+                        (active, margin),
+                    );
                     context.ctx.remove_btree_set(
                         active,
                         &segment.curve,
@@ -2202,17 +2209,39 @@ struct PlaneBoundaryProof<'ir> {
 }
 
 impl PlaneBoundaryProof<'_> {
-    fn matches(&self, key: super::plane_proof::CoplanarityPlaneKey, plane: (Point3, Vector3), resolution: f64) -> bool {
-        if !self.coplanarity.matches(key, plane, resolution) { return false; }
+    fn matches(
+        &self,
+        key: super::plane_proof::CoplanarityPlaneKey,
+        plane: (Point3, Vector3),
+        resolution: f64,
+    ) -> bool {
+        if !self.coplanarity.matches(key, plane, resolution) {
+            return false;
+        }
         if self.orientation_margin == f64::INFINITY
-            || (self.coplanarity.origin == plane.0 && self.coplanarity.normal == plane.1) {
+            || (self.coplanarity.origin == plane.0 && self.coplanarity.normal == plane.1)
+        {
             return true;
         }
-        let Some(envelope) = self.coplanarity.envelope else { return false; };
-        let (Some(previous), Some(current)) = (super::plane_proof::canonical_plane_normal(self.coplanarity.normal), super::plane_proof::canonical_plane_normal(plane.1)) else { return false; };
+        let Some(envelope) = self.coplanarity.envelope else {
+            return false;
+        };
+        let (Some(previous), Some(current)) = (
+            super::plane_proof::canonical_plane_normal(self.coplanarity.normal),
+            super::plane_proof::canonical_plane_normal(plane.1),
+        ) else {
+            return false;
+        };
         let magnitude = |point: Point3| point.x.abs().max(point.y.abs()).max(point.z.abs());
-        let radius = 4.0 * 3.0_f64.sqrt() * (envelope.coordinate + magnitude(self.coplanarity.origin) + magnitude(plane.0));
-        let delta = Vector3::new(previous.x - current.x, previous.y - current.y, previous.z - current.z).norm();
+        let radius = 4.0
+            * 3.0_f64.sqrt()
+            * (envelope.coordinate + magnitude(self.coplanarity.origin) + magnitude(plane.0));
+        let delta = Vector3::new(
+            previous.x - current.x,
+            previous.y - current.y,
+            previous.z - current.z,
+        )
+        .norm();
         let error = radius * radius * (128.0 * f64::EPSILON + 8.0 * delta);
         error.is_finite() && self.orientation_margin > error
     }
@@ -2220,6 +2249,7 @@ impl PlaneBoundaryProof<'_> {
 
 /// Successful boundary proofs for one immutable model.
 struct PlaneBoundaryProofs<'ir, 'ctx> {
+    sequences: super::plane_proof::PlaneProofSequences,
     proven: BTreeMap<PlaneBoundaryKey, PlaneBoundaryProof<'ir>>,
     storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
@@ -2255,9 +2285,17 @@ fn plane_boundary_edge<'ir>(
             return Ok(proof.coplanarity.result);
         }
     }
-    for neighbor in super::plane_proof::coplanarity_neighbors(plane_key, plane.1) {
-        if let Some(proof) = ctx.get_btree_map(&proofs.proven, &(boundary_sequence, neighbor), "iges plane boundary proof cache lookup")? {
-            if proof.matches(neighbor, plane, resolution) { return Ok(proof.coplanarity.result); }
+    if proofs.sequences.contains(&boundary_sequence) {
+        for neighbor in super::plane_proof::coplanarity_neighbors(plane_key, plane.1) {
+            if let Some(proof) = ctx.get_btree_map(
+                &proofs.proven,
+                &(boundary_sequence, neighbor),
+                "iges plane boundary proof cache lookup",
+            )? {
+                if proof.matches(neighbor, plane, resolution) {
+                    return Ok(proof.coplanarity.result);
+                }
+            }
         }
     }
     let mut key_storage = [0_u8; 64];
@@ -2338,16 +2376,25 @@ fn plane_boundary_edge<'ir>(
             PlaneBoundaryProof {
                 orientation_margin: orientation_margin.get(),
                 coplanarity: super::plane_proof::CoplanarityProof {
-                origin: plane.0,
-                normal: plane.1,
-                geometry: Some(geometry),
-                envelope,
-                result: source_edge,
+                    origin: plane.0,
+                    normal: plane.1,
+                    geometry: Some(geometry),
+                    envelope,
+                    result: source_edge,
                 },
             },
             "iges plane boundary proof cache",
         )
     })?;
+    if !proofs.sequences.contains(&boundary_sequence) {
+        proofs.storage.with_storage(|| {
+            proofs.sequences.insert(
+                boundary_sequence,
+                ctx,
+                "iges plane boundary proof sequences",
+            )
+        })?;
+    }
     Ok(source_edge)
 }
 
@@ -2767,9 +2814,7 @@ fn read_flow_required_pointers(
 ) -> Result<Option<Vec<u32>>, CodecError> {
     let mut pointers = ctx.collection_vec(count, operation)?;
     let mut input = 0..count;
-    while (!input.is_empty())
-        && ctx.next_charged(&mut input, operation)?.is_some()
-    {
+    while (!input.is_empty()) && ctx.next_charged(&mut input, operation)?.is_some() {
         let Some(FlowPointer::Sequence(sequence)) =
             read_flow_pointer(record, entries, cursor, false, ctx)?
         else {
@@ -4027,6 +4072,7 @@ pub(super) fn project<'ctx>(
 
     let mut plane_index = None;
     let mut plane_proofs = PlaneBoundaryProofs {
+        sequences: super::plane_proof::PlaneProofSequences::default(),
         proven: BTreeMap::new(),
         storage: ctx.reserve_scoped(0, "iges plane boundary proof cache")?,
     };

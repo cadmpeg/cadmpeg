@@ -359,7 +359,9 @@ fn resolve_pcurve_uses<'ctx, 'geometry>(
     // A model without procedural surface records evaluates the support directly.
     if !source.model.procedural_surfaces.is_empty() && model_index.is_none() {
         let geometry = snapshot.model(source, ctx)?;
-        *model_index = Some(cadmpeg_ir::index::ModelIndex::new_model_only(geometry, ctx)?);
+        *model_index = Some(cadmpeg_ir::index::ModelIndex::new_model_only(
+            geometry, ctx,
+        )?);
     }
     let index = model_index.as_ref();
     let (composite_index, composite_storage) = composite;

@@ -285,6 +285,7 @@ fn legacy_plane_invalid_parent_boundary_does_not_visit_children() {
         let ir = CadIr::empty();
         let index = ModelIndex::new_model_only(&ir, ctx).unwrap();
         let mut proofs = super::super::PlaneBoundaryProofs {
+            sequences: Default::default(),
             proven: BTreeMap::new(),
             storage: ctx.reserve_scoped(0, "test plane proofs").unwrap(),
         };

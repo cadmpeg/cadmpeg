@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::*;
 use super::super::super::composite::{CompositeCurveError, CompositeIndex};
+use super::*;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::PlaneSurface;
 use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsPoles3};
@@ -125,9 +125,7 @@ fn project_source_pcurve(
 }
 
 fn composite_index(ir: &CadIr) -> CompositeIndex {
-    crate::test_support::with_service_context(&[], |ctx| {
-        CompositeIndex::from_ir(ir, ctx).unwrap()
-    })
+    crate::test_support::with_service_context(&[], |ctx| CompositeIndex::from_ir(ir, ctx).unwrap())
 }
 
 fn assert_source_pcurve_exists(ir: &CadIr, index: &CompositeIndex) {
@@ -160,10 +158,7 @@ fn bounded_source_peak_bytes(ir: &CadIr) -> u64 {
     // The generated source identity stays live while the bounded 3D lanes are
     // constructed. Its last use precedes the parameter-space mapping.
     u64::try_from(
-        bytes
-            + SOURCE_CURVE_ID.len()
-            + BOUNDED_EDGE_START_ID.len()
-            + BOUNDED_EDGE_END_ID.len(),
+        bytes + SOURCE_CURVE_ID.len() + BOUNDED_EDGE_START_ID.len() + BOUNDED_EDGE_END_ID.len(),
     )
     .unwrap()
 }
@@ -245,7 +240,10 @@ fn mapped_pcurve_knots_remain_retained_after_source_storage_is_released() {
             Ok(_) => panic!("missing retained mapped-knot boundary"),
         }
     };
-    assert_eq!(additional, 4 * u64::try_from(std::mem::size_of::<f64>()).unwrap());
+    assert_eq!(
+        additional,
+        4 * u64::try_from(std::mem::size_of::<f64>()).unwrap()
+    );
 
     crate::test_support::with_service_context(&[], |ctx| {
         let Some((PcurveGeometry::Nurbs { nurbs }, range)) =

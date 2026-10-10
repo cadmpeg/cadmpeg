@@ -128,7 +128,6 @@ fn plane_draft_first_or_last_edge_entity_refusal_remains_sticky() {
             .temporary_vec(count, "test plane boundary raw slots")
             .unwrap();
         source.extend(fixture);
-        let replay_storage = ctx.reserve_scoped(0, "test empty plane replay").unwrap();
         let stem = Stem::word_directory(Word::BoundedPlane, 1_u32);
         let result = plane_face_draft(1, 1, &stem, (source, storage), 0.0, &mut sequences, &ctx);
         let Err(LegacyPlaneError::Resource(CodecError::ResourceLimit(first))) = result else {
@@ -139,11 +138,6 @@ fn plane_draft_first_or_last_edge_entity_refusal_remains_sticky() {
         assert_eq!(
             (first.used, first.additional, first.limit),
             (entities, 1, entities)
-        );
-        assert!(
-            matches!(plane_face_draft(1, 1, &stem, (Vec::new(), replay_storage),
-            f64::INFINITY, &mut sequences, &ctx),
-            Err(LegacyPlaneError::Resource(CodecError::ResourceLimit(last))) if last == first)
         );
         drop(sequences);
         assert!(

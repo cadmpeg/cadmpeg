@@ -269,7 +269,11 @@ fn planar_segments_intersect_beyond_endpoint(
         // orientation must stay away from zero before a placement can reuse it.
         for (point, orientation) in [c, d, a, b].into_iter().zip(orientations) {
             if Some(point) != allowed_endpoint {
-                let area = if orientation.is_finite() { orientation.abs() } else { 0.0 };
+                let area = if orientation.is_finite() {
+                    orientation.abs()
+                } else {
+                    0.0
+                };
                 margin.set(margin.get().min(area));
             }
         }
@@ -1468,7 +1472,15 @@ pub(super) fn curve_geometry_coplanar(
     active: &mut BTreeSet<CurveId>,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    curve_geometry_coplanar_inner(geometry, index, transform, plane, resolution, (active, None), ctx)
+    curve_geometry_coplanar_inner(
+        geometry,
+        index,
+        transform,
+        plane,
+        resolution,
+        (active, None),
+        ctx,
+    )
 }
 
 pub(super) fn curve_geometry_coplanar_proof(
@@ -1481,7 +1493,15 @@ pub(super) fn curve_geometry_coplanar_proof(
     ctx: &DecodeContext<'_>,
 ) -> Result<(bool, Option<super::plane_proof::CoplanarityEnvelope>), CodecError> {
     let envelope = std::cell::Cell::new(super::plane_proof::CoplanarityEnvelope::default());
-    let valid = curve_geometry_coplanar_inner(geometry, index, transform, plane, resolution, (active, Some(&envelope)), ctx)?;
+    let valid = curve_geometry_coplanar_inner(
+        geometry,
+        index,
+        transform,
+        plane,
+        resolution,
+        (active, Some(&envelope)),
+        ctx,
+    )?;
     Ok((valid, valid.then_some(envelope.get())))
 }
 
@@ -1491,7 +1511,10 @@ fn curve_geometry_coplanar_inner(
     transform: Transform,
     plane: (Point3, Vector3),
     resolution: f64,
-    (active, envelope): (&mut BTreeSet<CurveId>, Option<&std::cell::Cell<super::plane_proof::CoplanarityEnvelope>>),
+    (active, envelope): (
+        &mut BTreeSet<CurveId>,
+        Option<&std::cell::Cell<super::plane_proof::CoplanarityEnvelope>>,
+    ),
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
     let _depth = ctx.enter_nested("iges coplanar curve recursion")?;
@@ -1523,7 +1546,8 @@ fn curve_geometry_coplanar_inner(
     };
     let direction_valid = |direction: Vector3| {
         transform.apply_vector(direction).is_some_and(|direction| {
-            if let (Some(direction), Some(plane_normal)) = (direction.get().unit(), plane.1.unit()) {
+            if let (Some(direction), Some(plane_normal)) = (direction.get().unit(), plane.1.unit())
+            {
                 record_angle(direction.dot(plane_normal).abs());
             }
             direction_in_plane(direction.get(), plane.1)
@@ -1608,7 +1632,13 @@ fn curve_geometry_coplanar_inner(
                 })?;
                 let result = (|| {
                     let valid = curve_geometry_coplanar_inner(
-                        geometry, index, transform, plane, resolution, (active, envelope), ctx,
+                        geometry,
+                        index,
+                        transform,
+                        plane,
+                        resolution,
+                        (active, envelope),
+                        ctx,
                     )?;
                     ctx.remove_btree_set(active, &segment.curve, "iges coplanar active removal")?;
                     if active.is_empty() {

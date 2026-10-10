@@ -195,7 +195,7 @@ fn resolution_boundary(operation: &'static str, preceding_items: u64) {
             .unwrap();
         let mut composite_index = None;
         let snapshot = crate::entities::evaluation_copy::SourceGeometrySnapshot::new(&ctx).unwrap();
-            let mut model_index = None;
+        let mut model_index = None;
         let result = super::super::resolve_pcurve_uses(
             &source,
             &uses,
@@ -204,7 +204,7 @@ fn resolution_boundary(operation: &'static str, preceding_items: u64) {
             &ctx,
             (
                 &mut model_index,
-                    &snapshot,
+                &snapshot,
                 (&mut composite_index, &mut composite_storage),
             ),
         )
@@ -231,7 +231,7 @@ fn resolution_boundary(operation: &'static str, preceding_items: u64) {
                     &ctx,
                     (
                         &mut model_index,
-                    &snapshot,
+                        &snapshot,
                         (&mut composite_index, &mut composite_storage),
                     ),
                 );

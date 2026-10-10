@@ -45,7 +45,8 @@ fn resolved_pcurve_vector_backing_is_scoped() {
             policy.limits.max_retained_bytes = 0;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let mut composite_storage = ctx.reserve_scoped(0, "test composite index")?;
-            let snapshot = crate::entities::evaluation_copy::SourceGeometrySnapshot::new(&ctx).unwrap();
+            let snapshot =
+                crate::entities::evaluation_copy::SourceGeometrySnapshot::new(&ctx).unwrap();
             let mut model_index = None;
             let mut composite_index = None;
             let result = super::super::resolve_pcurve_uses(

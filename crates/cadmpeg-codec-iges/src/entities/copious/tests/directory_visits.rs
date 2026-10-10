@@ -16,9 +16,11 @@ fn global() -> crate::global::ProjectedGlobal {
 #[test]
 fn skipped_copious_directory_entries_have_exact_work_without_empty_reads() {
     let global = global();
-    let directory = [crate::test_support::directory_target(1, 110),
+    let directory = [
+        crate::test_support::directory_target(1, 110),
         crate::test_support::directory_target(3, 110),
-        crate::test_support::directory_target(5, 110)];
+        crate::test_support::directory_target(5, 110),
+    ];
     let entries = BTreeMap::new();
     let records = BTreeMap::new();
     for count in [1, 3] {
@@ -34,7 +36,13 @@ fn skipped_copious_directory_entries_have_exact_work_without_empty_reads() {
             let mut ir = cadmpeg_ir::CadIr::empty();
             let mut sequences = super::super::super::geometry::SourceSequences::default();
             let result = super::super::project(
-                &mut ir, &directory[..count], &entries, &records, &global, &ctx, &mut sequences,
+                &mut ir,
+                &directory[..count],
+                &entries,
+                &records,
+                &global,
+                &ctx,
+                &mut sequences,
             );
             if cap == required {
                 let outcome = result.unwrap();
@@ -53,7 +61,9 @@ fn skipped_copious_directory_entries_have_exact_work_without_empty_reads() {
                 assert_eq!(first.dimension, ResourceDimension::WorkUnits);
                 assert_eq!(first.operation, "iges copious directory traversal");
                 assert_eq!((first.limit, first.used, first.additional), (cap, cap, 1));
-                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
+                );
             }
             assert!(ir.model.bodies.is_empty());
         }
@@ -65,8 +75,11 @@ fn copious_directory_does_not_admit_an_unvisited_tail_before_a_loss_refusal() {
     let global = global();
     let mut entry = crate::test_support::directory_target(1, 106);
     entry.form = 11;
-    let directory = [entry, crate::test_support::directory_target(3, 110),
-        crate::test_support::directory_target(5, 110)];
+    let directory = [
+        entry,
+        crate::test_support::directory_target(3, 110),
+        crate::test_support::directory_target(5, 110),
+    ];
     let entries = BTreeMap::new();
     let records = BTreeMap::new();
     let arena = DecodeArena::new();
@@ -79,7 +92,13 @@ fn copious_directory_does_not_admit_an_unvisited_tail_before_a_loss_refusal() {
     let mut ir = cadmpeg_ir::CadIr::empty();
     let mut sequences = super::super::super::geometry::SourceSequences::default();
     let result = super::super::project(
-        &mut ir, &directory, &entries, &records, &global, &ctx, &mut sequences,
+        &mut ir,
+        &directory,
+        &entries,
+        &records,
+        &global,
+        &ctx,
+        &mut sequences,
     );
     let first = match result.as_ref() {
         Err(CodecError::ResourceLimit(first)) => *first,

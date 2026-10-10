@@ -4,7 +4,7 @@
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{
-    Curve, ExactSpline, OffsetExtension, OffsetSide, CurveOffsetRange, CurveOffsetDistanceLaw,
+    Curve, CurveOffsetDistanceLaw, CurveOffsetRange, ExactSpline, OffsetExtension, OffsetSide,
     ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition,
     Surface,
 };
@@ -19,9 +19,12 @@ fn text_allocation(text: &str, ctx: &DecodeContext<'_>) -> Result<(), CodecError
 }
 
 fn array_allocation<T>(count: usize, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
-    if count == 0 { return Ok(()); }
+    if count == 0 {
+        return Ok(());
+    }
     let count = u64_from_index(count);
-    let bytes = count.checked_mul(u64_from_index(std::mem::size_of::<T>()))
+    let bytes = count
+        .checked_mul(u64_from_index(std::mem::size_of::<T>()))
         .ok_or_else(|| ctx.refuse_codec_limit(COPY, u64::MAX, u64::MAX))?;
     ctx.charge_collection_items(count, COPY)?;
     ctx.charge_work(count, COPY)?;
@@ -60,24 +63,40 @@ pub(super) fn procedural_surface(
             text_allocation(payload.directrix().as_str(), ctx)?;
         }
         ProceduralSurfaceDefinition::Offset(payload)
-            if matches!(payload.extension(), OffsetExtension::Legacy { .. }) => {
+            if matches!(payload.extension(), OffsetExtension::Legacy { .. }) =>
+        {
             text_allocation(payload.support().as_str(), ctx)?;
         }
         ProceduralSurfaceDefinition::Ruled { first, second, .. } => {
             text_allocation(first.as_str(), ctx)?;
             text_allocation(second.as_str(), ctx)?;
         }
-        ProceduralSurfaceDefinition::CurveBounded { support, boundaries, boundary_pcurves, .. } => {
+        ProceduralSurfaceDefinition::CurveBounded {
+            support,
+            boundaries,
+            boundary_pcurves,
+            ..
+        } => {
             text_allocation(support.as_str(), ctx)?;
             array_allocation::<cadmpeg_ir::ids::CurveId>(boundaries.len(), ctx)?;
             array_allocation::<cadmpeg_ir::ids::PcurveId>(boundary_pcurves.len(), ctx)?;
-            for id in ctx.admit_iter(boundaries, COPY)? { text_allocation(id.as_str(), ctx)?; }
-            for id in ctx.admit_iter(boundary_pcurves, COPY)? { text_allocation(id.as_str(), ctx)?; }
+            for id in ctx.admit_iter(boundaries, COPY)? {
+                text_allocation(id.as_str(), ctx)?;
+            }
+            for id in ctx.admit_iter(boundary_pcurves, COPY)? {
+                text_allocation(id.as_str(), ctx)?;
+            }
         }
         ProceduralSurfaceDefinition::Unknown { record, .. } => {
-            if let Some(record) = record { text_allocation(record.as_str(), ctx)?; }
+            if let Some(record) = record {
+                text_allocation(record.as_str(), ctx)?;
+            }
         }
-        _ => return Err(CodecError::malformed("unexpected IGES surface construction")),
+        _ => {
+            return Err(CodecError::malformed(
+                "unexpected IGES surface construction",
+            ))
+        }
     }
     Ok(ProceduralSurface::new(
         surface.id.try_clone_for_decode(ctx, COPY)?,
@@ -93,20 +112,30 @@ pub(super) fn procedural_curve(
     match curve.definition() {
         ProceduralCurveDefinition::Compound(payload) => {
             array_allocation::<cadmpeg_ir::scalar::FiniteReal>(payload.parameters().len(), ctx)?;
-            array_allocation::<cadmpeg_ir::geometry::CompoundComponent<cadmpeg_ir::ids::CurveId,
-                cadmpeg_ir::scalar::FiniteReal>>(payload.components().len(), ctx)?;
+            array_allocation::<
+                cadmpeg_ir::geometry::CompoundComponent<
+                    cadmpeg_ir::ids::CurveId,
+                    cadmpeg_ir::scalar::FiniteReal,
+                >,
+            >(payload.components().len(), ctx)?;
             for component in ctx.admit_iter(payload.components(), COPY)? {
                 text_allocation(component.component.as_str(), ctx)?;
             }
         }
         ProceduralCurveDefinition::Offset(payload) => {
             text_allocation(payload.source().as_str(), ctx)?;
-            if let OffsetSide::Direction { support: Some(support), .. } = payload.side() {
+            if let OffsetSide::Direction {
+                support: Some(support),
+                ..
+            } = payload.side()
+            {
                 text_allocation(support.as_str(), ctx)?;
             }
             if let Some(CurveOffsetRange::Variable {
-                distance_law: CurveOffsetDistanceLaw::Coordinate { function, .. }, ..
-            }) = payload.range() {
+                distance_law: CurveOffsetDistanceLaw::Coordinate { function, .. },
+                ..
+            }) = payload.range()
+            {
                 text_allocation(function.as_str(), ctx)?;
             }
         }
@@ -128,27 +157,50 @@ impl<'ctx> SourceGeometrySnapshot<'ctx> {
     pub(super) fn new(ctx: &'ctx DecodeContext<'_>) -> Result<Self, CodecError> {
         Ok(Self {
             model: std::cell::OnceCell::new(),
-            storage: std::cell::RefCell::new(ctx.reserve_scoped(0, "iges source geometry snapshot")?),
+            storage: std::cell::RefCell::new(
+                ctx.reserve_scoped(0, "iges source geometry snapshot")?,
+            ),
         })
     }
 
-    pub(super) fn model(&self, source: &CadIr, ctx: &DecodeContext<'_>) -> Result<&CadIr, CodecError> {
+    pub(super) fn model(
+        &self,
+        source: &CadIr,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<&CadIr, CodecError> {
         if self.model.get().is_none() {
-            let model = self.storage.borrow_mut().with_storage(|| -> Result<CadIr, CodecError> {
-    let mut result = CadIr::empty();
-    result.tolerances = source.tolerances;
-    result.model.surfaces = ctx.try_collect_retained_with(
-        &source.model.surfaces, COPY, |value| surface(value, ctx))?;
-    result.model.curves = ctx.try_collect_retained_with(
-        &source.model.curves, COPY, |value| curve(value, ctx))?;
-    result.model.procedural_surfaces = ctx.try_collect_retained_with(
-        &source.model.procedural_surfaces, COPY, |value| procedural_surface(value, ctx))?;
-    result.model.procedural_curves = ctx.try_collect_retained_with(
-        &source.model.procedural_curves, COPY, |value| procedural_curve(value, ctx))?;
-    Ok(result)
+            let model =
+                self.storage
+                    .borrow_mut()
+                    .with_storage(|| -> Result<CadIr, CodecError> {
+                        let mut result = CadIr::empty();
+                        result.tolerances = source.tolerances;
+                        result.model.surfaces =
+                            ctx.try_collect_retained_with(&source.model.surfaces, COPY, |value| {
+                                surface(value, ctx)
+                            })?;
+                        result.model.curves =
+                            ctx.try_collect_retained_with(&source.model.curves, COPY, |value| {
+                                curve(value, ctx)
+                            })?;
+                        result.model.procedural_surfaces = ctx.try_collect_retained_with(
+                            &source.model.procedural_surfaces,
+                            COPY,
+                            |value| procedural_surface(value, ctx),
+                        )?;
+                        result.model.procedural_curves = ctx.try_collect_retained_with(
+                            &source.model.procedural_curves,
+                            COPY,
+                            |value| procedural_curve(value, ctx),
+                        )?;
+                        Ok(result)
+                    })?;
+            self.model.set(model).map_err(|_| {
+                CodecError::malformed("source geometry snapshot is already populated")
             })?;
-            self.model.set(model).map_err(|_| CodecError::malformed("source geometry snapshot is already populated"))?;
         }
-        self.model.get().ok_or_else(|| CodecError::malformed("source geometry snapshot is absent"))
+        self.model
+            .get()
+            .ok_or_else(|| CodecError::malformed("source geometry snapshot is absent"))
     }
 }

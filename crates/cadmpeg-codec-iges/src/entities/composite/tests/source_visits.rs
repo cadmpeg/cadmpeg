@@ -38,7 +38,8 @@ fn composite_candidate_source_refuses_one_visit_and_propagates_the_refusal() {
     assert_eq!(first.dimension, ResourceDimension::WorkUnits);
     assert_eq!(first.operation, "iges composite edge candidates");
     assert_eq!((first.limit, first.used, first.additional), (0, 0, 1));
-    { let replay = &candidates[..];
+    {
+        let replay = &candidates[..];
         assert!(
             matches!(select_composite_edge(&ctx, &CadIr::empty(), None, &line(), replay, 0.0),
             Err(CodecError::ResourceLimit(last)) if last == first)
@@ -292,7 +293,8 @@ fn internal_knot_boundary(visited: usize, accepts_source: bool) {
     );
     assert_eq!((first.limit, first.used, first.additional), (cap, cap, 1));
     for _ in 0..64 {
-        { let target = 2;
+        {
+            let target = 2;
             let Err(error) = elevate_nurbs_to_degree(&ctx, &mut curve, [0.0, 1.0], target, None)
             else {
                 panic!("expected sticky refusal before same-degree recovery")
@@ -388,7 +390,8 @@ fn internal_value_storage_boundary(rational: bool, exact: bool) {
         );
     }
     for _ in 0..64 {
-        { let degree = 3;
+        {
+            let degree = 3;
             let error = elevate_nurbs_to_degree(&ctx, &mut curve, [0.0, 1.0], degree, None)
                 .expect_err("expected refusal before the unchanged-degree route");
             assert!(
@@ -533,7 +536,8 @@ fn elevated_net_storage_boundary(rational: bool, exact: bool) {
         );
     }
     for _ in 0..64 {
-        { let target = 3;
+        {
+            let target = 3;
             let error = elevate_nurbs_to_degree(&ctx, &mut curve, [0.0, 1.0], target, None)
                 .expect_err("expected original refusal before degree recovery");
             assert!(

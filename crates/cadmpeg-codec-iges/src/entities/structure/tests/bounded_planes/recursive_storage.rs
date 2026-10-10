@@ -272,6 +272,7 @@ fn plane_boundary_destroys_active_path_before_retaining_proof_cache() {
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut proofs = super::super::super::PlaneBoundaryProofs {
+            sequences: Default::default(),
             proven: std::collections::BTreeMap::new(),
             storage: ctx
                 .reserve_scoped(0, "test boundary proof cache storage")
