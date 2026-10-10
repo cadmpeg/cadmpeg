@@ -217,24 +217,30 @@ fn validated_support_uv_exposes_ordered_endpoint_witnesses() {
     })
     .expect("validated witnesses fit the service profile");
 
-    assert_eq!(
-        crate::decode::pcurves::endpoint_witness_for_candidate(
-            &witnesses,
-            &(owner.clone(), side.1.clone()),
-            &pcurve.geometry,
-            parameter_range,
-        ),
-        Some([points[0], points[1]])
-    );
-    assert_eq!(
-        crate::decode::pcurves::endpoint_witness_for_candidate(
-            &witnesses,
-            &(owner, side.1),
-            &pcurve.geometry,
-            [parameter_range[0], parameter_range[1] + 1.0],
-        ),
-        None
-    );
+    crate::test_support::with_decode_context(|ctx| {
+        assert_eq!(
+            crate::decode::pcurves::endpoint_witness_for_candidate(
+                ctx,
+                &witnesses,
+                (&owner, &side.1),
+                &pcurve.geometry,
+                parameter_range,
+            )
+            .expect("witness lookup fits the service profile"),
+            Some([points[0], points[1]])
+        );
+        assert_eq!(
+            crate::decode::pcurves::endpoint_witness_for_candidate(
+                ctx,
+                &witnesses,
+                (&owner, &side.1),
+                &pcurve.geometry,
+                [parameter_range[0], parameter_range[1] + 1.0],
+            )
+            .expect("witness lookup fits the service profile"),
+            None
+        );
+    });
 }
 
 #[test]
@@ -331,11 +337,13 @@ fn full_support_uv_validation_publishes_endpoint_witnesses() {
         .endpoint_witnesses;
 
         let witness = crate::decode::pcurves::endpoint_witness_for_candidate(
+            geometry_ctx,
             &witnesses,
-            &(curve_id, surface),
+            (&curve_id, &surface),
             &pcurve.geometry,
             parameter_range,
         )
+        .expect("witness lookup fits the service profile")
         .expect("complete validation endpoint witness");
         assert!(Point3::distance(witness[0], points[0]) <= EPS_SUPPORT_WITNESS);
         assert!(Point3::distance(witness[1], points[1]) <= EPS_SUPPORT_WITNESS);
