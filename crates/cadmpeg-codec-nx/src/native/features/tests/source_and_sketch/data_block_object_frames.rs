@@ -21,12 +21,8 @@ fn data_block_object_frame_route_refusal(
         crate::container::scan_bytes(ctx, file.as_slice())
     })
     .expect("synthetic data block object frame container");
-    crate::test_support::with_decode_context(|ctx| {
-        container
-            .indexed_om_sections(ctx)
-            .map(|(sections, _storage)| sections)
-    })
-    .expect("cached offset-store source");
+    crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx).map(|_| ()))
+        .expect("cached offset-store source");
     let records =
         crate::test_support::with_decode_context(|ctx| data_block_object_frames(ctx, &container))
             .expect("data block object frame projection");

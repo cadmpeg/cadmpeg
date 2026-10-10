@@ -725,7 +725,7 @@ pub(in crate::native) fn feature_draft_construction_index_lanes(
             &history_section.records,
             "visit NX feature operation records",
         )? {
-            let (lane, lane_storage) = crate::om::draft_leading::scan(ctx, record.payload_view())?;
+            let (lane, _lane_storage) = crate::om::draft_leading::scan(ctx, record.payload_view())?;
             let Some(lane) = lane else {
                 continue;
             };
@@ -774,15 +774,11 @@ pub(in crate::native) fn feature_draft_construction_index_lanes(
                 continue;
             };
             let indices = match section_ordinal {
-                None => {
-                    FeatureDraftConstructionIndices::Unresolved(lane_storage.commit_value(frame)?)
-                }
+                None => FeatureDraftConstructionIndices::Unresolved(frame),
                 Some(section_ordinal) => {
-                    let resolved = frame.resolve(ctx, |index| {
+                    FeatureDraftConstructionIndices::Resolved(frame.resolve(ctx, |index| {
                         format_offset_data_block_id(ctx, section_ordinal, index)
-                    })?;
-                    drop(lane_storage);
-                    FeatureDraftConstructionIndices::Resolved(resolved)
+                    })?)
                 }
             };
             let id = format_feature_history_id(
@@ -1110,9 +1106,10 @@ pub(in crate::native) fn feature_draft_construction_graph_strings(
             let graph_payload = ctx.copy_retained_text(&payload.id, "NX draft string graph")?;
             let ordinal = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX draft string ordinal", 0, 1))?;
-            let value = value
-                .value
-                .try_into_owned_for_decode(ctx, "NX draft construction string")?;
+            let value = PrintableString::new(
+                ctx.copy_retained_text(value.value.as_str(), "NX draft construction string")?,
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?;
             ctx.reserve_vec(&mut strings, 1, "NX draft construction graph strings")?;
             strings.push(FeatureDraftConstructionGraphString {
                 id,

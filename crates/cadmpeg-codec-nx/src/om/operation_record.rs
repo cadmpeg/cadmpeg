@@ -206,7 +206,8 @@ mod tests {
             if let Some(index) = mismatch {
                 bytes[21 + index] = b'X';
             }
-            let compared = cadmpeg_core::decode::u64_from_index(mismatch.map_or(5, |index| index + 1));
+            let compared =
+                cadmpeg_core::decode::u64_from_index(mismatch.map_or(5, |index| index + 1));
             for cap in [compared - 1, compared] {
                 crate::test_support::with_decode_context_over(
                     &[],
@@ -218,7 +219,10 @@ mod tests {
                                 panic!("the next label byte must refuse");
                             };
                             assert_eq!(first.operation, "NX operation record label equality");
-                            assert_eq!(first.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+                            assert_eq!(
+                                first.dimension,
+                                cadmpeg_core::decode::ResourceDimension::WorkUnits
+                            );
                             assert_eq!(first.used, cap);
                             assert_eq!(first.additional, 1);
                             assert_eq!(ctx.resource_refusal(), Some(first));
@@ -228,7 +232,8 @@ mod tests {
                             assert_eq!(result.unwrap().is_some(), mismatch.is_none());
                             assert_eq!(ctx.resource_refusal(), None);
                             let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) =
-                                ctx.charge_work(1, "label compared prefix boundary") else {
+                                ctx.charge_work(1, "label compared prefix boundary")
+                            else {
                                 panic!("the exact compared prefix exhausted the work cap");
                             };
                             assert_eq!(limit.used, compared);

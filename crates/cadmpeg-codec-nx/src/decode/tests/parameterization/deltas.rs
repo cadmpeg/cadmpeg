@@ -192,10 +192,13 @@ fn decode_preserves_partition_loop_topology_over_deltas_history() {
     })
     .unwrap();
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &merged))
-            .unwrap()
-            .node(NodeKind::Loop, 5)
-            .and_then(|node| node.u32_at(4)),
+        crate::test_support::with_decode_context(|ctx| {
+            crate::topology::Graph::parse(ctx, &merged)
+                .unwrap()
+                .get(ctx, NodeKind::Loop, 5)
+                .unwrap()
+                .and_then(|node| node.u32_at(4))
+        }),
         Some(0)
     );
     let mut cur = Cursor::new(prt_with_streams(&[&partition, &deltas]));
@@ -218,10 +221,13 @@ fn decode_preserves_partition_shell_topology_over_deltas_history() {
     })
     .unwrap();
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &merged))
-            .unwrap()
-            .node(NodeKind::Shell, 3)
-            .and_then(|node| node.u32_at(4)),
+        crate::test_support::with_decode_context(|ctx| {
+            crate::topology::Graph::parse(ctx, &merged)
+                .unwrap()
+                .get(ctx, NodeKind::Shell, 3)
+                .unwrap()
+                .and_then(|node| node.u32_at(4))
+        }),
         Some(0)
     );
     let mut cur = Cursor::new(prt_with_streams(&[&partition, &deltas]));

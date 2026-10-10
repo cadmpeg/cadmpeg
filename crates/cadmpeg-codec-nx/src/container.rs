@@ -502,8 +502,8 @@ impl<'a> Container<'a> {
         let mut result = storage.with_storage(|| {
             ctx.collection_vec(
                 match framed_cache {
-                FramedSectionCache::Borrowed { sections } => sections.len(),
-                FramedSectionCache::Owned { layouts } => layouts.len(),
+                    FramedSectionCache::Borrowed { sections } => sections.len(),
+                    FramedSectionCache::Owned { layouts } => layouts.len(),
                 },
                 "NX framed section readers",
             )
@@ -512,10 +512,9 @@ impl<'a> Container<'a> {
             FramedSectionCache::Borrowed { sections } => {
                 let mut visits = sections.iter();
                 while visits.len() != 0 {
-                    let Some((entry_index, section)) = ctx.next_charged(
-                        &mut visits,
-                        "visit NX framed cached section readers",
-                    )? else {
+                    let Some((entry_index, section)) =
+                        ctx.next_charged(&mut visits, "visit NX framed cached section readers")?
+                    else {
                         break;
                     };
                     if let Some(entry) = EntryRef::new(&self.entries, *entry_index) {
@@ -526,17 +525,13 @@ impl<'a> Container<'a> {
             FramedSectionCache::Owned { layouts } => {
                 let mut visits = layouts.iter();
                 while visits.len() != 0 {
-                    let Some((entry_index, layout)) = ctx.next_charged(
-                        &mut visits,
-                        "visit NX framed owned section readers",
-                    )? else {
+                    let Some((entry_index, layout)) =
+                        ctx.next_charged(&mut visits, "visit NX framed owned section readers")?
+                    else {
                         break;
                     };
                     if let Some(entry) = EntryRef::new(&self.entries, *entry_index) {
-                        result.push((
-                            entry,
-                            storage.with_storage(|| layout.materialize(ctx))?,
-                        ));
+                        result.push((entry, storage.with_storage(|| layout.materialize(ctx))?));
                     }
                 }
             }
@@ -559,8 +554,8 @@ impl<'a> Container<'a> {
                     let mut blocks = BTreeMap::new();
                     let mut visits = sections.iter().enumerate();
                     while visits.len() != 0 {
-                        let Some((section_ordinal, (entry_index, section))) = ctx
-                            .next_charged(&mut visits, "index NX cached offset sections")?
+                        let Some((section_ordinal, (entry_index, section))) =
+                            ctx.next_charged(&mut visits, "index NX cached offset sections")?
                         else {
                             break;
                         };
@@ -583,8 +578,8 @@ impl<'a> Container<'a> {
                         )?;
                         let mut visits = records.iter().enumerate();
                         while visits.len() != 0 {
-                            let Some((record_ordinal, block)) = ctx
-                                .next_charged(&mut visits, "index NX cached offset records")?
+                            let Some((record_ordinal, block)) =
+                                ctx.next_charged(&mut visits, "index NX cached offset records")?
                             else {
                                 break;
                             };
@@ -625,8 +620,8 @@ impl<'a> Container<'a> {
         let mut result = storage.with_storage(|| {
             ctx.collection_vec(
                 match cache {
-                IndexedSectionCache::Borrowed { sections, .. } => sections.len(),
-                IndexedSectionCache::Owned { layouts } => layouts.len(),
+                    IndexedSectionCache::Borrowed { sections, .. } => sections.len(),
+                    IndexedSectionCache::Owned { layouts } => layouts.len(),
                 },
                 "NX indexed section readers",
             )
@@ -635,10 +630,9 @@ impl<'a> Container<'a> {
             IndexedSectionCache::Borrowed { sections, .. } => {
                 let mut visits = sections.iter();
                 while visits.len() != 0 {
-                    let Some((entry_index, section)) = ctx.next_charged(
-                        &mut visits,
-                        "visit NX indexed cached section readers",
-                    )? else {
+                    let Some((entry_index, section)) =
+                        ctx.next_charged(&mut visits, "visit NX indexed cached section readers")?
+                    else {
                         break;
                     };
                     if let Some(entry) = EntryRef::new(&self.entries, *entry_index) {
@@ -649,17 +643,13 @@ impl<'a> Container<'a> {
             IndexedSectionCache::Owned { layouts } => {
                 let mut visits = layouts.iter();
                 while visits.len() != 0 {
-                    let Some((entry_index, layout)) = ctx.next_charged(
-                        &mut visits,
-                        "visit NX indexed owned section readers",
-                    )? else {
+                    let Some((entry_index, layout)) =
+                        ctx.next_charged(&mut visits, "visit NX indexed owned section readers")?
+                    else {
                         break;
                     };
                     if let Some(entry) = EntryRef::new(&self.entries, *entry_index) {
-                        result.push((
-                            entry,
-                            storage.with_storage(|| layout.materialize(ctx))?,
-                        ));
+                        result.push((entry, storage.with_storage(|| layout.materialize(ctx))?));
                     }
                 }
             }
@@ -803,7 +793,8 @@ impl<'a> Container<'a> {
                     let Some(record) = ctx.next_charged(
                         &mut records,
                         "project NX external reference record entries",
-                    )? else {
+                    )?
+                    else {
                         break;
                     };
                     ctx.push_scoped_vec(
@@ -830,7 +821,13 @@ impl<'a> Container<'a> {
     pub(crate) fn external_reference_indexed_records<'ctx>(
         &self,
         ctx: &'ctx DecodeContext<'_>,
-    ) -> Result<(Vec<(&DirEntry, ExtrefIndexedRecord)>, ScopedReservation<'ctx>), CodecError> {
+    ) -> Result<
+        (
+            Vec<(&DirEntry, ExtrefIndexedRecord)>,
+            ScopedReservation<'ctx>,
+        ),
+        CodecError,
+    > {
         let mut storage = ctx.reserve_scoped(0, "nx external reference indexed entries")?;
         let mut out = Vec::new();
         for entry in &self.entries {
@@ -863,7 +860,8 @@ impl<'a> Container<'a> {
                     let Some(record) = ctx.next_charged(
                         &mut records,
                         "project NX external reference indexed entries",
-                    )? else {
+                    )?
+                    else {
                         break;
                     };
                     ctx.push_scoped_vec(
@@ -1029,8 +1027,8 @@ fn locate_extref_string_table(
         let mut pos = start;
         let mut entries = 0..count;
         while entries.len() != 0 {
-            let Some(_) = ctx
-                .next_charged(&mut entries, "nx external reference string table entries")?
+            let Some(_) =
+                ctx.next_charged(&mut entries, "nx external reference string table entries")?
             else {
                 break;
             };
@@ -1162,8 +1160,10 @@ fn parse_extref_records<'ctx>(
         let handle_token_count = count - 1;
         let mut token_indices = 0..handle_token_count;
         while token_indices.len() != 0 {
-            let Some(handle_index) =
-                ctx.next_charged(&mut token_indices, "validate NX external reference handle tokens")?
+            let Some(handle_index) = ctx.next_charged(
+                &mut token_indices,
+                "validate NX external reference handle tokens",
+            )?
             else {
                 break;
             };
@@ -1633,8 +1633,7 @@ fn parse_indexed_section_cache<'bytes>(
                 }
                 let (layout, candidate_storage) =
                     crate::om::cache::IndexedSectionLayout::from_section(ctx, section, source)?;
-                let Some(layout) = layout
-                else {
+                let Some(layout) = layout else {
                     continue;
                 };
                 layouts_storage.with_storage(|| {
@@ -1891,8 +1890,7 @@ pub(crate) fn scan_legacy<'a>(
     let mut entries = Vec::new();
     let mut visits = snapshot.entries().iter();
     while visits.len() != 0 {
-        let Some(entry) =
-            ctx.next_charged(&mut visits, "retain legacy NX directory traversal")?
+        let Some(entry) = ctx.next_charged(&mut visits, "retain legacy NX directory traversal")?
         else {
             break;
         };
@@ -1973,8 +1971,7 @@ fn directory_region(
     let mut at = entries_offset;
     let mut ordinals = 0..count;
     while ordinals.len() != 0 {
-        let Some(ordinal) = ctx.next_charged(&mut ordinals, "read NX directory entries")?
-        else {
+        let Some(ordinal) = ctx.next_charged(&mut ordinals, "read NX directory entries")? else {
             break;
         };
         let Some((entry, next)) = try_entry(ctx, data, at, region, region_end, ordinal)? else {

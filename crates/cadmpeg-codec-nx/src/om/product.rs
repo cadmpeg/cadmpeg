@@ -39,10 +39,10 @@ impl ProductText<&str> {
         self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<ProductText<String>, cadmpeg_core::CodecError> {
-        Ok(ProductText(
-            self.0
-                .try_into_owned_for_decode(ctx, "retain NX store version")?,
-        ))
+        Ok(ProductText(self.0.try_into_owned_for_decode(
+            ctx,
+            "retain NX store version",
+        )?))
     }
 }
 
@@ -162,7 +162,10 @@ mod tests {
         use cadmpeg_core::CodecError;
 
         let text = ProductText::new("NX ").unwrap();
-        for dimension in [ResourceDimension::WorkUnits, ResourceDimension::RetainedBytes] {
+        for dimension in [
+            ResourceDimension::WorkUnits,
+            ResourceDimension::RetainedBytes,
+        ] {
             let error = crate::test_support::resource_refusal_at(
                 &[],
                 dimension,

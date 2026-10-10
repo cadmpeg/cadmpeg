@@ -580,12 +580,9 @@ pub(crate) fn append_design_intent_losses(
         )?;
     }
 
-    let mut expression_storage = ctx.reserve_scoped(0, "NX report incomplete expressions")?;
-    let incomplete_expressions =
-        expression_storage.with_storage(|| incomplete_expression_parameters(ctx, ir))?;
-    let incomplete_expression_count = incomplete_expressions.len();
-    drop(incomplete_expressions);
-    drop(expression_storage);
+    let incomplete_expression_count = body_storage
+        .with_storage(|| incomplete_expression_parameters(ctx, ir))?
+        .len();
     if incomplete_expression_count != 0 {
         push_report_loss(
             ctx,
@@ -736,7 +733,7 @@ pub(crate) fn append_design_intent_losses(
             FeatureDefinition::Operation(FeatureOperation::BaseFeature { bodies })
                 if !is_exact_empty_base
                     && !snapshot
-                    && body_selection_is_incomplete(bodies) =>
+                    && body_selection_is_incomplete(ctx, bodies)? =>
             {
                 "base feature"
             }
@@ -800,7 +797,7 @@ pub(crate) fn append_design_intent_losses(
                 "datum coordinate system"
             }
             FeatureDefinition::Operation(FeatureOperation::ExtractBody { source })
-                if body_selection_is_incomplete(source) =>
+                if body_selection_is_incomplete(ctx, source)? =>
             {
                 "extract body"
             }
@@ -902,12 +899,12 @@ pub(crate) fn append_design_intent_losses(
                 "shell"
             }
             FeatureDefinition::Operation(FeatureOperation::SewBodies { .. })
-                if sew_bodies_definition_is_incomplete(feature) =>
+                if sew_bodies_definition_is_incomplete(ctx, feature)? =>
             {
                 "sew bodies"
             }
             FeatureDefinition::Operation(FeatureOperation::TrimBodies { .. })
-                if trim_bodies_definition_is_incomplete(feature) =>
+                if trim_bodies_definition_is_incomplete(ctx, feature)? =>
             {
                 "trim bodies"
             }
@@ -949,19 +946,19 @@ pub(crate) fn append_design_intent_losses(
             FeatureDefinition::Operation(FeatureOperation::SectionShape {
                 operands,
                 approximate,
-            }) if body_selection_is_incomplete(operands.first())
-                || body_selection_is_incomplete(operands.second())
+            }) if body_selection_is_incomplete(ctx, operands.first())?
+                || body_selection_is_incomplete(ctx, operands.second())?
                 || approximate.is_none() =>
             {
                 "section"
             }
             FeatureDefinition::Operation(FeatureOperation::Combine { .. })
-                if combine_definition_is_incomplete(feature) =>
+                if combine_definition_is_incomplete(ctx, feature)? =>
             {
                 "body combine"
             }
             FeatureDefinition::Operation(FeatureOperation::DeleteBody { .. })
-                if delete_body_definition_is_incomplete(feature) =>
+                if delete_body_definition_is_incomplete(ctx, feature)? =>
             {
                 "delete body"
             }

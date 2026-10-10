@@ -137,22 +137,15 @@ fn invalidation_preserves_lanes_with_a_prior_validation_proof() {
             ),
         );
 
-        crate::test_support::with_decode_context(|ctx| {
-            let mut endpoint_witness_storage =
-                ctx.reserve_scoped(0, "nx support UV endpoint witnesses")?;
-            let mut endpoint_witnesses = crate::decode::pcurves::EndpointWitnesses::new();
-            crate::decode::support_uv::invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
-                ctx,
-                &mut result.ir_mut(),
-                &pending,
-                &validated_lanes,
-                &support_budget,
-                &geometry_budget,
-                false,
-                &mut endpoint_witnesses,
-                &mut endpoint_witness_storage,
-            )
-        })
+        crate::test_support::with_decode_context(|ctx| crate::decode::support_uv::invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
+        ctx,
+        &mut result.ir_mut(),
+        &pending,
+        &validated_lanes,
+        &support_budget,
+        &geometry_budget,
+        false,
+    ))
     .expect("evaluator allocation succeeds");
 
         let pcurve_present = |procedural_id: &ProceduralCurveId| {
@@ -214,18 +207,17 @@ fn validated_support_uv_exposes_ordered_endpoint_witnesses() {
         .expect("intersection owner")
         .clone();
 
-    crate::test_support::with_decode_context(|ctx| {
-        let mut endpoint_witness_storage =
-            ctx.reserve_scoped(0, "nx validated endpoint witnesses")?;
-        let mut witnesses = crate::decode::pcurves::EndpointWitnesses::new();
+    let witnesses = crate::test_support::with_decode_context(|ctx| {
         crate::decode::support_uv::validated_support_uv_endpoint_witnesses(
             ctx,
             result.ir(),
             &pending,
             &validated_lanes,
-            &mut witnesses,
-            &mut endpoint_witness_storage,
-        )?;
+        )
+    })
+    .expect("validated witnesses fit the service profile");
+
+    crate::test_support::with_decode_context(|ctx| {
         assert_eq!(
             crate::decode::pcurves::endpoint_witness_for_candidate(
                 ctx,
@@ -248,9 +240,7 @@ fn validated_support_uv_exposes_ordered_endpoint_witnesses() {
             .expect("witness lookup fits the service profile"),
             None
         );
-        Ok::<(), cadmpeg_core::CodecError>(())
-    })
-    .expect("validated witnesses fit the service profile");
+    });
 }
 
 #[test]
@@ -333,35 +323,30 @@ fn full_support_uv_validation_publishes_endpoint_witnesses() {
             ),
         );
 
-        crate::test_support::with_decode_context(|ctx| {
-            let mut endpoint_witness_storage =
-                ctx.reserve_scoped(0, "nx support UV endpoint witnesses")?;
-            let mut witnesses = crate::decode::pcurves::EndpointWitnesses::new();
-            crate::decode::support_uv::invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
-                ctx,
-                &mut result.ir_mut(),
-                &pending,
-                &BTreeSet::new(),
-                &support_budget,
-                &geometry_budget,
-                false,
-                &mut witnesses,
-                &mut endpoint_witness_storage,
-            )?;
+        let witnesses =
+        crate::test_support::with_decode_context(|ctx| crate::decode::support_uv::invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
+            ctx,
+            &mut result.ir_mut(),
+            &pending,
+            &BTreeSet::new(),
+            &support_budget,
+            &geometry_budget,
+            false,
+        ))
+        .expect("evaluator allocation succeeds")
+        .endpoint_witnesses;
 
-            let witness = crate::decode::pcurves::endpoint_witness_for_candidate(
-                ctx,
-                &witnesses,
-                (&curve_id, &surface),
-                &pcurve.geometry,
-                parameter_range,
-            )?
-            .expect("complete validation endpoint witness");
-            assert!(Point3::distance(witness[0], points[0]) <= EPS_SUPPORT_WITNESS);
-            assert!(Point3::distance(witness[1], points[1]) <= EPS_SUPPORT_WITNESS);
-            Ok::<(), cadmpeg_core::CodecError>(())
-        })
-        .expect("evaluator allocation succeeds");
+        let witness = crate::decode::pcurves::endpoint_witness_for_candidate(
+            geometry_ctx,
+            &witnesses,
+            (&curve_id, &surface),
+            &pcurve.geometry,
+            parameter_range,
+        )
+        .expect("witness lookup fits the service profile")
+        .expect("complete validation endpoint witness");
+        assert!(Point3::distance(witness[0], points[0]) <= EPS_SUPPORT_WITNESS);
+        assert!(Point3::distance(witness[1], points[1]) <= EPS_SUPPORT_WITNESS);
     });
 }
 

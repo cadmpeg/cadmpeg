@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Feature-completeness predicates for NX decode.
 
+use cadmpeg_core::decode::cost::DecodeCost;
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::math::Vector3;
@@ -33,6 +35,147 @@ const EPS_PERPENDICULAR: f64 = 1.0e-9;
 
 const PROPERTIES: &str = "nx feature completeness source properties";
 
+/// Admission for the input-sized work of the completeness predicates.
+///
+/// Decode reports pass their [`DecodeContext`], which charges every visit,
+/// comparison and lookup. The context-free saved-body census passes
+/// [`StandardCompleteness`], which never refuses.
+pub(crate) trait CompletenessAdmission {
+    type Error;
+
+    /// Return whether a value satisfies `predicate`; each visited value is
+    /// charged before its predicate runs.
+    fn any_by<T>(
+        &self,
+        values: &[T],
+        predicate: impl FnMut(&T) -> Result<bool, Self::Error>,
+        operation: &'static str,
+    ) -> Result<bool, Self::Error>;
+
+    /// Return whether `values` contains `value`.
+    fn contains<T: DecodeCost + PartialEq>(
+        &self,
+        values: &[T],
+        value: &T,
+        operation: &'static str,
+    ) -> Result<bool, Self::Error>;
+
+    /// Return whether two members of `values` are equal.
+    fn has_duplicate<T: DecodeCost + Ord>(
+        &self,
+        values: &[T],
+        operation: &'static str,
+    ) -> Result<bool, Self::Error>;
+
+    /// Return whether two members of `values` are equal, for values without
+    /// an order; every earlier member is compared with each later one.
+    fn has_equal_pair<T: DecodeCost + PartialEq>(
+        &self,
+        values: &[T],
+        operation: &'static str,
+    ) -> Result<bool, Self::Error>;
+
+    /// Return whether `text` holds only whitespace.
+    fn is_blank(&self, text: &str, operation: &'static str) -> Result<bool, Self::Error>;
+
+    /// Return the source property stored under `key`.
+    fn property<'p>(
+        &self,
+        properties: &'p BTreeMap<NonBlankString, String>,
+        key: &str,
+        operation: &'static str,
+    ) -> Result<Option<&'p String>, Self::Error>;
+
+    /// Return whether a source-property key satisfies `predicate`. The
+    /// predicate compares the key with fixed text only.
+    fn any_property_key(
+        &self,
+        properties: &BTreeMap<NonBlankString, String>,
+        predicate: impl FnMut(&str) -> bool,
+        operation: &'static str,
+    ) -> Result<bool, Self::Error>;
+}
+
+impl CompletenessAdmission for DecodeContext<'_> {
+    type Error = CodecError;
+
+    fn any_by<T>(
+        &self,
+        values: &[T],
+        predicate: impl FnMut(&T) -> Result<bool, CodecError>,
+        operation: &'static str,
+    ) -> Result<bool, CodecError> {
+        DecodeContext::any_by(self, values, predicate, operation)
+    }
+
+    fn contains<T: DecodeCost + PartialEq>(
+        &self,
+        values: &[T],
+        value: &T,
+        operation: &'static str,
+    ) -> Result<bool, CodecError> {
+        DecodeContext::contains(self, values, value, operation)
+    }
+
+    fn has_duplicate<T: DecodeCost + Ord>(
+        &self,
+        values: &[T],
+        operation: &'static str,
+    ) -> Result<bool, CodecError> {
+        let mut storage = self.reserve_scoped(0, operation)?;
+        let mut seen = BTreeSet::new();
+        for value in values {
+            self.charge_work(1, operation)?;
+            if !storage.with_storage(|| self.insert_btree_set(&mut seen, value, operation))? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    fn has_equal_pair<T: DecodeCost + PartialEq>(
+        &self,
+        values: &[T],
+        operation: &'static str,
+    ) -> Result<bool, CodecError> {
+        for (index, value) in values.iter().enumerate() {
+            self.charge_work(1, operation)?;
+            if DecodeContext::contains(self, &values[..index], value, operation)? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    fn is_blank(&self, text: &str, operation: &'static str) -> Result<bool, CodecError> {
+        Ok(self.trim_text(text, operation)?.is_empty())
+    }
+
+    fn property<'p>(
+        &self,
+        properties: &'p BTreeMap<NonBlankString, String>,
+        key: &str,
+        operation: &'static str,
+    ) -> Result<Option<&'p String>, CodecError> {
+        self.get_btree_map(properties, key, operation)
+    }
+
+    fn any_property_key(
+        &self,
+        properties: &BTreeMap<NonBlankString, String>,
+        mut predicate: impl FnMut(&str) -> bool,
+        operation: &'static str,
+    ) -> Result<bool, CodecError> {
+        for key in properties.keys() {
+            self.charge_work(1, operation)?;
+            if predicate(key.as_str()) {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+}
+
 /// Run a completeness predicate under a service decode budget.
 #[cfg(test)]
 pub(crate) fn decode_check<T>(
@@ -42,20 +185,20 @@ pub(crate) fn decode_check<T>(
         .expect("the completeness check stays within the service budget")
 }
 
-fn has_property(
-    ctx: &DecodeContext<'_>,
+fn has_property<A: CompletenessAdmission>(
+    admission: &A,
     feature: &Feature,
     key: &str,
-) -> Result<bool, CodecError> {
-    Ok(ctx
-        .get_btree_map(&feature.source_properties, key, PROPERTIES)?
+) -> Result<bool, A::Error> {
+    Ok(admission
+        .property(&feature.source_properties, key, PROPERTIES)?
         .is_some())
 }
 
-pub(crate) fn output_free_native_snapshot(
-    ctx: &DecodeContext<'_>,
+pub(crate) fn output_free_native_snapshot<A: CompletenessAdmission>(
+    admission: &A,
     feature: &Feature,
-) -> Result<bool, CodecError> {
+) -> Result<bool, A::Error> {
     if !(feature.evaluation.outputs().is_empty()
         && feature.name.as_deref() == Some("MASTER SNAPSHOT BODY")
         && matches!(
@@ -67,8 +210,8 @@ pub(crate) fn output_free_native_snapshot(
     {
         return Ok(false);
     }
-    match ctx.get_btree_map(&feature.source_properties, "operation_record", PROPERTIES)? {
-        Some(record) => Ok(!ctx.trim_text(record, PROPERTIES)?.is_empty()),
+    match admission.property(&feature.source_properties, "operation_record", PROPERTIES)? {
+        Some(record) => Ok(!admission.is_blank(record, PROPERTIES)?),
         None => Ok(false),
     }
 }
@@ -78,13 +221,13 @@ pub(crate) fn output_free_native_snapshot(
 /// Offset-store and unbound object-namespace bodies are retained as native
 /// feature-local identities. They do not create neutral current-body outputs;
 /// the saved segment image remains the only neutral body census.
-pub(crate) fn output_free_local_body_construction(
-    ctx: &DecodeContext<'_>,
+pub(crate) fn output_free_local_body_construction<A: CompletenessAdmission>(
+    admission: &A,
     feature: &Feature,
-) -> Result<bool, CodecError> {
+) -> Result<bool, A::Error> {
     Ok(feature.evaluation.outputs().is_empty()
-        && has_property(ctx, feature, "primary_body_reference")?
-        && !has_property(ctx, feature, "primary_body_segment_use")?)
+        && has_property(admission, feature, "primary_body_reference")?
+        && !has_property(admission, feature, "primary_body_segment_use")?)
 }
 
 /// Return whether a pattern record is construction-only and has no neutral
@@ -95,14 +238,14 @@ pub(crate) fn output_free_local_body_construction(
 /// reference occurrence, even when the occurrence is too ambiguous to become
 /// a primary writer. Keep that distinction explicit so an incomplete body
 /// binding cannot be mistaken for a construction-only record.
-pub(crate) fn output_free_pattern_construction(
-    ctx: &DecodeContext<'_>,
+pub(crate) fn output_free_pattern_construction<A: CompletenessAdmission>(
+    admission: &A,
     feature: &Feature,
-) -> Result<bool, CodecError> {
+) -> Result<bool, A::Error> {
     Ok(matches!(
         feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Pattern { .. })
-    ) && has_no_body_result_or_reference(ctx, feature)?)
+    ) && has_no_body_result_or_reference(admission, feature)?)
 }
 
 /// Return whether a `TRIMMED_SH` record is a construction-only operation.
@@ -110,14 +253,14 @@ pub(crate) fn output_free_pattern_construction(
 /// NX uses the typed trim-surface family for records that carry no body
 /// occurrence or primary-body field. Those records have no body result to
 /// bind; a body marker makes the output obligation explicit again.
-pub(super) fn output_free_trim_surface_construction(
-    ctx: &DecodeContext<'_>,
+pub(super) fn output_free_trim_surface_construction<A: CompletenessAdmission>(
+    admission: &A,
     feature: &Feature,
-) -> Result<bool, CodecError> {
+) -> Result<bool, A::Error> {
     Ok(matches!(
         feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::TrimSurface { .. })
-    ) && has_no_body_result_or_reference(ctx, feature)?)
+    ) && has_no_body_result_or_reference(admission, feature)?)
 }
 
 pub(crate) fn active_configuration_state_is_incomplete(
@@ -558,25 +701,25 @@ pub(crate) fn incomplete_expression_parameters(
     Ok(incomplete)
 }
 
-pub(crate) fn trim_surface_definition_is_incomplete(
-    ctx: &DecodeContext<'_>,
+pub(crate) fn trim_surface_definition_is_incomplete<A: CompletenessAdmission>(
+    admission: &A,
     feature: &Feature,
-) -> Result<bool, CodecError> {
+) -> Result<bool, A::Error> {
     let FeatureDefinition::Operation(FeatureOperation::TrimSurface {
         faces, tool, keep, ..
     }) = feature.evaluation.definition()
     else {
         return Ok(true);
     };
-    Ok(face_selection_is_incomplete(ctx, faces)?
-        || path_ref_is_incomplete(ctx, tool)?
+    Ok(face_selection_is_incomplete(admission, faces)?
+        || path_ref_is_incomplete(admission, tool)?
         || matches!(keep, TrimRegion::Unresolved))
 }
 
-pub(crate) fn extend_surface_definition_is_incomplete(
-    ctx: &DecodeContext<'_>,
+pub(crate) fn extend_surface_definition_is_incomplete<A: CompletenessAdmission>(
+    admission: &A,
     feature: &Feature,
-) -> Result<bool, CodecError> {
+) -> Result<bool, A::Error> {
     let FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
         faces,
         distance,
@@ -585,54 +728,67 @@ pub(crate) fn extend_surface_definition_is_incomplete(
     else {
         return Ok(true);
     };
-    Ok(face_selection_is_incomplete(ctx, faces)?
+    Ok(face_selection_is_incomplete(admission, faces)?
         || distance.is_none()
         || matches!(method, cadmpeg_ir::features::SurfaceExtension::Unresolved))
 }
 
-pub(crate) fn sew_bodies_definition_is_incomplete(feature: &Feature) -> bool {
+pub(crate) fn sew_bodies_definition_is_incomplete<A: CompletenessAdmission>(
+    admission: &A,
+    feature: &Feature,
+) -> Result<bool, A::Error> {
     let FeatureDefinition::Operation(FeatureOperation::SewBodies { bodies, .. }) =
         feature.evaluation.definition()
     else {
-        return true;
+        return Ok(true);
     };
-    body_selection_is_incomplete(bodies)
+    body_selection_is_incomplete(admission, bodies)
 }
 
-pub(crate) fn combine_definition_is_incomplete(feature: &Feature) -> bool {
+pub(crate) fn combine_definition_is_incomplete<A: CompletenessAdmission>(
+    admission: &A,
+    feature: &Feature,
+) -> Result<bool, A::Error> {
     let FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. }) =
         feature.evaluation.definition()
     else {
-        return true;
+        return Ok(true);
     };
-    body_selection_is_incomplete(operands.target())
-        || body_selection_is_incomplete(operands.tools())
+    Ok(body_selection_is_incomplete(admission, operands.target())?
+        || body_selection_is_incomplete(admission, operands.tools())?)
 }
 
-pub(crate) fn trim_bodies_definition_is_incomplete(feature: &Feature) -> bool {
+pub(crate) fn trim_bodies_definition_is_incomplete<A: CompletenessAdmission>(
+    admission: &A,
+    feature: &Feature,
+) -> Result<bool, A::Error> {
     let FeatureDefinition::Operation(FeatureOperation::TrimBodies { operands, keep }) =
         feature.evaluation.definition()
     else {
-        return true;
+        return Ok(true);
     };
-    body_selection_is_incomplete(operands.targets())
-        || body_selection_is_incomplete(operands.tools())
-        || matches!(keep, BodyTrimSide::Unresolved)
+    Ok(body_selection_is_incomplete(admission, operands.targets())?
+        || body_selection_is_incomplete(admission, operands.tools())?
+        || matches!(keep, BodyTrimSide::Unresolved))
 }
 
-pub(super) fn delete_body_definition_is_incomplete(feature: &Feature) -> bool {
+pub(super) fn delete_body_definition_is_incomplete<A: CompletenessAdmission>(
+    admission: &A,
+    feature: &Feature,
+) -> Result<bool, A::Error> {
     let FeatureDefinition::Operation(FeatureOperation::DeleteBody { bodies, mode }) =
         feature.evaluation.definition()
     else {
-        return true;
+        return Ok(true);
     };
-    body_selection_is_incomplete(bodies) || matches!(mode, BodyRetentionMode::Unresolved)
+    Ok(body_selection_is_incomplete(admission, bodies)?
+        || matches!(mode, BodyRetentionMode::Unresolved))
 }
 
-pub(crate) fn hole_definition_is_incomplete(
-    ctx: &DecodeContext<'_>,
+pub(crate) fn hole_definition_is_incomplete<A: CompletenessAdmission>(
+    admission: &A,
     feature: &Feature,
-) -> Result<bool, CodecError> {
+) -> Result<bool, A::Error> {
     let FeatureDefinition::Operation(FeatureOperation::Hole {
         profile,
         face,
@@ -651,7 +807,7 @@ pub(crate) fn hole_definition_is_incomplete(
     let construction_incomplete = match construction {
         cadmpeg_ir::features::holes::HoleConstruction::Form { kind, .. } => {
             hole_feature_is_incomplete(
-                ctx,
+                admission,
                 profile.as_ref(),
                 face.as_ref(),
                 placements.as_deref(),
@@ -669,7 +825,7 @@ pub(crate) fn hole_definition_is_incomplete(
                 drill_point_angle: *drill_point_angle,
             };
             hole_feature_is_incomplete(
-                ctx,
+                admission,
                 profile.as_ref(),
                 face.as_ref(),
                 placements.as_deref(),
@@ -682,32 +838,32 @@ pub(crate) fn hole_definition_is_incomplete(
     Ok(construction_incomplete
         || match extent {
             Some(extent) => {
-                termination_dependency_is_incomplete(ctx, extent, &feature.dependencies)?
+                termination_dependency_is_incomplete(admission, extent, &feature.dependencies)?
             }
             None => false,
         }
         || match profile {
             Some(profile) => {
-                planar_profile_dependency_is_incomplete(ctx, profile, &feature.dependencies)?
+                planar_profile_dependency_is_incomplete(admission, profile, &feature.dependencies)?
             }
             None => false,
         })
 }
 
-pub(crate) fn chamfer_definition_is_incomplete(
-    ctx: &DecodeContext<'_>,
+pub(crate) fn chamfer_definition_is_incomplete<A: CompletenessAdmission>(
+    admission: &A,
     feature: &Feature,
-) -> Result<bool, CodecError> {
+) -> Result<bool, A::Error> {
     let FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. }) =
         feature.evaluation.definition()
     else {
         return Ok(true);
     };
-    ctx.any_by(
+    admission.any_by(
         groups,
         |group| {
             Ok(
-                edge_selection_is_incomplete(ctx, &group.edges)?
+                edge_selection_is_incomplete(admission, &group.edges)?
                     || group.spec.is_unresolved(),
             )
         },
@@ -715,45 +871,45 @@ pub(crate) fn chamfer_definition_is_incomplete(
     )
 }
 
-pub(super) fn fillet_definition_is_incomplete(
-    ctx: &DecodeContext<'_>,
+pub(super) fn fillet_definition_is_incomplete<A: CompletenessAdmission>(
+    admission: &A,
     feature: &Feature,
-) -> Result<bool, CodecError> {
+) -> Result<bool, A::Error> {
     let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) =
         feature.evaluation.definition()
     else {
         return Ok(true);
     };
-    ctx.any_by(
+    admission.any_by(
         groups,
         |group| {
-            Ok(edge_selection_is_incomplete(ctx, &group.edges)?
+            Ok(edge_selection_is_incomplete(admission, &group.edges)?
                 || group.radius.is_unresolved())
         },
         "nx fillet groups",
     )
 }
 
-pub(super) fn face_blend_definition_is_incomplete(
-    ctx: &DecodeContext<'_>,
+pub(super) fn face_blend_definition_is_incomplete<A: CompletenessAdmission>(
+    admission: &A,
     feature: &Feature,
-) -> Result<bool, CodecError> {
+) -> Result<bool, A::Error> {
     let FeatureDefinition::Operation(FeatureOperation::FaceBlend { operands, radius }) =
         feature.evaluation.definition()
     else {
         return Ok(true);
     };
     Ok(
-        face_selection_is_incomplete(ctx, operands.first_faces())?
-            || face_selection_is_incomplete(ctx, operands.second_faces())?
+        face_selection_is_incomplete(admission, operands.first_faces())?
+            || face_selection_is_incomplete(admission, operands.second_faces())?
             || radius.is_unresolved(),
     )
 }
 
-pub(super) fn shell_definition_is_incomplete(
-    ctx: &DecodeContext<'_>,
+pub(super) fn shell_definition_is_incomplete<A: CompletenessAdmission>(
+    admission: &A,
     definition: &FeatureDefinition,
-) -> Result<bool, CodecError> {
+) -> Result<bool, A::Error> {
     let FeatureDefinition::Operation(FeatureOperation::Shell {
         bodies,
         removed_faces,
@@ -768,9 +924,9 @@ pub(super) fn shell_definition_is_incomplete(
         return Ok(true);
     };
     Ok(match bodies {
-        Some(bodies) => body_selection_is_incomplete(bodies),
+        Some(bodies) => body_selection_is_incomplete(admission, bodies)?,
         None => false,
-    } || face_selection_is_incomplete(ctx, removed_faces)?
+    } || face_selection_is_incomplete(admission, removed_faces)?
         || thickness.is_none()
         || outward.is_none()
         || mode.is_none()
@@ -779,16 +935,16 @@ pub(super) fn shell_definition_is_incomplete(
         || allow_self_intersections.is_none())
 }
 
-pub(super) fn offset_surface_definition_is_incomplete(
-    ctx: &DecodeContext<'_>,
+pub(super) fn offset_surface_definition_is_incomplete<A: CompletenessAdmission>(
+    admission: &A,
     feature: &Feature,
-) -> Result<bool, CodecError> {
+) -> Result<bool, A::Error> {
     let FeatureDefinition::Operation(FeatureOperation::OffsetSurface { faces, distance }) =
         feature.evaluation.definition()
     else {
         return Ok(true);
     };
-    Ok(face_selection_is_incomplete(ctx, faces)? || distance.is_none())
+    Ok(face_selection_is_incomplete(admission, faces)? || distance.is_none())
 }
 
 pub(crate) fn sphere_definition_is_incomplete(feature: &Feature) -> bool {
@@ -800,10 +956,10 @@ pub(crate) fn sphere_definition_is_incomplete(feature: &Feature) -> bool {
     matches!(op, BooleanOp::Unresolved)
 }
 
-pub(super) fn thicken_definition_is_incomplete(
-    ctx: &DecodeContext<'_>,
+pub(super) fn thicken_definition_is_incomplete<A: CompletenessAdmission>(
+    admission: &A,
     feature: &Feature,
-) -> Result<bool, CodecError> {
+) -> Result<bool, A::Error> {
     let FeatureDefinition::Operation(FeatureOperation::Thicken {
         faces,
         thickness,
@@ -812,13 +968,13 @@ pub(super) fn thicken_definition_is_incomplete(
     else {
         return Ok(true);
     };
-    Ok(face_selection_is_incomplete(ctx, faces)? || thickness.is_none() || side.is_none())
+    Ok(face_selection_is_incomplete(admission, faces)? || thickness.is_none() || side.is_none())
 }
 
-pub(super) fn draft_definition_is_incomplete(
-    ctx: &DecodeContext<'_>,
+pub(super) fn draft_definition_is_incomplete<A: CompletenessAdmission>(
+    admission: &A,
     feature: &Feature,
-) -> Result<bool, CodecError> {
+) -> Result<bool, A::Error> {
     let FeatureDefinition::Operation(FeatureOperation::Draft {
         faces,
         anchor,
@@ -828,13 +984,13 @@ pub(super) fn draft_definition_is_incomplete(
     else {
         return Ok(true);
     };
-    Ok(face_selection_is_incomplete(ctx, faces)?
+    Ok(face_selection_is_incomplete(admission, faces)?
         || match anchor {
             cadmpeg_ir::features::DraftAnchor::NeutralPlane { plane, .. } => {
-                face_selection_is_incomplete(ctx, plane)?
+                face_selection_is_incomplete(admission, plane)?
             }
             cadmpeg_ir::features::DraftAnchor::PartingLine { tool, .. } => {
-                face_selection_is_incomplete(ctx, tool)?
+                face_selection_is_incomplete(admission, tool)?
             }
         }
         || anchor.pull().is_none()
@@ -846,23 +1002,23 @@ pub(super) fn draft_definition_is_incomplete(
         || outward.is_none())
 }
 
-pub(super) fn replace_face_definition_is_incomplete(
-    ctx: &DecodeContext<'_>,
+pub(super) fn replace_face_definition_is_incomplete<A: CompletenessAdmission>(
+    admission: &A,
     feature: &Feature,
-) -> Result<bool, CodecError> {
+) -> Result<bool, A::Error> {
     let FeatureDefinition::Operation(FeatureOperation::ReplaceFace { operands }) =
         feature.evaluation.definition()
     else {
         return Ok(true);
     };
-    Ok(face_selection_is_incomplete(ctx, operands.targets())?
-        || face_selection_is_incomplete(ctx, operands.replacements())?)
+    Ok(face_selection_is_incomplete(admission, operands.targets())?
+        || face_selection_is_incomplete(admission, operands.replacements())?)
 }
 
-pub(crate) fn loft_definition_is_incomplete(
-    ctx: &DecodeContext<'_>,
+pub(crate) fn loft_definition_is_incomplete<A: CompletenessAdmission>(
+    admission: &A,
     feature: &Feature,
-) -> Result<bool, CodecError> {
+) -> Result<bool, A::Error> {
     let FeatureDefinition::Operation(FeatureOperation::Loft {
         sections,
         guidance,
@@ -873,13 +1029,13 @@ pub(crate) fn loft_definition_is_incomplete(
         return Ok(true);
     };
     Ok(sections.len() < 2
-        || ctx.any_by(
+        || admission.any_by(
             sections,
             |section| {
-                Ok(loft_section_is_incomplete(ctx, section)?
+                Ok(loft_section_is_incomplete(admission, section)?
                     || match section {
                         LoftSection::Profile(profile) => profile_dependency_is_incomplete(
-                            ctx,
+                            admission,
                             profile,
                             &feature.dependencies,
                         )?,
@@ -889,22 +1045,22 @@ pub(crate) fn loft_definition_is_incomplete(
             "nx loft sections",
         )?
         || match guidance {
-            cadmpeg_ir::features::LoftGuidance::Guides(guides) => ctx.any_by(
+            cadmpeg_ir::features::LoftGuidance::Guides(guides) => admission.any_by(
                 guides,
-                |guide| path_ref_is_incomplete(ctx, guide),
+                |guide| path_ref_is_incomplete(admission, guide),
                 "nx loft guides",
             )?,
             cadmpeg_ir::features::LoftGuidance::Centerline(centerline) => {
-                path_ref_is_incomplete(ctx, centerline)?
+                path_ref_is_incomplete(admission, centerline)?
             }
         }
         || matches!(op, BooleanOp::Unresolved))
 }
 
-pub(crate) fn extrude_definition_is_incomplete(
-    ctx: &DecodeContext<'_>,
+pub(crate) fn extrude_definition_is_incomplete<A: CompletenessAdmission>(
+    admission: &A,
     feature: &Feature,
-) -> Result<bool, CodecError> {
+) -> Result<bool, A::Error> {
     let FeatureDefinition::Operation(FeatureOperation::Extrude {
         profile,
         direction,
@@ -917,59 +1073,59 @@ pub(crate) fn extrude_definition_is_incomplete(
     else {
         return Ok(true);
     };
-    Ok(profile_ref_is_incomplete(ctx, profile)?
-        || profile_dependency_is_incomplete(ctx, profile, &feature.dependencies)?
+    Ok(profile_ref_is_incomplete(admission, profile)?
+        || profile_dependency_is_incomplete(admission, profile, &feature.dependencies)?
         || matches!(
             direction,
             cadmpeg_ir::features::ExtrudeDirection::Unresolved {}
         )
-        || extrude_start_is_incomplete(ctx, start)?
-        || extrude_extent_is_incomplete(ctx, extent, &feature.dependencies)?
+        || extrude_start_is_incomplete(admission, start)?
+        || extrude_extent_is_incomplete(admission, extent, &feature.dependencies)?
         || matches!(op, BooleanOp::Unresolved)
         || solid.is_none()
         || match direction {
             cadmpeg_ir::features::ExtrudeDirection::Explicit {
                 source: Some(cadmpeg_ir::features::ExtrusionDirectionSource::Edge { reference }),
                 ..
-            } => path_ref_is_incomplete(ctx, reference)?,
+            } => path_ref_is_incomplete(admission, reference)?,
             _ => false,
         })
 }
 
-pub(crate) fn revolve_definition_is_incomplete(
-    ctx: &DecodeContext<'_>,
+pub(crate) fn revolve_definition_is_incomplete<A: CompletenessAdmission>(
+    admission: &A,
     feature: &Feature,
-) -> Result<bool, CodecError> {
+) -> Result<bool, A::Error> {
     let FeatureDefinition::Operation(FeatureOperation::Revolve { construction, op }) =
         feature.evaluation.definition()
     else {
         return Ok(true);
     };
-    revolve_feature_is_incomplete(ctx, construction, *op, &feature.dependencies)
+    revolve_feature_is_incomplete(admission, construction, *op, &feature.dependencies)
 }
 
-pub(crate) fn rib_definition_is_incomplete(
-    ctx: &DecodeContext<'_>,
+pub(crate) fn rib_definition_is_incomplete<A: CompletenessAdmission>(
+    admission: &A,
     feature: &Feature,
-) -> Result<bool, CodecError> {
+) -> Result<bool, A::Error> {
     let FeatureDefinition::Operation(FeatureOperation::Rib { construction, op }) =
         feature.evaluation.definition()
     else {
         return Ok(true);
     };
-    Ok(rib_feature_is_incomplete(ctx, construction, *op)?
+    Ok(rib_feature_is_incomplete(admission, construction, *op)?
         || match &construction.profile {
             Some(profile) => {
-                planar_profile_dependency_is_incomplete(ctx, profile, &feature.dependencies)?
+                planar_profile_dependency_is_incomplete(admission, profile, &feature.dependencies)?
             }
             None => false,
         })
 }
 
-pub(crate) fn sweep_definition_is_incomplete(
-    ctx: &DecodeContext<'_>,
+pub(crate) fn sweep_definition_is_incomplete<A: CompletenessAdmission>(
+    admission: &A,
     feature: &Feature,
-) -> Result<bool, CodecError> {
+) -> Result<bool, A::Error> {
     let FeatureDefinition::Operation(FeatureOperation::Sweep {
         shape,
 
@@ -986,20 +1142,20 @@ pub(crate) fn sweep_definition_is_incomplete(
     let sections_incomplete = match shape {
         SweepShape::Unresolved { section, sections }
         | SweepShape::Surface { section, sections } => {
-            sweep_sections_are_incomplete(ctx, section, sections, &feature.dependencies)?
+            sweep_sections_are_incomplete(admission, section, sections, &feature.dependencies)?
         }
         SweepShape::Solid {
             section, sections, ..
-        } => sweep_sections_are_incomplete(ctx, section, sections, &feature.dependencies)?,
+        } => sweep_sections_are_incomplete(admission, section, sections, &feature.dependencies)?,
     };
     Ok(sections_incomplete
         || match path {
-            Some(path) => path_ref_is_incomplete(ctx, path)?,
+            Some(path) => path_ref_is_incomplete(admission, path)?,
             None => true,
         }
         || sweep_mode_is_incomplete(shape.mode())
         || match orientation {
-            Some(orientation) => sweep_orientation_is_incomplete(ctx, orientation)?,
+            Some(orientation) => sweep_orientation_is_incomplete(admission, orientation)?,
             None => true,
         }
         || transition.is_none()
@@ -1008,53 +1164,46 @@ pub(crate) fn sweep_definition_is_incomplete(
 
 /// Whether a sweep cross-section is unresolved or references an incomplete
 /// profile or a profile feature outside the sweep's dependencies.
-fn sweep_sections_are_incomplete<G>(
-    ctx: &DecodeContext<'_>,
+fn sweep_sections_are_incomplete<A: CompletenessAdmission, G>(
+    admission: &A,
     section: &SweepSection<G>,
     sections: &[SweepSection<G>],
     dependencies: &[cadmpeg_ir::features::FeatureId],
-) -> Result<bool, CodecError> {
+) -> Result<bool, A::Error> {
     let section_is_incomplete = |section: &SweepSection<G>| {
         if section.is_unresolved() {
             return Ok(true);
         }
         match section.referenced_profile() {
-            Some(profile) => Ok(planar_profile_ref_is_incomplete(ctx, profile)?
-                || planar_profile_dependency_is_incomplete(ctx, profile, dependencies)?),
+            Some(profile) => Ok(planar_profile_ref_is_incomplete(admission, profile)?
+                || planar_profile_dependency_is_incomplete(admission, profile, dependencies)?),
             None => Ok(false),
         }
     };
     Ok(section_is_incomplete(section)?
-        || ctx.any_by(sections, section_is_incomplete, "nx sweep sections")?)
+        || admission.any_by(sections, section_is_incomplete, "nx sweep sections")?)
 }
 
 fn positive_feature_length(length: Length) -> bool {
     length.get() > 0.0
 }
 
-fn has_no_body_result_or_reference(
-    ctx: &DecodeContext<'_>,
+fn has_no_body_result_or_reference<A: CompletenessAdmission>(
+    admission: &A,
     feature: &Feature,
-) -> Result<bool, CodecError> {
-    if !feature.evaluation.outputs().is_empty() {
-        return Ok(false);
-    }
-    let mut keys = feature.source_properties.keys();
-    while keys.len() > 0 {
-        let Some(key) = ctx.next_charged(&mut keys, PROPERTIES)? else {
-            break;
-        };
-        let key = key.as_str();
-        if key == "primary_body_reference"
-            || key == "primary_body_object_index"
-            || key == "primary_body_data_block"
-            || key.starts_with("body_reference.")
-            || key.starts_with("body_reference_occurrence.")
-        {
-            return Ok(false);
-        }
-    }
-    Ok(true)
+) -> Result<bool, A::Error> {
+    Ok(feature.evaluation.outputs().is_empty()
+        && !admission.any_property_key(
+            &feature.source_properties,
+            |key| {
+                key == "primary_body_reference"
+                    || key == "primary_body_object_index"
+                    || key == "primary_body_data_block"
+                    || key.starts_with("body_reference.")
+                    || key.starts_with("body_reference_occurrence.")
+            },
+            PROPERTIES,
+        )?)
 }
 
 #[cfg(test)]

@@ -606,7 +606,9 @@ pub(crate) fn entity_51_record_at(
     };
     let mut payloads = ctx.reserve_scoped(0, "NX entity-51 reference lanes")?;
     let record = entity_51_record_from_frame(ctx, bytes, frame, &mut payloads)?;
-    record.map(|record| payloads.commit_value(record)).transpose()
+    record
+        .map(|record| payloads.commit_value(record))
+        .transpose()
 }
 
 #[derive(Clone, Copy)]

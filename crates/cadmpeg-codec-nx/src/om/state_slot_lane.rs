@@ -120,17 +120,6 @@ impl StateSlotLane<u64> {
         Ok(Self { offset, end, slots })
     }
 
-    pub(crate) fn from_wire(
-        ctx: &DecodeContext<'_>,
-        offset: u64,
-        slots: StateSlots<Option<StateIndexToken>>,
-    ) -> Result<Result<Self, &'static str>, CodecError> {
-        Ok(Self::extent(offset, slots.as_slice(), |slots| {
-            ctx.next_charged(slots, "NX native state slot width traversal")
-        })?
-        .map(|end| Self { offset, end, slots }))
-    }
-
     fn extent<'a, E>(
         offset: u64,
         slots: &'a [Option<StateIndexToken>],
@@ -236,7 +225,10 @@ mod tests {
         );
         assert_eq!(refusal.dimension, ResourceDimension::MaterializedBytes);
         assert_eq!(refusal.operation, "nx state slots");
-        assert_eq!(refusal.additional, cadmpeg_core::decode::u64_from_index(token_storage));
+        assert_eq!(
+            refusal.additional,
+            cadmpeg_core::decode::u64_from_index(token_storage)
+        );
 
         crate::test_support::with_decode_context_over(
             &bytes,
@@ -245,8 +237,9 @@ mod tests {
                     cadmpeg_core::decode::u64_from_index(token_storage)
             },
             |ctx| {
-                let (lane, storage) =
-                    StateSlotLane::read(ctx, &bytes, 0, bytes.len(), 0).unwrap().unwrap();
+                let (lane, storage) = StateSlotLane::read(ctx, &bytes, 0, bytes.len(), 0)
+                    .unwrap()
+                    .unwrap();
                 drop(lane);
                 drop(storage);
                 assert!(ctx
@@ -265,10 +258,11 @@ mod tests {
                     cadmpeg_core::decode::u64_from_index(token_storage)
             },
             |ctx| {
-                let (lane, storage) =
-                    StateSlotLane::read(ctx, &bytes, 0, bytes.len(), 0).unwrap().unwrap();
+                let (lane, storage) = StateSlotLane::read(ctx, &bytes, 0, bytes.len(), 0)
+                    .unwrap()
+                    .unwrap();
                 assert_eq!(
-                    StateSlotLane::from_wire(ctx, u64::MAX - 5, lane.into_slots()).unwrap(),
+                    StateSlotLane::new(u64::MAX - 5, lane.into_slots()),
                     Err("source_offset: slot-lane extent overflows")
                 );
                 drop(storage);

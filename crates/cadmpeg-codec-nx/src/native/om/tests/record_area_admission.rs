@@ -53,9 +53,7 @@ fn record_area_matching_section_preserves_work_refusal() {
     let container = crate::test_support::with_decode_context(|ctx| {
         let container = container::scan_bytes(ctx, file)?;
         // Build the section cache once so every walk step charges the same route.
-        container
-            .om_sections(ctx)
-            .map(|(sections, _storage)| sections)?;
+        container.om_sections(ctx)?;
         Ok::<_, CodecError>(container)
     })
     .expect("record area container");

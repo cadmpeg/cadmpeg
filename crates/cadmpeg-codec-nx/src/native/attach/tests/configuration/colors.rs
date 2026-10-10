@@ -454,15 +454,23 @@ fn rm_source_color_bindings_require_one_palette_per_source_identity() {
                             Err(cadmpeg_core::CodecError::ResourceLimit(later)) if later == first));
                     } else {
                         result.unwrap();
-                        assert_eq!(matches!(choice, crate::native::attach::RmColorChoice::Conflicting), conflicting);
+                        assert_eq!(
+                            matches!(choice, crate::native::attach::RmColorChoice::Conflicting),
+                            conflicting
+                        );
                         if !conflicting {
-                            assert!(matches!(choice, crate::native::attach::RmColorChoice::Unique {
-                                definition: "color-a", source_offset: 5,
-                            }));
+                            assert!(matches!(
+                                choice,
+                                crate::native::attach::RmColorChoice::Unique {
+                                    definition: "color-a",
+                                    source_offset: 5,
+                                }
+                            ));
                         }
                         assert_eq!(ctx.resource_refusal(), None);
                         let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) =
-                            ctx.charge_work(1, "palette compared prefix boundary") else {
+                            ctx.charge_work(1, "palette compared prefix boundary")
+                        else {
                             panic!("the compared prefix exhausted the work cap");
                         };
                         assert_eq!(limit.used, compared);

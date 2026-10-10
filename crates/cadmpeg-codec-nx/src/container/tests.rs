@@ -915,12 +915,10 @@ fn external_reference_paths_refuse_before_visiting_the_unselected_suffix() {
                 .map(|(paths, _storage)| paths)
         },
     );
-    assert!(
-        matches!(error, CodecError::ResourceLimit(limit)
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits
                 && limit.operation == "project NX external reference paths"
-                && limit.additional == 1)
-    );
+                && limit.additional == 1));
 }
 
 #[test]
@@ -1104,9 +1102,7 @@ fn external_reference_record_parser_charges_only_visited_index_records() {
         .used
         .checked_add(cadmpeg_core::decode::u64_from_index(RECORD_COUNT))
         .and_then(|work| work.checked_add(external_reference_handle_parse_work(RECORD_COUNT, 1)))
-        .and_then(|work| {
-            work.checked_add(nine_push_growth_copy_work::<container::ExtrefRecord>())
-        })
+        .and_then(|work| work.checked_add(nine_push_growth_copy_work::<container::ExtrefRecord>()))
         .expect("parser visit and vector growth work fits u64");
 
     crate::test_support::with_decode_context_over(
@@ -1170,9 +1166,7 @@ fn external_reference_handle_ordering_charges_each_comparison() {
         panic!("handle ordering must charge its first adjacent comparison");
     };
     assert_eq!(limit.additional, 1);
-    let comparison_work = cadmpeg_core::decode::u64_from_index(
-        1 + 2 * std::mem::size_of::<u32>(),
-    );
+    let comparison_work = cadmpeg_core::decode::u64_from_index(1 + 2 * std::mem::size_of::<u32>());
     let exact_work = limit
         .used
         .checked_add(comparison_work)
@@ -1181,8 +1175,9 @@ fn external_reference_handle_ordering_charges_each_comparison() {
         &[],
         |policy| policy.limits.max_work_units = exact_work,
         |ctx| {
-            let (records, storage, handles_storage) = container::parse_extref_records(ctx, &payload)
-                .expect("the two-token order check fits exactly");
+            let (records, storage, handles_storage) =
+                container::parse_extref_records(ctx, &payload)
+                    .expect("the two-token order check fits exactly");
             assert_eq!(records.len(), 1);
             assert_eq!(records[0].handles.serialized(), [0x10, 0x20]);
             assert_eq!(ctx.resource_refusal(), None);
@@ -1275,17 +1270,15 @@ fn external_reference_record_container_projection_charges_each_tuple() {
     const RECORD_COUNT: usize = 9;
     let payload = crate::test_support::test_streams::external_reference_handle_sets(RECORD_COUNT);
     let file = prt_with_named_payloads(&[("/Root/ExternalReferences", payload)]);
-    let container = crate::test_support::with_decode_context(|ctx| {
-        container::scan_bytes(ctx, file.as_slice())
-    })
-    .expect("external reference container");
+    let container =
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file.as_slice()))
+            .expect("external reference container");
     let error = crate::test_support::resource_refusal_at(
         &[],
         ResourceDimension::WorkUnits,
         "project NX external reference record entries",
         |ctx| {
-            let (records, storage, handles_storage) =
-                container.external_reference_records(ctx)?;
+            let (records, storage, handles_storage) = container.external_reference_records(ctx)?;
             drop(records);
             drop(storage);
             drop(handles_storage);
@@ -1300,9 +1293,10 @@ fn external_reference_record_container_projection_charges_each_tuple() {
         .used
         .checked_add(cadmpeg_core::decode::u64_from_index(RECORD_COUNT))
         .and_then(|work| {
-            work.checked_add(
-                nine_push_growth_copy_work::<(&DirEntry, container::ExtrefRecord)>(),
-            )
+            work.checked_add(nine_push_growth_copy_work::<(
+                &DirEntry,
+                container::ExtrefRecord,
+            )>())
         })
         .expect("record tuple and vector growth work fits u64");
 
@@ -1327,10 +1321,9 @@ fn external_reference_index_container_projection_charges_each_tuple() {
     const RECORD_COUNT: usize = 9;
     let payload = indexed_extref_payload(RECORD_COUNT);
     let file = prt_with_named_payloads(&[("/Root/ExternalReferences", payload)]);
-    let container = crate::test_support::with_decode_context(|ctx| {
-        container::scan_bytes(ctx, file.as_slice())
-    })
-    .expect("external reference container");
+    let container =
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file.as_slice()))
+            .expect("external reference container");
     let error = crate::test_support::resource_refusal_at(
         &[],
         ResourceDimension::WorkUnits,
@@ -1350,9 +1343,10 @@ fn external_reference_index_container_projection_charges_each_tuple() {
         .used
         .checked_add(cadmpeg_core::decode::u64_from_index(RECORD_COUNT))
         .and_then(|work| {
-            work.checked_add(
-                nine_push_growth_copy_work::<(&DirEntry, container::ExtrefIndexedRecord)>(),
-            )
+            work.checked_add(nine_push_growth_copy_work::<(
+                &DirEntry,
+                container::ExtrefIndexedRecord,
+            )>())
         })
         .expect("indexed tuple and vector growth work fits u64");
 
@@ -1375,20 +1369,18 @@ fn external_reference_index_container_projection_charges_each_tuple() {
 fn external_reference_record_projection_keeps_scratch_and_retained_handles_separate() {
     let payload = crate::test_support::test_streams::external_reference_stream();
     let file = prt_with_named_payloads(&[("/Root/ExternalReferences", payload)]);
-    let container = crate::test_support::with_decode_context(|ctx| {
-        container::scan_bytes(ctx, file.as_slice())
-    })
-    .expect("external reference container");
+    let container =
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file.as_slice()))
+            .expect("external reference container");
 
     let index_node = one_btree_node_storage_bytes::<u32, ()>();
     let index_peak = index_node
         + 4 * std::mem::size_of::<(u32, usize)>()
         + 2 * std::mem::size_of::<container::ExtrefIndexedRecord>();
     let handle_storage = 2 * std::mem::size_of::<u32>();
-    let parsed_records_peak =
-        2 * std::mem::size_of::<container::ExtrefIndexedRecord>()
-            + 4 * std::mem::size_of::<container::ExtrefRecord>()
-            + handle_storage;
+    let parsed_records_peak = 2 * std::mem::size_of::<container::ExtrefIndexedRecord>()
+        + 4 * std::mem::size_of::<container::ExtrefRecord>()
+        + handle_storage;
     let output_slots = 4 * std::mem::size_of::<(&DirEntry, container::ExtrefRecord)>();
     let projection_peak =
         4 * std::mem::size_of::<container::ExtrefRecord>() + handle_storage + output_slots;
@@ -1397,8 +1389,7 @@ fn external_reference_record_projection_keeps_scratch_and_retained_handles_separ
     crate::test_support::with_decode_context_over(
         &[],
         |policy| {
-            policy.limits.max_materialized_bytes =
-                cadmpeg_core::decode::u64_from_index(peak);
+            policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(peak);
         },
         |ctx| {
             let (records, storage, handles_storage) = container
@@ -1408,20 +1399,18 @@ fn external_reference_record_projection_keeps_scratch_and_retained_handles_separ
             assert_eq!(records[0].1.handles.serialized().len(), 2);
             let refusal = ctx
                 .reserve_scoped(
-                    cadmpeg_core::decode::u64_from_index(
-                        peak - output_slots - handle_storage + 1,
-                    ),
+                    cadmpeg_core::decode::u64_from_index(peak - output_slots - handle_storage + 1),
                     "probe external reference result lifetime",
                 )
                 .expect_err("returned outer slots remain scoped until the vector is dropped");
             assert!(matches!(refusal, CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::MaterializedBytes
-                    && limit.used == cadmpeg_core::decode::u64_from_index(
-                        output_slots + handle_storage
-                    )
-                    && limit.additional == cadmpeg_core::decode::u64_from_index(
-                        peak - output_slots - handle_storage + 1
-                    )));
+            if limit.dimension == ResourceDimension::MaterializedBytes
+                && limit.used == cadmpeg_core::decode::u64_from_index(
+                    output_slots + handle_storage
+                )
+                && limit.additional == cadmpeg_core::decode::u64_from_index(
+                    peak - output_slots - handle_storage + 1
+                )));
             drop(records);
             drop(storage);
             drop(handles_storage);
@@ -1433,19 +1422,17 @@ fn external_reference_record_projection_keeps_scratch_and_retained_handles_separ
 fn external_reference_record_projection_refuses_exact_outer_scratch_growth() {
     let payload = crate::test_support::test_streams::external_reference_stream();
     let file = prt_with_named_payloads(&[("/Root/ExternalReferences", payload)]);
-    let container = crate::test_support::with_decode_context(|ctx| {
-        container::scan_bytes(ctx, file.as_slice())
-    })
-    .expect("external reference container");
+    let container =
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file.as_slice()))
+            .expect("external reference container");
     let index_node = one_btree_node_storage_bytes::<u32, ()>();
     let index_peak = index_node
         + 4 * std::mem::size_of::<(u32, usize)>()
         + 2 * std::mem::size_of::<container::ExtrefIndexedRecord>();
     let handle_storage = 2 * std::mem::size_of::<u32>();
-    let parsed_records_peak =
-        2 * std::mem::size_of::<container::ExtrefIndexedRecord>()
-            + 4 * std::mem::size_of::<container::ExtrefRecord>()
-            + handle_storage;
+    let parsed_records_peak = 2 * std::mem::size_of::<container::ExtrefIndexedRecord>()
+        + 4 * std::mem::size_of::<container::ExtrefRecord>()
+        + handle_storage;
     let output_slots = 4 * std::mem::size_of::<(&DirEntry, container::ExtrefRecord)>();
     let projection_peak =
         4 * std::mem::size_of::<container::ExtrefRecord>() + handle_storage + output_slots;
@@ -1454,8 +1441,7 @@ fn external_reference_record_projection_refuses_exact_outer_scratch_growth() {
     crate::test_support::with_decode_context_over(
         &[],
         |policy| {
-            policy.limits.max_materialized_bytes =
-                cadmpeg_core::decode::u64_from_index(peak - 1);
+            policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(peak - 1);
         },
         |ctx| {
             let error = container
@@ -1477,10 +1463,9 @@ fn external_reference_record_projection_refuses_exact_outer_scratch_growth() {
 fn external_reference_indexed_projection_keeps_outer_growth_receipt_live() {
     let payload = indexed_extref_payload(9);
     let file = prt_with_named_payloads(&[("/Root/ExternalReferences", payload)]);
-    let container = crate::test_support::with_decode_context(|ctx| {
-        container::scan_bytes(ctx, file.as_slice())
-    })
-    .expect("external reference container");
+    let container =
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file.as_slice()))
+            .expect("external reference container");
     let index_item = std::mem::size_of::<container::ExtrefIndexedRecord>();
     let output_item = std::mem::size_of::<(&DirEntry, container::ExtrefIndexedRecord)>();
     let final_capacity = 16;
@@ -1520,10 +1505,9 @@ fn external_reference_indexed_projection_keeps_outer_growth_receipt_live() {
 fn external_reference_indexed_projection_refuses_peak_reallocation_overlap() {
     let payload = indexed_extref_payload(9);
     let file = prt_with_named_payloads(&[("/Root/ExternalReferences", payload)]);
-    let container = crate::test_support::with_decode_context(|ctx| {
-        container::scan_bytes(ctx, file.as_slice())
-    })
-    .expect("external reference container");
+    let container =
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file.as_slice()))
+            .expect("external reference container");
     let index_item = std::mem::size_of::<container::ExtrefIndexedRecord>();
     let output_item = std::mem::size_of::<(&DirEntry, container::ExtrefIndexedRecord)>();
     let previous_capacity = 8;
@@ -1532,23 +1516,22 @@ fn external_reference_indexed_projection_refuses_peak_reallocation_overlap() {
     crate::test_support::with_decode_context_over(
         &[],
         |policy| {
-            policy.limits.max_materialized_bytes =
-                cadmpeg_core::decode::u64_from_index(peak - 1);
+            policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(peak - 1);
         },
         |ctx| {
             let error = container
                 .external_reference_indexed_records(ctx)
                 .expect_err("the final growth must admit old and new storage overlap");
             assert!(matches!(error, CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::MaterializedBytes
-                    && limit.operation == "nx external reference indexed entries"
-                    && limit.limit == cadmpeg_core::decode::u64_from_index(peak - 1)
-                    && limit.used == cadmpeg_core::decode::u64_from_index(
-                        2 * previous_capacity * output_item + 9 * index_item
-                    )
-                    && limit.additional == cadmpeg_core::decode::u64_from_index(
-                        previous_capacity * output_item
-                    )));
+            if limit.dimension == ResourceDimension::MaterializedBytes
+                && limit.operation == "nx external reference indexed entries"
+                && limit.limit == cadmpeg_core::decode::u64_from_index(peak - 1)
+                && limit.used == cadmpeg_core::decode::u64_from_index(
+                    2 * previous_capacity * output_item + 9 * index_item
+                )
+                && limit.additional == cadmpeg_core::decode::u64_from_index(
+                    previous_capacity * output_item
+                )));
         },
     );
 }
@@ -1557,10 +1540,9 @@ fn external_reference_indexed_projection_refuses_peak_reallocation_overlap() {
 fn external_reference_record_handles_remain_scoped_until_native_projection() {
     let payload = crate::test_support::test_streams::external_reference_stream();
     let file = prt_with_named_payloads(&[("/Root/ExternalReferences", payload)]);
-    let container = crate::test_support::with_decode_context(|ctx| {
-        container::scan_bytes(ctx, file.as_slice())
-    })
-    .expect("external reference container");
+    let container =
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file.as_slice()))
+            .expect("external reference container");
 
     crate::test_support::with_decode_context_over(
         &[],

@@ -4,6 +4,7 @@
 use std::collections::HashMap;
 
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
+use cadmpeg_core::CodecError;
 
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
 use serde::{Deserialize, Serialize};
@@ -102,20 +103,14 @@ impl DisplayJtGraph {
             "duplicate identity in compressed_element_sequences",
         )?;
         let mut toc_entries = HashMap::new();
-        let mut document_records = wire.documents.iter();
-        while document_records.len() != 0 {
-            let Some(document) =
-                ctx.next_charged(&mut document_records, "index DisplayJT TOC entries")?
-            else {
-                break;
-            };
-            let mut entries = document.toc_entries.iter();
-            while entries.len() != 0 {
-                let Some(entry) =
-                    ctx.next_charged(&mut entries, "index DisplayJT TOC entries")?
-                else {
-                    break;
-                };
+        for document in ctx
+            .admit_iter(&wire.documents, "index DisplayJT TOC entries")
+            .map_err(CodecError::from)?
+        {
+            for entry in ctx
+                .admit_iter(&document.toc_entries, "index DisplayJT TOC entries")
+                .map_err(CodecError::from)?
+            {
                 if storage
                     .with_storage(|| {
                         ctx.insert_hash_map(
@@ -135,13 +130,10 @@ impl DisplayJtGraph {
                 }
             }
         }
-        let mut segment_records = wire.segments.iter();
-        while segment_records.len() != 0 {
-            let Some(segment) =
-                ctx.next_charged(&mut segment_records, "admit DisplayJT segments")?
-            else {
-                break;
-            };
+        for segment in ctx
+            .admit_iter(&wire.segments, "admit DisplayJT segments")
+            .map_err(CodecError::from)?
+        {
             let document = ctx
                 .get_hash_map(
                     &documents,
@@ -191,13 +183,10 @@ impl DisplayJtGraph {
                 ));
             }
         }
-        let mut shape_elements = wire.shape_lod_elements.iter();
-        while shape_elements.len() != 0 {
-            let Some(element) =
-                ctx.next_charged(&mut shape_elements, "admit DisplayJT shape elements")?
-            else {
-                break;
-            };
+        for element in ctx
+            .admit_iter(&wire.shape_lod_elements, "admit DisplayJT shape elements")
+            .map_err(CodecError::from)?
+        {
             let segment = ctx
                 .get_hash_map(
                     &segments,
@@ -213,16 +202,13 @@ impl DisplayJtGraph {
                 ));
             }
         }
-        let mut compressed_elements = wire.compressed_elements.iter();
-        while compressed_elements.len() != 0 {
-            let Some(element) = ctx
-                .next_charged(
-                    &mut compressed_elements,
-                    "admit DisplayJT compressed elements",
-                )?
-            else {
-                break;
-            };
+        for element in ctx
+            .admit_iter(
+                &wire.compressed_elements,
+                "admit DisplayJT compressed elements",
+            )
+            .map_err(CodecError::from)?
+        {
             admit_compressed_owner(
                 ctx,
                 &segments,
@@ -232,16 +218,13 @@ impl DisplayJtGraph {
                 element.source_offset,
             )?;
         }
-        let mut sequences = wire.compressed_element_sequences.iter();
-        while sequences.len() != 0 {
-            let Some(sequence) = ctx
-                .next_charged(
-                    &mut sequences,
-                    "admit DisplayJT compressed element sequences",
-                )?
-            else {
-                break;
-            };
+        for sequence in ctx
+            .admit_iter(
+                &wire.compressed_element_sequences,
+                "admit DisplayJT compressed element sequences",
+            )
+            .map_err(CodecError::from)?
+        {
             admit_compressed_owner(
                 ctx,
                 &segments,
@@ -251,13 +234,11 @@ impl DisplayJtGraph {
                 sequence.source_offset,
             )?;
             let mut next_offset = 0u64;
-            let mut ids = sequence.elements().iter().enumerate();
-            while ids.len() != 0 {
-                let Some((ordinal, id)) =
-                    ctx.next_charged(&mut ids, "admit DisplayJT sequence elements")?
-                else {
-                    break;
-                };
+            for (ordinal, id) in ctx
+                .admit_iter(sequence.elements(), "admit DisplayJT sequence elements")
+                .map_err(CodecError::from)?
+                .enumerate()
+            {
                 let element = ctx
                     .get_hash_map(&elements, id.as_str(), "match DisplayJT sequence elements")?
                     .ok_or_else(|| {
@@ -365,11 +346,10 @@ fn sequences_for_decode(
     let mut wires =
         namespace.arena_iter_as_for_decode::<DisplayJtCompressedElementSequenceWire>(ctx, ARENA);
     let mut sequences = ctx.vector_storage(records.len(), OPERATION)?;
-    let mut record_iter = records.iter();
-    while record_iter.len() != 0 {
-        let Some(record) = ctx.next_charged(&mut record_iter, OPERATION)? else {
-            break;
-        };
+    for record in ctx
+        .admit_iter(records, OPERATION)
+        .map_err(CodecError::from)?
+    {
         let Some(wire) = wires.next() else {
             break;
         };
@@ -433,12 +413,10 @@ fn by_id<'a, T>(
     duplicate: &'static str,
 ) -> Result<HashMap<&'a str, &'a T>, NativeConvertError> {
     let mut index = HashMap::new();
-    let mut record_iter = records.iter();
-    while record_iter.len() != 0 {
-        let Some(record) = ctx.next_charged(&mut record_iter, "index DisplayJT graph records")?
-        else {
-            break;
-        };
+    for record in ctx
+        .admit_iter(records, "index DisplayJT graph records")
+        .map_err(CodecError::from)?
+    {
         let id = id(record);
         if storage
             .with_storage(|| {
@@ -453,16 +431,36 @@ fn by_id<'a, T>(
 }
 
 fn invalid(ctx: &DecodeContext<'_>, id: &str, field: &str) -> NativeConvertError {
+    use std::fmt::Write as _;
+
     let code = crate::loss::NxLossCode::DisplayJtGraphRejected.code();
     let prefix = ": display_jt ";
     let separator = ": ";
-    match ctx.format_retained(
-        format_args!("{code}{prefix}{id}{separator}{field}"),
-        "retain DisplayJT graph rejection",
-    ) {
-        Ok(message) => NativeConvertError::InvalidCollection(message),
-        Err(error) => NativeConvertError::Resource(error),
+    let Some(length) = code
+        .len()
+        .checked_add(prefix.len())
+        .and_then(|len| len.checked_add(id.len()))
+        .and_then(|len| len.checked_add(separator.len()))
+        .and_then(|len| len.checked_add(field.len()))
+    else {
+        return NativeConvertError::Resource(ctx.refuse_codec_limit(
+            "retain DisplayJT graph rejection",
+            0,
+            1,
+        ));
+    };
+    let mut message = match ctx.retained_string(length, "retain DisplayJT graph rejection") {
+        Ok(message) => message,
+        Err(error) => return NativeConvertError::Resource(error),
+    };
+    if write!(&mut message, "{code}{prefix}{id}{separator}{field}").is_err() {
+        return NativeConvertError::Resource(ctx.refuse_codec_limit(
+            "format DisplayJT graph rejection",
+            0,
+            1,
+        ));
     }
+    NativeConvertError::InvalidCollection(message)
 }
 
 #[cfg(test)]

@@ -3,7 +3,7 @@
 
 use crate::decode::blend::{surface_contact_direction, surface_offset_lineage};
 use crate::decode::build::{
-    rmfastload_selected_bodies, rmfastload_stream_indices, select_active_body, BodyNodeIds,
+    rmfastload_selected_bodies, rmfastload_stream_indices, select_active_body,
 };
 use crate::decode::emit::orient_edge_range;
 use crate::decode::offset::{
@@ -72,11 +72,12 @@ fn active_body_selection_accepts_a_complete_singleton_membership() {
         )),
         BTreeMap::new(),
     ));
+    let body_node_ids = BTreeMap::from([
+        (first.clone(), BTreeSet::from([7])),
+        (second, BTreeSet::from([8])),
+    ]);
+
     assert!(crate::test_support::with_decode_context(|ctx| {
-        let body_node_ids = BTreeMap::from([
-            (first.clone(), BodyNodeIds::from_ids_for_test(ctx, BTreeSet::from([7]))),
-            (second, BodyNodeIds::from_ids_for_test(ctx, BTreeSet::from([8]))),
-        ]);
         select_active_body(ctx, &mut ir, &body_node_ids, &[7])
     })
     .unwrap());
@@ -95,11 +96,12 @@ fn active_body_selection_accepts_a_complete_singleton_membership() {
 fn rmfastload_preselection_keeps_only_streams_with_selected_body_images() {
     let first = BodyId::mint("nx:s3:body#first").expect("identity grammar");
     let second = BodyId::mint("nx:s8:body#second").expect("identity grammar");
+    let body_node_ids = BTreeMap::from([
+        (first.clone(), BTreeSet::from([7, 8])),
+        (second, BTreeSet::from([8, 9])),
+    ]);
+
     crate::test_support::with_decode_context(|ctx| {
-        let body_node_ids = BTreeMap::from([
-            (first.clone(), BodyNodeIds::from_ids_for_test(ctx, BTreeSet::from([7, 8]))),
-            (second, BodyNodeIds::from_ids_for_test(ctx, BTreeSet::from([8, 9]))),
-        ]);
         let selected = rmfastload_selected_bodies(ctx, &body_node_ids, &[7, 8]).unwrap();
         assert_eq!(selected, BTreeSet::from([first]));
         assert_eq!(

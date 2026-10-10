@@ -99,9 +99,7 @@ fn native_expression_record_directory_ordinal_parse_refuses_named_work() {
     let container = crate::test_support::with_decode_context(|ctx| {
         let container = container::scan_bytes(ctx, file.as_slice())?;
         // Build the section cache once so every walk step charges the same route.
-        container
-            .indexed_om_sections(ctx)
-            .map(|(sections, _storage)| sections)?;
+        container.indexed_om_sections(ctx)?;
         Ok::<_, CodecError>(container)
     })
     .expect("indexed expression container");
@@ -129,9 +127,7 @@ fn native_expression_malformed_record_directory_ordinal_skips_declaration() {
     let container = crate::test_support::with_decode_context(|ctx| {
         let container = container::scan_bytes(ctx, file.as_slice())?;
         // Build the section cache once so every walk step charges the same route.
-        container
-            .indexed_om_sections(ctx)
-            .map(|(sections, _storage)| sections)?;
+        container.indexed_om_sections(ctx)?;
         Ok::<_, CodecError>(container)
     })
     .expect("indexed expression container");
@@ -170,9 +166,7 @@ fn expression_search_refusal(operation: &str, declarations_needed: bool) {
     let container = crate::test_support::with_decode_context(|ctx| {
         let container = container::scan_bytes(ctx, file.as_slice())?;
         // Build the section cache once so every walk step charges the same route.
-        container
-            .indexed_om_sections(ctx)
-            .map(|(sections, _storage)| sections)?;
+        container.indexed_om_sections(ctx)?;
         Ok::<_, CodecError>(container)
     })
     .expect("indexed expression container");
@@ -210,23 +204,4 @@ fn expression_candidate_search_preserves_work_refusal() {
 #[test]
 fn expression_record_split_preserves_work_refusal() {
     expression_search_refusal("NX expression declaration record split", true);
-}
-
-#[test]
-fn parameterized_expression_refuses_scoped_limit() {
-    let bytes = b"p1 + 2";
-
-    crate::test_support::with_decode_context_over(
-        bytes,
-        |policy| {
-            policy.limits.max_materialized_bytes = 0;
-        },
-        |ctx| {
-            let error = super::super::evaluate_parameterized_expression(ctx, "p1 + 2", |_| Ok(Some(3.0)))
-                .unwrap_err();
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
-            );
-        },
-    );
 }

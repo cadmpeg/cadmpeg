@@ -70,11 +70,14 @@ impl FastLoadOccurrences {
         let count = wire.len();
         let mut records = ctx.vector_storage(count, "NX admitted occurrence records")?;
         let mut wire = wire.into_iter();
-        while wire.len() != 0 {
-            let Some(record) = ctx.next_charged(&mut wire, OPERATION)? else {
+        for _ in ctx
+            .admit_iter(&(0..count), OPERATION)
+            .map_err(cadmpeg_core::CodecError::from)?
+        {
+            ctx.reserve_vec(&mut records, 1, "NX admitted occurrence records")?;
+            let Some(record) = wire.next() else {
                 break;
             };
-            ctx.reserve_vec(&mut records, 1, "NX admitted occurrence records")?;
             match FastLoadComponentOccurrence::try_from(record) {
                 Ok(record) => records.push(record),
                 Err(error) => {

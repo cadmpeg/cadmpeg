@@ -1439,10 +1439,8 @@ impl<'a> Section<'a> {
     pub(crate) fn operation_state_status_table<'ctx>(
         &self,
         ctx: &'ctx DecodeContext<'_>,
-    ) -> Result<
-        Option<(OperationStateStatusTable<'a, 'ctx>, ScopedReservation<'ctx>)>,
-        CodecError,
-    > {
+    ) -> Result<Option<(OperationStateStatusTable<'a, 'ctx>, ScopedReservation<'ctx>)>, CodecError>
+    {
         let Some(block) = self.operation_state_block(ctx)? else {
             return Ok(None);
         };
@@ -2883,11 +2881,15 @@ pub(crate) fn operation_body_reference_lanes(
         let values = match (compact, objects) {
             (Some(values), None) => {
                 drop(object_storage);
-                OperationBodyReferenceLaneValues::CompactIndex(compact_storage.commit_value(values)?)
+                OperationBodyReferenceLaneValues::CompactIndex(
+                    compact_storage.commit_value(values)?,
+                )
             }
             (None, Some(values)) => {
                 drop(compact_storage);
-                OperationBodyReferenceLaneValues::PayloadObjectIndex(object_storage.commit_value(values)?)
+                OperationBodyReferenceLaneValues::PayloadObjectIndex(
+                    object_storage.commit_value(values)?,
+                )
             }
             _ => continue,
         };
@@ -3716,7 +3718,8 @@ fn operation_state_group_table_before_counter_map(
         let Some(candidate) = ctx.next_charged(
             &mut selected_candidates,
             "NX selected state group path traversal",
-        )? else {
+        )?
+        else {
             break;
         };
         let Some(group) = group_storage.with_storage(|| {
@@ -3734,7 +3737,9 @@ fn operation_state_group_table_before_counter_map(
     drop(candidates);
     drop(scratch);
     let table = OperationStateGroupTable::new(ctx, groups, trailing)?;
-    table.map(|table| group_storage.commit_value(table)).transpose()
+    table
+        .map(|table| group_storage.commit_value(table))
+        .transpose()
 }
 
 /// Decode a complete bounded `m_rollForwardStates` group table.

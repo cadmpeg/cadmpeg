@@ -938,7 +938,7 @@ pub(in crate::native) fn feature_pattern_references(
                 continue;
             };
             let layout = decoded.layout();
-            let mut decoded_references = decoded.into_references();
+            let mut decoded_references = decoded.into_references().into_iter();
             let ordinals = ctx.admit_iter(
                 &(0..decoded_references.len()),
                 "visit NX pattern references",
@@ -1000,7 +1000,7 @@ pub(in crate::native) fn feature_pattern_counted_reference_lanes(
             &history_section.records,
             "visit NX feature operation records",
         )? {
-            let (lane, lane_storage) =
+            let (lane, _lane_storage) =
                 match CountedPatternReferences::read(ctx, record.payload_view()) {
                     Ok((Some(lane), storage)) => (lane, storage),
                     Ok((None, _)) => continue,
@@ -1017,7 +1017,6 @@ pub(in crate::native) fn feature_pattern_counted_reference_lanes(
                     return Err(error);
                 }
             };
-            drop(lane_storage);
             let id = format_feature_history_id(
                 ctx,
                 "pattern-counted-reference-lane",
@@ -1199,9 +1198,9 @@ pub(in crate::native) fn feature_pattern_construction_strings(
             let ordinal_u32 = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX pattern string ordinal", 0, 1))?;
             let id = format_feature_child_id(ctx, &payload.id, "-string-", ordinal)?;
-            let value = value
-                .value
-                .try_into_owned_for_decode(ctx, "NX pattern construction string value")?;
+            let value = ctx
+                .copy_retained_text(value.value.as_str(), "NX pattern construction string value")?;
+            let value = PrintableString::new(value).map_err(cadmpeg_core::CodecError::malformed)?;
             let operation_label = ctx.copy_retained_text(
                 &payload.operation_label,
                 "NX pattern construction string label",

@@ -18,24 +18,21 @@ fn registry_search_refusal(operation: &str, creation_display: bool) {
         super::part_color_container()
     };
     crate::test_support::with_decode_context(|ctx| {
-        container
-            .om_sections(ctx)
-            .map(|(sections, _storage)| sections)?;
+        container.om_sections(ctx)?;
         container.indexed_om_sections(ctx).map(|_| ())
     })
     .expect("built section caches");
     if creation_display {
-        let sections = crate::test_support::with_decode_context(|ctx| {
-            container
+        crate::test_support::with_decode_context(|ctx| {
+            let (sections, _sections_storage) = container
                 .om_sections(ctx)
-                .map(|(sections, _storage)| sections)
-        })
-        .expect("creation display source sections");
-        assert!(sections.iter().any(|(entry, section)| {
-            entry.name == "/Root/FastLoad/RMFastLoad"
-                && section.record_area.is_some()
-                && !section.types.is_empty()
-        }));
+                .expect("creation display source sections");
+            assert!(sections.iter().any(|(entry, section)| {
+                entry.name == "/Root/FastLoad/RMFastLoad"
+                    && section.record_area.is_some()
+                    && !section.types.is_empty()
+            }));
+        });
     }
     let error = crate::test_support::resource_refusal_at(
         container.data.as_ref(),
@@ -80,9 +77,7 @@ fn store_search_refusal(offset_only: bool) {
     let container = crate::test_support::with_decode_context(|ctx| {
         let container = crate::container::scan_bytes(ctx, file)?;
         // Build the section cache once so every walk step charges the same route.
-        container
-            .indexed_om_sections(ctx)
-            .map(|(sections, _storage)| sections)?;
+        container.indexed_om_sections(ctx)?;
         Ok::<_, CodecError>(container)
     })
     .expect("indexed store container");

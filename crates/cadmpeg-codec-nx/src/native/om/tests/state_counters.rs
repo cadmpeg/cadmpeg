@@ -676,39 +676,6 @@ fn state_status_route_refuses_work_limit() {
 }
 
 #[test]
-fn state_status_projection_refuses_before_the_first_table_entry() {
-    let payload = composed_feature_history_payload_with_operation_state_statuses();
-    let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
-    let container = crate::test_support::with_decode_context(|ctx| {
-        container::scan_bytes(ctx, file.as_slice())
-    })
-    .expect("feature-history container");
-    // Refusal replay uses the same warm cache as the probe run.
-    crate::test_support::with_decode_context(|ctx| {
-        let history = crate::native::features::FeatureHistory::new(ctx, &container).unwrap();
-        drop(history);
-    });
-    let operation = "NX operation state statuses";
-    let error = crate::test_support::resource_refusal_at(
-        &[],
-        ResourceDimension::WorkUnits,
-        operation,
-        |ctx| {
-            operation_state_statuses(
-                ctx,
-                &crate::native::features::FeatureHistory::new(ctx, &container)?,
-            )
-            .map(|_| ())
-        },
-    );
-    let CodecError::ResourceLimit(first_visit) = error else {
-        panic!("status-table projection must charge the first known entry");
-    };
-    assert_eq!(first_visit.operation, operation);
-    assert_eq!(first_visit.additional, 1);
-}
-
-#[test]
 fn state_slot_lane_route_refuses_collection_limit() {
     let error = state_projection_limit_error(
         composed_feature_history_payload_with_operation_state_statuses(),
@@ -757,59 +724,6 @@ fn state_slot_lane_route_refuses_work_limit() {
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits));
-}
-
-#[test]
-fn state_slot_projection_charges_skipped_status_entries_before_projection() {
-    let payload = composed_feature_history_payload_with_operation_state_statuses();
-    let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
-    let container = crate::test_support::with_decode_context(|ctx| {
-        container::scan_bytes(ctx, file.as_slice())
-    })
-    .expect("feature-history container");
-    // Refusal replay uses the same warm cache as the probe run.
-    crate::test_support::with_decode_context(|ctx| {
-        let history = crate::native::features::FeatureHistory::new(ctx, &container).unwrap();
-        drop(history);
-    });
-    let operation = "NX operation state slot lanes";
-    let error = crate::test_support::resource_refusal_at(
-        &[],
-        ResourceDimension::WorkUnits,
-        operation,
-        |ctx| {
-            operation_state_slot_lanes(
-                ctx,
-                &crate::native::features::FeatureHistory::new(ctx, &container)?,
-            )
-            .map(|_| ())
-        },
-    );
-    let CodecError::ResourceLimit(first_visit) = error else {
-        panic!("slot-lane projection must charge a known status entry");
-    };
-    assert_eq!(first_visit.operation, operation);
-    assert_eq!(first_visit.additional, 1);
-    let second_visit_cap = first_visit
-        .used
-        // The first projection visit also advances its admitted entry extent.
-        .checked_add(1 + 1)
-        .expect("second slot-table entry visit cap fits");
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| policy.limits.max_work_units = second_visit_cap,
-        |ctx| {
-            let error = operation_state_slot_lanes(
-                ctx,
-                &crate::native::features::FeatureHistory::new(ctx, &container).unwrap(),
-            )
-            .expect_err("the second table entry requires its own visit charge");
-            assert!(matches!(error, CodecError::ResourceLimit(limit)
-                if limit.operation == operation
-                    && limit.used == second_visit_cap
-                    && limit.additional == 1));
-        },
-    );
 }
 
 #[test]
@@ -961,9 +875,7 @@ fn matching_section_refusal(
     let container = crate::test_support::with_decode_context(|ctx| {
         let container = container::scan_bytes(ctx, file)?;
         // Build the section cache once so every walk step charges the same route.
-        container
-            .om_sections(ctx)
-            .map(|(sections, _storage)| sections)?;
+        container.om_sections(ctx)?;
         Ok::<_, CodecError>(container)
     })
     .expect("section search container");

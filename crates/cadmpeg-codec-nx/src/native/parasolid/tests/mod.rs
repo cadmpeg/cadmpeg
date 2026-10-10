@@ -1327,58 +1327,78 @@ fn topology_retains_entity_attribute_list_references() {
         crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
             .unwrap();
     assert_eq!(
-        graph
-            .node(crate::framing::node_kind::NodeKind::Face, 4)
-            .expect("required invariant")
-            .face_fields()
-            .expect("required invariant")
-            .attributes
-            .map(u32::from)
-            .expect("non-null attribute target"),
+        crate::test_support::with_decode_context(|ctx| graph.get(
+            ctx,
+            crate::framing::node_kind::NodeKind::Face,
+            4
+        ))
+        .unwrap()
+        .expect("required invariant")
+        .face_fields()
+        .expect("required invariant")
+        .attributes
+        .map(u32::from)
+        .expect("non-null attribute target"),
         41
     );
     assert_eq!(
-        graph
-            .node(crate::framing::node_kind::NodeKind::Loop, 5)
-            .expect("required invariant")
-            .loop_fields()
-            .expect("required invariant")
-            .attributes
-            .map(u32::from)
-            .expect("non-null attribute target"),
+        crate::test_support::with_decode_context(|ctx| graph.get(
+            ctx,
+            crate::framing::node_kind::NodeKind::Loop,
+            5
+        ))
+        .unwrap()
+        .expect("required invariant")
+        .loop_fields()
+        .expect("required invariant")
+        .attributes
+        .map(u32::from)
+        .expect("non-null attribute target"),
         42
     );
     assert_eq!(
-        graph
-            .node(crate::framing::node_kind::NodeKind::Fin, 7)
-            .expect("required invariant")
-            .fin_fields()
-            .expect("required invariant")
-            .attributes
-            .map(u32::from)
-            .expect("non-null attribute target"),
+        crate::test_support::with_decode_context(|ctx| graph.get(
+            ctx,
+            crate::framing::node_kind::NodeKind::Fin,
+            7
+        ))
+        .unwrap()
+        .expect("required invariant")
+        .fin_fields()
+        .expect("required invariant")
+        .attributes
+        .map(u32::from)
+        .expect("non-null attribute target"),
         43
     );
     assert_eq!(
-        graph
-            .node(crate::framing::node_kind::NodeKind::Edge, 8)
-            .expect("required invariant")
-            .edge_fields()
-            .expect("required invariant")
-            .attributes
-            .map(u32::from)
-            .expect("non-null attribute target"),
+        crate::test_support::with_decode_context(|ctx| graph.get(
+            ctx,
+            crate::framing::node_kind::NodeKind::Edge,
+            8
+        ))
+        .unwrap()
+        .expect("required invariant")
+        .edge_fields()
+        .expect("required invariant")
+        .attributes
+        .map(u32::from)
+        .expect("non-null attribute target"),
         44
     );
     assert_eq!(
-        graph
-            .node(crate::framing::node_kind::NodeKind::Vertex, 10)
-            .expect("required invariant")
-            .vertex_fields()
-            .expect("required invariant")
-            .attributes
-            .map(u32::from)
-            .expect("non-null attribute target"),
+        crate::test_support::with_decode_context(|ctx| graph.get(
+            ctx,
+            crate::framing::node_kind::NodeKind::Vertex,
+            10
+        ))
+        .unwrap()
+        .expect("required invariant")
+        .vertex_fields()
+        .expect("required invariant")
+        .attributes
+        .map(u32::from)
+        .expect("non-null attribute target"),
         45
     );
 

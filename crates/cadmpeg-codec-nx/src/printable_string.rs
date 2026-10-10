@@ -57,9 +57,7 @@ impl PrintableString<&str> {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<PrintableString<String>, cadmpeg_core::CodecError> {
-        Ok(PrintableString(
-            ctx.copy_retained_text(self.0, operation)?,
-        ))
+        Ok(PrintableString(ctx.copy_retained_text(self.0, operation)?))
     }
 
     #[cfg(test)]
@@ -174,7 +172,10 @@ mod tests {
             },
         );
 
-        for dimension in [ResourceDimension::WorkUnits, ResourceDimension::RetainedBytes] {
+        for dimension in [
+            ResourceDimension::WorkUnits,
+            ResourceDimension::RetainedBytes,
+        ] {
             let error = crate::test_support::resource_refusal_at(
                 &[],
                 dimension,

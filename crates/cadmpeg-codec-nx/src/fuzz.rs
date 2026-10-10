@@ -21,15 +21,12 @@ pub fn deltas(data: &[u8]) {
     let arena = DecodeArena::new();
     let policy = fuzz_policy();
     if let Ok((ctx, _)) = DecodeContext::from_root_bytes(data, &arena, &policy) {
-        let census_resource_refused = match ctx.with_scoped_storage(
-            "NX fuzz deltas census",
-            || Ok::<_, cadmpeg_core::CodecError>(crate::deltas::census::walk(&ctx, data)),
-        ) {
+        let census_resource_refused = match ctx.with_scoped_storage("NX fuzz deltas census", || {
+            Ok::<_, cadmpeg_core::CodecError>(crate::deltas::census::walk(&ctx, data))
+        }) {
             Ok((census, storage)) => {
-                let resource_refused = matches!(
-                    &census,
-                    Err(cadmpeg_core::CodecError::ResourceLimit(_))
-                );
+                let resource_refused =
+                    matches!(&census, Err(cadmpeg_core::CodecError::ResourceLimit(_)));
                 drop(census);
                 drop(storage);
                 resource_refused
@@ -76,21 +73,22 @@ pub fn om(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
         };
         at += token.raw().len();
     }
-    let (_, indexed_sections_storage) = ctx.with_scoped_storage("NX fuzz indexed section output", || {
-        let sections = crate::om::indexed_sections(&ctx, data)?;
-        let mut remaining_sections = sections.iter();
-        while !remaining_sections.as_slice().is_empty() {
-            let Some(section) =
-                ctx.next_charged(&mut remaining_sections, "NX fuzz indexed sections")?
-            else {
-                break;
-            };
-            drop(ctx.with_scoped_storage("NX fuzz numeric expressions", || {
-                section.numeric_expressions(&ctx)
-            })?);
-        }
-        Ok::<_, cadmpeg_core::CodecError>(())
-    })?;
+    let (_, indexed_sections_storage) =
+        ctx.with_scoped_storage("NX fuzz indexed section output", || {
+            let sections = crate::om::indexed_sections(&ctx, data)?;
+            let mut remaining_sections = sections.iter();
+            while !remaining_sections.as_slice().is_empty() {
+                let Some(section) =
+                    ctx.next_charged(&mut remaining_sections, "NX fuzz indexed sections")?
+                else {
+                    break;
+                };
+                drop(ctx.with_scoped_storage("NX fuzz numeric expressions", || {
+                    section.numeric_expressions(&ctx)
+                })?);
+            }
+            Ok::<_, cadmpeg_core::CodecError>(())
+        })?;
     drop(indexed_sections_storage);
     let (_, sections_storage) = ctx.with_scoped_storage("NX fuzz framed section output", || {
         let sections = crate::om::sections(&ctx, data)?;
@@ -101,9 +99,11 @@ pub fn om(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
             else {
                 break;
             };
-            drop(ctx.with_scoped_storage("NX fuzz operation body references", || {
-                section.operation_body_references(&ctx)
-            })?);
+            drop(
+                ctx.with_scoped_storage("NX fuzz operation body references", || {
+                    section.operation_body_references(&ctx)
+                })?,
+            );
         }
         Ok::<_, cadmpeg_core::CodecError>(())
     })?;
@@ -201,10 +201,7 @@ pub fn topology(data: &[u8]) {
     };
     let graph_stopped = match ctx.with_scoped_storage("NX fuzz topology graph", || {
         let graph = crate::topology::Graph::parse(&ctx, data);
-        let mut stop = matches!(
-            &graph,
-            Err(cadmpeg_core::CodecError::ResourceLimit(_))
-        );
+        let mut stop = matches!(&graph, Err(cadmpeg_core::CodecError::ResourceLimit(_)));
         if let Ok(graph) = &graph {
             if let Ok(nodes) = ctx.admit_iter(graph.of_kind(NodeKind::Body), "NX fuzz body nodes") {
                 for node in nodes {
@@ -234,10 +231,7 @@ pub fn topology(data: &[u8]) {
     }) else {
         return;
     };
-    let resource_refused = matches!(
-        &result,
-        Err(cadmpeg_core::CodecError::ResourceLimit(_))
-    );
+    let resource_refused = matches!(&result, Err(cadmpeg_core::CodecError::ResourceLimit(_)));
     drop(result);
     drop(storage);
     if resource_refused {
@@ -248,10 +242,7 @@ pub fn topology(data: &[u8]) {
     }) else {
         return;
     };
-    let resource_refused = matches!(
-        &result,
-        Err(cadmpeg_core::CodecError::ResourceLimit(_))
-    );
+    let resource_refused = matches!(&result, Err(cadmpeg_core::CodecError::ResourceLimit(_)));
     drop(result);
     drop(storage);
     if resource_refused {
@@ -262,10 +253,7 @@ pub fn topology(data: &[u8]) {
     }) else {
         return;
     };
-    let resource_refused = matches!(
-        &result,
-        Err(cadmpeg_core::CodecError::ResourceLimit(_))
-    );
+    let resource_refused = matches!(&result, Err(cadmpeg_core::CodecError::ResourceLimit(_)));
     drop(result);
     drop(storage);
     if resource_refused {
@@ -276,10 +264,7 @@ pub fn topology(data: &[u8]) {
     }) else {
         return;
     };
-    let resource_refused = matches!(
-        &result,
-        Err(cadmpeg_core::CodecError::ResourceLimit(_))
-    );
+    let resource_refused = matches!(&result, Err(cadmpeg_core::CodecError::ResourceLimit(_)));
     drop(result);
     drop(storage);
     if resource_refused {
@@ -290,10 +275,7 @@ pub fn topology(data: &[u8]) {
     }) else {
         return;
     };
-    let resource_refused = matches!(
-        &result,
-        Err(cadmpeg_core::CodecError::ResourceLimit(_))
-    );
+    let resource_refused = matches!(&result, Err(cadmpeg_core::CodecError::ResourceLimit(_)));
     drop(result);
     drop(storage);
     if resource_refused {

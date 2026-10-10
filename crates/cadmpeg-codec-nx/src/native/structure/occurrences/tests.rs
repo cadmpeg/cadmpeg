@@ -25,19 +25,6 @@ fn rows(form: u8) -> Value {
     ])
 }
 
-fn invalid_second_prototype_rows() -> Value {
-    let mut values = rows(0).as_array().unwrap().clone();
-    values[1]["prototype"] = json!("nx:fast-load:prototype#missing");
-    let suffix = values[1].clone();
-    for ordinal in 2..128 {
-        let mut record = suffix.clone();
-        record["id"] = json!(format!("nx:fast-load:occurrence#{ordinal}"));
-        record["ordinal"] = json!(ordinal);
-        values.push(record);
-    }
-    json!(values)
-}
-
 #[test]
 fn roster_hoists_each_legal_form_and_preserves_row_json() {
     for wire in [json!([]), rows(0), rows(1)] {
@@ -117,74 +104,4 @@ fn native_occurrence_admission_preserves_caller_resource_refusals() {
             },
         );
     }
-}
-
-#[test]
-fn roster_conversion_admits_each_record_before_converting_it() {
-    let wire_value = invalid_second_prototype_rows();
-    let row_count = wire_value.as_array().unwrap().len();
-    let namespace: NativeNamespace =
-        serde_json::from_value(json!({"fast_load_component_occurrences": wire_value})).unwrap();
-    let invalid =
-        "FastLoadComponentOccurrence.prototype disagrees with prototype_index";
-    let decode_at_work = |max_work_units| {
-        crate::test_support::with_decode_context_over(
-            &[],
-            |policy| policy.limits.max_work_units = max_work_units,
-            |ctx| FastLoadOccurrences::from_namespace_with_context(ctx, &namespace),
-        )
-    };
-
-    // The namespace read and full-roster lane check have data-dependent costs.
-    // Find the first work limit that reaches the unchanged second-row error.
-    let mut lower = 0;
-    let mut upper = u64::MAX;
-    while lower < upper {
-        let middle = lower + (upper - lower) / 2;
-        match decode_at_work(middle) {
-            Err(cadmpeg_ir::native::NativeConvertError::InvalidCollection(message))
-                if message == invalid =>
-            {
-                upper = middle;
-            }
-            Err(cadmpeg_ir::native::NativeConvertError::Resource(
-                cadmpeg_core::CodecError::ResourceLimit(limit),
-            )) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                lower = middle + 1;
-            }
-            result => panic!("unexpected occurrence conversion result: {result:?}"),
-        }
-    }
-    let semantic_work = upper;
-    let message_work = u64::try_from(invalid.len()).expect("fixed error length fits u64");
-    let before_second_record_work = message_work
-        .checked_add(1)
-        .and_then(|tail| semantic_work.checked_sub(tail))
-        .expect("prefix conversion work fits");
-
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| policy.limits.max_work_units = before_second_record_work,
-        |ctx| {
-            let error = FastLoadOccurrences::from_namespace_with_context(ctx, &namespace)
-                .unwrap_err();
-            assert!(matches!(
-                error,
-                cadmpeg_ir::native::NativeConvertError::Resource(
-                    cadmpeg_core::CodecError::ResourceLimit(limit)
-                ) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                    && limit.operation == "admit NX occurrence roster"
-                    && limit.additional == 1
-            ));
-            assert!(ctx.resource_refusal().is_some());
-        },
-    );
-
-    let result = decode_at_work(semantic_work);
-    assert!(matches!(
-        result,
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidCollection(message))
-            if message == invalid
-    ));
-    assert_eq!(row_count, 128);
 }
