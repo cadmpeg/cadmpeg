@@ -7,11 +7,13 @@ use cadmpeg_ir::ids::{CurveId, SurfaceId};
 fn source_curves(count: usize) -> AsmBrep {
     use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
     AsmBrep {
-        curves: (1..=count).map(|index| Curve {
-            id: CurveId::mint(format!("f3d:brep:entity#{index}")).unwrap(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
-            source_object: None,
-        }).collect(),
+        curves: (1..=count)
+            .map(|index| Curve {
+                id: CurveId::mint(format!("f3d:brep:entity#{index}")).unwrap(),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+                source_object: None,
+            })
+            .collect(),
         ..Default::default()
     }
 }
@@ -26,15 +28,24 @@ fn annotation_source_refusal(allocation: bool) {
     // The first source visit and the empty-map key probe precede allocation.
     policy.limits.max_work_units = if allocation {
         1 + u64::try_from(out.curves[0].id.as_str().len()).unwrap()
-    } else { 0 };
+    } else {
+        0
+    };
     policy.limits.max_collection_items = 0;
     policy.limits.max_materialized_bytes = 0;
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let Err(CodecError::ResourceLimit(first)) = emit_annotation_records(
-        &ctx, &mut out, &[], &std::collections::HashMap::new(),
-        &mut Carriers::default(), "source", crate::asm_format!("f3d"),
-    ) else { panic!("expected annotation source or map allocation refusal"); };
+        &ctx,
+        &mut out,
+        &[],
+        &std::collections::HashMap::new(),
+        &mut Carriers::default(),
+        "source",
+        crate::asm_format!("f3d"),
+    ) else {
+        panic!("expected annotation source or map allocation refusal");
+    };
     if allocation {
         assert_eq!(first.dimension, ResourceDimension::CollectionItems);
         assert_eq!(first.operation, "ASM annotation curve geometry index");
@@ -78,8 +89,16 @@ fn annotation_index_sources_empty_input_executes_no_work() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut out = AsmBrep::default();
-    emit_annotation_records(&ctx, &mut out, &[], &std::collections::HashMap::new(),
-        &mut Carriers::default(), "source", crate::asm_format!("f3d")).unwrap();
+    emit_annotation_records(
+        &ctx,
+        &mut out,
+        &[],
+        &std::collections::HashMap::new(),
+        &mut Carriers::default(),
+        "source",
+        crate::asm_format!("f3d"),
+    )
+    .unwrap();
     assert!(out.annotation_records.is_empty());
     ctx.finish_session().unwrap();
 }
@@ -93,8 +112,16 @@ fn annotation_index_sources_borrow_curve_ids_without_retained_copy() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    emit_annotation_records(&ctx, &mut out, &[], &std::collections::HashMap::new(),
-        &mut Carriers::default(), "source", crate::asm_format!("f3d")).unwrap();
+    emit_annotation_records(
+        &ctx,
+        &mut out,
+        &[],
+        &std::collections::HashMap::new(),
+        &mut Carriers::default(),
+        "source",
+        crate::asm_format!("f3d"),
+    )
+    .unwrap();
     assert_eq!(out.curves, expected.curves);
     assert!(out.annotation_records.is_empty());
     ctx.finish_session().unwrap();
@@ -141,12 +168,12 @@ fn annotation_stream_refuses_retained_limit() {
     use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
 
     let records = [crate::test_support::sab::record(
-1,
-"straight".into(),
-Vec::new().into(),
-0,
-0
-)];
+        1,
+        "straight".into(),
+        Vec::new().into(),
+        0,
+        0,
+    )];
     let make_out = || AsmBrep {
         curves: vec![Curve {
             id: CurveId::mint("f3d:brep:entity#1").unwrap(),
@@ -186,12 +213,12 @@ Vec::new().into(),
 #[test]
 fn synthetic_annotations_use_record_keys_independent_of_id_text() {
     let records = [crate::test_support::sab::record(
-37,
-"spline".into(),
-Vec::new().into(),
-1234,
-0
-)];
+        37,
+        "spline".into(),
+        Vec::new().into(),
+        1234,
+        0,
+    )];
     let by_index = records
         .iter()
         .map(|record| {
@@ -267,14 +294,22 @@ Vec::new().into(),
 fn synthetic_first_visit_refusal(count: usize, support: bool) {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
-    let fixture = || if support {
-        Carriers { procedural_support_sources: (0..count).map(|_| (
-            37, SurfaceId::mint("f3d:child:support#named").unwrap(),
-        )).collect(), ..Carriers::default() }
-    } else {
-        Carriers { procedural_curve_child_sources: (0..count).map(|_| (
-            37, CurveId::mint("f3d:child:curve#named").unwrap(),
-        )).collect(), ..Carriers::default() }
+    let fixture = || {
+        if support {
+            Carriers {
+                procedural_support_sources: (0..count)
+                    .map(|_| (37, SurfaceId::mint("f3d:child:support#named").unwrap()))
+                    .collect(),
+                ..Carriers::default()
+            }
+        } else {
+            Carriers {
+                procedural_curve_child_sources: (0..count)
+                    .map(|_| (37, CurveId::mint("f3d:child:curve#named").unwrap()))
+                    .collect(),
+                ..Carriers::default()
+            }
+        }
     };
     let mut carriers = fixture();
     let replays: Vec<_> = (0..64).map(|_| fixture()).collect();
@@ -290,13 +325,25 @@ fn synthetic_first_visit_refusal(count: usize, support: bool) {
     let mut out = AsmBrep::default();
     // The missing record must not be inspected before its source visit.
     let Err(CodecError::ResourceLimit(first)) = emit_annotation_records(
-        &ctx, &mut out, &[], &std::collections::HashMap::new(),
-        &mut carriers, "source", crate::asm_format!("f3d"),
-    ) else { panic!("expected the first synthetic annotation source visit to refuse"); };
+        &ctx,
+        &mut out,
+        &[],
+        &std::collections::HashMap::new(),
+        &mut carriers,
+        "source",
+        crate::asm_format!("f3d"),
+    ) else {
+        panic!("expected the first synthetic annotation source visit to refuse");
+    };
     assert_eq!(first.dimension, ResourceDimension::WorkUnits);
-    assert_eq!(first.operation, if support {
-        "ASM procedural support annotations"
-    } else { "ASM procedural child annotations" });
+    assert_eq!(
+        first.operation,
+        if support {
+            "ASM procedural support annotations"
+        } else {
+            "ASM procedural child annotations"
+        }
+    );
     assert_eq!((first.limit, first.used, first.additional), (0, 0, 1));
     assert!(out.annotation_records.is_empty());
     for mut replay in replays {
@@ -304,8 +351,14 @@ fn synthetic_first_visit_refusal(count: usize, support: bool) {
             &ctx, &mut out, &[], &std::collections::HashMap::new(),
             &mut replay, "source", crate::asm_format!("f3d")),
             Err(CodecError::ResourceLimit(last)) if last == first));
-        assert_eq!(replay.procedural_support_sources.len(), if support { count } else { 0 });
-        assert_eq!(replay.procedural_curve_child_sources.len(), if support { 0 } else { count });
+        assert_eq!(
+            replay.procedural_support_sources.len(),
+            if support { count } else { 0 }
+        );
+        assert_eq!(
+            replay.procedural_curve_child_sources.len(),
+            if support { 0 } else { count }
+        );
         assert!(matches!(emit_annotation_records(
             &ctx, &mut out, &[], &std::collections::HashMap::new(),
             &mut Carriers::default(), "source", crate::asm_format!("f3d")),
@@ -316,12 +369,16 @@ fn synthetic_first_visit_refusal(count: usize, support: bool) {
 
 #[test]
 fn synthetic_support_annotation_first_visit_refuses_without_admitting_tail() {
-    for count in [4, 64] { synthetic_first_visit_refusal(count, true); }
+    for count in [4, 64] {
+        synthetic_first_visit_refusal(count, true);
+    }
 }
 
 #[test]
 fn synthetic_child_annotation_first_visit_refuses_without_admitting_tail() {
-    for count in [4, 64] { synthetic_first_visit_refusal(count, false); }
+    for count in [4, 64] {
+        synthetic_first_visit_refusal(count, false);
+    }
 }
 
 #[test]
@@ -332,23 +389,25 @@ fn edge_annotation_range_derivation_preserves_record_lookup_results() {
         let mut tokens = vec![crate::sab::Token::Long(0); 8];
         tokens.push(crate::sab::Token::Ref(37));
         let mut records = vec![crate::test_support::sab::record(
-1,
-"edge".into(),
-tokens.into(),
-123,
-0
-)];
+            1,
+            "edge".into(),
+            tokens.into(),
+            123,
+            0,
+        )];
         if let Some(name) = name {
             records.push(crate::test_support::sab::record(
-37,
-name.into(),
-Vec::new().into(),
-456,
-0
-));
+                37,
+                name.into(),
+                Vec::new().into(),
+                456,
+                0,
+            ));
         }
-        let by_index = records.iter().map(|record|
-            (i64::try_from(record.index).unwrap(), record)).collect();
+        let by_index = records
+            .iter()
+            .map(|record| (i64::try_from(record.index).unwrap(), record))
+            .collect();
         let mut out = AsmBrep {
             edges: vec![Edge {
                 id: EdgeId::mint("f3d:brep:entity#1").unwrap(),
@@ -360,16 +419,29 @@ Vec::new().into(),
             ..AsmBrep::default()
         };
         crate::test_support::with_service_context(&[], |ctx| {
-            emit_annotation_records(ctx, &mut out, &records, &by_index,
-                &mut Carriers::default(), "source", crate::asm_format!("f3d")).unwrap();
-        }).unwrap();
+            emit_annotation_records(
+                ctx,
+                &mut out,
+                &records,
+                &by_index,
+                &mut Carriers::default(),
+                "source",
+                crate::asm_format!("f3d"),
+            )
+            .unwrap();
+        })
+        .unwrap();
         assert_eq!(out.annotation_records.len(), 1);
         let annotation = &out.annotation_records[0];
         assert_eq!(annotation.id, "f3d:brep:entity#1");
         assert_eq!(annotation.offset, 123);
         assert_eq!(annotation.tag.as_str(), "edge");
         assert_eq!(annotation.stream, "source");
-        let expected: &[&str] = if name == Some("ellipse") { &["param_range"] } else { &[] };
+        let expected: &[&str] = if name == Some("ellipse") {
+            &["param_range"]
+        } else {
+            &[]
+        };
         assert_eq!(annotation.derived_fields, expected);
     }
 }

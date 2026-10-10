@@ -50,9 +50,9 @@ fn transform_decodes_column_major_basis_and_scaled_translation() {
     use cadmpeg_asm::sab::Token;
 
     let record = cadmpeg_asm::test_support::sab::record(
-0,
-"transform".into(),
-vec![
+        0,
+        "transform".into(),
+        vec![
             Token::Vector3([1.0, 0.0, 0.0]),
             Token::Vector3([0.0, 1.0, 0.0]),
             Token::Vector3([0.0, 0.0, 1.0]),
@@ -60,9 +60,9 @@ vec![
             Token::Double(1.0),
         ]
         .into(),
-0,
-0
-);
+        0,
+        0,
+    );
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[],

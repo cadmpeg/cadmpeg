@@ -10,18 +10,18 @@ use cadmpeg_ir::geometry::RevisionCacheForm;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use std::collections::{HashMap, HashSet};
 
+mod entry_refusal;
 mod shared_carrier;
 mod source_visits;
-mod entry_refusal;
 
 fn ref_record(index: usize, name: &str, refs: &[i64]) -> Record {
     crate::test_support::sab::record(
-index,
-name.into(),
-refs.iter().copied().map(Token::Ref).collect(),
-0,
-0
-)
+        index,
+        name.into(),
+        refs.iter().copied().map(Token::Ref).collect(),
+        0,
+        0,
+    )
 }
 
 fn with_collection_limit(
@@ -669,13 +669,15 @@ fn history_pcurve_use_has_no_invented_parameter_interval() {
         &cadmpeg_core::decode::DecodePolicy::default(),
     )
     .expect("test decode context");
-    let record = |index, name: &str, fields: &[i64]| crate::test_support::sab::record(
-index,
-name.into(),
-fields.iter().copied().map(Token::Ref).collect(),
-0,
-0
-);
+    let record = |index, name: &str, fields: &[i64]| {
+        crate::test_support::sab::record(
+            index,
+            name.into(),
+            fields.iter().copied().map(Token::Ref).collect(),
+            0,
+            0,
+        )
+    };
     let records = [
         record(0, "face", &[-1, -1, -1, -1, 1]),
         record(1, "loop", &[-1, -1, -1, -1, 2]),
@@ -737,9 +739,9 @@ fn model_pcurve_parameter_range_refuses_collection_limit() {
         ref_record(2, "coedge", &[-1, -1, -1, 2, -1, -1, 3, -1, -1, 4]),
         ref_record(3, "edge", &[-1; 9]),
         crate::test_support::sab::record(
-4,
-"pcurve".into(),
-vec![
+            4,
+            "pcurve".into(),
+            vec![
                 Token::Ref(-1),
                 Token::Ref(-1),
                 Token::Ref(-1),
@@ -762,9 +764,9 @@ vec![
                 Token::SubtypeClose,
             ]
             .into(),
-0,
-0
-),
+            0,
+            0,
+        ),
     ];
     let by_index = records
         .iter()
@@ -811,9 +813,9 @@ fn model_pcurve_subtype_lookup_propagates_work_refusal() {
         ref_record(2, "coedge", &[-1, -1, -1, 2, -1, -1, 3, -1, -1, 4]),
         ref_record(3, "edge", &[-1; 9]),
         crate::test_support::sab::record(
-4,
-"pcurve".into(),
-vec![
+            4,
+            "pcurve".into(),
+            vec![
                 Token::Ref(-1),
                 Token::Ref(-1),
                 Token::Ref(-1),
@@ -824,9 +826,9 @@ vec![
                 Token::SubtypeClose,
             ]
             .into(),
-0,
-0
-),
+            0,
+            0,
+        ),
     ];
     let by_index = indexed_records(&records);
     let error = with_work_limit("ASM payload subtype token scan", |ctx| {
@@ -865,17 +867,17 @@ fn history_construction_kind_does_not_consume_retained_storage() {
     let records = [
         ref_record(0, "face", &[-1, -1, -1, -1, -1, -1, -1, 1]),
         crate::test_support::sab::record(
-1,
-"spline".into(),
-vec![
+            1,
+            "spline".into(),
+            vec![
                 Token::SubtypeOpen,
                 Token::Ident("mystery".into()),
                 Token::SubtypeClose,
             ]
             .into(),
-0,
-0
-),
+            0,
+            0,
+        ),
     ];
     let by_index = indexed_records(&records);
     let token_table = nurbs::toks::SubtypeTable::from_records(

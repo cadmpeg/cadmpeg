@@ -139,9 +139,9 @@ fn numerical_audit_pcurve_ranges_keep_active_domain_and_nonzero_intervals() {
         .expect("fixture pcurve construction admission")
         .unwrap();
         let edge = crate::test_support::sab::record(
-1,
-"edge".into(),
-vec![
+            1,
+            "edge".into(),
+            vec![
                 Token::Ref(-1),
                 Token::Long(-1),
                 Token::Ref(-1),
@@ -154,9 +154,9 @@ vec![
                 Token::False,
             ]
             .into(),
-0,
-0
-);
+            0,
+            0,
+        );
         assert_eq!(
             super::super::pcurve_ranges_on_domain(&c, Some(&edge)).map(Iterator::collect::<Vec<_>>),
             Some(vec![[0., d]])

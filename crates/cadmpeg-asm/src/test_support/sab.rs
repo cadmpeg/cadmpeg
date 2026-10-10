@@ -127,8 +127,13 @@ pub fn payload_token_offsets(
 /// # Panics
 ///
 /// Panics when the fixture exceeds the service policy.
-pub fn record(index: usize, name: String, tokens: std::sync::Arc<[crate::sab::Token]>,
-    offset: usize, len: usize) -> Record {
+pub fn record(
+    index: usize,
+    name: String,
+    tokens: std::sync::Arc<[crate::sab::Token]>,
+    offset: usize,
+    len: usize,
+) -> Record {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("record fixture context");

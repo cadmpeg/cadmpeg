@@ -209,12 +209,12 @@ fn one_insert_only_state() -> crate::history_records::AsmHistory {
 
 fn archive_record() -> cadmpeg_asm::sab::Record {
     cadmpeg_asm::test_support::sab::record(
-0,
-"edge".into(),
-vec![cadmpeg_asm::sab::Token::Ref(-1)].into(),
-0,
-0
-)
+        0,
+        "edge".into(),
+        vec![cadmpeg_asm::sab::Token::Ref(-1)].into(),
+        0,
+        0,
+    )
 }
 
 fn archive_error(max_items: u64) -> cadmpeg_core::CodecError {
@@ -295,13 +295,16 @@ fn history_record_name_copy_refuses_retained_limit() {
 fn history_token_text_copy_refuses_retained_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
-    let record = { let base = archive_record(); cadmpeg_asm::test_support::sab::record(
-base.index,
-String::new(),
-vec![cadmpeg_asm::sab::Token::Str("x".into())].into(),
-base.offset,
-base.len
-) };
+    let record = {
+        let base = archive_record();
+        cadmpeg_asm::test_support::sab::record(
+            base.index,
+            String::new(),
+            vec![cadmpeg_asm::sab::Token::Str("x".into())].into(),
+            base.offset,
+            base.len,
+        )
+    };
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
         cadmpeg_core::decode::ResourceDimension::RetainedBytes,
