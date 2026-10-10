@@ -4138,7 +4138,7 @@ pub(crate) fn project_feature_input_topologies(
         let previous_state_id = match scope.previous_history_state_id() {
             Some(previous_state_id) => Some(previous_state_id),
             None => {
-                crate::design::feature_project::work_point_recipe_state_id(scope, edge_operands)
+                crate::design::feature_project::work_point_recipe_state_id(ctx, scope, edge_operands)?
                     .or_else(|| crate::design::feature_project::work_plane_recipe_state_id(scope))
             }
         };

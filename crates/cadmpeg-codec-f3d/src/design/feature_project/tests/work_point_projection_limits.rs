@@ -297,3 +297,5 @@ fn work_point_without_recipe_state_skips_terminal_edge_proof() {
         });
     }
 }
+
+mod queries;
