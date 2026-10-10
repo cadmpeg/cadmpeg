@@ -36,7 +36,8 @@ fn body_shape_shell_count(
         count += 1;
         Ok(ControlFlow::Continue(()))
     };
-    let _ = graph.visit_body_shape_shells(ctx, BodyShapeShellVisitor::Summary(&mut visit))?;
+    let (ControlFlow::Continue(()) | ControlFlow::Break(())) =
+        graph.visit_body_shape_shells(ctx, BodyShapeShellVisitor::Summary(&mut visit))?;
     Ok(count)
 }
 
@@ -49,7 +50,8 @@ fn body_shape_shell_count_with_faces(
         count += 1;
         Ok(ControlFlow::Continue(()))
     };
-    let _ = graph.visit_body_shape_shells(ctx, BodyShapeShellVisitor::Faces(&mut visit))?;
+    let (ControlFlow::Continue(()) | ControlFlow::Break(())) =
+        graph.visit_body_shape_shells(ctx, BodyShapeShellVisitor::Faces(&mut visit))?;
     Ok(count)
 }
 
@@ -227,6 +229,14 @@ fn referenced_graph_rebuild_admits_only_real_node_moves() {
     use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
+    fn root_bytes<K, V>() -> usize {
+        11 * (std::mem::size_of::<K>() + std::mem::size_of::<V>())
+            + 16 * std::mem::size_of::<usize>()
+            + 2 * std::mem::align_of::<K>()
+                .max(std::mem::align_of::<V>())
+                .max(std::mem::align_of::<usize>())
+    }
+
     let mut bytes = record(18, 28);
     put_ref(&mut bytes, 2, 2);
     for offset in [8, 10, 12, 14] {
@@ -251,13 +261,6 @@ fn referenced_graph_rebuild_admits_only_real_node_moves() {
         panic!("the real referenced-node rebuild must reach its first move");
     };
     assert_eq!(prefix.additional, 1);
-    fn root_bytes<K, V>() -> usize {
-        11 * (std::mem::size_of::<K>() + std::mem::size_of::<V>())
-            + 16 * std::mem::size_of::<usize>()
-            + 2 * std::mem::align_of::<K>()
-                .max(std::mem::align_of::<V>())
-                .max(std::mem::align_of::<usize>())
-    }
     // The first insertion admits three node passes; the second admits one.
     // Each second key is searched before growth and again before insertion.
     // Both kind vectors are initially empty, so neither relocates slots.
@@ -413,7 +416,7 @@ fn topology_rejects_shell_with_broken_face_ownership_chain() {
             published += 1;
             Ok(ControlFlow::Continue(()))
         };
-        let _ = graph
+        let (ControlFlow::Continue(()) | ControlFlow::Break(())) = graph
             .visit_body_shape_shells(ctx, BodyShapeShellVisitor::Faces(&mut visit))
             .unwrap();
         assert_eq!(published, 1);
@@ -433,7 +436,7 @@ fn topology_rejects_shell_with_broken_face_ownership_chain() {
             published = true;
             Ok(ControlFlow::Continue(()))
         };
-        let _ = broken_graph
+        let (ControlFlow::Continue(()) | ControlFlow::Break(())) = broken_graph
             .visit_body_shape_shells(ctx, BodyShapeShellVisitor::Faces(&mut visit))
             .unwrap();
         assert!(!published);
@@ -1063,7 +1066,7 @@ fn topology_keeps_nonmonotone_linked_face_order_in_native_identity() {
             observed_chain = true;
             Ok(ControlFlow::Continue(()))
         };
-        let _ = graph
+        let (ControlFlow::Continue(()) | ControlFlow::Break(())) = graph
             .visit_body_shape_shells(ctx, BodyShapeShellVisitor::Faces(&mut visit))
             .unwrap();
         assert!(observed_chain);

@@ -1022,16 +1022,18 @@ struct DomainCandidates {
     ownership: Vec<NodeCandidate>,
 }
 
+type BodyShapeFaceVisit<'graph, 'visit> =
+    dyn FnMut(&'graph Node, u32, &[u32]) -> Result<ControlFlow<()>, CodecError> + 'visit;
+
 pub(crate) enum BodyShapeShellVisitor<'graph, 'visit> {
-    Faces(&'visit mut dyn FnMut(&'graph Node, u32, &[u32]) -> Result<ControlFlow<()>, CodecError>),
+    Faces(&'visit mut BodyShapeFaceVisit<'graph, 'visit>),
     Summary(&'visit mut dyn FnMut(u32, usize) -> Result<ControlFlow<()>, CodecError>),
 }
 
 enum BodyShapeShellTraversal<'graph, 'visit> {
     Faces {
         owners: BTreeMap<u32, Vec<u32>>,
-        visit:
-            &'visit mut dyn FnMut(&'graph Node, u32, &[u32]) -> Result<ControlFlow<()>, CodecError>,
+        visit: &'visit mut BodyShapeFaceVisit<'graph, 'visit>,
     },
     Summary {
         owner_counts: BTreeMap<u32, usize>,
@@ -1246,7 +1248,7 @@ impl Graph {
         const OPERATION: &str = "NX topology candidates";
         let mut storage = ctx.reserve_scoped(0, OPERATION)?;
         let mut domains: [DomainCandidates; 2] = Default::default();
-        let last = stream.len().checked_sub(3).unwrap_or(0);
+        let last = stream.len().saturating_sub(3);
         for pos in ctx.admit_iter(0..last, "scan NX topology candidates")? {
             if stream[pos] != 0 {
                 continue;
@@ -1763,7 +1765,8 @@ impl Graph {
             visit_body_id(body_id)?;
             Ok(ControlFlow::Continue(()))
         };
-        let _ = self.visit_body_shape_shells(ctx, BodyShapeShellVisitor::Summary(&mut visit))?;
+        let (ControlFlow::Continue(()) | ControlFlow::Break(())) =
+            self.visit_body_shape_shells(ctx, BodyShapeShellVisitor::Summary(&mut visit))?;
         Ok(())
     }
 
@@ -2002,7 +2005,8 @@ impl Graph {
             face_count += shell_face_count;
             Ok(ControlFlow::Continue(()))
         };
-        let _ = self.visit_body_shape_shells(ctx, BodyShapeShellVisitor::Summary(&mut visit))?;
+        let (ControlFlow::Continue(()) | ControlFlow::Break(())) =
+            self.visit_body_shape_shells(ctx, BodyShapeShellVisitor::Summary(&mut visit))?;
         Ok(face_count)
     }
 
@@ -2014,48 +2018,53 @@ impl Graph {
         let mut reachable_fins = BTreeSet::new();
         let mut faces = 0usize;
         let mut rings_complete = true;
-        let mut visit_shell = |_, _, face_xmts: &[u32]| {
-            faces += face_xmts.len();
-            if rings_complete {
-                let mut remaining_faces = face_xmts.iter();
-                while !remaining_faces.as_slice().is_empty() {
-                    let Some(&face_xmt) =
-                        ctx.next_charged(&mut remaining_faces, "NX body shell faces")?
-                    else {
-                        break;
-                    };
-                    let mut ring_storage = ctx.reserve_scoped(0, "NX body face rings")?;
-                    let rings = ring_storage.with_storage(|| {
-                        match self.face_loop_rings(ctx, face_xmt) {
-                            Ok(rings) => Ok(Ok(rings)),
-                            Err(FaceLoopError::Invalid(failure)) => Ok(Err(failure)),
-                            Err(FaceLoopError::Codec(error)) => Err(error),
-                        }
-                    })?;
-                    match rings {
-                        Ok(rings) if !rings.is_empty() => {
-                            for (_, ring) in ctx.admit_iter(&rings, OPERATION)? {
-                                for &xmt in ctx.admit_iter(ring, OPERATION)? {
-                                    reachable_storage.with_storage(|| {
-                                        ctx.insert_btree_set(&mut reachable_fins, xmt, OPERATION)
-                                    })?;
-                                }
-                            }
-                            drop(rings);
-                            drop(ring_storage);
-                        }
-                        Ok(_) | Err(_) => {
-                            rings_complete = false;
+        {
+            let mut visit_shell = |_, _, face_xmts: &[u32]| {
+                faces += face_xmts.len();
+                if rings_complete {
+                    let mut remaining_faces = face_xmts.iter();
+                    while !remaining_faces.as_slice().is_empty() {
+                        let Some(&face_xmt) =
+                            ctx.next_charged(&mut remaining_faces, "NX body shell faces")?
+                        else {
                             break;
+                        };
+                        let mut ring_storage = ctx.reserve_scoped(0, "NX body face rings")?;
+                        let rings = ring_storage.with_storage(|| {
+                            match self.face_loop_rings(ctx, face_xmt) {
+                                Ok(rings) => Ok(Ok(rings)),
+                                Err(FaceLoopError::Invalid(failure)) => Ok(Err(failure)),
+                                Err(FaceLoopError::Codec(error)) => Err(error),
+                            }
+                        })?;
+                        match rings {
+                            Ok(rings) if !rings.is_empty() => {
+                                for (_, ring) in ctx.admit_iter(&rings, OPERATION)? {
+                                    for &xmt in ctx.admit_iter(ring, OPERATION)? {
+                                        reachable_storage.with_storage(|| {
+                                            ctx.insert_btree_set(
+                                                &mut reachable_fins,
+                                                xmt,
+                                                OPERATION,
+                                            )
+                                        })?;
+                                    }
+                                }
+                                drop(rings);
+                                drop(ring_storage);
+                            }
+                            Ok(_) | Err(_) => {
+                                rings_complete = false;
+                                break;
+                            }
                         }
                     }
                 }
-            }
-            Ok(ControlFlow::Continue(()))
-        };
-        let _ =
-            self.visit_body_shape_shells(ctx, BodyShapeShellVisitor::Faces(&mut visit_shell))?;
-        drop(visit_shell);
+                Ok(ControlFlow::Continue(()))
+            };
+            let (ControlFlow::Continue(()) | ControlFlow::Break(())) =
+                self.visit_body_shape_shells(ctx, BodyShapeShellVisitor::Faces(&mut visit_shell))?;
+        }
         if !rings_complete || faces == 0 {
             drop(reachable_fins);
             drop(reachable_storage);

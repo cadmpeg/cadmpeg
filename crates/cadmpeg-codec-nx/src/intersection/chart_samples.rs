@@ -373,22 +373,20 @@ impl SourceChartData {
         support_uv: [Option<Vec<[f64; 2]>>; 2],
     ) -> Result<Option<Self>, CodecError> {
         let [first, second] = support_uv;
-        let (first, first_reservation) = match first {
+        let (first_reservation, first) = match first {
             Some(values) => match super::SupportUvLane::from_present_values_scoped(ctx, &values)? {
-                Some((lane, reservation)) => (Some(lane), Some(reservation)),
+                Some((lane, reservation)) => (Some(reservation), Some(lane)),
                 None => return Ok(None),
             },
             None => (None, None),
         };
-        let first = first;
-        let (second, second_reservation) = match second {
+        let (second_reservation, second) = match second {
             Some(values) => match super::SupportUvLane::from_present_values_scoped(ctx, &values)? {
-                Some((lane, reservation)) => (Some(lane), Some(reservation)),
+                Some((lane, reservation)) => (Some(reservation), Some(lane)),
                 None => return Ok(None),
             },
             None => (None, None),
         };
-        let second = second;
         let mut reservation = ctx.reserve_scoped(0, "NX chart sample pairs")?;
         let data = Self::ext11_with_storage(
             points,

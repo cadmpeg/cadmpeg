@@ -205,7 +205,7 @@ mod tests {
             &bytes,
             |policy| {
                 policy.limits.max_materialized_bytes =
-                    cadmpeg_core::decode::u64_from_index(token_storage)
+                    cadmpeg_core::decode::u64_from_index(token_storage);
             },
             |ctx| {
                 let (first, first_storage) = StateSlotLane::read(ctx, &bytes, 0, bytes.len(), 0)
@@ -234,7 +234,7 @@ mod tests {
             &bytes,
             |policy| {
                 policy.limits.max_materialized_bytes =
-                    cadmpeg_core::decode::u64_from_index(token_storage)
+                    cadmpeg_core::decode::u64_from_index(token_storage);
             },
             |ctx| {
                 let (lane, storage) = StateSlotLane::read(ctx, &bytes, 0, bytes.len(), 0)
@@ -255,7 +255,7 @@ mod tests {
             &bytes,
             |policy| {
                 policy.limits.max_materialized_bytes =
-                    cadmpeg_core::decode::u64_from_index(token_storage)
+                    cadmpeg_core::decode::u64_from_index(token_storage);
             },
             |ctx| {
                 let (lane, storage) = StateSlotLane::read(ctx, &bytes, 0, bytes.len(), 0)

@@ -127,12 +127,12 @@ fn one_multi_instance_output_payload() -> Vec<u8> {
 fn offset_store_control_form_matches(
     control: &[u8],
     first_record: Option<&[u8]>,
-    expected: Option<crate::om::OffsetStoreControlForm>,
+    expected: Option<&crate::om::OffsetStoreControlForm>,
 ) -> bool {
     crate::test_support::with_decode_context(|ctx| -> Result<bool, cadmpeg_core::CodecError> {
         match crate::om::offset_store_control_form(ctx, control, first_record)? {
             Some((form, storage)) => {
-                let matches = expected.as_ref() == Some(&form);
+                let matches = expected == Some(&form);
                 drop(form);
                 drop(storage);
                 Ok(matches)
@@ -1656,7 +1656,7 @@ fn om_offset_store_control_form_requires_one_complete_grammar() {
     assert!(offset_store_control_form_matches(
         &[0, 0x34, 0x12, 0, 0, 0xff, 0xff, 0xff],
         None,
-        Some(OffsetStoreControlForm::ZeroPrefixed {
+        Some(&OffsetStoreControlForm::ZeroPrefixed {
             values: crate::om::nonempty::NonEmpty::new(
                 [0x1234, 0x00ff_ffff]
                     .map(|value| crate::om::control_word::ControlWord24::try_from(value).unwrap())
@@ -1672,7 +1672,7 @@ fn om_offset_store_control_form_requires_one_complete_grammar() {
     assert!(offset_store_control_form_matches(
         &product,
         None,
-        Some(OffsetStoreControlForm::ProductAnchored {
+        Some(&OffsetStoreControlForm::ProductAnchored {
             leading_value: Some(
                 crate::om::control_leading_value::ControlLeadingValue::from_wire(2, 0).unwrap()
             ),

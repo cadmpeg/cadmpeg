@@ -260,6 +260,17 @@ impl Region {
     }
 }
 
+type ScopedExtrefRecords<'entries, 'ctx> = (
+    Vec<(&'entries DirEntry, ExtrefRecord)>,
+    ScopedReservation<'ctx>,
+    ScopedReservation<'ctx>,
+);
+
+type ScopedExtrefIndexedRecords<'entries, 'ctx> = (
+    Vec<(&'entries DirEntry, ExtrefIndexedRecord)>,
+    ScopedReservation<'ctx>,
+);
+
 impl<'a> Container<'a> {
     /// Number of directory entries in a region.
     pub(crate) fn entry_count(
@@ -753,14 +764,7 @@ impl<'a> Container<'a> {
     pub(crate) fn external_reference_records<'ctx>(
         &self,
         ctx: &'ctx DecodeContext<'_>,
-    ) -> Result<
-        (
-            Vec<(&DirEntry, ExtrefRecord)>,
-            ScopedReservation<'ctx>,
-            ScopedReservation<'ctx>,
-        ),
-        CodecError,
-    > {
+    ) -> Result<ScopedExtrefRecords<'_, 'ctx>, CodecError> {
         let mut storage = ctx.reserve_scoped(0, "nx external reference record entries")?;
         let mut handles_storage = ctx.reserve_scoped(0, "nx external reference handles")?;
         let mut out = Vec::new();
@@ -821,13 +825,7 @@ impl<'a> Container<'a> {
     pub(crate) fn external_reference_indexed_records<'ctx>(
         &self,
         ctx: &'ctx DecodeContext<'_>,
-    ) -> Result<
-        (
-            Vec<(&DirEntry, ExtrefIndexedRecord)>,
-            ScopedReservation<'ctx>,
-        ),
-        CodecError,
-    > {
+    ) -> Result<ScopedExtrefIndexedRecords<'_, 'ctx>, CodecError> {
         let mut storage = ctx.reserve_scoped(0, "nx external reference indexed entries")?;
         let mut out = Vec::new();
         for entry in &self.entries {
@@ -955,7 +953,7 @@ impl<'a> Container<'a> {
         let mut object_ids = Vec::new();
         ctx.reserve_capacity(&mut object_ids, count, "retain NX FastLoad object IDs")?;
         let mut visits = 0..count;
-        while visits.len() != 0 {
+        while !visits.is_empty() {
             let Some(ordinal) = ctx.next_charged(&mut visits, "read NX FastLoad object IDs")?
             else {
                 break;
@@ -1026,7 +1024,7 @@ fn locate_extref_string_table(
 
         let mut pos = start;
         let mut entries = 0..count;
-        while entries.len() != 0 {
+        while !entries.is_empty() {
             let Some(_) =
                 ctx.next_charged(&mut entries, "nx external reference string table entries")?
             else {
@@ -1084,7 +1082,7 @@ fn parse_extref_string_table<'bytes, 'ctx>(
         storage.with_storage(|| ctx.collection_vec(count, "nx external reference string table"))?;
     let mut pos = start;
     let mut visits = 0..count;
-    while visits.len() != 0 {
+    while !visits.is_empty() {
         let Some(_) = ctx.next_charged(&mut visits, "read NX external reference strings")? else {
             break;
         };
@@ -1517,7 +1515,7 @@ fn parse_framed_section_cache<'bytes>(
                 let mut candidate_storage =
                     ctx.reserve_scoped(0, "NX framed cache layout candidate")?;
                 let Some(layout) = candidate_storage.with_storage(|| {
-                    crate::om::cache::SectionLayout::from_section(ctx, &section, source)
+                    crate::om::cache::SectionLayout::from_section(ctx, section, source)
                 })?
                 else {
                     continue;
@@ -1956,7 +1954,7 @@ fn directory_region(
     ctx.reserve_capacity(&mut entries, capacity, "retain NX directory entries")?;
     let mut at = entries_offset;
     let mut ordinals = 0..count;
-    while ordinals.len() != 0 {
+    while !ordinals.is_empty() {
         let Some(ordinal) = ctx.next_charged(&mut ordinals, "read NX directory entries")? else {
             break;
         };
