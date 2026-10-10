@@ -388,7 +388,8 @@ fn surface_intersect_feature_definition(
         let mut all_surfaces_owned = true;
         let mut entry_iter = table.entries.iter();
         while entry_iter.len() != 0 {
-            let Some(entry) = ctx.next_charged(&mut entry_iter, "creo intersect table entries")? else {
+            let Some(entry) = ctx.next_charged(&mut entry_iter, "creo intersect table entries")?
+            else {
                 break;
             };
             if !table.contains_surface_id(entry.entity_id) {

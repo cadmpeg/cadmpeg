@@ -399,7 +399,8 @@ fn duplicate_saved_spline_surface_releases_candidate_storage() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(saved_spline_curve());
     ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
-        id: cadmpeg_ir::ids::SurfaceId::mint("creo:visibgeom:surface#20").expect("existing surface"),
+        id: cadmpeg_ir::ids::SurfaceId::mint("creo:visibgeom:surface#20")
+            .expect("existing surface"),
         geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(
             cadmpeg_ir::geometry::SolvedSurfaceGeometry::Unknown { record: None },
         ),
@@ -414,35 +415,51 @@ fn duplicate_saved_spline_surface_releases_candidate_storage() {
     for _ in 0..3 {
         let mut annotations = AnnotationBuilder::new();
         let mut losses = Vec::new();
-        assert_eq!(transfer_resolved_revolution_surfaces(
-            &ctx, &scan, &mut ir, &mut annotations, &mut losses,
-            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
-        ).expect("duplicate candidate keeps no output storage"), 0);
+        assert_eq!(
+            transfer_resolved_revolution_surfaces(
+                &ctx,
+                &scan,
+                &mut ir,
+                &mut annotations,
+                &mut losses,
+                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )
+            .expect("duplicate candidate keeps no output storage"),
+            0
+        );
         assert!(losses.is_empty());
     }
     assert_eq!(ir, expected);
-    let available = ctx.reserve_scoped(policy.limits.max_materialized_bytes, "after duplicate surface candidate")
+    let available = ctx
+        .reserve_scoped(
+            policy.limits.max_materialized_bytes,
+            "after duplicate surface candidate",
+        )
         .expect("all candidate and lookup reservations ended");
     drop(available);
-    let error = ctx.charge_retained(1, "after duplicate surface retention").expect_err("zero retained cap");
+    let error = ctx
+        .charge_retained(1, "after duplicate surface retention")
+        .expect_err("zero retained cap");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes && resource.used == 0));
 }
-
 
 #[test]
 fn duplicate_vertex_orbits_release_candidate_storage() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_ir::math::Point2;
-    use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
-        SketchGeometryDefinition, SketchPlacement, SketchProfiles};
+    use cadmpeg_ir::sketches::{
+        Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
+        SketchGeometryDefinition, SketchPlacement, SketchProfiles,
+    };
     for extrusion in [false, true] {
         let mut scan = saved_spline_revolution_scan();
         if extrusion {
             scan.features.operations[0].kind = crate::feature::operations::OperationKind::Extrude;
-            scan.features.operations[0].recipe = crate::feature::operations::RecipeResolution::Resolved(
-                crate::feature::operations::FeatureRecipe::ProtrudeExtrude,
-            );
+            scan.features.operations[0].recipe =
+                crate::feature::operations::RecipeResolution::Resolved(
+                    crate::feature::operations::FeatureRecipe::ProtrudeExtrude,
+                );
             scan.features.revolution_extents.clear();
             scan.features.rows.push(crate::feature::rows::FeatureRow {
                 feature_id: 40,
@@ -456,28 +473,51 @@ fn duplicate_vertex_orbits_release_candidate_storage() {
         let mut ir = CadIr::empty();
         let sketch_id = crate::decode::with_test_decode_ctx(|ctx| {
             super::model_sketch_id(ctx, &scan, &scan.features.definitions[0])
-        }).expect("sketch identity admission").expect("fixture sketch");
+        })
+        .expect("sketch identity admission")
+        .expect("fixture sketch");
         let entity_id = SketchEntityId::mint("test:sketch:line#1").expect("fixture entity");
         ir.model.sketches.push(Sketch {
-            id: sketch_id.clone(), name: None, configuration: None, visible: None,
+            id: sketch_id.clone(),
+            name: None,
+            configuration: None,
+            visible: None,
             placement: SketchPlacement::Unresolved {},
             profiles: SketchProfiles::try_from(vec![vec![SketchEntityUse {
-                entity: entity_id.clone(), reversed: false,
-            }]]).expect("fixture profile"), native_ref: None,
+                entity: entity_id.clone(),
+                reversed: false,
+            }]])
+            .expect("fixture profile"),
+            native_ref: None,
         });
-        ir.model.sketch_entities.push(SketchEntity::new(entity_id, sketch_id,
+        ir.model.sketch_entities.push(SketchEntity::new(
+            entity_id,
+            sketch_id,
             SketchGeometry::try_from(SketchGeometryDefinition::Line {
-                start: Point2::new(2.0, 0.0), end: Point2::new(2.0, 1.0),
-            }).expect("fixture line")));
+                start: Point2::new(2.0, 0.0),
+                end: Point2::new(2.0, 1.0),
+            })
+            .expect("fixture line"),
+        ));
         let transfer = |ctx: &DecodeContext<'_>, ir: &mut CadIr| {
             let mut annotations = AnnotationBuilder::new();
             let mut source_carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
             if extrusion {
-                super::transfer_resolved_extrusion_vertex_orbit_curves(ctx, &scan, ir,
-                    &mut annotations, &mut source_carriers)
+                super::transfer_resolved_extrusion_vertex_orbit_curves(
+                    ctx,
+                    &scan,
+                    ir,
+                    &mut annotations,
+                    &mut source_carriers,
+                )
             } else {
-                super::transfer_resolved_revolution_vertex_orbit_curves(ctx, &scan, ir,
-                    &mut annotations, &mut source_carriers)
+                super::transfer_resolved_revolution_vertex_orbit_curves(
+                    ctx,
+                    &scan,
+                    ir,
+                    &mut annotations,
+                    &mut source_carriers,
+                )
             }
         };
         let count = crate::decode::with_test_decode_ctx(|ctx| transfer(ctx, &mut ir))
@@ -491,11 +531,18 @@ fn duplicate_vertex_orbits_release_candidate_storage() {
         policy.limits.max_materialized_bytes = 1024 * 1024;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         for _ in 0..3 {
-            assert_eq!(transfer(&ctx, &mut ir).expect("duplicate orbit keeps no output storage"), 0);
+            assert_eq!(
+                transfer(&ctx, &mut ir).expect("duplicate orbit keeps no output storage"),
+                0
+            );
         }
         assert_eq!(ir, expected);
-        let available = ctx.reserve_scoped(policy.limits.max_materialized_bytes,
-            "after duplicate orbit candidates").expect("all candidate reservations ended");
+        let available = ctx
+            .reserve_scoped(
+                policy.limits.max_materialized_bytes,
+                "after duplicate orbit candidates",
+            )
+            .expect("all candidate reservations ended");
         drop(available);
     }
 }

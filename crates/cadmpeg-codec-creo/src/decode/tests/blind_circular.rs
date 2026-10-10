@@ -9,8 +9,8 @@ use crate::decode::feature_history::round::tests::radius_from_support_planes;
 use crate::decode::feature_history::round::{
     coordinate_pair_proves_torus_radii, differing_positive_lengths,
     five_coordinate_envelope_proves_torus_radii, outline_has_unique_radius_delta,
-    paired_five_coordinate_sphere_center, round_constant_radius,
-    round_observed_radii, round_placed_cylinder_radii, round_support_radius, slot_fillet_cylinder,
+    paired_five_coordinate_sphere_center, round_constant_radius, round_observed_radii,
+    round_placed_cylinder_radii, round_support_radius, slot_fillet_cylinder,
     unique_positive_length,
 };
 

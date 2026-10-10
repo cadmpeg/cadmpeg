@@ -36,12 +36,16 @@ fn parallel_plane_radius(
     let mut first_radius: Option<f64> = None;
     let mut pairs = planes.iter().enumerate();
     while pairs.len() != 0 {
-        let Some((first_index, (first_plane, first_normal))) = ctx.next_charged(&mut pairs, "creo round support plane pairs")? else {
+        let Some((first_index, (first_plane, first_normal))) =
+            ctx.next_charged(&mut pairs, "creo round support plane pairs")?
+        else {
             break;
         };
         let mut partners = planes[first_index + 1..].iter();
         while partners.len() != 0 {
-            let Some((second_plane, second_normal)) = ctx.next_charged(&mut partners, "creo round support plane pairs")? else {
+            let Some((second_plane, second_normal)) =
+                ctx.next_charged(&mut partners, "creo round support plane pairs")?
+            else {
                 break;
             };
             let alignment = first_normal
@@ -107,7 +111,9 @@ pub(in super::super) fn slot_fillet_cylinder(
     let mut midplanes = Vec::<(PlaneEquation, f64)>::new();
     let mut items = support_planes.iter().enumerate();
     while items.len() != 0 {
-        let Some((first_index, first_plane)) = ctx.next_charged(&mut items, "creo slot fillet support plane pairs")? else {
+        let Some((first_index, first_plane)) =
+            ctx.next_charged(&mut items, "creo slot fillet support plane pairs")?
+        else {
             break;
         };
         let Some(first_normal) = normalize(first_plane.normal) else {
@@ -119,9 +125,10 @@ pub(in super::super) fn slot_fillet_cylinder(
         let mut second_plane_iter = support_planes[first_index + 1..].iter();
         while second_plane_iter.len() != 0 {
             let Some(second_plane) = ctx.next_charged(
-            &mut second_plane_iter,
-            "creo slot fillet support plane pairs",
-        )? else {
+                &mut second_plane_iter,
+                "creo slot fillet support plane pairs",
+            )?
+            else {
                 break;
             };
             let Some(second_normal) = normalize(second_plane.normal) else {
@@ -155,12 +162,16 @@ pub(in super::super) fn slot_fillet_cylinder(
     let mut first_candidate: Option<CylinderEquation> = None;
     let mut items = midplanes.iter().enumerate();
     while items.len() != 0 {
-        let Some((first_index, first)) = ctx.next_charged(&mut items, "creo slot fillet midplane pairs")? else {
+        let Some((first_index, first)) =
+            ctx.next_charged(&mut items, "creo slot fillet midplane pairs")?
+        else {
             break;
         };
         let mut second_iter = midplanes[first_index + 1..].iter();
         while second_iter.len() != 0 {
-            let Some(second) = ctx.next_charged(&mut second_iter, "creo slot fillet midplane pairs")? else {
+            let Some(second) =
+                ctx.next_charged(&mut second_iter, "creo slot fillet midplane pairs")?
+            else {
                 break;
             };
             let radius = first.1;
@@ -411,7 +422,9 @@ fn prototype_round_radius(
     let mut radii = None;
     let mut items = associations.iter();
     while items.len() != 0 {
-        let Some((record, row, _)) = ctx.next_charged(&mut items, "creo round prototype associations")? else {
+        let Some((record, row, _)) =
+            ctx.next_charged(&mut items, "creo round prototype associations")?
+        else {
             break;
         };
         if !matches!(
@@ -447,7 +460,8 @@ fn prototype_round_radius(
     }
     let mut row_iter = rows.iter();
     while row_iter.len() != 0 {
-        let Some(row) = ctx.next_charged(&mut row_iter, "creo round prototype surface rows")? else {
+        let Some(row) = ctx.next_charged(&mut row_iter, "creo round prototype surface rows")?
+        else {
             break;
         };
         let Some(record) = unique_surface_parameter_record(ctx, scan, row)? else {
@@ -660,7 +674,8 @@ fn legacy_round_radius_agrees(
     let mut difference: f64 = 0.0;
     let mut samples = samples.iter().chain(&placed);
     while samples.size_hint().1 != Some(0) {
-        let Some(&sample) = ctx.next_charged(&mut samples, "creo legacy round radius samples")? else {
+        let Some(&sample) = ctx.next_charged(&mut samples, "creo legacy round radius samples")?
+        else {
             break;
         };
         if !sample.is_finite() || sample <= 0.0 {
@@ -682,7 +697,8 @@ fn complete_direct_placed_cylinder_radius_agreement(
     let mut agrees = true;
     let mut row_iter = scan.surfaces.rows.iter();
     while row_iter.len() != 0 {
-        let Some(row) = ctx.next_charged(&mut row_iter, "creo direct placed round surface rows")? else {
+        let Some(row) = ctx.next_charged(&mut row_iter, "creo direct placed round surface rows")?
+        else {
             break;
         };
         if row.feature_id != feature_id || row.kind != crate::surface::SurfaceKind::Cylinder {
@@ -772,7 +788,8 @@ fn mixed_torus_radius_samples(
         let mut radii = Vec::new();
         let mut row_iter = rows.iter();
         while row_iter.len() != 0 {
-            let Some(row) = ctx.next_charged(&mut row_iter, "creo mixed torus surface rows")? else {
+            let Some(row) = ctx.next_charged(&mut row_iter, "creo mixed torus surface rows")?
+            else {
                 break;
             };
             let Some(record) = unique_surface_parameter_record(ctx, scan, row)? else {
@@ -934,13 +951,17 @@ pub(in super::super) fn round_support_envelope_cylinder(
     let mut agreed_pair: Option<([f64; 3], f64, f64)> = None;
     let mut pairs = support_planes.iter().enumerate();
     while pairs.len() != 0 {
-        let Some((first_index, (first, first_normal))) = ctx.next_charged(&mut pairs, "creo round support plane pairs")? else {
+        let Some((first_index, (first, first_normal))) =
+            ctx.next_charged(&mut pairs, "creo round support plane pairs")?
+        else {
             break;
         };
         let first_normal = *first_normal;
         let mut partners = support_planes[first_index + 1..].iter();
         while partners.len() != 0 {
-            let Some((second, second_normal)) = ctx.next_charged(&mut partners, "creo round support plane pairs")? else {
+            let Some((second, second_normal)) =
+                ctx.next_charged(&mut partners, "creo round support plane pairs")?
+            else {
                 break;
             };
             let second_normal = *second_normal;
@@ -1236,7 +1257,8 @@ fn positive_length_spread(
     let mut difference: f64 = 0.0;
     let mut samples = values.iter().chain(additional);
     while samples.size_hint().1 != Some(0) {
-        let Some(&sample) = ctx.next_charged(&mut samples, "creo positive length agreement")? else {
+        let Some(&sample) = ctx.next_charged(&mut samples, "creo positive length agreement")?
+        else {
             break;
         };
         if !sample.is_finite() || sample <= 0.0 {
@@ -1289,7 +1311,8 @@ fn equal_distance_chamfer_setback(
     let mut max_difference: f64 = 0.0;
     let mut cone_iter = cones.iter();
     while cone_iter.len() != 0 {
-        let Some(cone) = ctx.next_charged(&mut cone_iter, "creo chamfer cone support pairs")? else {
+        let Some(cone) = ctx.next_charged(&mut cone_iter, "creo chamfer cone support pairs")?
+        else {
             break;
         };
         let Some(axis) = normalize(cone.axis()) else {

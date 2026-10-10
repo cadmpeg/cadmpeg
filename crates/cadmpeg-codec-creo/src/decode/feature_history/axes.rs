@@ -42,7 +42,8 @@ pub(in super::super) fn resolved_revolution_axis(
     let mut axis = None;
     let mut rows = segments.rows.as_slice().iter();
     while rows.len() != 0 {
-        let Some(row) = ctx.next_charged(&mut rows, "creo revolution axis section segment rows")? else {
+        let Some(row) = ctx.next_charged(&mut rows, "creo revolution axis section segment rows")?
+        else {
             break;
         };
         let crate::feature::segment_rows::SegmentRow::Ordinary(segment) = row else {
@@ -123,7 +124,8 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
     let mut sphere_centers = Vec::new();
     let mut saw_row = false;
     while rows.len() != 0 {
-        let Some(row) = ctx.next_charged(&mut rows, "creo full-turn revolution surface rows")? else {
+        let Some(row) = ctx.next_charged(&mut rows, "creo full-turn revolution surface rows")?
+        else {
             break;
         };
         if row.feature_id != feature_id {
@@ -229,7 +231,9 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
         .fold(1.0, f64::max);
     let mut items = rest.iter();
     while items.len() != 0 {
-        let Some((candidate_origin, candidate_direction)) = ctx.next_charged(&mut items, "creo full-turn revolution remaining axes")? else {
+        let Some((candidate_origin, candidate_direction)) =
+            ctx.next_charged(&mut items, "creo full-turn revolution remaining axes")?
+        else {
             break;
         };
         let candidate_direction = unit_length(*candidate_direction);
@@ -255,7 +259,9 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
     }
     let mut normal_iter = plane_normals.iter();
     while normal_iter.len() != 0 {
-        let Some(normal) = ctx.next_charged(&mut normal_iter, "creo full-turn revolution plane normals")? else {
+        let Some(normal) =
+            ctx.next_charged(&mut normal_iter, "creo full-turn revolution plane normals")?
+        else {
             break;
         };
         let normal = unit_length(*normal);
@@ -268,7 +274,9 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
     }
     let mut center_iter = sphere_centers.iter();
     while center_iter.len() != 0 {
-        let Some(center) = ctx.next_charged(&mut center_iter, "creo full-turn revolution sphere centers")? else {
+        let Some(center) =
+            ctx.next_charged(&mut center_iter, "creo full-turn revolution sphere centers")?
+        else {
             break;
         };
         let displacement = [

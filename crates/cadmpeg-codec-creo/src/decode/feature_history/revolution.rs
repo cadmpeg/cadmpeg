@@ -174,7 +174,9 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
             })?;
         }
         let mut sketch_storage = ctx.reserve_scoped(0, "creo history sketch lookup")?;
-        let Some(sketch_id) = sketch_storage.with_storage(|| model_sketch_id(ctx, scan, definition))? else {
+        let Some(sketch_id) =
+            sketch_storage.with_storage(|| model_sketch_id(ctx, scan, definition))?
+        else {
             continue;
         };
         let matching_sketch = crate::decode::uniqueness::exactly_one_by(
@@ -511,8 +513,9 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 },
                 "creo revolved spline directrix lookup",
             )?;
-            let Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(directrix))) =
-                matching_curve.map(|curve| source_carriers.curve_geometry(curve)).transpose()?
+            let Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(directrix))) = matching_curve
+                .map(|curve| source_carriers.curve_geometry(curve))
+                .transpose()?
             else {
                 return Ok(std::ops::ControlFlow::Continue(()));
             };
@@ -522,17 +525,20 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 .zip(directrix.knots().last())
                 .map(|(lower, upper)| [*lower, *upper]);
             let mut refusal = crate::lane_refusal::LaneRefusals::new();
-            let mut surface_geometry_storage = ctx.reserve_scoped(0, "creo revolved spline surface candidate")?;
-            let surface = surface_geometry_storage.with_storage(|| revolved_nurbs_surface(
-                ctx,
-                directrix,
-                &axis,
-                &format_args!(
-                    "feature {feature_id} saved spline at offset {}",
-                    spline.offset
-                ),
-                &mut refusal,
-            ))?;
+            let mut surface_geometry_storage =
+                ctx.reserve_scoped(0, "creo revolved spline surface candidate")?;
+            let surface = surface_geometry_storage.with_storage(|| {
+                revolved_nurbs_surface(
+                    ctx,
+                    directrix,
+                    &axis,
+                    &format_args!(
+                        "feature {feature_id} saved spline at offset {}",
+                        spline.offset
+                    ),
+                    &mut refusal,
+                )
+            })?;
             let refused = refusal.take_records_checked()?;
             let Some(surface) = surface.filter(|_| refused.is_empty()) else {
                 for record in ctx.admit_iter(&refused, "creo revolution lane refusals")? {
@@ -737,7 +743,9 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
             continue;
         };
         let mut sketch_storage = ctx.reserve_scoped(0, "creo history sketch lookup")?;
-        let Some(sketch_id) = sketch_storage.with_storage(|| model_sketch_id(ctx, scan, definition))? else {
+        let Some(sketch_id) =
+            sketch_storage.with_storage(|| model_sketch_id(ctx, scan, definition))?
+        else {
             continue;
         };
         let profiles = scratch.with_storage(|| {
@@ -758,7 +766,8 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
                 scratch.with_storage(|| {
                     ctx.reserve_vec(&mut pending, 1, "creo revolution vertex orbit candidates")
                 })?;
-                let mut candidate_storage = ctx.reserve_scoped(0, "creo revolution orbit candidate text")?;
+                let mut candidate_storage =
+                    ctx.reserve_scoped(0, "creo revolution orbit candidate text")?;
                 let (id, object_id) = candidate_storage.with_storage(|| {
                     let id = crate::identity::compose_checked::<CurveId>(
                         ctx,
@@ -869,7 +878,9 @@ pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
             continue;
         };
         let mut sketch_storage = ctx.reserve_scoped(0, "creo history sketch lookup")?;
-        let Some(sketch_id) = sketch_storage.with_storage(|| model_sketch_id(ctx, scan, definition))? else {
+        let Some(sketch_id) =
+            sketch_storage.with_storage(|| model_sketch_id(ctx, scan, definition))?
+        else {
             continue;
         };
         let profiles = scratch.with_storage(|| {
@@ -886,7 +897,8 @@ pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
                 scratch.with_storage(|| {
                     ctx.reserve_vec(&mut pending, 1, "creo extrusion vertex orbit candidates")
                 })?;
-                let mut candidate_storage = ctx.reserve_scoped(0, "creo extrusion orbit candidate text")?;
+                let mut candidate_storage =
+                    ctx.reserve_scoped(0, "creo extrusion orbit candidate text")?;
                 let (id, object_id) = candidate_storage.with_storage(|| {
                     let id = crate::identity::compose_checked::<CurveId>(
                         ctx,
