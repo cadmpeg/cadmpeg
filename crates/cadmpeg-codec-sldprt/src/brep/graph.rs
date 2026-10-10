@@ -695,10 +695,13 @@ fn walk_face(
     let surface_attr = bridge.refs[4];
     let mut loops = Vec::new();
     let mut loop_ref = bridge.refs[2];
+    let mut loop_guard_storage = ctx.reserve_scoped(0, "hold Parasolid loop walk guard")?;
     let mut loop_guard = HashSet::new();
     while loop_ref != 0 {
         ctx.charge_work(1, "walk Parasolid face loops")?;
-        if !ctx.insert_hash_set(&mut loop_guard, loop_ref, "walk Parasolid face loops")? {
+        if !loop_guard_storage.with_storage(|| {
+            ctx.insert_hash_set(&mut loop_guard, loop_ref, "walk Parasolid face loops")
+        })? {
             break;
         }
         let Some(lp) = ctx.get_btree_map(t.loops(), &loop_ref, "lookup Parasolid loops")? else {
@@ -718,13 +721,17 @@ fn walk_face(
             break;
         }
         let first = lp.refs[1];
+        let mut ring_storage = ctx.reserve_scoped(0, "hold Parasolid coedge ring")?;
         let mut ring = Vec::new();
         let mut ce_ref = first;
+        let mut ce_guard_storage = ctx.reserve_scoped(0, "hold Parasolid coedge walk guard")?;
         let mut ce_guard = HashSet::new();
         let mut ring_closed = false;
         while ce_ref != 0 {
             ctx.charge_work(1, "walk Parasolid face coedges")?;
-            if !ctx.insert_hash_set(&mut ce_guard, ce_ref, "walk Parasolid face coedges")? {
+            if !ce_guard_storage.with_storage(|| {
+                ctx.insert_hash_set(&mut ce_guard, ce_ref, "walk Parasolid face coedges")
+            })? {
                 break;
             }
             let Some(ce) = ctx.get_btree_map(t.coedges(), &ce_ref, "lookup Parasolid coedges")?
@@ -734,17 +741,22 @@ fn walk_face(
             if ce.refs[1] != loop_ref {
                 break;
             }
-            ctx.reserve_vec(&mut ring, 1, "walk Parasolid face coedges")?;
-            ring.push(ce_ref);
+            ctx.push_scoped_vec(
+                &mut ring_storage,
+                &mut ring,
+                ce_ref,
+                "walk Parasolid face coedges",
+            )?;
             ce_ref = ce.refs[3];
             if ce_ref == first {
                 ring_closed = true;
                 break;
             }
         }
+        drop((ce_guard, ce_guard_storage));
         if ring_closed {
             ctx.reserve_vec(&mut loops, 1, "walk Parasolid face loops")?;
-            loops.push((loop_ref, ring));
+            loops.push((loop_ref, ring_storage.commit_value(ring)?));
         }
         loop_ref = lp.refs[3];
     }
@@ -1574,3 +1586,145 @@ mod evaluation_admission_tests;
 
 #[cfg(test)]
 mod test_support;
+
+#[cfg(test)]
+mod walk_storage_tests {
+    use super::{topology, walk_face, Sense};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    fn fixture(loop_count: u16, closed: bool) -> (topology::Bridge, topology::Tables) {
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let bridge = topology::Bridge {
+            attr: 10,
+            refs: [0, 0, 20, 0, 30],
+            sequence: 0,
+            sense: Sense::Forward,
+            owner: None,
+            offset: 0,
+        };
+        let mut tables = topology::Tables::default();
+        for index in 0..loop_count {
+            let loop_attr = 20 + index;
+            let first = 0x1000 + index * 64;
+            let sibling = if index + 1 == loop_count {
+                0
+            } else {
+                loop_attr + 1
+            };
+            tables
+                .insert_loop(
+                    &ctx,
+                    topology::Loop {
+                        attr: loop_attr,
+                        refs: [0, first, bridge.attr, sibling],
+                        offset: 0,
+                    },
+                )
+                .expect("fixture loop");
+            for step in 0..32 {
+                let attr = first + step;
+                let next = if closed && step == 31 {
+                    first
+                } else {
+                    attr + 1
+                };
+                tables
+                    .insert_coedge(
+                        &ctx,
+                        topology::Coedge {
+                            attr,
+                            refs: [0, loop_attr, 0, next, 0, 0, 0, 0, 0],
+                            sense: Sense::Forward,
+                            offset: 0,
+                        },
+                    )
+                    .expect("fixture coedge");
+            }
+        }
+        (bridge, tables)
+    }
+
+    #[test]
+    fn face_walk_releases_guards_and_rejected_rings_between_walks() {
+        let (bridge, tables) = fixture(1, false);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 4096;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let mut graph_storage = ctx.reserve_scoped(0, "test graph scratch").unwrap();
+        for _ in 0..64 {
+            let face = graph_storage
+                .with_storage(|| walk_face(&ctx, &bridge, &tables))
+                .expect("local storage is reusable");
+            assert!(face.loops.is_empty());
+            assert_eq!(face.bridge_attr, bridge.attr);
+            assert_eq!(face.surface_attr, 30);
+            assert_eq!(face.sense, Sense::Forward);
+        }
+    }
+
+    #[test]
+    fn face_walk_releases_rejected_ring_storage_between_sibling_loops() {
+        let (bridge, tables) = fixture(32, false);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 4096;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let mut graph_storage = ctx.reserve_scoped(0, "test graph scratch").unwrap();
+        let face = graph_storage
+            .with_storage(|| walk_face(&ctx, &bridge, &tables))
+            .expect("rejected sibling ring storage is reusable");
+        assert!(face.loops.is_empty());
+    }
+
+    #[test]
+    fn face_walk_transfers_only_closed_ring_storage_to_graph_scope() {
+        const PROBE: &str = "probe walked face storage";
+        let (bridge, tables) = fixture(2, true);
+        let mut expected_bytes = 0;
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::MaterializedBytes,
+            PROBE,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_materialized_bytes = cap;
+                policy.limits.max_retained_bytes = 0;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                let mut graph_storage = ctx.reserve_scoped(0, "test graph scratch")?;
+                let face = graph_storage.with_storage(|| walk_face(&ctx, &bridge, &tables))?;
+                assert_eq!(face.loops.len(), 2);
+                for (index, (attr, ring)) in face.loops.iter().enumerate() {
+                    let index = u16::try_from(index).unwrap();
+                    assert_eq!(*attr, 20 + index);
+                    assert_eq!(
+                        *ring,
+                        (0..32)
+                            .map(|step| 0x1000 + index * 64 + step)
+                            .collect::<Vec<_>>()
+                    );
+                }
+                let ring_bytes: usize = face
+                    .loops
+                    .iter()
+                    .map(|(_, ring)| ring.capacity() * std::mem::size_of::<u16>())
+                    .sum();
+                expected_bytes = u64::try_from(
+                    ring_bytes + face.loops.capacity() * std::mem::size_of::<(u16, Vec<u16>)>(),
+                )
+                .unwrap();
+                let _probe = ctx.reserve_scoped(4096, PROBE)?;
+                drop((face, graph_storage));
+                Ok(())
+            },
+        );
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("storage refusal")
+        };
+        assert_eq!(limit.used, expected_bytes);
+        assert_eq!(limit.additional, 4096);
+    }
+}
