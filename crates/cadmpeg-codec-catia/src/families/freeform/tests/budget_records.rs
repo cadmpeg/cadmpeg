@@ -108,6 +108,9 @@ fn freeform_census_pools_are_temporary_through_model_transfer() {
         "catia_b5_typed_class21_pcurves",
         "catia_b5_typed_parameter_incidences",
         "catia_b5_typed_vertex_incidence_rosters",
+        "catia_freeform_b5_face_ids",
+        "catia_freeform_b5_loop_ids",
+        "catia_freeform_census_face_ids",
     ] {
         // Each populated census route must finish with a retained refusal
         // armed at its source allocation. The model transfer still succeeds.
@@ -189,5 +192,78 @@ fn freeform_fallback_carrier_slots_and_tags_are_temporary() {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere))
                 if sphere.radius().get() == 5.0));
         assert!(output.ir.model.surfaces[0].source_object.is_some());
+    }
+}
+
+#[test]
+fn freeform_surface_pool_source_tags_are_temporary_through_annotation() {
+    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, ResourceDimension};
+    let bytes = crate::test_support::test_a5a8::a5_surface_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let _probe = RefusalProbe::arm(
+        ResourceDimension::RetainedBytes,
+        "catia_freeform_surface_source_tag",
+        None,
+    );
+    let ir = crate::test_support::with_retained_limit(u64::MAX, |ctx| {
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        super::super::append_freeform_surface_pools(
+            &mut ir,
+            &mut cadmpeg_ir::AnnotationBuilder::new(),
+            &bytes,
+            &records,
+            &std::collections::HashMap::new(),
+            &mut crate::nurbs::LaneRefusals::new(),
+            &mut crate::families::FamilyEntityAdmission::new(ctx),
+        )?;
+        Ok::<_, cadmpeg_core::CodecError>(ir)
+    })
+    .expect("annotation source tag is temporary");
+    assert_eq!(ir.model.surfaces.len(), 1);
+    assert!(ir.model.surfaces[0].source_object.is_some());
+}
+
+#[test]
+fn freeform_surface_source_formats_the_final_scoped_tag() {
+    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, ResourceDimension};
+    let bytes = crate::test_support::test_a5a8::a5_surface_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let mut surface = crate::test_support::with_service_context(|ctx| {
+        crate::families::a5a8::records::a5_surfaces_from_records(
+            ctx,
+            &bytes,
+            &records,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    })
+    .expect("source surface")
+    .pop()
+    .expect("one source surface");
+    for (identity, tags) in [
+        (
+            None,
+            [
+                "frame_offset:0000000000",
+                "freeform:frame_offset:0000000000",
+            ],
+        ),
+        (
+            Some(0x1234_5678),
+            ["object_id:12345678", "freeform:object_id:12345678"],
+        ),
+    ] {
+        surface.identity = identity;
+        for (prefix, expected) in ["", "freeform:"].into_iter().zip(tags) {
+            let _probe = RefusalProbe::arm(
+                ResourceDimension::RetainedBytes,
+                "catia_freeform_surface_source_tag",
+                None,
+            );
+            crate::test_support::with_service_context(|ctx| {
+                let (_, tag) = super::super::freeform_surface_source(ctx, &surface, prefix)
+                    .expect("scoped final tag");
+                assert_eq!(tag.0, expected);
+            });
+        }
     }
 }
