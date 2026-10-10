@@ -153,6 +153,62 @@ fn absent_topology_consumers_skip_populated_owner_and_geometry_indexes() {
 }
 
 #[test]
+fn occurrence_lookup_storage_releases_before_occurrence_copies() {
+    let shapes = TextTShapes::from(vec![TextTShape {
+        geometry: TextTShapeGeometry::Edge {
+            tolerance: FiniteReal::ZERO,
+            same_parameter: false,
+            same_range: false,
+            degenerated: false,
+            representations: Vec::new(),
+        },
+        flags: [false; 7],
+        children: Vec::new(),
+    }]);
+    let roots = [TextShapeUse {
+        shape: 1,
+        orientation: TextOrientation::Forward,
+        location: 0.into(),
+    }];
+    let mut payload = payload();
+    payload.property = "p".into();
+    with_limits(u64::MAX, u64::MAX, |ctx| {
+        let mut occurrences = super::TopologyOccurrences {
+            records: Vec::new(),
+            _storage: ctx.reserve_scoped(0, "test occurrences").unwrap(),
+        };
+        let mut tables = tables(&shapes);
+        tables.roots = &roots;
+        let mut builder = Builder::new(
+            ctx,
+            &payload,
+            tables,
+            super::ScopedData {
+                data: cadmpeg_core::text::NonBlankString::try_from("Object").unwrap(),
+                _storage: ctx.reserve_scoped(0, "test source object").unwrap(),
+            },
+            GeometryIndexes::new(ctx).unwrap(),
+            Some(&mut occurrences),
+        ).unwrap();
+        let _probe = RefusalProbe::arm(
+            ResourceDimension::MaterializedBytes,
+            "FreeCAD topology occurrence property",
+            None,
+        );
+        builder.bind_topology(
+            crate::brep::TextShapeKind::Edge, 1, Transform::identity(), "e",
+        ).expect("lookup scratch expires before the short occurrence copies");
+        drop(builder);
+        assert_eq!(occurrences.records.len(), 1);
+        assert_eq!(occurrences.records[0].property, "p");
+        assert_eq!(occurrences.records[0].indexed_name, "Edge");
+        assert_eq!(occurrences.records[0].source_index, 1);
+        assert_eq!(occurrences.records[0].topology_id, "e");
+        assert_eq!(ctx.resource_refusal(), None);
+    });
+}
+
+#[test]
 fn procedural_indexes_wait_for_the_first_consumer_and_reuse_the_result() {
     let mut ir = populated_ir();
     let construction =

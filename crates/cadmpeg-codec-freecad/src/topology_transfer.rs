@@ -685,20 +685,21 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
                     )
                 })?;
         let key = ScopedData {
-            data,
+            data: (kind, data),
             _storage: storage,
         };
         let Some(source_index) = self
             .ctx
             .get_hash_map(
                 &source_indices.data,
-                &(kind, key.data),
+                &key.data,
                 "FreeCAD source topology lookup",
             )?
             .copied()
         else {
             return Ok(());
         };
+        drop(key);
         let property = self.ctx.copy_scoped_text(
             &self.payload.property,
             &mut occurrences._storage,
