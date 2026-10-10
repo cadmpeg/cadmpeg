@@ -2017,7 +2017,13 @@ impl Graph {
         let mut visit_shell = |_, _, face_xmts: &[u32]| {
             faces += face_xmts.len();
             if rings_complete {
-                for &face_xmt in ctx.admit_iter(face_xmts, "NX body shell faces")? {
+                let mut remaining_faces = face_xmts.iter();
+                while !remaining_faces.as_slice().is_empty() {
+                    let Some(&face_xmt) =
+                        ctx.next_charged(&mut remaining_faces, "NX body shell faces")?
+                    else {
+                        break;
+                    };
                     let mut ring_storage = ctx.reserve_scoped(0, "NX body face rings")?;
                     let rings = ring_storage.with_storage(|| {
                         match self.face_loop_rings(ctx, face_xmt) {
