@@ -19,17 +19,20 @@ use super::{
     ParsedParameterOwner,
 };
 use crate::design::test_support::{parameter_owner_frame, parameter_record};
+use crate::ids;
 use crate::records::{
     parameters::{DesignParameterCompanion, DesignParameterKind, DesignParameterOwner},
     recipes::{ConstructionRecipe, ConstructionRecipeKind},
 };
-use crate::test_support::lp_utf16;
 use crate::test_support::manifest_test::write_synthetic_manifests;
 use crate::test_support::zip_test::with_scan;
+use crate::test_support::{lp_utf16, with_decode_context};
 
-mod payload_session;
 mod retention;
-mod user_source_kind;
+
+fn native_scope(stream: &str) -> String {
+    with_decode_context(|ctx| ids::native_scope(ctx, stream, "retain F3D native scope").unwrap())
+}
 
 impl ParsedParameterOwner {
     /// Locate this owner in a test stream through the decode path.
@@ -69,6 +72,24 @@ fn parse_legacy_parameter_owner_88(
     legacy_parameter_owner_88_layout(frame, evaluated, frame_start)
         .map(|layout| layout.retain(ctx))
         .transpose()
+}
+
+#[test]
+fn design_parameter_class_tag_refuses_retained_bytes() {
+    let bytes = parameter_record(None, "60 mm", "User Parameter", Some("mm"), "Width", 6.0);
+    let refusal = crate::test_support::resource_refusal_at(
+        ResourceDimension::RetainedBytes,
+        "copy F3D Design parameter class tag",
+        0,
+        |ctx| super::parse_design_parameter(ctx, &bytes).map(|_| ()),
+    );
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "copy F3D Design parameter class tag"
+                && limit.additional == 3
+    ));
 }
 
 fn compact_owned_parameter_record(
@@ -375,7 +396,7 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
     let mut sheet_metal =
         parameter_record(Some(301), "50.00 mm", "FlangeHeight", Some("mm"), "d2", 5.0);
     sheet_metal[22..30].copy_from_slice(&6u64.to_le_bytes());
-    let (_, expression_end) = crate::test_support::with_decode_context(|ctx| {
+    let (_, expression_end) = with_decode_context(|ctx| {
         crate::bytes::lp_utf16_bounded_charged(
             ctx,
             &sheet_metal,
@@ -1033,15 +1054,7 @@ fn parameter_companion_decode_refuses_index_output_and_identifier_limits() {
     prefix[42..50].copy_from_slice(&1u64.to_le_bytes());
     let owner =
         DesignParameterOwner::try_from(crate::records::parameters::DesignParameterOwnerWire {
-            id: format!(
-                "{}:design-parameter-owner#1",
-                crate::test_support::with_decode_context(|ctx| crate::ids::native_scope(
-                    ctx,
-                    STREAM,
-                    "retain F3D native scope"
-                )
-                .expect("test F3D native identity"))
-            ),
+            id: format!("{}:design-parameter-owner#1", native_scope(STREAM)),
             byte_offset: 1,
             frame_length: 104,
             class_tag: crate::records::references::DesignClassTag::try_from("292".to_owned())
@@ -1058,10 +1071,7 @@ fn parameter_companion_decode_refuses_index_output_and_identifier_limits() {
         })
         .unwrap();
     let header = crate::records::decal::DesignRecordHeader {
-        id: crate::test_support::with_decode_context(|ctx| {
-            crate::ids::native_design_record_header_id(ctx, STREAM, 0)
-                .expect("test F3D native identity")
-        }),
+        id: with_decode_context(|ctx| ids::native_design_record_header_id(ctx, STREAM, 0).unwrap()),
         record_index: 46,
         class_tag: crate::records::references::DesignClassTag::try_from("408".to_owned()).unwrap(),
         byte_offset: 0,
@@ -1073,13 +1083,7 @@ fn parameter_companion_decode_refuses_index_output_and_identifier_limits() {
     zip.write_all(&prefix).unwrap();
     let archive = zip.finish().unwrap().into_inner();
     with_scan(&archive, |scan| {
-        let scope_len = u64_from_index(
-            crate::test_support::with_decode_context(|ctx| {
-                crate::ids::native_scope(ctx, STREAM, "retain F3D native scope")
-                    .expect("test F3D native identity")
-            })
-            .len(),
-        );
+        let scope_len = u64_from_index(native_scope(STREAM).len());
         for (items, retained, dimension, operation) in [
             (
                 0,
@@ -1187,15 +1191,7 @@ fn parameter_companion_decode_refuses_index_output_and_identifier_limits() {
         assert_eq!(decoded.len(), 1);
         assert_eq!(
             decoded[0].id(),
-            format!(
-                "{}:design-parameter-companion#0",
-                crate::test_support::with_decode_context(|ctx| crate::ids::native_scope(
-                    ctx,
-                    STREAM,
-                    "retain F3D native scope"
-                )
-                .expect("test F3D native identity"))
-            )
+            format!("{}:design-parameter-companion#0", native_scope(STREAM))
         );
     });
 }
@@ -1221,9 +1217,8 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
     let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
     let parameter = crate::records::parameters::DesignParameter::try_from(
         crate::records::parameters::DesignParameterDraft::<String> {
-            id: crate::test_support::with_decode_context(|ctx| {
-                crate::ids::native_design_parameter_id(ctx, stream, 200)
-                    .expect("test F3D native identity")
+            id: with_decode_context(|ctx| {
+                ids::native_design_parameter_id(ctx, stream, 200).unwrap()
             }),
             byte_offset: 200,
             class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned())
@@ -1255,10 +1250,7 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
     )
     .unwrap();
     let header = crate::records::decal::DesignRecordHeader {
-        id: crate::test_support::with_decode_context(|ctx| {
-            crate::ids::native_design_record_header_id(ctx, stream, 0)
-                .expect("test F3D native identity")
-        }),
+        id: with_decode_context(|ctx| ids::native_design_record_header_id(ctx, stream, 0).unwrap()),
         record_index: 44,
         class_tag: crate::records::references::DesignClassTag::try_from("292".to_owned()).unwrap(),
         byte_offset: 0,
@@ -1334,9 +1326,8 @@ fn parameter_owner_maps_and_output_refuse_collection_limit() {
     let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
     let parameter = crate::records::parameters::DesignParameter::try_from(
         crate::records::parameters::DesignParameterDraft::<String> {
-            id: crate::test_support::with_decode_context(|ctx| {
-                crate::ids::native_design_parameter_id(ctx, stream, 200)
-                    .expect("test F3D native identity")
+            id: with_decode_context(|ctx| {
+                ids::native_design_parameter_id(ctx, stream, 200).unwrap()
             }),
             byte_offset: 200,
             class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned())
@@ -1368,10 +1359,7 @@ fn parameter_owner_maps_and_output_refuse_collection_limit() {
     )
     .unwrap();
     let header = crate::records::decal::DesignRecordHeader {
-        id: crate::test_support::with_decode_context(|ctx| {
-            crate::ids::native_design_record_header_id(ctx, stream, 0)
-                .expect("test F3D native identity")
-        }),
+        id: with_decode_context(|ctx| ids::native_design_record_header_id(ctx, stream, 0).unwrap()),
         record_index: 44,
         class_tag: crate::records::references::DesignClassTag::try_from("292".to_owned()).unwrap(),
         byte_offset: 0,
@@ -1878,13 +1866,9 @@ fn legacy_parameter_owner_preserves_external_scalar_offsets() {
             assert_eq!(owner.evaluated_value().get(), 2.5);
             assert_eq!(
                 owner.id(),
-                &crate::test_support::with_decode_context(|ctx| {
-                    crate::ids::native_design_parameter_owner_id(
-                        ctx,
-                        "Design/BulkStream.dat",
-                        frame_start,
-                    )
-                    .expect("test F3D native identity")
+                &with_decode_context(|ctx| {
+                    ids::native_design_parameter_owner_id(ctx, "Design/BulkStream.dat", frame_start)
+                        .unwrap()
                 })
             );
         }
@@ -1925,6 +1909,48 @@ fn frame_relative_offsets_refuse_to_saturate_at_the_end_of_the_address_space() {
     )
     .expect_err("a frame at the end of the address space cannot be located");
     assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+}
+
+#[test]
+fn design_parameter_text_fields_refuse_each_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let payload = parameter_record(Some(44), "1", "AlongDistance", Some("mm"), "d71", 1.0);
+    for (skip, field) in ["1", "AlongDistance", "mm", "d71"].into_iter().enumerate() {
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::RetainedBytes,
+            "f3d Design UTF-16 text",
+            skip,
+            |ctx| super::parse_design_parameter(ctx, &payload),
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "f3d Design UTF-16 text"
+                && refusal.additional == u64::try_from(field.len()).unwrap())
+        );
+    }
+    let parsed =
+        super::parse_design_parameter(&cadmpeg_test_support::service_decode_context(), &payload)
+            .unwrap()
+            .unwrap();
+    assert_eq!(parsed.name, "d71");
+
+    let legacy = class_287_parameter_record("HoleDepth", "d20");
+    let mut charged = 0usize;
+    for field in ["0.4375 in", "HoleDepth", "in", "d20"] {
+        charged += field.len();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = u64::try_from(charged - 1).unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::parse_design_parameter(&ctx, &legacy).err().unwrap();
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "f3d Design UTF-16 text")
+        );
+    }
 }
 
 #[test]

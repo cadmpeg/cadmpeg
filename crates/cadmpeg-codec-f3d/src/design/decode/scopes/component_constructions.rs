@@ -1241,8 +1241,7 @@ fn legacy_component_insert_role(
                 if bytes.get(after_asset_guid) != Some(&0) {
                     return Ok(false);
                 }
-                let _asset_storage;
-                let Some((asset_identity, after_asset_identity, held_text_storage)) =
+                let Some((asset_identity, after_asset_identity, _asset_storage)) =
                     lp_utf16_bounded_scoped(
                         ctx,
                         bytes,
@@ -1253,7 +1252,6 @@ fn legacy_component_insert_role(
                 else {
                     return Ok(false);
                 };
-                _asset_storage = held_text_storage;
                 let carrier_transform_at = after_asset_identity + 1;
                 let after_transform = carrier_transform_at + 16 * 8;
                 if bytes.get(after_asset_identity) != Some(&0)
@@ -1263,8 +1261,7 @@ fn legacy_component_insert_role(
                 {
                     return Ok(false);
                 }
-                let _repeated_storage;
-                let Some((repeated_identity, after_repeated_identity, held_text_storage)) =
+                let Some((repeated_identity, after_repeated_identity, _repeated_storage)) =
                     lp_utf16_bounded_scoped(
                         ctx,
                         bytes,
@@ -1275,7 +1272,6 @@ fn legacy_component_insert_role(
                 else {
                     return Ok(false);
                 };
-                _repeated_storage = held_text_storage;
                 Ok(after_repeated_identity + 12 == relation_at
                     && bytes_at::<12>(bytes, after_repeated_identity)
                         == Some(&[0, 1, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0])
