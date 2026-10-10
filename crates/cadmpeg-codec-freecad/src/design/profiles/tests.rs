@@ -583,6 +583,7 @@ fn profile_endpoint_index_failure_does_not_precharge_entity_suffix() {
         limit.dimension,
         cadmpeg_core::decode::ResourceDimension::WorkUnits
     );
+    assert!(limit.additional < u64::try_from(entities.len()).expect("entity suffix bound"));
     assert_eq!(ctx.resource_refusal(), Some(limit));
 }
 
