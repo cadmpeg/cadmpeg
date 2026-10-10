@@ -68,7 +68,7 @@ fn feature_output_error(
 
 #[test]
 fn feature_output_history_nodes_refuse_collection_limit() {
-    let history = empty_transition_history();
+    let (_, _, history, _) = output_binding_inputs();
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         cadmpeg_core::decode::ResourceDimension::CollectionItems,
         "index F3D feature output history nodes",
@@ -337,4 +337,43 @@ fn feature_outputs_with_empty_body_lane_skip_active_index() {
     })
     .unwrap();
     assert!(feature.evaluation.outputs().is_empty());
+}
+
+#[test]
+fn feature_output_unadmitted_state_skips_node_index() {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+    for rejected in 0..3 {
+        let (mut feature, scope, mut history, body) = output_binding_inputs();
+        let original = feature.clone();
+        match rejected {
+            0 => history.states[0].state_id = 77,
+            1 => history.states.push(history.states[0].clone()),
+            _ => {
+                history.states[0]
+                    .transition
+                    .as_mut()
+                    .unwrap()
+                    .previous_state_id = None;
+            }
+        }
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        crate::test_support::with_decode_policy(&policy, |ctx| {
+            let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+                ResourceDimension::WorkUnits,
+                "index F3D feature output history nodes",
+                None,
+            );
+            crate::history::bind_feature_outputs(
+                ctx,
+                std::slice::from_mut(&mut feature),
+                &[scope],
+                &[history],
+                &[body],
+            )
+            .unwrap();
+            assert_eq!(ctx.resource_refusal(), None);
+        });
+        assert_eq!(feature, original);
+    }
 }

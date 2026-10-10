@@ -231,6 +231,7 @@ fn edge_identity_reload_and_indexes_release_their_scoped_storage() {
         policy.limits.max_materialized_bytes = 1 << 20;
         let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut ctx = super::super::Ctx::new(&ir, &native, service).unwrap();
+        ctx.headers().unwrap();
         ctx.decode = &decode;
         let mut findings = Vec::new();
         let (records, storage) =

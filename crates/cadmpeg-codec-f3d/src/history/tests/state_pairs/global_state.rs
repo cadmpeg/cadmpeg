@@ -16,10 +16,12 @@ fn history(id: &str, state_ids: &[i64]) -> AsmHistory {
         record_table_binding_budget_exceeded: false,
         states: state_ids
             .iter()
-            .map(|&state_id| {
+            .enumerate()
+            .map(|(node_index, &state_id)| {
                 let mut state = change_state(state_id);
                 state.id = format!("{id}:state#{state_id}");
                 state.parent = id.into();
+                state.node_index = i64::try_from(node_index).unwrap();
                 state
             })
             .collect(),
@@ -27,10 +29,18 @@ fn history(id: &str, state_ids: &[i64]) -> AsmHistory {
 }
 
 #[test]
-fn global_history_state_rejects_repetition_within_or_across_eligible_histories() {
+fn global_history_state_requires_one_eligible_history() {
     for histories in [
         vec![history("repeated", &[7, 7]), history("single", &[7])],
         vec![history("single", &[7]), history("repeated", &[7, 7])],
+    ] {
+        crate::test_support::with_decode_context(|ctx| {
+            let (history, state) = unique_history_state(ctx, &histories, 7).unwrap().unwrap();
+            assert_eq!(history.id, "single");
+            assert_eq!(state.state_id, 7);
+        });
+    }
+    for histories in [
         vec![history("first", &[7]), history("second", &[7])],
         vec![history("repeated", &[7, 7])],
     ] {
@@ -50,7 +60,7 @@ fn global_history_state_rejects_repetition_within_or_across_eligible_histories()
 }
 
 #[test]
-fn repeated_global_history_state_has_no_derived_scope_predecessor() {
+fn repeated_history_does_not_hide_eligible_scope_predecessor() {
     let mut single = history("single", &[7]);
     single.states[0].transition = Some(AsmHistoricalTransition {
         previous_state_id: Some(1),
@@ -74,29 +84,35 @@ fn repeated_global_history_state_has_no_derived_scope_predecessor() {
         let histories = [history("repeated", &[7, 7]), single];
         assert_eq!(
             effective_scope_previous_history_state_id(ctx, &scope, &histories).unwrap(),
-            None
+            Some(1)
         );
     });
 }
 
 #[test]
-fn global_history_ambiguity_stops_before_unread_history_and_state_tails() {
-    let histories = [
-        history("repeated", &[7, 7, 8, 9]),
-        history("tail", &[7, 8, 9]),
-    ];
-    let mut policy = DecodePolicy::service();
-    // One history source step and the two matching state source steps.
-    policy.limits.max_work_units = 3;
-    policy.limits.max_collection_items = 0;
-    policy.limits.max_materialized_bytes = 0;
-    policy.limits.max_retained_bytes = 0;
-    crate::test_support::with_decode_policy(&policy, |ctx| {
-        assert!(unique_history_state(ctx, &histories, 7).unwrap().is_none());
-        assert!(
-            matches!(ctx.charge_work(1, "after global ambiguity"), Err(CodecError::ResourceLimit(limit)) if limit.used == 3 && limit.additional == 1)
-        );
-    });
+fn global_history_ambiguity_stops_before_unread_history_tail() {
+    let work = |tail| {
+        let histories = [
+            history("first", &[7]),
+            history("second", &[7]),
+            history("tail", &vec![7; tail]),
+        ];
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        crate::test_support::with_decode_policy(&policy, |ctx| {
+            assert!(unique_history_state(ctx, &histories, 7).unwrap().is_none());
+            let CodecError::ResourceLimit(limit) = ctx
+                .charge_work(u64::MAX, "measure history work")
+                .unwrap_err()
+            else {
+                panic!("work refusal");
+            };
+            limit.used
+        })
+    };
+    assert_eq!(work(1), work(4096));
 }
 
 #[test]
@@ -122,7 +138,8 @@ fn global_history_state_source_refusal_is_active_and_sticky() {
             };
             assert_eq!(original.operation, operation);
             assert_eq!(original.additional, 1);
-            let CodecError::ResourceLimit(sticky) = unique_history_state(ctx, &[], 7).unwrap_err()
+            let CodecError::ResourceLimit(sticky) =
+                unique_history_state(ctx, &histories, 7).unwrap_err()
             else {
                 panic!("sticky state refusal");
             };

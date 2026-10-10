@@ -287,3 +287,93 @@ fn thread_face_lane_allocates_final_slots_once() {
     policy.limits.max_collection_items = limit.used.checked_add(limit.additional).unwrap();
     crate::test_support::with_decode_policy(&policy, bind).unwrap();
 }
+
+#[test]
+fn split_face_grouped_resolution_keeps_priority_over_nested_support() {
+    use crate::history_records::{AsmHistoricalPersistentSubentityTag, AsmTopologyCache};
+    use crate::records::topology::edge_recipe::DesignTopologyRecipeSide;
+    use crate::records::topology::face::{DesignFaceRecipeNode, DesignFaceRecipeStructure};
+    let (scope, group, mut operand, mut history) = fixture(
+        DesignFeatureKind::SplitFace,
+        ConstructionRecipeKind::BoundedFace,
+    );
+    operand.candidate_faces.clear();
+    operand.unreferenced_candidate_faces.clear();
+    operand.alternate_selector_candidate_faces.clear();
+    operand.recipe_program = vec![0, -1, 1];
+    operand.recipe_nodes = vec![DesignFaceRecipeNode {
+        byte_offset: 1_430,
+        end_byte_offset: 1_500,
+        program: vec![0, -1, 1],
+        recipe_structure: Some(DesignFaceRecipeStructure {
+            root: 0,
+            prelude: [0, 2],
+            sides: std::array::from_fn(|_| DesignTopologyRecipeSide {
+                header_value: 0,
+                scalars: Vec::new(),
+                payload_prefix: Vec::new(),
+                entries: Vec::new(),
+            }),
+            postlude_value: None,
+        }),
+    }];
+    let mut reference = operand.recipe_references[0].clone();
+    reference.selector = 17;
+    reference.token = "3".into();
+    reference.design_reference = 8;
+    reference.candidate_faces.clear();
+    operand.recipe_references = vec![reference; 4];
+    let mut prefix = vec![0; 10];
+    prefix.extend_from_slice(&1_u32.to_le_bytes());
+    prefix.extend_from_slice(&4_u32.to_le_bytes());
+    for _ in 0..4 {
+        prefix.extend_from_slice(&1_u32.to_le_bytes());
+        prefix.extend_from_slice(&17_u32.to_le_bytes());
+        prefix.push(b'3');
+        prefix.extend_from_slice(&[0; 4]);
+        prefix.extend_from_slice(&1_u32.to_le_bytes());
+        prefix.extend_from_slice(&8_i32.to_le_bytes());
+    }
+    prefix.extend_from_slice(&0_u32.to_le_bytes());
+    operand.recipe_prefix_bytes = prefix;
+    history.states[0]
+        .transition
+        .as_mut()
+        .unwrap()
+        .topology
+        .faces
+        .updated = vec![8];
+    let AsmTopologyCache::Complete(topology) = &mut history.states[1].topology_cache else {
+        panic!("preceding topology");
+    };
+    topology.faces = vec![7, 8];
+    topology.persistent_subentity_tags = vec![AsmHistoricalPersistentSubentityTag {
+        entity_kind: AsmHistoricalEntityKind::Face,
+        entity_ref: 7,
+        selector: 17,
+        token: "3".into(),
+        design_references: vec![8],
+        ordinal: 0,
+    }];
+    crate::test_support::with_decode_context(|ctx| {
+        bind_face_operand_history_candidates(
+            ctx,
+            std::slice::from_mut(&mut operand),
+            &[scope],
+            &[group],
+            &[],
+            &[history],
+            &HashMap::new(),
+        )
+    })
+    .unwrap();
+    assert_eq!(
+        operand.preceding_candidate_faces,
+        [crate::ids::brep_face_id(7)]
+    );
+    assert_eq!(
+        crate::design::face_resolve::resolve_face_operand_history_candidates(&operand),
+        Some(7)
+    );
+    assert!(operand.resolved_face_slots.is_empty());
+}

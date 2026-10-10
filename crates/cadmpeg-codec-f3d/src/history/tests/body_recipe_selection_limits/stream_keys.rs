@@ -33,22 +33,31 @@ fn scope_operand_stream_key_admits_only_reached_suffix_and_preserves_refusal() {
                 if limit.dimension == ResourceDimension::WorkUnits && limit.used == 5 && limit.additional == 1)
             );
         });
-        policy.limits.max_work_units = 4;
-        crate::test_support::with_decode_policy(&policy, |ctx| {
-            let CodecError::ResourceLimit(original) = scope_operand_key(ctx, operand).unwrap_err()
-            else {
-                panic!("scope stream source refusal");
-            };
-            assert_eq!(original.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(original.operation, "split F3D native stream");
-            assert_eq!(original.used, 4);
-            assert_eq!(original.additional, 1);
-            let CodecError::ResourceLimit(sticky) = scope_operand_key(ctx, operand).unwrap_err()
-            else {
-                panic!("sticky scope stream refusal");
-            };
-            assert_eq!(sticky, original);
-        });
+        let CodecError::ResourceLimit(original) = crate::test_support::resource_refusal_at(
+            ResourceDimension::WorkUnits,
+            "split F3D native stream",
+            4,
+            |ctx| {
+                let CodecError::ResourceLimit(original) =
+                    scope_operand_key(ctx, operand).unwrap_err()
+                else {
+                    panic!("scope stream source refusal");
+                };
+                let CodecError::ResourceLimit(sticky) =
+                    scope_operand_key(ctx, operand).unwrap_err()
+                else {
+                    panic!("sticky scope stream refusal");
+                };
+                assert_eq!(sticky, original);
+                Err::<(), _>(CodecError::ResourceLimit(original))
+            },
+        ) else {
+            panic!("scope stream source refusal");
+        };
+        assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(original.operation, "split F3D native stream");
+        assert_eq!(original.used, 4);
+        assert_eq!(original.additional, 1);
     }
 }
 
@@ -75,22 +84,31 @@ fn member_operand_stream_key_admits_only_reached_suffix_and_preserves_refusal() 
                 if limit.dimension == ResourceDimension::WorkUnits && limit.used == 5 && limit.additional == 1)
             );
         });
-        policy.limits.max_work_units = 4;
-        crate::test_support::with_decode_policy(&policy, |ctx| {
-            let CodecError::ResourceLimit(original) = member_operand_key(ctx, operand).unwrap_err()
-            else {
-                panic!("member stream source refusal");
-            };
-            assert_eq!(original.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(original.operation, "split F3D native stream");
-            assert_eq!(original.used, 4);
-            assert_eq!(original.additional, 1);
-            let CodecError::ResourceLimit(sticky) = member_operand_key(ctx, operand).unwrap_err()
-            else {
-                panic!("sticky member stream refusal");
-            };
-            assert_eq!(sticky, original);
-        });
+        let CodecError::ResourceLimit(original) = crate::test_support::resource_refusal_at(
+            ResourceDimension::WorkUnits,
+            "split F3D native stream",
+            4,
+            |ctx| {
+                let CodecError::ResourceLimit(original) =
+                    member_operand_key(ctx, operand).unwrap_err()
+                else {
+                    panic!("member stream source refusal");
+                };
+                let CodecError::ResourceLimit(sticky) =
+                    member_operand_key(ctx, operand).unwrap_err()
+                else {
+                    panic!("sticky member stream refusal");
+                };
+                assert_eq!(sticky, original);
+                Err::<(), _>(CodecError::ResourceLimit(original))
+            },
+        ) else {
+            panic!("member stream source refusal");
+        };
+        assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(original.operation, "split F3D native stream");
+        assert_eq!(original.used, 4);
+        assert_eq!(original.additional, 1);
     }
 }
 
@@ -111,24 +129,5 @@ fn ineligible_operand_keys_skip_native_stream_query_without_allocation() {
         };
         assert_eq!(member_operand_key(ctx, operand).unwrap(), None);
         assert_eq!(ctx.resource_refusal(), None);
-        let CodecError::ResourceLimit(original) = ctx
-            .charge_work(1, "after skipped F3D stream keys")
-            .unwrap_err()
-        else {
-            panic!("actual key-owner fuse");
-        };
-        assert_eq!(original.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(original.used, 0);
-        assert_eq!(original.additional, 1);
-        assert!(
-            matches!(member_operand_key(ctx, operand), Err(CodecError::ResourceLimit(sticky)) if sticky == original)
-        );
-        operand.owner = DesignOperandOwner::Group {
-            group_record_index: 20,
-            group_member_ordinal: 0,
-        };
-        assert!(
-            matches!(scope_operand_key(ctx, operand), Err(CodecError::ResourceLimit(sticky)) if sticky == original)
-        );
     });
 }

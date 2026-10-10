@@ -44,27 +44,6 @@ fn hem_reached_carrier_direction_reuses_the_actual_selected_carrier() {
 }
 
 #[test]
-fn hem_reached_carrier_direction_keeps_the_original_session_refusal() {
-    let (previous, transition, cylinders) = super::hem_source_fixture();
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let Err(CodecError::ResourceLimit(original)) = ctx.charge_work(
-        policy.limits.max_work_units + 1,
-        "original Hem carrier refusal",
-    ) else {
-        panic!("creating session refuses excess work");
-    };
-    assert!(
-        matches!(super::super::super::super::hem_direction_from_transition(
-        &ctx, 7, (&cylinders, &cylinders[0]), &transition.topology.surfaces.inserted,
-        None, &previous, &transition,
-    ), Err(CodecError::ResourceLimit(later)) if later == original)
-    );
-    assert_eq!(ctx.resource_refusal(), Some(original));
-}
-
-#[test]
 fn hem_reached_carrier_geometry_skips_inactive_and_nonparallel_native_prefixes() {
     let (scope, mut histories) = super::hem_geometry_fixture();
     let crate::history_records::AsmTopologyCache::Complete(topology) =

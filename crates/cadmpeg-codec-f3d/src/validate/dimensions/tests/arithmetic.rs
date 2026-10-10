@@ -123,10 +123,20 @@ fn locus_findings(group: DesignDimensionLocusGroup) -> Vec<cadmpeg_ir::report::c
             .unwrap()
             .0
             .insert((stream, 7), vec![&parameter]);
-        ctx.owner_groups.insert((stream, 6), vec![&owner]);
+        ctx.owners().unwrap();
+        ctx.owner_indexes
+            .get_mut()
+            .unwrap()
+            .0
+            .insert((stream, 6), vec![&owner]);
         ctx.companions_by_index.insert((stream, 8), &companion);
         ctx.entities_by_suffix.insert((stream, 4), &entity);
-        ctx.sketch_geometry_indices.insert((stream, 10));
+        ctx.geometry_indices().unwrap();
+        ctx.sketch_geometry_indices
+            .get_mut()
+            .unwrap()
+            .0
+            .insert((stream, 10));
         let mut findings = Vec::new();
         super::super::validate_dimension_locus_groups(&ctx, &mut findings).unwrap();
         findings
@@ -316,10 +326,19 @@ fn annotation_findings(payload_length: u64) -> Vec<cadmpeg_ir::report::check::Fi
             .unwrap()
             .0
             .insert((stream, 7), vec![&parameter]);
-        ctx.owner_groups.insert((stream, 6), vec![&owner]);
+        ctx.owners().unwrap();
+        ctx.owner_indexes
+            .get_mut()
+            .unwrap()
+            .0
+            .insert((stream, 6), vec![&owner]);
         ctx.companions_by_index.insert((stream, 8), &companion);
         ctx.entities_by_suffix.insert((stream, 4), &entity);
+        ctx.geometry_indices().unwrap();
         ctx.sketch_geometry_indices
+            .get_mut()
+            .unwrap()
+            .0
             .extend([(stream, 10), (stream, 11)]);
         let mut findings = Vec::new();
         super::super::validate_dimension_annotation_frames(&ctx, &mut findings).unwrap();

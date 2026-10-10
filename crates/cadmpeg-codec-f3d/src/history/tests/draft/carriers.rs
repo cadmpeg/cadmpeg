@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Duplicate carrier geometry and reached proof admission.
 
-use crate::history::{draft_surface_geometry, DraftSurfaceEvidence, DraftSurfaceGeometry};
+use crate::history::{draft_surface_geometry, DraftSurfaceGeometry};
 use crate::history_records::{
     AsmHistoricalCarrierBinding, AsmHistoricalCylinder, AsmHistoricalPlane,
     AsmHistoricalSurfaceAxis, AsmHistoricalSurfaceRadius, AsmHistoricalTopology,
@@ -46,45 +46,62 @@ fn axis(direction: Vector3) -> AsmHistoricalSurfaceAxis {
     }
 }
 
-fn assert_ambiguous(topology: &AsmHistoricalTopology) {
+fn assert_first(topology: &AsmHistoricalTopology, expected: DraftSurfaceGeometry) {
     crate::test_support::with_decode_context(|ctx| {
-        assert!(matches!(
-            draft_surface_geometry(ctx, topology, 10).unwrap(),
-            DraftSurfaceEvidence::Absent | DraftSurfaceEvidence::Repeated
-        ));
+        assert!(draft_surface_geometry(ctx, topology, 10).unwrap() == Some(expected));
         assert_eq!(ctx.resource_refusal(), None);
     });
 }
 
 #[test]
-fn draft_plane_carrier_rejects_conflicting_records() {
+fn draft_plane_carrier_uses_first_record() {
     let mut topology = topology();
     topology.surface_planes = vec![
         plane(Vector3::new(0.0, 0.0, 1.0)),
         plane(Vector3::new(1.0, 0.0, 0.0)),
     ];
-    assert_ambiguous(&topology);
+    assert_first(
+        &topology,
+        DraftSurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+        },
+    );
 }
 
 #[test]
-fn draft_cylinder_carrier_rejects_conflicting_records() {
+fn draft_cylinder_carrier_uses_first_record() {
     let mut topology = topology();
     topology.surface_cylinders = vec![cylinder(1.0), cylinder(2.0)];
-    assert_ambiguous(&topology);
+    assert_first(
+        &topology,
+        DraftSurfaceGeometry::Cylinder {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            radius: 1.0,
+        },
+    );
 }
 
 #[test]
-fn draft_axis_carrier_rejects_conflicting_records() {
+fn draft_axis_carrier_uses_first_record() {
     let mut topology = topology();
     topology.surface_axes = vec![
         axis(Vector3::new(0.0, 0.0, 1.0)),
         axis(Vector3::new(1.0, 0.0, 0.0)),
     ];
-    assert_ambiguous(&topology);
+    assert_first(
+        &topology,
+        DraftSurfaceGeometry::Axis {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vector3::new(0.0, 0.0, 1.0),
+            radius: None,
+        },
+    );
 }
 
 #[test]
-fn draft_axis_radius_rejects_conflicting_records() {
+fn draft_axis_radius_uses_first_record() {
     let mut topology = topology();
     topology.surface_axes = vec![axis(Vector3::new(0.0, 0.0, 1.0))];
     topology.surface_radii = vec![
@@ -97,7 +114,14 @@ fn draft_axis_radius_rejects_conflicting_records() {
             radius: 2.0,
         },
     ];
-    assert_ambiguous(&topology);
+    assert_first(
+        &topology,
+        DraftSurfaceGeometry::Axis {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vector3::new(0.0, 0.0, 1.0),
+            radius: Some(1.0),
+        },
+    );
 }
 
 #[test]
@@ -112,13 +136,13 @@ fn draft_cylinder_keeps_its_axis_and_radius_carriers() {
     crate::test_support::with_decode_context(|ctx| {
         assert!(matches!(
             draft_surface_geometry(ctx, &topology, 10).unwrap(),
-            DraftSurfaceEvidence::Geometry(DraftSurfaceGeometry::Cylinder { radius: 2.0, .. })
+            Some(DraftSurfaceGeometry::Cylinder { radius: 2.0, .. })
         ));
     });
 }
 
 #[test]
-fn draft_duplicate_carrier_stops_before_unread_geometry() {
+fn draft_first_carrier_stops_before_unread_geometry() {
     let mut topology = topology();
     topology.surface_planes = vec![
         plane(Vector3::new(0.0, 0.0, 1.0)),
@@ -130,28 +154,34 @@ fn draft_duplicate_carrier_stops_before_unread_geometry() {
         plane
     }));
     topology.surface_cylinders = vec![cylinder(2.0)];
-    let mut policy = DecodePolicy::service();
-    // One binding plus the two matching plane records; no suffix is queried.
-    policy.limits.max_work_units = 3;
-    policy.limits.max_collection_items = 0;
-    policy.limits.max_materialized_bytes = 0;
-    policy.limits.max_retained_bytes = 0;
-    crate::test_support::with_decode_policy(&policy, |ctx| {
-        assert!(matches!(
-            draft_surface_geometry(ctx, &topology, 10).unwrap(),
-            DraftSurfaceEvidence::Absent | DraftSurfaceEvidence::Repeated
-        ));
-        assert_eq!(ctx.resource_refusal(), None);
-        assert!(
-            matches!(ctx.charge_work(1, "after duplicate carrier proof"),
-            Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits
-                && limit.used == 3 && limit.additional == 1)
-        );
-    });
+    let work = |topology: &AsmHistoricalTopology| {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        crate::test_support::with_decode_policy(&policy, |ctx| {
+            assert!(matches!(
+                draft_surface_geometry(ctx, topology, 10).unwrap(),
+                Some(DraftSurfaceGeometry::Plane { .. })
+            ));
+            assert_eq!(ctx.resource_refusal(), None);
+            let CodecError::ResourceLimit(limit) = ctx
+                .charge_work(u64::MAX, "measure first carrier work")
+                .unwrap_err()
+            else {
+                panic!("work measurement");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            limit.used
+        })
+    };
+    let mut short = topology.clone();
+    short.surface_planes.truncate(2);
+    assert_eq!(work(&short), work(&topology));
 }
 
 #[test]
-fn draft_alternate_transition_rejects_conflicting_carrier_proof() {
+fn draft_alternate_transition_uses_first_carrier_proof() {
     use crate::history::resolve_draft_face_by_surface_transition;
     use crate::records::{
         dimensions::DesignRecipeReference, recipes::ConstructionRecipeKind,
@@ -239,7 +269,7 @@ fn draft_alternate_transition_rejects_conflicting_carrier_proof() {
                     &conflicting_after
                 )
                 .unwrap(),
-                None
+                Some(10)
             );
             assert_eq!(ctx.resource_refusal(), None);
         });
@@ -253,10 +283,9 @@ fn draft_carrier_proof_preserves_original_work_refusal() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = u64::MAX;
     crate::test_support::with_decode_policy(&policy, |ctx| {
-        assert!(matches!(
-            draft_surface_geometry(ctx, &topology, 10).unwrap(),
-            DraftSurfaceEvidence::Geometry(_)
-        ));
+        assert!(draft_surface_geometry(ctx, &topology, 10)
+            .unwrap()
+            .is_some());
         let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
             ResourceDimension::WorkUnits,
             "find F3D draft surface geometry",
@@ -268,8 +297,7 @@ fn draft_carrier_proof_preserves_original_work_refusal() {
         };
         assert_eq!(original.operation, "find F3D draft surface geometry");
         assert_eq!(original.additional, 1);
-        let Err(CodecError::ResourceLimit(sticky)) =
-            draft_surface_geometry(ctx, &AsmHistoricalTopology::default(), 10)
+        let Err(CodecError::ResourceLimit(sticky)) = draft_surface_geometry(ctx, &topology, 10)
         else {
             panic!("sticky Draft surface proof refusal");
         };

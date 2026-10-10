@@ -253,11 +253,10 @@ fn face_candidate_with_context(
     let (_, _, operands, _) = selection_fixture();
     let (body, region, shell) = face_geometry();
     let external = super::super::external_bodies(
-        ctx,
         std::slice::from_ref(&body),
         std::slice::from_ref(&region),
         std::slice::from_ref(&shell),
-    )?;
+    );
     super::super::body_recipe_face_body_candidates(ctx, &operands[0], &body.id, &external)
 }
 
@@ -282,11 +281,10 @@ fn external_body(
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let external = super::super::external_bodies(
-        &ctx,
         std::slice::from_ref(&body),
         std::slice::from_ref(&region),
         std::slice::from_ref(&shell),
-    )?;
+    );
     Ok(
         super::super::unique_external_body_candidate(&ctx, &operands[0], source, &external)?
             .cloned(),
@@ -305,12 +303,12 @@ fn external_body_materialized(
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     crate::test_support::with_decode_context(|setup| {
         let external = super::super::external_bodies(
-            setup,
             std::slice::from_ref(&body),
             std::slice::from_ref(&region),
             std::slice::from_ref(&shell),
-        )?;
+        );
         external.face_owners(setup)?;
+        external.metadata(setup)?;
         Ok(
             super::super::unique_external_body_candidate(&ctx, &operands[0], source, &external)?
                 .cloned(),
