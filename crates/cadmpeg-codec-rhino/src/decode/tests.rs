@@ -29,14 +29,13 @@ use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::topology::{Body, BodyKind, Point, Sense};
-use cadmpeg_ir::unknown::{NativeUnknownRecord, UnknownRecord};
+use cadmpeg_ir::unknown::NativeUnknownRecord;
 use cadmpeg_ir::{Exactness, SourceObjectAssociation};
 
 mod c2;
 mod candidate_annotations;
 mod source_links;
 
-use source_links::append_link_to_record;
 mod local_limits;
 mod source_prefix;
 
@@ -227,7 +226,10 @@ fn point_cloud_vertices_refuse_collection_limit() {
         .used
         .checked_add(limit.additional)
         .expect("bounded fixture requirement");
-    let (committed, vertices) = run(cap).expect("vertex and link admitted");
+    assert!(matches!(run(cap), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "Rhino source link index entries"));
+    // The first source link also inserts one distinct index entry.
+    let (committed, vertices) = run(cap + 1).expect("vertex, link, and index entry admitted");
     assert!(committed);
     assert_eq!(vertices, 1);
 }
@@ -1523,48 +1525,6 @@ fn phase5_freeze_shared_admissibility_fixtures() {
 }
 
 #[test]
-fn unknown_record_link_insertion_refuses_collection_limit() {
-    let refusal = with_collection_limit(0, |ctx| {
-        let mut record = UnknownRecord::unavailable(
-            UnknownId::mint("rhino:object:unknown#0").expect("valid identity"),
-            0,
-            0,
-            "",
-            Vec::new(),
-        );
-        append_link_to_record(
-            ctx,
-            "rhino:object:unknown#0",
-            record.links_mut(),
-            "rhino:curve#1",
-        )
-        .expect_err("one link exceeds the collection limit")
-    });
-    assert!(matches!(
-        refusal,
-        cadmpeg_core::CodecError::ResourceLimit(ref limit)
-            if limit.operation == "Rhino unknown record links"
-    ));
-}
-
-#[test]
-fn unknown_record_link_copy_refuses_retained_limit() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 4;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is admitted");
-    let refusal = ctx
-        .copy_retained_text("curve", "Rhino unknown record link copy")
-        .expect_err("five retained bytes exceed the limit");
-    assert!(matches!(
-        refusal,
-        cadmpeg_core::CodecError::ResourceLimit(ref limit)
-            if limit.operation == "Rhino unknown record link copy"
-    ));
-}
-
-#[test]
 fn rejected_candidate_rolls_back_entities_and_preserves_retained_bytes() {
     let archive = ArchiveVersion::V5;
     let object = object_record(archive, 1, [0; 16]);
@@ -1813,3 +1773,5 @@ mod instance_snapshots;
 mod resource_limits;
 
 mod set_lookups;
+
+mod feature_storage;
