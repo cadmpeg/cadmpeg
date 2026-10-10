@@ -140,3 +140,102 @@ fn zero_entity_procedural_position_lookup_preserves_work_refusal() {
 fn zero_entity_curve_position_lookup_preserves_work_refusal() {
     assert_reversed_lookup_refusal(false, "catia_zero_wire_curve_lookup");
 }
+
+#[test]
+fn compatible_wire_loops_borrow_large_source_curve_geometry() {
+    use crate::families::zero_entity::records::{
+        ZeroEntityFace, ZeroEntityFaceControl, ZeroEntityLoop, ZeroEntitySupportRun,
+    };
+    const CONTROLS: u32 = 4096;
+    let first = Point3::new(0.0, 0.0, 0.0);
+    let corner = Point3::new(1.0, 0.0, 0.0);
+    let mut knots = vec![0.0, 0.0];
+    knots.extend((1..CONTROLS - 1).map(|index| f64::from(index) / f64::from(CONTROLS - 1)));
+    knots.extend([1.0, 1.0]);
+    let poles = (0..CONTROLS)
+        .map(|index| Point3::new(f64::from(index) / f64::from(CONTROLS - 1), 0.0, 0.0))
+        .collect();
+    let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+        super::NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            1,
+            knots,
+            poles,
+            None,
+            false,
+        )
+        .expect("fixture admission")
+        .expect("linear NURBS"),
+    ));
+    let curve_id = CurveId::mint("catia:test:curve#large").expect("identity");
+    let closing_id = CurveId::mint("catia:test:curve#closing").expect("identity");
+    let mut ir = CadIr::empty();
+    ir.model.curves.push(Curve {
+        id: curve_id.clone(),
+        geometry,
+        source_object: None,
+    });
+    ir.model.curves.push(Curve {
+        id: closing_id.clone(),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                corner,
+                Vector3::new(-1.0, 0.0, 0.0),
+            )
+            .expect("closing line"),
+        )),
+        source_object: None,
+    });
+    let loops = [3, 6]
+        .map(|ordinal| ZeroEntityLoop {
+            pos: 20,
+            record_ordinal: ordinal,
+            tag: [0x62, 0x14],
+            members: ZeroEntityLoopMembers::try_new(8, 1, NonZeroUsize::new(2).expect("members"))
+                .expect("member range"),
+            typed_references: vec![1, 2],
+            support_record_ordinals: vec![4, 5],
+            loop_class: ZeroEntityLoopClass::Outer41,
+            forward_senses: vec![true, true],
+            oriented_model_endpoints: finite_pairs(vec![[first, corner], [corner, first]]),
+        })
+        .to_vec();
+    let runs = [ZeroEntitySupportRun {
+        carrier_pos: 0,
+        carrier_record_ordinal: 1,
+        face: Some(ZeroEntityFace {
+            pos: 10,
+            record_ordinal: 2,
+            tag: [0x5f, 0x0c],
+            allocations: vec![8, 8],
+            loops: Some(loops),
+            terminal_control: ZeroEntityFaceControl::Control05,
+        }),
+        supports: vec![
+            super::support(4, 30, [first, corner]),
+            super::support(5, 40, [corner, first]),
+        ],
+    }];
+    let curve_ids = HashMap::from([(4, curve_id.clone()), (5, closing_id)]);
+    let counts = crate::test_support::with_retained_limit(32768, |ctx| {
+        transfer_closed_wire_loops(
+            &mut crate::families::FamilyEntityAdmission::new(ctx),
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &runs,
+            &curve_ids,
+            None,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    })
+    .expect("output fits without discarded knot and pole copies");
+    assert_eq!(counts.edges, 4);
+    assert_eq!(ir.model.curves.len(), 2);
+    for edge in ir.model.edges.iter().step_by(2) {
+        assert_eq!(edge.curve(), Some(&curve_id));
+        assert_eq!(
+            edge.param_range().map(cadmpeg_ir::units::FiniteVector::get),
+            Some([0.0, 1.0])
+        );
+    }
+}

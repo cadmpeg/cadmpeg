@@ -139,7 +139,7 @@ fn standard_extrusion_support_refuses_before_surface_storage() {
             &mut supports,
             &mut ctx.reserve_scoped(0, "test support map").expect("scope"),
             7,
-            geometry.clone(),
+            &geometry,
             &mut admission,
         )
     });
@@ -155,7 +155,7 @@ fn standard_extrusion_support_refuses_before_surface_storage() {
             &mut supports,
             &mut ctx.reserve_scoped(0, "test support map").expect("scope"),
             7,
-            geometry,
+            &geometry,
             &mut admission,
         )
     })
@@ -829,7 +829,7 @@ fn line_pair_constraint_refuses_collection_growth_before_face_edges() {
 }
 
 #[test]
-fn circle_pair_constraint_refuses_nested_range_growth() {
+fn circle_pair_constraint_refuses_range_capacity_growth() {
     let supports = [StandardCurveSupport {
         pos: 0,
         tag: 0,
@@ -851,16 +851,31 @@ fn circle_pair_constraint_refuses_nested_range_growth() {
         matches!(face_refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_standard_circle_constraint_faces")
     );
-    let refused = crate::test_support::with_collection_limit(1, |ctx| {
-        super::super::super::edge_geometry::StandardCirclePairConstraint::new(
-            ctx, &supports, &options,
-        )
-        .map(|_| ())
-    });
+    let refused = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "catia_standard_circle_constraint_ranges",
+        |cap| {
+            crate::test_support::with_materialized_limit(cap, |ctx| {
+                super::super::super::edge_geometry::StandardCirclePairConstraint::new(
+                    ctx, &supports, &options,
+                )
+                .map(|_| ())
+            })
+        },
+    );
     assert!(
-        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        matches!(refused, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "catia_standard_circle_constraint_ranges")
     );
+    // Two counting-map keys and two range-map keys; capacity holds no rows.
+    crate::test_support::with_collection_limit(4, |ctx| {
+        assert!(
+            super::super::super::edge_geometry::StandardCirclePairConstraint::new(
+                ctx, &supports, &options
+            )
+            .is_ok()
+        );
+    });
     crate::test_support::with_service_context(|ctx| {
         assert!(
             super::super::super::edge_geometry::StandardCirclePairConstraint::new(
@@ -991,4 +1006,37 @@ fn a_native_endpoint_pair_reads_from_the_finite_support_when_its_placed_partner_
         ),
         Ok(Some([0, 1]))
     );
+}
+
+#[test]
+fn cached_extrusion_support_does_not_copy_unused_geometry() {
+    let id = SurfaceId::mint("catia:test:surface#cached").expect("identity");
+    let mut surfaces = vec![Surface {
+        id: id.clone(),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+        source_object: None,
+    }];
+    let mut supports = HashMap::from([(7, 0usize)]);
+    let unused = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
+        record: Some(
+            cadmpeg_ir::ids::UnknownId::mint(format!("catia:test:unknown#{}", "x".repeat(16384)))
+                .expect("identity"),
+        ),
+    });
+    let copied = crate::test_support::with_retained_limit(128, |ctx| {
+        let mut storage = ctx.reserve_scoped(0, "support map")?;
+        standard_extrusion_support_id(
+            &mut AnnotationBuilder::new(),
+            &mut surfaces,
+            &mut supports,
+            &mut storage,
+            7,
+            &unused,
+            &mut crate::families::FamilyEntityAdmission::new(ctx),
+        )
+    })
+    .expect("only the cached output ID is copied");
+    assert_eq!(copied, id);
+    assert_eq!(surfaces.len(), 1);
+    assert_eq!(supports, HashMap::from([(7, 0usize)]));
 }

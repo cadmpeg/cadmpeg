@@ -307,7 +307,7 @@ fn procedural_support_lookup_uses_the_stored_arena_index() {
             &mut supports,
             &mut ctx.reserve_scoped(0, "test support map").expect("scope"),
             7,
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+            &SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             &mut admission,
         )?;
         assert_eq!(result, expected);
@@ -347,7 +347,7 @@ fn limit_curve_index_filters_distinct_curves_and_checks_collisions() {
     // Index construction plus every distinct lookup stays below the 523,776
     // earlier-curve visits of an incremental linear scan.
     crate::test_support::with_work_limit(400_000, |ctx| {
-        let mut index = LimitCurveIndex::new(ctx, &[]).expect("empty index");
+        let mut index = LimitCurveIndex::new(ctx).expect("empty index");
         for (row, curve) in curves.iter().enumerate() {
             let key = nurbs_curve_fingerprint(ctx, curve).expect("fingerprint");
             assert!(!index.contains(ctx, key, &curves, curve).expect("query"));
@@ -1014,4 +1014,59 @@ fn projected_line_validation_matches_pair_predicate_at_tolerance_boundaries() {
             }
         }
     }
+}
+
+#[test]
+fn native_surface_source_hit_skips_geometry_fingerprints() {
+    use crate::families::b5::transfer::ResolvedPcurveSurface;
+    use crate::families::standard::decode::edge_geometry::{
+        ensure_native_edge_support_surface, NativeSurfaceIndex,
+    };
+    use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
+    let geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+        NurbsSurface::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            NurbsSurfaceLanes::new(
+                vec![
+                    vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                    vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+                ],
+                None,
+            ),
+            false,
+        )
+        .expect("admission")
+        .expect("bilinear surface"),
+    ));
+    crate::test_support::with_work_limit(u64::MAX, |ctx| {
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        let id = cadmpeg_ir::ids::SurfaceId::mint("catia:test:surface#source").expect("identity");
+        ir.model.surfaces.push(Surface {
+            id: id.clone(),
+            geometry: geometry.clone(),
+            source_object: Some(crate::assemble::cgm_source(ctx, "surface", 42).expect("source")),
+        });
+        let mut index = NativeSurfaceIndex::new(ctx).expect("index");
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "catia_native_surface_fingerprint",
+            None,
+        );
+        assert_eq!(
+            ensure_native_edge_support_surface(
+                &mut ir,
+                &mut cadmpeg_ir::AnnotationBuilder::new(),
+                42,
+                &ResolvedPcurveSurface::Geometry(geometry),
+                &mut index,
+                &mut crate::families::FamilyEntityAdmission::new(ctx)
+            )
+            .expect("source lookup visits no geometry lanes"),
+            id
+        );
+        assert_eq!(ir.model.surfaces.len(), 1);
+    });
 }

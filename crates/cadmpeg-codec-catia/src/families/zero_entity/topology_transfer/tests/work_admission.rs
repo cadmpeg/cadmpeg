@@ -47,7 +47,7 @@ fn paired_face_fixture(
         )),
         source_object: None,
     });
-    let surfaces = HashMap::from([(100, surface_id)]);
+    let surfaces = HashMap::from([(100, 0usize)]);
     let mut curves = HashMap::new();
     for run in &runs {
         for support in &run.supports {
@@ -76,19 +76,42 @@ fn paired_face_fixture(
             });
         }
     }
-    let counts = transfer_closed_face_topology(
-        &mut crate::families::FamilyEntityAdmission::new(ctx),
-        &mut ir,
-        &mut AnnotationBuilder::new(),
-        ZeroEntityClosedTopology {
-            support_runs: &runs,
-            surface_ids_by_position: &surfaces,
-            support_curve_ids: &curves,
-            ownership_root: None,
-        },
-        &WorkBudget::new(100_000),
-        &mut crate::nurbs::LaneRefusals::new(),
-    )?
+    let counts = {
+        let mut candidate_storage = ctx
+            .provisional_retained("closed topology test candidate")
+            .expect("scope");
+        let outcome = transfer_closed_face_topology(
+            &mut crate::families::FamilyEntityAdmission::new(ctx),
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            ZeroEntityClosedTopology {
+                support_runs: &runs,
+                surface_indices_by_position: &surfaces,
+                support_curve_ids: &curves,
+                ownership_root: None,
+            },
+            &WorkBudget::new(100_000),
+            &mut crate::nurbs::LaneRefusals::new(),
+            &mut candidate_storage,
+        );
+        if outcome.is_ok() {
+            candidate_storage
+                .commit()
+                .expect("accepted mutation storage");
+        } else {
+            ir.model.bodies = Vec::new();
+            ir.model.regions = Vec::new();
+            ir.model.shells = Vec::new();
+            ir.model.faces = Vec::new();
+            ir.model.loops = Vec::new();
+            ir.model.coedges = Vec::new();
+            ir.model.edges = Vec::new();
+            ir.model.vertices = Vec::new();
+            ir.model.points = Vec::new();
+            ir.model.pcurves = Vec::new();
+        }
+        outcome
+    }?
     .expect("complete paired-face fixture");
     Ok(counts.faces)
 }

@@ -164,7 +164,7 @@ fn standard_initial_carrier_identity_refuses_retained_limit() {
 }
 
 #[test]
-fn standard_revolution_procedure_copy_refuses_retained_limit() {
+fn standard_revolution_directrix_copy_refuses_retained_limit() {
     let directrix = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
         &cadmpeg_test_support::service_decode_context(),
         1,
@@ -187,18 +187,21 @@ fn standard_revolution_procedure_copy_refuses_retained_limit() {
             parameter_interval: [0.0, 1.0],
         },
     ));
-    let limited = crate::test_support::with_retained_limit(0, |ctx| {
-        super::super::copy_standard_procedure(ctx, &procedure)
-    });
+    let super::super::StandardSurfaceProcedure::Revolution(revolution) = &procedure else {
+        panic!("revolution fixture");
+    };
+    let copy = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        revolution
+            .directrix
+            .try_clone_for_decode(ctx, "catia_standard_revolution_directrix_copy")
+    };
+    let limited = crate::test_support::with_retained_limit(0, copy);
     assert!(
         matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_standard_revolution_plan_copy")
+        if limit.operation == "catia_standard_revolution_directrix_copy")
     );
-    let service = crate::test_support::with_service_context(|ctx| {
-        super::super::copy_standard_procedure(ctx, &procedure)
-    })
-    .expect("service budget");
-    assert!(service == procedure);
+    let service = crate::test_support::with_service_context(copy).expect("service budget");
+    assert_eq!(service, revolution.directrix);
 }
 
 #[test]
