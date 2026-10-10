@@ -168,7 +168,6 @@ impl ProfileNurbs<'_, '_> {
             Self::Generated(profile) => &profile.curve,
         }
     }
-
 }
 
 #[cfg(test)]
@@ -176,9 +175,10 @@ impl<'source> ProfileNurbs<'source, '_> {
     fn into_retained(self) -> Result<Cow<'source, NurbsCurve>, CodecError> {
         match self {
             Self::Borrowed(curve) => Ok(Cow::Borrowed(curve)),
-            Self::Generated(GeneratedProfile { curve, _storage: storage }) => {
-                Ok(Cow::Owned(storage.commit_value(curve)?))
-            }
+            Self::Generated(GeneratedProfile {
+                curve,
+                _storage: storage,
+            }) => Ok(Cow::Owned(storage.commit_value(curve)?)),
         }
     }
 }

@@ -36,7 +36,8 @@ fn assert_typed_scalar_formatting(class: &str, expected: &str) {
     assert_eq!(first.dimension, ResourceDimension::RetainedBytes);
     assert_eq!(first.operation, "format SLDPRT native scalar");
     assert!(histories[0].features[0].parameters.is_empty());
-    let CodecError::ResourceLimit(repeated) = ctx.finish_session()
+    let CodecError::ResourceLimit(repeated) = ctx
+        .finish_session()
         .expect_err("scalar formatting refusal must fuse the session")
     else {
         panic!("expected sticky refusal");

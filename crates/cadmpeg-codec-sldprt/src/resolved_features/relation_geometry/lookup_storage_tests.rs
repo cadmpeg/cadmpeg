@@ -18,22 +18,28 @@ use std::collections::BTreeMap;
 
 // Core admits four buckets, four control bytes, sixteen trailing controls,
 // and max(element alignment, sixteen)-one padding for a first table.
-const SCALAR_TABLE_BYTES: u64 = 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(&str, &FeatureInputScalar)>())
-    + 4
-    + 16
-    + cadmpeg_core::decode::u64_from_index((if std::mem::align_of::<(&str, &FeatureInputScalar)>() > 16 {
-        std::mem::align_of::<(&str, &FeatureInputScalar)>()
-    } else {
-        16
-    }) - 1);
-const NAME_TABLE_BYTES: u64 = 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(&str, &str)>())
-    + 4
-    + 16
-    + cadmpeg_core::decode::u64_from_index((if std::mem::align_of::<(&str, &str)>() > 16 {
-        std::mem::align_of::<(&str, &str)>()
-    } else {
-        16
-    }) - 1);
+const SCALAR_TABLE_BYTES: u64 =
+    4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(&str, &FeatureInputScalar)>())
+        + 4
+        + 16
+        + cadmpeg_core::decode::u64_from_index(
+            (if std::mem::align_of::<(&str, &FeatureInputScalar)>() > 16 {
+                std::mem::align_of::<(&str, &FeatureInputScalar)>()
+            } else {
+                16
+            }) - 1,
+        );
+const NAME_TABLE_BYTES: u64 =
+    4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(&str, &str)>())
+        + 4
+        + 16
+        + cadmpeg_core::decode::u64_from_index(
+            (if std::mem::align_of::<(&str, &str)>() > 16 {
+                std::mem::align_of::<(&str, &str)>()
+            } else {
+                16
+            }) - 1,
+        );
 const DRIVING_BYTES: u64 = SCALAR_TABLE_BYTES + NAME_TABLE_BYTES;
 
 fn fixture(role: FeatureInputScalarRole) -> (Feature, DesignParameter, FeatureInputLane) {
