@@ -57,6 +57,7 @@ mod curve_nurbs;
 mod contact_higher;
 mod model_surface_point;
 mod pcurve_nurbs;
+mod polar_higher;
 mod polyline;
 mod priority_queue;
 mod rational;
@@ -6654,18 +6655,11 @@ fn variable_blend_contact_track(
         let result = (|| {
             let parameter = FiniteReal::new(parameter).ok_or(no_value)?;
             let mut higher = [Err(no_value); 3];
-            let evaluated = if let (ContactRequest::Higher(order), PcurveGeometry::Nurbs { nurbs }) = (request, geometry) {
-                let _depth = scratch.enter().ok_or_else(|| scratch.failure(no_value))?;
+            let evaluated = if let ContactRequest::Higher(order) = request {
                 let max_order = if order == SurfaceRequest::Fifth { 5 }
                     else if order.needs_fourth() { 4 } else if order.needs_third() { 3 } else { 2 };
-                match pcurve_nurbs::differential_requested(&scratch, nurbs.degree(), nurbs.knots(),
-                    pcurve_nurbs::DifferentialPoles::Stored(nurbs.pole_rows()), parameter, max_order) {
-                    Ok(differential) => { higher = differential.higher; PcurveEvaluation::from(differential) }
-                    Err(EvaluationFailure::NonFinite(point)) => PcurveEvaluation::left_finite_range(point,
-                        Point2::new(f64::NAN, f64::NAN)),
-                    Err(EvaluationFailure::NoValue) => return Err(no_value),
-                    Err(EvaluationFailure::ResourceLimit(limit)) => return Err(EvaluationFailure::ResourceLimit(limit)),
-                }
+                pcurve_uv_unsettled(&scratch, geometry, parameter, Some((max_order, &mut higher)))
+                    .ok_or(no_value)?
             } else { pcurve_uv_differential(&scratch, geometry, parameter).ok_or(no_value)? };
             if let Some(limit) = evaluated.resource {
                 return Err(EvaluationFailure::ResourceLimit(limit));
@@ -8056,7 +8050,7 @@ fn pcurve_uv_differential(
     geometry: &PcurveGeometry,
     parameter: FiniteReal,
 ) -> Option<PcurveEvaluation> {
-    let evaluated = pcurve_uv_unsettled(scratch, geometry, parameter);
+    let evaluated = pcurve_uv_unsettled(scratch, geometry, parameter, None);
     match scratch.refused() {
         Some(limit) => Some(PcurveEvaluation::resource(limit)),
         None => evaluated,
@@ -8067,6 +8061,7 @@ fn pcurve_uv_unsettled(
     scratch: &decode::Scratch<'_, '_>,
     geometry: &PcurveGeometry,
     parameter: FiniteReal,
+    requested: Option<(usize, &mut pcurve_nurbs::HigherPcurve)>,
 ) -> Option<PcurveEvaluation> {
     let _depth = scratch.enter()?;
     let t = parameter.get();
@@ -8265,11 +8260,9 @@ fn pcurve_uv_unsettled(
                     Point2::new(f64::NAN, axial_derivative),
                 ));
             };
-            let angle = match polar_angle_differential(
-                radial,
-                admit_parameter_point(Point2::new(dx, dy)),
-                FinitePoint2::new(Point2::new(ddx, ddy)),
-            ) {
+            let radial_first = admit_parameter_point(Point2::new(dx, dy));
+            let radial_second = FinitePoint2::new(Point2::new(ddx, ddy));
+            let angle = match polar_angle_differential(radial, radial_first, radial_second) {
                 Ok(Some(angle)) => angle,
                 Ok(None) => return None,
                 Err(limit) => return Some(PcurveEvaluation::resource(limit)),
@@ -8295,15 +8288,49 @@ fn pcurve_uv_unsettled(
             };
             let axial_lane =
                 |value: f64| FiniteReal::new(value).ok_or(EvaluationFailure::NonFinite(value));
-            return Some(PcurveEvaluation {
+            let mut axial_second = None;
+            let evaluated = PcurveEvaluation {
                 point: Ok(FinitePoint2::from_coordinates(angle, finite_axial)),
                 tangent: planar_value(first, axial_lane(axial_derivative)),
                 acceleration: second.and_then(|second| {
-                    let axial = FiniteReal::new(-axial_cos * cosine - axial_sin * sine)?;
-                    Some(FinitePoint2::from_coordinates(second, axial))
+                    let axial = FiniteReal::new(-axial_cos * cosine - axial_sin * sine);
+                    axial_second = Some(axial);
+                    Some(FinitePoint2::from_coordinates(second, axial?))
                 }).into(),
                 resource: None,
-            });
+            };
+            if let Some((max_order, higher)) = requested.filter(|(order, _)| *order >= 3) {
+                let no_value = EvaluationFailure::NoValue;
+                let first = radial_first.map_err(|failure| failure.map(|_| ()));
+                let second = radial_second.ok_or(EvaluationFailure::NonFinite(()));
+                let negated = |point: FinitePoint2| {
+                    let [u, v] = point.coordinates();
+                    FinitePoint2::from_coordinates(u.negated(), v.negated())
+                };
+                let radial_higher: pcurve_nurbs::HigherPcurve = std::array::from_fn(|at| {
+                    if at + 3 > max_order { return Err(no_value); }
+                    match at { 0 => first.map(negated), 1 => second.map(negated), _ => first }
+                });
+                let angular = polar_higher::angular(
+                    [Ok(radial), first, second, radial_higher[0], radial_higher[1], radial_higher[2]],
+                    max_order,
+                );
+                let axial_first = axial_lane(axial_derivative).map_err(|failure| failure.map(|_| ()));
+                let axial_second = if max_order >= 4 {
+                    axial_second.unwrap_or_else(|| FiniteReal::new(-axial_cos * cosine - axial_sin * sine))
+                        .ok_or(EvaluationFailure::NonFinite(()))
+                } else { Err(no_value) };
+                *higher = std::array::from_fn(|at| {
+                    if at + 3 > max_order { return Err(no_value); }
+                    let axial = match at {
+                        0 => axial_first.map(FiniteReal::negated),
+                        1 => axial_second.map(FiniteReal::negated),
+                        _ => axial_first,
+                    };
+                    Ok(FinitePoint2::from_coordinates(angular[at]?, axial?))
+                });
+            }
+            return Some(evaluated);
         }
         PcurveGeometry::PolarNurbs { nurbs } => {
             let poles = nurbs.pole_rows();
@@ -8459,11 +8486,19 @@ fn pcurve_uv_unsettled(
         }
         PcurveGeometry::Nurbs { nurbs } => {
             let poles = nurbs.pole_rows();
-            return match pcurve_nurbs::differential(
-                scratch, nurbs.degree(), nurbs.knots(),
-                pcurve_nurbs::DifferentialPoles::Stored(poles), parameter,
-            ) {
-                Ok(differential) => Some(PcurveEvaluation::from(differential)),
+            let differential = match &requested {
+                Some((order, _)) => pcurve_nurbs::differential_requested(
+                    scratch, nurbs.degree(), nurbs.knots(),
+                    pcurve_nurbs::DifferentialPoles::Stored(poles), parameter, *order),
+                None => pcurve_nurbs::differential(
+                    scratch, nurbs.degree(), nurbs.knots(),
+                    pcurve_nurbs::DifferentialPoles::Stored(poles), parameter),
+            };
+            return match differential {
+                Ok(differential) => {
+                    if let Some((_, higher)) = requested { *higher = differential.higher; }
+                    Some(PcurveEvaluation::from(differential))
+                }
                 // The quotient rule forms the derivatives from the finite
                 // point, so a point outside the finite range reaches none.
                 Err(EvaluationFailure::NonFinite(point)) => Some(

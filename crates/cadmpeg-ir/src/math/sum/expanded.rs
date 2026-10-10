@@ -5,9 +5,12 @@ use super::{add_shifted, bit_is_set, signed_difference, ScaledValue,
     MAX_SCALED_EXPONENT, MIN_SCALED_EXPONENT};
 use crate::scalar::FiniteReal;
 
-// Four, five and six factors need 212, 265 and 318 significand bits.
-// The closed tables have 26, 150 and 1082 signed copies, so their sums
-// need five, eight and eleven carry bits. These are the original extents.
+// Three through six factors need 159, 212, 265 and 318 significand bits.
+// The closed tables have 6, 26, 150 and 1082 signed copies, so their sums
+// need three, five, eight and eleven carry bits. Each keeps its own extent.
+const _: () = assert!(3 * (MIN_SCALED_EXPONENT - 53) == -13236);
+const _: () = assert!(3 * (MAX_SCALED_EXPONENT - MIN_SCALED_EXPONENT + 53) + 3 == 26658);
+const _: () = assert!(417 * 64 >= 26658);
 const _: () = assert!(4 * (MIN_SCALED_EXPONENT - 53) == -17648);
 const _: () = assert!(5 * (MIN_SCALED_EXPONENT - 53) == -22060);
 const _: () = assert!(6 * (MIN_SCALED_EXPONENT - 53) == -26472);
@@ -25,6 +28,7 @@ impl<const FACTORS: usize, const WORDS: usize, const LIMBS: usize>
     Numerator<FACTORS, WORDS, LIMBS>
 {
     const ORIGIN: i32 = match FACTORS {
+        3 => 3 * (MIN_SCALED_EXPONENT - 53),
         4 => 4 * (MIN_SCALED_EXPONENT - 53),
         5 => 5 * (MIN_SCALED_EXPONENT - 53),
         _ => 6 * (MIN_SCALED_EXPONENT - 53),
@@ -32,7 +36,7 @@ impl<const FACTORS: usize, const WORDS: usize, const LIMBS: usize>
 
     pub(super) fn new() -> Self {
         const {
-            assert!(matches!((FACTORS, WORDS, LIMBS), (4, 556, 4) | (5, 695, 5) | (6, 834, 5)));
+            assert!(matches!((FACTORS, WORDS, LIMBS), (3, 417, 3) | (4, 556, 4) | (5, 695, 5) | (6, 834, 5)));
             assert!(LIMBS * 64 >= FACTORS * 53);
             assert!(WORDS * 64 <= 65535);
         }
@@ -111,8 +115,8 @@ impl<const FACTORS: usize, const WORDS: usize, const LIMBS: usize>
             mantissa /= denominator.sign * denominator.mantissa;
             exponent -= denominator.exponent();
         }
-        // Seven, nine or eleven divisions keep the mantissa at most128,512
-        // or2048. Only final scaling can overflow or round into subnormal range.
+        // Five, seven, nine or eleven divisions keep the mantissa at most32,
+        //128,512 or2048. Only final scaling can overflow or round into subnormal range.
         Some(crate::math::scale_power_of_two(mantissa, exponent)
             .ok_or(mantissa.signum() * f64::INFINITY))
     }
