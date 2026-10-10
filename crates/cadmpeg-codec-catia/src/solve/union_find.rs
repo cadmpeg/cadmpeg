@@ -90,6 +90,7 @@ impl UnionFind<'_> {
     pub(crate) fn find(&self, ctx: &DecodeContext<'_>, node: usize) -> Result<usize, CodecError> {
         let mut parents = self.parents.borrow_mut();
         let mut root = node;
+        let mut last_child = node;
         loop {
             ctx.charge_work(1, "catia_union_traversal")?;
             let parent = *parents
@@ -98,10 +99,11 @@ impl UnionFind<'_> {
             if parent == root {
                 break;
             }
+            last_child = root;
             root = parent;
         }
         let mut current = node;
-        while current != root {
+        while current != last_child {
             ctx.charge_work(1, "catia_union_compression")?;
             let parent = parents[current];
             parents[current] = root;
@@ -384,6 +386,19 @@ mod tests {
         });
     }
     #[test]
+    fn flat_representative_lookups_do_not_rewrite_parents() {
+        let mut union = UnionFind::new(2);
+        crate::test_support::with_service_context(|ctx| {
+            union.union(ctx, 0, 1).expect("merge");
+        });
+        // Each lookup reads the child and representative; neither parent changes.
+        crate::test_support::with_work_limit(4, |ctx| {
+            assert_eq!(union.find(ctx, 1).expect("first lookup"), 0);
+            assert_eq!(union.find(ctx, 1).expect("second lookup"), 0);
+            assert!(ctx.resource_refusal().is_none());
+        });
+    }
+    #[test]
     fn readonly_root_scans_compress_an_adversarial_chain() {
         const NODES: usize = 1_024;
         let mut union = UnionFind::new(NODES);
@@ -392,10 +407,10 @@ mod tests {
                 union.union(ctx, node, node - 1).expect("merge");
             }
         });
-        // First scan: 2N-1 initial path steps, then 3(N-2)+1 steps.
-        // Second scan: 3(N-1)+1 steps. Total: 8N-8.
+        // First scan: N reads and N-2 writes, then 2(N-2)+1 reads.
+        // Second scan: 2(N-1)+1 reads. Total: 6N-6.
         crate::test_support::with_work_limit(
-            cadmpeg_core::decode::u64_from_index(8 * NODES - 8),
+            cadmpeg_core::decode::u64_from_index(6 * NODES - 6),
             |ctx| {
                 for _ in 0..2 {
                     for node in 0..NODES {

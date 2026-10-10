@@ -105,6 +105,37 @@ fn revise_root_domain(
     })
 }
 
+fn edge_arc_supports(
+    ctx: &DecodeContext<'_>,
+    edge_ids: &[usize],
+    edge_candidates: &[Vec<[usize; 2]>],
+    budget: Option<&WorkBudget<'_>>,
+) -> Result<Option<Vec<Vec<[usize; 2]>>>, CodecError> {
+    let Some(support_work) =
+        ctx.fold(
+            edge_ids,
+            Some(0usize),
+            |work, edge| {
+                Ok(work.and_then(|work| {
+                    work.checked_add(edge_candidates[*edge].len().checked_mul(2)?)
+                }))
+            },
+            "catia_arc_support_work",
+        )?
+    else {
+        return Ok(None);
+    };
+    if support_work > 0 && budget.is_some_and(|budget| !budget.charge_by(support_work)) {
+        return Ok(None);
+    }
+    let mut supports = Vec::new();
+    for &edge in ctx.admit_iter(edge_ids, "catia_arc_support_edges")? {
+        let edge_supports = edge_point_supports(ctx, &edge_candidates[edge], "catia_arc_supports")?;
+        ctx.push_vec(&mut supports, edge_supports, "catia_arc_support_edges")?;
+    }
+    Ok(Some(supports))
+}
+
 fn enforce_edge_arc_consistency(
     ctx: &DecodeContext<'_>,
     domains: &mut [Vec<usize>],
@@ -116,28 +147,23 @@ fn enforce_edge_arc_consistency(
 ) -> Result<bool, CodecError> {
     let mut scratch = ctx.reserve_scoped(0, "catia_enforce_edge_arc_consistency_scratch")?;
     scratch.with_storage(|| {
-        let Some(support_work) = ctx.fold(
-            edge_ids,
-            Some(0usize),
-            |work, edge| {
-                Ok(work.and_then(|work| {
-                    work.checked_add(edge_candidates[*edge].len().checked_mul(2)?)
-                }))
-            },
-            "catia_arc_support_work",
-        )?
-        else {
+        let Some(supports) = edge_arc_supports(ctx, edge_ids, edge_candidates, budget)? else {
             return Ok(false);
         };
-        if support_work > 0 && budget.is_some_and(|budget| !budget.charge_by(support_work)) {
-            return Ok(false);
-        }
-        let mut supports = Vec::new();
-        for &edge in ctx.admit_iter(edge_ids, "catia_arc_support_edges")? {
-            let edge_supports =
-                edge_point_supports(ctx, &edge_candidates[edge], "catia_arc_supports")?;
-            ctx.push_vec(&mut supports, edge_supports, "catia_arc_support_edges")?;
-        }
+        propagate_indexed_edge_arcs(ctx, domains, edges, root_edges, &supports, budget)
+    })
+}
+
+fn propagate_indexed_edge_arcs(
+    ctx: &DecodeContext<'_>,
+    domains: &mut [Vec<usize>],
+    edges: &[[usize; 2]],
+    root_edges: &[Vec<usize>],
+    supports: &[Vec<[usize; 2]>],
+    budget: Option<&WorkBudget<'_>>,
+) -> Result<bool, CodecError> {
+    let mut scratch = ctx.reserve_scoped(0, "catia_arc_queue_storage")?;
+    scratch.with_storage(|| {
         let mut queued = ctx.alloc_filled(edges.len(), [true; 2], "catia_arc_queued")?;
         let mut queue = VecDeque::new();
         for edge in ctx.admit_iter(0..edges.len(), "catia_arc_queue")? {
@@ -4512,13 +4538,20 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                 }
                 let arc_budget =
                     budget.map(|budget| budget.session_child_slice(budget.remaining()));
-                let arc_consistent = enforce_edge_arc_consistency(
+                let Some(pair_supports) =
+                    edge_arc_supports(ctx, &edge_ids, edge_candidates, arc_budget.as_ref())?
+                else {
+                    if arc_budget.as_ref().is_some_and(WorkBudget::exhausted) {
+                        exhausted.set(true);
+                    }
+                    return Ok(false);
+                };
+                let arc_consistent = propagate_indexed_edge_arcs(
                     ctx,
                     &mut local_domains,
                     &local_edges,
-                    &edge_ids,
                     &root_edges,
-                    edge_candidates,
+                    &pair_supports,
                     arc_budget.as_ref(),
                 )?;
                 if arc_consistent {
@@ -4569,16 +4602,6 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                 {
                     return Ok(false);
                 }
-                let pair_supports = ctx.try_collect_vec(
-                    edge_ids.iter().map(|&edge| {
-                        edge_point_supports(
-                            ctx,
-                            &edge_candidates[edge],
-                            "catia_coordinate_pair_support_index",
-                        )
-                    }),
-                    "catia_coordinate_pair_support_index",
-                )?;
                 let mut solutions = Vec::new();
                 let mut states = 0;
                 let mut exhausted = false;
@@ -6050,6 +6073,63 @@ mod tests {
             }
             assert_eq!(quotient.members(0).len(), 128);
             assert_eq!(&**quotient.domains()[0], &[0]);
+            assert!(ctx.resource_refusal().is_none());
+        });
+    }
+    #[test]
+    fn coordinate_closure_reuses_the_arc_support_index() {
+        crate::test_support::with_service_context(|ctx| {
+            let mut quotient = MeshQuotient::new(
+                [0, 1, 0, 1]
+                    .into_iter()
+                    .map(|point| Arc::new(HashSet::from([point])))
+                    .collect(),
+            );
+            quotient
+                .merge_charged(ctx, 0, 2)
+                .expect("merge")
+                .expect("left point");
+            quotient
+                .merge_charged(ctx, 1, 3)
+                .expect("merge")
+                .expect("right point");
+            let candidates = [vec![[0, 1]], vec![[0, 1]]];
+            let faces = [[0, 1]; 2];
+            let boundary = MeshFaceBoundaryAssignment {
+                boundaries: vec![vec![
+                    MeshBoundaryEdgeCandidate {
+                        edge: 0,
+                        start: 0,
+                        end: 0,
+                        reversed: None,
+                    },
+                    MeshBoundaryEdgeCandidate {
+                        edge: 1,
+                        start: 0,
+                        end: 0,
+                        reversed: None,
+                    },
+                ]],
+            };
+            let domains = [
+                MeshFaceBoundaryDomain::Ordered(vec![boundary.clone()]),
+                MeshFaceBoundaryDomain::Ordered(vec![boundary]),
+            ];
+            let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+                ResourceDimension::WorkUnits,
+                "catia_coordinate_pair_support_index",
+                Some(1),
+            );
+            let outcome = quotient
+                .coordinate_root_closure_outcome(
+                    ctx,
+                    2,
+                    &candidates,
+                    Some((&faces, &domains)),
+                    None,
+                )
+                .expect("one support index suffices");
+            assert_eq!(outcome, MeshSolve::Solved(HashMap::from([(0, 0), (1, 1)])));
             assert!(ctx.resource_refusal().is_none());
         });
     }
