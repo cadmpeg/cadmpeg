@@ -103,21 +103,30 @@ fn distinct_domain_mates<'a>(
             },
         );
     }
+    let required_edge =
+        if let Some(MatchingEdgeConstraint::Require(domain, point)) = edge_constraint {
+            if domain >= count
+                || point >= point_count
+                || !ctx.contains(domains[domain], &point, "catia_match_required_edge")?
+            {
+                return Ok(None);
+            }
+            Some((domain, point))
+        } else {
+            None
+        };
+    if let Some((_, point)) = required_edge.filter(|_| count == 1) {
+        return ctx
+            .alloc_filled(1, Some(point), "catia_match_mates")
+            .map(Some);
+    }
     let mut owner = ctx.alloc_filled(point_count, None, "catia_match_owners")?;
     let mut mates = ctx.alloc_filled(count, None, "catia_match_mates")?;
-    let mut matched_count = 0usize;
-    let mut required_domain = None;
-    if let Some(MatchingEdgeConstraint::Require(domain, point)) = edge_constraint {
-        if domain >= count
-            || point >= point_count
-            || !ctx.contains(domains[domain], &point, "catia_match_required_edge")?
-        {
-            return Ok(None);
-        }
+    let mut matched_count = usize::from(required_edge.is_some());
+    let required_domain = required_edge.map(|(domain, _)| domain);
+    if let Some((domain, point)) = required_edge {
         owner[point] = Some(domain);
         mates[domain] = Some(point);
-        matched_count = 1;
-        required_domain = Some(domain);
     }
     // A phase queues each domain at most once, and an augmenting path holds
     // one domain per distance layer, so both fit one slot per domain.
@@ -139,10 +148,17 @@ fn distinct_domain_mates<'a>(
         }
         let mut head = 0usize;
         let mut shortest = None;
-        while head < queued {
-            ctx.charge_work(1, "catia_matching_iteration")?;
-            let root = queue[head];
-            head += 1;
+        while let Some(root) = ctx.next_charged(
+            &mut std::iter::from_fn(|| {
+                if head == queued {
+                    return None;
+                }
+                let root = queue[head];
+                head += 1;
+                Some(root)
+            }),
+            "catia_matching_iteration",
+        )? {
             let Some(root_distance) = distance[root] else {
                 continue;
             };
@@ -182,8 +198,12 @@ fn distinct_domain_mates<'a>(
             path[0] = start;
             let mut depth = 1usize;
             let mut free_point = None;
-            while let Some(&root) = depth.checked_sub(1).and_then(|top| path.get(top)) {
-                ctx.charge_work(1, "catia_matching_iteration")?;
+            while let Some(root) = ctx.next_charged(
+                &mut std::iter::from_fn(|| {
+                    depth.checked_sub(1).and_then(|top| path.get(top)).copied()
+                }),
+                "catia_matching_iteration",
+            )? {
                 let mut advanced = false;
                 let root_distance = distance[root];
                 while cursor[root] < domains[root].len() {
@@ -301,6 +321,9 @@ fn repaired_domain_mates<'a>(
             ctx.push_vec(&mut unmatched, domain, "catia_match_unmatched")?;
         }
     }
+    if unmatched.is_empty() {
+        return Ok(Some(mates));
+    }
     // Each search stamps its visits with its own generation, so one set of
     // marks serves every search; a search queues each domain at most once.
     let mut seen_domains = ctx.alloc_filled(count, 0usize, "catia_match_repair_seen_domains")?;
@@ -318,10 +341,17 @@ fn repaired_domain_mates<'a>(
         let mut queued = 1usize;
         let mut head = 0usize;
         let mut free_point = None;
-        'search: while head < queued {
-            ctx.charge_work(1, "catia_matching_iteration")?;
-            let domain = queue[head];
-            head += 1;
+        'search: while let Some(domain) = ctx.next_charged(
+            &mut std::iter::from_fn(|| {
+                if head == queued {
+                    return None;
+                }
+                let domain = queue[head];
+                head += 1;
+                Some(domain)
+            }),
+            "catia_matching_iteration",
+        )? {
             for &point in domains[domain] {
                 charge_matching_work(ctx, budget)?;
                 if point >= point_count || seen_points[point] == generation {
@@ -340,11 +370,14 @@ fn repaired_domain_mates<'a>(
                 }
             }
         }
-        let Some(mut point) = free_point else {
+        let Some(point) = free_point else {
             return Ok(None);
         };
-        loop {
-            ctx.charge_work(1, "catia_matching_iteration")?;
+        let mut step = Some(point);
+        while let Some(point) = ctx.next_charged(
+            &mut std::iter::from_fn(|| step.take()),
+            "catia_matching_iteration",
+        )? {
             let domain = via_domain[point];
             owner[point] = Some(domain);
             let previous = mates[domain].replace(point);
@@ -354,7 +387,7 @@ fn repaired_domain_mates<'a>(
             let Some(previous) = previous else {
                 return Ok(None);
             };
-            point = previous;
+            step = Some(previous);
         }
     }
     Ok(Some(mates))
@@ -471,17 +504,19 @@ fn matching_support_classes(
         visited[start] = true;
         ctx.push_vec(&mut stack, (start, 0usize), "catia_match_support_stack")?;
         while let Some(top) = stack.last_mut() {
-            ctx.charge_work(1, "catia_matching_iteration")?;
             let (node, edge_index) = *top;
             if let Some(&next) = graph[node].get(edge_index) {
-                top.1 += 1;
                 charge_matching_work(ctx, budget)?;
+                top.1 += 1;
                 if !visited[next] {
                     visited[next] = true;
                     ctx.push_vec(&mut stack, (next, 0), "catia_match_support_stack")?;
                 }
             } else {
-                stack.pop();
+                ctx.next_charged(
+                    &mut std::iter::from_fn(|| stack.pop()),
+                    "catia_matching_iteration",
+                )?;
                 ctx.push_vec(&mut finish_order, node, "catia_match_support_finish_order")?;
             }
         }
@@ -499,8 +534,10 @@ fn matching_support_classes(
         }
         component[start] = Some(component_count);
         ctx.push_vec(&mut members, start, "catia_match_support_component_stack")?;
-        while let Some(node) = members.pop() {
-            ctx.charge_work(1, "catia_matching_iteration")?;
+        while let Some(node) = ctx.next_charged(
+            &mut std::iter::from_fn(|| members.pop()),
+            "catia_matching_iteration",
+        )? {
             for &next in &reverse[node] {
                 charge_matching_work(ctx, budget)?;
                 if component[next].is_none() {
@@ -524,8 +561,10 @@ fn matching_support_classes(
             ctx.push_vec(&mut pending, node, "catia_match_support_free_queue")?;
         }
     }
-    while let Some(node) = pending.pop() {
-        ctx.charge_work(1, "catia_matching_iteration")?;
+    while let Some(node) = ctx.next_charged(
+        &mut std::iter::from_fn(|| pending.pop()),
+        "catia_matching_iteration",
+    )? {
         for &previous in &reverse[node] {
             charge_matching_work(ctx, budget)?;
             if !reaches_free[previous] {
@@ -677,12 +716,21 @@ where
         let mut queued = 1usize;
         let mut head = 0usize;
         let mut open_class = None;
-        'search: while head < queued {
-            ctx.charge_work(1, "catia_bijection_match_visit")?;
-            let vertex = queue[head];
-            head += 1;
-            for &class in &class_domains[vertex] {
-                ctx.charge_work(1, "catia_bijection_class_visit")?;
+        'search: while let Some(vertex) = ctx.next_charged(
+            &mut std::iter::from_fn(|| {
+                if head == queued {
+                    return None;
+                }
+                let vertex = queue[head];
+                head += 1;
+                Some(vertex)
+            }),
+            "catia_bijection_match_visit",
+        )? {
+            let mut classes = class_domains[vertex].iter();
+            while let Some(&class) =
+                ctx.next_charged(&mut classes, "catia_bijection_class_visit")?
+            {
                 if seen_classes[class] == generation {
                     continue;
                 }
@@ -693,8 +741,7 @@ where
                     open_class = Some(class);
                     break 'search;
                 }
-                for &row in rows {
-                    ctx.charge_work(1, "catia_bijection_slot_projection")?;
+                for &row in ctx.admit_iter(rows, "catia_bijection_slot_projection")? {
                     let holder = owner[row];
                     if seen_vertices[holder] != generation {
                         seen_vertices[holder] = generation;
@@ -707,18 +754,18 @@ where
         let Some(class) = open_class else {
             return Ok(None);
         };
-        let mut row = class_points[class][load[class]];
+        let row = class_points[class][load[class]];
         load[class] += 1;
-        let mut vertex = via_vertex[class];
-        loop {
-            ctx.charge_work(1, "catia_bijection_augmentation")?;
+        let mut step = Some((row, via_vertex[class]));
+        while let Some((row, vertex)) = ctx.next_charged(
+            &mut std::iter::from_fn(|| step.take()),
+            "catia_bijection_augmentation",
+        )? {
             owner[row] = vertex;
             let previous = std::mem::replace(&mut held_row[vertex], row);
-            if vertex == start {
-                break;
+            if vertex != start {
+                step = Some((previous, via_vertex[point_classes[previous]]));
             }
-            row = previous;
-            vertex = via_vertex[point_classes[previous]];
         }
     }
 
@@ -748,7 +795,10 @@ where
         }
     }
     let mut ordered = 0usize;
-    while let Some(class) = ready.pop() {
+    while let Some(class) = ctx.next_charged(
+        &mut std::iter::from_fn(|| ready.pop()),
+        "catia_bijection_acyclic_order",
+    )? {
         ordered += 1;
         for &row in ctx.admit_iter(&class_points[class], "catia_bijection_acyclic_order")? {
             let vertex = owner[row];
@@ -774,6 +824,47 @@ where
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
+
+    #[test]
+    fn distinct_matching_retains_only_assignments() {
+        let domains = [vec![0], vec![1], vec![2]];
+        let bytes = 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>());
+        crate::test_support::with_retained_limit(bytes, |ctx| {
+            assert_eq!(
+                super::distinct_domain_matching_with_budget(
+                    ctx,
+                    domains.iter().map(Vec::as_slice),
+                    3,
+                    None,
+                    None
+                )
+                .expect("search scratch"),
+                Some(vec![0, 1, 2])
+            );
+        });
+        crate::test_support::with_retained_limit(bytes, |ctx| {
+            assert_eq!(
+                super::repair_distinct_domain_matching_with_budget(
+                    ctx,
+                    domains.iter().map(Vec::as_slice),
+                    3,
+                    &[2, 0, 1],
+                    None
+                )
+                .expect("repair scratch"),
+                Some(vec![0, 1, 2])
+            );
+        });
+        let mut domains = domains;
+        crate::test_support::with_retained_limit(0, |ctx| {
+            assert_eq!(
+                super::retain_distinct_matching_supports(ctx, &mut domains, 3, &[0, 1, 2], None)
+                    .expect("support scratch"),
+                Some(false)
+            );
+        });
+        assert_eq!(domains, [vec![0], vec![1], vec![2]]);
+    }
 
     #[test]
     fn matching_visit_charges_the_attached_session_once() {
@@ -1378,5 +1469,6 @@ mod tests {
                 && limit.operation == "catia_match_owners"));
     }
 
+    mod budget_paths;
     mod empty_domains;
 }
