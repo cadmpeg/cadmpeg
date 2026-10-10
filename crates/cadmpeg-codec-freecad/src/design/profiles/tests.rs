@@ -554,8 +554,10 @@ fn profile_endpoint_index_failure_does_not_precharge_entity_suffix() {
         let eligible = std::collections::BTreeSet::from([0]);
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::service();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-        let (index, storage) = super::EndpointIndex::new(&ctx, &eligible, &entities).expect("short endpoint index");
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("context");
+        let (index, storage) =
+            super::EndpointIndex::new(&ctx, &eligible, &entities).expect("short endpoint index");
         assert_eq!(index.by_scale.values().map(Vec::len).sum::<usize>(), 2);
         drop(index);
         drop(storage);
@@ -569,10 +571,18 @@ fn profile_endpoint_index_failure_does_not_precharge_entity_suffix() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_work_units = work_cap;
     assert!(work_cap < u64::try_from(entities.len()).expect("entity count"));
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    let error = super::EndpointIndex::new(&ctx, &profile_entities, &entities).err().expect("entity suffix exceeds work allowance");
-    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("work refusal") };
-    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("context");
+    let error = super::EndpointIndex::new(&ctx, &profile_entities, &entities)
+        .err()
+        .expect("entity suffix exceeds work allowance");
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("work refusal")
+    };
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits
+    );
     assert_eq!(ctx.resource_refusal(), Some(limit));
 }
 
@@ -729,11 +739,23 @@ fn empty_profile_routes_preserve_prior_resource_refusal() {
 fn explicit_profile_relations_skip_unused_entity_index() {
     let entities = (0..8193).map(line_entity).collect::<Vec<_>>();
     let eligible = std::collections::BTreeSet::new();
-    let mut inactive = coincident_constraint("test:test:constraint#inactive", entities[0].sketch.clone(), vec![SketchLocus::Start(entities[0].id().clone()), SketchLocus::End(entities[0].id().clone())]);
+    let mut inactive = coincident_constraint(
+        "test:test:constraint#inactive",
+        entities[0].sketch.clone(),
+        vec![
+            SketchLocus::Start(entities[0].id().clone()),
+            SketchLocus::End(entities[0].id().clone()),
+        ],
+    );
     inactive.active = Some(false);
     let mut horizontal = inactive.clone();
     horizontal.active = Some(true);
-    horizontal.definition = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(SketchConstraintDefinitionInput::Horizontal { entity: entities[0].id().clone() }).expect("horizontal constraint");
+    horizontal.definition = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+        SketchConstraintDefinitionInput::Horizontal {
+            entity: entities[0].id().clone(),
+        },
+    )
+    .expect("horizontal constraint");
     for constraints in [Vec::new(), vec![inactive], vec![horizontal]] {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
@@ -741,8 +763,11 @@ fn explicit_profile_relations_skip_unused_entity_index() {
         policy.limits.max_materialized_bytes = 0;
         policy.limits.max_retained_bytes = 0;
         policy.limits.max_work_units = 256;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-        let (relations, _storage) = super::explicit_endpoint_relations(&ctx, &eligible, &entities, &constraints).expect("no qualifying constraint");
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("context");
+        let (relations, _storage) =
+            super::explicit_endpoint_relations(&ctx, &eligible, &entities, &constraints)
+                .expect("no qualifying constraint");
         assert!(relations.is_empty());
         assert_eq!(ctx.resource_refusal(), None);
     }

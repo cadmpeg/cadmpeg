@@ -258,7 +258,12 @@ pub(crate) fn transfer<'ctx>(
             Ok::<_, CodecError>(body_ids)
         })?;
     let (feature_ordinal_storage, mut cycle_storage, feature_ordinals, mut cycle_affected);
-    (feature_ordinals, cycle_affected, feature_ordinal_storage, cycle_storage) = {
+    (
+        feature_ordinals,
+        cycle_affected,
+        feature_ordinal_storage,
+        cycle_storage,
+    ) = {
         let ordering::FeatureOrdering {
             ordinals,
             cycle_affected,
@@ -8118,8 +8123,7 @@ fn pattern_definition(
     };
     let mut source = seeds.into_iter();
     while source.len() != 0 {
-        let Some(seed) =
-            ctx.next_charged(&mut source, "fcstd selected pattern seed candidates")?
+        let Some(seed) = ctx.next_charged(&mut source, "fcstd selected pattern seed candidates")?
         else {
             break;
         };

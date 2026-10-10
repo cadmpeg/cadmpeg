@@ -84,13 +84,11 @@ fn design_spreadsheet_cell_properties_refuse_at_collection_limits() {
             "<Property><Cells Count=\"1\"><Cell address=\"A1\" content=\"5\" alias=\"Length\"/></Cells></Property>".into(), 0,
         ).expect("valid XML span"),
     };
-    for operation in [
+    crate::test_support::assert_collection_refusal_at(
+        &[],
         "fcstd spreadsheet cell properties",
-    ] {
-        crate::test_support::assert_collection_refusal_at(&[], operation, |ctx| {
-            super::append_spreadsheet(ctx, &mut Vec::new(), &object, &[&property])
-        });
-    }
+        |ctx| super::append_spreadsheet(ctx, &mut Vec::new(), &object, &[&property]),
+    );
 }
 
 #[test]
@@ -136,11 +134,9 @@ fn design_spreadsheet_dimensions_refuse_at_distinct_collection_limits() {
         "Spreadsheet::PropertyRowHeights",
         "<Property><RowInfo Count=\"1\"><Row name=\"2\" height=\"45\"/></RowInfo></Property>",
     );
-    for operation in ["fcstd spreadsheet dimensions"] {
-        crate::test_support::assert_collection_refusal_at(&[], operation, |ctx| {
-            super::append_spreadsheet(ctx, &mut Vec::new(), &object, &[&cells, &columns, &rows])
-        });
-    }
+    crate::test_support::assert_collection_refusal_at(&[], "fcstd spreadsheet dimensions", |ctx| {
+        super::append_spreadsheet(ctx, &mut Vec::new(), &object, &[&cells, &columns, &rows])
+    });
 }
 
 #[test]

@@ -376,8 +376,8 @@ pub(super) fn bind_parameter_dependencies<'ctx>(
                         let mut names = HashMap::new();
                         let mut source = objects.iter();
                         while source.len() != 0 {
-                            let Some(object) =
-                                ctx.next_charged(&mut source, "fcstd parameter dependency objects")?
+                            let Some(object) = ctx
+                                .next_charged(&mut source, "fcstd parameter dependency objects")?
                             else {
                                 break;
                             };
@@ -403,7 +403,10 @@ pub(super) fn bind_parameter_dependencies<'ctx>(
                     }
                     _ => None,
                 };
-                for name in [Some(parameter.name.as_str()), source_name].into_iter().flatten() {
+                for name in [Some(parameter.name.as_str()), source_name]
+                    .into_iter()
+                    .flatten()
+                {
                     let key = (owner, name);
                     if let Some(candidate) =
                         ctx.get_mut_hash_map(&mut local, &key, "fcstd unique local candidates")?

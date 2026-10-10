@@ -86,7 +86,10 @@ impl std::fmt::Display for MapModeIssue {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::OutOfRange(index) => write!(formatter, "map_mode index {index} is out of range"),
-            Self::StorageRange(index) => write!(formatter, "map_mode index {index} exceeds its storage range"),
+            Self::StorageRange(index) => write!(
+                formatter,
+                "map_mode index {index} exceeds its storage range"
+            ),
         }
     }
 }
@@ -96,7 +99,9 @@ impl MapModeIndex {
         if index >= MAP_MODE_NAMES.len() {
             return Err(MapModeIssue::OutOfRange(index));
         }
-        u8::try_from(index).map(Self).map_err(|_| MapModeIssue::StorageRange(index))
+        u8::try_from(index)
+            .map(Self)
+            .map_err(|_| MapModeIssue::StorageRange(index))
     }
 }
 
@@ -147,7 +152,8 @@ pub(crate) fn transfer(
     let mut by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
     let mut candidates = properties.iter();
     while candidates.len() != 0 {
-        let Some(property) = ctx.next_charged(&mut candidates, "FreeCAD attachment properties")? else {
+        let Some(property) = ctx.next_charged(&mut candidates, "FreeCAD attachment properties")?
+        else {
             break;
         };
         if !is_attachment_property(&property.name) {
@@ -158,8 +164,13 @@ pub(crate) fn transfer(
             continue;
         }
         owner_storage.with_storage(|| {
-            ctx.push_hash_group(&mut by_owner, owner, property,
-                "FreeCAD attachment owner lookup", "FreeCAD attachment owner properties")
+            ctx.push_hash_group(
+                &mut by_owner,
+                owner,
+                property,
+                "FreeCAD attachment owner lookup",
+                "FreeCAD attachment owner properties",
+            )
         })?;
     }
     if by_owner.is_empty() {
@@ -324,13 +335,20 @@ fn map_mode_value(
     };
     match ctx.parse_text::<usize>(index, "FreeCAD attachment map-mode parse")? {
         Ok(index) => MapModeIndex::try_new(index).map_err(|issue| {
-            crate::resource::malformed_charged(ctx,
+            crate::resource::malformed_charged(
+                ctx,
                 format_args!("attachment property {}: {issue}", property.id),
-                "FreeCAD attachment map-mode error")
+                "FreeCAD attachment map-mode error",
+            )
         }),
-        Err(_) => Err(crate::resource::malformed_charged(ctx,
-            format_args!("attachment property {}: map_mode {index:?} is not an index", property.id),
-            "FreeCAD attachment map-mode error")),
+        Err(_) => Err(crate::resource::malformed_charged(
+            ctx,
+            format_args!(
+                "attachment property {}: map_mode {index:?} is not an index",
+                property.id
+            ),
+            "FreeCAD attachment map-mode error",
+        )),
     }
 }
 

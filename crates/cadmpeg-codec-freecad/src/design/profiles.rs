@@ -501,8 +501,9 @@ fn explicit_endpoint_relations<'ctx>(
             };
             let (entity_indices, _entity_index_storage) = match &mut entity_lookup {
                 Some(lookup) => lookup,
-                slot @ None => slot.insert(
-                    ctx.with_scoped_storage("FCStd profile entity lookup storage", || {
+                slot @ None => slot.insert(ctx.with_scoped_storage(
+                    "FCStd profile entity lookup storage",
+                    || {
                         ctx.collect_hash_map(
                             entities
                                 .iter()
@@ -510,8 +511,8 @@ fn explicit_endpoint_relations<'ctx>(
                                 .map(|(index, entity)| (entity.id().as_str(), index)),
                             "FCStd profile entity lookup",
                         )
-                    })?,
-                ),
+                    },
+                )?),
             };
             let mut endpoint_storage = ctx.reserve_scoped(0, "FCStd explicit profile loci")?;
             let mut endpoints = BTreeSet::new();

@@ -183,7 +183,9 @@ fn body_predecessors_keep_first_usable_body_and_first_member_winners() {
 #[test]
 fn object_index_first_insertion_refuses_before_visiting_long_suffix() {
     let work_cap = 4096;
-    let objects = (0..8193).map(|order| object(&format!("source-{order}"), order)).collect::<Vec<_>>();
+    let objects = (0..8193)
+        .map(|order| object(&format!("source-{order}"), order))
+        .collect::<Vec<_>>();
     assert!(work_cap < u64::try_from(objects.len()).expect("object count"));
 
     let arena = DecodeArena::new();
@@ -206,7 +208,9 @@ fn object_index_first_insertion_refuses_before_visiting_long_suffix() {
 #[test]
 fn body_predecessor_visits_source_objects_before_admitting_suffix() {
     let work_cap = 1024;
-    let objects = (0..8193).map(|order| object(&format!("source-{order}"), order)).collect::<Vec<_>>();
+    let objects = (0..8193)
+        .map(|order| object(&format!("source-{order}"), order))
+        .collect::<Vec<_>>();
     assert!(work_cap < u64::try_from(objects.len()).expect("object count"));
 
     let features = HashMap::new();
