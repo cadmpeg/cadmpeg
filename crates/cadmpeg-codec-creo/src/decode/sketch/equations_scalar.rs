@@ -152,20 +152,7 @@ fn section_equation_function_ten_axis_alignment(
 
     let auxiliary_is_zero =
         |row: &crate::feature::definitions::FeatureVariableRow| -> Result<bool, CodecError> {
-            Ok(reconcile_equation_value(
-                row.value.value(),
-                ctx.get_btree_map(
-                    scalar_equality_values,
-                    &(row.variable_type, row.key),
-                    "creo section scalar equality values get",
-                )?
-                .copied()
-                .unwrap_or(Ok(None))
-                .ok()
-                .flatten(),
-            )
-            .ok()
-                == Some(Some(0.0)))
+            Ok(reconciled_scalar_row(ctx, row, scalar_equality_values)? == Ok(Some(0.0)))
         };
     if !auxiliary_is_zero(first_auxiliary)? || !auxiliary_is_zero(second_auxiliary)? {
         return Ok(None);
