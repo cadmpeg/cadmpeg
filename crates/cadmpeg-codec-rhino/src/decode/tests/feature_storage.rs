@@ -173,8 +173,11 @@ fn cage_literal_fields_refuse_storage_before_allocation() {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_materialized_bytes = cap;
-                let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)?;
-                let mut transaction = DecodeContext::new(&scan, crate::mesh::MeshExpand::new(&ctx, root))?;
+                let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                    scan.data, &arena, &policy,
+                )?;
+                let mut transaction =
+                    DecodeContext::new(&scan, crate::mesh::MeshExpand::new(&ctx, root))?;
                 let object = transaction.object(0).unwrap().clone();
                 let result = transaction.decode_cage(0, &object);
                 assert!(transaction.session.document().model.features.is_empty());
@@ -183,12 +186,16 @@ fn cage_literal_fields_refuse_storage_before_allocation() {
                 }
                 drop(transaction);
                 if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result {
-                    assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == *refusal));
+                    assert!(
+                        matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == *refusal)
+                    );
                 }
                 result
             },
         );
-        let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else { panic!("literal storage refusal"); };
+        let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else {
+            panic!("literal storage refusal");
+        };
         assert_eq!(refusal.operation, operation);
         assert_eq!(refusal.additional, u64::try_from(length).unwrap());
     }

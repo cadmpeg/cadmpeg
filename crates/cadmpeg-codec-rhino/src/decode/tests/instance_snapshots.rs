@@ -46,9 +46,7 @@ fn commit_sorts_links_after_indexed_append_and_deduplication() {
     let scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, POINT_CLASS)]);
     with_expand(&scan, |expand| {
         let mut transaction = DecodeContext::new(&scan, expand).unwrap();
-        transaction
-            .append_link(0, "rhino:test:curve#z")
-            .unwrap();
+        transaction.append_link(0, "rhino:test:curve#z").unwrap();
         transaction
             .append_links(
                 0,
@@ -68,7 +66,11 @@ fn commit_sorts_links_after_indexed_append_and_deduplication() {
                 .iter()
                 .map(|identity| identity.as_str())
                 .collect::<Vec<_>>(),
-            ["rhino:test:curve#a", "rhino:test:curve#m", "rhino:test:curve#z"]
+            [
+                "rhino:test:curve#a",
+                "rhino:test:curve#m",
+                "rhino:test:curve#z"
+            ]
         );
     });
 }
@@ -157,15 +159,19 @@ fn instance_row_journal_does_not_copy_existing_link_text() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_materialized_bytes = cap;
-        let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)?;
+        let (ctx, root) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)?;
         let mut transaction = DecodeContext::new(&scan, crate::mesh::MeshExpand::new(&ctx, root))?;
-        for link in &original { transaction.append_link(0, link)?; }
+        for link in &original {
+            transaction.append_link(0, link)?;
+        }
         if measure_headroom {
             let headroom = ctx.reserve_scoped(4096, "journal remaining headroom")?;
             drop(headroom);
         }
         transaction.instance_journal = Some(InstanceJournal::new(&ctx)?);
-        transaction.append_link(0, "rhino:test:curve#added")
+        transaction
+            .append_link(0, "rhino:test:curve#added")
             .expect("only the new link is copied into scratch");
         transaction.mark_decoded(0);
         transaction.rollback_instance_rows().unwrap();
@@ -176,8 +182,13 @@ fn instance_row_journal_does_not_copy_existing_link_text() {
         ctx.finish_session()
     };
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::MaterializedBytes, "journal remaining headroom", |cap| run(cap, true));
-    let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else { panic!("headroom probe must refuse"); };
+        ResourceDimension::MaterializedBytes,
+        "journal remaining headroom",
+        |cap| run(cap, true),
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else {
+        panic!("headroom probe must refuse");
+    };
     assert_eq!(refusal.additional, 4096);
     // Setup owns at least 64 * 149 = 9536 text bytes, besides the index nodes.
     // The journal has 4096 bytes beyond that live setup, below a full text copy.

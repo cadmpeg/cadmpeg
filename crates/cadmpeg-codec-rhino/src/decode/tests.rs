@@ -2,9 +2,9 @@
 #![allow(clippy::disallowed_methods)]
 
 use super::{
-    append_record_links, brep_free_vertex_indices, coedge_sense,
-    commit_curve_tree, edge_param_range, edge_vertices, face_components, face_sense,
-    hatch_loop_ids, hatch_plane_transform, hatch_source_links, region_shell_groups,
+    append_record_links, brep_free_vertex_indices, coedge_sense, commit_curve_tree,
+    edge_param_range, edge_vertices, face_components, face_sense, hatch_loop_ids,
+    hatch_plane_transform, hatch_source_links, region_shell_groups,
     region_shell_groups_without_records, scaled_tolerance, seal_for_test, set_exactness,
     stage_brep, stage_curve_tree, stage_extrusion_caps, transform_decoded_curve, transform_surface,
     with_expand, with_expand_bytes, BrepDraft, BrepTransferInput, BrepTransferKind, CandidateError,
@@ -226,8 +226,10 @@ fn point_cloud_vertices_refuse_collection_limit() {
         .used
         .checked_add(limit.additional)
         .expect("bounded fixture requirement");
-    assert!(matches!(run(cap), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "Rhino source link index entries"));
+    assert!(
+        matches!(run(cap), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "Rhino source link index entries")
+    );
     // The first source link also inserts one distinct index entry.
     let (committed, vertices) = run(cap + 1).expect("vertex, link, and index entry admitted");
     assert!(committed);
