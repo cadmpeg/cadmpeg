@@ -140,9 +140,10 @@ fn attachment_map_mode_outer_error_refuses_at_retained_limit() {
 
 #[test]
 fn attachment_owner_lookup_refuses_on_collection_limit() {
+    let object = residual_admission::object();
     let property = crate::native::PropertyRecord {
         id: "property".into(),
-        owner: "object".into(),
+        owner: object.id().clone(),
         name: "AttachmentSupport".into(),
         type_name: "App::PropertyLinkSubList".into(),
         family: crate::native::PropertyFamily::Unknown,
@@ -154,10 +155,10 @@ fn attachment_owner_lookup_refuses_on_collection_limit() {
     };
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
+    policy.limits.max_collection_items = 1;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within input policy");
-    assert!(matches!(super::transfer(&ctx, &[], &[property]),
+    assert!(matches!(super::transfer(&ctx, &[object], &[property]),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "FreeCAD attachment owner lookup"));
 }
@@ -414,6 +415,7 @@ fn map_mode_writes_the_same_text_through_a_writer() {
 
 #[test]
 fn attachment_property_visits_propagate_work_refusal() {
+    let object = residual_admission::object();
     let property = diagnostic_property(
         "App::PropertyEnumeration",
         vec![enum_value("Integer", Some("5"))],
@@ -423,7 +425,7 @@ fn attachment_property_visits_propagate_work_refusal() {
     policy.limits.max_work_units = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root fits work policy");
-    assert!(matches!(super::transfer(&ctx, &[], &[property]),
+    assert!(matches!(super::transfer(&ctx, &[object], &[property]),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "FreeCAD attachment properties"));
 }

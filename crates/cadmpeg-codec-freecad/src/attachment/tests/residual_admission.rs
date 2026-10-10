@@ -24,7 +24,7 @@ fn attachment_out_of_range_index_admits_temporary_error_before_outer_diagnostic(
     });
 }
 
-fn object() -> ObjectRecord {
+pub(super) fn object() -> ObjectRecord {
     ObjectRecord {
         identity: crate::native::object_identity::ObjectIdentity::try_new(
             "fcstd:native:object#Attachment".into(),
