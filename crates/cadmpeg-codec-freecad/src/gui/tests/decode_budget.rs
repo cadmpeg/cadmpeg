@@ -204,10 +204,10 @@ fn gui_body_payload_index_preserves_nested_keys_and_repeated_sources() {
         assert_eq!(
             selected,
             [
-                ir.model.bodies[0].id.clone(),
-                ir.model.bodies[0].id.clone(),
-                ir.model.bodies[2].id.clone(),
-                ir.model.bodies[0].id.clone()
+                &ir.model.bodies[0].id,
+                &ir.model.bodies[0].id,
+                &ir.model.bodies[2].id,
+                &ir.model.bodies[0].id
             ]
         );
     });
