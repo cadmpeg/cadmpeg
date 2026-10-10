@@ -149,8 +149,13 @@ fn inverse_first_objective_rejection_needs_no_knot_tail_work() {
     assert!(sampled_parameter_minima(&ctx, &knots, [0.0, 99.0], |_| {
         calls += 1;
         Ok(None)
-    }).unwrap().is_none());
+    })
+    .unwrap()
+    .is_none());
     assert_eq!(calls, 1);
-    drop(ctx.reserve_scoped(SCRATCH_BYTES, "test released first inverse rejection").unwrap());
+    drop(
+        ctx.reserve_scoped(SCRATCH_BYTES, "test released first inverse rejection")
+            .unwrap(),
+    );
     ctx.finish_session().unwrap();
 }

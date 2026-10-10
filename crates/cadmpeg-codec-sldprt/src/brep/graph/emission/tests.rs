@@ -93,3 +93,29 @@ fn topology_pruning_retains_a_procedural_blend_spine() {
     crate::brep::graph::emission::prune_rejected_topology(&ctx, &mut brep).expect("prune topology");
     assert_eq!(brep.curves.first().map(|curve| &curve.id), Some(&spine));
 }
+
+#[test]
+fn analytic_graph_skips_procedural_and_appearance_index_work() {
+    use cadmpeg_core::decode::refusal_probe::RefusalProbe;
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    let bytes = crate::test_support::container::sldprt_with_body(
+        &crate::test_support::parasolid::triangle_body(),
+    );
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_work_units = u64::MAX;
+    for operation in [
+        "index Parasolid surface face edges",
+        "select Parasolid face surface carriers",
+        "index Parasolid face owners",
+        "index Parasolid body attributes",
+    ] {
+        let probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
+        let decoded = crate::SldprtCodec
+            .decode(&mut std::io::Cursor::new(&bytes), &options)
+            .unwrap();
+        drop(probe);
+        assert_eq!(decoded.ir().model.faces.len(), 1);
+        assert_eq!(decoded.ir().model.bodies.len(), 1);
+    }
+}

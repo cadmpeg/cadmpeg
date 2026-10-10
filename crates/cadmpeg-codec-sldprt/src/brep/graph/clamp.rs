@@ -16,7 +16,8 @@ fn nurbs_homogeneous_controls(
         curve.pole_count(),
         "collect homogeneous NURBS controls",
     )?;
-    for index in ctx.admit_iter(0..curve.pole_count(), "collect homogeneous NURBS controls")? {
+    let mut indices = 0..curve.pole_count();
+    while let Some(index) = ctx.next_charged(&mut indices, "collect homogeneous NURBS controls")? {
         let Some(point) = curve.pole_rows().point_at(index) else {
             return Ok(None);
         };
@@ -133,10 +134,10 @@ pub(super) fn insert_nurbs_homogeneous_knot<'ctx>(
                 &controls[..prefix_end],
                 "insert homogeneous NURBS control lane",
             )?;
-            for index in ctx.admit_iter(
-                prefix_end..=suffix_start,
-                "blend homogeneous NURBS controls",
-            )? {
+            let mut indices = prefix_end..=suffix_start;
+            while let Some(index) =
+                ctx.next_charged(&mut indices, "blend homogeneous NURBS controls")?
+            {
                 let denominator = knots[index + degree] - knots[index];
                 if !denominator.is_finite() || denominator <= 0.0 {
                     return Ok(None);
@@ -223,10 +224,11 @@ fn clamped_segment_with<T>(
         if multiplicity > full_multiplicity {
             return Ok(None);
         }
-        for _ in ctx.admit_iter(
-            multiplicity..full_multiplicity,
-            "insert clamped NURBS knots",
-        )? {
+        let mut insertions = multiplicity..full_multiplicity;
+        while ctx
+            .next_charged(&mut insertions, "insert clamped NURBS knots")?
+            .is_some()
+        {
             let Some(inserted) = insert_nurbs_homogeneous_knot(
                 ctx,
                 degree,
@@ -310,7 +312,10 @@ fn clamped_raw_poles(
     } else {
         None
     };
-    for &[x, y, z, weight] in ctx.admit_iter(control_slice, "collect clamped NURBS controls")? {
+    let mut controls = control_slice.iter();
+    while let Some(&[x, y, z, weight]) =
+        ctx.next_charged(&mut controls, "collect clamped NURBS controls")?
+    {
         if !weight.is_finite() || weight <= 0.0 {
             return Ok(None);
         }
@@ -418,14 +423,17 @@ pub(super) fn clamp_nurbs_curve_to_domain(
             use cadmpeg_ir::geometry::nurbs::NurbsError;
             let text = match &mut error {
                 NurbsError::Structure(text) | NurbsError::EditRefused(text) => Some(text),
-                NurbsError::WeightLaneLength { field, .. } | NurbsError::UnusableWeight { field, .. } => Some(field),
+                NurbsError::WeightLaneLength { field, .. }
+                | NurbsError::UnusableWeight { field, .. } => Some(field),
                 NurbsError::ResourceLimit(_) => None,
             };
             // The diagnostic escapes both this candidate and any comparison
             // workspace around the caller. Its copy has session storage.
-            let mut diagnostic_storage = ctx.provisional_retained("retain clamped NURBS refusal")?;
+            let mut diagnostic_storage =
+                ctx.provisional_retained("retain clamped NURBS refusal")?;
             if let Some(text) = text {
-                let copy = diagnostic_storage.with_storage(|| ctx.copy_retained_text(text, "copy clamped NURBS refusal"))?;
+                let copy = diagnostic_storage
+                    .with_storage(|| ctx.copy_retained_text(text, "copy clamped NURBS refusal"))?;
                 *text = copy;
             }
             drop(candidate_storage);

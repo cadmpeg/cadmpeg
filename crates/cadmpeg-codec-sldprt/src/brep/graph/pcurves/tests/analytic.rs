@@ -218,9 +218,12 @@ fn constant_radius_knot_rejection_does_not_charge_the_tail() {
     policy.limits.max_work_units = 5;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(!crate::brep::graph::pcurves::quadratic_nurbs_has_constant_radius(
-        &ctx, &controls, None, &knots, radius,
-    ).unwrap());
+    assert!(
+        !crate::brep::graph::pcurves::quadratic_nurbs_has_constant_radius(
+            &ctx, &controls, None, &knots, radius,
+        )
+        .unwrap()
+    );
     ctx.finish_session().unwrap();
 }
 
@@ -240,8 +243,11 @@ fn constant_radius_segment_rejection_charges_only_the_first_start() {
     policy.limits.max_work_units = u64::try_from(knots.len() + 2).unwrap();
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(!crate::brep::graph::pcurves::quadratic_nurbs_has_constant_radius(
-        &ctx, &controls, None, &knots, radius,
-    ).unwrap());
+    assert!(
+        !crate::brep::graph::pcurves::quadratic_nurbs_has_constant_radius(
+            &ctx, &controls, None, &knots, radius,
+        )
+        .unwrap()
+    );
     ctx.finish_session().unwrap();
 }
