@@ -913,20 +913,29 @@ fn native_state_slot_extent_and_storage_transfer_refuse_at_their_boundaries() {
         "/Root/UG_PART/UG_PART",
         composed_feature_history_payload_with_operation_state_statuses(),
     )]);
-    let container = crate::test_support::with_decode_context(|ctx| {
-        container::scan_bytes(ctx, file)
-    }).unwrap();
+    let container =
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file)).unwrap();
     let lanes = crate::test_support::with_decode_context(|ctx| {
-        operation_state_slot_lanes(ctx, &crate::native::features::FeatureHistory::new(ctx, &container)?)
-    }).unwrap();
+        operation_state_slot_lanes(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
+    })
+    .unwrap();
     assert_eq!(lanes.len(), 1);
     assert_eq!(lanes[0].frame.slots().len(), 3);
     for (dimension, operation) in [
         (ResourceDimension::WorkUnits, "NX native state slot extent"),
-        (ResourceDimension::RetainedBytes, "NX state slot candidate storage"),
+        (
+            ResourceDimension::RetainedBytes,
+            "NX state slot candidate storage",
+        ),
     ] {
         let error = crate::test_support::resource_refusal_at(&[], dimension, operation, |ctx| {
-            operation_state_slot_lanes(ctx, &crate::native::features::FeatureHistory::new(ctx, &container)?)
+            operation_state_slot_lanes(
+                ctx,
+                &crate::native::features::FeatureHistory::new(ctx, &container)?,
+            )
         });
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == dimension && limit.operation == operation));

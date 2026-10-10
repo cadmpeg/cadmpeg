@@ -71,7 +71,9 @@ impl FastLoadOccurrences {
         let mut records = ctx.vector_storage(count, "NX admitted occurrence records")?;
         let mut wire = wire.into_iter();
         while wire.len() != 0 {
-            let Some(record) = ctx.next_charged(&mut wire, "convert NX occurrence roster record")? else {
+            let Some(record) =
+                ctx.next_charged(&mut wire, "convert NX occurrence roster record")?
+            else {
                 break;
             };
             ctx.reserve_vec(&mut records, 1, "NX admitted occurrence records")?;

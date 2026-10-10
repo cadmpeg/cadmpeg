@@ -593,7 +593,8 @@ pub(super) fn operation_state_slot_lanes(
                 continue;
             };
             let (slots, slots_storage) = slots.into_parts();
-            let Ok(frame) = crate::om::state_slot_lane::StateSlotLane::from_wire(ctx, source_offset, slots)?
+            let Ok(frame) =
+                crate::om::state_slot_lane::StateSlotLane::from_wire(ctx, source_offset, slots)?
             else {
                 continue;
             };
@@ -3407,10 +3408,10 @@ pub(super) fn external_reference_tail_reference_pairs(
         else {
             continue;
         };
-        let (pairs, _pairs_storage) = ctx.with_scoped_storage(
-            "NX parsed external reference tail pairs",
-            || crate::container::parse_extref_reference_pairs(ctx, bytes),
-        )?;
+        let (pairs, _pairs_storage) = ctx
+            .with_scoped_storage("NX parsed external reference tail pairs", || {
+                crate::container::parse_extref_reference_pairs(ctx, bytes)
+            })?;
         let record_key = ctx
             .split_once(&record.id, "#", "nx native external reference tail pair id")?
             .map_or(record.id.as_str(), |(_, key)| key);
@@ -4875,7 +4876,8 @@ pub(super) fn data_block_control_values(
             .admit_iter(values.initial(), "project NX control values")?
             .copied()
             .chain(std::iter::once(*values.last()))
-            .enumerate() {
+            .enumerate()
+        {
             let ordinal = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX data block control value ordinal", 0, 1))?;
             let source_offset = entry_offset
@@ -5077,7 +5079,8 @@ pub(super) fn data_block_control_index_values(
             .admit_iter(values.initial(), "project NX control index values")?
             .copied()
             .chain(std::iter::once(*values.last()))
-            .enumerate() {
+            .enumerate()
+        {
             let ordinal = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX control index value ordinal", 0, 1))?;
             let source_offset = entry_offset
@@ -5841,7 +5844,9 @@ pub(super) fn string_values(
                 let source_offset = entry_offset
                     .checked_add(cadmpeg_core::decode::u64_from_index(value.offset))
                     .ok_or_else(|| ctx.refuse_codec_limit("NX string value source offset", 0, 1))?;
-                let text = value.value.try_into_owned_for_decode(ctx, "NX string value text")?;
+                let text = value
+                    .value
+                    .try_into_owned_for_decode(ctx, "NX string value text")?;
                 ctx.reserve_vec(&mut output, 1, "NX native string values")?;
                 output.push(StringValue {
                     id: retained_om_three_number_id(
