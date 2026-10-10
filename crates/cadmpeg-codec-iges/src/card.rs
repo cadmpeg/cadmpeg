@@ -291,9 +291,6 @@ impl FramingRecoveries {
         declared: FramingValue,
         used: FramingValue,
     ) -> Result<(), CodecError> {
-        if let Some(limit) = ctx.resource_refusal() {
-            return Err(CodecError::ResourceLimit(limit));
-        }
         let slot = &mut self.0[key.0.index()][key.1.index()];
         if let Some(recovery) = slot {
             recovery.count = recovery.count.checked_add(1).ok_or_else(|| {
@@ -312,9 +309,6 @@ impl FramingRecoveries {
     }
 
     pub(crate) fn merge(&mut self, other: Self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
-        if let Some(limit) = ctx.resource_refusal() {
-            return Err(CodecError::ResourceLimit(limit));
-        }
         // Five sections and five defect classes define every slot and its order.
         for (held_row, incoming_row) in self.0.iter_mut().zip(other.0) {
             for (slot, incoming) in held_row.iter_mut().zip(incoming_row) {
@@ -440,9 +434,6 @@ fn marker(card: &[u8]) -> Option<Section> {
 /// line terminator a media convention, so a stride of marked card images is a
 /// Fixed ASCII file even with no terminator in it.
 fn detect_card_stride(prefix: &[u8], ctx: &DecodeContext<'_>) -> Result<Confidence, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut cards = prefix.chunks_exact(CARD_WIDTH);
     let (Some(first), Some(second)) = (cards.next(), cards.next()) else {
         return Ok(Confidence::No);
@@ -485,9 +476,6 @@ pub(crate) fn detect_fixed_ascii(
     prefix: &[u8],
     ctx: &DecodeContext<'_>,
 ) -> Result<Confidence, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some((first, rest)) = take_line(prefix) else {
         return detect_card_stride(prefix, ctx);
     };
@@ -505,9 +493,6 @@ pub(crate) fn detect_fixed_ascii(
 
 /// The card count of a pre-Terminate line whose payload divides into cards.
 fn fused_card_count(payload: &[u8], ctx: &DecodeContext<'_>) -> Result<Option<usize>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if !payload.len().is_multiple_of(CARD_WIDTH) {
         return Ok(None);
     }
@@ -572,9 +557,6 @@ fn physical_lines<'a>(
             1
         };
         let mut card_start = start;
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let mut source_values = IntoIterator::into_iter(0..cards);
         while source_values.len() != 0 {
             let Some(index) = ctx.next_charged(&mut source_values, "iges physical cards")? else {
@@ -644,9 +626,6 @@ fn frame_sections<'a>(
     let mut section = None;
     let mut position = 1_usize;
     let mut terminated = false;
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(lines);
     while source_values.len() != 0 {
         let Some(raw) = ctx.next_charged(&mut source_values, "iges framed card traversal")? else {
@@ -729,9 +708,6 @@ fn terminate_counts(
     recoveries: &mut FramingRecoveries,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(terminate) = cards
         .get(runs[Section::Terminate.index()].clone())
         .and_then(<[_]>::first)
@@ -784,9 +760,6 @@ pub(crate) fn scan_with_context<'a>(
     source: &'a [u8],
     ctx: &DecodeContext<'_>,
 ) -> Result<CardScan<'a>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if source.is_empty() {
         return Err(CodecError::WrongFormat("empty IGES source".into()));
     }

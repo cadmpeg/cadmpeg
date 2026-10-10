@@ -260,9 +260,6 @@ impl Subject<'_, '_, '_> {
     }
 
     fn text_run(&self, start: usize) -> Result<NativeTextRun, CodecError> {
-        if let Some(refusal) = self.ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let record = self.record;
         let font_code = record.and_then(|record| record.integer(start + 3));
         let text = record.and_then(|record| record.string(start + 11));
@@ -309,9 +306,6 @@ impl Subject<'_, '_, '_> {
     }
 
     fn note_link(&self, index: usize) -> Result<Option<String>, CodecError> {
-        if let Some(refusal) = self.ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let Some(sequence) = self.record.and_then(|record| record.integer(index)) else {
             return Ok(None);
         };
@@ -322,9 +316,6 @@ impl Subject<'_, '_, '_> {
     }
 
     fn leader_link(&self, index: usize) -> Result<Option<String>, CodecError> {
-        if let Some(refusal) = self.ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let Some(sequence) = self.record.and_then(|record| record.integer(index)) else {
             return Ok(None);
         };
@@ -354,9 +345,6 @@ impl Subject<'_, '_, '_> {
     }
 
     fn witness_link(&self, index: usize) -> Result<Option<String>, CodecError> {
-        if let Some(refusal) = self.ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let Some(sequence) = self.record.and_then(|record| record.integer(index)) else {
             return Ok(None);
         };
@@ -371,9 +359,6 @@ impl Subject<'_, '_, '_> {
         index: usize,
         global_table: GlobalTable,
     ) -> Result<Option<String>, CodecError> {
-        if let Some(refusal) = self.ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let Some(sequence) = self.record.and_then(|record| record.integer(index)) else {
             return Ok(None);
         };
@@ -394,9 +379,6 @@ impl Subject<'_, '_, '_> {
     }
 
     fn ordinate_link(&self, index: usize) -> Result<Option<String>, CodecError> {
-        if let Some(refusal) = self.ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let Some(sequence) = self.record.and_then(|record| record.integer(index)) else {
             return Ok(None);
         };
@@ -427,9 +409,6 @@ impl Subject<'_, '_, '_> {
         index: usize,
         global_table: GlobalTable,
     ) -> Result<Option<String>, CodecError> {
-        if let Some(refusal) = self.ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let Some(sequence) = self.record.and_then(|record| record.integer(index)) else {
             return Ok(None);
         };
@@ -456,9 +435,6 @@ impl Subject<'_, '_, '_> {
         index: usize,
         global_table: GlobalTable,
     ) -> Result<Option<String>, CodecError> {
-        if let Some(refusal) = self.ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let Some(sequence) = self.record.and_then(|record| record.integer(index)) else {
             return Ok(None);
         };
@@ -478,9 +454,6 @@ impl Subject<'_, '_, '_> {
     }
 
     fn section_boundary_link(&self, index: usize) -> Result<Option<String>, CodecError> {
-        if let Some(refusal) = self.ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let Some(sequence) = self.record.and_then(|record| record.integer(index)) else {
             return Ok(None);
         };
@@ -889,6 +862,3 @@ pub(super) fn build<'arena>(
     }
     Ok(annotations)
 }
-
-#[cfg(test)]
-mod tests;

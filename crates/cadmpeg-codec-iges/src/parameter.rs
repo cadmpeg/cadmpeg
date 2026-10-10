@@ -1194,9 +1194,6 @@ fn entity_primary_end_for_entry(
     global_table: GlobalTable,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<usize>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     Ok(match (entry.entity_type, entry.form) {
         (102, 0) | (402, 1 | 7 | 14 | 15) => Some(counted_primary_end(record)),
         (402, 5) => Some(label_display_primary_end(record)),
@@ -1394,9 +1391,6 @@ fn entity_primary_end_with_records_for_entry(
     widths: &mut AttributeDefinitionWidths<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<usize>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if entry.entity_type == 422 && matches!(entry.form, 0 | 1) {
         return Ok(Some(attribute_table_instance_primary_end(
             record, entry, directory, records, widths, ctx,
@@ -1515,9 +1509,6 @@ fn fem_result_primary_end(
     entity_type: i64,
     ctx: &DecodeContext<'_>,
 ) -> Result<usize, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let (value_count_index, item_count_index, item_start): (usize, usize, usize) =
         if entity_type == 146 {
             (4, 5, 6)
@@ -1603,9 +1594,6 @@ fn text_font_primary_end(
     record: &ParameterRecord,
     ctx: &DecodeContext<'_>,
 ) -> Result<usize, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(character_count) = record
         .integer(5)
         .and_then(|value| usize::try_from(value).ok())
@@ -1692,9 +1680,6 @@ fn tabular_data_primary_end(
     record: &ParameterRecord,
     ctx: &DecodeContext<'_>,
 ) -> Result<usize, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(dependent_count) = record
         .integer(3)
         .and_then(|value| usize::try_from(value).ok())
@@ -2083,9 +2068,6 @@ fn associativity_definition_primary_end(
     record: &ParameterRecord,
     ctx: &DecodeContext<'_>,
 ) -> Result<usize, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(class_count) = record
         .integer(1)
         .and_then(|value| usize::try_from(value).ok())
@@ -2172,9 +2154,6 @@ fn attribute_table_definition_primary_end(
     form: i64,
     ctx: &DecodeContext<'_>,
 ) -> Result<usize, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(attribute_count) = record
         .integer(3)
         .and_then(|value| usize::try_from(value).ok())
@@ -2354,9 +2333,6 @@ fn attribute_table_instance_primary_end(
     widths: &mut AttributeDefinitionWidths<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<usize, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(definition_sequence) = entry
         .structure
         .checked_neg()
@@ -2534,9 +2510,6 @@ fn loop_primary_end(
     record: &ParameterRecord,
     ctx: &DecodeContext<'_>,
 ) -> Result<usize, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(use_count) = record
         .integer(1)
         .and_then(|value| usize::try_from(value).ok())
@@ -2725,9 +2698,6 @@ fn boundary_primary_end(
     record: &ParameterRecord,
     ctx: &DecodeContext<'_>,
 ) -> Result<usize, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(segment_count) = record
         .integer(4)
         .and_then(|value| usize::try_from(value).ok())
@@ -3123,9 +3093,6 @@ impl QuarantinedParameterRecord {
     }
 
     pub(crate) fn loss_note(&self, ctx: &DecodeContext<'_>) -> Result<LossNote, CodecError> {
-        if let Some(limit) = ctx.resource_refusal() {
-            return Err(CodecError::ResourceLimit(limit));
-        }
         let owned = match &self.ownership {
             QuarantinedCards::Owned { range, .. } => {
                 let last = range.end.checked_sub(1).ok_or_else(|| {
@@ -3182,9 +3149,6 @@ fn layout_hollerith(
     start: usize,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<(usize, usize)>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(CodecError::ResourceLimit(refusal));
-    }
     let mut cursor = start;
     while cursor < bytes.len() {
         ctx.charge_work(1, "iges parameter layout Hollerith digits")?;
@@ -3396,9 +3360,6 @@ fn hollerith(
     global_table: GlobalTable,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<(Token, usize)>, TokenizeFailure> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(TokenizeFailure::Refusal(CodecError::ResourceLimit(refusal)));
-    }
     let mut cursor = start;
     while cursor < bytes.len() {
         ctx.charge_work(1, "iges parameter Hollerith digits")
@@ -3490,9 +3451,6 @@ fn trim_macro_span(
     span: Range<usize>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Range<usize>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(CodecError::ResourceLimit(refusal));
-    }
     let mut start = span.start;
     let mut end = span.end;
     while start < end && start < bytes.len() {
@@ -3530,9 +3488,6 @@ fn macro_hollerith_end(
     start: usize,
     ctx: &DecodeContext<'_>,
 ) -> Result<HollerithProbe, MacroDataError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(CodecError::ResourceLimit(refusal).into());
-    }
     let mut cursor = start;
     while cursor < bytes.len() {
         ctx.charge_work(1, "iges macro Hollerith digits")?;
@@ -3573,9 +3528,6 @@ fn macro_next_field(
     record_delimiter: u8,
     ctx: &DecodeContext<'_>,
 ) -> Result<(Range<usize>, u8, usize), MacroDataError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(CodecError::ResourceLimit(refusal).into());
-    }
     let mut cursor = start;
     while cursor < bytes.len() {
         ctx.charge_work(1, "iges macro leading whitespace")?;
@@ -3619,9 +3571,6 @@ fn macro_integer(
     span: &Range<usize>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<i64>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(bytes) = bytes.get(span.clone()) else {
         return Ok(None);
     };
@@ -3641,9 +3590,6 @@ fn macro_keyword(
     keyword: &[u8],
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(value) = bytes.get(span.clone()) else {
         return Ok(false);
     };
@@ -3691,9 +3637,6 @@ pub(crate) fn macro_parameter_data_with_context(
     record_delimiter: u8,
     ctx: &DecodeContext<'_>,
 ) -> Result<MacroParameterData, MacroDataError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(CodecError::ResourceLimit(refusal).into());
-    }
     let mut statements = Vec::new();
     let mut start = 0_usize;
     let mut cursor = 0_usize;
@@ -4127,9 +4070,6 @@ fn tokenize_with_limits(
     limits: NumericLimits,
     ctx: &DecodeContext<'_>,
 ) -> Result<(Vec<Token>, usize, Vec<u64>), TokenizeFailure> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(TokenizeFailure::Refusal(CodecError::ResourceLimit(refusal)));
-    }
     let mut tokens = Vec::new();
     let mut double_precision_reals = Vec::new();
     let mut cursor = 0_usize;

@@ -336,9 +336,6 @@ fn resolve_display_ref(
     kind: ReferenceKind,
     arena: &str,
 ) -> Result<DisplayRef, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if pointer >= 0 {
         return Ok(DisplayRef::Number(pointer.unsigned_abs()));
     }
@@ -366,9 +363,6 @@ fn resolved_label_display_definition(
     source_sequence: u32,
     pointer: i64,
 ) -> Result<Option<String>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if pointer <= 0 {
         return Ok(None);
     }
@@ -1609,9 +1603,6 @@ impl<'ctx, 'arena> OverdeclaredCounts<'ctx, 'arena> {
     }
 
     fn admit(&mut self, sequence: u32, verdict: DefaultTailCount) -> Result<usize, CodecError> {
-        if let Some(refusal) = self.ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         match verdict {
             DefaultTailCount::Held(count) => Ok(count),
             DefaultTailCount::Overdeclared(count) => {
@@ -2304,9 +2295,6 @@ fn copy_native_token_value(
     ctx: &DecodeContext<'_>,
     value: &TokenValue,
 ) -> Result<TokenValue, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     match value {
         TokenValue::String(bytes) => Ok(TokenValue::String(
             ctx.copy_retained(bytes, "iges native token value bytes")?,
