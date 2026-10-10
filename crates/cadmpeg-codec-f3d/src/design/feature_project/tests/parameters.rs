@@ -241,10 +241,14 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
     .unwrap();
     parameter.id = "f3d:native/BulkStream.dat:parameter#45".into();
     parameter.record_index = 45;
-    let mut owner = parse_parameter_owner(&cadmpeg_test_support::service_decode_context(), &parameter_owner_frame()).expect("service decode context")
-        .unwrap()
-        .into_record("Design/BulkStream.dat", 0)
-        .unwrap();
+    let mut owner = parse_parameter_owner(
+        &cadmpeg_test_support::service_decode_context(),
+        &parameter_owner_frame(),
+    )
+    .expect("service decode context")
+    .unwrap()
+    .into_record("Design/BulkStream.dat", 0)
+    .unwrap();
     {
         let mut wire = crate::records::parameters::DesignParameterOwnerWire::from(owner.clone());
         wire.id = "f3d:native/BulkStream.dat:parameter-owner#44".into();
@@ -369,10 +373,14 @@ fn owned_parameter_without_a_projected_scope_is_retained_unowned() {
     parameter.id = "f3d:native:parameter#45".into();
     parameter.record_index = 45;
     parameter.source_ordinal = 17;
-    let mut owner = parse_parameter_owner(&cadmpeg_test_support::service_decode_context(), &parameter_owner_frame()).expect("service decode context")
-        .unwrap()
-        .into_record("Design/BulkStream.dat", 0)
-        .unwrap();
+    let mut owner = parse_parameter_owner(
+        &cadmpeg_test_support::service_decode_context(),
+        &parameter_owner_frame(),
+    )
+    .expect("service decode context")
+    .unwrap()
+    .into_record("Design/BulkStream.dat", 0)
+    .unwrap();
     {
         let mut wire = crate::records::parameters::DesignParameterOwnerWire::from(owner.clone());
         wire.id = "f3d:native:parameter-owner#44".into();
@@ -604,10 +612,14 @@ fn parameter_expressions_project_feature_dependencies() {
         parameter
     };
     let owner = |record_index, scope_record_index, parameter_record_index| {
-        let mut owner = parse_parameter_owner(&cadmpeg_test_support::service_decode_context(), &parameter_owner_frame()).expect("service decode context")
-            .expect("generated parameter owner is canonical")
-            .into_record("Design/BulkStream.dat", 0)
-            .unwrap();
+        let mut owner = parse_parameter_owner(
+            &cadmpeg_test_support::service_decode_context(),
+            &parameter_owner_frame(),
+        )
+        .expect("service decode context")
+        .expect("generated parameter owner is canonical")
+        .into_record("Design/BulkStream.dat", 0)
+        .unwrap();
         {
             let mut wire =
                 crate::records::parameters::DesignParameterOwnerWire::from(owner.clone());
