@@ -9,7 +9,7 @@ use super::{
 };
 
 #[test]
-fn remaining_merge_capacity_respects_mutually_exclusive_orientations() {
+fn production_options_respect_mutually_exclusive_orientations() {
     catia_test_context!(ctx);
     let assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![vec![
@@ -27,181 +27,24 @@ fn remaining_merge_capacity_respects_mutually_exclusive_orientations() {
             },
         ]],
     };
-    let assignments = vec![vec![assignment]];
-    let equations = possible_face_equations(&ctx, &assignments).expect("service resource budget");
+    let assignments = [vec![assignment]];
     let edge_candidates = vec![Vec::new(); 2];
-    let search = MeshSelectionSearch {
-        ctx: &ctx,
-        assignments: &assignments,
-        possible_face_choices: possible_face_choices(&ctx, &assignments, &equations),
-        possible_face_equations: equations,
-        face_work: vec![Some(1)],
-        edge_candidates: &edge_candidates,
-        edge_rows: &[],
-        vertex_points: &[],
-        candidate_gauge: None,
-        port_identities: None,
-        fixed_face_directions: Vec::new(),
-        fixed_edge_orientations: Vec::new(),
-        edge_has_fixed_direction: Vec::new(),
-        selected: vec![None],
-        visited_states: std::collections::HashMap::new(),
-        memo_storage: RefCell::new(
-            ctx.reserve_scoped(0, "catia_selection_memo_storage")
-                .expect("memo storage"),
-        ),
-        outcome: SearchOutcome::Open,
-        face_equation_cache: RefCell::default(),
-    };
-    let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0, 1]), 4));
+    let quotient = MeshQuotient::new(repeated_domain(HashSet::from([0, 1]), 4));
 
-    assert_eq!(
-        search
-            .remaining_equation_merge_capacity(&mut quotient)
-            .expect("service resource budget"),
-        Some(2)
-    );
-}
-
-#[test]
-fn remaining_equations_must_connect_equal_singleton_domains() {
-    catia_test_context!(ctx);
-    let assignments = vec![vec![MeshFaceBoundaryAssignment {
-        boundaries: vec![vec![MeshBoundaryEdgeCandidate {
-            edge: 0,
-            start: 0,
-            end: 0,
-            reversed: Some(false),
-        }]],
-    }]];
-    let edge_candidates = vec![Vec::new(); 2];
-    let search = MeshSelectionSearch {
-        ctx: &ctx,
-        assignments: &assignments,
-        possible_face_equations: possible_face_equations(&ctx, &assignments)
-            .expect("service resource budget"),
-        possible_face_choices: possible_face_choices(
+    let options = quotient
+        .assignment_options_limited(
             &ctx,
-            &assignments,
-            &possible_face_equations(&ctx, &assignments).expect("service resource budget"),
-        ),
-        face_work: vec![Some(1)],
-        edge_candidates: &edge_candidates,
-        edge_rows: &[],
-        vertex_points: &[],
-        candidate_gauge: None,
-        port_identities: None,
-        fixed_face_directions: Vec::new(),
-        fixed_edge_orientations: Vec::new(),
-        edge_has_fixed_direction: Vec::new(),
-        selected: vec![None],
-        visited_states: std::collections::HashMap::new(),
-        memo_storage: RefCell::new(
-            ctx.reserve_scoped(0, "catia_selection_memo_storage")
-                .expect("memo storage"),
-        ),
-        outcome: SearchOutcome::Open,
-        face_equation_cache: RefCell::default(),
-    };
-    let mut quotient = MeshQuotient::new(vec![
-        Arc::new(HashSet::from([0])),
-        Arc::new(HashSet::from([1])),
-        Arc::new(HashSet::from([0])),
-        Arc::new(HashSet::from([2])),
-    ]);
-
-    assert_eq!(
-        search
-            .remaining_equation_merge_capacity(&mut quotient)
-            .expect("service resource budget"),
-        None
-    );
-}
-
-#[test]
-fn remaining_equation_components_require_a_coordinate_matching() {
-    catia_test_context!(ctx);
-    let assignments = Vec::new();
-    let edge_candidates = vec![Vec::new(); 2];
-    let search = MeshSelectionSearch {
-        ctx: &ctx,
-        assignments: &assignments,
-        possible_face_equations: Vec::new(),
-        possible_face_choices: Vec::new(),
-        face_work: Vec::new(),
-        edge_candidates: &edge_candidates,
-        edge_rows: &[],
-        vertex_points: &[],
-        candidate_gauge: None,
-        port_identities: None,
-        fixed_face_directions: Vec::new(),
-        fixed_edge_orientations: Vec::new(),
-        edge_has_fixed_direction: Vec::new(),
-        selected: Vec::new(),
-        visited_states: std::collections::HashMap::new(),
-        memo_storage: RefCell::new(
-            ctx.reserve_scoped(0, "catia_selection_memo_storage")
-                .expect("memo storage"),
-        ),
-        outcome: SearchOutcome::Open,
-        face_equation_cache: RefCell::default(),
-    };
-    let mut quotient = MeshQuotient::new(vec![
-        Arc::new(HashSet::from([0, 1])),
-        Arc::new(HashSet::from([0, 1])),
-        Arc::new(HashSet::from([0, 1])),
-        Arc::new(HashSet::from([2, 3])),
-    ]);
-
-    assert_eq!(
-        search
-            .remaining_equation_merge_capacity(&mut quotient)
-            .expect("service resource budget"),
-        None
-    );
-}
-
-#[test]
-fn coordinate_matching_reserves_unavoidable_roots_per_component() {
-    catia_test_context!(ctx);
-    let assignments = vec![Vec::new()];
-    let edge_candidates = vec![Vec::new(); 2];
-    let search = MeshSelectionSearch {
-        ctx: &ctx,
-        assignments: &assignments,
-        possible_face_equations: vec![vec![[0, 1], [1, 2]]],
-        possible_face_choices: vec![vec![vec![[0, 1]], vec![[1, 2]]]],
-        face_work: vec![Some(1)],
-        edge_candidates: &edge_candidates,
-        edge_rows: &[],
-        vertex_points: &[[0.0, 0.0, 0.0]; 3],
-        candidate_gauge: None,
-        port_identities: None,
-        fixed_face_directions: Vec::new(),
-        fixed_edge_orientations: Vec::new(),
-        edge_has_fixed_direction: Vec::new(),
-        selected: vec![None],
-        visited_states: std::collections::HashMap::new(),
-        memo_storage: RefCell::new(
-            ctx.reserve_scoped(0, "catia_selection_memo_storage")
-                .expect("memo storage"),
-        ),
-        outcome: SearchOutcome::Open,
-        face_equation_cache: RefCell::default(),
-    };
-    let mut quotient = MeshQuotient::new(vec![
-        Arc::new(HashSet::from([0])),
-        Arc::new(HashSet::from([0])),
-        Arc::new(HashSet::from([0])),
-        Arc::new(HashSet::from([1, 2])),
-    ]);
-
-    assert_eq!(
-        search
-            .remaining_equation_merge_capacity(&mut quotient)
-            .expect("service resource budget"),
-        None
-    );
+            &assignments[0][0],
+            &edge_candidates,
+            &std::collections::BTreeSet::new(),
+            16,
+            None,
+        )
+        .expect("production orientation options");
+    assert!(!options.is_empty());
+    for (_, option) in options {
+        assert_eq!(option.root_count(&ctx).expect("option roots"), 2);
+    }
 }
 
 #[test]
@@ -214,7 +57,6 @@ fn completed_mesh_search_continues_to_check_uniqueness() {
     let search = MeshSelectionSearch {
         ctx: &ctx,
         assignments: &assignments,
-        possible_face_equations: Vec::new(),
         possible_face_choices: Vec::new(),
         face_work: Vec::new(),
         edge_candidates: &edge_candidates,
@@ -272,7 +114,6 @@ fn completed_mesh_search_refuses_edge_and_point_collection_limits() {
         let mut search = MeshSelectionSearch {
             ctx,
             assignments: &assignments,
-            possible_face_equations: Vec::new(),
             possible_face_choices: Vec::new(),
             face_work: vec![Some(1)],
             edge_candidates: &edge_candidates,
@@ -331,7 +172,6 @@ fn mesh_selection_declines_when_its_work_budget_is_exhausted() {
     let mut search = MeshSelectionSearch {
         ctx: &ctx,
         assignments: &[],
-        possible_face_equations: Vec::new(),
         possible_face_choices: Vec::new(),
         face_work: Vec::new(),
         edge_candidates: &[],
@@ -397,7 +237,6 @@ fn mesh_selection_finishes_the_active_face_component_first() {
     let mut search = MeshSelectionSearch {
         ctx: &ctx,
         assignments: &assignments,
-        possible_face_equations: vec![Vec::new(); face_count],
         possible_face_choices: vec![Vec::new(); face_count],
         face_work: vec![Some(1); face_count],
         edge_candidates: &edge_candidates,
@@ -449,8 +288,6 @@ fn forced_face_selection_does_not_exhaust_the_work_budget() {
     let mut search = MeshSelectionSearch {
         ctx: &ctx,
         assignments: &assignments,
-        possible_face_equations: possible_face_equations(&ctx, &assignments)
-            .expect("service resource budget"),
         possible_face_choices: possible_face_choices(
             &ctx,
             &assignments,
@@ -512,8 +349,6 @@ fn overmerged_face_options_do_not_exhaust_the_work_budget() {
     let mut search = MeshSelectionSearch {
         ctx: &ctx,
         assignments: &assignments,
-        possible_face_equations: possible_face_equations(&ctx, &assignments)
-            .expect("service resource budget"),
         possible_face_choices: possible_face_choices(
             &ctx,
             &assignments,
@@ -575,8 +410,6 @@ fn mesh_selection_merges_corner_equations_common_to_every_option() {
     let search = MeshSelectionSearch {
         ctx: &ctx,
         assignments: &assignments,
-        possible_face_equations: possible_face_equations(&ctx, &assignments)
-            .expect("service resource budget"),
         possible_face_choices: possible_face_choices(
             &ctx,
             &assignments,
@@ -652,8 +485,6 @@ fn mesh_selection_merges_equations_common_to_every_assignment() {
     let search = MeshSelectionSearch {
         ctx: &ctx,
         assignments: &assignments,
-        possible_face_equations: possible_face_equations(&ctx, &assignments)
-            .expect("service resource budget"),
         possible_face_choices: possible_face_choices(
             &ctx,
             &assignments,
@@ -717,8 +548,6 @@ fn mesh_selection_common_equations_ignore_infeasible_assignments() {
     let search = MeshSelectionSearch {
         ctx: &ctx,
         assignments: &assignments,
-        possible_face_equations: possible_face_equations(&ctx, &assignments)
-            .expect("service resource budget"),
         possible_face_choices: possible_face_choices(
             &ctx,
             &assignments,
@@ -789,8 +618,6 @@ fn mesh_selection_propagates_closed_ports_without_enumerating_directions() {
     let search = MeshSelectionSearch {
         ctx: &ctx,
         assignments: &assignments,
-        possible_face_equations: possible_face_equations(&ctx, &assignments)
-            .expect("service resource budget"),
         possible_face_choices: possible_face_choices(
             &ctx,
             &assignments,
