@@ -256,7 +256,7 @@ fn missing_shape_entry_diagnostic_refuses_at_retained_limit() {
 fn shape_property_xml_diagnostic_refuses_at_retained_limit() {
     let property = shape_property("<Property>");
     assert_retained_refusal_at(&[], "FreeCAD shape property XML diagnostic", |ctx| {
-        super::super::direct_shape_entry(ctx, &property)
+        super::super::direct_shape_entry(ctx, &property).map(|_| ())
     });
 }
 
@@ -264,7 +264,7 @@ fn shape_property_xml_diagnostic_refuses_at_retained_limit() {
 fn shape_property_root_diagnostic_refuses_at_retained_limit() {
     let property = shape_property("<Wrong/>");
     assert_retained_refusal_at(&[], "FreeCAD shape property root diagnostic", |ctx| {
-        super::super::direct_shape_entry(ctx, &property)
+        super::super::direct_shape_entry(ctx, &property).map(|_| ())
     });
 }
 
@@ -273,7 +273,7 @@ fn shape_property_carrier_diagnostic_refuses_at_retained_limit() {
     let property =
         shape_property("<Property><Part file=\"a.brp\"/><Part file=\"b.brp\"/></Property>");
     assert_retained_refusal_at(&[], "FreeCAD shape property carrier diagnostic", |ctx| {
-        super::super::direct_shape_entry(ctx, &property)
+        super::super::direct_shape_entry(ctx, &property).map(|_| ())
     });
 }
 
@@ -624,3 +624,21 @@ surface_identity_test!(
     offset_surface(),
     "FreeCAD surface construction identity"
 );
+
+#[test]
+fn shape_lookup_names_use_scratch_storage() {
+    let property = shape_property("<Property><Part file=\"scratch.brp\"/></Property>");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    for _ in 0..128 {
+        let name = super::super::direct_shape_entry(&ctx, &property)
+            .unwrap()
+            .unwrap();
+        let _storage = name.1;
+        let name = name.0;
+        assert_eq!(name, "scratch.brp");
+    }
+    assert_eq!(ctx.resource_refusal(), None);
+}

@@ -8,7 +8,7 @@ use triangulation::TextTriangulation;
 use std::collections::{BTreeMap, HashMap};
 
 use cadmpeg_core::decode::admission::Admission;
-use cadmpeg_core::decode::{bounded_len, DecodeContext, View};
+use cadmpeg_core::decode::{bounded_len, DecodeContext, ScopedReservation, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::{
@@ -321,10 +321,9 @@ impl ShapeSet {
         .map_err(CodecError::Malformed)
     }
 
-    /// Checks every reference, admitting each list's visits through `admit`
-    /// before reading it. `max_nodes` holds the greatest node index of each
-    /// indexed polygon, so a polygon's nodes are read once however many edges
-    /// name it.
+    /// Checks every reference, admitting each visit through `admit`
+    /// before reading its value. `max_nodes` caches each indexed polygon's
+    /// greatest node index, so each edge checks the cached bound.
     fn check<E>(
         &self,
         max_nodes: &[u32],
@@ -368,10 +367,10 @@ impl ShapeSet {
             }
             Ok(())
         };
-        admit(locations)?;
         for (position, location) in self.locations.iter().enumerate() {
-            admit(location.factors.len())?;
+            admit(1)?;
             for factor in &location.factors {
+                admit(1)?;
                 checked!(validate_one_based(
                     factor.location,
                     position,
@@ -379,8 +378,8 @@ impl ShapeSet {
                 ));
             }
         }
-        admit(self.polygons3d.len())?;
         for (position, polygon) in self.polygons3d.iter().enumerate() {
+            admit(1)?;
             if polygon
                 .parameters
                 .as_ref()
@@ -391,13 +390,15 @@ impl ShapeSet {
                 )));
             }
         }
-        admit(self.polygons_on_triangulations.len())?;
         for (position, polygon) in self.polygons_on_triangulations.iter().enumerate() {
-            admit(polygon.nodes.len())?;
-            if polygon.nodes.contains(&0) {
-                return Ok(Err(format!(
-                    "PolygonOnTriangulations[{position}] node indices must be one-based"
-                )));
+            admit(1)?;
+            for node in &polygon.nodes {
+                admit(1)?;
+                if *node == 0 {
+                    return Ok(Err(format!(
+                        "PolygonOnTriangulations[{position}] node indices must be one-based"
+                    )));
+                }
             }
             if polygon
                 .parameters
@@ -409,11 +410,11 @@ impl ShapeSet {
                 )));
             }
         }
-        admit(self.tshapes.len())?;
         for (position, shape) in self.tshapes.iter().enumerate() {
+            admit(1)?;
             let shape_index = position + 1;
-            admit(shape.children.len())?;
             for child in &shape.children {
+                admit(1)?;
                 checked!(validate_one_based(
                     child.shape,
                     self.tshapes.len(),
@@ -435,8 +436,8 @@ impl ShapeSet {
                 TextTShapeGeometry::Vertex {
                     representations, ..
                 } => {
-                    admit(representations.len())?;
                     for representation in representations {
+                        admit(1)?;
                         match representation {
                             TextPointRepresentation::Curve3d {
                                 curve, location, ..
@@ -494,8 +495,8 @@ impl ShapeSet {
                 TextTShapeGeometry::Edge {
                     representations, ..
                 } => {
-                    admit(representations.len())?;
                     for representation in representations {
+                        admit(1)?;
                         match representation {
                             TextEdgeRepresentation::Curve3d {
                                 curve, location, ..
@@ -655,8 +656,8 @@ impl ShapeSet {
                 | TextTShapeGeometry::Compound => {}
             }
         }
-        admit(self.roots.len())?;
         for root in &self.roots {
+            admit(1)?;
             checked!(validate_one_based(
                 root.shape,
                 self.tshapes.len(),
@@ -2468,6 +2469,8 @@ pub(crate) fn parse_payloads(
         let Some(name) = direct_shape_entry(ctx, property)? else {
             continue;
         };
+        let _name_storage = name.1;
+        let name = name.0;
         let entries_by_name = match &mut entries_by_name {
             Some(index) => index,
             slot @ None => {
@@ -2520,10 +2523,10 @@ pub(crate) fn parse_payloads(
     Ok(payloads)
 }
 
-fn direct_shape_entry(
-    ctx: &DecodeContext<'_>,
+fn direct_shape_entry<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     property: &PropertyRecord,
-) -> Result<Option<String>, CodecError> {
+) -> Result<Option<(String, ScopedReservation<'ctx>)>, CodecError> {
     let admitted_document = ctx
         .parse_xml(property.xml.text(), "FreeCAD XML tree")
         .or_else(|error| {
@@ -2567,7 +2570,11 @@ fn direct_shape_entry(
     };
     ctx.xml_attribute(part, "file", "FreeCAD shape property carriers")?
         .filter(|file| !file.is_empty())
-        .map(|file| ctx.copy_retained_text(file, "FreeCAD shape entry name"))
+        .map(|file| {
+            ctx.with_scoped_storage("FreeCAD shape entry name", || {
+                ctx.copy_retained_text(file, "FreeCAD shape entry name")
+            })
+        })
         .transpose()
 }
 
@@ -3062,9 +3069,8 @@ fn parse_binary_prefix(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<(ShapeSet, BinaryTopologyVersion), CodecError> {
-    // The cursor reads forward and reads each byte once, in fixed-size
-    // values and newline-terminated lines; this pays for that pass. Section
-    // header lines it rereads charge their length again.
+    // Prepay the supplied payload extent before binary cursor parsing.
+    // A malformed prefix can return before the cursor reaches the suffix.
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(bytes.len()),
         "FreeCAD binary B-rep read",
@@ -3942,6 +3948,46 @@ fn parse_binary_surface(
         )));
     }
     Ok(match cursor.u8("binary surface kind")? {
+        6 => TextSurface::Extrusion {
+            direction: cursor.finite_vector3("binary extrusion direction")?,
+            directrix: NestedCurve::try_new(parse_binary_curve(cursor, depth + 1)?)
+                .map_err(CodecError::malformed)?,
+        },
+        7 => TextSurface::Revolution {
+            axis_origin: cursor.finite_point3("binary revolution axis origin")?,
+            axis_direction: cursor.finite_vector3("binary revolution axis direction")?,
+            directrix: NestedCurve::try_new(parse_binary_curve(cursor, depth + 1)?)
+                .map_err(CodecError::malformed)?,
+        },
+        10 => TextSurface::Trimmed {
+            parameter_ranges: [
+                [
+                    cursor.finite_f64("binary surface u trim start")?,
+                    cursor.finite_f64("binary surface u trim end")?,
+                ],
+                [
+                    cursor.finite_f64("binary surface v trim start")?,
+                    cursor.finite_f64("binary surface v trim end")?,
+                ],
+            ],
+            basis: NestedSurface::try_new(parse_binary_surface(cursor, depth + 1)?)
+                .map_err(CodecError::malformed)?,
+        },
+        11 => TextSurface::Offset {
+            distance: cursor.finite_f64("binary surface offset")?,
+            basis: NestedSurface::try_new(parse_binary_surface(cursor, depth + 1)?)
+                .map_err(CodecError::malformed)?,
+        },
+        kind => parse_binary_surface_leaf(cursor, kind)?,
+    })
+}
+
+/// Parses nonrecursive binary surface records.
+fn parse_binary_surface_leaf(
+    cursor: &mut BinaryCursor<'_, '_, '_>,
+    kind: u8,
+) -> Result<TextSurface, CodecError> {
+    Ok(match kind {
         1 => {
             let origin = cursor.finite_point3("binary plane origin")?;
             let axis = cursor.finite_vector3("binary plane axis")?;
@@ -4008,17 +4054,6 @@ fn parse_binary_surface(
                 u_reversed: frame_v_reversed(axis.get(), ref_direction.get(), y_direction.get()),
             }
         }
-        6 => TextSurface::Extrusion {
-            direction: cursor.finite_vector3("binary extrusion direction")?,
-            directrix: NestedCurve::try_new(parse_binary_curve(cursor, depth + 1)?)
-                .map_err(CodecError::malformed)?,
-        },
-        7 => TextSurface::Revolution {
-            axis_origin: cursor.finite_point3("binary revolution axis origin")?,
-            axis_direction: cursor.finite_vector3("binary revolution axis direction")?,
-            directrix: NestedCurve::try_new(parse_binary_curve(cursor, depth + 1)?)
-                .map_err(CodecError::malformed)?,
-        },
         8 => {
             let u_rational = cursor.bool("binary Bezier u-rational flag")?;
             let v_rational = cursor.bool("binary Bezier v-rational flag")?;
@@ -4034,13 +4069,20 @@ fn parse_binary_surface(
             let rational = u_rational || v_rational;
             // Each pole consumes at least a 24-byte point3.
             let capacity = cursor.bounded(pole_count, 24, "binary Bezier surface pole")?;
-            let mut control_points = cursor
-                .ctx
-                .collection_vec(capacity, "FreeCAD B-rep parse_binary_surface")?;
-            let mut weights =
+            let mut point_storage = cursor.ctx.reserve_scoped(0, "FreeCAD surface flat poles")?;
+            let mut control_points = point_storage.with_storage(|| {
                 cursor
                     .ctx
-                    .optional_collection_vec(rational, capacity, "FreeCAD B-rep weights")?;
+                    .collection_vec(capacity, "FreeCAD B-rep parse_binary_surface")
+            })?;
+            let mut weight_storage = cursor
+                .ctx
+                .reserve_scoped(0, "FreeCAD surface flat weights")?;
+            let mut weights = weight_storage.with_storage(|| {
+                cursor
+                    .ctx
+                    .optional_collection_vec(rational, capacity, "FreeCAD B-rep weights")
+            })?;
             for _ in 0..pole_count {
                 control_points.push(cursor.finite_point3("binary Bezier surface pole")?);
                 if let Some(weights) = &mut weights {
@@ -4065,9 +4107,11 @@ fn parse_binary_surface(
                         false,
                     ),
                     NurbsSurfaceLanes::new(
-                        grid_rows(cursor.ctx, control_points, v_count)?,
+                        grid_rows(cursor.ctx, (control_points, Some(point_storage)), v_count)?,
                         weights
-                            .map(|values| grid_rows(cursor.ctx, values, v_count))
+                            .map(|values| {
+                                grid_rows(cursor.ctx, (values, Some(weight_storage)), v_count)
+                            })
                             .transpose()?,
                     ),
                     false,
@@ -4090,51 +4134,62 @@ fn parse_binary_surface(
             let rational = u_rational || v_rational;
             // Each pole consumes at least a 24-byte point3.
             let capacity = cursor.bounded(pole_count, 24, "binary B-spline surface pole")?;
-            let mut control_points = cursor
-                .ctx
-                .collection_vec(capacity, "FreeCAD B-rep parse_binary_surface")?;
-            let mut weights =
+            let mut point_storage = cursor.ctx.reserve_scoped(0, "FreeCAD surface flat poles")?;
+            let mut control_points = point_storage.with_storage(|| {
                 cursor
                     .ctx
-                    .optional_collection_vec(rational, capacity, "FreeCAD B-rep weights")?;
+                    .collection_vec(capacity, "FreeCAD B-rep parse_binary_surface")
+            })?;
+            let mut weight_storage = cursor
+                .ctx
+                .reserve_scoped(0, "FreeCAD surface flat weights")?;
+            let mut weights = weight_storage.with_storage(|| {
+                cursor
+                    .ctx
+                    .optional_collection_vec(rational, capacity, "FreeCAD B-rep weights")
+            })?;
             for _ in 0..pole_count {
                 control_points.push(cursor.finite_point3("binary B-spline surface pole")?);
                 if let Some(weights) = &mut weights {
                     weights.push(cursor.finite_f64("binary B-spline surface weight")?);
                 }
             }
+            let u_knots = if u_periodic {
+                let (knots, storage) = cursor
+                    .ctx
+                    .with_scoped_storage("FreeCAD periodic source knots", || {
+                        cursor.expanded_knots(u_knot_count, "binary B-spline u knots")
+                    })?;
+                (knots, Some(storage))
+            } else {
+                (
+                    cursor.expanded_knots(u_knot_count, "binary B-spline u knots")?,
+                    None,
+                )
+            };
+            let v_knots = if v_periodic {
+                let (knots, storage) = cursor
+                    .ctx
+                    .with_scoped_storage("FreeCAD periodic source knots", || {
+                        cursor.expanded_knots(v_knot_count, "binary B-spline v knots")
+                    })?;
+                (knots, Some(storage))
+            } else {
+                (
+                    cursor.expanded_knots(v_knot_count, "binary B-spline v knots")?,
+                    None,
+                )
+            };
             TextSurface::Nurbs(normalize_periodic_surface(
                 cursor.ctx,
                 [u_degree, v_degree],
-                [
-                    cursor.expanded_knots(u_knot_count, "binary B-spline u knots")?,
-                    cursor.expanded_knots(v_knot_count, "binary B-spline v knots")?,
-                ],
+                [u_knots, v_knots],
                 [u_count, v_count],
-                control_points,
-                weights,
+                (control_points, Some(point_storage)),
+                weights.map(|values| (values, Some(weight_storage))),
                 [u_periodic, v_periodic],
             )?)
         }
-        10 => TextSurface::Trimmed {
-            parameter_ranges: [
-                [
-                    cursor.finite_f64("binary surface u trim start")?,
-                    cursor.finite_f64("binary surface u trim end")?,
-                ],
-                [
-                    cursor.finite_f64("binary surface v trim start")?,
-                    cursor.finite_f64("binary surface v trim end")?,
-                ],
-            ],
-            basis: NestedSurface::try_new(parse_binary_surface(cursor, depth + 1)?)
-                .map_err(CodecError::malformed)?,
-        },
-        11 => TextSurface::Offset {
-            distance: cursor.finite_f64("binary surface offset")?,
-            basis: NestedSurface::try_new(parse_binary_surface(cursor, depth + 1)?)
-                .map_err(CodecError::malformed)?,
-        },
         other => {
             return Err(CodecError::malformed(format_args!(
                 "invalid binary surface kind {other}"
@@ -4163,6 +4218,30 @@ fn parse_binary_curve(
         )));
     }
     Ok(match cursor.u8("binary 3D curve kind")? {
+        8 => TextCurve::Trimmed {
+            parameter_range: [
+                cursor.finite_f64("binary trim start")?,
+                cursor.finite_f64("binary trim end")?,
+            ],
+            basis: NestedCurve::try_new(parse_binary_curve(cursor, depth + 1)?)
+                .map_err(CodecError::malformed)?,
+        },
+        9 => TextCurve::Offset {
+            distance: cursor.finite_f64("binary offset distance")?,
+            direction: cursor.finite_vector3("binary offset direction")?,
+            basis: NestedCurve::try_new(parse_binary_curve(cursor, depth + 1)?)
+                .map_err(CodecError::malformed)?,
+        },
+        kind => parse_binary_curve_leaf(cursor, kind)?,
+    })
+}
+
+/// Parses nonrecursive binary curve records.
+fn parse_binary_curve_leaf(
+    cursor: &mut BinaryCursor<'_, '_, '_>,
+    kind: u8,
+) -> Result<TextCurve, CodecError> {
+    Ok(match kind {
         1 => TextCurve::Line {
             origin: cursor.finite_point3("binary line origin")?,
             direction: cursor.finite_vector3("binary line direction")?,
@@ -4273,7 +4352,16 @@ fn parse_binary_curve(
                     weights.push(cursor.finite_f64("binary B-spline weight")?);
                 }
             }
-            let knots = cursor.expanded_knots(knot_count, "binary B-spline")?;
+            let knots = if periodic {
+                let (knots, storage) = cursor
+                    .ctx
+                    .with_scoped_storage("FreeCAD periodic source knots", || {
+                        cursor.expanded_knots(knot_count, "binary B-spline")
+                    })?;
+                (knots, Some(storage))
+            } else {
+                (cursor.expanded_knots(knot_count, "binary B-spline")?, None)
+            };
             let (knots, padding) = normalize_periodic_knots(cursor.ctx, knots, degree, periodic)?;
             append_periodic_curve_poles(
                 cursor.ctx,
@@ -4293,20 +4381,6 @@ fn parse_binary_curve(
                 .map_err(|error| CodecError::Malformed(error.to_string()))?,
             )
         }
-        8 => TextCurve::Trimmed {
-            parameter_range: [
-                cursor.finite_f64("binary trim start")?,
-                cursor.finite_f64("binary trim end")?,
-            ],
-            basis: NestedCurve::try_new(parse_binary_curve(cursor, depth + 1)?)
-                .map_err(CodecError::malformed)?,
-        },
-        9 => TextCurve::Offset {
-            distance: cursor.finite_f64("binary offset distance")?,
-            direction: cursor.finite_vector3("binary offset direction")?,
-            basis: NestedCurve::try_new(parse_binary_curve(cursor, depth + 1)?)
-                .map_err(CodecError::malformed)?,
-        },
         other => {
             return Err(CodecError::malformed(format_args!(
                 "invalid binary 3D curve kind {other}"
@@ -4328,6 +4402,29 @@ fn parse_binary_curve2d(
         )));
     }
     Ok(match cursor.u8("binary parameter-curve kind")? {
+        8 => TextCurve2d::Trimmed {
+            parameter_range: [
+                cursor.finite_f64("binary trim start")?,
+                cursor.finite_f64("binary trim end")?,
+            ],
+            basis: NestedCurve2d::try_new(parse_binary_curve2d(cursor, depth + 1)?)
+                .map_err(CodecError::malformed)?,
+        },
+        9 => TextCurve2d::Offset {
+            distance: cursor.finite_f64("binary offset distance")?,
+            basis: NestedCurve2d::try_new(parse_binary_curve2d(cursor, depth + 1)?)
+                .map_err(CodecError::malformed)?,
+        },
+        kind => parse_binary_curve2d_leaf(cursor, kind)?,
+    })
+}
+
+/// Parses nonrecursive binary curve records.
+fn parse_binary_curve2d_leaf(
+    cursor: &mut BinaryCursor<'_, '_, '_>,
+    kind: u8,
+) -> Result<TextCurve2d, CodecError> {
+    Ok(match kind {
         1 => TextCurve2d::Line {
             origin: cursor.finite_point2("binary line origin")?,
             direction: cursor.finite_point2("binary line direction")?,
@@ -4410,7 +4507,16 @@ fn parse_binary_curve2d(
                     weights.push(cursor.finite_f64("binary B-spline weight")?);
                 }
             }
-            let knots = cursor.expanded_knots(knot_count, "binary B-spline")?;
+            let knots = if periodic {
+                let (knots, storage) = cursor
+                    .ctx
+                    .with_scoped_storage("FreeCAD periodic source knots", || {
+                        cursor.expanded_knots(knot_count, "binary B-spline")
+                    })?;
+                (knots, Some(storage))
+            } else {
+                (cursor.expanded_knots(knot_count, "binary B-spline")?, None)
+            };
             let (knots, padding) = normalize_periodic_knots(cursor.ctx, knots, degree, periodic)?;
             append_periodic_curve_poles(
                 cursor.ctx,
@@ -4426,19 +4532,6 @@ fn parse_binary_curve2d(
                 periodic,
             })
         }
-        8 => TextCurve2d::Trimmed {
-            parameter_range: [
-                cursor.finite_f64("binary trim start")?,
-                cursor.finite_f64("binary trim end")?,
-            ],
-            basis: NestedCurve2d::try_new(parse_binary_curve2d(cursor, depth + 1)?)
-                .map_err(CodecError::malformed)?,
-        },
-        9 => TextCurve2d::Offset {
-            distance: cursor.finite_f64("binary offset distance")?,
-            basis: NestedCurve2d::try_new(parse_binary_curve2d(cursor, depth + 1)?)
-                .map_err(CodecError::malformed)?,
-        },
         other => {
             return Err(CodecError::malformed(format_args!(
                 "invalid binary parameter-curve kind {other}"
@@ -4867,7 +4960,19 @@ fn parse_nurbs_curve2d(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsCurv
             weights.push(cursor.finite_real("2D B-spline weight")?);
         }
     }
-    let knots = parse_knots(cursor, knot_count, degree, "2D B-spline knot")?;
+    let knots = if periodic {
+        let (knots, storage) = cursor
+            .ctx
+            .with_scoped_storage("FreeCAD periodic source knots", || {
+                parse_knots(cursor, knot_count, degree, "2D B-spline knot")
+            })?;
+        (knots, Some(storage))
+    } else {
+        (
+            parse_knots(cursor, knot_count, degree, "2D B-spline knot")?,
+            None,
+        )
+    };
     let (knots, padding) = normalize_periodic_knots(
         cursor.ctx,
         knots,
@@ -5902,21 +6007,52 @@ fn parse_nurbs_surface(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsSurf
         .ok_or_else(|| CodecError::Malformed("B-spline surface pole limit exceeded".into()))?;
     // Each pole consumes its three point tokens.
     let capacity = cursor.bounded(pole_count, 3, "B-spline surface pole")?;
-    let mut control_points = cursor
-        .ctx
-        .collection_vec(capacity, "FreeCAD B-rep parse_nurbs_surface")?;
-    let mut weights =
+    let mut point_storage = cursor.ctx.reserve_scoped(0, "FreeCAD surface flat poles")?;
+    let mut control_points = point_storage.with_storage(|| {
         cursor
             .ctx
-            .optional_collection_vec(rational, capacity, "FreeCAD B-rep weights")?;
+            .collection_vec(capacity, "FreeCAD B-rep parse_nurbs_surface")
+    })?;
+    let mut weight_storage = cursor
+        .ctx
+        .reserve_scoped(0, "FreeCAD surface flat weights")?;
+    let mut weights = weight_storage.with_storage(|| {
+        cursor
+            .ctx
+            .optional_collection_vec(rational, capacity, "FreeCAD B-rep weights")
+    })?;
     for _ in 0..pole_count {
         control_points.push(cursor.finite_point("B-spline surface pole")?);
         if let Some(weights) = &mut weights {
             weights.push(cursor.finite_real("B-spline surface weight")?);
         }
     }
-    let u_knots = parse_knots(cursor, u_knot_count, u_degree, "B-spline u knot")?;
-    let v_knots = parse_knots(cursor, v_knot_count, v_degree, "B-spline v knot")?;
+    let u_knots = if u_periodic {
+        let (knots, storage) = cursor
+            .ctx
+            .with_scoped_storage("FreeCAD periodic source knots", || {
+                parse_knots(cursor, u_knot_count, u_degree, "B-spline u knot")
+            })?;
+        (knots, Some(storage))
+    } else {
+        (
+            parse_knots(cursor, u_knot_count, u_degree, "B-spline u knot")?,
+            None,
+        )
+    };
+    let v_knots = if v_periodic {
+        let (knots, storage) = cursor
+            .ctx
+            .with_scoped_storage("FreeCAD periodic source knots", || {
+                parse_knots(cursor, v_knot_count, v_degree, "B-spline v knot")
+            })?;
+        (knots, Some(storage))
+    } else {
+        (
+            parse_knots(cursor, v_knot_count, v_degree, "B-spline v knot")?,
+            None,
+        )
+    };
     normalize_periodic_surface(
         cursor.ctx,
         [
@@ -5927,8 +6063,8 @@ fn parse_nurbs_surface(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsSurf
         ],
         [u_knots, v_knots],
         [u_count, v_count],
-        control_points,
-        weights,
+        (control_points, Some(point_storage)),
+        weights.map(|values| (values, Some(weight_storage))),
         [u_periodic, v_periodic],
     )
 }
@@ -5944,13 +6080,20 @@ fn parse_bezier_surface(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsSur
     let pole_count = u_count
         .checked_mul(v_count)
         .ok_or_else(|| CodecError::Malformed("Bezier surface pole count overflow".into()))?;
-    let mut control_points = cursor
-        .ctx
-        .collection_vec(pole_count, "FreeCAD B-rep parse_bezier_surface")?;
-    let mut weights =
+    let mut point_storage = cursor.ctx.reserve_scoped(0, "FreeCAD surface flat poles")?;
+    let mut control_points = point_storage.with_storage(|| {
         cursor
             .ctx
-            .optional_collection_vec(rational, pole_count, "FreeCAD B-rep weights")?;
+            .collection_vec(pole_count, "FreeCAD B-rep parse_bezier_surface")
+    })?;
+    let mut weight_storage = cursor
+        .ctx
+        .reserve_scoped(0, "FreeCAD surface flat weights")?;
+    let mut weights = weight_storage.with_storage(|| {
+        cursor
+            .ctx
+            .optional_collection_vec(rational, pole_count, "FreeCAD B-rep weights")
+    })?;
     for _ in 0..pole_count {
         control_points.push(cursor.finite_point("Bezier surface pole")?);
         if let Some(weights) = &mut weights {
@@ -5972,9 +6115,9 @@ fn parse_bezier_surface(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsSur
             false,
         ),
         NurbsSurfaceLanes::new(
-            grid_rows(cursor.ctx, control_points, v_count)?,
+            grid_rows(cursor.ctx, (control_points, Some(point_storage)), v_count)?,
             weights
-                .map(|values| grid_rows(cursor.ctx, values, v_count))
+                .map(|values| grid_rows(cursor.ctx, (values, Some(weight_storage)), v_count))
                 .transpose()?,
         ),
         false,
@@ -6011,10 +6154,13 @@ fn parse_knots(
 
 fn normalize_periodic_knots(
     ctx: &DecodeContext<'_>,
-    knots: Vec<FiniteReal>,
+    knots: (Vec<FiniteReal>, Option<ScopedReservation<'_>>),
     degree: u32,
     periodic: bool,
 ) -> Result<(Vec<FiniteReal>, usize), CodecError> {
+    let (knots, source_storage) = knots;
+    let _source_storage = source_storage;
+    let knots = knots;
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
     }
@@ -6129,25 +6275,18 @@ fn append_periodic_curve_poles<T: Copy>(
             "periodic B-spline has insufficient poles".into(),
         ));
     }
-    ctx.reserve_vec(
+    ctx.extend_from_within(
         control_points,
-        padding,
+        0..padding,
         "FreeCAD periodic B-rep curve poles",
     )?;
-    // The reserved slots make these fixed-width copies infallible.
-    for index in ctx.admit_iter(0..padding, "FreeCAD periodic B-rep curve poles")? {
-        control_points.push(control_points[index]);
-    }
     if let Some(weights) = weights {
         if weights.len() < padding {
             return Err(CodecError::Malformed(
                 "periodic B-spline has insufficient weights".into(),
             ));
         }
-        ctx.reserve_vec(weights, padding, "FreeCAD periodic B-rep curve weights")?;
-        for index in ctx.admit_iter(0..padding, "FreeCAD periodic B-rep curve weights")? {
-            weights.push(weights[index]);
-        }
+        ctx.extend_from_within(weights, 0..padding, "FreeCAD periodic B-rep curve weights")?;
     }
     Ok(())
 }
@@ -6155,10 +6294,10 @@ fn append_periodic_curve_poles<T: Copy>(
 fn normalize_periodic_surface(
     ctx: &DecodeContext<'_>,
     degrees: [u32; 2],
-    knots: [Vec<FiniteReal>; 2],
+    knots: [(Vec<FiniteReal>, Option<ScopedReservation<'_>>); 2],
     counts: [usize; 2],
-    control_points: Vec<FinitePoint3>,
-    weights: Option<Vec<FiniteReal>>,
+    control_points: (Vec<FinitePoint3>, Option<ScopedReservation<'_>>),
+    weights: Option<(Vec<FiniteReal>, Option<ScopedReservation<'_>>)>,
     periodic: [bool; 2],
 ) -> Result<NurbsSurface, CodecError> {
     let [u_source_knots, v_source_knots] = knots;
@@ -6168,10 +6307,10 @@ fn normalize_periodic_surface(
         normalize_periodic_knots(ctx, v_source_knots, degrees[1], periodic[1])?;
     let [old_u, old_v] = counts;
     let source_count = checked_grid_count(old_u, old_v, "B-spline")?;
-    if control_points.len() != source_count
+    if control_points.0.len() != source_count
         || weights
             .as_ref()
-            .is_some_and(|values| values.len() != source_count)
+            .is_some_and(|values| values.0.len() != source_count)
     {
         return Err(CodecError::Malformed(
             "B-spline pole grid cardinality mismatch".into(),
@@ -6193,24 +6332,40 @@ fn normalize_periodic_surface(
         .filter(|count| *count <= 2_000_000)
         .ok_or_else(|| CodecError::Malformed("periodic B-spline pole limit exceeded".into()))?;
     let (control_points, weights) = if u_padding != 0 || v_padding != 0 {
-        let old_points = &control_points;
-        let old_weights = weights.as_deref();
-        let mut points = ctx.collection_vec(new_count, "FreeCAD periodic B-rep surface poles")?;
-        let mut weights = ctx.optional_collection_vec(
-            old_weights.is_some(),
-            new_count,
-            "FreeCAD periodic B-rep surface weights",
-        )?;
+        let old_points = &control_points.0;
+        let old_weights = weights.as_ref().map(|(values, _storage)| values.as_slice());
+        let points = ctx.with_scoped_storage("FreeCAD periodic surface flat poles", || {
+            ctx.collection_vec(new_count, "FreeCAD periodic B-rep surface poles")
+        })?;
+        let point_storage = points.1;
+        let mut points = points.0;
+        let extended_weights =
+            ctx.with_scoped_storage("FreeCAD periodic surface flat weights", || {
+                ctx.optional_collection_vec(
+                    old_weights.is_some(),
+                    new_count,
+                    "FreeCAD periodic B-rep surface weights",
+                )
+            })?;
+        let weight_storage = extended_weights.1;
+        let mut extended_weights = extended_weights.0;
         // Every reserved cell is filled; the source grid was checked above.
         for cell in ctx.admit_iter(0..new_count, "FreeCAD periodic B-rep surface poles")? {
             let (u, v) = (cell / new_v, cell % new_v);
             let source = (u % old_u) * old_v + v % old_v;
             points.push(old_points[source]);
-            if let (Some(source_weights), Some(target_weights)) = (old_weights, &mut weights) {
+            if let (Some(source_weights), Some(target_weights)) =
+                (old_weights, &mut extended_weights)
+            {
                 target_weights.push(source_weights[source]);
             }
         }
-        (points, weights)
+        drop(control_points);
+        drop(weights);
+        (
+            (points, Some(point_storage)),
+            extended_weights.map(|values| (values, Some(weight_storage))),
+        )
     } else {
         (control_points, weights)
     };
@@ -6378,7 +6533,19 @@ fn parse_nurbs_curve(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsCurve,
             weights.push(cursor.finite_real("B-spline weight")?);
         }
     }
-    let knots = parse_knots(cursor, knot_count, degree, "B-spline knot")?;
+    let knots = if periodic {
+        let (knots, storage) = cursor
+            .ctx
+            .with_scoped_storage("FreeCAD periodic source knots", || {
+                parse_knots(cursor, knot_count, degree, "B-spline knot")
+            })?;
+        (knots, Some(storage))
+    } else {
+        (
+            parse_knots(cursor, knot_count, degree, "B-spline knot")?,
+            None,
+        )
+    };
     let (knots, padding) = normalize_periodic_knots(
         cursor.ctx,
         knots,
@@ -6469,9 +6636,12 @@ fn clamped_bezier_knots(
 
 fn grid_rows<T>(
     ctx: &DecodeContext<'_>,
-    values: Vec<T>,
+    values: (Vec<T>, Option<ScopedReservation<'_>>),
     width: usize,
 ) -> Result<Vec<Vec<T>>, CodecError> {
+    let (values, source_storage) = values;
+    let _source_storage = source_storage;
+    let values = values;
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
     }
@@ -7074,10 +7244,7 @@ fn append_text_surface(
         // cross-section grows along the frame axis. The reader keeps it: the
         // slant-to-axial conversion `surface_parameter_affine` applies to the
         // cone's pcurves is `cos(half_angle)`, which is even, so a negative
-        // angle converts as consistently as a positive one. Both decode goldens
-        // that hold cones hold negative half angles, so a positive interval here
-        // would fail those decodes. Each arm of this match refuses what its IR
-        // carrier refuses and nothing more.
+        // angle uses the same slant-to-axial scale as a positive one.
         TextSurface::Cone {
             origin,
             axis,
