@@ -1189,20 +1189,24 @@ pub(super) fn clamp_edge_ranges_to_carrier_domains(
     out: &mut AsmBrep,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut storage = ctx.reserve_scoped(0, "ASM edge domain storage")?;
-    let domains: HashMap<&str, [f64; 2]> = storage.with_storage(|| {
-        ctx.collect_hash_map(
-            ctx.admit_iter(&out.curves, "ASM edge domain curves")?
-                .filter_map(|curve| match &curve.geometry {
-                    CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
-                        let first = nurbs.knots().get(usize::try_from(nurbs.degree()).ok()?)?;
-                        let last = nurbs.knots().get(nurbs.pole_count())?;
-                        Some((curve.id.as_str(), [*first, *last]))
-                    }
-                    _ => None,
-                }),
-            "ASM edge carrier domains",
-        )
-    })?;
+    let mut domains: HashMap<&str, [f64; 2]> = HashMap::new();
+    let mut curves = out.curves.iter();
+    while !curves.as_slice().is_empty() {
+        let Some(curve) = ctx.next_charged(&mut curves, "ASM edge domain curves")? else {
+            break;
+        };
+        let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = &curve.geometry else {
+            continue;
+        };
+        let Some(first) = usize::try_from(nurbs.degree()).ok().and_then(|degree| nurbs.knots().get(degree)) else {
+            continue;
+        };
+        let Some(last) = nurbs.knots().get(nurbs.pole_count()) else { continue; };
+        storage.with_storage(|| {
+            ctx.insert_hash_map(&mut domains, curve.id.as_str(), [*first, *last],
+                "ASM edge carrier domains")
+        })?;
+    }
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
     }

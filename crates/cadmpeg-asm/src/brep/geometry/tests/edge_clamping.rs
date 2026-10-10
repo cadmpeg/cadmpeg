@@ -104,3 +104,64 @@ fn edge_clamping_preserves_original_refusal_before_any_mutation() {
     assert!(matches!(ctx.finish_session(),
         Err(CodecError::ResourceLimit(last)) if last == first));
 }
+
+fn rejected_carriers() -> AsmBrep {
+    AsmBrep {
+        curves: (1..=3).map(|index| Curve {
+            id: CurveId::mint(format!("sat:brep:curve#{index}")).unwrap(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+            source_object: None,
+        }).collect(),
+        ..Default::default()
+    }
+}
+
+fn domain_source_refusal(work: u64) {
+    let mut out = rejected_carriers();
+    let expected = rejected_carriers();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = work;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let Err(CodecError::ResourceLimit(first)) = clamp_edge_ranges_to_carrier_domains(&ctx, &mut out)
+    else { panic!("expected domain source refusal"); };
+    assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(first.operation, "ASM edge domain curves");
+    assert_eq!((first.limit, first.used, first.additional), (work, work, 1));
+    assert_eq!(out.curves, expected.curves);
+    for _ in 0..64 {
+        for mut replay in [rejected_carriers(), AsmBrep::default()] {
+            assert!(matches!(clamp_edge_ranges_to_carrier_domains(&ctx, &mut replay),
+                Err(CodecError::ResourceLimit(last)) if last == first));
+        }
+    }
+    assert!(matches!(ctx.finish_session(),
+        Err(CodecError::ResourceLimit(last)) if last == first));
+}
+
+#[test]
+fn edge_domain_source_refuses_before_first_curve() { domain_source_refusal(0); }
+
+#[test]
+fn edge_domain_source_refuses_before_last_curve() { domain_source_refusal(2); }
+
+#[test]
+fn edge_domain_source_accepts_exact_rejected_carrier_visits_and_empty_input() {
+    for (mut out, work) in [(rejected_carriers(), 3), (AsmBrep::default(), 0)] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = work;
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        clamp_edge_ranges_to_carrier_domains(&ctx, &mut out).unwrap();
+        assert!(out.edges.is_empty());
+        assert_eq!(out.curves.len(), usize::try_from(work).unwrap());
+        if work != 0 { assert_eq!(out.curves, rejected_carriers().curves); }
+        ctx.finish_session().unwrap();
+    }
+}

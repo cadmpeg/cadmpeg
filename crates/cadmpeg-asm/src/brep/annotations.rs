@@ -7,7 +7,7 @@ use super::{AsmBrep, Carriers};
 use crate::ids::IdFormat;
 use crate::sab::Record;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Provenance tag for a source record or a synthetic procedural entity.
 pub enum AnnotationTag {
@@ -63,89 +63,70 @@ pub(super) fn emit_annotation_records(
     format: IdFormat,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut index_storage = ctx.reserve_scoped(0, "ASM annotation indices")?;
-    let curve_geometries = index_storage.with_storage(|| {
-        ctx.collect_hash_map(
-            ctx.admit_iter(&out.curves, "ASM annotation source arena")?
-                .map(|curve| (curve.id.as_str(), &curve.geometry)),
-            "ASM annotation curve geometry index",
-        )
-    })?;
-    let emitted_ids = index_storage.with_storage(|| {
-        ctx.collect_hash_set(
-            ctx.admit_iter(&out.bodies, "ASM annotation source arena")?
-                .map(|entity| entity.id.as_str())
-                .chain(
-                    ctx.admit_iter(&out.regions, "ASM annotation source arena")?
-                        .map(|entity| entity.id.as_str()),
-                )
-                .chain(
-                    ctx.admit_iter(&out.shells, "ASM annotation source arena")?
-                        .map(|entity| entity.id.as_str()),
-                )
-                .chain(
-                    ctx.admit_iter(&out.faces, "ASM annotation source arena")?
-                        .map(|entity| entity.id.as_str()),
-                )
-                .chain(
-                    ctx.admit_iter(&out.loops, "ASM annotation source arena")?
-                        .map(|entity| entity.id.as_str()),
-                )
-                .chain(
-                    ctx.admit_iter(&out.coedges, "ASM annotation source arena")?
-                        .map(|entity| entity.id.as_str()),
-                )
-                .chain(
-                    ctx.admit_iter(&out.edges, "ASM annotation source arena")?
-                        .map(|entity| entity.id.as_str()),
-                )
-                .chain(
-                    ctx.admit_iter(&out.vertices, "ASM annotation source arena")?
-                        .map(|entity| entity.id.as_str()),
-                )
-                .chain(
-                    ctx.admit_iter(&out.points, "ASM annotation source arena")?
-                        .map(|entity| entity.id.as_str()),
-                )
-                .chain(
-                    ctx.admit_iter(&out.surfaces, "ASM annotation source arena")?
-                        .map(|entity| entity.id.as_str()),
-                )
-                .chain(
-                    ctx.admit_iter(&out.curves, "ASM annotation source arena")?
-                        .map(|entity| entity.id.as_str()),
-                )
-                .chain(
-                    ctx.admit_iter(&out.pcurves, "ASM annotation source arena")?
-                        .map(|entity| entity.id.as_str()),
-                ),
-            "ASM annotation emitted IDs",
-        )
-    })?;
-    let attribute_ids = index_storage.with_storage(|| {
-        ctx.collect_hash_set(
-            ctx.admit_iter(&out.attributes, "ASM annotation source arena")?
-                .map(|attribute| attribute.id.as_str()),
-            "ASM annotation attribute IDs",
-        )
-    })?;
-    let unknown_ids = index_storage.with_storage(|| {
-        ctx.collect_hash_set(
-            ctx.admit_iter(&out.unknowns, "ASM annotation source arena")?
-                .map(|unknown| unknown.id().as_str()),
-            "ASM annotation unknown IDs",
-        )
-    })?;
-    let procedural_ids = index_storage.with_storage(|| {
-        ctx.collect_hash_set(
-            ctx.admit_iter(&out.procedural_surfaces, "ASM annotation source arena")?
-                .map(|(_, entity)| entity.id.as_str())
-                .chain(
-                    ctx.admit_iter(&out.procedural_curves, "ASM annotation source arena")?
-                        .map(|(_, entity)| entity.id.as_str()),
-                ),
-            "ASM annotation procedural IDs",
-        )
-    })?;
+    let mut curve_geometries = HashMap::new();
+    let mut emitted_ids = HashSet::new();
+    let mut curves = out.curves.iter();
+    while !curves.as_slice().is_empty() {
+        let Some(curve) = ctx.next_charged(&mut curves, "ASM annotation source arena")? else {
+            break;
+        };
+        index_storage.with_storage(|| {
+            ctx.insert_hash_map(&mut curve_geometries, curve.id.as_str(), &curve.geometry,
+                "ASM annotation curve geometry index")?;
+            ctx.insert_hash_set(&mut emitted_ids, curve.id.as_str(), "ASM annotation emitted IDs")
+        })?;
+    }
+    let mut emitted = out.bodies.iter().map(|entity| entity.id.as_str())
+        .chain(out.regions.iter().map(|entity| entity.id.as_str()))
+        .chain(out.shells.iter().map(|entity| entity.id.as_str()))
+        .chain(out.faces.iter().map(|entity| entity.id.as_str()))
+        .chain(out.loops.iter().map(|entity| entity.id.as_str()))
+        .chain(out.coedges.iter().map(|entity| entity.id.as_str()))
+        .chain(out.edges.iter().map(|entity| entity.id.as_str()))
+        .chain(out.vertices.iter().map(|entity| entity.id.as_str()))
+        .chain(out.points.iter().map(|entity| entity.id.as_str()))
+        .chain(out.surfaces.iter().map(|entity| entity.id.as_str()))
+        .chain(out.pcurves.iter().map(|entity| entity.id.as_str()));
+    // Each base is a slice; the fixed chain reports an exact upper bound.
+    while emitted.size_hint().1 != Some(0) {
+        let Some(id) = ctx.next_charged(&mut emitted, "ASM annotation source arena")? else {
+            break;
+        };
+        index_storage.with_storage(|| {
+            ctx.insert_hash_set(&mut emitted_ids, id, "ASM annotation emitted IDs")
+        })?;
+    }
+    let mut attribute_ids = HashSet::new();
+    let mut attributes = out.attributes.iter();
+    while !attributes.as_slice().is_empty() {
+        let Some(attribute) = ctx.next_charged(&mut attributes, "ASM annotation source arena")? else {
+            break;
+        };
+        index_storage.with_storage(|| {
+            ctx.insert_hash_set(&mut attribute_ids, attribute.id.as_str(), "ASM annotation attribute IDs")
+        })?;
+    }
+    let mut unknown_ids = HashSet::new();
+    let mut unknowns = out.unknowns.iter();
+    while !unknowns.as_slice().is_empty() {
+        let Some(unknown) = ctx.next_charged(&mut unknowns, "ASM annotation source arena")? else {
+            break;
+        };
+        index_storage.with_storage(|| {
+            ctx.insert_hash_set(&mut unknown_ids, unknown.id().as_str(), "ASM annotation unknown IDs")
+        })?;
+    }
+    let mut procedural_ids = HashSet::new();
+    let mut procedural = out.procedural_surfaces.iter().map(|(_, entity)| entity.id.as_str())
+        .chain(out.procedural_curves.iter().map(|(_, entity)| entity.id.as_str()));
+    while procedural.size_hint().1 != Some(0) {
+        let Some(id) = ctx.next_charged(&mut procedural, "ASM annotation source arena")? else {
+            break;
+        };
+        index_storage.with_storage(|| {
+            ctx.insert_hash_set(&mut procedural_ids, id, "ASM annotation procedural IDs")
+        })?;
+    }
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
     }
