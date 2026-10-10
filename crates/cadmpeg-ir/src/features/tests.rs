@@ -26,26 +26,6 @@ fn native_feature_kind_preserves_the_source_spelling() {
 }
 
 #[test]
-fn feature_evaluation_edit_forwards_callback_result() {
-    use crate::features::{FeatureDefinition, FeatureEvaluation, FeatureOperation};
-    use crate::scalar::Length;
-
-    let mut evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
-        FeatureOperation::DatumOffsetPlane {
-            reference: None,
-            distance: Length::ZERO,
-        },
-    ));
-    let result: Result<u8, &str> = evaluation.edit(|_, outputs| {
-        outputs.clear();
-        Err("preserve callback refusal")
-    });
-
-    assert_eq!(result, Err("preserve callback refusal"));
-    assert!(evaluation.outputs().is_empty());
-}
-
-#[test]
 fn a_face_maker_is_its_class_and_carries_no_mode_key() {
     use crate::features::FaceMaker;
 

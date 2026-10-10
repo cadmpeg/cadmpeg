@@ -706,15 +706,6 @@ impl Angle {
         Self(self.0.abs())
     }
 
-    /// Convert a finite value in degrees to an angle in canonical radians.
-    ///
-    /// The conversion factor is positive and below one, so the product is
-    /// finite. Underflow to signed zero is valid.
-    #[must_use]
-    pub fn from_degrees(value: FiniteReal) -> Self {
-        Self(value.get().to_radians())
-    }
-
     /// Assign the angle family to a dimensionless value in canonical radians.
     ///
     /// A `FiniteReal` carries no quantity family, so no conversion gives it
@@ -753,10 +744,10 @@ impl FiniteReal {
     /// The value `units` times the least positive subnormal magnitude,
     /// negated when `negative` is set.
     ///
-    /// Refuses a count with more than 53 significant bits after trailing zeros
-    /// are removed. Every admitted count converts exactly to at most `2^64`.
-    /// Its product with `2^-1074` is exact and finite, at most `2^-1010`.
-    /// Up to `2^53` units, the result's bit pattern is the sign bit and `units`.
+    /// A `u64` converts to at most `2^64`, and `2^64` times `2^-1074` is
+    /// `2^-1010`, so the product is finite for every argument and nothing is
+    /// checked. Up to `2^53` units the conversion and the product are exact,
+    /// so the value is the one whose bit pattern is the sign bit and `units`.
     #[must_use]
     pub(crate) fn subnormal_units(negative: bool, units: u64) -> Option<Self> {
         let magnitude = cadmpeg_core::convert::f64_from_u64(units)? * f64::from_bits(1);

@@ -1825,21 +1825,6 @@ fn oriented_endpoints(
         ),
         SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
             let points = curve.pole_rows();
-            let domain = crate::eval::nurbs_pcurve_parameter_domain(
-                curve.degree(), curve.knots(), points.count(),
-            )?;
-            let [start, end] = domain.endpoints();
-            let after_start = usize::try_from(curve.degree()).ok()?.checked_add(1)?;
-            let before_end = points.count().checked_sub(1)?;
-            // Ordering and the adjacent strict inequalities prove exactly
-            // degree+1 equal end knots; excess multiplicity is degenerate.
-            if curve.knots().first().copied() != Some(start)
-                || curve.knots().last().copied() != Some(end)
-                || *curve.knots().get(after_start)? <= start
-                || *curve.knots().get(before_end)? >= end
-            {
-                return None;
-            }
             (
                 points.point_at(0)?.get(),
                 points.point_at(points.count().checked_sub(1)?)?.get(),

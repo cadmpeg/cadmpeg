@@ -25,9 +25,6 @@ use serde_json::{Map, Value};
 
 use super::{nests_too_deep_message, MAX_NATIVE_NESTING_DEPTH};
 
-pub(super) mod account;
-use account::Account;
-
 // serde_json's RawValue Serialize protocol. The RawValue owner fixtures check
 // this spelling against the dependency's actual serializer.
 const RAW_VALUE_STRUCT: &str = "$serde_json::private::RawValue";
@@ -61,7 +58,7 @@ impl Node {
 }
 
 /// An externally tagged variant: `{"Variant": payload}`.
-fn tagged(ctx: Account<'_>, variant: &str, payload: Value) -> Result<Node, CanonError> {
+fn tagged(ctx: &DecodeContext<'_>, variant: &str, payload: Value) -> Result<Node, CanonError> {
     let key = copy_text(ctx, variant)?;
     let mut entries = Map::new();
     ctx.admit_btree_node_storage::<String, Value>(entries.len(), STORAGE)?;
@@ -71,7 +68,7 @@ fn tagged(ctx: Account<'_>, variant: &str, payload: Value) -> Result<Node, Canon
     Ok(Node::Value(Value::Object(entries)))
 }
 
-fn copy_text(ctx: Account<'_>, text: &str) -> Result<String, CanonError> {
+fn copy_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, CanonError> {
     ctx.charge_work(
         u64::try_from(text.len())
             .map_err(|_| ctx.refuse_codec_limit(WORK, u64::MAX - 1, u64::MAX))?,
@@ -84,7 +81,7 @@ fn copy_text(ctx: Account<'_>, text: &str) -> Result<String, CanonError> {
 }
 
 struct ChargingDisplayText<'a> {
-    ctx: Account<'a>,
+    ctx: &'a DecodeContext<'a>,
     text: String,
     refusal: Option<CanonError>,
 }
@@ -108,7 +105,7 @@ impl std::fmt::Write for ChargingDisplayText<'_> {
 }
 
 fn collect_display_text<T: Display + ?Sized>(
-    ctx: Account<'_>,
+    ctx: &DecodeContext<'_>,
     value: &T,
 ) -> Result<String, CanonError> {
     let mut writer = ChargingDisplayText {
@@ -147,7 +144,7 @@ pub(super) enum CanonError {
 }
 
 impl CanonError {
-    pub(super) fn into_native(self, ctx: Account<'_>) -> super::NativeConvertError {
+    pub(super) fn into_native(self, ctx: &DecodeContext<'_>) -> super::NativeConvertError {
         match self {
             Self::NonFinite(steps) => match Self::field_path(ctx, &steps) {
                 Ok(field) => super::NativeConvertError::NonFiniteNumber { field },
@@ -160,7 +157,7 @@ impl CanonError {
     }
 
     /// This refusal, stated from one container further out.
-    fn within(self, ctx: Account<'_>, step: impl FnOnce() -> Result<Step, Self>) -> Self {
+    fn within(self, ctx: &DecodeContext<'_>, step: impl FnOnce() -> Result<Step, Self>) -> Self {
         let Self::NonFinite(mut steps) = self else {
             return self;
         };
@@ -178,7 +175,7 @@ impl CanonError {
     }
 
     pub(super) fn field_path(
-        ctx: Account<'_>,
+        ctx: &DecodeContext<'_>,
         steps: &[Step],
     ) -> Result<String, CodecError> {
         let mut path = String::new();
@@ -275,7 +272,7 @@ fn number(value: f64) -> Result<Node, CanonError> {
 
 /// The canonical-value serializer. Every `serialize_*` returns a [`Node`].
 pub(super) struct CanonValue<'a> {
-    ctx: Account<'a>,
+    ctx: &'a DecodeContext<'a>,
     /// Containers this value may still enter.
     depth: usize,
 }
@@ -291,25 +288,18 @@ impl<'a> CanonValue<'a> {
     /// [`MAX_NATIVE_NESTING_DEPTH`]-deep field.
     pub(super) const fn for_record(ctx: &'a DecodeContext<'a>) -> Self {
         Self {
-            ctx: Account::Decode(ctx),
-            depth: MAX_NATIVE_NESTING_DEPTH + 1,
-        }
-    }
-
-    pub(super) const fn for_standard_record() -> Self {
-        Self {
-            ctx: Account::Standard,
+            ctx,
             depth: MAX_NATIVE_NESTING_DEPTH + 1,
         }
     }
 
     /// The serializer for a child value that may enter `depth` containers.
-    const fn within(ctx: Account<'a>, depth: usize) -> Self {
+    const fn within(ctx: &'a DecodeContext<'a>, depth: usize) -> Self {
         Self { ctx, depth }
     }
 
     /// The budget left after entering one container, or the refusal.
-    fn enter(&self) -> Result<(usize, Option<DepthGuard<'a>>), Error> {
+    fn enter(&self) -> Result<(usize, DepthGuard<'a>), Error> {
         match self.depth.checked_sub(1) {
             Some(depth) => {
                 self.ctx.charge_work(1, WORK)?;
@@ -576,8 +566,8 @@ impl<'a> ser::Serializer for CanonValue<'a> {
 
 /// A sequence collected in visit order.
 pub(super) struct CanonSeq<'a> {
-    ctx: Account<'a>,
-    _nested: Option<DepthGuard<'a>>,
+    ctx: &'a DecodeContext<'a>,
+    _nested: DepthGuard<'a>,
     out: Vec<Value>,
     /// Reserved slots not yet occupied by an element.
     unfilled: usize,
@@ -638,7 +628,7 @@ impl ser::SerializeTupleStruct for CanonSeq<'_> {
 
 /// An externally tagged tuple variant: `{"Variant":[...]}`.
 pub(super) struct CanonVariantSeq<'a> {
-    _nested: Option<DepthGuard<'a>>,
+    _nested: DepthGuard<'a>,
     variant: &'static str,
     seq: CanonSeq<'a>,
 }
@@ -665,8 +655,8 @@ impl ser::SerializeTupleVariant for CanonVariantSeq<'_> {
 
 /// An object's distinct members, keyed by raw (unescaped) key.
 pub(super) struct CanonMap<'a> {
-    ctx: Account<'a>,
-    _nested: Option<DepthGuard<'a>>,
+    ctx: &'a DecodeContext<'a>,
+    _nested: DepthGuard<'a>,
     entries: Map<String, Value>,
     key: Option<String>,
     /// Containers each member value may still enter.
@@ -761,7 +751,7 @@ impl ser::SerializeMap for CanonMap<'_> {
 pub(super) enum CanonStruct<'a> {
     Object(CanonMap<'a>),
     Raw {
-        ctx: Account<'a>,
+        ctx: &'a DecodeContext<'a>,
         /// Containers the payload may enter.
         depth: usize,
         /// The replayed payload, once its one field has arrived.
@@ -787,7 +777,7 @@ impl ser::SerializeStruct for CanonStruct<'_> {
                     ));
                 }
                 let text = ctx.with_scoped_storage(STORAGE, || {
-                    value.serialize(CanonValue::within(*ctx, *depth))
+                    value.serialize(CanonValue::within(ctx, *depth))
                 })?;
                 let Node::Value(Value::String(json)) = &text.0 else {
                     return Err(ser::Error::custom("raw JSON payload must be a string"));
@@ -809,7 +799,7 @@ impl ser::SerializeStruct for CanonStruct<'_> {
                     .and_then(|work| work.checked_mul(16))
                     .ok_or_else(|| ctx.refuse_codec_limit(WORK, u64::MAX - 1, u64::MAX))?;
                 ctx.charge_work(work, WORK)?;
-                let replayed = super::replay::emit(json, CanonValue::within(*ctx, *depth), *depth);
+                let replayed = super::replay::emit(json, CanonValue::within(ctx, *depth), *depth);
                 ctx.charge_work(0, WORK)?;
                 *parsed = Some(replayed?);
                 Ok(())
@@ -833,7 +823,7 @@ impl ser::SerializeStruct for CanonStruct<'_> {
 
 /// An externally tagged struct variant: `{"Variant":{...}}`.
 pub(super) struct CanonVariantMap<'a> {
-    _nested: Option<DepthGuard<'a>>,
+    _nested: DepthGuard<'a>,
     variant: &'static str,
     map: CanonMap<'a>,
 }
@@ -866,7 +856,7 @@ impl ser::SerializeStructVariant for CanonVariantMap<'_> {
 /// pass through, scalar keys and unit variants use their string forms, and
 /// compound or absent keys are rejected. Floating-point keys must be finite.
 struct CanonKey<'a> {
-    ctx: Account<'a>,
+    ctx: &'a DecodeContext<'a>,
 }
 
 struct NumberText {
@@ -890,7 +880,7 @@ impl Write for NumberText {
     }
 }
 
-fn number_key_text<T: Serialize>(ctx: Account<'_>, value: &T) -> Result<String, Error> {
+fn number_key_text<T: Serialize>(ctx: &DecodeContext<'_>, value: &T) -> Result<String, Error> {
     ctx.charge_work(128, WORK)?;
     let mut text = NumberText {
         bytes: [0; 128],

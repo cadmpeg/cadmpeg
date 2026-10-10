@@ -997,11 +997,11 @@ impl BsplineSurface {
         self.v_degree
     }
 
-    /// Map pole positions in row-major order after every result passes admission.
+    /// Map every pole position in row-major order, or change nothing.
     ///
-    /// The map must return the same result for the same index and position.
-    /// The first refusal leaves every pole unchanged. After all results pass,
-    /// the map runs again and writes the results in place. Nothing is allocated.
+    /// `map` receives each pole's row-major index and position. The first
+    /// refusal returns before any pole changes; otherwise `map` runs again for
+    /// every pole and the results are written in place. Nothing is allocated.
     pub fn try_map_control_points<E>(
         &mut self,
         map: impl Fn(usize, FinitePoint3) -> Result<FinitePoint3, E>,

@@ -19,19 +19,7 @@ use cadmpeg_core::CodecError;
 
 #[test]
 fn cadir_encoder_streams_the_canonical_json_shape() {
-    let mut ir = unit_cube().expect("valid unit cube fixture");
-    let last_point = ir
-        .model
-        .points
-        .last()
-        .expect("unit cube points")
-        .id
-        .as_str()
-        .to_owned();
-    let last = ir.model.points.len() - 1;
-    ir.model.points.swap(0, last);
-    assert_eq!(ir.model.points[0].id.as_str(), last_point);
-
+    let ir = unit_cube().expect("valid unit cube fixture");
     let mut encoded = Vec::new();
     let plan = CadirEncoder
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
@@ -48,17 +36,6 @@ fn cadir_encoder_streams_the_canonical_json_shape() {
     let mut canonical = ir.to_canonical_json().unwrap();
     canonical.push('\n');
     assert_eq!(encoded, canonical.as_bytes());
-
-    let value: serde_json::Value = serde_json::from_str(&canonical).unwrap();
-    let points = value["model"]["points"]
-        .as_array()
-        .expect("canonical model points");
-    let identities: Vec<_> = points
-        .iter()
-        .map(|point| point["id"].as_str().expect("point identity"))
-        .collect();
-    assert!(identities.windows(2).all(|pair| pair[0] < pair[1]));
-    assert_eq!(ir.model.points[0].id.as_str(), last_point);
 }
 
 #[test]

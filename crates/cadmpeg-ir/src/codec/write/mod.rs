@@ -304,9 +304,7 @@ impl EncoderBackend for CadirEncoder {
     const TARGET: DialectFree = DialectFree;
 
     fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
-        let mut bytes = input
-            .ir
-            .to_canonical_json()
+        let mut bytes = crate::hash::finite_json::to_canonical_json_string(input.ir)
             .map_err(|error| CodecError::Malformed(error.to_string()))?
             .into_bytes();
         bytes.push(b'\n');
