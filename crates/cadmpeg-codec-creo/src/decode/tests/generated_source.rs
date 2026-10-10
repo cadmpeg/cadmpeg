@@ -2,7 +2,6 @@
 //! Tests: generated source.
 
 use super::{simple_drilled_recipe_surface_rows, simple_drilled_recipe_table, surface_row};
-use crate::decode::analytic::carriers::rowless_round_face_orientations;
 use crate::decode::feature_history::draft::schema_feature_definition;
 use crate::decode::feature_history::link::{
     analytic_surface_id_for_feature, generated_surface_id_for_feature,
@@ -25,7 +24,6 @@ use crate::decode::holes::drilled::{
 use crate::decode::with_test_decode_ctx as with_ctx;
 
 use crate::decode::sketch::equations_coordinate::approximately_equal;
-use crate::decode::surfaces::cylinders::rowless_round_cylinder_pairs;
 
 use crate::feature::schema::SchemaClass;
 use cadmpeg_ir::document::CadIr;
@@ -38,7 +36,7 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::scalar::{Length, PositiveLength};
 use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 const EPS_GENERATED_CYLINDER_RADIUS: f64 = 1.0e-12;
 
@@ -1913,90 +1911,6 @@ fn counterbore_corner_envelopes_define_the_directed_stepped_span() {
     );
 }
 
-#[test]
-fn rowless_round_cylinder_requires_the_four_entry_sibling_layout() {
-    let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
-        id,
-        kind,
-        feature_id: 23,
-        reversed: false,
-        boundary_type: crate::surface::BoundaryType::Code00,
-        next_surface: 0,
-        offset: 0,
-    };
-    let mut rows = vec![
-        row(10, crate::surface::SurfaceKind::Plane),
-        row(11, crate::surface::SurfaceKind::Plane),
-        row(13, crate::surface::SurfaceKind::Cylinder),
-    ];
-    let table = crate::feature::entity::FeatureEntityTable::new(
-        23,
-        80,
-        vec![
-            crate::feature::entity::dummy_table_entry(10),
-            crate::feature::entity::dummy_table_entry(11),
-            crate::feature::entity::dummy_table_entry(12),
-            crate::feature::entity::dummy_table_entry(13),
-        ],
-        &std::collections::BTreeSet::new(),
-        47,
-    )
-    .with_surface_ids([10, 11, 13]);
-    assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| rowless_round_cylinder_pairs(
-            ctx,
-            &BTreeSet::from([23]),
-            std::slice::from_ref(&table),
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone()),
-        ))
-        .expect("service pair admitted"),
-        vec![(12, 13, 47)]
-    );
-    assert!(
-        crate::decode::with_test_decode_ctx(|ctx| rowless_round_cylinder_pairs(
-            ctx,
-            &BTreeSet::new(),
-            std::slice::from_ref(&table),
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone()),
-        ))
-        .expect("service empty pair admitted")
-        .is_empty()
-    );
-    rows[2].reversed = true;
-    assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| rowless_round_face_orientations(
-            ctx,
-            &BTreeSet::from([23]),
-            std::slice::from_ref(&table),
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone()),
-            &BTreeSet::from([12]),
-        ))
-        .expect("service rowless orientation admitted"),
-        BTreeMap::from([(12, true)])
-    );
-    assert!(
-        crate::decode::with_test_decode_ctx(|ctx| rowless_round_face_orientations(
-            ctx,
-            &BTreeSet::from([23]),
-            std::slice::from_ref(&table),
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone()),
-            &BTreeSet::new(),
-        ))
-        .expect("service absent orientation admitted")
-        .is_empty()
-    );
-    let mut materialized_rowless = rows;
-    materialized_rowless.push(row(12, crate::surface::SurfaceKind::Cylinder));
-    assert!(
-        crate::decode::with_test_decode_ctx(|ctx| rowless_round_cylinder_pairs(
-            ctx,
-            &BTreeSet::from([23]),
-            &[table],
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(materialized_rowless.clone()),
-        ))
-        .expect("service materialized row admitted")
-        .is_empty()
-    );
-}
 
 mod extrusion_profiles;
+mod rowless_round;
