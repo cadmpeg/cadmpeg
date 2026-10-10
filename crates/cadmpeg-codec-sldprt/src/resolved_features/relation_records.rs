@@ -164,17 +164,20 @@ impl<'a, 'i> DeclarationIndex<'a, 'i> {
         intervals: &'i [(u64, Option<u64>, String)],
     ) -> Result<Self, CodecError> {
         const OPERATION: &str = "index SLDPRT relation declarations";
+        let mut relation_classes_storage = ctx.reserve_scoped(0, OPERATION)?;
         let mut relation_classes = Vec::new();
         for class in ctx.admit_iter(classes, OPERATION)? {
             if relation_family(&class.name).is_none() {
                 continue;
             }
             if let Some(interval) = feature_at_offset(ctx, class.offset, intervals)? {
-                ctx.push_vec(
-                    &mut relation_classes,
-                    (class.offset, interval.feature_name),
-                    OPERATION,
-                )?;
+                relation_classes_storage.with_storage(|| {
+                    ctx.push_vec(
+                        &mut relation_classes,
+                        (class.offset, interval.feature_name),
+                        OPERATION,
+                    )
+                })?;
             }
         }
         ctx.sort_unstable_by_key(
@@ -194,6 +197,7 @@ impl<'a, 'i> DeclarationIndex<'a, 'i> {
                 OPERATION,
             )?;
         }
+        drop(relation_classes_storage);
         let mut ordered = ctx.collect_vec(scalars.iter(), OPERATION)?;
         ctx.stable_sort_by(&mut ordered, |scalar| &scalar.offset, Ord::cmp, OPERATION)?;
         Ok(Self {
@@ -2626,7 +2630,66 @@ mod relation_records_tests {
     }
 
     #[test]
-    fn circle_handle_literal_pays_only_actual_source_work() {
+    fn declaration_class_workspace_ends_before_scalar_sort_scratch() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let classes = [class(0, "sgPntPntHorDist")];
+        let scalars = (1..=21)
+            .rev()
+            .map(|offset| scalar(offset, FeatureInputScalarRole::Driving))
+            .collect::<Vec<_>>();
+        let intervals = [(0, None, "sketch".to_owned())];
+        // One hash group: four 40-byte buckets + 15-byte alignment allowance
+        // + four control bytes + 16 trailing bytes, then one 8-byte offset.
+        // Scalar Vec: 32 reference slots. Stable sort: two 21-usize arrays.
+        // The consumed four-slot (u64, &str) class Vec is no longer live.
+        const MATERIALIZED: u64 = 195 + 8 + 32 * 8 + 2 * 21 * 8;
+        const ITEMS: u64 = 1 + 1 + 1 + 21 + 2 * 21;
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = MATERIALIZED;
+        policy.limits.max_collection_items = ITEMS * 64;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        for _ in 0..64 {
+            let storage;
+            let index;
+            (index, storage) = ctx.with_scoped_storage("index SLDPRT relation declarations", || {
+                super::DeclarationIndex::new(&ctx, &classes, &scalars, &intervals)
+            }).unwrap();
+            assert_eq!(
+                index.scalars.iter().map(|value| value.offset).collect::<Vec<_>>(),
+                (1..=21).collect::<Vec<_>>()
+            );
+            assert!(std::ptr::eq(index.scalars[0], &scalars[20]));
+            assert_eq!(index.relation_class_offsets.get("sketch").unwrap(), &[0]);
+            drop(index);
+            drop(storage);
+        }
+        assert_eq!(ctx.resource_refusal(), None);
+        ctx.reserve_scoped(MATERIALIZED, "released relation declaration index").unwrap();
+
+        policy.limits.max_materialized_bytes = MATERIALIZED - 1;
+        policy.limits.max_collection_items = ITEMS;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = match ctx.with_scoped_storage("index SLDPRT relation declarations", || {
+            super::DeclarationIndex::new(&ctx, &classes, &scalars, &intervals)
+        }) {
+            Err(error) => error,
+            Ok(_) => panic!("one below the live index and sort scratch must refuse"),
+        };
+        let CodecError::ResourceLimit(limit) = error else { panic!("resource refusal"); };
+        assert_eq!(limit.operation, "index SLDPRT relation declarations");
+        assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+        assert_eq!(limit.used, 195 + 8 + 32 * 8 + 21 * 8);
+        assert_eq!(limit.additional, 21 * 8);
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    }
+
+    #[test]
+    fn circle_handle_literal_does_not_add_comparison_work() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_core::CodecError;
         let mut display = circle_scalar(0, "", FeatureInputScalarRole::Display, None);
@@ -2645,8 +2708,10 @@ mod relation_records_tests {
             ).unwrap(),
             operands: Vec::new(),
         };
-        // One scalar visit; singleton sort 1 + 1 + (8 + 2*8)*2*8;
-        // one lookup visit and two ID bytes; three classes; one driver visit.
+        // Current shared singleton-sort charge: 1 + 1 + (8 + 2*8)*2*8.
+        // It includes an upper bound for comparisons and moves not executed.
+        // Other work: scalar visit; lookup visit and two ID bytes;
+        // three classes; driver visit. Fixed grammar adds no comparison charge.
         const WORK: u64 = 394;
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 0;
