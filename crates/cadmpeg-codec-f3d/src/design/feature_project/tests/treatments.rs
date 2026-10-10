@@ -506,10 +506,14 @@ fn localized_fillet_owner(
     parameter_record_index: u32,
     local_ordinal: u32,
 ) -> DesignParameterOwner {
-    let mut owner = parse_parameter_owner(&cadmpeg_test_support::service_decode_context(), &parameter_owner_frame()).expect("service decode context")
-        .unwrap()
-        .into_record("Design/BulkStream.dat", 0)
-        .unwrap();
+    let mut owner = parse_parameter_owner(
+        &cadmpeg_test_support::service_decode_context(),
+        &parameter_owner_frame(),
+    )
+    .expect("service decode context")
+    .unwrap()
+    .into_record("Design/BulkStream.dat", 0)
+    .unwrap();
     {
         let mut wire = DesignParameterOwnerWire::from(owner.clone());
         wire.id = format!("f3d:native/BulkStream.dat:owner#{record_index}");
