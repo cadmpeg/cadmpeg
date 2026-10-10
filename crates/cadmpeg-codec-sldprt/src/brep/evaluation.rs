@@ -113,8 +113,6 @@ pub(super) fn nurbs_surface_parameter_within_tolerance(
     let result = cadmpeg_ir::eval::nurbs_surface_parameter_within_tolerance_with_budget(
         ctx, surface, point, seed, tolerance, &budget,
     );
-    // A zero charge observes the session's original sticky refusal.
-    ctx.charge_work(0, OPERATION)?;
     if budget.exhausted() {
         return Err(ctx.refuse_codec_limit(
             OPERATION,
@@ -159,7 +157,6 @@ pub(super) fn nurbs_surface_parameter_segment_chord_bound(
     let result = cadmpeg_ir::eval::nurbs_surface_parameter_segment_chord_bound_with_budget(
         ctx, surface, parameters, chord, &budget,
     );
-    ctx.charge_work(0, OPERATION)?;
     if budget.exhausted() {
         return Err(ctx.refuse_codec_limit(
             OPERATION,

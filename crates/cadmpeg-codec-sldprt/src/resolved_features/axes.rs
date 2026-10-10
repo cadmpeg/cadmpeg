@@ -1438,7 +1438,6 @@ pub(crate) fn bind_profile_revolution_axes(
     const SKETCH_INDEX: &str = "index SLDPRT revolution sketches";
     const OWNER_INDEX: &str = "index SLDPRT revolution sketch owners";
     const BIND: &str = "bind SLDPRT revolution axes";
-    ctx.charge_work(0, INDEX)?;
     if model_features.is_empty() {
         return Ok(());
     }
@@ -2109,7 +2108,6 @@ impl<'roster, 'a, 'payload, 'ctx> ProfileEndpointQueries<'roster, 'a, 'payload, 
         const OPERATION: &str = "cache SLDPRT profile curve endpoints";
         if super::endpoints::roster_curve_endpoint_route(&self.lane.native_payload, curve).is_none()
         {
-            self.ctx.charge_work(0, OPERATION)?;
             return Ok(&[]);
         }
         let key = std::ptr::from_ref(curve).addr();

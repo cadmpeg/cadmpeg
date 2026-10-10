@@ -108,7 +108,6 @@ pub(crate) fn extract_streams_with_offsets(
         let effort = u64::try_from(payload.len() - i)
             .map_err(|_| CodecError::NotImplemented("Parasolid probe work exceeds u64".into()))?;
         if !work.charge_by(payload.len() - i) {
-            ctx.charge_work(0, "probe Parasolid zlib candidates")?;
             return Err(ctx.refuse_codec_limit(
                 "probe Parasolid zlib candidates",
                 local_limit,

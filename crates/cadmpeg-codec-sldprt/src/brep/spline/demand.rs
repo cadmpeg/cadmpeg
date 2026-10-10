@@ -73,9 +73,6 @@ impl<'input, 'ctx, 'arena> Sources<'input, 'ctx, 'arena> {
 
     fn curve(&mut self, attr: u16) -> Result<Option<CurveDescriptor>, CodecError> {
         let ctx = self.ctx;
-        if let Some(limit) = ctx.resource_refusal() {
-            return Err(limit.into());
-        }
         let bytes = self.bytes;
         if attr <= 1 {
             return Ok(None);
@@ -118,10 +115,6 @@ impl<'input, 'ctx, 'arena> Sources<'input, 'ctx, 'arena> {
         &mut self,
         attr_at: usize,
     ) -> Result<Option<CurveDescriptor>, CodecError> {
-        let ctx = self.ctx;
-        if let Some(limit) = ctx.resource_refusal() {
-            return Err(limit.into());
-        }
         let bytes = self.bytes;
         for at in attr_at + 2..(attr_at + 24).min(bytes.len().checked_sub(1).map_or(0, |end| end)) {
             let Some(reference) = View::u16_be_at(bytes, at) else {
@@ -136,9 +129,6 @@ impl<'input, 'ctx, 'arena> Sources<'input, 'ctx, 'arena> {
 
     pub(super) fn surface(&mut self, attr: u16) -> Result<Option<SurfaceDescriptor>, CodecError> {
         let ctx = self.ctx;
-        if let Some(limit) = ctx.resource_refusal() {
-            return Err(limit.into());
-        }
         let bytes = self.bytes;
         if attr <= 1 {
             return Ok(None);

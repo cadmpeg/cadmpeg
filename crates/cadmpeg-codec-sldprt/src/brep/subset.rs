@@ -131,9 +131,6 @@ impl<'ctx> SubsetEntries<'ctx> {
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Option<StreamCurve<'ctx>>, CodecError> {
-        if let Some(limit) = ctx.resource_refusal() {
-            return Err(CodecError::ResourceLimit(limit));
-        }
         if self.values.len() == 0 {
             return Ok(None);
         }

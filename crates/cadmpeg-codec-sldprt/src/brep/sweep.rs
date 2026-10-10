@@ -210,9 +210,6 @@ pub(super) fn profile_nurbs<'a, 'ctx>(
     record: &dyn std::fmt::Display,
     refusal: &mut RefusalSink<'_, 'ctx>,
 ) -> Result<Option<ProfileNurbs<'a, 'ctx>>, CodecError> {
-    if let Some(limit) = ctx.resource_refusal() {
-        return Err(limit.into());
-    }
     let (center, frame, major_radius, minor_radius) = match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) => {
             return Ok(Some(ProfileNurbs::Borrowed(curve)))
@@ -315,9 +312,6 @@ pub(super) fn swept_nurbs<'ctx>(
     record: &dyn std::fmt::Display,
     refusal: &mut RefusalSink<'_, 'ctx>,
 ) -> Result<Option<NurbsSurface>, CodecError> {
-    if let Some(limit) = ctx.resource_refusal() {
-        return Err(limit.into());
-    }
     let direction = direction.as_raw();
     if !(v_start.is_finite() && v_end.is_finite()) || v_end <= v_start {
         return Ok(None);
