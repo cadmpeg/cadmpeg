@@ -113,7 +113,6 @@ pub(in crate::native) fn feature_projected_curve_references(
                     .and_then(|field| {
                         field
                             .into_references()
-                            .into_iter()
                             .map(|reference| {
                                 Some((
                                     reference.token,
