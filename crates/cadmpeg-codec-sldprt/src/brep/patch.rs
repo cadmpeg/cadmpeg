@@ -69,9 +69,6 @@ impl<'body, 'ctx, 'arena> CompactCurvePatch<'body, 'ctx, 'arena> {
     /// Consumes the selection before later mutations can change its source.
     pub(crate) fn apply(self, values: &[f64]) -> Result<bool, cadmpeg_core::CodecError> {
         let ctx = self.context;
-        if let Some(limit) = ctx.resource_refusal() {
-            return Err(cadmpeg_core::CodecError::ResourceLimit(limit));
-        }
         let Some(selection) = self.selection else {
             return Ok(false);
         };

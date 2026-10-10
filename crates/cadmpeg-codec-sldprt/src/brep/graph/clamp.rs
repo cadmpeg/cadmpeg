@@ -47,9 +47,6 @@ pub(super) fn insert_nurbs_homogeneous_knot<'ctx>(
     controls: &[[f64; 4]],
     value: f64,
 ) -> Result<Option<HomogeneousCurveLanes<'ctx>>, cadmpeg_core::CodecError> {
-    if let Some(limit) = ctx.resource_refusal() {
-        return Err(limit.into());
-    }
     let Some(expected_knots) = controls
         .len()
         .checked_add(degree)
@@ -177,9 +174,6 @@ fn clamped_segment_with<T>(
     domain: [f64; 2],
     publish: impl FnOnce(Vec<f64>, &[[f64; 4]], bool) -> Result<Option<T>, cadmpeg_core::CodecError>,
 ) -> Result<Option<T>, cadmpeg_core::CodecError> {
-    if let Some(limit) = ctx.resource_refusal() {
-        return Err(limit.into());
-    }
     if curve.periodic()
         || !domain[0].is_finite()
         || !domain[1].is_finite()

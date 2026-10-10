@@ -222,9 +222,6 @@ impl FeatureSource {
         value: &str,
         operation: &'static str,
     ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
-        if let Some(limit) = ctx.resource_refusal() {
-            return Err(cadmpeg_core::CodecError::ResourceLimit(limit));
-        }
         if value == RESERVED_FEATURE_SOURCE {
             return Ok(Some(Self::Reserved));
         }

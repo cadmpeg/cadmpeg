@@ -64,9 +64,6 @@ impl<'ctx> ScopedRecords<'ctx> {
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Option<ScopedRecord<'ctx>>, CodecError> {
-        if let Some(limit) = ctx.resource_refusal() {
-            return Err(CodecError::ResourceLimit(limit));
-        }
         if self.records.len() == 0 {
             return Ok(None);
         }

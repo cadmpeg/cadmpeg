@@ -2222,9 +2222,6 @@ fn planar_boundary_samples<'ctx>(
     frame: PlaneFrame,
     limits: BoundaryTolerance,
 ) -> Result<Option<(PlanarBoundarySamples<'ctx>, f64)>, cadmpeg_core::CodecError> {
-    if let Some(limit) = ctx.resource_refusal() {
-        return Err(limit.into());
-    }
     let BoundaryTolerance {
         tolerance,
         sampling_tolerance,
@@ -2377,9 +2374,6 @@ impl PlanarArc {
         frame: PlaneFrame,
         limits: BoundaryTolerance,
     ) -> Result<Option<(PlanarBoundarySamples<'ctx>, f64)>, cadmpeg_core::CodecError> {
-        if let Some(limit) = ctx.resource_refusal() {
-            return Err(limit.into());
-        }
         let BoundaryTolerance {
             tolerance,
             sampling_tolerance,
@@ -2836,9 +2830,6 @@ fn cylindrical_trim(
     surface: &SurfaceGeometry,
     topology: &TrimTopology<'_>,
 ) -> Result<Option<CylindricalTrim>, cadmpeg_core::CodecError> {
-    if let Some(limit) = ctx.resource_refusal() {
-        return Err(limit.into());
-    }
     let TrimTopology {
         loops,
         coedges,
@@ -2970,9 +2961,6 @@ fn conical_trim(
     surface: &SurfaceGeometry,
     topology: &TrimTopology<'_>,
 ) -> Result<Option<ConicalTrim>, cadmpeg_core::CodecError> {
-    if let Some(limit) = ctx.resource_refusal() {
-        return Err(limit.into());
-    }
     let TrimTopology {
         loops,
         coedges,

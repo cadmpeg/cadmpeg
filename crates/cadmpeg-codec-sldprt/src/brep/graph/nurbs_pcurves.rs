@@ -688,9 +688,6 @@ pub(super) fn nurbs_curve_sample_parameters<'ctx>(
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     range: [f64; 2],
 ) -> Result<Option<CurveSampleParameters<'ctx>>, NurbsPcurveFailure> {
-    if let Some(limit) = ctx.resource_refusal() {
-        return Err(limit.into());
-    }
     let Some(domain) = nurbs_curve_parameter_domain(curve) else {
         return Ok(None);
     };

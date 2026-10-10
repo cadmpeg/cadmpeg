@@ -153,9 +153,6 @@ impl<'ctx, V> CarrierTable<'ctx, V> {
         source_operation: &'static str,
         target_operation: &'static str,
     ) -> Result<(), CodecError> {
-        if let Some(limit) = ctx.resource_refusal() {
-            return Err(CodecError::ResourceLimit(limit));
-        }
         let mut source = source.into_entries();
         while source.entries.len() != 0 {
             let Some((attr, value)) = ctx.next_charged(&mut source.entries, source_operation)?
@@ -176,9 +173,6 @@ impl<'ctx, V> CarrierTable<'ctx, V> {
         // The owner retains the source shell through the actual IntoIter,
         // including an early resource refusal. Intact child owners move;
         // occupied-source children drop. No drained shell is transferred.
-        if let Some(limit) = ctx.resource_refusal() {
-            return Err(CodecError::ResourceLimit(limit));
-        }
         let mut source = source.into_entries();
         while source.entries.len() != 0 {
             let Some((attr, value)) = ctx.next_charged(&mut source.entries, operation)? else {
