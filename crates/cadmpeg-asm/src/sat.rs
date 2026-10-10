@@ -186,14 +186,20 @@ impl<'a> FieldReader<'a> {
 
     /// Borrow one whitespace-delimited field and classify its integer shape
     /// during the byte scan. Returns `None` at end of input. Counted string
-    /// payloads are consumed separately by `read_str_payload`.
+    /// payloads are consumed separately by `read_str_payload`. An optional frame
+    /// step follows whitespace admission and precedes the field byte scan.
     fn next_field(
         &mut self,
         ctx: &DecodeContext<'_>,
+        frame_step: Option<&'static str>,
     ) -> Result<Option<(usize, &'a str, bool)>, StreamFailure> {
         self.skip_ws(ctx)?;
         if self.pos >= self.bytes.len() {
             return Ok(None);
+        }
+        if let Some(operation) = frame_step {
+            ctx.charge_work(1, operation)
+                .map_err(StreamFailure::from_operation)?;
         }
         let start = self.pos;
         let mut integer = true;
@@ -628,9 +634,7 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
     .map_err(StreamFailure::from_operation)?;
     // Record name field, then payload fields until the terminator.
     'stream: loop {
-        ctx.charge_work(1, "frame SAT record")
-            .map_err(StreamFailure::from_operation)?;
-        let Some((rec_start, name, _)) = reader.next_field(ctx)? else {
+        let Some((rec_start, name, _)) = reader.next_field(ctx, Some("frame SAT record"))? else {
             break;
         };
         let mut scratch = ctx
@@ -651,9 +655,8 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
         let mut prims = Vec::new();
         let mut subtype_depth = 0usize;
         loop {
-            ctx.charge_work(1, "frame SAT field")
-                .map_err(StreamFailure::from_operation)?;
-            let Some((at, field, integer)) = reader.next_field(ctx)? else {
+            let Some((at, field, integer)) = reader.next_field(ctx, Some("frame SAT field"))?
+            else {
                 return Err(StreamError {
                     format: StreamFormat::Text,
                     offset: rec_start,
@@ -730,16 +733,19 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
 
         ctx.reserve_vec(&mut records, 1, "frame SAT record")
             .map_err(StreamFailure::from_operation)?;
-        records.push(Record::with_head_end(ctx,
-records.len(),
-ctx
-                .copy_retained_text(name, "retain SAT record name")
-                .map_err(StreamFailure::from_operation)?,
-tokens.into(),
-rec_start,
-reader.pos - rec_start,
-head.len()
-).map_err(StreamFailure::from_operation)?);
+        records.push(
+            Record::with_head_end(
+                ctx,
+                records.len(),
+                ctx.copy_retained_text(name, "retain SAT record name")
+                    .map_err(StreamFailure::from_operation)?,
+                tokens.into(),
+                rec_start,
+                reader.pos - rec_start,
+                head.len(),
+            )
+            .map_err(StreamFailure::from_operation)?,
+        );
     }
     let Some(terminator) = terminator else {
         return Err(StreamError {
@@ -2239,7 +2245,7 @@ mod tests {
                         bytes: b"x",
                         pos: 0,
                     };
-                    reader.next_field(ctx)
+                    reader.next_field(ctx, None)
                 }
                 .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
             },
@@ -2289,7 +2295,7 @@ mod tests {
                         bytes: b"x",
                         pos: 0,
                     };
-                    reader.next_field(ctx)
+                    reader.next_field(ctx, None)
                 }
                 .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
             },
@@ -2750,7 +2756,7 @@ mod tests {
     #[test]
     fn sat_typed_text_charges_only_its_retained_copy() {
         for (body, name, payload, token_count) in [
-            ("mystery @4 test #\n", "mystery", 4, 1),
+            ("mystery @4 test #\n", "mystery", 4, 1_usize),
             (
                 "face $-1 -1 $-1 $-1 $-1 $-1 $-1 $-1 forward single #\n",
                 "face",
@@ -2762,13 +2768,40 @@ mod tests {
             crate::test_support::with_service_context(&source, |service| {
                 let mut policy = *service.policy();
                 // Retain the header, record name, payload, exact token lane,
-                // and the record vector's four-slot initial capacity.
-                policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+                // record vector, value-token index, and shared index owner.
+                let index_owner =
+                    std::mem::size_of::<Vec<usize>>() + 2 * std::mem::size_of::<usize>();
+                let required = cadmpeg_core::decode::u64_from_index(
                     61 + name.len()
                         + payload
                         + token_count * std::mem::size_of::<Token>()
-                        + 4 * std::mem::size_of::<super::Record>(),
+                        + 4 * std::mem::size_of::<super::Record>()
+                        + token_count.max(4).next_power_of_two() * std::mem::size_of::<usize>()
+                        + index_owner,
                 );
+                let error = cadmpeg_test_support::refusal::resource_limit_at(
+                    ResourceDimension::RetainedBytes,
+                    "ASM record chunk index",
+                    |cap| {
+                        policy.limits.max_retained_bytes = cap;
+                        let arena = DecodeArena::new();
+                        let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)?;
+                        super::parse(&ctx, &source)
+                            .map_err(|error| error.into_codec_error(&ctx, CodecError::malformed))
+                    },
+                );
+                let CodecError::ResourceLimit(limit) = error else {
+                    panic!("shared record index owner refusal");
+                };
+                assert_eq!(limit.operation, "ASM record chunk index");
+                assert_eq!(limit.limit, required - 1);
+                let owner_bytes = cadmpeg_core::decode::u64_from_index(index_owner);
+                assert_eq!(
+                    (limit.used, limit.additional),
+                    (required - owner_bytes, owner_bytes)
+                );
+
+                policy.limits.max_retained_bytes = required;
                 let arena = DecodeArena::new();
                 let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)
                     .expect("source fits input limit");
