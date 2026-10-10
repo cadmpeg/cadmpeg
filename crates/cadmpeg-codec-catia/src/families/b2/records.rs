@@ -2604,29 +2604,31 @@ fn parse_b2_nurbs_curve(
             control_points.push(point);
             weights.push(NonZeroReal::from(weight));
         }
-        let mut knots = Vec::new();
-        ctx.reserve_capacity(&mut knots, 2 * control_count, "catia_b2_nurbs_knots")?;
-        ctx.resize_vec(
-            &mut knots,
-            control_count,
-            knot_start,
-            "catia_b2_nurbs_knots",
-        )?;
-        ctx.resize_vec(
-            &mut knots,
-            2 * control_count,
-            knot_end,
-            "catia_b2_nurbs_knots",
-        )?;
-        Ok(Some((knots, control_points, weights)))
+        Ok(Some((control_points, weights)))
     })?;
-    let Some((knots, control_points, weights)) = lanes else {
+    let Some((control_points, weights)) = lanes else {
         return Ok(None);
     };
-    storage.commit()?;
+    let mut knots = Vec::new();
+    ctx.reserve_capacity(&mut knots, 2 * control_count, "catia_b2_nurbs_knots")?;
+    ctx.resize_vec(
+        &mut knots,
+        control_count,
+        knot_start,
+        "catia_b2_nurbs_knots",
+    )?;
+    ctx.resize_vec(
+        &mut knots,
+        2 * control_count,
+        knot_end,
+        "catia_b2_nurbs_knots",
+    )?;
+    let geometry =
+        NurbsCurve::from_checked_lanes(ctx, degree, knots, control_points, Some(weights), false)?;
+    drop(storage);
     crate::nurbs::note_refusal(
         ctx,
-        NurbsCurve::from_checked_lanes(ctx, degree, knots, control_points, Some(weights), false)?,
+        geometry,
         refusal,
         format_args!("b2 NURBS curve record at byte {}", frame.pos),
     )
@@ -4063,7 +4065,7 @@ fn offset_matches_carrier(
 }
 
 /// Bind offset boxes through ordered domain and knot endpoint walks. A query
-/// uses the smallest of its six scalar candidate sets and stops at ambiguity.
+/// uses the smallest available scalar candidate set and stops at ambiguity.
 pub(in crate::families) fn offset_support_carriers(
     ctx: &DecodeContext<'_>,
     offsets: &[B2OffsetSupport],
@@ -4175,7 +4177,7 @@ pub(in crate::families) fn offset_support_carriers(
                 required[query / 2] = true;
             }
         }
-        for lane in 0..3 {
+        for (lane, &required) in required.iter().enumerate() {
             if !evaluate && lane == 2 {
                 let domain_visits = ctx.sum(
                     &choices,
@@ -4194,13 +4196,21 @@ pub(in crate::families) fn offset_support_carriers(
                         .enumerate()
                     {
                         let surface = &carrier.borrow().geometry;
-                        let (Some(&v_min), Some(&v_max)) =
-                            (surface.v_knots().first(), surface.v_knots().last())
-                        else {
+                        let (Some(&u_min), Some(&u_max), Some(&v_min), Some(&v_max)) = (
+                            surface.u_knots().first(),
+                            surface.u_knots().last(),
+                            surface.v_knots().first(),
+                            surface.v_knots().last(),
+                        ) else {
                             continue;
                         };
+                        let u_span = u_max - u_min;
                         let v_span = v_max - v_min;
-                        if !v_span.is_finite() || v_span <= 0.0 {
+                        if !u_span.is_finite()
+                            || u_span <= 0.0
+                            || !v_span.is_finite()
+                            || v_span <= 0.0
+                        {
                             continue;
                         }
                         let tolerance = EPS_OFFSET_PARAMETER_RELATIVE * v_span;
@@ -4259,7 +4269,7 @@ pub(in crate::families) fn offset_support_carriers(
                 })?;
             }
             let events = &events[lane];
-            if !required[lane] || events.is_empty() {
+            if !required || events.is_empty() {
                 continue;
             }
             let mut counts = ctx.with_scoped_storage("catia_b2_offset_active_slots", || {

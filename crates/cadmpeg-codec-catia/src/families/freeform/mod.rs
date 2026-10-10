@@ -1745,25 +1745,40 @@ fn freeform_surface_carriers(
     records: &[crate::wire::records::ConsolidatedRecord],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Vec<FreeformSurfaceCarrier>, cadmpeg_core::CodecError> {
-    let resolved = crate::families::a5a8::records::resolved_a8_surfaces(ctx, data, refusal)?;
-    let a5 = crate::families::a5a8::records::a5_surfaces_from_records(ctx, data, records, refusal)?;
     let mut surfaces = Vec::new();
-    for surface in ctx
-        .admit_iter(resolved, "catia_freeform_surface_carrier_visits")?
-        .chain(ctx.admit_iter(a5, "catia_freeform_surface_carrier_visits")?)
     {
-        let (source_object, source_tag) = freeform_surface_source(ctx, &surface, "freeform:")?;
-        let source_tag = source_tag.1.commit_value(source_tag.0)?;
-        ctx.push_vec(
-            &mut surfaces,
-            FreeformSurfaceCarrier {
-                pos: surface.pos,
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface.geometry)),
-                source_object,
-                source_tag,
-            },
-            "catia_freeform_surface_carriers",
-        )?;
+        let mut push_nurbs = |surface: crate::families::a5a8::records::FreeformSurface| {
+            let (source_object, source_tag) = freeform_surface_source(ctx, &surface, "freeform:")?;
+            let source_tag = source_tag.1.commit_value(source_tag.0)?;
+            ctx.push_vec(
+                &mut surfaces,
+                FreeformSurfaceCarrier {
+                    pos: surface.pos,
+                    geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+                        surface.geometry,
+                    )),
+                    source_object,
+                    source_tag,
+                },
+                "catia_freeform_surface_carriers",
+            )
+        };
+        {
+            let mut resolved =
+                crate::families::a5a8::records::resolved_a8_surface_records(ctx, data, refusal)?;
+            while let Some(surface) =
+                ctx.next_charged(&mut resolved, "catia_freeform_surface_carrier_visits")?
+            {
+                push_nurbs(surface?)?;
+            }
+        }
+        let mut a5 =
+            crate::families::a5a8::records::a5_surface_records(ctx, data, records, refusal)?;
+        while let Some(surface) =
+            ctx.next_charged(&mut a5, "catia_freeform_surface_carrier_visits")?
+        {
+            push_nurbs(surface?)?;
+        }
     }
     for surface in crate::families::b2::records::b2_cylinders_from_records(ctx, data, records)? {
         let surface = surface?;
@@ -2639,14 +2654,16 @@ fn append_resolved_consolidated_surface_curves(
     // Every carrier table, model index and pending queue below is scratch for
     // this pass; only the curves, surfaces and pcurves it emits are kept.
     let mut scratch = ctx.reserve_scoped(0, "catia_freeform_surface_curve_workspace")?;
+    let topology_runs = ctx.with_scoped_storage("catia_freeform_topology_run_workspace", || {
+        crate::families::consolidated::records::consolidated_topology_edge_runs_from_records(
+            ctx, data, records,
+        )
+    })?;
     let complete_runs = scratch.with_storage(|| {
-        let topology_runs =
-            crate::families::consolidated::records::consolidated_topology_edge_runs_from_records(
-                ctx, data, records,
-            )?;
         ctx.collect_hash_map(
             topology_runs
-                .into_iter()
+                .0
+                .iter()
                 .map(|run| (run.edge.pcurves[0].pos, run)),
             "catia_freeform_complete_runs",
         )
@@ -2654,7 +2671,7 @@ fn append_resolved_consolidated_surface_curves(
     let mut pending = scratch.with_storage(|| {
         let mut pending = VecDeque::new();
         for index in ctx.admit_iter(0..resolved_blocks.len(), "catia_freeform_pending_edges")? {
-            if let Some(run) = ctx.get_hash_map(
+            if let Some(&run) = ctx.get_hash_map(
                 &complete_runs,
                 &resolved_blocks[index].block.pcurves[0].pos,
                 "catia_freeform_complete_run_lookup",
@@ -2667,50 +2684,12 @@ fn append_resolved_consolidated_surface_curves(
     if pending.is_empty() {
         return Ok(ConsolidatedCurveBindingCounts::default());
     }
-    let (standalone, embedded, cones, spheres, tori, planes) = scratch.with_storage(|| {
-        let mut standalone = HashMap::new();
-        for cylinder in crate::families::b2::records::b2_cylinders_from_records(ctx, data, records)?
-        {
-            let cylinder = cylinder?;
-            ctx.insert_hash_map(
-                &mut standalone,
-                cylinder.pos,
-                cylinder,
-                "catia_freeform_standalone_cylinders",
-            )?;
-        }
-        let mut embedded = HashMap::new();
-        for value in
-            crate::families::b2::records::b2_embedded_cylinders_from_records(ctx, data, records)?
-        {
-            let value = value?;
-            ctx.insert_hash_map(
-                &mut embedded,
-                value.pos,
-                value,
-                "catia_freeform_embedded_cylinders",
-            )?;
-        }
-        let mut cones = HashMap::new();
-        for cone in crate::families::b2::records::b2_cones_from_records(ctx, data, records)? {
-            ctx.insert_hash_map(&mut cones, cone.pos, cone, "catia_freeform_cones")?;
-        }
-        let mut spheres = HashMap::new();
-        for sphere in crate::families::b2::records::b2_spheres_from_records(ctx, data, records)? {
-            ctx.insert_hash_map(&mut spheres, sphere.pos, sphere, "catia_freeform_spheres")?;
-        }
-        let mut tori = HashMap::new();
-        for torus in crate::families::b2::records::b2_tori_from_records(ctx, data, records)? {
-            ctx.insert_hash_map(&mut tori, torus.pos, torus, "catia_freeform_tori")?;
-        }
-        let plane_carriers =
-            crate::families::b2::records::b2_plane_carriers_from_records(ctx, data, records)?;
-        let planes = ctx.collect_hash_map(
-            plane_carriers.into_iter().map(|plane| (plane.pos, plane)),
-            "catia_freeform_planes",
-        )?;
-        Ok::<_, cadmpeg_core::CodecError>((standalone, embedded, cones, spheres, tori, planes))
-    })?;
+    let mut standalone = None;
+    let mut embedded = None;
+    let mut cones = None;
+    let mut spheres = None;
+    let mut tori = None;
+    let mut planes = None;
 
     let mut surface_ids = HashMap::<ConsolidatedCarrierKey, SurfaceId>::new();
     let mut surface_positions = crate::families::ModelSurfacePositions::new(ctx, ir)?;
@@ -3315,15 +3294,38 @@ fn append_resolved_consolidated_surface_curves(
                 continue;
             }
             let (key, carrier, source_object, chart, annotation_kind, namespace) = match binding {
-                Some(crate::families::consolidated::records::ConsolidatedSupportBinding::Cylinder { pos }) => {
-                    let Some(cylinder) = ctx.get_hash_map(&standalone, pos, "catia_freeform_carrier_lookup")? else {
+                Some(crate::families::consolidated::records::ConsolidatedSupportBinding::Cylinder {
+                    pos,
+                }) => {
+                    let index = match &mut standalone {
+                        Some(index) => index,
+                        cache @ None => cache.insert(scratch.with_storage(|| {
+                            let mut index = HashMap::new();
+                            for cylinder in
+                                crate::families::b2::records::b2_cylinders_from_records(ctx, data, records)?
+                            {
+                                let cylinder = cylinder?;
+                                ctx.insert_hash_map(
+                                    &mut index,
+                                    cylinder.pos,
+                                    cylinder,
+                                    "catia_freeform_standalone_cylinders",
+                                )?;
+                            }
+                            Ok::<_, cadmpeg_core::CodecError>(index)
+                        })?),
+                    };
+                    let Some(cylinder) = ctx.get_hash_map(index, pos, "catia_freeform_carrier_lookup")?
+                    else {
                         continue;
                     };
                     let carrier = cylinder.surface_geometry();
-                    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = carrier else {
+                    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =
+                        carrier
+                    else {
                         continue;
                     };
- let radius = cylinder_surface.radius().get();
+                    let radius = cylinder_surface.radius().get();
                     (
                         (*pos, None),
                         carrier,
@@ -3333,86 +3335,174 @@ fn append_resolved_consolidated_surface_curves(
                         cadmpeg_ir::identity_namespace!("catia", "consolidated", "cylinder"),
                     )
                 }
-            Some(crate::families::consolidated::records::ConsolidatedSupportBinding::EmbeddedCylinder { pos, .. }) => {
-                let Some(value) = ctx.get_hash_map(&embedded, pos, "catia_freeform_carrier_lookup")? else {
-                    continue;
-                };
-                let carrier = value.cylinder.surface_geometry();
-                let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder)) = carrier else {
-                    continue;
-                };
-                let radius = cylinder.radius().get();
-                (
-                    (*pos, None),
-                    carrier,
-                    Some(value.object_id),
-                    ConsolidatedCarrierChart::Cylinder { radius },
-                    "consolidated_b2_03_60_cylinder",
-                    cadmpeg_ir::identity_namespace!("catia", "consolidated", "cylinder"),
+                Some(
+                    crate::families::consolidated::records::ConsolidatedSupportBinding::EmbeddedCylinder {
+                        pos,
+                        ..
+                    },
+                ) => {
+                    let index = match &mut embedded {
+                        Some(index) => index,
+                        cache @ None => cache.insert(scratch.with_storage(|| {
+                            let mut index = HashMap::new();
+                            for value in crate::families::b2::records::b2_embedded_cylinders_from_records(
+                                ctx, data, records,
+                            )? {
+                                let value = value?;
+                                ctx.insert_hash_map(
+                                    &mut index,
+                                    value.pos,
+                                    value,
+                                    "catia_freeform_embedded_cylinders",
+                                )?;
+                            }
+                            Ok::<_, cadmpeg_core::CodecError>(index)
+                        })?),
+                    };
+                    let Some(value) = ctx.get_hash_map(index, pos, "catia_freeform_carrier_lookup")? else {
+                        continue;
+                    };
+                    let carrier = value.cylinder.surface_geometry();
+                    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder)) = carrier else {
+                        continue;
+                    };
+                    let radius = cylinder.radius().get();
+                    (
+                        (*pos, None),
+                        carrier,
+                        Some(value.object_id),
+                        ConsolidatedCarrierChart::Cylinder { radius },
+                        "consolidated_b2_03_60_cylinder",
+                        cadmpeg_ir::identity_namespace!("catia", "consolidated", "cylinder"),
+                    )
+                }
+                Some(crate::families::consolidated::records::ConsolidatedSupportBinding::Cone { pos }) => {
+                    let index = match &mut cones {
+                        Some(index) => index,
+                        cache @ None => cache.insert(scratch.with_storage(|| {
+                            let mut index = HashMap::new();
+                            for cone in
+                                crate::families::b2::records::b2_cones_from_records(ctx, data, records)?
+                            {
+                                ctx.insert_hash_map(&mut index, cone.pos, cone, "catia_freeform_cones")?;
+                            }
+                            Ok::<_, cadmpeg_core::CodecError>(index)
+                        })?),
+                    };
+                    let Some(cone) = ctx.get_hash_map(index, pos, "catia_freeform_carrier_lookup")? else {
+                        continue;
+                    };
+                    (
+                        (*pos, None),
+                        crate::families::b2::records::b2_cone_geometry(cone),
+                        None,
+                        ConsolidatedCarrierChart::Cone { cone },
+                        "consolidated_b2_03_29_cone",
+                        cadmpeg_ir::identity_namespace!("catia", "consolidated", "cone"),
+                    )
+                }
+                Some(crate::families::consolidated::records::ConsolidatedSupportBinding::Sphere {
+                    pos,
+                }) => {
+                    let index = match &mut spheres {
+                        Some(index) => index,
+                        cache @ None => cache.insert(scratch.with_storage(|| {
+                            let mut index = HashMap::new();
+                            for sphere in
+                                crate::families::b2::records::b2_spheres_from_records(ctx, data, records)?
+                            {
+                                ctx.insert_hash_map(
+                                    &mut index,
+                                    sphere.pos,
+                                    sphere,
+                                    "catia_freeform_spheres",
+                                )?;
+                            }
+                            Ok::<_, cadmpeg_core::CodecError>(index)
+                        })?),
+                    };
+                    let Some(sphere) = ctx.get_hash_map(index, pos, "catia_freeform_carrier_lookup")?
+                    else {
+                        continue;
+                    };
+                    (
+                        (*pos, None),
+                        crate::families::b2::records::b2_sphere_geometry(sphere),
+                        None,
+                        ConsolidatedCarrierChart::Identity,
+                        "consolidated_b2_03_2a_sphere",
+                        cadmpeg_ir::identity_namespace!("catia", "consolidated", "sphere"),
+                    )
+                }
+                Some(crate::families::consolidated::records::ConsolidatedSupportBinding::Torus { pos }) => {
+                    let index = match &mut tori {
+                        Some(index) => index,
+                        cache @ None => cache.insert(scratch.with_storage(|| {
+                            let mut index = HashMap::new();
+                            for torus in
+                                crate::families::b2::records::b2_tori_from_records(ctx, data, records)?
+                            {
+                                ctx.insert_hash_map(&mut index, torus.pos, torus, "catia_freeform_tori")?;
+                            }
+                            Ok::<_, cadmpeg_core::CodecError>(index)
+                        })?),
+                    };
+                    let Some(torus) = ctx.get_hash_map(index, pos, "catia_freeform_carrier_lookup")? else {
+                        continue;
+                    };
+                    (
+                        (*pos, None),
+                        crate::families::b2::records::b2_torus_geometry(torus),
+                        None,
+                        ConsolidatedCarrierChart::Torus { torus },
+                        "consolidated_b2_03_2b_torus",
+                        cadmpeg_ir::identity_namespace!("catia", "consolidated", "torus"),
+                    )
+                }
+                Some(crate::families::consolidated::records::ConsolidatedSupportBinding::Plane { pos }) => {
+                    let (plane_carriers, positions) = match &mut planes {
+                        Some(index) => index,
+                        cache @ None => cache.insert(scratch.with_storage(|| {
+                            let plane_carriers =
+                                crate::families::b2::records::b2_plane_carriers_from_records(
+                                    ctx, data, records,
+                                )?;
+                            let positions = ctx.collect_hash_map(
+                                plane_carriers
+                                    .iter()
+                                    .enumerate()
+                                    .map(|(index, plane)| (plane.pos, index)),
+                                "catia_freeform_planes",
+                            )?;
+                            Ok::<_, cadmpeg_core::CodecError>((plane_carriers, positions))
+                        })?),
+                    };
+                    let Some(&index) = ctx.get_hash_map(positions, pos, "catia_freeform_carrier_lookup")?
+                    else {
+                        continue;
+                    };
+                    let Some(carrier) =
+                        crate::families::b2::records::b2_plane_geometry(&plane_carriers[index])
+                    else {
+                        continue;
+                    };
+                    (
+                        (*pos, None),
+                        carrier,
+                        None,
+                        ConsolidatedCarrierChart::Identity,
+                        "consolidated_b2_03_27_plane",
+                        cadmpeg_ir::identity_namespace!("catia", "consolidated", "plane"),
+                    )
+                }
+                Some(
+                    crate::families::consolidated::records::ConsolidatedSupportBinding::Circle { .. }
+                    | crate::families::consolidated::records::ConsolidatedSupportBinding::NurbsCarrier {
+                        ..
+                    },
                 )
-            }
-            Some(crate::families::consolidated::records::ConsolidatedSupportBinding::Cone { pos }) => {
-                let Some(cone) = ctx.get_hash_map(&cones, pos, "catia_freeform_carrier_lookup")? else {
-                    continue;
-                };
-                (
-                    (*pos, None),
-                    crate::families::b2::records::b2_cone_geometry(cone),
-                    None,
-                    ConsolidatedCarrierChart::Cone { cone },
-                    "consolidated_b2_03_29_cone",
-                    cadmpeg_ir::identity_namespace!("catia", "consolidated", "cone"),
-                )
-            }
-            Some(crate::families::consolidated::records::ConsolidatedSupportBinding::Sphere { pos }) => {
-                let Some(sphere) = ctx.get_hash_map(&spheres, pos, "catia_freeform_carrier_lookup")? else {
-                    continue;
-                };
-                (
-                    (*pos, None),
-                    crate::families::b2::records::b2_sphere_geometry(sphere),
-                    None,
-                    ConsolidatedCarrierChart::Identity,
-                    "consolidated_b2_03_2a_sphere",
-                    cadmpeg_ir::identity_namespace!("catia", "consolidated", "sphere"),
-                )
-            }
-            Some(crate::families::consolidated::records::ConsolidatedSupportBinding::Torus { pos }) => {
-                let Some(torus) = ctx.get_hash_map(&tori, pos, "catia_freeform_carrier_lookup")? else {
-                    continue;
-                };
-                (
-                    (*pos, None),
-                    crate::families::b2::records::b2_torus_geometry(torus),
-                    None,
-                    ConsolidatedCarrierChart::Torus { torus },
-                    "consolidated_b2_03_2b_torus",
-                    cadmpeg_ir::identity_namespace!("catia", "consolidated", "torus"),
-                )
-            }
-            Some(crate::families::consolidated::records::ConsolidatedSupportBinding::Plane { pos }) => {
-                let Some(plane) = ctx.get_hash_map(&planes, pos, "catia_freeform_carrier_lookup")? else {
-                    continue;
-                };
-                let Some(carrier) = crate::families::b2::records::b2_plane_geometry(plane)
-                else {
-                    continue;
-                };
-                (
-                    (*pos, None),
-                    carrier,
-                    None,
-                    ConsolidatedCarrierChart::Identity,
-                    "consolidated_b2_03_27_plane",
-                    cadmpeg_ir::identity_namespace!("catia", "consolidated", "plane"),
-                )
-            }
-            Some(
-                crate::families::consolidated::records::ConsolidatedSupportBinding::Circle { .. }
-                | crate::families::consolidated::records::ConsolidatedSupportBinding::NurbsCarrier { .. },
-            )
-            | None => continue,
-        };
+                | None => continue,
+            };
             let mut id_storage = ctx.reserve_scoped(0, "catia_freeform_side_id_workspace")?;
             let surface = if let Some(id) =
                 ctx.get_hash_map(&surface_ids, &key, "catia_freeform_carrier_surface_lookup")?
