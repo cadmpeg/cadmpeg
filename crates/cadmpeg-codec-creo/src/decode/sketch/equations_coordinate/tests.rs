@@ -59,23 +59,31 @@ fn solve_matrix_with_limit(
     coefficients: &[BTreeMap<usize, f64>],
     variable_count: usize,
 ) -> cadmpeg_core::CodecError {
-    crate::test_support::last_refusal_at(&[0], ResourceDimension::CollectionItems, operation, |ctx| {
-        let mut matrix = coefficients
-            .iter()
-            .map(|coefficients| super::SectionLinearRow {
-                coefficients: coefficients.clone(),
-                rhs: 1.0,
-            })
-            .collect::<Vec<_>>();
-        super::uniquely_solved_linear_variables(ctx, &mut matrix, variable_count)
-    })
+    crate::test_support::last_refusal_at(
+        &[0],
+        ResourceDimension::CollectionItems,
+        operation,
+        |ctx| {
+            let mut matrix = coefficients
+                .iter()
+                .map(|coefficients| super::SectionLinearRow {
+                    coefficients: coefficients.clone(),
+                    rhs: 1.0,
+                })
+                .collect::<Vec<_>>();
+            super::uniquely_solved_linear_variables(ctx, &mut matrix, variable_count)
+        },
+    )
 }
 
 #[test]
 fn coordinate_equation_refuses_before_first_term_node() {
-    let error = crate::test_support::last_refusal_at(&[0], ResourceDimension::CollectionItems, "creo coordinate equation term nodes", |ctx| {
-        super::SectionCoordinateEquation::point_value(ctx, 7, SectionAxis::U, 2.0)
-    });
+    let error = crate::test_support::last_refusal_at(
+        &[0],
+        ResourceDimension::CollectionItems,
+        "creo coordinate equation term nodes",
+        |ctx| super::SectionCoordinateEquation::point_value(ctx, 7, SectionAxis::U, 2.0),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
@@ -91,9 +99,12 @@ fn coordinate_equation_refuses_before_first_term_node() {
 
 #[test]
 fn coordinate_difference_refuses_before_second_term_node() {
-    let error = crate::test_support::last_refusal_at(&[0], ResourceDimension::CollectionItems, "creo coordinate equation term nodes", |ctx| {
-        super::SectionCoordinateEquation::point_difference(ctx, 7, 8, SectionAxis::V, 3.0)
-    });
+    let error = crate::test_support::last_refusal_at(
+        &[0],
+        ResourceDimension::CollectionItems,
+        "creo coordinate equation term nodes",
+        |ctx| super::SectionCoordinateEquation::point_difference(ctx, 7, 8, SectionAxis::V, 3.0),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
@@ -166,9 +177,12 @@ fn section_solved_columns_refuse_before_vector_growth() {
 #[test]
 fn section_coordinate_unique_variables_refuse_before_tree_insert() {
     let equations = [SectionEquationFixture::point_value(1, SectionAxis::U, 1.0)];
-    let error = crate::test_support::last_refusal_at(&[0], ResourceDimension::CollectionItems, "creo section unique variables", |ctx| {
-        super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
-    });
+    let error = crate::test_support::last_refusal_at(
+        &[0],
+        ResourceDimension::CollectionItems,
+        "creo section unique variables",
+        |ctx| super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new()),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
@@ -179,9 +193,12 @@ fn section_coordinate_unique_variables_refuse_before_tree_insert() {
 #[test]
 fn section_coordinate_ordered_variables_refuse_before_vector_reserve() {
     let equations = [SectionEquationFixture::point_value(1, SectionAxis::U, 1.0)];
-    let error = crate::test_support::last_refusal_at(&[0], ResourceDimension::CollectionItems, "creo section ordered variables", |ctx| {
-        super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
-    });
+    let error = crate::test_support::last_refusal_at(
+        &[0],
+        ResourceDimension::CollectionItems,
+        "creo section ordered variables",
+        |ctx| super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new()),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
@@ -192,9 +209,12 @@ fn section_coordinate_ordered_variables_refuse_before_vector_reserve() {
 #[test]
 fn section_coordinate_variable_indices_refuse_before_tree_insert() {
     let equations = [SectionEquationFixture::point_value(1, SectionAxis::U, 1.0)];
-    let error = crate::test_support::last_refusal_at(&[0], ResourceDimension::CollectionItems, "creo section variable indices", |ctx| {
-        super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
-    });
+    let error = crate::test_support::last_refusal_at(
+        &[0],
+        ResourceDimension::CollectionItems,
+        "creo section variable indices",
+        |ctx| super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new()),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
@@ -204,14 +224,19 @@ fn section_coordinate_variable_indices_refuse_before_tree_insert() {
 
 #[test]
 fn unsigned_dimension_unique_variables_refuse_before_tree_insert() {
-    let error = crate::test_support::last_refusal_at(&[0], ResourceDimension::CollectionItems, "creo section unique variables", |ctx| {
-        super::solve_unsigned_dimension_coordinates(
-            ctx,
-            &[],
-            &BTreeMap::new(),
-            &[(1, 2, SectionAxis::U, 1.0)],
-        )
-    });
+    let error = crate::test_support::last_refusal_at(
+        &[0],
+        ResourceDimension::CollectionItems,
+        "creo section unique variables",
+        |ctx| {
+            super::solve_unsigned_dimension_coordinates(
+                ctx,
+                &[],
+                &BTreeMap::new(),
+                &[(1, 2, SectionAxis::U, 1.0)],
+            )
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
@@ -222,9 +247,12 @@ fn unsigned_dimension_unique_variables_refuse_before_tree_insert() {
 #[test]
 fn section_remaining_variables_refuse_before_tree_insert() {
     let equations = [SectionEquationFixture::point_value(1, SectionAxis::U, 1.0)];
-    let error = crate::test_support::last_refusal_at(&[0], ResourceDimension::CollectionItems, "creo section remaining variables", |ctx| {
-        super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
-    });
+    let error = crate::test_support::last_refusal_at(
+        &[0],
+        ResourceDimension::CollectionItems,
+        "creo section remaining variables",
+        |ctx| super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new()),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
@@ -235,9 +263,12 @@ fn section_remaining_variables_refuse_before_tree_insert() {
 #[test]
 fn section_component_seed_refuses_before_tree_insert() {
     let equations = [SectionEquationFixture::point_value(1, SectionAxis::U, 1.0)];
-    let error = crate::test_support::last_refusal_at(&[0], ResourceDimension::CollectionItems, "creo section component seed", |ctx| {
-        super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
-    });
+    let error = crate::test_support::last_refusal_at(
+        &[0],
+        ResourceDimension::CollectionItems,
+        "creo section component seed",
+        |ctx| super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new()),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
@@ -248,9 +279,12 @@ fn section_component_seed_refuses_before_tree_insert() {
 #[test]
 fn section_pending_seed_refuses_before_deque_growth() {
     let equations = [SectionEquationFixture::point_value(1, SectionAxis::U, 1.0)];
-    let error = crate::test_support::last_refusal_at(&[0], ResourceDimension::CollectionItems, "creo section pending seed", |ctx| {
-        super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
-    });
+    let error = crate::test_support::last_refusal_at(
+        &[0],
+        ResourceDimension::CollectionItems,
+        "creo section pending seed",
+        |ctx| super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new()),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
@@ -270,9 +304,12 @@ fn section_component_neighbors_refuse_before_tree_insert() {
         super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
     })
     .is_ok());
-    let error = crate::test_support::last_refusal_at(&[0], ResourceDimension::CollectionItems, "creo section component neighbors", |ctx| {
-        super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
-    });
+    let error = crate::test_support::last_refusal_at(
+        &[0],
+        ResourceDimension::CollectionItems,
+        "creo section component neighbors",
+        |ctx| super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new()),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
@@ -288,9 +325,12 @@ fn section_pending_neighbors_refuse_before_deque_growth() {
         SectionAxis::U,
         1.0,
     )];
-    let error = crate::test_support::last_refusal_at(&[0], ResourceDimension::CollectionItems, "creo section pending neighbors", |ctx| {
-        super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
-    });
+    let error = crate::test_support::last_refusal_at(
+        &[0],
+        ResourceDimension::CollectionItems,
+        "creo section pending neighbors",
+        |ctx| super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new()),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
@@ -300,14 +340,19 @@ fn section_pending_neighbors_refuse_before_deque_growth() {
 
 #[test]
 fn unsigned_dimension_remaining_variables_refuse_before_tree_insert() {
-    let error = crate::test_support::last_refusal_at(&[0], ResourceDimension::CollectionItems, "creo section remaining variables", |ctx| {
-        super::solve_unsigned_dimension_coordinates(
-            ctx,
-            &[],
-            &BTreeMap::new(),
-            &[(1, 2, SectionAxis::U, 1.0)],
-        )
-    });
+    let error = crate::test_support::last_refusal_at(
+        &[0],
+        ResourceDimension::CollectionItems,
+        "creo section remaining variables",
+        |ctx| {
+            super::solve_unsigned_dimension_coordinates(
+                ctx,
+                &[],
+                &BTreeMap::new(),
+                &[(1, 2, SectionAxis::U, 1.0)],
+            )
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
@@ -317,14 +362,19 @@ fn unsigned_dimension_remaining_variables_refuse_before_tree_insert() {
 
 #[test]
 fn unsigned_component_distances_refuse_before_vector_growth() {
-    let error = crate::test_support::last_refusal_at(&[0], ResourceDimension::CollectionItems, "creo section component distances", |ctx| {
-        super::solve_unsigned_dimension_coordinates(
-            ctx,
-            &[],
-            &BTreeMap::new(),
-            &[(1, 2, SectionAxis::U, 1.0)],
-        )
-    });
+    let error = crate::test_support::last_refusal_at(
+        &[0],
+        ResourceDimension::CollectionItems,
+        "creo section component distances",
+        |ctx| {
+            super::solve_unsigned_dimension_coordinates(
+                ctx,
+                &[],
+                &BTreeMap::new(),
+                &[(1, 2, SectionAxis::U, 1.0)],
+            )
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
@@ -340,14 +390,19 @@ fn unsigned_component_equation_rows_refuse_before_vector_growth() {
         SectionAxis::U,
         1.0,
     )];
-    let error = crate::test_support::last_refusal_at(&[0], ResourceDimension::CollectionItems, "creo section component equation rows", |ctx| {
-        super::solve_unsigned_dimension_coordinates(
-            ctx,
-            &equations,
-            &BTreeMap::new(),
-            &[(1, 2, SectionAxis::U, 1.0)],
-        )
-    });
+    let error = crate::test_support::last_refusal_at(
+        &[0],
+        ResourceDimension::CollectionItems,
+        "creo section component equation rows",
+        |ctx| {
+            super::solve_unsigned_dimension_coordinates(
+                ctx,
+                &equations,
+                &BTreeMap::new(),
+                &[(1, 2, SectionAxis::U, 1.0)],
+            )
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
@@ -363,14 +418,19 @@ fn unsigned_branch_with_collection_limit(operation: &'static str) -> cadmpeg_cor
         SectionAxis::U,
         1.0,
     )];
-    crate::test_support::last_refusal_at(&[0], ResourceDimension::CollectionItems, operation, |ctx| {
-        super::solve_unsigned_dimension_coordinates(
-            ctx,
-            &equations,
-            &BTreeMap::new(),
-            &[(1, 2, SectionAxis::U, 1.0)],
-        )
-    })
+    crate::test_support::last_refusal_at(
+        &[0],
+        ResourceDimension::CollectionItems,
+        operation,
+        |ctx| {
+            super::solve_unsigned_dimension_coordinates(
+                ctx,
+                &equations,
+                &BTreeMap::new(),
+                &[(1, 2, SectionAxis::U, 1.0)],
+            )
+        },
+    )
 }
 
 #[test]
@@ -413,7 +473,6 @@ fn unsigned_signed_equation_terms_refuse_before_tree_creation() {
     );
 }
 
-
 fn unsigned_value_fixture(
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeMap<SectionCoordinateVariable, f64>, cadmpeg_core::CodecError> {
@@ -431,7 +490,12 @@ fn unsigned_value_fixture(
 }
 
 fn unsigned_value_with_limit(operation: &'static str) -> cadmpeg_core::CodecError {
-    crate::test_support::last_refusal_at(&[0], ResourceDimension::CollectionItems, operation, unsigned_value_fixture)
+    crate::test_support::last_refusal_at(
+        &[0],
+        ResourceDimension::CollectionItems,
+        operation,
+        unsigned_value_fixture,
+    )
 }
 
 #[test]
@@ -474,9 +538,12 @@ fn unsigned_resolved_values_refuse_before_tree_insert() {
 #[test]
 fn section_component_columns_refuse_before_vector_reserve() {
     let equations = [SectionEquationFixture::point_value(1, SectionAxis::U, 1.0)];
-    let error = crate::test_support::last_refusal_at(&[0], ResourceDimension::CollectionItems, "creo section component columns", |ctx| {
-        super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
-    });
+    let error = crate::test_support::last_refusal_at(
+        &[0],
+        ResourceDimension::CollectionItems,
+        "creo section component columns",
+        |ctx| super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new()),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
@@ -487,9 +554,12 @@ fn section_component_columns_refuse_before_vector_reserve() {
 #[test]
 fn section_local_columns_refuse_before_tree_insert() {
     let equations = [SectionEquationFixture::point_value(1, SectionAxis::U, 1.0)];
-    let error = crate::test_support::last_refusal_at(&[0], ResourceDimension::CollectionItems, "creo section local columns", |ctx| {
-        super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
-    });
+    let error = crate::test_support::last_refusal_at(
+        &[0],
+        ResourceDimension::CollectionItems,
+        "creo section local columns",
+        |ctx| super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new()),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
@@ -500,9 +570,12 @@ fn section_local_columns_refuse_before_tree_insert() {
 #[test]
 fn section_component_equations_refuse_before_tree_insert() {
     let equations = [SectionEquationFixture::point_value(1, SectionAxis::U, 1.0)];
-    let error = crate::test_support::last_refusal_at(&[0], ResourceDimension::CollectionItems, "creo section component equations", |ctx| {
-        super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
-    });
+    let error = crate::test_support::last_refusal_at(
+        &[0],
+        ResourceDimension::CollectionItems,
+        "creo section component equations",
+        |ctx| super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new()),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
@@ -513,9 +586,12 @@ fn section_component_equations_refuse_before_tree_insert() {
 #[test]
 fn section_matrix_rows_refuse_before_vector_reserve() {
     let equations = [SectionEquationFixture::point_value(1, SectionAxis::U, 1.0)];
-    let error = crate::test_support::last_refusal_at(&[0], ResourceDimension::CollectionItems, "creo section matrix rows", |ctx| {
-        super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
-    });
+    let error = crate::test_support::last_refusal_at(
+        &[0],
+        ResourceDimension::CollectionItems,
+        "creo section matrix rows",
+        |ctx| super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new()),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
@@ -526,9 +602,12 @@ fn section_matrix_rows_refuse_before_vector_reserve() {
 #[test]
 fn section_matrix_coefficients_refuse_before_tree_insert() {
     let equations = [SectionEquationFixture::point_value(1, SectionAxis::U, 1.0)];
-    let error = crate::test_support::last_refusal_at(&[0], ResourceDimension::CollectionItems, "creo section matrix coefficients", |ctx| {
-        super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
-    });
+    let error = crate::test_support::last_refusal_at(
+        &[0],
+        ResourceDimension::CollectionItems,
+        "creo section matrix coefficients",
+        |ctx| super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new()),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
@@ -539,9 +618,12 @@ fn section_matrix_coefficients_refuse_before_tree_insert() {
 #[test]
 fn section_solved_coordinates_refuse_before_tree_insert() {
     let equations = [SectionEquationFixture::point_value(1, SectionAxis::U, 1.0)];
-    let error = crate::test_support::last_refusal_at(&[0], ResourceDimension::CollectionItems, "creo section solved coordinates", |ctx| {
-        super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
-    });
+    let error = crate::test_support::last_refusal_at(
+        &[0],
+        ResourceDimension::CollectionItems,
+        "creo section solved coordinates",
+        |ctx| super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new()),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
@@ -557,25 +639,32 @@ fn section_stored_fallback_refuses_before_solved_node() {
     ];
     let stored = BTreeMap::from([((1, SectionAxis::U), 2.0)]);
     let error = crate::test_support::last_refusal_at(
-        &[0], ResourceDimension::CollectionItems, "creo section solved coordinates",
+        &[0],
+        ResourceDimension::CollectionItems,
+        "creo section solved coordinates",
         |ctx| super::solve_section_coordinate_equations(ctx, &equations, &stored),
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo section solved coordinates"));
+            && limit.operation == "creo section solved coordinates")
+    );
     let solved = crate::decode::with_test_decode_ctx(|ctx| {
         super::solve_section_coordinate_equations(ctx, &equations, &stored)
-    }).expect("stored fallback admitted");
+    })
+    .expect("stored fallback admitted");
     assert_eq!(solved, BTreeMap::from([(1, [Some(2.0), None])]));
-
 }
 
 #[test]
 fn section_solved_points_refuse_before_tree_insert() {
     let equations = [SectionEquationFixture::point_value(1, SectionAxis::U, 1.0)];
-    let error = crate::test_support::last_refusal_at(&[0], ResourceDimension::CollectionItems, "creo section solved points", |ctx| {
-        super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
-    });
+    let error = crate::test_support::last_refusal_at(
+        &[0],
+        ResourceDimension::CollectionItems,
+        "creo section solved points",
+        |ctx| super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new()),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
@@ -586,9 +675,12 @@ fn section_solved_points_refuse_before_tree_insert() {
 #[test]
 fn section_coordinate_adjacency_reports_collection_limit() {
     let equations = [SectionEquationFixture::point_value(1, SectionAxis::U, 1.0)];
-    let error = crate::test_support::last_refusal_at(&[0], ResourceDimension::CollectionItems, "creo section coordinate adjacency", |ctx| {
-        super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
-    });
+    let error = crate::test_support::last_refusal_at(
+        &[0],
+        ResourceDimension::CollectionItems,
+        "creo section coordinate adjacency",
+        |ctx| super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new()),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
@@ -599,9 +691,12 @@ fn section_coordinate_adjacency_reports_collection_limit() {
 #[test]
 fn section_coordinate_equation_membership_reports_collection_limit() {
     let equations = [SectionEquationFixture::point_value(1, SectionAxis::U, 1.0)];
-    let error = crate::test_support::last_refusal_at(&[0], ResourceDimension::CollectionItems, "creo section coordinate equation membership", |ctx| {
-        super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
-    });
+    let error = crate::test_support::last_refusal_at(
+        &[0],
+        ResourceDimension::CollectionItems,
+        "creo section coordinate equation membership",
+        |ctx| super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new()),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
@@ -611,14 +706,19 @@ fn section_coordinate_equation_membership_reports_collection_limit() {
 
 #[test]
 fn unsigned_dimension_adjacency_reports_collection_limit() {
-    let error = crate::test_support::last_refusal_at(&[0], ResourceDimension::CollectionItems, "creo section equation adjacency", |ctx| {
-        super::solve_unsigned_dimension_coordinates(
-            ctx,
-            &[],
-            &BTreeMap::new(),
-            &[(1, 2, SectionAxis::U, 1.0)],
-        )
-    });
+    let error = crate::test_support::last_refusal_at(
+        &[0],
+        ResourceDimension::CollectionItems,
+        "creo section equation adjacency",
+        |ctx| {
+            super::solve_unsigned_dimension_coordinates(
+                ctx,
+                &[],
+                &BTreeMap::new(),
+                &[(1, 2, SectionAxis::U, 1.0)],
+            )
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
@@ -628,14 +728,19 @@ fn unsigned_dimension_adjacency_reports_collection_limit() {
 
 #[test]
 fn unsigned_dimension_adjacency_links_refuse_before_tree_insert() {
-    let error = crate::test_support::last_refusal_at(&[0], ResourceDimension::CollectionItems, "creo section equation adjacency links", |ctx| {
-        super::solve_unsigned_dimension_coordinates(
-            ctx,
-            &[],
-            &BTreeMap::new(),
-            &[(1, 2, SectionAxis::U, 1.0)],
-        )
-    });
+    let error = crate::test_support::last_refusal_at(
+        &[0],
+        ResourceDimension::CollectionItems,
+        "creo section equation adjacency links",
+        |ctx| {
+            super::solve_unsigned_dimension_coordinates(
+                ctx,
+                &[],
+                &BTreeMap::new(),
+                &[(1, 2, SectionAxis::U, 1.0)],
+            )
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
@@ -651,9 +756,12 @@ fn section_coordinate_adjacency_links_refuse_before_tree_insert() {
         SectionAxis::U,
         1.0,
     )];
-    let error = crate::test_support::last_refusal_at(&[0], ResourceDimension::CollectionItems, "creo section coordinate adjacency links", |ctx| {
-        super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
-    });
+    let error = crate::test_support::last_refusal_at(
+        &[0],
+        ResourceDimension::CollectionItems,
+        "creo section coordinate adjacency links",
+        |ctx| super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new()),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
@@ -664,9 +772,12 @@ fn section_coordinate_adjacency_links_refuse_before_tree_insert() {
 #[test]
 fn section_coordinate_equation_links_refuse_before_tree_insert() {
     let equations = [SectionEquationFixture::point_value(1, SectionAxis::U, 1.0)];
-    let error = crate::test_support::last_refusal_at(&[0], ResourceDimension::CollectionItems, "creo section coordinate equation links", |ctx| {
-        super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
-    });
+    let error = crate::test_support::last_refusal_at(
+        &[0],
+        ResourceDimension::CollectionItems,
+        "creo section coordinate equation links",
+        |ctx| super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new()),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
@@ -752,9 +863,12 @@ fn equal_length_candidate_node_refuses_before_insertion() {
         offset: 0,
         active: true,
     }];
-    let error = crate::test_support::last_refusal_at(&[0], ResourceDimension::CollectionItems, "creo equal-length coordinate candidates", |ctx| {
-        super::section_equal_length_coordinate_values(ctx, &constraints, &coordinates)
-    });
+    let error = crate::test_support::last_refusal_at(
+        &[0],
+        ResourceDimension::CollectionItems,
+        "creo equal-length coordinate candidates",
+        |ctx| super::section_equal_length_coordinate_values(ctx, &constraints, &coordinates),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems

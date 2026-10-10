@@ -193,11 +193,18 @@ fn section_line_entity_fixed_coordinate_with_mode(
             definition,
             *entity_id,
             include_unique_rows,
-            skamp_coordinates.get(entity_id).copied().unwrap_or([false; 2]),
+            skamp_coordinates
+                .get(entity_id)
+                .copied()
+                .unwrap_or([false; 2]),
         )?;
         for (coordinate, present) in SectionAxis::ALL.into_iter().zip(direct_coordinates) {
             if present {
-                let coordinate = if *parity { coordinate.other() } else { coordinate };
+                let coordinate = if *parity {
+                    coordinate.other()
+                } else {
+                    coordinate
+                };
                 coordinates[coordinate.index()] = true;
             }
         }

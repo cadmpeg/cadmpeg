@@ -33,9 +33,7 @@ use super::skamp::{
     section_skamp_point_on_line, section_skamp_point_symmetry, section_skamp_saved_point_on_line,
     SectionPointSource, SectionSymmetryAxis,
 };
-use crate::decode::sketch_transfer::constraints::{
-    section_linear_distance_vectors,
-};
+use crate::decode::sketch_transfer::constraints::section_linear_distance_vectors;
 use crate::decode::sketch_transfer::loci::{
     section_skamp_arc_midpoint_source, section_skamp_line_midpoint_sources,
     section_skamp_same_coordinate_sources, visit_section_skamps,
@@ -222,7 +220,11 @@ impl<'ctx> CoordinateEquationIndex<'ctx> {
             return Ok(());
         };
         let entry = self.storage.with_storage(|| {
-            ctx.entry_btree_map(&mut self.terms, key.0, "creo coordinate equation index nodes")
+            ctx.entry_btree_map(
+                &mut self.terms,
+                key.0,
+                "creo coordinate equation index nodes",
+            )
         })?;
         match entry {
             std::collections::btree_map::Entry::Vacant(entry) => {
@@ -422,7 +424,10 @@ fn solve_section_coordinates_with_derived_constraints(
         && equal_length_constraints.is_empty()
         && auxiliary_constraints.midpoints.is_empty()
         && auxiliary_constraints.point_bindings.is_empty()
-        && definition.variables.as_ref().is_none_or(|table| table.rows.is_empty())
+        && definition
+            .variables
+            .as_ref()
+            .is_none_or(|table| table.rows.is_empty())
     {
         return solved_storage.commit_value(solved_coordinates);
     }
@@ -1355,11 +1360,12 @@ pub(in crate::decode) fn section_linear_distance_coordinate(
     let first_match = ctx.position_by(segments, matching, "creo dimension segment search")?;
     let unique_segment = first_match.map(|index| segments[index]);
     let duplicate_segment = if let Some(index) = first_match {
-        index + 1 < segments.len() && ctx.any_by(
-            &segments[index + 1..],
-            matching,
-            "creo dimension segment uniqueness",
-        )?
+        index + 1 < segments.len()
+            && ctx.any_by(
+                &segments[index + 1..],
+                matching,
+                "creo dimension segment uniqueness",
+            )?
     } else {
         false
     };

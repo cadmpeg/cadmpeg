@@ -93,9 +93,15 @@ fn empty_coordinate_solver_passes_are_free() {
     let mut equations = Vec::new();
     let mut scalar_values = BTreeMap::new();
     let coordinates = super::super::solve_section_coordinates_with_derived_constraints(
-        &ctx, &definition, &mut equations, &BTreeMap::new(), (&[], &[]),
-        &SectionEquationAuxiliaryConstraints::default(), &mut scalar_values,
-    ).expect("empty solver sources need no work");
+        &ctx,
+        &definition,
+        &mut equations,
+        &BTreeMap::new(),
+        (&[], &[]),
+        &SectionEquationAuxiliaryConstraints::default(),
+        &mut scalar_values,
+    )
+    .expect("empty solver sources need no work");
     assert!(coordinates.is_empty());
 }
 

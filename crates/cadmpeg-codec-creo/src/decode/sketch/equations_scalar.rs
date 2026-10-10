@@ -159,10 +159,9 @@ fn section_equation_function_ten_axis_alignment(
         return Ok(None);
     }
 
-    let auxiliary_is_zero =
-        |row: &FeatureVariableRow| -> Result<bool, CodecError> {
-            Ok(reconciled_scalar_row(ctx, row, scalar_equality_values)? == Ok(Some(0.0)))
-        };
+    let auxiliary_is_zero = |row: &FeatureVariableRow| -> Result<bool, CodecError> {
+        Ok(reconciled_scalar_row(ctx, row, scalar_equality_values)? == Ok(Some(0.0)))
+    };
     if !auxiliary_is_zero(first_auxiliary)? || !auxiliary_is_zero(second_auxiliary)? {
         return Ok(None);
     }
@@ -253,7 +252,8 @@ pub(in crate::decode) fn section_equation_coordinate_equality_rows(
         scratch.with_storage(|| section_equation_scalar_equality_values(ctx, definition))?;
     let mut function_ten_points = None;
     let mut rows = Vec::new();
-    let equation_solver_rows = ctx.admit_iter(&equations.rows, "creo section source equation rows")?;
+    let equation_solver_rows =
+        ctx.admit_iter(&equations.rows, "creo section source equation rows")?;
     let equation_solver = EquationIncidences::new(ctx, definition)?;
     for equation in equation_solver_rows {
         if equation.function_id == 10 {
@@ -452,11 +452,11 @@ pub(super) fn section_equation_auxiliary_constraints(
             .and_then(|ordinal| variables.rows.get(ordinal))
     };
     let mut constraints = SectionEquationAuxiliaryConstraints::default();
-    let equation_solver_rows = ctx
-        .admit_iter(&equations.rows, "creo auxiliary constraint equations")?;
+    let equation_solver_rows =
+        ctx.admit_iter(&equations.rows, "creo auxiliary constraint equations")?;
     let equation_solver = EquationIncidences::new(ctx, definition)?;
-    for equation in equation_solver_rows
-        .filter(|equation| !equation_solver.is_disabled(equation.equation_id))
+    for equation in
+        equation_solver_rows.filter(|equation| !equation_solver.is_disabled(equation.equation_id))
     {
         match (equation.function_id, equation.arguments.as_slice()) {
             (42, [Some(first), Some(second), Some(result)]) => {
@@ -621,7 +621,8 @@ pub(in crate::decode) fn section_equation_function_forty_two_midpoint_coordinate
             .and_then(|ordinal| variables.rows.get(ordinal))
     };
     let mut rows = Vec::new();
-    let equation_solver_rows = ctx.admit_iter(&equations.rows, "creo section source equation rows")?;
+    let equation_solver_rows =
+        ctx.admit_iter(&equations.rows, "creo section source equation rows")?;
     let equation_solver = EquationIncidences::new(ctx, definition)?;
     for equation in equation_solver_rows {
         let [Some(first), Some(second), Some(result)] = equation.arguments.as_slice() else {
@@ -734,7 +735,8 @@ pub(in crate::decode) fn section_equation_function_thirty_one_point_coordinate_r
             .and_then(|ordinal| variables.rows.get(ordinal))
     };
     let mut rows = Vec::new();
-    let equation_solver_rows = ctx.admit_iter(&equations.rows, "creo section source equation rows")?;
+    let equation_solver_rows =
+        ctx.admit_iter(&equations.rows, "creo section source equation rows")?;
     let equation_solver = EquationIncidences::new(ctx, definition)?;
     for equation in equation_solver_rows {
         let [Some(first_u), Some(first_v), Some(second_u), Some(second_v)] =
@@ -1442,11 +1444,11 @@ pub(super) fn section_equation_scalar_equality_components(
         SectionScalarVariable,
         Option<f64>,
     )>::new();
-    let equation_solver_rows = ctx
-        .admit_iter(&equations.rows, "creo scalar equality source equations")?;
+    let equation_solver_rows =
+        ctx.admit_iter(&equations.rows, "creo scalar equality source equations")?;
     let equation_solver = EquationIncidences::new(ctx, definition)?;
-    for equation in equation_solver_rows
-        .filter(|equation| !equation_solver.is_disabled(equation.equation_id))
+    for equation in
+        equation_solver_rows.filter(|equation| !equation_solver.is_disabled(equation.equation_id))
     {
         if let Some((first, second, selector)) = direct_function_five_scalar_rows(
             equation.function_id,
@@ -1652,8 +1654,7 @@ fn scalar_equality_values_for_components(
         let mut invalid = false;
         let mut members = component.iter();
         while members.len() != 0 {
-            let Some(variable) =
-                ctx.next_charged(&mut members, "creo scalar component samples")?
+            let Some(variable) = ctx.next_charged(&mut members, "creo scalar component samples")?
             else {
                 break;
             };
@@ -1847,8 +1848,8 @@ fn section_equation_radial_constraint_rows_with_scalar_values(
     let scalar_equality_values =
         scratch.with_storage(|| section_equation_scalar_equality_values(ctx, definition))?;
     let mut rows = Vec::new();
-    let equation_solver_rows = ctx
-        .admit_iter(&equations.rows, "creo section source equation rows")?;
+    let equation_solver_rows =
+        ctx.admit_iter(&equations.rows, "creo section source equation rows")?;
     let equation_solver = EquationIncidences::new(ctx, definition)?;
     for equation in equation_solver_rows
         .filter(|equation| equation.function_id == 0 && equation.arguments.len() == 6)
@@ -1923,13 +1924,33 @@ fn section_equation_radial_constraint_rows_with_scalar_values(
             continue;
         }
         let scalar_value = |row: &FeatureVariableRow| -> Result<Option<Option<f64>>, CodecError> {
-                let equality = ctx.get_btree_map(&scalar_equality_values, &(row.variable_type, row.key), "creo section scalar equality lookup")?.copied().unwrap_or(Ok(None));
-                let Ok(equality) = equality else { return Ok(None); };
-                let Ok(resolved) = reconcile_equation_value(row.value.value(), equality) else { return Ok(None); };
-                let Some(scalar_values) = scalar_values else { return Ok(Some(resolved)); };
-                let Some(Some(value)) = ctx.get_btree_map(scalar_values, &(row.variable_type, row.key), "creo section scalar lookup")? else { return Ok(Some(resolved)); };
-                Ok(reconcile_equation_value(resolved, Some(*value)).ok())
+            let equality = ctx
+                .get_btree_map(
+                    &scalar_equality_values,
+                    &(row.variable_type, row.key),
+                    "creo section scalar equality lookup",
+                )?
+                .copied()
+                .unwrap_or(Ok(None));
+            let Ok(equality) = equality else {
+                return Ok(None);
             };
+            let Ok(resolved) = reconcile_equation_value(row.value.value(), equality) else {
+                return Ok(None);
+            };
+            let Some(scalar_values) = scalar_values else {
+                return Ok(Some(resolved));
+            };
+            let Some(Some(value)) = ctx.get_btree_map(
+                scalar_values,
+                &(row.variable_type, row.key),
+                "creo section scalar lookup",
+            )?
+            else {
+                return Ok(Some(resolved));
+            };
+            Ok(reconcile_equation_value(resolved, Some(*value)).ok())
+        };
         let Some(radius_value) = scalar_value(radius)? else {
             continue;
         };
@@ -2201,16 +2222,14 @@ pub(in crate::decode) fn section_equation_function_five_scalar_equality_rows(
     let scalar_equality_values =
         scratch.with_storage(|| section_equation_scalar_equality_values(ctx, definition))?;
     let mut rows = Vec::new();
-    let equation_solver_rows = ctx
-        .admit_iter(&equations.rows, "creo section source equation rows")?;
+    let equation_solver_rows =
+        ctx.admit_iter(&equations.rows, "creo section source equation rows")?;
     let equation_solver = EquationIncidences::new(ctx, definition)?;
-    for equation in equation_solver_rows
-        .filter(|equation| {
-            equation.function_id == 5
-                && equation.arguments.len() == 3
-                && !equation_solver.is_disabled(equation.equation_id)
-        })
-    {
+    for equation in equation_solver_rows.filter(|equation| {
+        equation.function_id == 5
+            && equation.arguments.len() == 3
+            && !equation_solver.is_disabled(equation.equation_id)
+    }) {
         let Some((first, second, selector)) = direct_function_five_scalar_rows(
             equation.function_id,
             &equation.arguments,
@@ -2310,7 +2329,8 @@ pub(in crate::decode) fn section_equation_function_sixteen_angle_difference_rows
             .and_then(|ordinal| variables.rows.get(ordinal))
     };
     let mut rows = Vec::new();
-    let equation_solver_rows = ctx.admit_iter(&equations.rows, "creo section source equation rows")?;
+    let equation_solver_rows =
+        ctx.admit_iter(&equations.rows, "creo section source equation rows")?;
     let equation_solver = EquationIncidences::new(ctx, definition)?;
     for equation in equation_solver_rows {
         if equation.function_id != 16 || equation.arguments.len() != 4 {
@@ -2460,7 +2480,8 @@ pub(in crate::decode) fn section_equation_function_forty_three_axis_distance_row
             .and_then(|ordinal| variables.rows.get(ordinal))
     };
     let mut rows = Vec::new();
-    let equation_solver_rows = ctx.admit_iter(&equations.rows, "creo section source equation rows")?;
+    let equation_solver_rows =
+        ctx.admit_iter(&equations.rows, "creo section source equation rows")?;
     let equation_solver = EquationIncidences::new(ctx, definition)?;
     for equation in equation_solver_rows {
         if equation.function_id != 43 || equation.arguments.len() != 8 {
@@ -2533,9 +2554,19 @@ pub(in crate::decode) fn section_equation_function_forty_three_axis_distance_row
         {
             continue;
         }
-        let auxiliary_value = |row: &FeatureVariableRow| -> Result<Option<Option<f64>>, CodecError> {
-                let equality = ctx.get_btree_map(&scalar_equality_values, &(row.variable_type, row.key), "creo section scalar equality lookup")?.copied().unwrap_or(Ok(None));
-                Ok(equality.ok().and_then(|value| reconcile_equation_value(row.value.value(), value).ok()))
+        let auxiliary_value =
+            |row: &FeatureVariableRow| -> Result<Option<Option<f64>>, CodecError> {
+                let equality = ctx
+                    .get_btree_map(
+                        &scalar_equality_values,
+                        &(row.variable_type, row.key),
+                        "creo section scalar equality lookup",
+                    )?
+                    .copied()
+                    .unwrap_or(Ok(None));
+                Ok(equality
+                    .ok()
+                    .and_then(|value| reconcile_equation_value(row.value.value(), value).ok()))
             };
         let Some(first_value) = auxiliary_value(first_auxiliary)? else {
             continue;
