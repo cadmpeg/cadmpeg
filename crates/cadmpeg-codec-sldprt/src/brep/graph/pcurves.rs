@@ -765,7 +765,8 @@ pub(super) fn quadratic_nurbs_has_constant_radius(
     let mut runs = 0usize;
     let mut previous = 0.0;
     let mut count = 0usize;
-    for knot in ctx.admit_iter(knots, "scan Parasolid constant radius knot runs")? {
+    let mut knots = knots.iter();
+    while let Some(knot) = ctx.next_charged(&mut knots, "scan Parasolid constant radius knot runs")? {
         if !knot.is_finite() {
             return Ok(false);
         }
@@ -792,13 +793,8 @@ pub(super) fn quadratic_nurbs_has_constant_radius(
     let choose_4 = [1.0, 4.0, 6.0, 4.0, 1.0];
     let tolerance = EPS_RADIUS_ABSOLUTE.max(radius * radius * EPS_RADIUS_RELATIVE);
     // Each quadratic segment checks a constant number of coefficients.
-    for start in ctx
-        .admit_iter(
-            0..radial_control_points.len() - 1,
-            "check Parasolid constant radius segments",
-        )?
-        .step_by(2)
-    {
+    let mut starts = (0..radial_control_points.len() - 1).step_by(2);
+    while let Some(start) = ctx.next_charged(&mut starts, "check Parasolid constant radius segments")? {
         let homogeneous = [0, 1, 2].map(|offset| {
             let weight = weight(start + offset);
             let point = radial_control_points[start + offset];
