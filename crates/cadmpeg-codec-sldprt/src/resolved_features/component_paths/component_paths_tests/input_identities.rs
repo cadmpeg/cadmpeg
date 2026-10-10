@@ -278,6 +278,10 @@ fn empty_component_inputs_do_not_scan_or_index_history() {
     policy.limits.max_materialized_bytes = 0;
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(super::super::component_path_input_features(&ctx, &[], &features, "consumer").unwrap().is_empty());
+    assert!(
+        super::super::component_path_input_features(&ctx, &[], &features, "consumer")
+            .unwrap()
+            .is_empty()
+    );
     ctx.finish_session().unwrap();
 }

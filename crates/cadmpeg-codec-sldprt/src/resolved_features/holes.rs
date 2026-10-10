@@ -734,7 +734,6 @@ fn copy_hole_profile_source(
     }
 }
 
-
 struct HoleHistoryIndex<'history, 'ctx> {
     history: &'history crate::records::FeatureHistory,
     by_id: HashMap<&'history str, Vec<usize>>,
@@ -829,7 +828,9 @@ fn claimed_hole_profiles<'a>(
         else {
             continue;
         };
-        for child in super::child_sources::child_tokens(ctx, children, "scan SLDPRT hole child references") {
+        for child in
+            super::child_sources::child_tokens(ctx, children, "scan SLDPRT hole child references")
+        {
             let child = ctx.trim_text(child?, OPERATION)?;
             if child.is_empty() {
                 continue;
@@ -2234,7 +2235,11 @@ pub(crate) fn project_profiled_hole_constructions(
         if let Some(children) =
             ctx.get_btree_map(&native.properties, "DissectableChildren", OPERATION)?
         {
-            for source in super::child_sources::child_tokens(ctx, children, "scan SLDPRT hole child references") {
+            for source in super::child_sources::child_tokens(
+                ctx,
+                children,
+                "scan SLDPRT hole child references",
+            ) {
                 let source = ctx.trim_text(source?, OPERATION)?;
                 let Some(profile) = records[history_index].child(ctx, source)? else {
                     continue;
@@ -2318,7 +2323,9 @@ fn collect_claimed_hole_profiles<'a>(
     profiles: &mut HashSet<&'a str>,
 ) -> Result<(), CodecError> {
     const OPERATION: &str = "index SLDPRT claimed axial hole profiles";
-    for child in super::child_sources::child_tokens(ctx, children, "scan SLDPRT hole child references") {
+    for child in
+        super::child_sources::child_tokens(ctx, children, "scan SLDPRT hole child references")
+    {
         let child = ctx.trim_text(child?, OPERATION)?;
         if child.is_empty() {
             continue;
@@ -4982,7 +4989,9 @@ fn direct_hole_position_feature<'a, 's>(
         "DissectableChildren",
         "find SLDPRT hole property",
     )? {
-        for source in super::child_sources::child_tokens(ctx, children, "scan SLDPRT hole child references") {
+        for source in
+            super::child_sources::child_tokens(ctx, children, "scan SLDPRT hole child references")
+        {
             let source = ctx.trim_text(source?, OPERATION)?;
             if source.is_empty() {
                 continue;

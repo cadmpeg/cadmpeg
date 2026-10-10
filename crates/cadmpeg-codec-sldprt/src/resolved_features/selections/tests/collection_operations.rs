@@ -495,9 +495,26 @@ fn selection_face_classes_are_built_at_the_first_face_reader() {
     use crate::records::{FeatureInputClass, FeatureInputLane};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     let lane = FeatureInputLane {
-        id: "lane".into(), configuration: None, native_payload: Vec::new(),
-        classes: vec![FeatureInputClass { id: "face-class".into(), parent: "lane".into(), ordinal: 0, offset: 0, name: "moCompFace_c".into() }],
-        names: Vec::new(), scalars: Vec::new(), relation_bindings: Vec::new(), relation_instances: Vec::new(), body_selections: Vec::new(), edge_selections: Vec::new(), surface_selections: Vec::new(), generated_surface_identities: Vec::new(), references: Vec::new(), sketch_entities: Vec::new(),
+        id: "lane".into(),
+        configuration: None,
+        native_payload: Vec::new(),
+        classes: vec![FeatureInputClass {
+            id: "face-class".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 0,
+            name: "moCompFace_c".into(),
+        }],
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
     };
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -505,14 +522,22 @@ fn selection_face_classes_are_built_at_the_first_face_reader() {
     policy.limits.max_materialized_bytes = 0;
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(super::super::compact_surface_selections(&ctx, &[], &[], &lane, &[]).unwrap().is_empty());
+    assert!(
+        super::super::compact_surface_selections(&ctx, &[], &[], &lane, &[])
+            .unwrap()
+            .is_empty()
+    );
     ctx.finish_session().unwrap();
-    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, "decode SLDPRT selection class intervals", |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-        let classes = super::super::OperationSurfaceClasses::new(&ctx, &[]);
-        classes.faces(&lane).map(|_| ())
-    });
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "decode SLDPRT selection class intervals",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            let classes = super::super::OperationSurfaceClasses::new(&ctx, &[]);
+            classes.faces(&lane).map(|_| ())
+        },
+    );
 }

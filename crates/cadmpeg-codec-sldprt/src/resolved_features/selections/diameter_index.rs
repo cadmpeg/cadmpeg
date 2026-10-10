@@ -59,10 +59,15 @@ impl<'a, 'ctx> CosmeticDiameterIndex<'a, 'ctx> {
                         }
                     }
                     for scalar in ctx.admit_iter(&self.lane.scalars, OPERATION)? {
-                        let diameter_name = match ctx.get_hash_map(&names, scalar.name.as_str(), OPERATION)? {
-                            Some(name) => ctx.equal(name.value.as_str(), "D2", "compare SLDPRT cosmetic diameter name")?,
-                            None => false,
-                        };
+                        let diameter_name =
+                            match ctx.get_hash_map(&names, scalar.name.as_str(), OPERATION)? {
+                                Some(name) => ctx.equal(
+                                    name.value.as_str(),
+                                    "D2",
+                                    "compare SLDPRT cosmetic diameter name",
+                                )?,
+                                None => false,
+                            };
                         if diameter_name {
                             if let Some(selected) =
                                 ctx.get_mut_hash_map(&mut scalars, &scalar.object_id, OPERATION)?

@@ -65,21 +65,25 @@ fn implicit_profile_axis_keeps_endpoint_identity_and_original_index_refusal() {
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy).unwrap();
     let roster = super::LaneMarkerIndex::new(&ctx, lane.sketch_entities.iter()).unwrap();
-    let endpoints = super::profile_roster_implicit_axis_endpoints(&ctx,
-&lane,
-"profile",
-&roster,
-&mut super::ProfileEndpointQueries::new(&ctx, &lane, &roster.all).unwrap(),)
-        .unwrap()
-        .expect("one bounded line resolves the axis");
+    let endpoints = super::profile_roster_implicit_axis_endpoints(
+        &ctx,
+        &lane,
+        "profile",
+        &roster,
+        &mut super::ProfileEndpointQueries::new(&ctx, &lane, &roster.all).unwrap(),
+    )
+    .unwrap()
+    .expect("one bounded line resolves the axis");
     assert_eq!(endpoints.map(SketchInputEntity::id), ["start", "end"]);
     crate::test_support::work_refusal_at("index SLDPRT marker geometry", |ctx| {
         let roster = super::LaneMarkerIndex::new(ctx, lane.sketch_entities.iter())?;
-        super::profile_roster_implicit_axis_endpoints(ctx,
-&lane,
-"profile",
-&roster,
-&mut super::ProfileEndpointQueries::new(ctx, &lane, &roster.all)?,)
+        super::profile_roster_implicit_axis_endpoints(
+            ctx,
+            &lane,
+            "profile",
+            &roster,
+            &mut super::ProfileEndpointQueries::new(ctx, &lane, &roster.all)?,
+        )
     });
 }
 
@@ -94,7 +98,9 @@ fn endpoint_id_pass_leaves_geometry_available_for_the_axis_fallback() {
     let markers: Vec<_> = lane.sketch_entities.iter().collect();
     let mut queries = super::ProfileEndpointQueries::new(&ctx, &lane, &markers).unwrap();
     let mut ids_storage = ctx.reserve_scoped(0, "hold test endpoint IDs").unwrap();
-    let ids = queries.ids(&ctx, &mut ids_storage, &markers, false).unwrap();
+    let ids = queries
+        .ids(&ctx, &mut ids_storage, &markers, false)
+        .unwrap();
     assert_eq!(ids.into_iter().collect::<Vec<_>>(), vec!["end", "start"]);
     drop(ids_storage);
     assert!(queries.geometry.is_some());
@@ -104,9 +110,33 @@ fn endpoint_id_pass_leaves_geometry_available_for_the_axis_fallback() {
         None,
     );
     let endpoints = queries.resolve(&lane.sketch_entities[2]).unwrap();
-    assert_eq!(endpoints.iter().map(|marker| marker.id()).collect::<Vec<_>>(), vec!["start", "end"]);
-    assert_eq!(super::profile_roster_origin_axis_endpoints(&ctx, "profile", &super::LaneMarkerIndex::new(&ctx, markers.iter().copied()).unwrap(), &mut queries).unwrap(), None);
-    assert_eq!(super::profile_roster_principal_axis_endpoints(&ctx, "profile", &super::LaneMarkerIndex::new(&ctx, markers.iter().copied()).unwrap(), &mut queries).unwrap(), Some([[0.0, 0.0], [1.0, 0.0]]));
+    assert_eq!(
+        endpoints
+            .iter()
+            .map(|marker| marker.id())
+            .collect::<Vec<_>>(),
+        vec!["start", "end"]
+    );
+    assert_eq!(
+        super::profile_roster_origin_axis_endpoints(
+            &ctx,
+            "profile",
+            &super::LaneMarkerIndex::new(&ctx, markers.iter().copied()).unwrap(),
+            &mut queries
+        )
+        .unwrap(),
+        None
+    );
+    assert_eq!(
+        super::profile_roster_principal_axis_endpoints(
+            &ctx,
+            "profile",
+            &super::LaneMarkerIndex::new(&ctx, markers.iter().copied()).unwrap(),
+            &mut queries
+        )
+        .unwrap(),
+        Some([[0.0, 0.0], [1.0, 0.0]])
+    );
     let CodecError::ResourceLimit(limit) = ctx
         .charge_work(1, OPERATION)
         .expect_err("the cached fallback leaves the index-construction probe armed")
@@ -128,12 +158,38 @@ fn profile_endpoint_cache_uses_scoped_storage_and_releases_it() {
     policy.limits.max_materialized_bytes = 1024 * 1024;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut queries = super::ProfileEndpointQueries::new(&ctx, &lane, &markers).unwrap();
-    assert_eq!(queries.resolve(&lane.sketch_entities[2]).unwrap().iter().map(|marker| marker.id()).collect::<Vec<_>>(), ["start", "end"]);
+    assert_eq!(
+        queries
+            .resolve(&lane.sketch_entities[2])
+            .unwrap()
+            .iter()
+            .map(|marker| marker.id())
+            .collect::<Vec<_>>(),
+        ["start", "end"]
+    );
     let roster = super::LaneMarkerIndex::new(&ctx, markers.iter().copied()).unwrap();
-    assert_eq!(super::profile_roster_implicit_axis_endpoints(&ctx, &lane, "profile", &roster, &mut queries).unwrap().unwrap().map(SketchInputEntity::id), ["start", "end"]);
+    assert_eq!(
+        super::profile_roster_implicit_axis_endpoints(
+            &ctx,
+            &lane,
+            "profile",
+            &roster,
+            &mut queries
+        )
+        .unwrap()
+        .unwrap()
+        .map(SketchInputEntity::id),
+        ["start", "end"]
+    );
     drop(roster);
     drop(queries);
-    drop(ctx.reserve_scoped(policy.limits.max_materialized_bytes, "test axis workspace expiry").unwrap());
+    drop(
+        ctx.reserve_scoped(
+            policy.limits.max_materialized_bytes,
+            "test axis workspace expiry",
+        )
+        .unwrap(),
+    );
     ctx.finish_session().unwrap();
 }
 
@@ -141,7 +197,8 @@ fn profile_endpoint_cache_uses_scoped_storage_and_releases_it() {
 fn profile_endpoint_cache_reuses_an_unresolved_curve_result() {
     const OPERATION: &str = "resolve SLDPRT curve endpoint roster";
     let mut lane = profile_line();
-    lane.sketch_entities.retain(|marker| marker.coordinates_m.is_none());
+    lane.sketch_entities
+        .retain(|marker| marker.coordinates_m.is_none());
     let markers: Vec<_> = lane.sketch_entities.iter().collect();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -149,14 +206,28 @@ fn profile_endpoint_cache_reuses_an_unresolved_curve_result() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut queries = super::ProfileEndpointQueries::new(&ctx, &lane, &markers).unwrap();
-    assert!(queries.resolve(&lane.sketch_entities[0]).unwrap().is_empty());
-    let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(ResourceDimension::WorkUnits, OPERATION, None);
-    assert!(queries.resolve(&lane.sketch_entities[0]).unwrap().is_empty());
-    let CodecError::ResourceLimit(limit) = ctx.charge_work(1, OPERATION).unwrap_err() else { panic!("cached empty result left the resolver probe armed"); };
+    assert!(queries
+        .resolve(&lane.sketch_entities[0])
+        .unwrap()
+        .is_empty());
+    let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        OPERATION,
+        None,
+    );
+    assert!(queries
+        .resolve(&lane.sketch_entities[0])
+        .unwrap()
+        .is_empty());
+    let CodecError::ResourceLimit(limit) = ctx.charge_work(1, OPERATION).unwrap_err() else {
+        panic!("cached empty result left the resolver probe armed");
+    };
     assert_eq!(limit.operation, OPERATION);
     assert_eq!(ctx.resource_refusal(), Some(limit));
     drop(queries);
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit)
+    );
     drop(probe);
     crate::test_support::work_refusal_at(OPERATION, |ctx| {
         let mut queries = super::ProfileEndpointQueries::new(ctx, &lane, &markers)?;
@@ -176,7 +247,10 @@ fn profile_endpoint_cache_without_a_route_uses_no_index_or_storage() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut queries = super::ProfileEndpointQueries::new(&ctx, &lane, &markers).unwrap();
-    assert!(queries.resolve(&lane.sketch_entities[0]).unwrap().is_empty());
+    assert!(queries
+        .resolve(&lane.sketch_entities[0])
+        .unwrap()
+        .is_empty());
     drop(queries);
     ctx.finish_session().unwrap();
 }

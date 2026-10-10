@@ -99,7 +99,10 @@ fn spatial_plane_class_comparison_has_its_own_work_boundary() {
     const OPERATION: &str = "compare SLDPRT spatial plane class name";
     let lane = lane();
     let ctx = cadmpeg_test_support::service_decode_context();
-    assert_eq!(super::super::spatial_relation_manager_ranges_charged(&ctx, &lane).unwrap(), [(10, 40)]);
+    assert_eq!(
+        super::super::spatial_relation_manager_ranges_charged(&ctx, &lane).unwrap(),
+        [(10, 40)]
+    );
     ctx.finish_session().unwrap();
     let error = crate::test_support::work_refusal_at(OPERATION, |ctx| {
         super::super::spatial_relation_manager_ranges_charged(ctx, &lane)

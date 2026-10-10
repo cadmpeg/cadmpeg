@@ -174,12 +174,16 @@ fn variable_fillet_kind_comparisons_refuse_before_class_lookup() {
     ] {
         let error = crate::test_support::work_refusal_at(operation, |ctx| {
             if controls {
-                super::super::variable_fillet_control_references(ctx, &feature, &lane, 0, 0).map(|_| ())
+                super::super::variable_fillet_control_references(ctx, &feature, &lane, 0, 0)
+                    .map(|_| ())
             } else {
-                super::super::compact_edge_reference_list_for_feature(ctx, &[], 0, &feature.kind).map(|_| ())
+                super::super::compact_edge_reference_list_for_feature(ctx, &[], 0, &feature.kind)
+                    .map(|_| ())
             }
         });
-        let CodecError::ResourceLimit(limit) = error else { panic!("kind comparison refusal"); };
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("kind comparison refusal");
+        };
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
         assert_eq!(limit.used, 0);
         assert_eq!(limit.additional, 9);

@@ -427,17 +427,15 @@ fn unique_declared_plane_reference_token(
             return Ok(None);
         }
         Ok((|| {
-            let body = usize::try_from(class.offset).ok()?.checked_add(6 + class.name.len())?;
+            let body = usize::try_from(class.offset)
+                .ok()?
+                .checked_add(6 + class.name.len())?;
             let value = View::u16_le_at(&lane.native_payload, body)?;
             is_class_token(value).then_some(value.to_le_bytes())
         })())
     };
     let mut classes = lane.classes.iter();
-    let Some(first) = ctx.find_map(
-        &mut classes,
-        token,
-        "scan SLDPRT declared plane tokens",
-    )?
+    let Some(first) = ctx.find_map(&mut classes, token, "scan SLDPRT declared plane tokens")?
     else {
         return Ok(None);
     };
