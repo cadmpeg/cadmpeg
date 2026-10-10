@@ -48,3 +48,25 @@ fn gui_native_graph_requires_materialized_storage() {
         }).map(|_| ())
     });
 }
+
+#[test]
+fn gui_native_graph_keeps_storage_until_records_drop() {
+    let live_storage = |keep_graph: bool| {
+        let xml = roxmltree::Document::parse(GUI).expect("GUI XML");
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let (graph, plan) = super::super::transfer_schema_one(&ctx, &cadmpeg_ir::CadIr::empty(), GUI, &xml, Some("1"), Some(1), &super::super::GuiSources {
+            entries: &std::collections::BTreeMap::new(), objects: &[], properties: &[],
+            payloads: &[], element_maps: &[], requires_alpha_conversion: false,
+        }).expect("GUI graph");
+        let graph = keep_graph.then_some(graph);
+        assert_eq!(plan.presentation_documents.len(), 1);
+        let CodecError::ResourceLimit(limit) = ctx.reserve_scoped(u64::MAX, "live GUI native storage").expect_err("finite storage cap") else { panic!("materialized refusal"); };
+        assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+        drop(graph);
+        drop(plan);
+        limit.used
+    };
+    assert!(live_storage(true) > live_storage(false));
+}
