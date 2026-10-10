@@ -544,6 +544,9 @@ pub(super) fn reverse_curve_geometry(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     geometry: &mut CurveGeometry,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
             line_curve.reverse_parameterization();
@@ -689,6 +692,9 @@ pub(super) fn analytic_procedural_surface(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &DecodedProceduralSurfaceDefinition,
 ) -> Option<Result<SurfaceGeometry, cadmpeg_core::CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     match definition {
         DecodedProceduralSurfaceDefinition::Extrusion {
             directrix,
@@ -729,6 +735,9 @@ fn analytic_rolling_ball_surface(
     spine: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     signed_radius: f64,
 ) -> Option<Result<SurfaceGeometry, cadmpeg_core::CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     let radius = signed_radius.abs();
     if !radius.is_finite() || radius <= f64::EPSILON {
         return None;
@@ -858,6 +867,9 @@ fn linear_nurbs_spine(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
 ) -> Option<Result<(Point3, UnitVector3), cadmpeg_core::CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     if curve.degree() == 0 || curve.periodic() {
         return None;
     }
@@ -884,6 +896,9 @@ fn linear_spine_points<T>(
     points: &[T],
     point: impl Fn(&T) -> FinitePoint3,
 ) -> Option<Result<(Point3, UnitVector3), cadmpeg_core::CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     let origin = point(points.first()?);
     let farthest = propagate_resource!(ctx.max_by_key(
         points,
@@ -919,6 +934,9 @@ pub(super) fn rational_four_arc_circle(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
 ) -> Option<Result<(Point3, Vector3, Vector3, f64), cadmpeg_core::CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     let cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } = curve.pole_rows() else {
         return None;
     };
@@ -1552,6 +1570,7 @@ mod sense_tests {
 #[cfg(test)]
 mod tests {
     mod budget;
+    mod entry_refusal;
     mod source_visits;
     mod quadratic_storage;
     mod numerical_ranges;

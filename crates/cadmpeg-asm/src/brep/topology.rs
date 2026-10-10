@@ -1027,6 +1027,9 @@ fn keep_wire_edge(
         purpose,
         format,
     } = inputs;
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Carriers {
         curve_geo,
         procedural_curve_defs,
@@ -1260,6 +1263,9 @@ pub(super) fn ring_coedges(
     kept: &HashSet<i64>,
     format: IdFormat,
 ) -> Result<Vec<CoedgeId>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let id = |i: i64| CoedgeId::from(super::id(format, i));
     let mut out = Vec::new();
     let Some(first) = loop_rec.ref_at(4) else {

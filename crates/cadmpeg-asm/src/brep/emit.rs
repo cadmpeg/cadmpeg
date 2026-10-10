@@ -120,6 +120,9 @@ fn map_law_formula(
         EmbeddedLawExpression,
     ) -> Result<cadmpeg_ir::geometry::LawExpression, cadmpeg_core::CodecError>,
 ) -> Result<cadmpeg_ir::geometry::LawFormula, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     match formula {
         EmbeddedLawFormula::Null => Ok(cadmpeg_ir::geometry::LawFormula::Null {}),
         EmbeddedLawFormula::Named { name, variables } => {
@@ -174,6 +177,9 @@ fn emit_carrier_surface(
     reach: &Reachable,
     format: IdFormat,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let (carriers, scratch, purpose) = carrier_scratch;
     let Carriers {
         surface_geo,
@@ -930,6 +936,9 @@ fn emit_loft_member_form(
     data: LoftProfileData,
     support_id: SurfaceId,
 ) -> Result<cadmpeg_ir::geometry::LoftMemberForm, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     match data {
         LoftProfileData::Classic(data) => {
             let (type_code, data) = emit_classic_loft_data(ctx, out, data, support_id)?;
@@ -1005,6 +1014,9 @@ fn emit_loft_path_curve(
     layout: EmbeddedLoftPathLayout,
     id: CurveId,
 ) -> Result<Option<LoftPathCurve>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let (geometry, endpoints) = match layout {
         EmbeddedLoftPathLayout::Legacy(curve) => (curve, None),
         EmbeddedLoftPathLayout::Revision(curve) => {
@@ -1209,6 +1221,9 @@ fn emit_compound_loft_surface(
     embedded: EmbeddedCompoundLoft,
     format: IdFormat,
 ) -> Result<ProceduralSurfaceDefinition, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let map_scale = |out: &mut AsmBrep,
                      name: cadmpeg_ir::ids::IdentityKey,
                      scale: EmbeddedCompoundLoftScale|
@@ -1828,6 +1843,9 @@ fn map_law_expression(
     path: cadmpeg_ir::ids::IdentityKey,
     expression: EmbeddedLawExpression,
 ) -> Result<cadmpeg_ir::geometry::LawExpression, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     Ok(match expression {
         EmbeddedLawExpression::Null => cadmpeg_ir::geometry::LawExpression::Null {},
         EmbeddedLawExpression::Text(value) => cadmpeg_ir::geometry::LawExpression::Text { value },
@@ -2867,6 +2885,9 @@ fn emit_rolling_ball_side(
     prefix: cadmpeg_ir::ids::IdentityKey,
     side: RollingBallSide<SurfaceGeometry, CurveGeometry, PcurveNurbs>,
 ) -> Result<RollingBallSide, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let surface = side
         .surface
         .map(|support| -> Result<_, cadmpeg_core::CodecError> {
@@ -3511,6 +3532,9 @@ fn emit_blend_surface(
     parts: BlendSurfaceParts,
     format: IdFormat,
 ) -> Result<ProceduralSurfaceDefinition, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let BlendSurfaceParts {
         supports,
         spine,
@@ -3773,6 +3797,9 @@ fn emit_carrier_curve(
     forward_curve_refs: &HashSet<i64>,
     format: IdFormat,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     use cadmpeg_ir::geometry::curve_payloads::{
         DeformableCurveConstruction, TwoSidedOffsetCurveConstruction, VectorOffsetCurveConstruction,
     };
@@ -4265,6 +4292,9 @@ fn emit_surface_curve_layout<F>(
     ),
     CarrierCurveError,
 > {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     use crate::nurbs::proc_curve::EmbeddedSurfaceCurveLayout;
     let (embedded, tail) = match layout {
         EmbeddedSurfaceCurveLayout::ContextFirst(context) => (context, None),
@@ -4332,6 +4362,9 @@ fn emit_surface_curve_family(
     family: crate::nurbs::proc_curve::EmbeddedSurfaceCurve,
     solved_domain: Option<[f64; 2]>,
 ) -> Result<cadmpeg_ir::geometry::SurfaceCurveFamily, CarrierCurveError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     use crate::nurbs::proc_curve::EmbeddedSurfaceCurve;
     Ok(match family {
         EmbeddedSurfaceCurve::Blend(layout) => {
@@ -4428,6 +4461,9 @@ fn emit_surface_offset_curve(
     format: IdFormat,
     solved_domain: Option<[f64; 2]>,
 ) -> Result<cadmpeg_ir::geometry::ProceduralCurveDefinition, CarrierCurveError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let (context, discontinuity_flag, base_endpoints, cache_first) = match embedded.layout {
         EmbeddedSurfaceOffsetLayout::ContextFirst {
             context,
@@ -4536,6 +4572,9 @@ fn emit_spring_support(
     side: usize,
     support: EmbeddedSpringSupport,
 ) -> Result<cadmpeg_ir::geometry::SpringSupport, CarrierCurveError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     Ok(match support {
         EmbeddedSpringSupport::Surface(geometry) => cadmpeg_ir::geometry::SpringSupport::Surface(
             emit_spring_surface(ctx, out, i, format, side, geometry)?,
@@ -4555,6 +4594,9 @@ fn emit_spring_curve(
     format: IdFormat,
     solved_domain: Option<[f64; 2]>,
 ) -> Result<cadmpeg_ir::geometry::ProceduralCurveDefinition, CarrierCurveError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let emit_pcurve = |nurbs| PcurveGeometry::Nurbs { nurbs };
     let layout = match embedded.layout {
         EmbeddedSpringLayout::ContextFirst {
@@ -4691,6 +4733,9 @@ fn emit_law_curve(
     format: IdFormat,
     solved_domain: Option<[f64; 2]>,
 ) -> Result<cadmpeg_ir::geometry::ProceduralCurveDefinition, CarrierCurveError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let prefix = brep_key!(i, ":law");
     let scope = LawExpressionScope::Curve(&prefix);
     let (parameter_range, version) = match embedded.layout {

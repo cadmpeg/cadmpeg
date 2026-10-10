@@ -12,6 +12,7 @@ use std::collections::{HashMap, HashSet};
 
 mod shared_carrier;
 mod source_visits;
+mod entry_refusal;
 
 fn ref_record(index: usize, name: &str, refs: &[i64]) -> Record {
     Record {
