@@ -37,7 +37,7 @@ fn admit_offset_controls(
 ) -> Result<Option<Vec<FinitePoint3>>, CodecError> {
     let mut admitted = ctx.collection_vec(controls.len(), operation)?;
     let mut controls = controls.into_iter();
-    while controls.len() != 0 || ctx.resource_refusal().is_some() {
+    while controls.len() != 0 {
         let Some(point) = ctx.next_charged(&mut controls, "iges offset control admission")? else { break; };
         let Some(point) = FinitePoint3::new(point) else {
             return Ok(None);
@@ -257,9 +257,6 @@ impl OffsetSourceIndex {
         ctx: &DecodeContext<'_>,
         storage: &mut ScopedReservation<'_>,
     ) -> Result<(), CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(CodecError::from(refusal));
-        }
         let mut source_index_entries = ir.model.curves[self.curve_count..].iter().enumerate();
         while source_index_entries.len() != 0 {
             let Some((offset, curve)) =
@@ -1285,7 +1282,7 @@ pub(super) fn project<'ctx>(
                     .temporary_vec(function_nurbs.pole_count(), "iges function-offset controls")?;
                 control_storage = result_control_storage;
                 let mut indices = 0..function_nurbs.pole_count();
-                while !indices.is_empty() || ctx.resource_refusal().is_some() {
+                while !indices.is_empty() {
                     let Some(index) = ctx.next_charged(&mut indices, "iges function-offset control traversal")? else { break; };
                     let Some(function_control) = function_nurbs.pole_rows().point_at(index) else {
                         ctx.clear_vec(&mut controls, "iges offset rejected controls")?;

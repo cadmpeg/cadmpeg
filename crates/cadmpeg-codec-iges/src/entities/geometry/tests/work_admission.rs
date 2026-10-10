@@ -239,7 +239,7 @@ fn invalid_linear_knot_boundary(control_count: usize, invalid_index: usize,
     assert_eq!(first.dimension, ResourceDimension::WorkUnits);
     assert_eq!((first.limit, first.used, first.additional), (cap, cap, 1));
     for _ in 0..64 {
-        for source in [&knots[..], &[][..]] {
+        { let source = &knots[..];
             let result = super::super::linear_nurbs_parameters(1, source,
                 control_count, false, range, &ctx);
             assert!(matches!(result.as_ref(), Err(CodecError::ResourceLimit(last)) if *last == first));
@@ -310,7 +310,7 @@ fn linear_parameter_collection_boundary(count: usize, items: usize, accepts: boo
         assert_eq!((first.limit, first.used, first.additional),
             (u64_from_index(items), u64_from_index(items), 1));
         for _ in 0..64 {
-            for source in [knots.as_slice(), &[]] {
+            { let source = knots.as_slice();
                 let replay = super::super::linear_nurbs_parameters(1, source,
                     count, false, range, &ctx);
                 assert!(matches!(replay.as_ref(),

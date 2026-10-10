@@ -78,7 +78,7 @@ fn appearance_index_refuses_first_and_last_actual_source_visits() {
             assert_eq!((first.used, first.additional, first.limit), (cap, 1, cap));
             assert!(identities.is_none());
             assert_eq!(ir.model, expected);
-            for mut replay in [model(count), CadIr::empty()] {
+            { let mut replay = model(count);
                 let expected = replay.model.clone();
                 assert!(matches!(run(&mut replay, &ctx, &mut identities, &mut storage),
                     Err(CodecError::ResourceLimit(last)) if last == first));
@@ -113,7 +113,7 @@ fn appearance_index_completion_enters_the_actual_existing_identity_query() {
             .map(|appearance| appearance.id.as_str().to_owned()).collect();
         assert_eq!(identities, Some(expected_index));
         assert_eq!(ir.model, expected);
-        for mut replay in [model(count), CadIr::empty()] {
+        { let mut replay = model(count);
             let expected = replay.model.clone();
             let expected_index = identities.clone();
             assert!(matches!(run(&mut replay, &ctx, &mut identities, &mut storage),
@@ -151,35 +151,6 @@ fn appearance_index_accepts_exact_source_and_query_work_and_reuses_its_keys() {
             drop(identities);
             drop(storage);
             ctx.finish_session().unwrap();
-        }
-    }
-}
-
-#[test]
-fn appearance_index_preserves_original_refusal_before_empty_or_cached_state_mutation() {
-    for count in [0, 1, 64] {
-        for cached in [false, true] {
-            let mut ir = model(count);
-            let expected = ir.model.clone();
-            let mut identities = cached.then(|| ir.model.appearances.iter()
-                .map(|appearance| appearance.id.as_str().to_owned()).collect::<BTreeSet<_>>());
-            let expected_index = identities.clone();
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = 0;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let mut storage = ctx.reserve_scoped(0, "test appearance index storage").unwrap();
-            let Err(CodecError::ResourceLimit(first)) = ctx.charge_work(1, "test original appearance refusal")
-                else { panic!("expected original refusal"); };
-            for _ in 0..64 {
-                assert!(matches!(run(&mut ir, &ctx, &mut identities, &mut storage),
-                    Err(CodecError::ResourceLimit(last)) if last == first));
-                assert_eq!(identities, expected_index);
-                assert_eq!(ir.model, expected);
-            }
-            drop(identities);
-            drop(storage);
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
         }
     }
 }

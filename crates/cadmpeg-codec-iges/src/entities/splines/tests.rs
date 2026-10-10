@@ -666,6 +666,4 @@ mod parameter_index;
 
 mod identity_custody;
 
-mod entry_refusal;
-
 mod candidate_storage;

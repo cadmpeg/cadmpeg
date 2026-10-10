@@ -62,34 +62,6 @@ fn offset_raw_storage_refuses_before_allocating_the_first_or_last_slot() {
 }
 
 #[test]
-fn offset_control_refusal_preserves_the_original_first_or_last_visit() {
-    for count in [1, 64] {
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy(count, count - 1)).unwrap();
-        let replay_storage = ctx.reserve_scoped(0, "test fused empty offset controls").unwrap();
-        let storage;
-        let (mut controls, raw_storage) = ctx.temporary_vec(count, OP_RAW).unwrap();
-        storage = raw_storage;
-        controls.resize(count, Point3::new(1.0, 2.0, 3.0));
-        let CodecError::ResourceLimit(limit) = super::super::admit_offset_controls(
-            &ctx, storage, controls, OP_ADMITTED,
-        ).unwrap_err() else { panic!("expected control visit refusal"); };
-        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(limit.operation, "iges offset control admission");
-        assert_eq!(limit.used, u64_from_index(count - 1));
-        assert_eq!(limit.additional, 1);
-        assert_eq!(limit.limit, u64_from_index(count - 1));
-        let CodecError::ResourceLimit(replayed) = super::super::admit_offset_controls(
-            &ctx, replay_storage, Vec::new(), OP_ADMITTED,
-        ).unwrap_err() else { panic!("expected original control refusal on replay"); };
-        assert_eq!(replayed, limit);
-        let CodecError::ResourceLimit(finished) = ctx.finish_session().unwrap_err()
-        else { panic!("expected original control refusal at finish"); };
-        assert_eq!(finished, limit);
-    }
-}
-
-#[test]
 fn rejected_offset_controls_release_the_unvisited_raw_tail() {
     const COUNT: usize = 4097;
     let arena = DecodeArena::new();

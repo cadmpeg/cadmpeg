@@ -165,7 +165,7 @@ fn conflicting_drawing_property_forms<'text>(
     };
     let mut first: Option<(u32, DrawingPropertyValue<'text>)> = None;
     let mut properties = groups.properties().iter();
-    while properties.len() != 0 || ctx.resource_refusal().is_some() {
+    while properties.len() != 0 {
         let Some(sequence) =
             ctx.next_charged(&mut properties, "iges drawing property traversal")?
         else {
