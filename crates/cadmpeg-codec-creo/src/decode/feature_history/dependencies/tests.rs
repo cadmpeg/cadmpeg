@@ -953,10 +953,8 @@ fn reconciliation_identity_and_order_work_boundaries_preserve_parent_edges() {
     let scan = regeneration_scan();
     let ir = crate::test_support::assert_work_boundaries(
         &[
-            "creo reconciled native dependency identity validation",
             "creo emitted feature identity lookup",
             "creo reconciled feature emission lookup",
-            "creo regeneration parent identity validation",
             "creo regeneration parent identity lookup",
             "creo emitted dependency identity lookup",
             "creo preceding dependency identity lookup",

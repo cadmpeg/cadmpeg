@@ -113,16 +113,9 @@ pub(in super::super) fn surface_kind_for_geometry(
     let Some(mut basis) = geometry.solved() else {
         return Ok(None);
     };
-    let mut bases = std::iter::successors(Some(basis), |current| match current {
-        SolvedSurfaceGeometry::Transformed(placed) => Some(placed.basis()),
-        _ => None,
-    })
-    .skip(1);
-    while matches!(basis, SolvedSurfaceGeometry::Transformed(_)) {
-        let Some(next) = ctx.next_charged(&mut bases, "creo transformed surface bases")? else {
-            return Ok(None);
-        };
-        basis = next;
+    // PlacedSurface bounds the complete basis chain by MAX_GEOMETRY_NESTING.
+    while let SolvedSurfaceGeometry::Transformed(placed) = basis {
+        basis = placed.basis();
     }
     Ok(match basis {
         SolvedSurfaceGeometry::Plane(_) => Some(crate::surface::SurfaceKind::Plane),
@@ -534,11 +527,7 @@ pub(in super::super) fn profile_segment_ids(
     let mut external_ids = std::collections::HashSet::new();
     for profile in ctx.admit_iter(profiles, "creo sketch profiles")? {
         for entity_use in ctx.admit_iter(profile, "creo sketch profile entities")? {
-            let Some(suffix) = ctx.strip_prefix(
-                entity_use.entity.as_str(),
-                "creo:featdefs:sketch_entity#",
-                "creo sketch profile identity prefix",
-            )?
+            let Some(suffix) = entity_use.entity.as_str().strip_prefix("creo:featdefs:sketch_entity#")
             else {
                 continue;
             };

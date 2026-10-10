@@ -129,10 +129,6 @@ fn feature_dimension_parameter_row_id_admitted(
             "creo dimension parameter identity",
         )?
     };
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(text.len()),
-        "creo dimension parameter identity validation",
-    )?;
     Ok(ParameterId::try_from(text).ok())
 }
 
@@ -236,10 +232,6 @@ pub(in super::super) fn planned_feature_dimension_parameter_ids(
                     dimension.external_id,
                 ),
                 "creo planned dimension parameter identity",
-            )?;
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(text.len()),
-                "creo planned dimension parameter identity validation",
             )?;
             let Ok(parameter) = ParameterId::try_from(text) else {
                 continue;
