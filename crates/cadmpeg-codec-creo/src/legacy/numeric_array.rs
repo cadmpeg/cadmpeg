@@ -25,9 +25,6 @@ impl<T> NumericArray<T> {
         dimensions: Vec<u32>,
         runs: Vec<NumericRun<T>>,
     ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let mut expected = 1usize;
         let mut extents = dimensions.iter();
         while extents.len() != 0 {
@@ -157,7 +154,6 @@ mod tests {
     #[test]
     fn empty_numeric_array_lanes_are_free_and_zero_extent_visits_once() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-        use cadmpeg_core::CodecError;
 
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -169,14 +165,6 @@ mod tests {
         assert!(NumericPayload::<u32>::array(&ctx, Vec::new(), Vec::new())
             .expect("empty lanes do no input-sized work")
             .is_none());
-        let original = ctx
-            .charge_work_limit(1, "seed empty numeric array refusal")
-            .expect_err("zero work cap");
-        assert_eq!((original.used, original.additional), (0, 1));
-        assert!(
-            matches!(NumericPayload::<u32>::array(&ctx, Vec::new(), Vec::new()),
-            Err(CodecError::ResourceLimit(refusal)) if refusal == original)
-        );
         let payload = crate::test_support::assert_work_boundaries(
             &["creo numeric array extent validation"],
             |ctx| NumericPayload::<u32>::array(ctx, vec![0], Vec::new()),

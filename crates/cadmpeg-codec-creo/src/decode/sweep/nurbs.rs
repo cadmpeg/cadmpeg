@@ -160,9 +160,6 @@ fn solve_vector_system(
 ) -> Result<Option<Vec<[f64; 3]>>, CodecError> {
     const EPS_INTERPOLATION_PIVOT: f64 = 1e-14;
 
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let count = matrix.len();
     if values.len() != count {
         return Ok(None);
@@ -241,9 +238,6 @@ fn interpolation_knots(
     ctx: &DecodeContext<'_>,
     parameters: &[f64],
 ) -> Result<Option<Vec<f64>>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let point_count = parameters.len();
     if point_count < 2 {
         return Ok(None);
@@ -286,9 +280,6 @@ fn interpolation_controls(
     knots: &[f64],
     endpoint_derivatives: [[f64; 3]; 2],
 ) -> Result<Option<Vec<[f64; 3]>>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if points.len() != parameters.len() || points.len() < 2 {
         return Ok(None);
     }
@@ -405,9 +396,6 @@ fn saved_spline_curve(
     ctx: &DecodeContext<'_>,
     spline: &crate::feature::definitions::FeatureSavedSpline,
 ) -> Result<Option<Result<NurbsCurve, cadmpeg_ir::geometry::nurbs::NurbsError>>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if spline
         .declared_point_count
         .and_then(|count| usize::try_from(count).ok())
@@ -477,9 +465,6 @@ fn saved_spline_off_plane_input(
     ctx: &DecodeContext<'_>,
     spline: &crate::feature::definitions::FeatureSavedSpline,
 ) -> Result<Option<(OffPlaneInput, f64)>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut points = spline.interpolation_points.iter().enumerate();
     while points.len() > 0 {
         let Some((index, point)) =
@@ -604,9 +589,6 @@ pub(in super::super) fn interpolation_spline_surface(
     record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Result<Option<NurbsSurface>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let points = grid.points();
     let u_parameters = grid.u_parameters();
     let v_parameters = grid.v_parameters();
@@ -939,9 +921,6 @@ pub(super) fn sketch_nurbs_curve(
     use cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles;
     use cadmpeg_ir::scalar::FiniteReal;
 
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
 
     let SketchGeometryDefinition::Nurbs { curve } = geometry.definition() else {
         return Ok(None);
@@ -1071,9 +1050,6 @@ pub(in super::super) fn extrusion_brep_side_surface(
     span: ExtrusionSpan,
     diagnostics: &mut crate::lane_refusal::LaneRefusalContext<'_, '_>,
 ) -> Result<Option<SurfaceGeometry>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let [start, end] = endpoints;
 
     if matches!(
@@ -1415,9 +1391,6 @@ pub(in super::super) fn placed_tabulated_cylinder_directrix(
     chart_origin: Option<[f64; 3]>,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Result<Option<(NurbsCurve, [f64; 3])>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some((control_points, sweep)) =
         tabulated_cylinder_placement(replay, parameters, chart_origin)
     else {

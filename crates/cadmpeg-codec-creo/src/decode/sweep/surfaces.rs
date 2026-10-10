@@ -240,9 +240,6 @@ pub(in super::super) fn placed_sketch_curve_ref(
     suffix: impl std::fmt::Display,
     geometry: &SketchGeometry,
 ) -> Result<Option<String>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(transform) = transform else {
         return Ok(None);
     };
@@ -431,9 +428,6 @@ pub(in super::super) fn revolved_nurbs_surface(
     record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Result<Option<NurbsSurface>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(axis_direction) = normalize([axis.direction.x, axis.direction.y, axis.direction.z])
     else {
         return Ok(None);

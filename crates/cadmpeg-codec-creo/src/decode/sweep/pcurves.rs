@@ -115,9 +115,6 @@ fn revolution_boundary_pcurve(
     record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(axis_direction) = normalize([axis.direction.x, axis.direction.y, axis.direction.z])
     else {
         return Ok(None);
@@ -277,9 +274,6 @@ pub(in super::super) fn revolved_brep_surface(
     record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Result<Option<SurfaceGeometry>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if matches!(
         geometry.definition(),
         SketchGeometryDefinition::Nurbs { .. }
@@ -398,9 +392,6 @@ pub(in super::super) fn revolution_face_sense(
         &mut crate::lane_refusal::LaneRefusals,
     ),
 ) -> Result<Option<Sense>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let (record, refusal) = diagnostics;
 
     macro_rules! require_some {

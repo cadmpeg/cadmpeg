@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::super::{
-    agreed_generated_cylinder_extent, feature_outline_plane, feature_outline_planes,
-    feature_plane_equations, generated_arc_cylinder_extent, generated_cap_plane_extent,
-    unique_available_positional_cylinder_frame_records,
+    agreed_generated_cylinder_extent, feature_outline_plane, 
+      generated_cap_plane_extent,
+    
 };
 use super::{plane_outline, plane_row};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -31,74 +31,6 @@ fn transform() -> crate::placement::FeatureSectionTransform {
     .expect("section transform")
 }
 
-#[test]
-fn empty_plane_queries_are_free_and_preserve_original_refusal() {
-    let scan = crate::test_support::empty_container_scan();
-    let ir = CadIr::empty();
-    let carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
-    let parameters = crate::surface::SurfaceParameters::from_rows(Vec::new());
-    let transform = transform();
-    let mut definition = crate::feature::definitions::FeatureDefinition {
-        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
-            schema_id: None,
-            owner_feature_id: None,
-        },
-        body: Vec::new(),
-        parameter_frames: Vec::new(),
-        outlines: Vec::new(),
-        variables: None,
-        segments: None,
-        trim_entities: None,
-        trim_vertices: None,
-        order_table: None,
-        section_3d: None,
-        dimensions: None,
-        relations: None,
-        saved_section: None,
-        offset: 0,
-    };
-    for owner in [None, Some(7)] {
-        definition.identity = crate::feature::definitions::DefinitionIdentity::Parsed {
-            schema_id: None,
-            owner_feature_id: owner,
-        };
-        let arena = DecodeArena::new();
-        let policy = work_policy(0);
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let queries = || {
-            [
-                feature_outline_plane(&ctx, &scan, 7, 31).map(|value| value.is_none()),
-                feature_outline_planes(&ctx, &scan, 7)
-                    .map(|value| value.expect("empty planes").0.is_empty()),
-                feature_plane_equations(&ctx, &scan, &ir, &carriers, 7)
-                    .map(|value| value.expect("empty equations").0.is_empty()),
-                generated_arc_cylinder_extent(&ctx, &scan, &ir, &carriers, &definition, &transform)
-                    .map(|value| value.is_none()),
-                generated_cap_plane_extent(&ctx, &scan, &ir, &carriers, 7)
-                    .map(|value| value.is_none()),
-                unique_available_positional_cylinder_frame_records(
-                    &ctx,
-                    &BTreeSet::new(),
-                    &parameters,
-                )
-                .map(|value| value.expect("empty frames").is_empty()),
-                agreed_generated_cylinder_extent(&ctx, &transform, [].iter())
-                    .map(|value| value.is_none()),
-            ]
-        };
-        for result in queries() {
-            assert!(result.expect("empty query"));
-        }
-        let original = ctx
-            .charge_work_limit(1, "seed plane query refusal")
-            .expect_err("zero cap");
-        assert_eq!((original.used, original.additional), (0, 1));
-        for result in queries() {
-            assert!(matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original));
-        }
-        assert_eq!(ctx.resource_refusal(), Some(original));
-    }
-}
 
 #[test]
 fn outline_plane_queries_visit_present_carriers_and_stop_at_second_match() {

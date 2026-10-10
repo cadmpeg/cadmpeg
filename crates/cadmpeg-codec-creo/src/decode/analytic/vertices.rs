@@ -60,9 +60,6 @@ fn pcurve_candidate_agrees_with_fixed_points(
     directions: [u8; 2],
     fixed_points: &BTreeMap<u32, [f64; 3]>,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(ordered) = directed_pcurve_points(directions, points) else {
         return Ok(true);
     };
@@ -87,9 +84,6 @@ fn pcurve_endpoint_is_ambiguous(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     candidates: &[[f64; 3]],
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(first) = candidates.first() else {
         return Ok(false);
     };
@@ -174,9 +168,6 @@ fn line_conic_intersections(
     line: &CurveGeometry,
     conic: &CurveGeometry,
 ) -> Result<Vec<[f64; 3]>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) = line else {
         return Ok(Vec::new());
     };
@@ -344,9 +335,6 @@ fn conic_conic_intersections(
     first: &CurveGeometry,
     second: &CurveGeometry,
 ) -> Result<Vec<[f64; 3]>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(first_equation) = planar_conic_equation(first) else {
         return Ok(Vec::new());
     };

@@ -154,9 +154,6 @@ pub(in super::super) fn fc14_held_coordinate(
     ctx: &DecodeContext<'_>,
     record: Option<&crate::curve::FcCurveCoordinates>,
 ) -> Result<Option<f64>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(CodecError::ResourceLimit(refusal));
-    }
     let Some(record) = record else {
         return Ok(None);
     };

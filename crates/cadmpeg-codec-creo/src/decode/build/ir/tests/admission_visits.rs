@@ -32,36 +32,6 @@ fn fixed_work_policy(work: u64) -> DecodePolicy {
     policy
 }
 
-#[test]
-fn fixed_pattern_coverage_is_free_and_preserves_original_refusal() {
-    let stage = resolved_stage();
-    let pattern = stage.clone().widen::<CompositePattern>();
-    let unresolved: PatternKind = PatternKind::UNRESOLVED;
-    let arena = DecodeArena::new();
-    let policy = fixed_work_policy(0);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    assert!(!pattern_kind_has_unresolved_operands(&ctx, &pattern).expect("fixed resolved pattern"));
-    assert!(!pattern_kind_has_unresolved_operands(&ctx, &stage).expect("fixed resolved stage"));
-    assert!(
-        pattern_kind_has_unresolved_operands(&ctx, &unresolved).expect("fixed unresolved pattern")
-    );
-    assert_eq!(ctx.resource_refusal(), None);
-    let original = ctx
-        .charge_work_limit(1, "after fixed pattern coverage")
-        .expect_err("zero cap");
-    assert_eq!(
-        (original.dimension, original.used, original.additional),
-        (ResourceDimension::WorkUnits, 0, 1)
-    );
-    for result in [
-        pattern_kind_has_unresolved_operands(&ctx, &pattern),
-        pattern_kind_has_unresolved_operands(&ctx, &stage),
-        pattern_kind_has_unresolved_operands(&ctx, &unresolved),
-    ] {
-        assert!(matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original));
-    }
-    assert_eq!(ctx.resource_refusal(), Some(original));
-}
 
 #[test]
 fn composite_pattern_coverage_visits_present_stages_until_first_unresolved() {
@@ -145,39 +115,6 @@ fn composite_pattern_coverage_visits_present_stages_until_first_unresolved() {
     }
 }
 
-#[test]
-fn empty_display_transfer_and_span_queries_are_free_and_preserve_refusal() {
-    let scan = crate::test_support::empty_container_scan();
-    let arena = DecodeArena::new();
-    let policy = fixed_work_policy(0);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let mut ir = CadIr::empty();
-    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-    transfer_display_tessellations(&ctx, &scan, &mut ir, &mut annotations).expect("empty display");
-    assert!(ir.model.tessellations.is_empty());
-    for vertices in [Vec::new(), vec![0u8, 1, 2]] {
-        assert!(admitted_display_strips(&ctx, vertices, &[])
-            .expect("no spans")
-            .is_none());
-    }
-    assert_eq!(ctx.resource_refusal(), None);
-    let original = ctx
-        .charge_work_limit(1, "after empty display queries")
-        .expect_err("zero cap");
-    assert_eq!(
-        (original.dimension, original.used, original.additional),
-        (ResourceDimension::WorkUnits, 0, 1)
-    );
-    assert!(
-        matches!(transfer_display_tessellations(&ctx, &scan, &mut ir, &mut annotations),
-        Err(CodecError::ResourceLimit(actual)) if actual == original)
-    );
-    assert!(
-        matches!(admitted_display_strips(&ctx, Vec::<u8>::new(), &[]),
-        Err(CodecError::ResourceLimit(actual)) if actual == original)
-    );
-    assert_eq!(ctx.resource_refusal(), Some(original));
-}
 
 #[test]
 fn unavailable_display_span_stops_before_unneeded_tail() {

@@ -121,4 +121,3 @@ fn spindle_torus_boundary_pcurve_retains_the_signed_ring_branch() {
     }
 }
 
-mod refusal_routes;

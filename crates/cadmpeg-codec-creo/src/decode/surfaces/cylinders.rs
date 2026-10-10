@@ -801,9 +801,6 @@ fn round_edge_cylinder_frame(
     radius: f64,
     support_planes: &[PlaneEquation],
 ) -> Result<Option<crate::surface::PositionalCylinderFrame>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if !radius.is_finite() || radius <= 0.0 {
         return Ok(None);
     }
@@ -1139,9 +1136,6 @@ fn perpendicular_round_edge_cylinder_frame(
     Result<crate::surface::PositionalCylinderFrame, PerpendicularRoundEdgeFailure>,
     cadmpeg_core::CodecError,
 > {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let [first, second] = envelope.vertices;
     let delta = std::array::from_fn::<_, 3, _>(|index| second[index] - first[index]);
     let plane_contains = |point: [f64; 3], plane: PlaneEquation| {
