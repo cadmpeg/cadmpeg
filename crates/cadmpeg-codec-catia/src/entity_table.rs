@@ -590,9 +590,15 @@ fn reference_signature_program_charged<'ctx>(
     let mut at = 0;
     let result = (|| -> Result<Option<Vec<ReferenceSignatureInstruction>>, CodecError> {
         while at < bytes.len() {
-            ctx.charge_work(1, "catia_reference_signature_symbol_visits")?;
+            let Some(&byte) = ctx.next_charged(
+                &mut bytes[at..].iter(),
+                "catia_reference_signature_symbol_visits",
+            )?
+            else {
+                return Ok(None);
+            };
             let start = at;
-            let symbol = match bytes[start] {
+            let symbol = match byte {
                 b'E' => ReferenceSignatureSymbol::E,
                 b'S' => ReferenceSignatureSymbol::S,
                 b'T' => ReferenceSignatureSymbol::T,
@@ -1327,17 +1333,20 @@ pub(crate) fn value_packets_charged(
             ctx.push_vec(&mut packets, packet, "catia_value_packets")?;
         }
     }
-    ctx.sort_unstable_by_key(
-        &mut packets,
-        |packet| match packet {
-            EntityValuePacket::Numeric { offset, .. } => (*offset, 0u8),
-            EntityValuePacket::E9Scalar { offset, .. } => (*offset, 1u8),
-            EntityValuePacket::Compact { offset, .. }
-            | EntityValuePacket::Layout { offset, .. } => (*offset, 2u8),
-        },
-        Ord::cmp,
-        "catia value packets sort",
-    )?;
+    let key = |packet: &EntityValuePacket| match packet {
+        EntityValuePacket::Numeric { offset, .. } => (*offset, 0u8),
+        EntityValuePacket::E9Scalar { offset, .. } => (*offset, 1u8),
+        EntityValuePacket::Compact { offset, .. } | EntityValuePacket::Layout { offset, .. } => {
+            (*offset, 2u8)
+        }
+    };
+    if packets.len() == 2 {
+        if key(&packets[0]) > key(&packets[1]) {
+            packets.swap(0, 1);
+        }
+    } else if packets.len() > 2 {
+        ctx.sort_unstable_by_key(&mut packets, key, Ord::cmp, "catia value packets sort")?;
+    }
     Ok(packets)
 }
 
@@ -1431,8 +1440,11 @@ fn parse_numeric_value_packet(
     let mut items = Vec::new();
     let mut binary64_count = 0usize;
     loop {
-        ctx.charge_work(1, "catia_numeric_packet_items_scan")?;
-        let Some(&code) = payload.get(at) else {
+        let Some(&code) = ctx.next_charged(
+            &mut payload.get(at..).unwrap_or_default().iter(),
+            "catia_numeric_packet_items_scan",
+        )?
+        else {
             return Ok(None);
         };
         match code {
@@ -1591,8 +1603,8 @@ pub(crate) fn parse_runs(
             records.push(record);
         }
         if complete {
-            ctx.reserve_vec(&mut runs, 1, "collect CATIA 7C05 materialized runs")?;
-            runs.push(record_storage.commit_value(records)?);
+            let records = record_storage.commit_value(records)?;
+            ctx.push_vec(&mut runs, records, "collect CATIA 7C05 materialized runs")?;
         }
     }
     Ok(runs)
@@ -1946,8 +1958,12 @@ fn identity_candidates(
     }
     let mut at = start;
     while at < end {
-        ctx.charge_work(1, "scan CATIA 7C05 identities")?;
-        match data[at] {
+        let Some(&byte) =
+            ctx.next_charged(&mut data[at..end].iter(), "scan CATIA 7C05 identities")?
+        else {
+            break;
+        };
+        match byte {
             0xea => {
                 if at
                     .checked_add(5)
@@ -2051,9 +2067,13 @@ pub(crate) fn parse_definition_schema_selectors(
     let mut selectors = Vec::new();
     let mut at = 0;
     while at < prefix.len() {
-        ctx.charge_work(1, "catia_entity_table_iteration")?;
-        let selector = match prefix.get(at) {
-            Some(0x32) => View::u32_le_at(prefix, at + 1),
+        let Some(&byte) =
+            ctx.next_charged(&mut prefix[at..].iter(), "catia_entity_table_iteration")?
+        else {
+            break;
+        };
+        let selector = match byte {
+            0x32 => View::u32_le_at(prefix, at + 1),
             _ => None,
         };
         if let Some(value) = selector {

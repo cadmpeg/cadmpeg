@@ -21,6 +21,11 @@ use std::collections::HashSet;
 
 #[test]
 fn transfers_exact_definition_values_as_typed_feature_properties() {
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "catia_feature_definition_values_sort",
+        None,
+    );
     let mut operation = native_operation_object(
         "synthetic:test:object#operation-object",
         None,
@@ -88,7 +93,7 @@ fn transfers_exact_definition_values_as_typed_feature_properties() {
     };
     let mut ir = CadIr::empty();
 
-    let transfer = crate::test_support::with_service_context(|ctx| {
+    let transfer = crate::test_support::with_work_limit(u64::MAX, |ctx| {
         transfer_design_features(
             ctx,
             &mut ctx
@@ -168,6 +173,11 @@ fn transfers_exact_definition_values_as_typed_feature_properties() {
 
 #[test]
 fn transfers_exact_definition_chains_as_typed_feature_properties() {
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "catia_feature_definition_chain_values_sort",
+        None,
+    );
     let mut operation = native_operation_object(
         "synthetic:test:object#operation-object",
         None,
@@ -240,7 +250,7 @@ fn transfers_exact_definition_chains_as_typed_feature_properties() {
     };
     let mut ir = CadIr::empty();
 
-    let transfer = crate::test_support::with_service_context(|ctx| {
+    let transfer = crate::test_support::with_work_limit(u64::MAX, |ctx| {
         transfer_design_features(
             ctx,
             &mut ctx

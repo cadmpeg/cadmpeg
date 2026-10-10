@@ -39,10 +39,12 @@ pub(crate) fn finite_f64_lane_charged(
     }
     let mut storage = ctx.reserve_scoped(0, operation)?;
     let mut values = storage.with_storage(|| ctx.collection_vec(bytes.len() / 8, operation))?;
-    let mut view = View::over_retained(bytes);
-    while !view.is_empty() {
-        ctx.charge_work(1, operation)?;
-        let Some(value) = view.f64_le().and_then(FiniteReal::new) else {
+    let mut windows = bytes.chunks_exact(8);
+    while windows.len() != 0 {
+        let Some(bytes) = ctx.next_charged(&mut windows, operation)? else {
+            return Ok(None);
+        };
+        let Some(value) = View::f64_le_at(bytes, 0).and_then(FiniteReal::new) else {
             return Ok(None);
         };
         values.push(value);
@@ -225,6 +227,33 @@ mod tests {
         .expect("only the accepted scalar retains eight bytes")
         .expect("finite lane");
         assert_eq!(values[0].get(), 2.0);
+    }
+
+    #[test]
+    fn finite_lane_visits_only_read_scalars_and_skips_empty_lanes() {
+        let empty = crate::test_support::with_work_limit(0, |ctx| {
+            super::finite_f64_lane_charged(ctx, &[], "catia_lane_test")
+        })
+        .expect("empty lane has no scalar visits")
+        .expect("empty finite lane");
+        assert!(empty.is_empty());
+        let mut rejected = f64::NAN.to_le_bytes().to_vec();
+        for _ in 0..4096 {
+            rejected.extend_from_slice(&1.0_f64.to_le_bytes());
+        }
+        assert!(crate::test_support::with_work_limit(1, |ctx| {
+            super::finite_f64_lane_charged(ctx, &rejected, "catia_lane_test")
+        })
+        .expect("first rejected scalar leaves the tail unread")
+        .is_none());
+        let accepted = [1.0_f64.to_le_bytes(), (-0.0_f64).to_le_bytes()].concat();
+        let values = crate::test_support::with_work_limit(2, |ctx| {
+            super::finite_f64_lane_charged(ctx, &accepted, "catia_lane_test")
+        })
+        .expect("one core visit per scalar")
+        .expect("finite lane");
+        assert_eq!(values[0].get(), 1.0);
+        assert_eq!(values[1].get().to_bits(), (-0.0_f64).to_bits());
     }
 
     #[test]

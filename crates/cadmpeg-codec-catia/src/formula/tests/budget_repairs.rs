@@ -80,7 +80,7 @@ fn formula_transfer_preserves_the_candidate_promotion_refusal() {
             let Err(CodecError::ResourceLimit(limit)) = result else {
                 panic!("candidate promotion must refuse");
             };
-            assert_eq!(ctx.resource_refusal(), Some(limit.clone()));
+            assert_eq!(ctx.resource_refusal(), Some(limit));
             assert!(ir.model.parameters.is_empty());
             assert!(matches!(ctx.charge_work(0, "after candidate promotion"),
                 Err(CodecError::ResourceLimit(original)) if original == limit));
@@ -198,4 +198,70 @@ fn formula_container_scope_refuses_variable_length_equality() {
         )
     )
     .expect("scalar mismatch runs no string comparison"));
+}
+
+#[test]
+fn formula_ordered_parameter_small_sorts_skip_constant_work() {
+    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, ResourceDimension};
+    let operation = "catia_formula_ordered_parameters_sort";
+    let native = |count: usize| {
+        let mut native = super::legacy_admission::legacy_values();
+        if count < 3 {
+            native.legacy_entity_runs[0].integer_values.clear();
+        }
+        if count < 2 {
+            native.legacy_entity_runs[0].string_values.clear();
+        }
+        if count < 1 {
+            native.legacy_entity_runs[0].scalar_values.clear();
+        }
+        native
+    };
+    let transfer = |ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+                    native: &crate::native::CatiaNative| {
+        let mut ir = cadmpeg_ir::document::CadIr::empty();
+        let transferred = super::super::transfer_parameters(
+            ctx,
+            &mut ir,
+            native,
+            &mut cadmpeg_ir::Annotations::default(),
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )?;
+        assert_eq!(
+            transferred.legacy_parameter_count,
+            ir.model.parameters.len()
+        );
+        Ok::<_, CodecError>(ir.model.parameters)
+    };
+    for count in 0..=2 {
+        let native = native(count);
+        let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
+        let parameters = crate::test_support::with_work_limit(u64::MAX, |ctx| {
+            let parameters = transfer(ctx, &native)?;
+            assert_eq!(ctx.resource_refusal(), None);
+            Ok::<_, CodecError>(parameters)
+        })
+        .expect("small numeric source orders need no general sort");
+        assert_eq!(parameters.len(), count);
+        for (ordinal, parameter) in parameters.iter().enumerate() {
+            assert_eq!(
+                parameter.ordinal,
+                u32::try_from(ordinal).expect("fixture ordinal")
+            );
+            assert_eq!(parameter.name, ["Result", "Responsible"][ordinal]);
+        }
+    }
+    let native = native(3);
+    let parameters = crate::test_support::with_service_context(|ctx| transfer(ctx, &native))
+        .expect("larger source ordering");
+    assert_eq!(
+        parameters
+            .iter()
+            .map(|parameter| parameter.name.as_str())
+            .collect::<Vec<_>>(),
+        ["Result", "Responsible", "Count"]
+    );
+    let error = with_work_refusal(operation, |ctx| transfer(ctx, &native))
+        .expect_err("larger source orders retain sorting admission");
+    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.operation == operation));
 }
