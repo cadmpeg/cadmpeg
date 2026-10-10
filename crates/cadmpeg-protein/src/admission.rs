@@ -15,7 +15,9 @@ use std::io::{Cursor, Read};
 
 use cadmpeg_container::ArchiveSnapshot;
 use cadmpeg_core::decode::iter_source::IterSource;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, DepthGuard, ScopedReservation, View};
+use cadmpeg_core::decode::{
+    u64_from_index, DecodeContext, DepthGuard, ProvisionalReservation, ScopedReservation, View,
+};
 use cadmpeg_core::CodecError;
 
 use crate::MAX_SCHEMA_BYTES;
@@ -30,6 +32,9 @@ pub trait ProteinAdmission: Copy {
     type Depth;
     /// The nested Protein archive this admission reads schemas from.
     type Archive<'bytes>;
+    /// Storage owner for one candidate record: kept if the record is
+    /// accepted, released with it if the record is rejected.
+    type Candidate;
 
     /// Opens an empty temporary storage owner.
     fn scope(self, operation: &'static str) -> Result<Self::Scope, Self::Error>;
@@ -40,6 +45,19 @@ pub trait ProteinAdmission: Copy {
         scope: &mut Self::Scope,
         build: impl FnOnce() -> Result<T, CodecError>,
     ) -> Result<T, CodecError>;
+
+    /// Opens an empty candidate storage owner.
+    fn candidate(self, operation: &'static str) -> Result<Self::Candidate, Self::Error>;
+
+    /// Runs `build` with the storage it allocates held by `candidate`.
+    fn build_candidate<T>(
+        self,
+        candidate: &mut Self::Candidate,
+        build: impl FnOnce() -> Result<T, CodecError>,
+    ) -> Result<T, CodecError>;
+
+    /// Keeps the candidate's storage with the accepted value.
+    fn accept<T>(self, candidate: Self::Candidate, value: T) -> Result<T, CodecError>;
 
     /// Admits a fixed number of work steps.
     fn work(self, units: usize, operation: &'static str) -> Result<(), Self::Error>;
@@ -220,6 +238,7 @@ impl<'ctx, 'input> ProteinAdmission for &'ctx DecodeContext<'input> {
     type Scope = ScopedReservation<'ctx>;
     type Depth = DepthGuard<'ctx>;
     type Archive<'bytes> = View<'input>;
+    type Candidate = ProvisionalReservation<'ctx>;
 
     fn scope(self, operation: &'static str) -> Result<Self::Scope, CodecError> {
         self.reserve_scoped(0, operation)
@@ -231,6 +250,22 @@ impl<'ctx, 'input> ProteinAdmission for &'ctx DecodeContext<'input> {
         build: impl FnOnce() -> Result<T, CodecError>,
     ) -> Result<T, CodecError> {
         scope.with_storage(build)
+    }
+
+    fn candidate(self, operation: &'static str) -> Result<Self::Candidate, CodecError> {
+        self.provisional_retained(operation)
+    }
+
+    fn build_candidate<T>(
+        self,
+        candidate: &mut Self::Candidate,
+        build: impl FnOnce() -> Result<T, CodecError>,
+    ) -> Result<T, CodecError> {
+        candidate.with_storage(build)
+    }
+
+    fn accept<T>(self, candidate: Self::Candidate, value: T) -> Result<T, CodecError> {
+        candidate.commit_value(value)
     }
 
     fn work(self, units: usize, operation: &'static str) -> Result<(), CodecError> {
@@ -447,6 +482,7 @@ impl ProteinAdmission for StandardAdmission {
     type Scope = ();
     type Depth = ();
     type Archive<'bytes> = &'bytes [u8];
+    type Candidate = ();
 
     fn scope(self, _operation: &'static str) -> Result<(), Infallible> {
         Ok(())
@@ -458,6 +494,22 @@ impl ProteinAdmission for StandardAdmission {
         build: impl FnOnce() -> Result<T, CodecError>,
     ) -> Result<T, CodecError> {
         build()
+    }
+
+    fn candidate(self, _operation: &'static str) -> Result<(), Infallible> {
+        Ok(())
+    }
+
+    fn build_candidate<T>(
+        self,
+        _candidate: &mut (),
+        build: impl FnOnce() -> Result<T, CodecError>,
+    ) -> Result<T, CodecError> {
+        build()
+    }
+
+    fn accept<T>(self, _candidate: (), value: T) -> Result<T, CodecError> {
+        Ok(value)
     }
 
     fn work(self, _units: usize, _operation: &'static str) -> Result<(), Infallible> {
