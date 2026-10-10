@@ -3918,6 +3918,13 @@ pub(super) fn project<'ctx>(
             )?;
             continue;
         };
+        let native_weights = if polynomial {
+            drop(native_weights);
+            drop(native_weight_storage);
+            None
+        } else {
+            Some((native_weights, native_weight_storage))
+        };
         let mut placement_storage = ctx.reserve_scoped(0, "iges surfaces placement scratch")?;
         let transform = match placement_storage.with_storage(|| {
             resolve_transform(
@@ -3933,7 +3940,6 @@ pub(super) fn project<'ctx>(
             Ok(transform) => transform,
             Err(error) => {
                 drop(native_weights);
-                drop(native_weight_storage);
                 let message = error.non_resource()?;
                 super::push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{message}"))?;
                 continue;
@@ -3999,7 +4005,9 @@ pub(super) fn project<'ctx>(
                     let Some(v) = ctx.next_charged(&mut source_values, "iges NURBS surface v poles")? else {
                         break;
                     };
-                    let weight = PositiveReal::new(native_weights[v * u_count + u])
+                    let weight = native_weights.as_ref()
+                        .and_then(|(weights, _)| weights.get(v * u_count + u))
+                        .and_then(|weight| PositiveReal::new(*weight))
                         .ok_or_else(|| CodecError::malformed("surface weight is not positive"))?;
                     row.push(WeightedPole3 {
                         point: point_at(u, v)?,
@@ -4011,7 +4019,6 @@ pub(super) fn project<'ctx>(
             NurbsPoleGrid::Rational { rows }
         };
         drop(native_weights);
-        drop(native_weight_storage);
         let construction = NurbsSurface::new(
             ctx,
             NurbsSurfaceAxis::new(u_degree, u_knots, flags[3] == Some(1)),
