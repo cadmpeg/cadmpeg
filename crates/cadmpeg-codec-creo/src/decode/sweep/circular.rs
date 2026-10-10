@@ -13,9 +13,11 @@ use super::pcurves::{add_extrusion_pcurve, PcurveAdmission};
 use super::profiles::{circular_pcurve, line_pcurve};
 use crate::container::ContainerScan;
 use crate::decode::sketch_transfer::recipe::feature_is_first_material_operation;
+use crate::lane_refusal::JoinedLaneRecords;
 use crate::vecmath::dot;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::analytic::CylinderSurface;
+use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
@@ -59,22 +61,6 @@ fn circular_item<T>(
     values.push(value);
     Ok(values)
 }
-
-fn copy_circular_pcurve(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    geometry: &cadmpeg_ir::geometry::pcurve::PcurveGeometry,
-) -> Result<cadmpeg_ir::geometry::pcurve::PcurveGeometry, cadmpeg_core::CodecError> {
-    let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = geometry else {
-        return Err(cadmpeg_core::CodecError::malformed(
-            "circular cap pcurve is not NURBS",
-        ));
-    };
-    Ok(cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs {
-        nurbs: nurbs.try_clone_for_decode(ctx, "creo circular cap pcurve copy")?,
-    })
-}
-
-use crate::lane_refusal::JoinedLaneRecords;
 
 pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -198,6 +184,9 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 }
             }
         };
+        let PcurveGeometry::Nurbs { nurbs: cap_nurbs } = &cap_geometry else {
+            return Err(cadmpeg_core::CodecError::malformed("circular cap pcurve is not NURBS"));
+        };
         let center = section_point_in_model(transform, section_center);
         let seam =
             std::array::from_fn::<_, 3, _>(|axis| center[axis] + radius * transform.u_axis()[axis]);
@@ -251,7 +240,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 PcurveAdmission::Pending(source_carriers, &cap_surface_geometry),
                 circular_identity::<PcurveId>(ctx, feature_id, format_args!("pcurve:{side}:cap"))?,
                 transform.offset,
-                copy_circular_pcurve(ctx, &cap_geometry)?,
+                PcurveGeometry::Nurbs { nurbs: cap_nurbs.try_clone_for_decode(ctx, "creo circular cap pcurve copy")? },
             )?;
             let side_pcurve = add_extrusion_pcurve(
                 ctx,
@@ -724,6 +713,9 @@ mod tests {
         )
         .expect("service resources")
         .expect("cap pcurve");
+        let super::PcurveGeometry::Nurbs { nurbs } = &geometry else {
+            panic!("NURBS cap fixture");
+        };
         crate::test_support::assert_refusal_order(
             cadmpeg_core::decode::ResourceDimension::CollectionItems,
             &[
@@ -735,13 +727,14 @@ mod tests {
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_collection_items = limit;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-                super::copy_circular_pcurve(&ctx, &geometry)
+                nurbs.try_clone_for_decode(&ctx, "creo circular cap pcurve copy").map(|nurbs| super::PcurveGeometry::Nurbs { nurbs })
             },
         );
-        assert_eq!(
-            super::copy_circular_pcurve(&ctx, &geometry).expect("copy"),
-            geometry
-        );
+        let copied = nurbs
+            .try_clone_for_decode(&ctx, "creo circular cap pcurve copy")
+            .map(|nurbs| super::PcurveGeometry::Nurbs { nurbs })
+            .expect("copy");
+        assert_eq!(copied, geometry);
     }
 
     #[test]
