@@ -31,19 +31,15 @@ pub(super) const MAX_SUPPORT_UV_COMPLETION_GEOMETRY_WORK: usize = 8_000_000;
 pub(super) const MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK: usize = 8_000_000;
 
 /// Compare two identity texts on a resource-only refusal channel. Texts of
-/// unequal length differ without a byte comparison; equal lengths charge the
-/// compared bytes first.
+/// unequal length differ without a byte comparison; equal lengths charge only
+/// the byte pairs read before a mismatch.
 pub(super) fn same_text(
     ctx: &DecodeContext<'_>,
     first: &str,
     second: &str,
     operation: &'static str,
 ) -> Result<bool, ResourceLimit> {
-    if first.len() != second.len() {
-        return Ok(false);
-    }
-    ctx.charge_work_limit(cadmpeg_core::decode::u64_from_index(first.len()), operation)?;
-    Ok(first == second)
+    ctx.equal_bytes_limit(first.as_bytes(), second.as_bytes(), operation)
 }
 
 /// Geometry work accounting plus the cache of successful blend-geometry
@@ -104,5 +100,28 @@ impl<'a> Deref for GeometryWorkBudget<'a> {
 
     fn deref(&self) -> &Self::Target {
         &self.work
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn identity_comparison_stops_before_an_unused_suffix() {
+        let first = format!("a{}", "x".repeat(4096));
+        let second = format!("b{}", "x".repeat(4096));
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_work_units = 1,
+            |ctx| {
+                assert!(!super::same_text(ctx, &first, &second, "nx test identity comparison").unwrap());
+                assert_eq!(ctx.resource_refusal(), None);
+            },
+        );
+        crate::test_support::resource_refusal_at(
+            &[],
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "nx test identity comparison",
+            |ctx| Ok(super::same_text(ctx, &first, &first, "nx test identity comparison")?),
+        );
     }
 }
