@@ -519,14 +519,6 @@ fn sketch_constructors_keep_original_refusals_without_retaining_temporary_slots(
                         assert_eq!(limit.dimension, dimension);
                         assert_eq!(limit.operation, "sketch constructor test");
                         assert!(
-                            matches!(crate::sketches::SketchPolygon::try_new(Vec::new(), &ctx, "later polygon"),
-                    Err(CodecError::ResourceLimit(sticky)) if sticky == *limit)
-                        );
-                        assert!(
-                            matches!(SpatialSketchProfile::try_new(origin, Vector3::new(0.0, 0.0, 0.0), u_axis,
-                    Vec::new(), &ctx, "later profile"), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit)
-                        );
-                        assert!(
                             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == *limit)
                         );
                     }

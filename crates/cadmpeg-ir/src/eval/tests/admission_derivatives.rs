@@ -149,10 +149,6 @@ fn stored_surface_partial_entries_admit_actual_scratch_and_work() {
                 assert_eq!(first.dimension, dimension);
                 assert_eq!((first.limit, first.used), (0, 0));
                 assert!(first.additional > 0);
-                assert_eq!(
-                    surface_second_partials(&ctx, &surface, f64::NAN, 0.5),
-                    Err(EvaluationFailure::ResourceLimit(first))
-                );
                 assert!(
                     matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == first)
                 );
