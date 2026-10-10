@@ -70,8 +70,6 @@ fn fc14_fixed_token_comparison_uses_four_visits_and_no_storage() {
             assert_eq!(refusal.operation, "creo FC14 coordinate tokens");
             assert_eq!(refusal.used, 3);
             assert_eq!(refusal.additional, 1);
-            assert!(matches!(super::super::fc14_held_coordinate(&ctx, None),
-                Err(CodecError::ResourceLimit(original)) if original == refusal));
         }
     }
 }

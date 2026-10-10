@@ -13,16 +13,25 @@ fn empty_brep_traversals_need_no_work() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    assert!(merge_body_components(&ctx, Vec::new()).expect("empty components").is_empty());
+    assert!(merge_body_components(&ctx, Vec::new())
+        .expect("empty components")
+        .is_empty());
     assert!(component_is_closed(
-        &ctx, &BTreeSet::new(), &BTreeSet::new(), &BTreeMap::new(), &[],
-    ).expect("empty closed component"));
+        &ctx,
+        &BTreeSet::new(),
+        &BTreeSet::new(),
+        &BTreeMap::new(),
+        &[],
+    )
+    .expect("empty closed component"));
     assert!(split_neutral_component_shells(
-        &ctx, &[], &BTreeSet::new(), &BTreeMap::new(), &BTreeMap::new(), &BTreeMap::new(),
-    ).expect("empty shell partition").is_empty());
+        &ctx,
+        &[],
+        &BTreeSet::new(),
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+    )
+    .expect("empty shell partition")
+    .is_empty());
 }
-
-
-
-
-

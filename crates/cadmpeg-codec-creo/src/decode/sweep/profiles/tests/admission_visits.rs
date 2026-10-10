@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::super::{
-     extrusion_profile_signed_area, nurbs_profile_point,
-    nurbs_profile_polyline, ordered_extrusion_profiles, polylines_intersect,
-     sketch_geometry_endpoints, 
+    extrusion_profile_signed_area, nurbs_profile_point, nurbs_profile_polyline,
+    ordered_extrusion_profiles, polylines_intersect, sketch_geometry_endpoints,
 };
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
@@ -15,7 +14,6 @@ fn work_policy(work: u64) -> DecodePolicy {
     policy.limits.max_retained_bytes = 0;
     policy
 }
-
 
 #[test]
 fn profile_polyline_queries_admit_present_windows_and_stop_at_first_contact() {

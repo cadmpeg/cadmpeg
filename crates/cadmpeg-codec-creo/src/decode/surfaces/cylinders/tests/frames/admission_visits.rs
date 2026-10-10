@@ -55,11 +55,12 @@ fn assert_exact_visits(
         (ResourceDimension::WorkUnits, visits, 1)
     );
     if visits != 0 {
-        assert!(matches!(query(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == original));
+        assert!(
+            matches!(query(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == original)
+        );
     }
     assert_eq!(ctx.resource_refusal(), Some(original));
 }
-
 
 #[test]
 fn round_edge_pair_search_admits_present_supports_and_skips_invalid_tails() {

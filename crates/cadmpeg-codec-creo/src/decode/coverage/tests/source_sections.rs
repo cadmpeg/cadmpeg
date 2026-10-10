@@ -34,7 +34,6 @@ fn scan_with_sections(layout: Layout) -> ContainerScan<'static> {
     scan
 }
 
-
 #[test]
 fn source_section_search_admits_only_present_sections_and_keeps_first_match() {
     for (layout, fallback) in [

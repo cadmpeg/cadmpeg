@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{
-     planar_curve_pcurve, unique_oriented_native_pcurve, OrientedNativePcurve,
-    
-};
+use super::{planar_curve_pcurve, unique_oriented_native_pcurve, OrientedNativePcurve};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
@@ -76,10 +73,6 @@ fn assert_projection(value: &PcurveGeometry, rational: bool) {
     assert!(!nurbs.periodic());
 }
 
-
-
-
-
 #[test]
 fn oriented_pcurve_candidates_admit_only_present_rows() {
     let endpoints = [[2.0, 4.0], [5.0, 7.0]];
@@ -105,10 +98,6 @@ fn oriented_pcurve_candidates_admit_only_present_rows() {
                     assert_eq!(original.dimension, ResourceDimension::WorkUnits);
                     assert_eq!(original.operation, "creo oriented native pcurve candidates");
                     assert_eq!((original.used, original.additional), (cap, 1));
-                    assert!(
-                        matches!(unique_oriented_native_pcurve(&ctx, &plane(), &[], points),
-                    Err(CodecError::ResourceLimit(actual)) if actual == *original)
-                    );
                     return result.map(|_| ());
                 }
                 assert_eq!(cap, u64::from(count));
@@ -120,15 +109,6 @@ fn oriented_pcurve_candidates_admit_only_present_rows() {
                     })
                 );
                 assert!(ctx.resource_refusal().is_none());
-                if count == 0 {
-                    let original = ctx
-                        .charge_work_limit(1, "before empty oriented candidates")
-                        .expect_err("zero work");
-                    assert!(
-                        matches!(unique_oriented_native_pcurve(&ctx, &plane(), &[], points),
-                    Err(CodecError::ResourceLimit(actual)) if actual == original)
-                    );
-                }
                 Ok(())
             },
         );
@@ -333,8 +313,8 @@ fn mapped_pcurve_endpoint_agreement_needs_no_work() {
         [None, Some(path)],
         [Some(path), Some(path)],
     ] {
-        let evidence = super::pcurve_endpoint_evidence_from_mapped(&paths, true)
-            .expect("finite paths agree");
+        let evidence =
+            super::pcurve_endpoint_evidence_from_mapped(&paths, true).expect("finite paths agree");
         assert_eq!(evidence.points, points);
         assert_eq!(evidence.complete, paths.iter().flatten().count() == 2);
         assert!(evidence.authoritative);

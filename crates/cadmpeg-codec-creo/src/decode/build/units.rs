@@ -850,7 +850,6 @@ fn scale_sheet_metal_flange_width(
 ) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::SheetMetalFlangeWidth;
 
-
     match width {
         SheetMetalFlangeWidth::Symmetric { width } => scale_positive_length(ctx, width, scale)?,
         SheetMetalFlangeWidth::TwoSides { first, second } => {
@@ -2937,7 +2936,6 @@ mod tests {
         );
     }
 
-
     #[test]
     fn flange_width_scaling_admits_only_present_pairs_and_keeps_original_refusal() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -3013,5 +3011,4 @@ mod tests {
             },
         );
     }
-
 }

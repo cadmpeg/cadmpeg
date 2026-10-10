@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{
-    Fc05CapPairFrame,
-};
+use super::Fc05CapPairFrame;
 use crate::curve::{Fc05CapEdge, Fc05CylinderCapPair, ParameterSense};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
@@ -129,4 +127,3 @@ fn cap_pair_frames_admit_only_present_edges_and_stop_at_missing_outline() {
         }
     }
 }
-

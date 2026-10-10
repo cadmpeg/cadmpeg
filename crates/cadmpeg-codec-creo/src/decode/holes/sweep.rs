@@ -344,19 +344,12 @@ pub(in crate::decode) fn circular_sweep_cylinder_from_cap_outlines(
     planes: [FeatureOutlinePlane; 2],
     outlines: [Option<CapOutline>; 2],
 ) -> Option<CylinderSurface> {
-    let Some((_, axis, _)) = hole_placement(planes) else {
-        return None;
-    };
-    let Some(aligned_axis) = super::placement::axis_aligned_with(axis, EPS_AXIS_ALIGNMENT) else {
-        return None;
-    };
+    let (_, axis, _) = hole_placement(planes)?;
+    let aligned_axis = super::placement::axis_aligned_with(axis, EPS_AXIS_ALIGNMENT)?;
     let radial = aligned_axis.complement().map(crate::axis::Axis::index);
     let mut outlines = outlines.into_iter().flatten();
-    let Some((center, radius)) = outlines
-        .find_map(|cap| cap_square_center_radius(cap.corners, aligned_axis))
-    else {
-        return None;
-    };
+    let (center, radius) =
+        outlines.find_map(|cap| cap_square_center_radius(cap.corners, aligned_axis))?;
     let scale = center
         .iter()
         .chain(std::iter::once(&radius))
@@ -366,8 +359,7 @@ pub(in crate::decode) fn circular_sweep_cylinder_from_cap_outlines(
         cap_square_center_radius(cap.corners, aligned_axis).is_some_and(
             |(other_center, other_radius)| {
                 radial.iter().any(|index| {
-                    (center[*index] - other_center[*index]).abs()
-                        > EPS_CENTER_AGREEMENT * scale
+                    (center[*index] - other_center[*index]).abs() > EPS_CENTER_AGREEMENT * scale
                 }) || (radius - other_radius).abs() > EPS_CENTER_AGREEMENT * scale
             },
         )
@@ -489,8 +481,7 @@ pub(in crate::decode) fn single_cap_circular_sweep_geometry<'a>(
         transform.origin(),
         transform.normal(),
         (plane.1, plane.2),
-    )
-    else {
+    ) else {
         return Ok(None);
     };
     let Some(geometry) = cylinder_from_single_cap_outline(cap) else {
@@ -618,11 +609,7 @@ pub(in crate::decode) fn two_cap_circular_sweep_geometry<'a>(
         cap_outline(ctx, scan, first)?,
         cap_outline(ctx, scan, second)?,
     ];
-    let Some(geometry) = circular_sweep_cylinder_from_cap_outlines(
-        [first, second],
-        caps,
-    )
-    else {
+    let Some(geometry) = circular_sweep_cylinder_from_cap_outlines([first, second], caps) else {
         return Ok(None);
     };
     Ok(Some(CircularSweepGeometry {
@@ -745,12 +732,8 @@ fn single_plane_extrusion_extent_and_direction(
     direction: [f64; 3],
     plane: ([f64; 3], [f64; 3]),
 ) -> Option<(ExtrudeExtent, [f64; 3])> {
-    let Some(axis) = normalized_span_direction(direction) else {
-        return None;
-    };
-    let Some(offset) = projected_plane_offset(profile_origin, axis, plane.0, plane.1) else {
-        return None;
-    };
+    let axis = normalized_span_direction(direction)?;
+    let offset = projected_plane_offset(profile_origin, axis, plane.0, plane.1)?;
     let span = if offset < 0.0 {
         ExtrusionSpan::new(offset, 0.0)
     } else if offset > 0.0 {

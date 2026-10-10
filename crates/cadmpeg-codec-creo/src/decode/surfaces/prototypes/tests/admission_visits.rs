@@ -1,10 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::super::{
-      prototype_parameter_array,
-     prototype_vector_array, 
-      
-};
+use super::super::{prototype_parameter_array, prototype_vector_array};
 use crate::surface::{
     SurfaceNamedParameter, SurfaceNamedValue, SurfacePrototypeFamily, SurfacePrototypeRecord,
 };
@@ -168,4 +164,3 @@ fn prototype_parameter_arrays_admit_present_values_and_stop_at_absence() {
         |ctx| prototype_parameter_array(ctx, &missing, "u_params").map(|actual| actual.is_none()),
     );
 }
-

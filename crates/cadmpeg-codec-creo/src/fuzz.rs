@@ -68,8 +68,8 @@ pub fn psb_tokens(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let _probe = crate::psb::tokens(ctx, data)
-        .try_fold(0usize, |count, token| token.map(|_| count + 1))?;
+    let _probe =
+        crate::psb::tokens(ctx, data).try_fold(0usize, |count, token| token.map(|_| count + 1))?;
     Ok(())
 }
 
@@ -189,8 +189,8 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         super::scalar(&ctx, &[]).expect("empty scalar probe does no work");
         assert_eq!(ctx.resource_refusal(), None);
     }
@@ -209,8 +209,11 @@ mod tests {
             policy.limits.max_materialized_bytes = CAP;
             let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy).expect("root");
             let output_storage = if scoped {
-                Some(ctx.with_scoped_storage("scalar probe parent", || super::scalar(&ctx, &data))
-                    .expect("scoped probe").1)
+                Some(
+                    ctx.with_scoped_storage("scalar probe parent", || super::scalar(&ctx, &data))
+                        .expect("scoped probe")
+                        .1,
+                )
             } else {
                 super::scalar(&ctx, &data).expect("probe");
                 None
@@ -222,11 +225,14 @@ mod tests {
                 ctx.charge_retained_limit(CAP + 1, "after scalar probe")
                     .expect_err("empty retained output")
             };
-            assert_eq!(refusal.dimension, if scoped {
-                ResourceDimension::MaterializedBytes
-            } else {
-                ResourceDimension::RetainedBytes
-            });
+            assert_eq!(
+                refusal.dimension,
+                if scoped {
+                    ResourceDimension::MaterializedBytes
+                } else {
+                    ResourceDimension::RetainedBytes
+                }
+            );
             assert_eq!((refusal.used, refusal.additional), (0, CAP + 1));
             assert!(matches!(super::scalar(&ctx, &data),
                 Err(CodecError::ResourceLimit(actual)) if actual == refusal));

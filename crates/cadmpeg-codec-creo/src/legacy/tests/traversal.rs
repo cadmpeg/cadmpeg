@@ -250,7 +250,6 @@ fn string_completeness_stops_at_first_unsupported_value() {
     }
 }
 
-
 #[test]
 fn legacy_line_and_decimal_admit_only_present_source_bytes() {
     for (source, expected) in [

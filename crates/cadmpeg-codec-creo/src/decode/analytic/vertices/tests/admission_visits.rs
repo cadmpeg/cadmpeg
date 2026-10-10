@@ -1,13 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::super::{
-      
-    pcurve_endpoint_is_ambiguous,
-};
+use super::super::pcurve_endpoint_is_ambiguous;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
-
-
-
 
 fn visit_policy(work: u64) -> DecodePolicy {
     let mut policy = DecodePolicy::service();
@@ -18,7 +12,6 @@ fn visit_policy(work: u64) -> DecodePolicy {
     policy.limits.max_recursion_depth = 0;
     policy
 }
-
 
 #[test]
 fn vertex_ambiguity_visits_only_present_comparisons_until_first_disagreement() {
@@ -83,8 +76,8 @@ fn vertex_ambiguity_visits_only_present_comparisons_until_first_disagreement() {
                 };
                 if visits != 0 {
                     assert!(
-                    matches!(pcurve_endpoint_is_ambiguous(&ctx, &points), Err(CodecError::ResourceLimit(actual)) if actual == original)
-                );
+                        matches!(pcurve_endpoint_is_ambiguous(&ctx, &points), Err(CodecError::ResourceLimit(actual)) if actual == original)
+                    );
                 }
                 assert_eq!(ctx.resource_refusal(), Some(original));
                 if cap == visits {

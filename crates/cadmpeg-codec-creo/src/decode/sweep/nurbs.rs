@@ -921,7 +921,6 @@ pub(super) fn sketch_nurbs_curve(
     use cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles;
     use cadmpeg_ir::scalar::FiniteReal;
 
-
     let SketchGeometryDefinition::Nurbs { curve } = geometry.definition() else {
         return Ok(None);
     };

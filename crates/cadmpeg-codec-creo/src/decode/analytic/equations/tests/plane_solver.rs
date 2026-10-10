@@ -30,7 +30,6 @@ fn plane_solver_refuses_candidate_scan_work() {
     assert_eq!(point, Some([1.0, 2.0, 3.0]));
 }
 
-
 #[test]
 fn incomplete_plane_rosters_need_no_scan_work() {
     let arena = DecodeArena::new();

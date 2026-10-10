@@ -1394,7 +1394,6 @@ mod tests {
         }
     }
 
-
     #[test]
     fn nurbs_pole_visitor_refuses_before_grid_traversal() {
         let (surface, _) = shared_generator_surfaces();
@@ -1911,7 +1910,6 @@ mod tests {
     // Two rational poles use the core four-slot growth floor; knots are an exact copy.
     const RATIONAL_BOUNDARY_BYTES: u64 = 4 * (3 * 8 + 8) + 4 * 8;
     const FOUR_RATIONAL_BOUNDARIES_BYTES: u64 = 4 * RATIONAL_BOUNDARY_BYTES;
-
 
     #[test]
     fn nurbs_boundary_promotion_retains_only_the_selected_curve_backing() {

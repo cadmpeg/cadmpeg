@@ -503,8 +503,6 @@ fn saved_spline_translated_curve_promotes_only_on_new_curve_transfer() {
     assert!(losses.is_empty());
 }
 
-
-
 #[test]
 fn revolved_pole_projection_charges_only_present_poles() {
     use cadmpeg_ir::features::{FeatureDirection3, FinitePoint3, RevolutionAxis};

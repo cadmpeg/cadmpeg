@@ -130,7 +130,9 @@ fn prototype_vector_array(
     let mut triples = Vec::new();
     let mut coordinates = array.values().chunks(3);
     while coordinates.len() != 0 {
-        let Some(coordinates) = ctx.next_charged(&mut coordinates, "creo prototype vector array traversal")? else {
+        let Some(coordinates) =
+            ctx.next_charged(&mut coordinates, "creo prototype vector array traversal")?
+        else {
             break;
         };
         if coordinates.len() != 3 {
@@ -187,7 +189,9 @@ fn prototype_parameter_array(
     let mut parameters = Vec::new();
     let mut values = array.values().iter();
     while values.len() != 0 {
-        let Some(value) = ctx.next_charged(&mut values, "creo prototype parameter array traversal")? else {
+        let Some(value) =
+            ctx.next_charged(&mut values, "creo prototype parameter array traversal")?
+        else {
             break;
         };
         let Some(value) = value else {
@@ -716,7 +720,8 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                 let overrides = match crate::surface::unique_surface_parameter(
                     &scan.surfaces.parameters,
                     row.id,
-                ).filter(|parameter| parameter.offset == row.offset)
+                )
+                .filter(|parameter| parameter.offset == row.offset)
                 {
                     Some(parameter) => parameter.torus_radius_overrides_checked(ctx)?,
                     None => None,

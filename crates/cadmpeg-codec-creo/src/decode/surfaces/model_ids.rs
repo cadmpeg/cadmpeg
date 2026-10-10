@@ -125,19 +125,43 @@ mod tests {
         let records = ["identity", "identity"];
         let mut index = ModelIdentityIndex::new(&ctx).expect("index");
         assert_eq!(
-            index.lookup(&ctx, &records, |record| record, "identity").expect("index records"),
+            index
+                .lookup(&ctx, &records, |record| record, "identity")
+                .expect("index records"),
             ModelIdentityMatch::Duplicate
         );
         let calls = Cell::new(0);
         let query = |index: &mut ModelIdentityIndex<'_>| {
             if count {
-                index.count(&ctx, &records[..1], |record| { calls.set(calls.get() + 1); *record }, "identity").map(|_| ())
+                index
+                    .count(
+                        &ctx,
+                        &records[..1],
+                        |record| {
+                            calls.set(calls.get() + 1);
+                            *record
+                        },
+                        "identity",
+                    )
+                    .map(|_| ())
             } else {
-                index.lookup(&ctx, &records[..1], |record| { calls.set(calls.get() + 1); *record }, "identity").map(|_| ())
+                index
+                    .lookup(
+                        &ctx,
+                        &records[..1],
+                        |record| {
+                            calls.set(calls.get() + 1);
+                            *record
+                        },
+                        "identity",
+                    )
+                    .map(|_| ())
             }
         };
-        assert!(matches!(query(&mut index), Err(CodecError::Malformed(message))
-            if message == "model identity index arena shrank"));
+        assert!(
+            matches!(query(&mut index), Err(CodecError::Malformed(message))
+            if message == "model identity index arena shrank")
+        );
         assert_eq!(calls.get(), 0);
         assert_eq!(index.indexed_len, records.len());
         assert_eq!(index.positions.len(), 1);
@@ -164,9 +188,18 @@ mod tests {
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let mut index = ModelIdentityIndex::new(&ctx).expect("empty index");
-        assert_eq!(index.lookup::<String>(&ctx, &[], String::as_str, "").expect("absence"),
-            ModelIdentityMatch::Absent);
-        assert_eq!(index.count::<String>(&ctx, &[], String::as_str, "").expect("zero count"), 0);
+        assert_eq!(
+            index
+                .lookup::<String>(&ctx, &[], String::as_str, "")
+                .expect("absence"),
+            ModelIdentityMatch::Absent
+        );
+        assert_eq!(
+            index
+                .count::<String>(&ctx, &[], String::as_str, "")
+                .expect("zero count"),
+            0
+        );
         assert!(ctx.resource_refusal().is_none());
     }
 

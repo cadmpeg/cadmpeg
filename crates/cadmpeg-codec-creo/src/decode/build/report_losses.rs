@@ -1268,5 +1268,4 @@ mod tests {
             note.message
         );
     }
-
 }
