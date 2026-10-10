@@ -1,0 +1,252 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Binding routes admit only their live consumers.
+
+use super::super::{bind_unique_sketch_feature, derive_feature_outputs, FeatureOutputSources};
+use super::{face_owner_fixture, ordering_feature};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+#[test]
+fn empty_output_sources_do_not_index_history_ordinals() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_work_units = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let histories = [crate::records::FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: Default::default(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![crate::history::tests::feature("native", Some("700"), 0)],
+    }];
+    let mut features = [ordering_feature()];
+    let original = features.clone();
+    derive_feature_outputs(
+        &ctx,
+        &mut features,
+        &histories,
+        FeatureOutputSources {
+            face_producers: &[],
+            body_modifiers: &[],
+        },
+        &[],
+        &[],
+        &[],
+    )
+    .unwrap();
+    assert_eq!(features, original);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn binding_without_sketch_features_does_not_allocate_indexes() {
+    let fixture = face_owner_fixture();
+    let histories = [crate::records::FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: Default::default(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![crate::history::tests::feature("native", Some("700"), 0)],
+    }];
+    let mut features = [ordering_feature()];
+    let original = features.clone();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    bind_unique_sketch_feature(
+        &ctx,
+        &mut features,
+        &fixture.ir().model.sketches,
+        &histories,
+    )
+    .unwrap();
+    assert_eq!(features, original);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn duplicate_body_modifiers_copy_only_the_published_body() {
+    let mut native = crate::history::tests::feature("native", Some("700"), 0);
+    native.kind = "Custom".into();
+    let history = crate::records::FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: Default::default(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![native],
+    };
+    let body = "synthetic:test:body#published";
+    let modifiers = vec![(body.to_owned(), 1); 64];
+    let mut feature = ordering_feature();
+    feature.native_ref = Some("native".into());
+    let mut features = [feature];
+    let mut policy = DecodePolicy::service();
+    // One body identity and the first output-vector growth survive.
+    policy.limits.max_retained_bytes =
+        u64::try_from(body.len() + 4 * std::mem::size_of::<cadmpeg_ir::ids::BodyId>()).unwrap();
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    derive_feature_outputs(
+        &ctx,
+        &mut features,
+        &[history],
+        FeatureOutputSources {
+            face_producers: &[],
+            body_modifiers: &modifiers,
+        },
+        &[],
+        &[],
+        &[],
+    )
+    .unwrap();
+    assert_eq!(
+        features[0].evaluation.outputs(),
+        &[cadmpeg_ir::ids::BodyId::mint(body).unwrap()]
+    );
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn invalid_body_modifier_does_not_retain_candidate_storage() {
+    let native = crate::history::tests::feature("native", Some("700"), 0);
+    let history = crate::records::FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: Default::default(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![native],
+    };
+    let modifiers = [("invalid body identity".to_owned(), 1)];
+    let mut feature = ordering_feature();
+    feature.native_ref = Some("native".into());
+    let mut features = [feature];
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    derive_feature_outputs(
+        &ctx,
+        &mut features,
+        &[history],
+        FeatureOutputSources {
+            face_producers: &[],
+            body_modifiers: &modifiers,
+        },
+        &[],
+        &[],
+        &[],
+    )
+    .unwrap();
+    assert!(features[0].evaluation.outputs().is_empty());
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn face_only_outputs_do_not_index_body_modifier_ordinals() {
+    let fixture = face_owner_fixture();
+    let model = &fixture.ir().model;
+    let histories = [crate::records::FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: Default::default(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![crate::history::tests::feature("native", Some("700"), 0)],
+    }];
+    let mut feature = ordering_feature();
+    feature.native_ref = Some("native".into());
+    let mut features = [feature];
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::MaterializedBytes,
+        "index SLDPRT body modifier ordinals",
+        None,
+    );
+    derive_feature_outputs(
+        &ctx,
+        &mut features,
+        &histories,
+        FeatureOutputSources {
+            face_producers: &[(model.faces[0].id.as_str(), 700)],
+            body_modifiers: &[],
+        },
+        &model.faces,
+        &model.shells,
+        &model.regions,
+    )
+    .unwrap();
+    assert_eq!(
+        features[0].evaluation.outputs(),
+        std::slice::from_ref(&model.bodies[0].id)
+    );
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn existing_sketch_alias_dependency_does_not_copy_the_base_identity() {
+    use cadmpeg_ir::features::{
+        DistinctMembers, FeatureDefinition, FeatureId, FeatureOperation, SketchFeatureBinding,
+    };
+    let base =
+        FeatureId::mint(format!("synthetic:test:feature#{}", "x".repeat(32 * 1024))).unwrap();
+    let mut first = ordering_feature();
+    first.id = base.clone();
+    first.name = Some("Profile".into());
+    first.native_ref = Some("native-base".into());
+    first
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(FeatureOperation::Sketch {
+            sketch: SketchFeatureBinding::Planar(None),
+        }));
+    let mut alias = first.clone();
+    alias.id = FeatureId::mint("synthetic:test:feature#alias").unwrap();
+    alias.name = Some("Profile<1>".into());
+    alias.native_ref = Some("native-alias".into());
+    alias.dependencies = DistinctMembers::try_from(
+        vec![base.clone()],
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .unwrap();
+    let native = |id: &str, name: &str| {
+        let mut feature = crate::history::tests::feature(id, None, 0);
+        feature.name = name.into();
+        feature.kind = "Sketch".into();
+        feature.xml_tag = "Sketch".into();
+        feature.input_class = Some("moProfileFeature_c".into());
+        feature
+    };
+    let histories = [crate::records::FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: Default::default(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![
+            native("native-base", "Profile"),
+            native("native-alias", "Profile<1>"),
+        ],
+    }];
+    let sketches = [cadmpeg_ir::sketches::Sketch {
+        id: cadmpeg_ir::sketches::SketchId::mint("synthetic:test:sketch#profile").unwrap(),
+        name: Some("Profile".into()),
+        configuration: None,
+        visible: None,
+        placement: cadmpeg_ir::sketches::SketchPlacement::Unresolved {},
+        profiles: Default::default(),
+        native_ref: None,
+    }];
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 1024;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut features = [first, alias];
+    bind_unique_sketch_feature(&ctx, &mut features, &sketches, &histories).unwrap();
+    assert_eq!(features[1].dependencies.as_slice(), &[base]);
+    ctx.finish_session().unwrap();
+}

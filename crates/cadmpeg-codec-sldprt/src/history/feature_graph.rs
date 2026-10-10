@@ -12,38 +12,38 @@ pub(crate) fn validate_feature_graph(
     features: &[crate::records::Feature],
 ) -> Result<(), CodecError> {
     let ((), storage) = ctx.with_scoped_storage("SLDPRT feature graph workspace", || {
-        if ctx
-            .admit_iter(features, "scan SLDPRT validate_feature_graph values")?
-            .try_fold(false, |invalid, feature| {
-                Ok::<_, CodecError>(invalid || !valid_xml_name(ctx, &feature.xml_tag)?)
-            })?
-        {
+        if ctx.any_by(
+            features,
+            |feature| Ok(!valid_xml_name(ctx, &feature.xml_tag)?),
+            "scan SLDPRT validate_feature_graph values",
+        )? {
             return Err(CodecError::Malformed(
                 "invalid feature XML element name".into(),
             ));
         }
+        let mut source_edges = false;
+        let mut source_count = 0;
         let mut by_id = HashMap::new();
         for (position, feature) in ctx
             .admit_iter(features, "validate SLDPRT feature graph")?
             .enumerate()
         {
+            source_edges |= feature.parent_source_id().is_some();
             if let Some(id) = feature.source_id {
+                source_count += 1;
                 ctx.insert_hash_map(&mut by_id, id, position, "index SLDPRT feature graph")?;
             }
         }
-        if by_id.len()
-            != ctx
-                .admit_iter(features, "scan SLDPRT validate_feature_graph values")?
-                .filter(|feature| feature.source_id.is_some())
-                .count()
-        {
+        if by_id.len() != source_count {
             return Err(CodecError::Malformed("duplicate feature source id".into()));
         }
+        let mut tree_edges = false;
         let mut by_record = HashMap::new();
         for (position, feature) in ctx
             .admit_iter(features, "scan SLDPRT validate_feature_graph values")?
             .enumerate()
         {
+            tree_edges |= feature.tree_parent_record_id().is_some();
             ctx.insert_hash_map(
                 &mut by_record,
                 feature.id.as_str(),
@@ -54,31 +54,42 @@ pub(crate) fn validate_feature_graph(
         if by_record.len() != features.len() {
             return Err(CodecError::Malformed("duplicate feature record id".into()));
         }
-        let mut source_walk = AncestryWalk::new(ctx, features.len())?;
-        let mut tree_walk = AncestryWalk::new(ctx, features.len())?;
+        if !source_edges && !tree_edges {
+            return Ok(());
+        }
+        let mut source_walk = source_edges
+            .then(|| AncestryWalk::new(ctx, features.len()))
+            .transpose()?;
+        let mut tree_walk = tree_edges
+            .then(|| AncestryWalk::new(ctx, features.len()))
+            .transpose()?;
         for position in ctx.admit_iter(
             0..features.len(),
             "scan SLDPRT validate_feature_graph values",
         )? {
-            source_walk.walk(
-                ctx,
-                features,
-                position,
-                &by_id,
-                crate::records::Feature::parent_source_id,
-                ("feature references missing parent", "feature parent cycle"),
-            )?;
-            tree_walk.walk(
-                ctx,
-                features,
-                position,
-                &by_record,
-                crate::records::Feature::tree_parent_record_id,
-                (
-                    "feature references missing tree parent",
-                    "feature tree cycle",
-                ),
-            )?;
+            if let Some(source_walk) = &mut source_walk {
+                source_walk.walk(
+                    ctx,
+                    features,
+                    position,
+                    &by_id,
+                    crate::records::Feature::parent_source_id,
+                    ("feature references missing parent", "feature parent cycle"),
+                )?;
+            }
+            if let Some(tree_walk) = &mut tree_walk {
+                tree_walk.walk(
+                    ctx,
+                    features,
+                    position,
+                    &by_record,
+                    crate::records::Feature::tree_parent_record_id,
+                    (
+                        "feature references missing tree parent",
+                        "feature tree cycle",
+                    ),
+                )?;
+            }
         }
         Ok(())
     })?;

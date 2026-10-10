@@ -189,22 +189,6 @@ fn run_sketch(policy: &DecodePolicy) -> Result<(), CodecError> {
 }
 
 #[test]
-fn configuration_feature_copy_design_refuses_collection_limit() {
-    assert_projection_refusal(
-        ResourceDimension::CollectionItems,
-        "retain SLDPRT configuration features",
-        run_design_with_feature,
-    );
-}
-#[test]
-fn configuration_feature_copy_design_refuses_work_limit() {
-    assert_projection_refusal(
-        ResourceDimension::WorkUnits,
-        "retain SLDPRT configuration features",
-        run_design_with_feature,
-    );
-}
-#[test]
 fn configuration_feature_copy_supplemental_refuses_collection_limit() {
     assert_projection_refusal(
         ResourceDimension::CollectionItems,
@@ -216,7 +200,7 @@ fn configuration_feature_copy_supplemental_refuses_collection_limit() {
 fn configuration_feature_copy_supplemental_refuses_retained_limit() {
     assert_projection_refusal(
         ResourceDimension::RetainedBytes,
-        "retain SLDPRT configuration features",
+        "retain SLDPRT supplemental configuration state",
         run_supplemental,
     );
 }
@@ -240,7 +224,7 @@ fn configuration_feature_copy_topology_refuses_collection_limit() {
 fn configuration_feature_copy_topology_refuses_retained_limit() {
     assert_projection_refusal(
         ResourceDimension::RetainedBytes,
-        "retain SLDPRT evaluated configuration features",
+        "retain SLDPRT configuration feature state",
         run_topology,
     );
 }
@@ -264,7 +248,7 @@ fn configuration_feature_copy_sketch_refuses_collection_limit() {
 fn configuration_feature_copy_sketch_refuses_retained_limit() {
     assert_projection_refusal(
         ResourceDimension::RetainedBytes,
-        "retain SLDPRT evaluated configuration features",
+        "retain SLDPRT configuration feature state",
         run_sketch,
     );
 }
@@ -293,21 +277,19 @@ fn configuration_design_skips_base_features_without_projected_features() {
 }
 
 #[test]
-fn configuration_design_base_features_use_scoped_storage() {
-    assert_projection_refusal(
+fn configuration_design_skips_base_features_without_inheritance_consumers() {
+    for dimension in [
         ResourceDimension::MaterializedBytes,
-        "retain SLDPRT configuration features",
-        run_design_with_feature,
-    );
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = u64::MAX;
-    policy.limits.max_materialized_bytes = u64::MAX;
-    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
         ResourceDimension::RetainedBytes,
-        "retain SLDPRT configuration features",
-        None,
-    );
-    run_design_with_feature(&policy).expect("base feature copy is temporary");
+    ] {
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            dimension,
+            "retain SLDPRT configuration features",
+            None,
+        );
+        run_design_with_feature(&DecodePolicy::service())
+            .expect("custom local feature has no inheritance consumer");
+    }
 }
 
 #[test]
@@ -398,4 +380,185 @@ fn configuration_parameter_metadata_uses_scoped_storage() {
         Some(&cadmpeg_ir::features::ParameterValue::Integer(1))
     );
     assert!(ctx.resource_refusal().is_none());
+}
+
+#[test]
+fn configuration_feature_metadata_is_scoped_in_each_projection() {
+    for project in [run_topology, run_sketch, run_supplemental] {
+        for operation in [
+            "retain SLDPRT evaluated configuration features",
+            "retain SLDPRT configuration features",
+        ] {
+            let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+                ResourceDimension::RetainedBytes,
+                operation,
+                None,
+            );
+            project(&DecodePolicy::service())
+                .expect("temporary feature metadata must not be retained");
+        }
+    }
+}
+
+#[test]
+fn supplemental_edges_do_not_copy_unread_metadata_or_overlaid_model_definition() {
+    let mut ir = model();
+    let unused = "x".repeat(17 * 1024 * 1024);
+    ir.model.features[0].name = Some(unused.clone());
+    ir.model.features[0].source_properties.insert(
+        cadmpeg_core::nonblank_literal!("Unused source property"),
+        unused.clone(),
+    );
+    ir.model.features[0]
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(FeatureOperation::Native {
+            kind: "Overlaid model operation".into(),
+            parameters: BTreeMap::from([(
+                cadmpeg_core::nonblank_literal!("Unused model parameter"),
+                unused,
+            )]),
+        }));
+    let expected = ir.clone();
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    super::super::project_configuration_supplemental_edge_selections(
+        &ctx,
+        &mut ir,
+        &[feature_input_lane(
+            "sldprt:feature-input:config-objects#0",
+            Some("0"),
+        )],
+    )
+    .unwrap();
+    assert_eq!(ir, expected);
+    ctx.finish_session().unwrap();
+}
+
+fn run_operation_base(policy: &DecodePolicy) -> Result<(), CodecError> {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
+    let mut native = crate::history::tests::feature("extrusion", Some("1"), 0);
+    native.kind = "Extrusion".into();
+    native.xml_tag = "Extrusion".into();
+    native
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("Depth"), "1mm".into());
+    let histories = [crate::records::FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![native],
+    }];
+    let fixture_ctx = cadmpeg_test_support::service_decode_context();
+    let local = crate::history::project::project_features(&fixture_ctx, &histories)?;
+    assert!(matches!(
+        local[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
+            op: cadmpeg_ir::features::BooleanOp::Unresolved,
+            ..
+        })
+    ));
+    let mut model = local.clone();
+    model[0].name = Some("x".repeat(32 * 1024));
+    let base =
+        super::super::configuration_base_features(&ctx, &model, &local, &histories, &[], None)?;
+    assert_eq!(base.features.len(), 1);
+    assert_eq!(
+        base.features[0].evaluation.definition(),
+        model[0].evaluation.definition()
+    );
+    assert!(base.features[0].name.is_none());
+    drop(base);
+    ctx.finish_session()?;
+    Ok(())
+}
+
+#[test]
+fn configuration_operation_base_uses_scoped_storage() {
+    for dimension in [
+        ResourceDimension::MaterializedBytes,
+        ResourceDimension::CollectionItems,
+        ResourceDimension::WorkUnits,
+    ] {
+        assert_projection_refusal(
+            dimension,
+            "retain SLDPRT configuration features",
+            run_operation_base,
+        );
+    }
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::RetainedBytes,
+        "retain SLDPRT configuration features",
+        None,
+    );
+    run_operation_base(&DecodePolicy::service()).expect("operation base is temporary");
+}
+
+#[test]
+fn configuration_duplicate_records_retain_only_last_valued_parameter_and_last_state() {
+    let mut first = crate::history::tests::feature("duplicate", None, 0);
+    first
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("Value"), "1".into());
+    let mut second = first.clone();
+    second
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("Value"), "2".into());
+    let mut last = first.clone();
+    last.parameters.insert(
+        cadmpeg_core::nonblank_literal!("Value"),
+        "Missing + 1".into(),
+    );
+    last.kind = "CustomLast".into();
+    last.suppressed = true;
+    let mut features = vec![first; 64];
+    features.extend([second, last]);
+    let histories = [crate::records::FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features,
+    }];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // One configuration-state B-tree node holds the inline operation variants.
+    // This cap admits that published node but excludes 66 retained state copies.
+    policy.limits.max_retained_bytes = 16 * 1024;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model
+        .configurations
+        .push(design_configuration("duplicates", 0, Some(0), None));
+    super::super::project_configuration_design_states(
+        &ctx,
+        &mut ir,
+        &histories,
+        &[feature_input_lane("lane", Some("0"))],
+        &[],
+        None,
+    )
+    .unwrap();
+    assert_eq!(ir.model.configurations[0].parameter_values.len(), 1);
+    assert_eq!(
+        ir.model.configurations[0].parameter_values.values().next(),
+        Some(&cadmpeg_ir::features::ParameterValue::Integer(2))
+    );
+    assert_eq!(ir.model.configurations[0].feature_states.len(), 1);
+    let state = ir.model.configurations[0]
+        .feature_states
+        .values()
+        .next()
+        .unwrap();
+    assert!(
+        matches!(&state.definition, FeatureDefinition::Operation(FeatureOperation::Native { kind, parameters }) if kind.as_str() == "CustomLast" && parameters["Value"] == "2")
+    );
+    assert!(matches!(
+        state.evaluation,
+        ConfigurationEvaluation::Suppressed {}
+    ));
+    ctx.finish_session().unwrap();
 }
