@@ -63,7 +63,7 @@ fn auxiliary_equation_dedup_and_suffix_movement_refuse_before_each_pass() {
 }
 
 #[test]
-fn coordinate_solver_pass_range_refuses_work_and_preserves_service_result() {
+fn empty_coordinate_solver_passes_are_free() {
     let definition = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(1),
@@ -83,20 +83,19 @@ fn coordinate_solver_pass_range_refuses_work_and_preserves_service_result() {
         saved_section: None,
         offset: 0,
     };
-    let coordinates =
-        crate::test_support::assert_work_boundaries(&["creo section solver pass scan"], |ctx| {
-            let mut equations = Vec::new();
-            let mut scalar_values = BTreeMap::new();
-            super::super::solve_section_coordinates_with_derived_constraints(
-                ctx,
-                &definition,
-                &mut equations,
-                &BTreeMap::new(),
-                (&[], &[]),
-                &SectionEquationAuxiliaryConstraints::default(),
-                &mut scalar_values,
-            )
-        });
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    let mut equations = Vec::new();
+    let mut scalar_values = BTreeMap::new();
+    let coordinates = super::super::solve_section_coordinates_with_derived_constraints(
+        &ctx, &definition, &mut equations, &BTreeMap::new(), (&[], &[]),
+        &SectionEquationAuxiliaryConstraints::default(), &mut scalar_values,
+    ).expect("empty solver sources need no work");
     assert!(coordinates.is_empty());
 }
 

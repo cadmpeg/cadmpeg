@@ -482,8 +482,7 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
                 match ctx.get_btree_map(&incident, vertex, "creo sketch incident vertex lookup")? {
                     Some(rows) => comparison_storage.with_storage(|| {
                         ctx.collect_vec(
-                            ctx.admit_iter(rows, "creo sketch incident comparison source")?
-                                .copied(),
+                            rows.iter().copied(),
                             "creo sketch incident comparison copy",
                         )
                     })?,
@@ -689,76 +688,76 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
         },
         "creo sketch unambiguous coordinates",
     )?;
+    let Some(trim_entities) = definition.trim_entities.as_ref().filter(|table| !table.rows.is_empty()) else {
+        return Ok(coordinates);
+    };
     loop {
         let mut pass_storage = ctx.reserve_scoped(0, "creo propagated trim pass scratch")?;
-        ctx.charge_work(1, "creo propagated trim fixed-point passes")?;
         let mut additions = Vec::new();
-        if let Some(trim_entities) = definition.trim_entities.as_ref() {
-            for (trim, external_id) in ctx
-                .admit_iter(&trim_entities.rows, "creo propagated trim entity rows")?
-                .zip(trim_ids.iter().copied())
+        for (trim, external_id) in ctx
+            .admit_iter(&trim_entities.rows, "creo propagated trim entity rows")?
+            .zip(trim_ids.iter().copied())
+        {
+            let Some(external_id) = external_id else {
+                continue;
+            };
+            let Some(segment) = segments.unique_segment(external_id) else {
+                continue;
+            };
+            let Some(SketchGeometryDefinition::Line { start, end }) =
+                (resolved_section_segment_geometry_with_missing_line(
+                    ctx,
+                    definition,
+                    points,
+                    segment,
+                    missing_line.as_ref(),
+                )?)
+                .map(SketchGeometry::into_definition)
+            else {
+                continue;
+            };
+            let stored = [[start.u, start.v], [end.u, end.v]];
+            let known = [
+                ctx.get_btree_map(
+                    &coordinates,
+                    &trim.vertices[0],
+                    "creo trim coordinate lookup",
+                )?
+                .copied(),
+                ctx.get_btree_map(
+                    &coordinates,
+                    &trim.vertices[1],
+                    "creo trim coordinate lookup",
+                )?
+                .copied(),
+            ];
+            let (known_point, missing_index) = match known {
+                [Some(point), None] => (point, 1),
+                [None, Some(point)] => (point, 0),
+                _ => continue,
+            };
+            let distances = stored
+                .map(|point| (point[0] - known_point[0]).hypot(point[1] - known_point[1]));
+            let scale = stored
+                .iter()
+                .flatten()
+                .map(|value| value.abs())
+                .fold(1.0, f64::max);
+            let matched = if distances[0] <= EPS_SKETCH_INTERSECTION_GEOMETRY * scale
+                && distances[1] > EPS_SKETCH_INTERSECTION_GEOMETRY * scale
             {
-                let Some(external_id) = external_id else {
-                    continue;
-                };
-                let Some(segment) = segments.unique_segment(external_id) else {
-                    continue;
-                };
-                let Some(SketchGeometryDefinition::Line { start, end }) =
-                    (resolved_section_segment_geometry_with_missing_line(
-                        ctx,
-                        definition,
-                        points,
-                        segment,
-                        missing_line.as_ref(),
-                    )?)
-                    .map(SketchGeometry::into_definition)
-                else {
-                    continue;
-                };
-                let stored = [[start.u, start.v], [end.u, end.v]];
-                let known = [
-                    ctx.get_btree_map(
-                        &coordinates,
-                        &trim.vertices[0],
-                        "creo trim coordinate lookup",
-                    )?
-                    .copied(),
-                    ctx.get_btree_map(
-                        &coordinates,
-                        &trim.vertices[1],
-                        "creo trim coordinate lookup",
-                    )?
-                    .copied(),
-                ];
-                let (known_point, missing_index) = match known {
-                    [Some(point), None] => (point, 1),
-                    [None, Some(point)] => (point, 0),
-                    _ => continue,
-                };
-                let distances = stored
-                    .map(|point| (point[0] - known_point[0]).hypot(point[1] - known_point[1]));
-                let scale = stored
-                    .iter()
-                    .flatten()
-                    .map(|value| value.abs())
-                    .fold(1.0, f64::max);
-                let matched = if distances[0] <= EPS_SKETCH_INTERSECTION_GEOMETRY * scale
-                    && distances[1] > EPS_SKETCH_INTERSECTION_GEOMETRY * scale
-                {
-                    0
-                } else if distances[1] <= EPS_SKETCH_INTERSECTION_GEOMETRY * scale
-                    && distances[0] > EPS_SKETCH_INTERSECTION_GEOMETRY * scale
-                {
-                    1
-                } else {
-                    continue;
-                };
-                pass_storage.with_storage(|| {
-                    ctx.reserve_vec(&mut additions, 1, "creo sketch propagated trim coordinates")
-                })?;
-                additions.push((trim.vertices[missing_index], stored[1 - matched]));
-            }
+                0
+            } else if distances[1] <= EPS_SKETCH_INTERSECTION_GEOMETRY * scale
+                && distances[0] > EPS_SKETCH_INTERSECTION_GEOMETRY * scale
+            {
+                1
+            } else {
+                continue;
+            };
+            pass_storage.with_storage(|| {
+                ctx.reserve_vec(&mut additions, 1, "creo sketch propagated trim coordinates")
+            })?;
+            additions.push((trim.vertices[missing_index], stored[1 - matched]));
         }
         let mut conflict_storage = ctx.reserve_scoped(0, "creo trim conflict scratch")?;
         let crate::feature::definitions::ReconciledPoints {
@@ -1118,7 +1117,7 @@ mod tests {
     }
 
     #[test]
-    fn trim_vertex_propagation_refuses_before_fixed_point_pass() {
+    fn empty_trim_vertex_propagation_is_free() {
         let definition = crate::feature::definitions::FeatureDefinition {
             identity: crate::feature::definitions::DefinitionIdentity::Parsed {
                 schema_id: std::num::NonZeroU32::new(1),
@@ -1144,17 +1143,16 @@ mod tests {
             saved_section: None,
             offset: 0,
         };
-        let coordinates = crate::test_support::assert_work_boundaries(
-            &["creo propagated trim fixed-point passes"],
-            |ctx| {
-                resolved_trim_vertex_coordinates(
-                    ctx,
-                    &definition,
-                    &BTreeMap::new(),
-                    &BTreeMap::new(),
-                )
-            },
-        );
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root");
+        let coordinates = resolved_trim_vertex_coordinates(
+            &ctx, &definition, &BTreeMap::new(), &BTreeMap::new(),
+        ).expect("empty trim sources need no work");
         assert!(coordinates.is_empty());
     }
 

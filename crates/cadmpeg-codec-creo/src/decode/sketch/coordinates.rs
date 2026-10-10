@@ -198,7 +198,13 @@ impl<'ctx> CoordinateEquationIndex<'ctx> {
         else {
             return Ok(false);
         };
-        ctx.any_by(values, |&value| Ok(FiniteReal::new(value).is_some_and(|value| approximately_equal(value, rhs))), "creo coordinate equation right-hand-side witnesses")
+        ctx.any_by(
+            values,
+            |&value| {
+                Ok(FiniteReal::new(value).is_some_and(|value| approximately_equal(value, rhs)))
+            },
+            "creo coordinate equation right-hand-side witnesses",
+        )
     }
 
     fn insert(
@@ -412,9 +418,15 @@ fn solve_section_coordinates_with_derived_constraints(
         .ok_or_else(|| {
             ctx.refuse_codec_limit("creo section solver pass count", u64::MAX, u64::MAX)
         })?;
-    let mut passes = 0..max_passes;
-    while !passes.is_empty() {
-        ctx.next_charged(&mut passes, "creo section solver pass scan")?;
+    if point_on_line_constraints.is_empty()
+        && equal_length_constraints.is_empty()
+        && auxiliary_constraints.midpoints.is_empty()
+        && auxiliary_constraints.point_bindings.is_empty()
+        && definition.variables.as_ref().is_none_or(|table| table.rows.is_empty())
+    {
+        return solved_storage.commit_value(solved_coordinates);
+    }
+    for _ in 0..max_passes {
         let mut pass_storage = ctx.reserve_scoped(0, "creo coordinate solver pass scratch")?;
         let mut appended = false;
         if append_point_on_line_equations(

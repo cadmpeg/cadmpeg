@@ -825,19 +825,12 @@ pub(in crate::decode) fn section_axis_reference_line_geometry(
     else {
         return Ok(None);
     };
-    let [first_id, second_id] = segment.point_ids();
-    let Some(value) = fixed_point_coordinate(ctx, variable_points, first_id, fixed_coordinate)? else {
+    let crate::feature::definitions::FeatureSegmentKind::Point(point_id) = segment.kind else {
         return Ok(None);
     };
-    if first_id != second_id {
-        let Some(second) = fixed_point_coordinate(ctx, variable_points, second_id, fixed_coordinate)? else {
-            return Ok(None);
-        };
-        let scale = value.abs().max(second.abs()).max(1.0);
-        if (second - value).abs() > EPS_RADIUS_AGREEMENT * scale {
-            return Ok(None);
-        }
-    }
+    let Some(value) = fixed_point_coordinate(ctx, variable_points, point_id, fixed_coordinate)? else {
+        return Ok(None);
+    };
     Ok(axis_reference_line(value, fixed_coordinate))
 }
 

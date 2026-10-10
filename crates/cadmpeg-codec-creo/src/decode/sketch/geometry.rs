@@ -1261,11 +1261,13 @@ pub(in crate::decode) fn saved_profile_chains(
         let Some(entity) = sketch_entity_id_admitted(ctx, sketch, external_id)? else {
             continue;
         };
-        let uses = ctx.collect_vec(
-            [SketchEntityUse {
+        let mut uses = Vec::new();
+        ctx.push_vec(
+            &mut uses,
+            SketchEntityUse {
                 entity,
                 reversed: false,
-            }],
+            },
             "creo saved circular profile uses",
         )?;
         ctx.reserve_vec(&mut profiles, 1, "creo saved profile rows")?;

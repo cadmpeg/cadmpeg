@@ -6,7 +6,7 @@ use crate::feature::segment_rows::SegmentRow;
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::ops::ControlFlow;
 
 use crate::decode::sketch_transfer::identity::{
@@ -186,40 +186,27 @@ fn section_line_entity_fixed_coordinate_with_mode(
             }
         }
     }
-    let mut coordinates = BTreeSet::new();
+    let mut coordinates = [false; 2];
     for (entity_id, parity) in ctx.admit_iter(&parities, "creo fixed-coordinate parity rows")? {
-        let mut direct_storage = ctx.reserve_scoped(0, "creo direct fixed-coordinate scratch")?;
-        let direct_coordinates = direct_storage.with_storage(|| {
-            section_line_direct_fixed_coordinates_with_mode(
-                ctx,
-                definition,
-                *entity_id,
-                include_unique_rows,
-                skamp_coordinates
-                    .get(entity_id)
-                    .copied()
-                    .unwrap_or([false; 2]),
-            )
-        })?;
-        for coordinate in &direct_coordinates {
-            let coordinate = if *parity {
-                coordinate.other()
-            } else {
-                *coordinate
-            };
-            scratch.with_storage(|| {
-                ctx.insert_btree_set(
-                    &mut coordinates,
-                    coordinate,
-                    "creo fixed-coordinate result nodes",
-                )
-            })?;
+        let direct_coordinates = section_line_direct_fixed_coordinates_with_mode(
+            ctx,
+            definition,
+            *entity_id,
+            include_unique_rows,
+            skamp_coordinates.get(entity_id).copied().unwrap_or([false; 2]),
+        )?;
+        for (coordinate, present) in SectionAxis::ALL.into_iter().zip(direct_coordinates) {
+            if present {
+                let coordinate = if *parity { coordinate.other() } else { coordinate };
+                coordinates[coordinate.index()] = true;
+            }
         }
     }
-    Ok(coordinates
-        .first()
-        .copied()
-        .filter(|_| coordinates.len() == 1))
+    Ok(match coordinates {
+        [true, false] => Some(SectionAxis::U),
+        [false, true] => Some(SectionAxis::V),
+        _ => None,
+    })
 }
 
 fn section_line_direct_fixed_coordinates_with_mode(
@@ -228,7 +215,7 @@ fn section_line_direct_fixed_coordinates_with_mode(
     entity_id: u32,
     include_unique_rows: bool,
     skamp_coordinates: [bool; 2],
-) -> Result<BTreeSet<SectionAxis>, CodecError> {
+) -> Result<[bool; 2], CodecError> {
     let segment = if include_unique_rows {
         unique_decoded_section_segment(definition, entity_id)
     } else {
@@ -247,13 +234,9 @@ fn section_line_direct_fixed_coordinates_with_mode(
             1 => Some(SectionAxis::V),
             _ => None,
         });
-    let mut coordinates = BTreeSet::new();
+    let mut coordinates = skamp_coordinates;
     if let Some(coordinate) = segment_coordinate {
-        ctx.insert_btree_set(
-            &mut coordinates,
-            coordinate,
-            "creo direct fixed-coordinate nodes",
-        )?;
+        coordinates[coordinate.index()] = true;
     }
     if let Some(coordinate) = unique_reference_line_segment(definition, entity_id)
         .and_then(|segment| segment.vertical_horizontal)
@@ -263,20 +246,7 @@ fn section_line_direct_fixed_coordinates_with_mode(
             _ => None,
         })
     {
-        ctx.insert_btree_set(
-            &mut coordinates,
-            coordinate,
-            "creo direct fixed-coordinate nodes",
-        )?;
-    }
-    for (coordinate, present) in SectionAxis::ALL.into_iter().zip(skamp_coordinates) {
-        if present {
-            ctx.insert_btree_set(
-                &mut coordinates,
-                coordinate,
-                "creo direct fixed-coordinate nodes",
-            )?;
-        }
+        coordinates[coordinate.index()] = true;
     }
     if saved_section_line_witness_allowed(definition, entity_id) {
         if let Some(crate::feature::definitions::FeatureSavedEntity::Line(line)) =
@@ -292,18 +262,10 @@ fn section_line_direct_fixed_coordinates_with_mode(
             let tolerance = EPS_SAVED_LINE_AXIS * scale;
             match [(x0 - x1).abs() <= tolerance, (y0 - y1).abs() <= tolerance] {
                 [true, false] => {
-                    ctx.insert_btree_set(
-                        &mut coordinates,
-                        SectionAxis::U,
-                        "creo direct fixed-coordinate nodes",
-                    )?;
+                    coordinates[SectionAxis::U.index()] = true;
                 }
                 [false, true] => {
-                    ctx.insert_btree_set(
-                        &mut coordinates,
-                        SectionAxis::V,
-                        "creo direct fixed-coordinate nodes",
-                    )?;
+                    coordinates[SectionAxis::V.index()] = true;
                 }
                 _ => {}
             }
@@ -921,16 +883,6 @@ mod tests {
     #[test]
     fn fixed_coordinate_pending_node_refuses_before_reservation() {
         assert_fixed_coordinate_graph_refusal(&["creo fixed-coordinate pending nodes"]);
-    }
-
-    #[test]
-    fn direct_fixed_coordinate_node_refuses_before_insertion() {
-        assert_fixed_coordinate_graph_refusal(&["creo direct fixed-coordinate nodes"]);
-    }
-
-    #[test]
-    fn fixed_coordinate_result_node_refuses_before_insertion() {
-        assert_fixed_coordinate_graph_refusal(&["creo fixed-coordinate result nodes"]);
     }
 
     #[test]

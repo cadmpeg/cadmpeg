@@ -291,7 +291,7 @@ mod tests {
             ([1, 7, 2], Some(7), 3),
             ([1, 2, 3], None, 3),
         ] {
-            for allowed in 0..=visits {
+            let found = crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, &[], |allowed| {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_work_units = allowed;
@@ -305,7 +305,7 @@ mod tests {
                     assert_ne!(*value, 99, "second match stops before the tail");
                     Ok(*value == 7)
                 }, "test present unique rows").map(Option::<&i32>::copied);
-                if allowed < visits {
+                if result.is_err() {
                     let cadmpeg_core::CodecError::ResourceLimit(r) = result.expect_err("next present row") else {
                         panic!("work refusal");
                     };
@@ -315,13 +315,16 @@ mod tests {
                     assert_eq!(predicates.get(), allowed);
                     assert!(matches!(super::exactly_one_by(&ctx, &[] as &[u32], |_| panic!("absent row"),
                         "test present unique rows"), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == r));
+                    Err(r.into())
                 } else {
                     assert_eq!(result.expect("all required rows"), expected);
                     assert_eq!(predicates.get(), visits);
                     let r = ctx.charge_work_limit(1, "after present unique rows").expect_err("exact cap");
                     assert_eq!((r.used, r.additional), (visits, 1));
+                    Ok(expected)
                 }
-            }
+            });
+            assert_eq!(found, expected);
         }
     }
 
@@ -336,7 +339,7 @@ mod tests {
             ([transform(1, 1), transform(2, 7), transform(3, 2)], 3),
             ([transform(1, 1), transform(2, 2), transform(3, 3)], 3),
         ] {
-            for allowed in 0..=visits {
+            crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, &[], |allowed| {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_work_units = allowed;
@@ -345,7 +348,7 @@ mod tests {
                 policy.limits.max_collection_items = 0;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
                 let result = super::unique_feature_profile_definition(&ctx, &[], &transforms, 7);
-                if allowed < visits {
+                if result.is_err() {
                     let cadmpeg_core::CodecError::ResourceLimit(r) = result.expect_err("next transform") else {
                         panic!("work refusal");
                     };
@@ -354,12 +357,14 @@ mod tests {
                     assert_eq!((r.used, r.additional), (allowed, 1));
                     assert!(matches!(super::unique_feature_profile_definition(&ctx, &[], &[], 7),
                         Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == r));
+                    Err(r.into())
                 } else {
                     assert!(result.expect("visited transforms and absent definitions").is_none());
                     let r = ctx.charge_work_limit(1, "after profile transforms").expect_err("exact cap");
                     assert_eq!((r.used, r.additional), (visits, 1));
+                    Ok(())
                 }
-            }
+            });
         }
     }
 
