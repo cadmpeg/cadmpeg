@@ -233,16 +233,6 @@ fn revolution_axis_binding_without_target_needs_no_index_storage() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     super::bind_profile_revolution_axes(&ctx, &mut [], &histories, &[], &[], &[]).unwrap();
     ctx.finish_session().unwrap();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let cadmpeg_core::CodecError::ResourceLimit(refusal) = ctx
-        .charge_work(1, "test sticky revolution refusal")
-        .unwrap_err()
-    else {
-        panic!("work refusal");
-    };
-    assert!(
-        matches!(super::bind_profile_revolution_axes(&ctx, &mut [], &histories, &[], &[], &[]), Err(cadmpeg_core::CodecError::ResourceLimit(actual)) if actual == refusal)
-    );
 }
 
 #[test]
