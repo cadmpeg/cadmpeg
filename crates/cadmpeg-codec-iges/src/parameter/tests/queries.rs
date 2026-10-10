@@ -25,12 +25,19 @@ fn macro_analysis_resolves_its_directory_entry_once() {
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let result = if with_records {
                 crate::parameter::analyze_trailing_pointer_groups_with_records_for_global_table(
-                    &record, &directory, &BTreeMap::new(), GlobalTable::V5Later,
-                    &mut crate::parameter::AttributeDefinitionWidths::new(&ctx).unwrap(), &ctx,
+                    &record,
+                    &directory,
+                    &BTreeMap::new(),
+                    GlobalTable::V5Later,
+                    &mut crate::parameter::AttributeDefinitionWidths::new(&ctx).unwrap(),
+                    &ctx,
                 )
             } else {
                 crate::parameter::analyze_trailing_pointer_groups_for_global_table_with_context(
-                    &record, &directory, GlobalTable::V5Later, &ctx,
+                    &record,
+                    &directory,
+                    GlobalTable::V5Later,
+                    &ctx,
                 )
             };
             if work == 4 {
@@ -41,7 +48,10 @@ fn macro_analysis_resolves_its_directory_entry_once() {
                     panic!("expected Directory query refusal");
                 };
                 assert_eq!(first.dimension, ResourceDimension::WorkUnits);
-                assert_eq!(first.operation, "iges parameter primary layout directory lookup");
+                assert_eq!(
+                    first.operation,
+                    "iges parameter primary layout directory lookup"
+                );
                 assert_eq!(first.used, 0);
                 // One stored u32 key bounds this query to one four-byte comparison.
                 assert_eq!(first.additional, 4);
@@ -68,7 +78,11 @@ fn attribute_primary_layout_admits_definition_queries_after_type_gates() {
         policy.limits.max_work_units = work;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = crate::parameter::entity_primary_end_with_records_for_global_table(
-            &record, &directory, &records, GlobalTable::V5Later, &ctx,
+            &record,
+            &directory,
+            &records,
+            GlobalTable::V5Later,
+            &ctx,
         );
         if work == 21 {
             // Two two-key Directory queries (8 each), one one-key record query
@@ -95,9 +109,17 @@ fn attribute_primary_layout_admits_definition_queries_after_type_gates() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 16;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert_eq!(crate::parameter::entity_primary_end_with_records_for_global_table(
-        &record, &directory, &records, GlobalTable::V5Later, &ctx,
-    ).unwrap(), Some(record.tokens().len()));
+    assert_eq!(
+        crate::parameter::entity_primary_end_with_records_for_global_table(
+            &record,
+            &directory,
+            &records,
+            GlobalTable::V5Later,
+            &ctx,
+        )
+        .unwrap(),
+        Some(record.tokens().len())
+    );
     ctx.finish_session().unwrap();
 }
 
@@ -121,9 +143,9 @@ fn first_trailing_pointer_query_refusal_does_not_previsit_copy_tail() {
     // Integer validation must finish first. Copying then visits only pointer 1.
     policy.limits.max_work_units = u64::try_from(POINTERS + 1 + 1).unwrap();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = crate::parameter::groups_for_candidate_with_context(
-        &record, &directory, candidate, &ctx,
-    ).unwrap_err();
+    let error =
+        crate::parameter::groups_for_candidate_with_context(&record, &directory, candidate, &ctx)
+            .unwrap_err();
     let CodecError::ResourceLimit(first) = error else {
         panic!("expected first pointer query refusal");
     };
@@ -157,10 +179,13 @@ fn valid_real_shape_admits_each_actual_byte() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = crate::parameter::decimal_shape(b"1E2", &ctx);
         if work >= 3 {
-            assert_eq!(result.unwrap(), Some(crate::parameter::DecimalShape {
-                magnitude: crate::parameter::Magnitude::Order(2),
-                double_precision: false,
-            }));
+            assert_eq!(
+                result.unwrap(),
+                Some(crate::parameter::DecimalShape {
+                    magnitude: crate::parameter::Magnitude::Order(2),
+                    double_precision: false,
+                })
+            );
             ctx.finish_session().unwrap();
         } else {
             let CodecError::ResourceLimit(first) = result.unwrap_err() else {

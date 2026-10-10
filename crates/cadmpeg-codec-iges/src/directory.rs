@@ -375,10 +375,7 @@ fn fields(line: &PhysicalLine<'_>) -> [[u8; 8]; 9] {
     fields
 }
 
-fn integer(
-    field: [u8; 8],
-    name: &'static str,
-) -> Result<i64, DirectoryDefect> {
+fn integer(field: [u8; 8], name: &'static str) -> Result<i64, DirectoryDefect> {
     let text = std::str::from_utf8(&field)
         .map_err(|_| DirectoryDefect::FieldNotAscii(name))?
         .trim();
@@ -455,15 +452,12 @@ fn parse_pair(
     let first_fields = fields(first);
     let second_fields = fields(second);
     let entity_type = directory_integer(first_fields[0], "entity type", 1, global_table)?;
-    let repeated_type = directory_integer(
-        second_fields[0],
-        "repeated entity type",
-        11,
-        global_table,
-    )?;
+    let repeated_type =
+        directory_integer(second_fields[0], "repeated entity type", 11, global_table)?;
     if entity_type != repeated_type {
         return Err(DirectoryDefect::RepeatedEntityTypeMismatch {
-            declared: entity_type, repeated: repeated_type,
+            declared: entity_type,
+            repeated: repeated_type,
         });
     }
     Ok(DirectoryEntry {
@@ -541,7 +535,9 @@ pub(crate) fn parse(
     let mut quarantined = Vec::new();
     let mut pairs = cards.chunks_exact(2);
     while pairs.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some(pair) = ctx.next_charged(&mut pairs, "iges directory card pairs")? else { break; };
+        let Some(pair) = ctx.next_charged(&mut pairs, "iges directory card pairs")? else {
+            break;
+        };
         let [first, second] = pair else {
             continue;
         };
@@ -596,7 +592,9 @@ pub(crate) fn summary_notes<'ctx>(
     let mut census = BTreeMap::<(i64, i64), usize>::new();
     let mut source = entries.iter();
     while source.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some(entry) = ctx.next_charged(&mut source, "iges directory summary groups")? else { break; };
+        let Some(entry) = ctx.next_charged(&mut source, "iges directory summary groups")? else {
+            break;
+        };
         census_storage.with_storage(|| {
             ctx.admit_btree_entry(
                 &census,
@@ -616,7 +614,11 @@ pub(crate) fn summary_notes<'ctx>(
     )?);
     let mut grouped = census.into_iter();
     while grouped.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some(((entity_type, form), count)) = ctx.next_charged(&mut grouped, "iges directory summary notes")? else { break; };
+        let Some(((entity_type, form), count)) =
+            ctx.next_charged(&mut grouped, "iges directory summary notes")?
+        else {
+            break;
+        };
         ctx.reserve_scoped_vec(&mut storage, &mut notes, 1, "iges directory summary notes")?;
         notes.push(ctx.format_retained(
             format_args!("entity.{entity_type}.form.{form}={count}"),
