@@ -3,7 +3,7 @@
 
 use crate::kernel_header::RefWidth;
 use crate::nurbs::core::{
-    curve_block, decode_curve_block, decode_owned_curve_cache_at, decode_owned_surface_cache_at,
+    curve_block, decode_inline_curve, decode_owned_curve_cache_at, decode_owned_surface_cache_at,
     decode_surface_block, surface_block,
 };
 use crate::nurbs::pcurve::pcurve_block_with_end;
@@ -349,14 +349,20 @@ pub(super) fn decode_rolling_ball_curve(
     int_width: RefWidth,
 ) -> Option<Result<RollingBallSupportCurve<CurveGeometry>, cadmpeg_core::CodecError>> {
     if marker_at(bytes, *position).is_some() {
-        let curve = decode_curve_block(bytes, *position, int_width)?;
-        *position = curve.end();
+        let mut attempt =
+            propagate_resource!(ctx.reserve_scoped(0, "ASM rolling-ball inline curve attempt",));
+        let (curve, end) = propagate_resource!(attempt.with_storage(|| {
+            decode_inline_curve(ctx, bytes, *position, int_width).transpose()
+        }))?;
+        *position = end;
         let parameter_range = [
             take_optional_range_value(bytes, position)?.value(),
             take_optional_range_value(bytes, position)?.value(),
         ];
         return Some(Ok(RollingBallSupportCurve {
-            curve: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve.curve)),
+            curve: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(propagate_resource!(
+                attempt.commit_value(curve)
+            ))),
             parameter_range,
         }));
     }
