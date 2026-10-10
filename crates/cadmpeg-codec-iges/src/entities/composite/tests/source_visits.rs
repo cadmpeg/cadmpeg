@@ -192,3 +192,58 @@ fn composite_unindexed_edge_scan_accepts_exact_executed_work_without_backing() {
         }
     }
 }
+
+fn internal_knot_boundary(visited: usize, accepts_source: bool) {
+    let mut curve = test_nurbs(1, vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)], None);
+    let before = serde_json::to_value(&curve).unwrap();
+    // On [0,0,1,1], lower/upper partition paths visit 3/2 slots
+    // for zero and 2/2 slots for one. The two homogeneous controls
+    // then need two visits, followed by four copied knots.
+    let boundary_visits = 3 + 2 + 2 + 2;
+    let prelude = boundary_visits + u64::try_from(curve.pole_count() + curve.knots().len()).unwrap();
+    let cap = prelude + u64::try_from(visited).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = edge_scan_policy(cap);
+    policy.limits.max_collection_items = u64::try_from(curve.pole_count() + curve.knots().len()).unwrap();
+    policy.limits.max_materialized_bytes = u64::try_from(
+        curve.pole_count() * std::mem::size_of::<[f64; 4]>()
+            + curve.knots().len() * std::mem::size_of::<f64>(),
+    ).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = match elevate_nurbs_to_degree(&ctx, &mut curve, [0.0, 1.0], 2, None) {
+        Err(error) => error,
+        Ok(()) => panic!("expected source or next phase refusal"),
+    };
+    let first = match error.non_resource() {
+        Err(CodecError::ResourceLimit(first)) => first,
+        _ => panic!("expected the original resource refusal"),
+    };
+    assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(first.operation, if accepts_source { "iges composite elevation spans" }
+        else { "iges composite internal knot traversal" });
+    assert_eq!((first.limit, first.used, first.additional), (cap, cap, 1));
+    for _ in 0..64 {
+        for target in [2, 1] {
+            let error = match elevate_nurbs_to_degree(&ctx, &mut curve, [0.0, 1.0], target, None) {
+                Err(error) => error,
+                Ok(()) => panic!("expected sticky refusal before same-degree recovery"),
+            };
+            assert!(matches!(error.non_resource(), Err(CodecError::ResourceLimit(last)) if last == first));
+        }
+    }
+    assert_eq!(serde_json::to_value(&curve).unwrap(), before);
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+}
+
+#[test]
+fn composite_internal_knot_source_refuses_first_and_last_actual_visits() {
+    for visited in [0, 3] { internal_knot_boundary(visited, false); }
+}
+
+#[test]
+fn composite_internal_knot_phase_accepts_exact_prelude_and_source_work() {
+    // Four actual knot visits complete without allocating an internal value;
+    // the exact phase limit next refuses the first elevated-span visit.
+    internal_knot_boundary(4, true);
+}
