@@ -2186,11 +2186,12 @@ impl From<CodecError> for PlaneBoundaryError {
     }
 }
 
-type PlaneBoundaryKey = (u32, [u64; 7]);
+type PlaneBoundaryKey = (u32, super::CoplanarityPlaneKey);
+type PlaneBoundaryProof<'ir> = (super::CoplanarityProof<'ir, &'ir Edge>, bool);
 
 /// Successful boundary proofs for one immutable model.
 struct PlaneBoundaryProofs<'ir, 'ctx> {
-    proven: BTreeMap<PlaneBoundaryKey, &'ir Edge>,
+    proven: BTreeMap<PlaneBoundaryKey, PlaneBoundaryProof<'ir>>,
     storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
@@ -2203,24 +2204,21 @@ fn plane_boundary_edge<'ir>(
     ctx: &DecodeContext<'_>,
     proofs: &mut PlaneBoundaryProofs<'ir, '_>,
 ) -> Result<&'ir Edge, PlaneBoundaryError> {
-    let proof_key = (
-        boundary_sequence,
-        [
-            plane.0.x.to_bits(),
-            plane.0.y.to_bits(),
-            plane.0.z.to_bits(),
-            plane.1.x.to_bits(),
-            plane.1.y.to_bits(),
-            plane.1.z.to_bits(),
-            resolution.to_bits(),
-        ],
-    );
-    if let Some(edge) = ctx.get_btree_map(
-        &proofs.proven,
-        &proof_key,
-        "iges plane boundary proof cache lookup",
+    let plane_key = super::coplanarity_plane_key(plane, resolution);
+    let mut proof_key = (boundary_sequence, plane_key);
+    if let Some((proof, simplicity_origin_invariant)) = ctx.get_btree_map(
+        &proofs.proven, &proof_key, "iges plane boundary proof cache lookup",
     )? {
-        return Ok(*edge);
+        if (proof.origin == plane.0 || *simplicity_origin_invariant)
+            && proof.matches(plane_key, plane, resolution) {
+            return Ok(proof.result);
+        }
+        proof_key = (boundary_sequence, super::coplanarity_placement_key(plane, resolution));
+        if let Some((proof, _)) = ctx.get_btree_map(
+            &proofs.proven, &proof_key, "iges plane boundary proof cache lookup",
+        )? {
+            return Ok(proof.result);
+        }
     }
     let mut key_storage = [0_u8; 64];
     let key =
@@ -2295,7 +2293,9 @@ fn plane_boundary_edge<'ir>(
         ctx.insert_btree_map(
             &mut proofs.proven,
             proof_key,
-            source_edge,
+            (super::CoplanarityProof { origin: plane.0, geometry: Some(geometry), result: source_edge },
+                matches!(geometry, SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_))
+                    || (source_is_certified_simple && matches!(geometry, SolvedCurveGeometry::Nurbs(_)))),
             "iges plane boundary proof cache",
         )
     })?;

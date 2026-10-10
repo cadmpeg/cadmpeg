@@ -908,6 +908,10 @@ fn sectioned_area_coplanarity_cache_uses_curve_plane_and_resolution_identity() {
                 None,
             );
             assert!(geometry.curve_coplanar(1, plane, 0.001, ctx).unwrap());
+            for origin in [Point3::new(1.0, 0.0, 0.0), Point3::new(0.0, -2.0, -0.0)] {
+                assert!(geometry.curve_coplanar(1, (origin, plane.1), 0.001, ctx).unwrap());
+                assert!(geometry.curve_coplanar(1, (origin, plane.1.scale(-1.0)), 0.001, ctx).unwrap());
+            }
         }
         assert!(!geometry.curve_coplanar(3, plane, 0.001, ctx).unwrap());
 
@@ -939,7 +943,7 @@ fn sectioned_area_coplanarity_cache_lookup_propagates_work_refusal() {
         source_object: None,
     });
     let plane = (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0));
-    cadmpeg_test_support::refusal::resource_limit_at(
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::WorkUnits,
         "iges section coplanarity proof lookup",
         |cap| {
@@ -952,6 +956,9 @@ fn sectioned_area_coplanarity_cache_lookup_propagates_work_refusal() {
             geometry.curve_coplanar(1, plane, 0.001, &ctx).map(|_| ())
         },
     );
+    let key_work = u64::try_from(std::mem::size_of::<u32>() + 6 * std::mem::size_of::<u64>()).unwrap();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "iges section coplanarity proof lookup" && limit.additional == key_work));
 }
 
 #[test]
@@ -1768,10 +1775,7 @@ fn sectioned_area_shared_geometry_index_stays_linear() {
     }
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    // The prior 4,096-unit model query and active-set envelope remains. The
-    // proof cache adds at most three searches of a 60-byte key at 44
-    // comparisons (7,920 units), plus one maximum B-tree node insertion
-    // (2,577 units), for 14,593 units per distinct proof.
+    // The cap bounds total index and distinct-boundary proof work linearly.
     policy.limits.max_work_units = 2_000 * MAX_WORK_PER_BOUNDARY;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut geometry = super::SectionedAreaGeometryCache::new(&ir, &ctx).unwrap();
@@ -1835,9 +1839,8 @@ fn noncoplanar_section_boundary_skips_island_geometry_work() {
     );
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    // Two admitted Directory searches per island add 16 units each. Keep the
-    // previous 30,000-unit early-exit envelope after accounting for the
-    // boundary searches, cache insertion and boundary cache hit.
+    // The cap allows directory checks for every island and one boundary proof.
+    // A cached noncoplanar boundary stops before island geometry.
     policy.limits.max_work_units = 352_653;
     policy.limits.max_recursion_depth = u64::MAX;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
@@ -1868,3 +1871,5 @@ fn noncoplanar_section_boundary_skips_island_geometry_work() {
 }
 
 mod entry_refusal;
+
+mod plane_cache;
