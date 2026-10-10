@@ -587,17 +587,23 @@ impl<'a> ScopeHistoryGraph<'a> {
                 let Some(component_namespace) = self.component_namespaces.get(&scope.id) else {
                     return Ok(ScopeHistoryPredecessor::Ambiguous);
                 };
-                let Some(candidates) = self.scopes_by_state.get(&(
-                    ctx.copy_retained_text(stream, "f3d predecessor stream")?,
-                    *component_namespace,
-                    ctx.copy_retained_text(history_id, "f3d predecessor history id")?,
-                    state_id,
-                )) else {
+                let mut key_storage = ctx.reserve_scoped(0, "hold F3D predecessor lookup key")?;
+                let key = key_storage.with_storage(|| -> Result<_, CodecError> {
+                    Ok((
+                        ctx.copy_retained_text(stream, "f3d predecessor stream")?,
+                        *component_namespace,
+                        ctx.copy_retained_text(history_id, "f3d predecessor history id")?,
+                        state_id,
+                    ))
+                })?;
+                let Some(candidates) = self.scopes_by_state.get(&key) else {
                     return Ok(ScopeHistoryPredecessor::None);
                 };
                 let [candidate] = candidates.as_slice() else {
                     return Ok(ScopeHistoryPredecessor::Ambiguous);
                 };
+                drop(key);
+                drop(key_storage);
                 if candidate.id == scope.id {
                     if visited.is_empty() {
                         return Ok(ScopeHistoryPredecessor::None);
@@ -1481,7 +1487,8 @@ face_operands,
             let Some(state_id) = scope.history_state_id() else {
                 continue;
             };
-            let Some(key) = scope_history.state_key(ctx, scope, state_id)? else {
+            let mut key_storage = ctx.reserve_scoped(0, "hold F3D history state lookup key")?;
+            let Some(key) = key_storage.with_storage(|| scope_history.state_key(ctx, scope, state_id))? else {
                 continue;
             };
             let stream = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
@@ -1500,6 +1507,7 @@ face_operands,
                 }
                 let id = (feature_id).try_clone_for_decode(ctx, "f3d feature history state id")?;
                 // discarded-value: the vacant-key check admits this state.
+                let key = key_storage.commit_value(key)?;
                 let _ = history_state_features.insert(key, Some(id));
             }
         }
@@ -1522,7 +1530,8 @@ face_operands,
             .iter()
             .filter_map(|input| work_point_input_history_state_id(scope, input, edge_operands))
         {
-            let Some(key) = scope_history.state_key(ctx, scope, state_id)? else {
+            let mut key_storage = ctx.reserve_scoped(0, "hold F3D WorkPoint history lookup key")?;
+            let Some(key) = key_storage.with_storage(|| scope_history.state_key(ctx, scope, state_id))? else {
                 continue;
             };
             let Some(Some(dependency)) = history_state_features.get(&key) else {

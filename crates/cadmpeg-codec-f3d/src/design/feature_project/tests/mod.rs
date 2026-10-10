@@ -91,3 +91,5 @@ fn audit_regression_near_half_turn_retains_negative_axis() {
 }
 
 mod numeric_text_limits;
+
+mod history_lookup_lifetimes;
