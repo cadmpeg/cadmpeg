@@ -626,19 +626,18 @@ fn relation_symbol_error(
     policy.limits.max_materialized_bytes = max_materialized_bytes;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let mut symbols = ExternalRelationSymbols::default();
-    let result = (|| -> Result<(), CodecError> {
-        let (name, _reservation) = ctx.format_scoped(
-            format_args!("d{}", 42),
-            "creo relation dimension symbol formatting",
-        )?;
-        symbols.observe(
-            &ctx,
-            name,
+    let result = match ctx.format_scoped(
+        format_args!("d{}", 42),
+        "creo relation dimension symbol formatting",
+    ) {
+        Ok((name, _reservation)) => symbols.observe(
+            &ctx, name,
             Some(CurveExpressionValue::Number(
                 cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite relation fixture"),
             )),
-        )
-    })();
+        ),
+        Err(error) => Err(error),
+    };
     result.expect_err("one relation symbol exceeds limit")
 }
 

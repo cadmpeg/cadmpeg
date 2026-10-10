@@ -4232,7 +4232,8 @@ mod tests {
         for bytes in [b"double_xar\0\xf8\x00".as_slice(), b"double_xar\0\xf8\x01".as_slice(),
             b"double_xar\0\xf8\x02".as_slice()] {
             let discovery = cadmpeg_core::decode::u64_from_index(bytes.len() + LABEL.len());
-            for allowed in [discovery - 1, discovery] {
+            crate::test_support::assert_refusal_order(
+                ResourceDimension::WorkUnits, &["creo double_xar discovery"], |allowed| {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_work_units = allowed;
@@ -4240,22 +4241,24 @@ mod tests {
                 policy.limits.max_retained_bytes = 0;
                 policy.limits.max_collection_items = 0;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-                let result = double_xar_tables(&ctx, bytes);
-                if allowed < discovery {
-                    let CodecError::ResourceLimit(r) = result.expect_err("discovery extent") else {
-                        panic!("work refusal");
-                    };
-                    assert_eq!(r.dimension, ResourceDimension::WorkUnits);
-                    assert_eq!(r.operation, "creo double_xar discovery");
-                    assert_eq!((r.used, r.additional), (0, discovery));
-                    assert!(matches!(double_xar_tables(&ctx, &[]),
-                        Err(CodecError::ResourceLimit(original)) if original == r));
-                } else {
-                    assert!(result.expect("no source slot").is_empty());
-                    let r = ctx.charge_work_limit(1, "after double_xar discovery").expect_err("exact cap");
-                    assert_eq!((r.used, r.additional), (discovery, 1));
+                match double_xar_tables(&ctx, bytes) {
+                    Err(CodecError::ResourceLimit(r)) => {
+                        assert_eq!(r.dimension, ResourceDimension::WorkUnits);
+                        assert_eq!(r.operation, "creo double_xar discovery");
+                        assert_eq!((r.used, r.additional), (0, discovery));
+                        assert!(matches!(double_xar_tables(&ctx, &[]),
+                            Err(CodecError::ResourceLimit(original)) if original == r));
+                        Err(CodecError::ResourceLimit(r))
+                    }
+                    result => {
+                        assert!(result?.is_empty());
+                        assert_eq!(allowed, discovery);
+                        let r = ctx.charge_work_limit(1, "after double_xar discovery").expect_err("exact cap");
+                        assert_eq!((r.used, r.additional), (discovery, 1));
+                        Ok(())
+                    }
                 }
-            }
+            });
         }
     }
 
@@ -4269,36 +4272,44 @@ mod tests {
         for (bytes, present, complete_table) in [(incomplete, 1_u64, false), (complete, 2, true)] {
             let discovery = cadmpeg_core::decode::u64_from_index(bytes.len() + LABEL.len());
             let need = discovery + present;
-            for allowed in discovery..=need {
+            crate::test_support::assert_refusal_order(
+                ResourceDimension::WorkUnits, &["creo double_xar slot parsing"], |allowed| {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_work_units = allowed;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-                let result = double_xar_tables(&ctx, bytes);
-                if allowed < need {
-                    let CodecError::ResourceLimit(r) = result.expect_err("next present source slot") else {
-                        panic!("work refusal");
-                    };
-                    assert_eq!(r.dimension, ResourceDimension::WorkUnits);
-                    assert_eq!(r.operation, "creo double_xar slot parsing");
-                    assert_eq!((r.used, r.additional), (allowed, 1));
-                    assert!(matches!(double_xar_tables(&ctx, &[]),
-                        Err(CodecError::ResourceLimit(original)) if original == r));
-                } else {
-                    let tables = result.expect("all present slots admitted");
-                    if complete_table {
-                        assert_eq!(tables.len(), 1);
-                        assert_eq!(tables[0].offset, 0);
-                        assert_eq!(tables[0].entries, [super::DoubleXarSlot::StockOne, super::DoubleXarSlot::TerminalNull]);
-                        assert_eq!(tables[0].entries[0].raw(), &[0x10]);
-                        assert_eq!(tables[0].entries[1].raw(), &[0xe0]);
-                    } else {
-                        assert!(tables.is_empty());
+                match double_xar_tables(&ctx, bytes) {
+                    Err(CodecError::ResourceLimit(r)) => {
+                        assert_eq!(r.dimension, ResourceDimension::WorkUnits);
+                        if allowed == 0 {
+                            assert_eq!(r.operation, "creo double_xar discovery");
+                            assert_eq!((r.used, r.additional), (0, discovery));
+                        } else {
+                            assert_eq!(r.operation, "creo double_xar slot parsing");
+                            assert_eq!((r.used, r.additional), (allowed, 1));
+                        }
+                        assert!(matches!(double_xar_tables(&ctx, &[]),
+                            Err(CodecError::ResourceLimit(original)) if original == r));
+                        Err(CodecError::ResourceLimit(r))
                     }
-                    let r = ctx.charge_work_limit(1, "after double_xar present slots").expect_err("exact cap");
-                    assert_eq!((r.used, r.additional), (need, 1));
+                    result => {
+                        let tables = result?;
+                        assert_eq!(allowed, need);
+                        if complete_table {
+                            assert_eq!(tables.len(), 1);
+                            assert_eq!(tables[0].offset, 0);
+                            assert_eq!(tables[0].entries, [super::DoubleXarSlot::StockOne, super::DoubleXarSlot::TerminalNull]);
+                            assert_eq!(tables[0].entries[0].raw(), &[0x10]);
+                            assert_eq!(tables[0].entries[1].raw(), &[0xe0]);
+                        } else {
+                            assert!(tables.is_empty());
+                        }
+                        let r = ctx.charge_work_limit(1, "after double_xar present slots").expect_err("exact cap");
+                        assert_eq!((r.used, r.additional), (need, 1));
+                        Ok(())
+                    }
                 }
-            }
+            });
         }
     }
 

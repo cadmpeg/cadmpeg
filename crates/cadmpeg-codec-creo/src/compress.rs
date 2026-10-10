@@ -308,7 +308,7 @@ impl<'a> CodeReader<'a> {
 #[cfg(test)]
 mod tests {
     fn codes(values: &[u16]) -> Vec<u8> {
-        let mut bytes = vec![0; values.len().saturating_mul(9).div_ceil(8)];
+        let mut bytes = vec![0; values.len().checked_mul(9).expect("fixture bit count fits").div_ceil(8)];
         for (index, value) in values.iter().copied().enumerate() {
             for bit in 0..9 {
                 bytes[(index * 9 + bit) / 8] |= u8::try_from((value >> bit) & 1)
@@ -337,8 +337,6 @@ mod tests {
     fn lzw_decoder_refuses_before_first_and_clear_following_code() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
-        // Nine-bit dictionaries initialize 512 prefix and 512 suffix slots.
-        const DICTIONARY_VISITS: u64 = 2 * (1 << 9);
         let mut literal_stream = vec![0x1f, 0x9d, 0x09];
         literal_stream.extend(codes(&[65, 66]));
         let mut clear_stream = vec![0x1f, 0x9d, 0x89];
@@ -346,17 +344,31 @@ mod tests {
         first_block.resize(9, 0);
         clear_stream.extend(first_block);
         clear_stream.extend(codes(&[66]));
-        // The first code, its one-byte output copy and CLEAR precede its literal.
-        for (stream, allowed) in [(literal_stream, DICTIONARY_VISITS),
-            (clear_stream, DICTIONARY_VISITS + 1 + 1 + 1)] {
+        for (stream, after_clear) in [(literal_stream, false), (clear_stream, true)] {
+            let allowed = if after_clear {
+                let error = crate::test_support::last_refusal_at(
+                    &[], ResourceDimension::WorkUnits, "decode Creo LZW code",
+                    |ctx| super::decode(ctx, &stream, 2),
+                );
+                let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("code refusal"); };
+                limit.limit
+            } else {
+                crate::test_support::allocation_limit_at(
+                    ResourceDimension::WorkUnits, Some("decode Creo LZW code"), |cap| {
+                        let arena = DecodeArena::new();
+                        let mut policy = DecodePolicy::service();
+                        policy.limits.max_work_units = cap;
+                        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                        super::decode(&ctx, &stream, 2)
+                    },
+                )
+            };
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = allowed;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
             let cadmpeg_core::CodecError::ResourceLimit(original) = super::decode(&ctx, &stream, 2)
-                .expect_err("next present code refuses before expansion") else {
-                    panic!("expected resource refusal");
-                };
+                .expect_err("next present code refuses before expansion") else { panic!("expected resource refusal"); };
             assert_eq!(original.dimension, ResourceDimension::WorkUnits);
             assert_eq!(original.operation, "decode Creo LZW code");
             assert_eq!((original.used, original.additional), (allowed, 1));
@@ -371,30 +383,30 @@ mod tests {
 
         let mut stream = vec![0x1f, 0x9d, 0x09];
         stream.extend(codes(&[65, 66, 67]));
-        // Two 512-slot fills, three code visits, three copied output bytes,
-        // and relocation of one then two live bytes on exact buffer growth.
-        const LITERAL_WORK: u64 = 2 * (1 << 9) + 3 + 3 + 1 + 2;
-        for allowed in [LITERAL_WORK - 1, LITERAL_WORK] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = allowed;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-            let result = super::decode(&ctx, &stream, 3);
-            if allowed < LITERAL_WORK {
-                let cadmpeg_core::CodecError::ResourceLimit(original) = result
-                    .expect_err("last actual output copy exceeds cap") else {
-                        panic!("expected resource refusal");
-                    };
-                assert_eq!(original.dimension, ResourceDimension::WorkUnits);
-                assert_eq!(original.operation, "expand_write copy");
-                assert_eq!((original.used, original.additional), (allowed, 1));
-            } else {
-                assert_eq!(result.expect("exact work admits literals"), Some(b"ABC".to_vec()));
-                let original = ctx.charge_work_limit(1, "after exact literal decode")
-                    .expect_err("all actual work was admitted");
-                assert_eq!((original.used, original.additional), (LITERAL_WORK, 1));
-            }
-        }
+        let work = crate::test_support::allocation_limit_at(
+            ResourceDimension::WorkUnits, None, |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                super::decode(&ctx, &stream, 3)
+            },
+        );
+        let error = crate::test_support::last_refusal_at(
+            &[], ResourceDimension::WorkUnits, "expand_write copy",
+            |ctx| super::decode(ctx, &stream, 3),
+        );
+        let cadmpeg_core::CodecError::ResourceLimit(original) = error else { panic!("output copy refusal"); };
+        assert_eq!(original.operation, "expand_write copy");
+        assert_eq!((original.used, original.additional, original.limit), (work - 1, 1, work - 1));
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = work;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        assert_eq!(super::decode(&ctx, &stream, 3).expect("exact work admits literals"), Some(b"ABC".to_vec()));
+        let original = ctx.charge_work_limit(1, "after exact literal decode")
+            .expect_err("all actual work was admitted");
+        assert_eq!((original.used, original.additional), (work, 1));
     }
 
     #[test]
@@ -425,23 +437,39 @@ mod tests {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
         let data = codes(&[65, 66]);
-        for permitted in [0, 1] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = permitted;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-            let mut reader = super::CodeReader::new(&data, 16);
-            if permitted == 1 {
-                assert_eq!(reader.next_in_lane(&ctx, 256, false).expect("first code"), Some(65));
-            }
-            let before = (reader.cursor, reader.block, reader.bit_offset, reader.start_limit, reader.width);
-            let error = reader.next_in_lane(&ctx, 256, false).expect_err("next present code refuses");
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-                if refusal.dimension == ResourceDimension::WorkUnits
-                    && refusal.operation == "decode Creo LZW code"
-                    && (refusal.used, refusal.additional) == (permitted, 1)));
-            assert_eq!((reader.cursor, reader.block, reader.bit_offset, reader.start_limit, reader.width), before);
-        }
+        let decoded = crate::test_support::assert_refusal_order(
+            ResourceDimension::WorkUnits, &["decode Creo LZW code"], |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                let mut reader = super::CodeReader::new(&data, 16);
+                let mut decoded = Vec::new();
+                loop {
+                    let before = (reader.cursor, reader.block, reader.bit_offset, reader.start_limit, reader.width);
+                    match reader.next_in_lane(&ctx, 256, false) {
+                        Ok(Some(code)) => {
+                            assert_eq!(code, [65, 66][decoded.len()]);
+                            decoded.push(code);
+                        }
+                        Ok(None) => {
+                            assert_eq!(cap, 2);
+                            return Ok(decoded);
+                        }
+                        Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) => {
+                            assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
+                            assert_eq!(refusal.operation, "decode Creo LZW code");
+                            assert_eq!((refusal.used, refusal.additional), (cap, 1));
+                            assert_eq!((reader.cursor, reader.block, reader.bit_offset, reader.start_limit, reader.width), before);
+                            assert_eq!(ctx.resource_refusal(), Some(refusal));
+                            return Err(cadmpeg_core::CodecError::ResourceLimit(refusal));
+                        }
+                        Err(error) => panic!("code reader error: {error}"),
+                    }
+                }
+            },
+        );
+        assert_eq!(decoded, [65, 66]);
     }
 
     #[test]
@@ -575,7 +603,15 @@ mod tests {
         let stream = [0x1f, 0x9d, 0x10, 0x41, 0x84, 0x0c, 0x01];
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_decompressed_bytes_per_expand = 2;
+        policy.limits.max_decompressed_bytes_per_expand = crate::test_support::allocation_limit_at(
+            ResourceDimension::DecompressedBytes, Some("begin_expand"), |cap| {
+                let arena = DecodeArena::new();
+                let mut trial = policy;
+                trial.limits.max_decompressed_bytes_per_expand = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&stream, &arena, &trial).expect("root");
+                super::decode(&ctx, &stream, 3)
+            },
+        );
         let (ctx, _) = DecodeContext::from_root_bytes(&stream, &arena, &policy)
             .expect("small compressed input is admitted");
         let error = super::decode(&ctx, &stream, 3)
@@ -596,7 +632,17 @@ mod tests {
         let stream = [0x1f, 0x9d, 0x10, 0x41, 0x84, 0x0c, 0x01];
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_decompressed_bytes_total = 5;
+        let total = crate::test_support::allocation_limit_at(
+            ResourceDimension::DecompressedBytes, None, |cap| {
+                let arena = DecodeArena::new();
+                let mut trial = policy;
+                trial.limits.max_decompressed_bytes_total = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&stream, &arena, &trial).expect("root");
+                assert_eq!(super::decode(&ctx, &stream, 3)?, Some(b"ABC".to_vec()));
+                super::decode(&ctx, &stream, 3)
+            },
+        );
+        policy.limits.max_decompressed_bytes_total = total.checked_sub(1).expect("nonempty expansions");
         let (ctx, _) = DecodeContext::from_root_bytes(&stream, &arena, &policy)
             .expect("small compressed input is admitted");
         assert_eq!(
@@ -809,31 +855,37 @@ mod tests {
 
         let mut stream = vec![0x1f, 0x9d, 0x09];
         stream.extend(codes(&[65, 66, 256]));
-        // Two 512-slot fills, three codes, one dictionary-chain link,
-        // four output copies and exact growth moving one, two, three bytes.
-        const ACTUAL_WORK: u64 = 2 * (1 << 9) + 3 + 1 + 4 + 1 + 2 + 3;
-        for cap in [ACTUAL_WORK - 1, ACTUAL_WORK] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let result = super::decode(&ctx, &stream, 4);
-            let original = if cap == ACTUAL_WORK {
-                assert_eq!(result.expect("actual code, chain, copy and growth work"), Some(b"ABAB".to_vec()));
-                ctx.charge_work_limit(1, "after singleton-stack decode")
-                    .expect_err("exact work cap used")
-            } else {
-                let Err(CodecError::ResourceLimit(original)) = result else {
-                    panic!("last copied byte exceeds cap");
-                };
-                assert_eq!(original.operation, "expand_write copy");
-                original
-            };
-            assert_eq!((original.dimension, original.used, original.additional),
-                (ResourceDimension::WorkUnits, cap, 1));
-            assert!(matches!(super::decode(&ctx, &stream, 4),
-                Err(CodecError::ResourceLimit(actual)) if actual == original));
-            assert_eq!(ctx.resource_refusal(), Some(original));
-        }
+        let work = crate::test_support::allocation_limit_at(
+            ResourceDimension::WorkUnits, None, |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                let result = super::decode(&ctx, &stream, 4);
+                if let Err(CodecError::ResourceLimit(limit)) = &result {
+                    assert_ne!(limit.operation, "creo LZW stack reversal");
+                }
+                result
+            },
+        );
+        let error = crate::test_support::last_refusal_at(
+            &[], ResourceDimension::WorkUnits, "expand_write copy",
+            |ctx| super::decode(ctx, &stream, 4),
+        );
+        let CodecError::ResourceLimit(original) = error else { panic!("last copied byte exceeds cap"); };
+        assert_eq!(original.operation, "expand_write copy");
+        assert_eq!((original.dimension, original.used, original.additional, original.limit),
+            (ResourceDimension::WorkUnits, work - 1, 1, work - 1));
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = work;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        assert_eq!(super::decode(&ctx, &stream, 4).expect("actual code, chain, copy and growth work"), Some(b"ABAB".to_vec()));
+        let original = ctx.charge_work_limit(1, "after singleton-stack decode").expect_err("exact work cap used");
+        assert_eq!((original.dimension, original.used, original.additional),
+            (ResourceDimension::WorkUnits, work, 1));
+        assert!(matches!(super::decode(&ctx, &stream, 4),
+            Err(CodecError::ResourceLimit(actual)) if actual == original));
+        assert_eq!(ctx.resource_refusal(), Some(original));
     }
 }

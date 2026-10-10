@@ -8466,6 +8466,10 @@ fn curve_scalar_lane(
     type_byte: u8,
     cache: &scalar::ScalarCache,
 ) -> Result<CurveScalarLane, cadmpeg_core::CodecError> {
+    enum SelectedToken {
+        Reference(u32, usize),
+        Scalar(f64, usize),
+    }
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
     }
@@ -8494,10 +8498,14 @@ fn curve_scalar_lane(
         } else {
             scalar::decode_in_row_lane(body, cursor, cache)
         };
-        if reference.is_none() && decoded.is_none() {
-            cursor += 1;
-            continue;
-        }
+        let selected = match (reference, decoded) {
+            (Some((id, next)), _) => SelectedToken::Reference(id, next),
+            (None, Some((value, next))) => SelectedToken::Scalar(value, next),
+            (None, None) => {
+                cursor += 1;
+                continue;
+            }
+        };
         if opaque_start < cursor {
             let raw =
                 ctx.copy_retained(&body[opaque_start..cursor], "creo curve opaque raw span")?;
@@ -8510,7 +8518,8 @@ fn curve_scalar_lane(
                 "creo curve opaque spans",
             )?;
         }
-        let next = if let Some((entity_id, next)) = reference {
+        let next = match selected {
+            SelectedToken::Reference(entity_id, next) => {
             ctx.push_vec(
                 &mut references,
                 CurveParameterReference {
@@ -8521,12 +8530,8 @@ fn curve_scalar_lane(
                 "creo curve parameter references",
             )?;
             next
-        } else {
-            let Some((value, next)) = decoded else {
-                return Err(cadmpeg_core::CodecError::malformed(
-                    "curve scalar dispatch has no token",
-                ));
-            };
+            }
+            SelectedToken::Scalar(value, next) => {
             let raw = ctx.copy_retained(
                 &body[cursor..next],
                 if zero {
@@ -8545,6 +8550,7 @@ fn curve_scalar_lane(
                 "creo curve parameter scalars",
             )?;
             next
+            }
         };
         cursor = next;
         opaque_start = next;
