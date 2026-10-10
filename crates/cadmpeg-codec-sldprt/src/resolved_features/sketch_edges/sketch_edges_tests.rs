@@ -100,7 +100,7 @@ fn projected_sketch_nurbs_refuses_collection_limit() {
         &points,
         &curves,
         frame,
-        &mut crate::lane_refusal::LaneRefusals::new(),
+        &mut crate::lane_refusal::scoped::RefusalSink::Retained(&mut crate::lane_refusal::LaneRefusals::new()),
     ) else {
         panic!("four knots exceed three collection items")
     };
@@ -122,7 +122,7 @@ fn projected_sketch_nurbs_refuses_collection_limit() {
         &points,
         &curves,
         frame,
-        &mut crate::lane_refusal::LaneRefusals::new(),
+        &mut crate::lane_refusal::scoped::RefusalSink::Retained(&mut crate::lane_refusal::LaneRefusals::new()),
     )
     .expect("service budget")
     .is_some());
@@ -195,7 +195,7 @@ fn projected_sketch_nurbs_poles_refuse_collection_limit() {
         &points,
         &curves,
         frame,
-        &mut crate::lane_refusal::LaneRefusals::new(),
+        &mut crate::lane_refusal::scoped::RefusalSink::Retained(&mut crate::lane_refusal::LaneRefusals::new()),
     ) else {
         panic!("projected poles exceed the remaining collection item slot")
     };
@@ -281,7 +281,7 @@ fn projected_sketch_nurbs_poles_refuse_work_limit() {
         &points,
         &curves,
         frame,
-        &mut crate::lane_refusal::LaneRefusals::new(),
+        &mut crate::lane_refusal::scoped::RefusalSink::Retained(&mut crate::lane_refusal::LaneRefusals::new()),
     ) else {
         panic!("first projected pole exceeds the remaining work units")
     };
@@ -359,7 +359,7 @@ fn projected_polynomial_sketch_nurbs_preserves_pole_order_and_knots() {
         &points,
         &curves,
         frame,
-        &mut crate::lane_refusal::LaneRefusals::new(),
+        &mut crate::lane_refusal::scoped::RefusalSink::Retained(&mut crate::lane_refusal::LaneRefusals::new()),
     )
     .expect("service budget")
     .expect("NURBS curve projects");
@@ -449,7 +449,7 @@ fn projected_rational_sketch_nurbs_preserves_pole_order_weights_and_knots() {
         &points,
         &curves,
         frame,
-        &mut crate::lane_refusal::LaneRefusals::new(),
+        &mut crate::lane_refusal::scoped::RefusalSink::Retained(&mut crate::lane_refusal::LaneRefusals::new()),
     )
     .expect("service budget")
     .expect("NURBS curve projects");
@@ -551,7 +551,7 @@ fn projected_rational_sketch_nurbs_weights_refuse_work_limit() {
                 &points,
                 &curves,
                 frame,
-                &mut crate::lane_refusal::LaneRefusals::new(),
+                &mut crate::lane_refusal::scoped::RefusalSink::Retained(&mut crate::lane_refusal::LaneRefusals::new()),
             )
         },
     );
@@ -718,7 +718,7 @@ fn sketch_projection_refuses_opaque_curve_retained_limit() {
         &points,
         &curves,
         frame,
-        &mut crate::lane_refusal::LaneRefusals::new(),
+        &mut crate::lane_refusal::scoped::RefusalSink::Retained(&mut crate::lane_refusal::LaneRefusals::new()),
     )
     .expect_err("opaque curve text exceeds retained limit");
     assert!(matches!(
@@ -736,7 +736,7 @@ fn sketch_projection_refuses_opaque_curve_retained_limit() {
         &points,
         &curves,
         frame,
-        &mut crate::lane_refusal::LaneRefusals::new(),
+        &mut crate::lane_refusal::scoped::RefusalSink::Retained(&mut crate::lane_refusal::LaneRefusals::new()),
     )
     .expect("service budget")
     .is_some());
@@ -808,7 +808,7 @@ fn projected_nurbs_retains_only_returned_lanes() {
                 u_axis: Vector3::new(1.0, 0.0, 0.0),
                 v_axis: Vector3::new(0.0, 1.0, 0.0),
             },
-            &mut crate::lane_refusal::LaneRefusals::new(),
+            &mut crate::lane_refusal::scoped::RefusalSink::Retained(&mut crate::lane_refusal::LaneRefusals::new()),
         )
         .unwrap()
         .unwrap();

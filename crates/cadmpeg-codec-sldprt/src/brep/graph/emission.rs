@@ -707,8 +707,7 @@ pub(super) fn decode_graph(
                     u64_from_index(ce.offset),
                     Some("00_11"),
                 )?;
-                let mut pcurve_refusal = crate::lane_refusal::LaneRefusals::new();
-                let pcurve_refusal = &mut pcurve_refusal;
+                let mut pcurve_refusal = crate::lane_refusal::scoped::ScopedLaneRefusals::new(ctx)?;
                 let pcurves = if let Some((_, _, curve_attr)) =
                     ctx.get_btree_map(&edge_ends, &edge_attr, "lookup Parasolid edge_ends")?
                 {
@@ -745,7 +744,7 @@ pub(super) fn decode_graph(
                                 f.surface_attr,
                                 surface,
                                 *endpoint_positions,
-                                pcurve_refusal,
+                                &mut crate::lane_refusal::scoped::RefusalSink::Scoped(&mut pcurve_refusal),
                             )?
                         else {
                             return Ok(None);
@@ -813,17 +812,17 @@ pub(super) fn decode_graph(
                 };
                 // The sink is drained before the `?` below: an error on that
                 // route must not drop a refusal the walk above already pushed.
-                for record in ctx.admit_iter(
-                    pcurve_refusal.take_records(),
-                    "collect intersection pcurve losses",
-                )? {
+                let mut pcurve_refusal = pcurve_refusal.into_records();
+                while let Some(record) = pcurve_refusal.next(ctx, "collect intersection pcurve losses")? {
                     let note = crate::loss::spline_lane_refusal(
                         ctx,
-                        format_args!("intersection pcurve for coedge {ce_attr}: {record}"),
+                        format_args!("intersection pcurve for coedge {ce_attr}: {}", record.message),
                     )?;
+                    drop(record);
                     ctx.reserve_vec(&mut out.losses, 1, "collect intersection pcurve losses")?;
                     out.losses.push(note);
                 }
+                drop(pcurve_refusal);
                 let pcurves = match pcurves
                     .transpose()
                     .map_err(cadmpeg_core::CodecError::malformed)?

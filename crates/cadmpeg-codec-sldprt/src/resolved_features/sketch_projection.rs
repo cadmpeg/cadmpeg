@@ -270,7 +270,7 @@ fn project_brep(
                     let Some(id) = id else {
                         continue;
                     };
-                    let mut edge_refusal = crate::lane_refusal::LaneRefusals::new();
+                    let mut edge_refusal = crate::lane_refusal::scoped::ScopedLaneRefusals::new(ctx)?;
                     let projected = project_edge(
                         ctx,
                         edge,
@@ -282,22 +282,22 @@ fn project_brep(
                             u_axis: *u_axis,
                             v_axis,
                         },
-                        &mut edge_refusal,
+                        &mut crate::lane_refusal::scoped::RefusalSink::Scoped(&mut edge_refusal),
                     )?;
-                    let edge_refusals = edge_refusal.take_records();
-                    if !edge_refusals.is_empty() {
-                        let operation = "retain SLDPRT sketch edge refusal";
-                        let mut message = String::new();
-
-                        for (index, record) in ctx
-                            .admit_iter(&edge_refusals, "format SLDPRT edge refusal text")?
-                            .enumerate()
-                        {
-                            if index != 0 {
-                                ctx.append_retained(&mut message, "; ", operation)?;
-                            }
-                            ctx.append_retained(&mut message, record, operation)?;
+                    let mut edge_refusals = edge_refusal.into_records();
+                    let operation = "retain SLDPRT sketch edge refusal";
+                    let mut message = String::new();
+                    let mut has_refusal = false;
+                    while let Some(record) = edge_refusals.next(ctx, "format SLDPRT edge refusal text")? {
+                        if has_refusal {
+                            ctx.append_retained(&mut message, "; ", operation)?;
                         }
+                        ctx.append_retained(&mut message, &record.message, operation)?;
+                        drop(record);
+                        has_refusal = true;
+                    }
+                    drop(edge_refusals);
+                    if has_refusal {
                         return Err(cadmpeg_core::CodecError::Malformed(message));
                     }
                     let Some(geometry) = projected else {
@@ -747,6 +747,128 @@ mod projected_brep_output_tests {
             )],
             ..Default::default()
         }
+    }
+
+    fn overflowing_edge_brep() -> crate::brep::graph::Brep {
+        use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
+        use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+        use cadmpeg_ir::ids::{CoedgeId, CurveId, EdgeId, LoopId};
+        use cadmpeg_ir::topology::{Coedge, Edge, EdgeCarrier, Loop, LoopBoundary, LoopRing};
+
+        let mut brep = point_brep();
+        brep.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            PlaneSurface::try_new(
+                Point3::new(-f64::MAX, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            ).unwrap(),
+        ));
+        let source_points = [Point3::new(f64::MAX, 0.0, 0.0), Point3::new(f64::MAX, 1.0, 0.0)];
+        let start_point = brep.points[0].id.clone();
+        let start_vertex = brep.vertices[0].id.clone();
+        brep.points[0] = Point::new(start_point,
+            cadmpeg_ir::features::FinitePoint3::new(source_points[0]).unwrap(), None);
+        let end_point = PointId::mint("test:model:point#end").unwrap();
+        let end_vertex = VertexId::mint("test:model:vertex#end").unwrap();
+        brep.points.push(Point::new(end_point.clone(),
+            cadmpeg_ir::features::FinitePoint3::new(source_points[1]).unwrap(), None));
+        brep.vertices.push(Vertex { id: end_vertex.clone(), point: end_point, tolerance: None });
+        let curve_id = CurveId::mint("test:model:curve#overflow").unwrap();
+        let edge_id = EdgeId::mint("test:model:edge#overflow").unwrap();
+        let coedge_id = CoedgeId::mint("test:model:coedge#overflow").unwrap();
+        let loop_id = LoopId::mint("test:model:loop#overflow").unwrap();
+        // Source geometry belongs to a separate fixture context. Subtraction
+        // overflows only when the production projection uses this plane origin.
+        let fixture_ctx = cadmpeg_test_support::service_decode_context();
+        brep.curves.push(Curve {
+            id: curve_id.clone(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                NurbsCurve::from_lanes(&fixture_ctx, 1, vec![0.0, 0.0, 1.0, 1.0],
+                    source_points.to_vec(), None, false).unwrap().unwrap(),
+            )),
+            source_object: None,
+        });
+        brep.edges.push(Edge { id: edge_id.clone(), carrier: EdgeCarrier::unbounded(Some(curve_id)),
+            start: start_vertex, end: end_vertex, tolerance: None });
+        brep.coedges.push(Coedge { id: coedge_id.clone(), owner_loop: loop_id.clone(), edge: edge_id,
+            radial_next: coedge_id.clone(), sense: Sense::Forward, pcurves: Vec::new(), use_curve: None });
+        brep.loops.push(Loop { id: loop_id.clone(), face: brep.faces[0].id.clone(),
+            boundary: LoopBoundary::Ring(LoopRing::new(&fixture_ctx, vec![coedge_id], Vec::new()).unwrap().unwrap()) });
+        brep.faces[0].loops = FaceLoops::unspecified(vec![loop_id]);
+        brep
+    }
+
+    const PROJECTED_EDGE_REFUSAL: &str = "sldprt projected sketch edge test:model:edge#overflow: control_points contains a non-finite point";
+    // Core's materialized allowance is min(policy, 16 MiB + 1000 * input).
+    // These caller tests use an empty root and the unchanged service policy.
+    const EMPTY_ROOT_MATERIALIZED_ALLOWANCE: u64 = 16 * 1024 * 1024;
+
+    #[test]
+    fn projected_edge_refusal_retains_only_final_malformed_message() {
+        let brep = overflowing_edge_brep();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = u64::try_from(PROJECTED_EDGE_REFUSAL.len()).unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let stream = cadmpeg_ir::stream_name!("test:sketch-projection");
+        let mut annotations = cadmpeg_ir::annotations::Annotations::default();
+        let mut sketches = Vec::new();
+        let mut entities = Vec::new();
+        let mut constraints = Vec::new();
+        let error = project_brep(&ctx, &brep, &BrepSketchSource {
+            block_offset: 0, stream_ordinal: 0, stream_offset: 0, source_stream: &stream,
+            sketch_name: "overflow", configuration: None, native_ref: "native:overflow",
+        }, &mut annotations, &mut sketches, &mut entities, &mut constraints).unwrap_err();
+        let cadmpeg_core::CodecError::Malformed(message) = error else {
+            panic!("non-finite projected controls preserve the structural refusal");
+        };
+        assert_eq!(message, PROJECTED_EDGE_REFUSAL);
+        assert!(sketches.is_empty() && entities.is_empty() && constraints.is_empty());
+        // The final message stays live while all temporary identities, indexes,
+        // raw lanes, IR diagnostic, refusal records and iterator storage are gone.
+        assert!(policy.limits.max_materialized_bytes >= EMPTY_ROOT_MATERIALIZED_ALLOWANCE);
+        let reusable = ctx.reserve_scoped(EMPTY_ROOT_MATERIALIZED_ALLOWANCE,
+            "reuse all projected refusal scratch").unwrap();
+        drop(reusable);
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = ctx.copy_retained_text(
+            "x", "projected refusal final message stays retained").unwrap_err() else {
+            panic!("the actual final message exhausts its exact retained allowance");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+        assert_eq!(limit.used, u64::try_from(PROJECTED_EDGE_REFUSAL.len()).unwrap());
+        assert_eq!(limit.additional, 1);
+    }
+
+    #[test]
+    fn projected_edge_refusal_preserves_final_message_resource_limit() {
+        let brep = overflowing_edge_brep();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = u64::try_from(PROJECTED_EDGE_REFUSAL.len()).unwrap() - 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let stream = cadmpeg_ir::stream_name!("test:sketch-projection");
+        let mut annotations = cadmpeg_ir::annotations::Annotations::default();
+        let mut sketches = Vec::new();
+        let mut entities = Vec::new();
+        let mut constraints = Vec::new();
+        let error = project_brep(&ctx, &brep, &BrepSketchSource {
+            block_offset: 0, stream_ordinal: 0, stream_offset: 0, source_stream: &stream,
+            sketch_name: "overflow", configuration: None, native_ref: "native:overflow",
+        }, &mut annotations, &mut sketches, &mut entities, &mut constraints).unwrap_err();
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("one byte below the actual final diagnostic must refuse");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+        assert_eq!(limit.operation, "retain SLDPRT sketch edge refusal");
+        assert_eq!(limit.used, 0);
+        assert_eq!(limit.additional, u64::try_from(PROJECTED_EDGE_REFUSAL.len()).unwrap());
+        assert!(sketches.is_empty() && entities.is_empty() && constraints.is_empty());
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+        let cadmpeg_core::CodecError::ResourceLimit(replayed) = ctx.reserve_scoped(
+            0, "replay projected final diagnostic refusal").unwrap_err() else {
+            panic!("the final diagnostic refusal remains sticky after source teardown");
+        };
+        assert_eq!(replayed, limit);
     }
 
     #[test]

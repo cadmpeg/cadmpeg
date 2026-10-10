@@ -13,11 +13,13 @@ pub(crate) mod scoped;
 /// record stated them. The sink is owned by the reader that reports, so no
 /// `return None`, `?` or `.ok()?` between a refusal and the report can drop it,
 /// and N refusals in one document stay N records.
+#[cfg(test)]
 #[derive(Debug, Default)]
 pub(crate) struct LaneRefusals {
     records: Vec<String>,
 }
 
+#[cfg(test)]
 impl LaneRefusals {
     /// An empty sink.
     pub(crate) fn new() -> Self {

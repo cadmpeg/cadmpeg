@@ -86,7 +86,7 @@ fn projected_nurbs_value_handoff_preserves_exact_storage_and_refusal() {
                     u_axis: Vector3::new(1.0, 0.0, 0.0),
                     v_axis: Vector3::new(0.0, 1.0, 0.0),
                 },
-                &mut refusals,
+                &mut crate::lane_refusal::scoped::RefusalSink::Retained(&mut refusals),
             );
             if let Some(dimension) = boundary {
                 let CodecError::ResourceLimit(limit) = output.unwrap_err() else {
