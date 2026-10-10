@@ -2175,7 +2175,11 @@ fn project_ufrx_external_reference(
         flags: reference.flags,
     }
     .into_record_with_path(|unchecked_path| match unchecked_path {
-        Some(unchecked_path) => Ok(NonBlankString::for_decode(ctx, unchecked_path, "validate path")?),
+        Some(unchecked_path) => Ok(NonBlankString::for_decode(
+            ctx,
+            unchecked_path,
+            "validate path",
+        )?),
         None => Ok(path),
     });
     let admitted = match admitted {
