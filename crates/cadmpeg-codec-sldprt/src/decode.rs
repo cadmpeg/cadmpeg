@@ -4306,61 +4306,62 @@ fn assign_native_configuration_indices(
     ir: &CadIr,
     native: &mut crate::native::SldprtNative,
 ) -> Result<(), CodecError> {
-    let (result, _workspace) = ctx.with_scoped_storage(
-        "SLDPRT native configuration lookup workspace",
-        || -> Result<(), CodecError> {
-            const OPERATION: &str = "assign SLDPRT native configuration indices";
-            // Each native configuration record by identity, the first in history
-            // order answering; the assignments are applied in configuration order.
-            let mut assignments = Vec::new();
+    const OPERATION: &str = "assign SLDPRT native configuration indices";
+    // Each native configuration record by identity, the first in history
+    // order answering; the assignments are applied in configuration order.
+    let mut assignment_storage =
+        ctx.reserve_scoped(0, "SLDPRT native configuration lookup workspace")?;
+    let mut assignments = Vec::new();
+    {
+        let mut record_storage = ctx.reserve_scoped(0, OPERATION)?;
+        let mut records = BTreeMap::<&str, (usize, usize)>::new();
+        for (history_index, history) in ctx
+            .admit_iter(&native.feature_histories, OPERATION)?
+            .enumerate()
+        {
+            for (record_index, record) in ctx
+                .admit_iter(&history.configurations, OPERATION)?
+                .enumerate()
             {
-                let mut records = BTreeMap::<&str, (usize, usize)>::new();
-                for (history_index, history) in ctx
-                    .admit_iter(&native.feature_histories, OPERATION)?
-                    .enumerate()
-                {
-                    for (record_index, record) in ctx
-                        .admit_iter(&history.configurations, OPERATION)?
-                        .enumerate()
-                    {
-                        if !ctx.contains_key_btree_map(&records, record.id.as_str(), OPERATION)? {
-                            ctx.insert_btree_map(
-                                &mut records,
-                                record.id.as_str(),
-                                (history_index, record_index),
-                                OPERATION,
-                            )?;
-                        }
-                    }
-                }
-                for configuration in ctx.admit_iter(&ir.model.configurations, OPERATION)? {
-                    let Some(native_ref) = configuration.native_ref.as_deref() else {
-                        continue;
-                    };
-                    if let Some(&position) = ctx.get_btree_map(&records, native_ref, OPERATION)? {
-                        ctx.push_vec(
-                            &mut assignments,
-                            (position, configuration.source_index),
+                if !ctx.contains_key_btree_map(&records, record.id.as_str(), OPERATION)? {
+                    record_storage.with_storage(|| {
+                        ctx.insert_btree_map(
+                            &mut records,
+                            record.id.as_str(),
+                            (history_index, record_index),
                             OPERATION,
-                        )?;
-                    }
+                        )
+                    })?;
                 }
             }
-            for ((history_index, record_index), source_index) in
-                ctx.admit_iter(assignments, OPERATION)?
-            {
-                if let Some(record) = native
-                    .feature_histories
-                    .get_mut(history_index)
-                    .and_then(|history| history.configurations.get_mut(record_index))
-                {
-                    record.source_index = source_index;
-                }
+        }
+        for configuration in ctx.admit_iter(&ir.model.configurations, OPERATION)? {
+            let Some(native_ref) = configuration.native_ref.as_deref() else {
+                continue;
+            };
+            if let Some(&position) = ctx.get_btree_map(&records, native_ref, OPERATION)? {
+                assignment_storage.with_storage(|| {
+                    ctx.push_vec(
+                        &mut assignments,
+                        (position, configuration.source_index),
+                        OPERATION,
+                    )
+                })?;
             }
-            Ok(())
-        },
-    )?;
-    Ok(result)
+        }
+    }
+    for ((history_index, record_index), source_index) in
+        ctx.admit_iter(assignments, OPERATION)?
+    {
+        if let Some(record) = native
+            .feature_histories
+            .get_mut(history_index)
+            .and_then(|history| history.configurations.get_mut(record_index))
+        {
+            record.source_index = source_index;
+        }
+    }
+    Ok(())
 }
 
 fn source_meta(
