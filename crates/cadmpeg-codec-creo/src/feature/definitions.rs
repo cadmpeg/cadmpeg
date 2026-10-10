@@ -2644,13 +2644,11 @@ fn unresolved_variable_guess_end(
     let Some(delimiter) = delimiter else {
         return Ok(None);
     };
-    // Three compact fields consume at most six bytes.
-    let mut suffixes = delimiter.saturating_sub(6).max(offset + 1)..delimiter;
+    const SUFFIX_BYTES: usize = 6;
+    let suffix_start = delimiter.checked_sub((delimiter - offset - 1).min(SUFFIX_BYTES))
+        .ok_or_else(|| CodecError::malformed("Creo variable suffix position underflows"))?;
     let mut candidate = None;
-    while !suffixes.is_empty() {
-        let Some(start) = ctx.next_charged(&mut suffixes, "creo variable guess suffix scan")? else {
-            break;
-        };
+    for start in suffix_start..delimiter {
         if variable_row_trailing_fields(payload, start, delimiter).is_some() {
             if candidate.replace(start).is_some() {
                 return Ok(None);
@@ -3707,13 +3705,11 @@ fn positional_segment_table(
     let name_search_end = start
         .checked_add(NAME_WINDOW)
         .map_or(end, |window_end| window_end.min(end));
-    let Some(name_end) = ctx.find_bytes_in(
-        payload,
-        b"S2D",
-        start,
-        name_search_end,
-        "find Creo feature definition field",
-    )?
+    let Some(name_window) = payload.get(start..name_search_end) else {
+        return Ok(None);
+    };
+    let Some(name_end) = name_window.windows(b"S2D".len())
+        .position(|window| window == b"S2D").map(|relative| start + relative)
     else {
         return Ok(None);
     };
@@ -4615,8 +4611,9 @@ fn positional_section_3d(
     end: usize,
 ) -> Result<Option<FeatureSection3d>, CodecError> {
     let Some((section, name_end)) = ctx.find_map(
-        start..end.saturating_sub(3),
-        |section| {
+        payload[start..end].windows(4).enumerate(),
+        |(relative, _)| {
+            let section = start + relative;
             if payload.get(section..section + 4) != Some(b"\x07S2D") {
                 return Ok(None);
             }
@@ -5612,29 +5609,24 @@ fn named_solver_table_header(
     else {
         return Ok(None);
     };
-    Ok((|| {
-        let mut cursor = offset + label.len();
-        if payload
-            .get(cursor)
-            .is_some_and(|byte| matches!(byte, 0xf1 | 0xf3))
-        {
-            cursor += 1;
-        } else if payload
-            .get(cursor..cursor + 2)
-            .is_some_and(|wrapper| matches!(wrapper, [0xf4, 0x04 | 0x05]))
-        {
-            cursor += 2;
-        }
-        (payload.get(cursor) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
-        let (declared_count, after_count) = psb::compact_int(payload, cursor + 1);
-        (payload.get(after_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
-        let (entity_ref, _) = psb::reference_id(payload, after_count + 1).ok()?;
-        Some(FeatureSolverTableHeader {
-            declared_count,
-            entity_ref,
-            offset,
-        })
-    })())
+    let mut cursor = offset + label.len();
+    if payload.get(cursor).is_some_and(|byte| matches!(byte, 0xf1 | 0xf3)) {
+        cursor += 1;
+    } else if payload.get(cursor..cursor + 2)
+        .is_some_and(|wrapper| matches!(wrapper, [0xf4, 0x04 | 0x05])) {
+        cursor += 2;
+    }
+    if payload.get(cursor) != Some(&psb::token::ARRAY_OPEN) {
+        return Ok(None);
+    }
+    let (declared_count, after_count) = psb::compact_int(payload, cursor + 1);
+    if payload.get(after_count) != Some(&psb::token::ENTITY_REF) {
+        return Ok(None);
+    }
+    let Ok((entity_ref, _)) = psb::reference_id(payload, after_count + 1) else {
+        return Ok(None);
+    };
+    Ok(Some(FeatureSolverTableHeader { declared_count, entity_ref, offset }))
 }
 
 type PositionalArrayHeader<'a> = (usize, u32, usize, &'a [u8]);
@@ -6442,14 +6434,10 @@ fn positional_relation_rows(
             break;
         }
         let mut suffix = None;
-        let mut suffix_starts = after_used.max(row_end.saturating_sub(6))..row_end;
-        while !suffix_starts.is_empty() {
-            let Some(suffix_start) = ctx.next_charged(
-                &mut suffix_starts,
-                "creo positional relation suffix scan",
-            )? else {
-                break;
-            };
+        const SUFFIX_BYTES: usize = 6;
+        let suffix_begin = row_end.checked_sub((row_end - after_used).min(SUFFIX_BYTES))
+            .ok_or_else(|| CodecError::malformed("Creo relation suffix position underflows"))?;
+        for suffix_start in suffix_begin..row_end {
             let (sign, after_sign) = psb::compact_int(payload, suffix_start);
             let (dimension_id, after_dimension) = psb::compact_int(payload, after_sign);
             let (relation_type, after_type) = psb::compact_int(payload, after_dimension);
@@ -7085,18 +7073,7 @@ fn saved_positional_generated_entities(
         if after_id > header_end {
             continue;
         }
-        let mut header = payload[after_id..header_end].iter();
-        let mut has_body = false;
-        while !header.as_slice().is_empty() {
-            let Some(byte) = ctx.next_charged(&mut header, "creo saved generated header scan")? else {
-                break;
-            };
-            if *byte == 0xe2 {
-                has_body = true;
-                break;
-            }
-        }
-        if has_body {
+        if payload[after_id..header_end].contains(&0xe2) {
             generated_storage.with_storage(|| {
                 ctx.reserve_vec(&mut starts, 1, "creo saved generated row starts")
             })?;
@@ -7885,7 +7862,7 @@ pub(crate) fn definition_revolution_extents(
             continue;
         }
         for offset in ctx.admit_iter(
-            0..definition.body.len().saturating_sub(FULL_TURN.len() - 1),
+            0..definition.body.windows(FULL_TURN.len()).len(),
             "creo revolution marker traversal",
         )? {
             let window = &definition.body[offset..offset + FULL_TURN.len()];
@@ -8041,14 +8018,13 @@ fn definition_in_range(
             let needle_len = label.len() + 4;
             let mut from = start;
             while let Some(field_offset) = ctx.find_by(
-                from..end.saturating_sub(needle_len - 1),
-                |&offset| {
-                    let window = &payload[offset..offset + needle_len];
+                payload[from..end].windows(needle_len).enumerate(),
+                |&(_, window)| {
                     Ok(window.get(..label.len()) == Some(label)
                         && window.get(label.len()..) == Some(b"\0\xf9\x04\x03"))
                 },
                 "creo parameter frame search",
-            )? {
+            )?.map(|(relative, _)| from + relative) {
                 let body_start = field_offset + needle_len;
                 let body_end = ctx
                     .position_by(
@@ -8350,13 +8326,13 @@ fn definition_in_range(
     let owner_feature_id = if owner_override.is_some() {
         owner_override
     } else {
-        let mut offsets = start..end.saturating_sub(2 + b"feat_id".len());
+        let mut offsets = payload[start..end].windows(3 + b"feat_id".len()).enumerate();
         let first = ctx.find_map(
             &mut offsets,
-            |offset| {
+            |(relative, _)| {
                 Ok(contextual_reference(
                     payload,
-                    offset,
+                    start + relative,
                     end,
                     b"feat_id",
                     b"gsec2d_ptr",
@@ -8368,9 +8344,9 @@ fn definition_in_range(
             Some(first)
                 if ctx.all_by(
                     offsets,
-                    |offset| {
+                    |(relative, _)| {
                         Ok(
-                            contextual_reference(payload, offset, end, b"feat_id", b"gsec2d_ptr")
+                            contextual_reference(payload, start + relative, end, b"feat_id", b"gsec2d_ptr")
                                 .is_none_or(|id| id == first),
                         )
                     },
@@ -8512,10 +8488,11 @@ fn definition_starts(
         } else {
             payload.len()
         };
-        for offset in ctx.admit_iter(
-            start..end.saturating_sub(2 + b"feat_id".len()),
+        for relative in ctx.admit_iter(
+            0..payload[start..end].windows(3 + b"feat_id".len()).len(),
             "creo contextual definition traversal",
         )? {
+            let offset = start + relative;
             let Some(owner) =
                 contextual_reference(payload, offset, end, b"feat_id", b"ref_model_info")
             else {
@@ -8552,22 +8529,19 @@ fn depdb_section_name_id(
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
     }
-    let mut bytes = name.iter().enumerate();
-    while bytes.len() != 0 {
-        let Some((index, byte)) = ctx.next_charged(&mut bytes, "creo DEPDB section name scan")? else {
-            break;
-        };
+    const NAME_WINDOW: usize = 128;
+    let mut value = 0u32;
+    let mut overflow = false;
+    for (index, byte) in name.iter().take(NAME_WINDOW).enumerate() {
         if *byte == 0 {
-            if index == 0 {
-                return Ok(None);
-            }
-            let Ok(text) = ctx.validate_utf8(&name[..index], "creo UTF-8 validation")? else {
-                return Ok(None);
-            };
-            return Ok(ctx.parse_text::<u32>(text, "creo scalar text parsing")?.ok());
+            return Ok((index > 0 && !overflow).then_some(value));
         }
         if !byte.is_ascii_digit() {
             return Ok(None);
+        }
+        match value.checked_mul(10).and_then(|value| value.checked_add(u32::from(*byte - b'0'))) {
+            Some(next) if !overflow => value = next,
+            _ => overflow = true,
         }
     }
     Ok(None)
@@ -8582,7 +8556,7 @@ fn depdb_gsec2d_starts(
     const NAME_WINDOW: usize = 128;
     let mut starts = Vec::new();
     for start in ctx.admit_iter(
-        0..payload.len().saturating_sub(GSEC.len() - 1),
+        0..payload.windows(GSEC.len()).len(),
         "creo DEPDB section marker traversal",
     )? {
         let window = &payload[start..start + GSEC.len()];
@@ -8592,13 +8566,8 @@ fn depdb_gsec2d_starts(
         let search_end = start
             .checked_add(NAME_WINDOW)
             .map_or(payload.len(), |window_end| window_end.min(payload.len()));
-        let Some(name_offset) = ctx.find_bytes_in(
-            payload,
-            NAME,
-            start,
-            search_end,
-            "find Creo feature definition field",
-        )?
+        let Some(name_offset) = payload[start..search_end].windows(NAME.len())
+            .position(|window| window == NAME).map(|relative| start + relative)
         else {
             continue;
         };
@@ -8765,20 +8734,15 @@ fn s2d_replay_starts(ctx: &DecodeContext<'_>, payload: &[u8]) -> Result<Vec<usiz
     const PREFIX: &[u8] = b"\xe3S2D";
     let mut starts = Vec::new();
     for offset in ctx.admit_iter(
-        0..payload.len().saturating_sub(PREFIX.len() - 1),
+        0..payload.windows(PREFIX.len()).len(),
         "creo replay marker traversal",
     )? {
         if &payload[offset..offset + PREFIX.len()] != PREFIX {
             continue;
         }
-        let mut suffix = payload[offset + PREFIX.len()..].iter().take(12).enumerate();
+        const NAME_SUFFIX_BYTES: usize = 12;
         let mut terminated = false;
-        while suffix.len() != 0 {
-            let Some((index, byte)) =
-                ctx.next_charged(&mut suffix, "creo replay name prefix scan")?
-            else {
-                break;
-            };
+        for (index, byte) in payload[offset + PREFIX.len()..].iter().take(NAME_SUFFIX_BYTES).enumerate() {
             if *byte == 0 {
                 terminated = index > 0;
                 break;
@@ -8920,7 +8884,7 @@ pub(crate) fn depdb_section_definition(
     const NAME: &[u8] = b"name\0S2D";
     const NAME_WINDOW: usize = 128;
     const PREFIX: &[u8] = b"feat_defs_";
-    let mut offsets = 0..payload.len().saturating_sub(GSEC.len() - 1);
+    let mut offsets = 0..payload.windows(GSEC.len()).len();
     let Some(start) = ctx.find_by(
         &mut offsets,
         |&offset| Ok(&payload[offset..offset + GSEC.len()] == GSEC),
@@ -8939,13 +8903,8 @@ pub(crate) fn depdb_section_definition(
     let name_search_end = start
         .checked_add(NAME_WINDOW)
         .map_or(payload.len(), |window_end| window_end.min(payload.len()));
-    let Some(name_offset) = ctx.find_bytes_in(
-        payload,
-        NAME,
-        start,
-        name_search_end,
-        "find Creo feature definition field",
-    )?
+    let Some(name_offset) = payload[start..name_search_end].windows(NAME.len())
+            .position(|window| window == NAME).map(|relative| start + relative)
     else {
         return Ok(None);
     };
@@ -9315,7 +9274,7 @@ pub(crate) fn bind_section_owners(
     )?;
     let mut pairs = std::collections::HashMap::new();
     for index in ctx.admit_iter(
-        0..ordered.len().saturating_sub(1),
+        0..ordered.windows(2).len(),
         "creo section owner operation count",
     )? {
         let owner = ordered[index];

@@ -235,7 +235,7 @@ mod tests {
             second.end_offset = 11;
             EntityRows::from_fixture(vec![first, second], &BTreeSet::from([7]))
         };
-        for cap in 0..=2 {
+        crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, &(["creo record child relocation traversal"]), |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
@@ -246,7 +246,8 @@ mod tests {
             let mut rows = fixture();
             let original_rows = rows.clone();
             let result = rows.relocate_offsets(&ctx, 17);
-            if cap < 2 {
+            let completed = result.is_ok();
+            if !completed {
                 let Err(CodecError::ResourceLimit(original)) = result else {
                     panic!("two present rows need two visits");
                 };
@@ -280,7 +281,11 @@ mod tests {
                     Err(CodecError::ResourceLimit(actual)) if actual == original));
                 assert_eq!((rows[0].offset, rows[0].end_offset), (20, 22));
             }
-        }
+
+            if completed { Ok(()) } else {
+                Err(CodecError::ResourceLimit(ctx.resource_refusal().expect("original refusal")))
+            }
+});
     }
 
     #[test]

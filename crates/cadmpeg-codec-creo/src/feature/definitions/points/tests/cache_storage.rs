@@ -46,7 +46,8 @@ fn with_limits<T>(materialized: u64, run: impl FnOnce(DecodeContext<'_>) -> T) -
 fn checked_trim_cache_radius_constructor_has_exact_backing_boundary() {
     let table = radius_table();
     let backing = radius_backing();
-    for cap in 0..=backing {
+    crate::test_support::assert_refusal_order(ResourceDimension::MaterializedBytes,
+        &["creo trim radius groups"], |cap| {
         with_limits(cap, |ctx| {
             let refusal = match table.reconciled_trim_geometry(&ctx) {
                 Ok(cache) => {
@@ -74,11 +75,13 @@ fn checked_trim_cache_radius_constructor_has_exact_backing_boundary() {
             if let Some(original) = refusal {
                 assert!(matches!(ctx.finish_session(),
                     Err(CodecError::ResourceLimit(actual)) if actual == original));
+                Err(CodecError::ResourceLimit(original))
             } else {
                 ctx.finish_session().expect("active zero-retained session");
+                Ok(())
             }
+        })
         });
-    }
 }
 
 #[test]

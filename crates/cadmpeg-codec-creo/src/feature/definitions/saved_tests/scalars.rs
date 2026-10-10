@@ -14,7 +14,8 @@ CodecError::ResourceLimit(limit)
             && limit.operation == "creo saved dummy body")
     );
     assert_eq!(
-        with_saved_leaf_limits(SAVED_DUMMY_LIMIT_INPUT, u64::MAX, u64::MAX, |ctx| {
+        with_saved_leaf_limits(SAVED_DUMMY_LIMIT_INPUT, 1,
+            u64::try_from(4 * std::mem::size_of::<FeatureSavedEntity>() + 1).expect("dummy backing"), |ctx| {
             parse_saved_dummy_entities(
                 ctx,
                 SAVED_DUMMY_LIMIT_INPUT,
@@ -40,7 +41,8 @@ CodecError::ResourceLimit(limit)
             && limit.operation == "creo saved dummy entities")
     );
     assert_eq!(
-        with_saved_leaf_limits(SAVED_DUMMY_LIMIT_INPUT, u64::MAX, u64::MAX, |ctx| {
+        with_saved_leaf_limits(SAVED_DUMMY_LIMIT_INPUT, 1,
+            u64::try_from(4 * std::mem::size_of::<FeatureSavedEntity>() + 1).expect("dummy backing"), |ctx| {
             parse_saved_dummy_entities(
                 ctx,
                 SAVED_DUMMY_LIMIT_INPUT,

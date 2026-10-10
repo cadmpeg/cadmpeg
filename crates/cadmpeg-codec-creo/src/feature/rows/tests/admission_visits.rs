@@ -9,28 +9,30 @@ fn check_visits(
     operation_at: impl Fn(u64) -> &'static str,
     parse: impl Fn(&DecodeContext<'_>) -> Result<(), CodecError>,
 ) {
-    for cap in 0..=total {
+    let operations = (0..total).map(&operation_at).collect::<Vec<_>>();
+    crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, &operations, |cap| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let result = parse(&ctx);
-        if cap == total {
-            result.expect("exact present visits");
-            assert_eq!(ctx.resource_refusal(), None);
-            let refusal = ctx.charge_work_limit(1, "after feature row visits").expect_err("exact cap");
-            assert_eq!((refusal.dimension, refusal.used, refusal.additional),
-                (ResourceDimension::WorkUnits, total, 1));
-        } else {
-            let original = ctx.resource_refusal().expect("present visit refuses");
-            assert!(matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original));
-            assert_eq!((original.dimension, original.used, original.additional, original.operation),
-                (ResourceDimension::WorkUnits, cap, 1, operation_at(cap)));
+        match parse(&ctx) {
+            Ok(()) => {
+                assert_eq!(ctx.resource_refusal(), None);
+                let refusal = ctx.charge_work_limit(1, "measure feature row visits").expect_err("measurement");
+                assert_eq!((refusal.used, refusal.additional), (total, 1));
+                assert!(matches!(parse(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == refusal));
+                Ok(())
+            }
+            Err(CodecError::ResourceLimit(original)) => {
+                assert_eq!(ctx.resource_refusal(), Some(original));
+                assert_eq!(original.additional, 1);
+                assert_eq!(original.operation, operation_at(original.used));
+                assert!(matches!(parse(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == original));
+                Err(CodecError::ResourceLimit(original))
+            }
+            Err(error) => Err(error),
         }
-        let original = ctx.resource_refusal().expect("original refusal");
-        assert!(matches!(parse(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == original));
-        assert_eq!(ctx.resource_refusal(), Some(original));
-    }
+    });
 }
 
 #[test]
@@ -255,7 +257,7 @@ fn unanchored_replay_start_scan_visits_only_its_candidate_range() {
         bytes.extend_from_slice(&[0xe1, 0xe1, 40, 0xe3, 0xe3, 1, 40, 0, 0xe1, 0, 0xe3]);
         let row = FeatureRow { body: bytes.try_into().expect("valid suffix row"), ..empty_candidate_row(2) };
         // L-1 suffix windows, prefix explicit-array bytes, and 1..prefix starts.
-        let starts = prefix.saturating_sub(1);
+        let starts = (1..prefix).len();
         let total = row.body.len() - 1 + prefix + starts;
         check_visits(total as u64, |used| {
             if used < (prefix + 1) as u64 { "creo unanchored replay suffix traversal" }

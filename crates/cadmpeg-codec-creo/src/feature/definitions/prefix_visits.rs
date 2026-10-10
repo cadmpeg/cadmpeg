@@ -4,65 +4,34 @@ use super::s2d_replay_starts;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
-fn check(payload: &[u8], visits: usize, expected: &[usize]) {
-    // Every four-byte marker window is admitted once, followed by actual name bytes.
-    let windows = payload.len().saturating_sub(3) as u64;
-    let total = windows + visits as u64;
-    for cap in 0..=total {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        if expected.is_empty() {
-            policy.limits.max_materialized_bytes = 0;
-            policy.limits.max_retained_bytes = 0;
-            policy.limits.max_collection_items = 0;
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let result = s2d_replay_starts(&ctx, payload);
-        if cap == total {
-            assert_eq!(result.expect("exact marker and name visits"), expected);
-            let original = ctx.charge_work_limit(1, "after replay prefix")
-                .expect_err("all executed work is accounted");
-            assert_eq!((original.used, original.additional), (total, 1));
-        } else {
-            let original = ctx.resource_refusal().expect("actual work refuses");
-            assert!(matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original));
-            let expected = if cap < windows {
-                (0, windows, "creo replay marker traversal")
-            } else {
-                (cap, 1, "creo replay name prefix scan")
-            };
-            assert_eq!(original.dimension, ResourceDimension::WorkUnits);
-            assert_eq!((original.used, original.additional, original.operation), expected);
-        }
-        let original = ctx.resource_refusal().expect("original refusal");
-        assert!(matches!(s2d_replay_starts(&ctx, payload),
-            Err(CodecError::ResourceLimit(actual)) if actual == original));
-    }
+fn check(payload: &[u8], expected: &[usize]) {
+    let windows = payload.windows(4).len() as u64;
+    check_work(&[(windows, "creo replay marker traversal")], expected.to_vec(), !expected.is_empty(),
+        |ctx| s2d_replay_starts(ctx, payload));
 }
 
 #[test]
-fn replay_prefix_admits_present_digits_through_terminator_or_invalid_byte() {
+fn replay_prefix_keeps_bounded_digit_grammar_without_name_work() {
     for length in [0, 1, 2, 11, 12, 17] {
         let mut payload = b"\xe3S2D".to_vec();
         payload.extend(std::iter::repeat_n(b'7', length));
-        check(&payload, length.min(12), &[]);
+        check(&payload, &[]);
         payload.push(0);
-        check(&payload, (length + 1).min(12),
+        check(&payload,
             if (1..12).contains(&length) { &[0] } else { &[] });
     }
-    check(b"\xe3S2DXignored\0", 1, &[]);
-    check(b"\xe3S2D12Xignored\0", 3, &[]);
-    check(b"", 0, &[]);
-    check(b"\xe3S2", 0, &[]);
+    check(b"\xe3S2DXignored\0", &[]);
+    check(b"\xe3S2D12Xignored\0", &[]);
+    check(b"", &[]);
+    check(b"\xe3S2", &[]);
 }
 
 #[test]
 fn replay_prefix_preserves_absolute_marker_offsets_and_the_twelve_byte_bound() {
-    check(b"junk\xe3S2D123\0ignored", 4, &[4]);
-    check(b"\xe3S2D1\0\xe3S2D22\0", 5, &[0, 6]);
-    check(b"\xe3S2D12345678901\0", 12, &[0]);
-    check(b"\xe3S2D123456789012\0", 12, &[]);
+    check(b"junk\xe3S2D123\0ignored", &[4]);
+    check(b"\xe3S2D1\0\xe3S2D22\0", &[0, 6]);
+    check(b"\xe3S2D12345678901\0", &[0]);
+    check(b"\xe3S2D123456789012\0", &[]);
 }
 
 fn check_work<T: std::fmt::Debug + PartialEq>(
@@ -72,7 +41,8 @@ fn check_work<T: std::fmt::Debug + PartialEq>(
     run: impl Fn(&DecodeContext<'_>) -> Result<T, CodecError>,
 ) {
     let total = fees.iter().map(|(fee, _)| fee).sum::<u64>();
-    for cap in 0..=total {
+    let operations = fees.iter().filter(|(fee, _)| *fee > 0).map(|(_, operation)| *operation).collect::<Vec<_>>();
+    crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, &operations, |cap| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = cap;
@@ -83,55 +53,47 @@ fn check_work<T: std::fmt::Debug + PartialEq>(
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let result = run(&ctx);
-        if cap == total {
-            assert_eq!(result.expect("source-derived exact work"), expected);
-            let original = ctx.charge_work_limit(1, "after bounded candidates").expect_err("exact work");
-            assert_eq!((original.used, original.additional), (total, 1));
-        } else {
-            let mut used = 0;
-            let (fee, operation) = fees.iter().find_map(|&(fee, operation)| {
-                if used + fee > cap { Some((fee, operation)) }
-                else { used += fee; None }
-            }).expect("first operation beyond cap");
-            let original = ctx.resource_refusal().expect("actual operation refuses");
-            assert!(matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original));
-            assert_eq!((original.dimension, original.used, original.additional, original.operation),
-                (ResourceDimension::WorkUnits, used, fee, operation));
+        match result {
+            Ok(value) => {
+                assert_eq!(ctx.resource_refusal(), None);
+                assert_eq!(value, expected);
+                let original = ctx.charge_work_limit(1, "measure feature work").expect_err("measurement");
+                assert_eq!((original.used, original.additional), (total, 1));
+                assert!(matches!(run(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == original));
+                Ok(())
+            }
+            Err(CodecError::ResourceLimit(original)) => {
+                assert_eq!(ctx.resource_refusal(), Some(original));
+                assert!(matches!(run(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == original));
+                Err(CodecError::ResourceLimit(original))
+            }
+            Err(error) => Err(error),
         }
-        let original = ctx.resource_refusal().expect("original refusal");
-        assert!(matches!(run(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == original));
-    }
+    });
 }
 
 #[test]
-fn depdb_decimal_name_admits_prefix_validation_and_parse_without_owned_text() {
-    for (name, visits, digits, expected) in [
-        (b"".as_slice(), 0, 0, None),
-        (b"\0ignored".as_slice(), 1, 0, None),
-        (b"0\0ignored".as_slice(), 2, 1, Some(0)),
-        (b"0002\0ignored".as_slice(), 5, 4, Some(2)),
-        (b"4294967295\0".as_slice(), 11, 10, Some(u32::MAX)),
-        (b"4294967296\0".as_slice(), 11, 10, None),
-        (b"12Xignored\0".as_slice(), 3, 0, None),
-        (b"123".as_slice(), 3, 0, None),
+fn depdb_decimal_name_is_bounded_and_free_without_owned_text() {
+    for (name, expected) in [
+        (b"".as_slice(), None), (b"\0ignored".as_slice(), None),
+        (b"0\0ignored".as_slice(), Some(0)), (b"0002\0ignored".as_slice(), Some(2)),
+        (b"4294967295\0".as_slice(), Some(u32::MAX)), (b"4294967296\0".as_slice(), None),
+        (b"12Xignored\0".as_slice(), None), (b"123".as_slice(), None),
     ] {
-        let mut fees = vec![(1, "creo DEPDB section name scan"); visits];
-        if digits != 0 {
-            fees.extend([(digits, "creo UTF-8 validation"), (digits, "creo scalar text parsing")]);
-        }
-        check_work(&fees, expected, false, |ctx| super::depdb_section_name_id(ctx, name));
+        check_work(&[], expected, false, |ctx| super::depdb_section_name_id(ctx, name));
     }
     let unterminated = [b'7'; 128];
-    check_work(&[(1, "creo DEPDB section name scan"); 128], None, false,
-        |ctx| super::depdb_section_name_id(ctx, &unterminated));
+    check_work(&[], None, false, |ctx| super::depdb_section_name_id(ctx, &unterminated));
+    let mut leading_zeros = vec![b'0'; 127];
+    leading_zeros.push(0);
+    check_work(&[], Some(0), false, |ctx| super::depdb_section_name_id(ctx, &leading_zeros));
 }
 
 #[test]
-fn unresolved_guess_admits_actual_suffix_candidates_and_preserves_first_delimiter() {
+fn unresolved_guess_keeps_fixed_suffix_candidates_and_first_delimiter() {
     // Five delimiter visits, then candidate starts1..5. Only start2 has three fields.
     let short = [0x00, 0x55, 0x01, 0x02, 0x03, 0xe2];
-    let mut fees = vec![(1, "creo variable guess delimiter"); 5];
-    fees.extend([(1, "creo variable guess suffix scan"); 4]);
+    let fees = vec![(1, "creo variable guess delimiter"); 5];
     check_work(&fees, Some(2), false,
         |ctx| super::unresolved_variable_guess_end(ctx, &short, 0, short.len()));
     let mut long = short.to_vec();
@@ -139,19 +101,18 @@ fn unresolved_guess_admits_actual_suffix_candidates_and_preserves_first_delimite
     check_work(&fees, Some(2), false,
         |ctx| super::unresolved_variable_guess_end(ctx, &long, 0, long.len()));
     for body in [b"".as_slice(), b"\0", b"\0\xff", b"\0\xff\xff"] {
-        let visits = body.len().saturating_sub(1);
+        let visits = body.windows(2).len();
         check_work(&vec![(1, "creo variable guess delimiter"); visits], None, false,
             |ctx| super::unresolved_variable_guess_end(ctx, body, 0, body.len()));
     }
 }
 
 #[test]
-fn relation_suffix_admits_candidates_stops_at_ambiguity_and_skips_absent_rows() {
+fn relation_suffix_is_fixed_stops_at_ambiguity_and_skips_absent_rows() {
     let body = [1, 0, 0x80, 0x80, 1, 2, 3, 0xe2];
     // One present row, eight delimiter bytes, then starts2/3/4. Starts3/4 conflict.
     let mut fees = vec![(1, "creo positional relation rows traversal")];
     fees.extend([(1, "creo relation row end"); 8]);
-    fees.extend([(1, "creo positional relation suffix scan"); 3]);
     check_work(&fees, Vec::<super::FeatureRelation>::new(), false, |ctx|
         super::positional_relation_rows(ctx, &body, 0, body.len(), super::RelationBodyRows::Count(1)));
     for rows in [super::RelationBodyRows::Count(0), super::RelationBodyRows::InvalidZero] {
@@ -164,7 +125,6 @@ fn relation_suffix_admits_candidates_stops_at_ambiguity_and_skips_absent_rows() 
     let body = [1, 0, 4, 1, 2, 3, 0xe2];
     let mut fees = vec![(1, "creo positional relation rows traversal")];
     fees.extend([(1, "creo relation row end"); 7]);
-    fees.extend([(1, "creo positional relation suffix scan"); 4]);
     fees.extend([(1, "creo relation operands"), (6, "creo relation row body")]);
     let expected = vec![super::FeatureRelation {
         relation_id: 1, used: 0, operands: vec![4], operand_vectors: None,
@@ -175,7 +135,7 @@ fn relation_suffix_admits_candidates_stops_at_ambiguity_and_skips_absent_rows() 
 }
 
 #[test]
-fn saved_generated_header_admits_present_bytes_within_twenty_four_byte_bound() {
+fn saved_generated_header_is_free_within_twenty_four_byte_bound() {
     let order = super::FeatureOrderTable {
         declared_count: 1, has_prototype: false, entity_ref: None,
         rows: vec![super::FeatureOrderRow { external_id: 42, internal_id: 7, bitmask: 0, offset: 0 }].into(),
@@ -193,8 +153,7 @@ fn saved_generated_header_admits_present_bytes_within_twenty_four_byte_bound() {
     for length in [0, 1, 23, 24, 25] {
         let mut payload = vec![0xe3, 7];
         payload.extend(std::iter::repeat_n(0xff, length));
-        let mut fees = vec![(payload.len() as u64, "creo saved generated start traversal")];
-        fees.extend(vec![(1, "creo saved generated header scan"); length.min(24)]);
+        let fees = vec![(payload.len() as u64, "creo saved generated start traversal")];
         check_work(&fees, (), false, |ctx| {
             let mut entities = Vec::new();
             super::saved_positional_generated_entities(ctx, &payload, 0, payload.len(), &cache,
@@ -587,4 +546,74 @@ fn trimmed_ids_absent_table_preserves_original_refusal() {
         section_3d: None, dimensions: None, relations: None, saved_section: None, offset: 0,
     };
     check_work(&[], &[] as &[u32], false, |ctx| super::unique_trimmed_external_ids(ctx, &definition));
+}
+
+#[test]
+fn positional_segment_marker_search_is_free_within_256_bytes() {
+    for length in [0, 1, 254, 255, 256, 300] {
+        let mut payload = vec![0xff; length];
+        payload.extend_from_slice(b"S2D1\0");
+        if length < 254 { payload.truncate(length); }
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        assert!(super::positional_segment_table(&ctx, &payload, 0, payload.len())
+            .expect("missing bounded marker uses no work").is_none());
+        assert!(ctx.resource_refusal().is_none());
+    }
+}
+
+#[test]
+fn positional_segment_invalid_range_has_no_match_or_work() {
+    let payload = b"S2D1\0";
+    for (start, end) in [(1, 0), (payload.len() + 1, payload.len()), (0, usize::MAX)] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        assert!(super::positional_segment_table(&ctx, payload, start, end)
+            .expect("invalid range uses no work").is_none());
+        assert!(ctx.resource_refusal().is_none());
+    }
+}
+
+#[test]
+fn depdb_name_marker_search_and_decimal_parse_add_no_bounded_work() {
+    for payload in [b"gsec2d_ptr\0name\0S2D1\0".as_slice(),
+        b"gsec2d_ptr\0missing", b"gsec2d_ptr\0name\0S2D4294967296\0"] {
+        check_work(&[(payload.windows(b"gsec2d_ptr\0".len()).len() as u64,
+            "creo DEPDB section marker traversal")], (), true, |ctx| {
+            let starts = super::depdb_gsec2d_starts(ctx, payload)?;
+            if payload.ends_with(b"S2D1\0") {
+                let [start] = starts.as_slice() else { panic!("one DEPDB start"); };
+                assert_eq!(start.offset, 0);
+                assert_eq!(start.id.map(std::num::NonZeroU32::get), Some(1));
+                assert!(!start.positional);
+                assert_eq!(start.owner_override, None);
+            } else { assert!(starts.is_empty()); }
+            Ok(())
+        });
+    }
+}
+
+#[test]
+fn standalone_depdb_missing_name_has_only_section_search_work() {
+    let payload = b"gsec2d_ptr\0missing";
+    crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits,
+        &["creo standalone section search", "creo standalone section uniqueness"], |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        match super::depdb_section_definition(&ctx, payload, None) {
+            Ok(definition) => { assert!(definition.is_none()); Ok(()) }
+            Err(CodecError::ResourceLimit(refusal)) => {
+                assert!(matches!(refusal.operation, "creo standalone section search" |
+                    "creo standalone section uniqueness"));
+                Err(CodecError::ResourceLimit(refusal))
+            }
+            Err(error) => Err(error),
+        }
+    });
 }

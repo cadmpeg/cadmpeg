@@ -540,7 +540,7 @@ pub(crate) fn round_replay_scalars(
         .filter(|row| row.root_schema_class == Some(SchemaClass::Round))
     {
         for record_start in ctx.admit_iter(
-            0..row.body.len().saturating_sub(CR_FLAGS_ANCHOR.len() - 1),
+            0..row.body.windows(CR_FLAGS_ANCHOR.len()).len(),
             "creo round replay anchor traversal",
         )? {
             let bytes = &row.body[record_start..record_start + CR_FLAGS_ANCHOR.len()];
@@ -1611,7 +1611,7 @@ pub(crate) fn replay_affected_ids(
             continue;
         };
         let anchor = ctx.find_map(
-            (0..row.body.len().saturating_sub(ANCHOR_LEN - 1)).rev(),
+            (0..row.body.windows(ANCHOR_LEN).len()).rev(),
             |offset| {
                 let window = &row.body[offset..offset + ANCHOR_LEN];
                 Ok((window.starts_with(ANCHOR_PREFIX)
@@ -2000,7 +2000,7 @@ pub(crate) fn loop_history_entries(
     }
     let mut next_tables = std::collections::HashMap::new();
     for index in ctx.admit_iter(
-        0..keys.len().saturating_sub(1),
+        0..keys.windows(2).len(),
         "creo loop table neighbor traversal",
     )? {
         let pair = &keys[index..index + 2];
