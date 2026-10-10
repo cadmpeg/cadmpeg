@@ -73,7 +73,6 @@ fn mesh_selection_orientation_refuses_constraint_collection_limit() {
         let search = MeshSelectionSearch {
             ctx,
             assignments: &assignments,
-            possible_face_equations: equations.clone(),
             possible_face_choices: face_choices.clone(),
             face_work: vec![Some(1)],
             edge_candidates: &[],
@@ -152,7 +151,6 @@ fn mesh_selection_completion_refuses_collection_limit() {
     let mut search = MeshSelectionSearch {
         ctx: &service_ctx,
         assignments: &assignments,
-        possible_face_equations: equations.clone(),
         possible_face_choices: possible_face_choices(&service_ctx, &assignments, &equations),
         face_work: vec![Some(1)],
         edge_candidates: &[],
@@ -202,7 +200,6 @@ fn mesh_selection_completion_refuses_existing_nested_direction_copies() {
         let search = MeshSelectionSearch {
             ctx,
             assignments: &assignments,
-            possible_face_equations: Vec::new(),
             possible_face_choices: Vec::new(),
             face_work: vec![Some(1)],
             edge_candidates: &[],
@@ -256,7 +253,6 @@ fn mesh_selection_selected_edges_refuse_before_set_growth() {
         let search = MeshSelectionSearch {
             ctx,
             assignments: &assignments,
-            possible_face_equations: Vec::new(),
             possible_face_choices: Vec::new(),
             face_work: vec![Some(1)],
             edge_candidates: &[],
