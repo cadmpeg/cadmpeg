@@ -12,7 +12,8 @@ use crate::eval::variable_blend_has_current_cache;
 use crate::eval::{EvaluationFailure, SurfaceFirstOrder, SurfaceJet};
 use crate::geometry::ProceduralSurfaceDefinition;
 use crate::math::Point3;
-use super::SurfaceRequest;
+use super::{HigherPartials, RequestedJet, SurfaceRequest};
+
 
 /// The point and first partials of an arena surface, the first partials
 /// with their own outcome, or why the point has none.
@@ -30,6 +31,24 @@ pub(in crate::eval) fn first_order(
     u: f64,
     v: f64,
 ) -> Result<SurfaceFirstOrder, EvaluationFailure<Point3>> {
+    requested(admission, index, surface, u, v, SurfaceRequest::First)
+        .map(|result| result.jet.first_order())
+}
+
+/// Select the same actual construction/cache as First, with independent
+/// requested higher outcomes. Higher completeness cannot change that choice.
+pub(in crate::eval) fn requested(
+    admission: admission::EvaluationAdmission<'_, '_>,
+    index: &crate::index::ModelIndex<'_>,
+    surface: &crate::ids::SurfaceId,
+    u: f64,
+    v: f64,
+    request: SurfaceRequest,
+) -> Result<RequestedJet, EvaluationFailure<Point3>> {
+    let from_first = |order: SurfaceFirstOrder| RequestedJet {
+        jet: SurfaceJet { point: order.point, first: order.first, second: Err(EvaluationFailure::NoValue) },
+        higher: HigherPartials::Third(Err(EvaluationFailure::NoValue)),
+    };
     let budget = admission.work_slice();
     let _depth =
         ModelEvaluationDepthGuard::enter(budget).map_err(EvaluationFailure::ResourceLimit)?;
@@ -47,7 +66,7 @@ pub(in crate::eval) fn first_order(
                         definition_payload,
                         u,
                         v,
-                    ),
+                    ).map(from_first),
                     revision_surface_tail_has_current_cache(&native.cache),
                 )
             })
@@ -55,7 +74,12 @@ pub(in crate::eval) fn first_order(
         Some(ProceduralSurfaceDefinition::VariableBlend(definition_payload)) => {
             let construction = definition_payload.construction();
             Some((
-                cacheless_variable_blend_first_order(admission, index, definition_payload, u, v),
+                if request != SurfaceRequest::First && matches!(construction.cross_section,
+                    Some(crate::geometry::VariableBlendCrossSection::RoundedChamfer { .. })) {
+                    super::rounded::evaluate(admission, index, definition_payload, u, v, request)
+                } else {
+                    cacheless_variable_blend_first_order(admission, index, definition_payload, u, v).map(from_first)
+                },
                 variable_blend_has_current_cache(construction),
             ))
         }
@@ -70,7 +94,7 @@ pub(in crate::eval) fn first_order(
                         construction,
                         u,
                         v,
-                    ),
+                    ).map(from_first),
                     sweep_has_current_cache(construction),
                 )
             })
@@ -78,9 +102,9 @@ pub(in crate::eval) fn first_order(
         _ => None,
     };
     let cached =
-        || super::model_jet(admission, index, surface, u, v, SurfaceRequest::First).map(SurfaceJet::first_order);
-    let complete = |order: &Result<SurfaceFirstOrder, EvaluationFailure<Point3>>| match order {
-        Ok(order) => match &order.first {
+        || super::model_requested_jet(admission, index, surface, u, v, request);
+    let complete = |order: &Result<RequestedJet, EvaluationFailure<Point3>>| match order {
+        Ok(order) => match &order.jet.first {
             Ok(_) => Ok(true),
             Err(EvaluationFailure::ResourceLimit(limit)) => {
                 Err(EvaluationFailure::ResourceLimit(*limit))

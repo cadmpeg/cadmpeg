@@ -3,6 +3,7 @@
 
 pub(super) mod differentials;
 pub(super) mod model;
+mod rounded;
 
 use super::admission::EvaluationAdmission;
 use super::depth::{ModelEvaluationDepthGuard, ModelEvaluationIdentity};
@@ -184,6 +185,7 @@ impl Mapping<'_> {
                     ProceduralSurfaceDefinition::Revolution(payload) => super::model_native_revolution_jet(admission, index, payload, *interval, *u, *v, source_order),
                     ProceduralSurfaceDefinition::Ruled { first, second, .. } => super::model_ruled_surface_jet(admission, index, first, second, *u, *v, source_order),
                     ProceduralSurfaceDefinition::Sum(payload) => super::model_sum_surface_jet(admission, index, payload, *u, *v, source_order),
+                    ProceduralSurfaceDefinition::VariableBlend(payload) => rounded::evaluate(admission, index, payload, *u, *v, source_order),
                     _ => Err(EvaluationFailure::NoValue),
                 }
             }
@@ -301,6 +303,15 @@ fn with_mapping<R>(
             | ProceduralSurfaceDefinition::Ruled { .. }
             | ProceduralSurfaceDefinition::Sum(_))) => consume(Mapping {
                 source: Source::Procedural(definition, interval, u, v), distance: 0.0, reversed: [false, false], orientation: 1.0,
+            }),
+        Some(definition @ ProceduralSurfaceDefinition::VariableBlend(payload))
+            if matches!(payload.construction().cross_section,
+                Some(crate::geometry::VariableBlendCrossSection::RoundedChamfer { .. }))
+            && matches!(payload.construction().cache,
+                crate::geometry::VariableBlendCache::Parameterization { .. }
+                    | crate::geometry::VariableBlendCache::Stale {}) => consume(Mapping {
+                source: Source::Procedural(definition, interval, u, v), distance: 0.0,
+                reversed: [false, false], orientation: 1.0,
             }),
         _ => {
             // Match the directly stored point owner's oriented normal. The
