@@ -213,18 +213,19 @@ fn validated_support_uv_exposes_ordered_endpoint_witnesses() {
         .clone();
 
     let witnesses = crate::test_support::with_decode_context(|ctx| {
-        {
-            let mut witness_storage = ctx.reserve_scoped(0, "nx test endpoint witnesses")?;
-            let mut witnesses = std::collections::BTreeMap::new();
-crate::decode::support_uv::validated_support_uv_endpoint_witnesses(
-ctx,
-result.ir(),
-&pending,
-&validated_lanes,
-&mut crate::decode::emit::EndpointWitnessSink::new(&mut witnesses, &mut witness_storage)
-)?;
-witness_storage.commit_value(witnesses)
-}
+        let mut witness_storage = ctx.reserve_scoped(0, "nx test endpoint witnesses")?;
+        let mut witnesses = std::collections::BTreeMap::new();
+        crate::decode::support_uv::validated_support_uv_endpoint_witnesses(
+            ctx,
+            result.ir(),
+            &pending,
+            &validated_lanes,
+            &mut crate::decode::emit::EndpointWitnessSink::new(
+                &mut witnesses,
+                &mut witness_storage,
+            ),
+        )?;
+        witness_storage.commit_value(witnesses)
     })
     .expect("validated witnesses fit the service profile");
 
