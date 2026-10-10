@@ -246,3 +246,19 @@ fn container_output_promotions_preserve_refusal_and_live_parent_storage() {
     })
     .expect("actual outputs stay under their live parent");
 }
+
+#[test]
+fn fbb_run_scan_visits_each_row_once() {
+    let row = [0x30, 0x04, 0x04, 0xff, 0, 0, 0, 0];
+    let bytes = row.repeat(3);
+    let ranges = crate::test_support::with_work_limit(3, |ctx| fbb_run_ranges(ctx, &bytes))
+        .expect("three recognized rows require exactly three visits");
+    assert_eq!(ranges.len(), 1);
+    assert_eq!(ranges[0], 0..24);
+    let error =
+        crate::test_support::with_work_refusal("catia_fbb_scan", |ctx| fbb_run_ranges(ctx, &bytes))
+            .expect_err("actual row visits require admission");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.operation == "catia_fbb_scan")
+    );
+}

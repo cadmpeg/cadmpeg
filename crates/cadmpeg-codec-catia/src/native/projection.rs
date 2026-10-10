@@ -1016,12 +1016,18 @@ pub(crate) fn consolidated_owner_packets(
             },
         ));
     }
-    ctx.stable_sort_by_key(
-        &mut packets,
-        |value| (value.0, value.1),
-        Ord::cmp,
-        "catia_native_owner_packet_sort",
-    )?;
+    if packets.len() == 2 {
+        if (packets[0].0, packets[0].1) > (packets[1].0, packets[1].1) {
+            packets.swap(0, 1);
+        }
+    } else if packets.len() > 2 {
+        ctx.stable_sort_by_key(
+            &mut packets,
+            |value| (value.0, value.1),
+            Ord::cmp,
+            "catia_native_owner_packet_sort",
+        )?;
+    }
     ctx.try_collect_vec(
         packets
             .into_iter()

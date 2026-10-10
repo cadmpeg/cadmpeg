@@ -795,11 +795,18 @@ where
         for range in ctx.admit_iter(&source_ranges, "catia_record_source_range_visits")? {
             let start = range.start;
             let end = range.end;
-            let mut pos = start;
-            while pos < end {
-                ctx.charge_work(1, "catia_record_scan")?;
-                let Some(mut record) = parse_consolidated_record(data, pos, end) else {
-                    pos += 1;
+            let position = std::cell::Cell::new(start);
+            let mut candidates = std::iter::from_fn(|| {
+                let pos = position.get();
+                (pos < end).then(|| (pos, parse_consolidated_record(data, pos, end)))
+            });
+            while position.get() < end {
+                let Some((pos, record)) = ctx.next_charged(&mut candidates, "catia_record_scan")?
+                else {
+                    break;
+                };
+                let Some(mut record) = record else {
+                    position.set(pos + 1);
                     continue;
                 };
                 let Some(physical_range) = record.range() else {
@@ -813,7 +820,7 @@ where
                 let Some(source_end) = source_offset.checked_add(physical_range.end - start) else {
                     return Ok(records);
                 };
-                pos = physical_range.end;
+                position.set(physical_range.end);
                 record.source_range = source_start..source_end;
                 ctx.push_scoped_vec(
                     &mut workspace,

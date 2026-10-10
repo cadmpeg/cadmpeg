@@ -475,3 +475,84 @@ fn native_catalogs_collector_preserves_work_refusal() {
         |count| *count > 0,
     );
 }
+
+fn native_sort_positions(
+    ctx: &DecodeContext<'_>,
+    kind: usize,
+    bytes: &[u8],
+    records: &[crate::wire::records::ConsolidatedRecord],
+) -> Result<Vec<u64>, CodecError> {
+    Ok(match kind {
+        0 => crate::native::consolidated_class61_records(ctx, bytes, records)?
+            .into_iter()
+            .map(|value| value.byte_offset)
+            .collect(),
+        1 => crate::native::consolidated_class5b5c_records(ctx, bytes, records)?
+            .into_iter()
+            .map(|value| value.source_offset)
+            .collect(),
+        2 => crate::native::consolidated_pcurves(ctx, bytes, records)?
+            .into_iter()
+            .map(|value| value.byte_offset)
+            .collect(),
+        _ => crate::native::projection::consolidated_owner_packets(ctx, bytes, records)?
+            .into_iter()
+            .map(|value| value.byte_offset)
+            .collect(),
+    })
+}
+
+#[test]
+fn native_collector_small_numeric_sorts_skip_constant_work() {
+    let control_bytes = crate::test_support::test_b2::b2_class5b5c_stream();
+    let control_records = crate::wire::records::consolidated_records(&control_bytes);
+    let control =
+        control_bytes[control_records[0].range().expect("control source extent")].to_vec();
+    let sources = [
+        (
+            crate::test_support::test_b2::b2_counted_61_stream(),
+            "catia_native_class61_sort",
+        ),
+        (control, "catia_native_class5b5c_sort"),
+        (
+            crate::test_support::test_a5a8::a5_pcurve_stream(),
+            "catia_native_pcurve_sort",
+        ),
+        (
+            crate::test_support::test_b2::b2_owner_packet_stream(),
+            "catia_native_owner_packet_sort",
+        ),
+    ];
+    for (kind, (source, operation)) in sources.iter().enumerate() {
+        for count in 0..=2 {
+            let bytes = source.repeat(count);
+            let records = crate::wire::records::consolidated_records(&bytes);
+            let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+                ResourceDimension::WorkUnits,
+                operation,
+                None,
+            );
+            let positions = crate::test_support::with_work_limit(u64::MAX, |ctx| {
+                let positions = native_sort_positions(ctx, kind, &bytes, &records)?;
+                assert_eq!(ctx.resource_refusal(), None);
+                Ok::<_, CodecError>(positions)
+            })
+            .expect("small numeric keys need no general sort");
+            assert_eq!(positions.len(), count);
+            assert!(positions.windows(2).all(|pair| pair[0] < pair[1]));
+        }
+        let bytes = source.repeat(3);
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let positions = crate::test_support::with_service_context(|ctx| {
+            native_sort_positions(ctx, kind, &bytes, &records)
+        })
+        .expect("larger ordered output");
+        assert_eq!(positions.len(), 3);
+        assert!(positions.windows(2).all(|pair| pair[0] < pair[1]));
+        let error = crate::test_support::with_work_refusal(operation, |ctx| {
+            native_sort_positions(ctx, kind, &bytes, &records)
+        })
+        .expect_err("larger sources keep the charged sort");
+        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.operation == *operation));
+    }
+}
