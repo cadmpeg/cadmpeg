@@ -2392,10 +2392,8 @@ fn plane_face_draft(
     sequences.record_face(&face_id, source_sequence, ctx)?;
     let mut candidate = ModelDraft::new();
     let mut outer_loop = None;
-    let mut loop_ids = ctx.collection_vec(
-        boundary.0.len().saturating_sub(1),
-        "iges legacy plane loop IDs",
-    )?;
+    let inner_loop_count = boundary.0.iter().skip(1).len();
+    let mut loop_ids = ctx.collection_vec(inner_loop_count, "iges legacy plane loop IDs")?;
     let mut input = boundary.0.into_iter().enumerate();
     while input.len() != 0 || ctx.resource_refusal().is_some() {
         let Some((boundary_index, edge)) =
