@@ -1234,7 +1234,7 @@ fn gui_state_records_refuse_at_caller_limit() {
 
 #[test]
 fn gui_object_name_index_refuses_at_caller_limit() {
-    let text = "<Document><Camera/></Document>";
+    let text = r#"<Document><Camera settings=""/><ViewProviderData Count="1"><ViewProvider name="P"><Properties Count="0"/></ViewProvider></ViewProviderData></Document>"#;
     let xml = roxmltree::Document::parse(text).expect("GUI document XML");
     let object = crate::native::ObjectRecord {
         identity: crate::native::object_identity::ObjectIdentity::try_new(
