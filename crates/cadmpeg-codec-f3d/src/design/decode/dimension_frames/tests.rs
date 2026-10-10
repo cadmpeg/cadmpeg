@@ -1950,3 +1950,5 @@ mod lazy_loci;
 mod stream_index_session;
 
 mod presentation_session;
+
+mod callback_boundaries;

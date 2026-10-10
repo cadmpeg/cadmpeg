@@ -1699,10 +1699,21 @@ fn matching_edge_operand_ids<'o>(
     operands: impl IntoIterator<Item = Result<&'o DesignEdgeOperand, CodecError>>,
     mut in_scope: impl FnMut(&DesignEdgeOperand) -> Result<bool, CodecError>,
 ) -> Result<Vec<String>, CodecError> {
+    const OPERATION: &str = "F3D dimension recipe edge callback boundary";
+    ctx.charge_work(0, OPERATION)?;
     let mut ids = Vec::new();
-    for operand in operands {
+    let mut operands = operands.into_iter();
+    ctx.charge_work(0, OPERATION)?;
+    loop {
+        let next = operands.next();
+        ctx.charge_work(0, OPERATION)?;
+        let Some(operand) = next else {
+            break;
+        };
         let operand = operand?;
-        if !in_scope(operand)? || !program_has_operand_tail(ctx, record, operand)? {
+        let selected = in_scope(operand);
+        ctx.charge_work(0, OPERATION)?;
+        if !selected? || !program_has_operand_tail(ctx, record, operand)? {
             continue;
         }
         ctx.push_formatted_retained(
@@ -3535,10 +3546,12 @@ fn parse_dimension_presentation_frame(
             let Some(candidate) = indexed_record_header_at(bytes, *offset) else {
                 return Ok(None);
             };
-            Ok(
-                (candidate.class_tag[0] != b'0' && is_paired_class(candidate.class_code)?)
-                    .then_some(candidate),
-            )
+            if candidate.class_tag[0] == b'0' {
+                return Ok(None);
+            }
+            let selected = is_paired_class(candidate.class_code);
+            ctx.charge_work(0, "f3d dimension presentation frame")?;
+            Ok(selected?.then_some(candidate))
         },
         "find F3D dimension presentation paired header",
     )?
