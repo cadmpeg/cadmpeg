@@ -1868,20 +1868,25 @@ pub(crate) mod base_feature_class_377_prefix {
     /// Stated value of `tag_body_based_on_faces_marker` (`u8`). Spec §3.1.
     pub(crate) const TAG_BODY_BASED_ON_FACES_MARKER_VALUE: u8 = 1;
     /// Offset of `tag_body_based_on_faces_count` (`u32`, little-endian). Spec §3.1.
+    #[cfg(test)]
     pub(crate) const TAG_BODY_BASED_ON_FACES_COUNT: usize = 55;
     /// Stated value of `tag_body_based_on_faces_count` (`u32`). Spec §3.1.
     pub(crate) const TAG_BODY_BASED_ON_FACES_COUNT_VALUE: u32 = 0x0000_0001;
     /// Offset of `tag_body_based_on_faces_key_length` (`u32`, little-endian). Spec §3.1.
+    #[cfg(test)]
     pub(crate) const TAG_BODY_BASED_ON_FACES_KEY_LENGTH: usize = 59;
     /// Stated value of `tag_body_based_on_faces_key_length` (`u32`). Spec §3.1.
     pub(crate) const TAG_BODY_BASED_ON_FACES_KEY_LENGTH_VALUE: u32 = 0x0000_0013;
     /// Offset of `tag_body_based_on_faces_key` (`bytes[19]`). Spec §3.1.
+    #[cfg(test)]
     pub(crate) const TAG_BODY_BASED_ON_FACES_KEY: usize = 63;
     /// Offset of `tag_body_based_on_faces_type_length` (`u32`, little-endian). Spec §3.1.
+    #[cfg(test)]
     pub(crate) const TAG_BODY_BASED_ON_FACES_TYPE_LENGTH: usize = 82;
     /// Stated value of `tag_body_based_on_faces_type_length` (`u32`). Spec §3.1.
     pub(crate) const TAG_BODY_BASED_ON_FACES_TYPE_LENGTH_VALUE: u32 = 0x0000_0015;
     /// Offset of `tag_body_based_on_faces_type` (`bytes[21]`). Spec §3.1.
+    #[cfg(test)]
     pub(crate) const TAG_BODY_BASED_ON_FACES_TYPE: usize = 86;
     /// Offset of `tag_body_based_on_faces_value` (`u16`, little-endian). Spec §3.1.
     pub(crate) const TAG_BODY_BASED_ON_FACES_VALUE: usize = 107;
@@ -1958,7 +1963,6 @@ pub(crate) mod base_feature_class_377_prefix {
     /// Stated value of `kind_length` (`u32`). Spec §3.1.
     pub(crate) const KIND_LENGTH_VALUE: u32 = 0x0000_000c;
     /// Offset of `kind` (`bytes[24]`). Spec §3.1.
-    #[cfg(test)]
     pub(crate) const KIND: usize = 262;
     /// Offset of `feature_ordinal` (`u32`, little-endian). Spec §3.1.
     pub(crate) const FEATURE_ORDINAL: usize = 286;

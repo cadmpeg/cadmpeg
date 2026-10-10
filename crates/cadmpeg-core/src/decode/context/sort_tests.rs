@@ -44,6 +44,44 @@ fn charged_stable_sort_scoped_refusal_preserves_input() {
     assert_eq!(values, (0..32).collect::<Vec<_>>());
 }
 
+/// The smallest work limit under which the stable sort of `values` succeeds.
+fn stable_sort_work(values: &[u64]) -> u64 {
+    let fits = |limit| {
+        let mut values = values.to_vec();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        ctx.stable_sort_by(&mut values, |value| value, Ord::cmp, "ordered sort")
+            .is_ok()
+    };
+    let (mut low, mut high) = (0, 1 << 20);
+    assert!(fits(high));
+    while low < high {
+        let middle = low + (high - low) / 2;
+        if fits(middle) {
+            high = middle;
+        } else {
+            low = middle + 1;
+        }
+    }
+    low
+}
+
+#[test]
+fn stable_sort_charges_depend_only_on_length() {
+    for count in [12_u64, 20, 21, 40] {
+        let sorted: Vec<_> = (0..count).collect();
+        let reversed: Vec<_> = (0..count).rev().collect();
+        let shuffled: Vec<_> = (0..count).map(|index| index * 7 % count).collect();
+        let interleaved: Vec<_> = (0..count).map(|index| index % 3).collect();
+        let work = stable_sort_work(&sorted);
+        assert_eq!(stable_sort_work(&reversed), work, "{count} reversed");
+        assert_eq!(stable_sort_work(&shuffled), work, "{count} shuffled");
+        assert_eq!(stable_sort_work(&interleaved), work, "{count} interleaved");
+    }
+}
+
 #[test]
 fn charged_stable_sort_work_refusal_preserves_input() {
     let mut values = vec![("long compared key", 1), ("different key", 2)];
