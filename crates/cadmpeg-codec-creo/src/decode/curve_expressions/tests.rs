@@ -942,17 +942,6 @@ fn curve_expression_dependency_validation_charges_index_work() {
     );
 }
 
-fn retained_refusal<T>(
-    operation: &'static str,
-    run: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
-) -> Result<T, cadmpeg_core::CodecError> {
-    Err(crate::test_support::last_refusal_at(
-        b"x",
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        operation,
-        run,
-    ))
-}
 
 #[test]
 fn curve_expression_external_dependency_text_refuses_before_copy() {
@@ -967,15 +956,14 @@ fn curve_expression_external_dependency_text_refuses_before_copy() {
         .expect("service profile admits the property"),
         Some("outside".to_string())
     );
-    let error = retained_refusal("creo curve-expression external dependency text", |ctx| {
+    let error = crate::test_support::last_refusal_at(b"x", cadmpeg_core::decode::ResourceDimension::RetainedBytes, "creo curve-expression external dependency text", |ctx| {
         super::joined_dependency_names(
             ctx,
             &names,
             |_| Ok(true),
             "creo curve-expression external dependency text",
         )
-    })
-    .expect_err("seven property bytes exceed the limit");
+    });
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -986,15 +974,14 @@ fn curve_expression_external_dependency_text_refuses_before_copy() {
 #[test]
 fn curve_expression_ambiguous_dependency_text_refuses_before_copy() {
     let names = vec!["ambiguous".to_string()];
-    let error = retained_refusal("creo curve-expression ambiguous dependency text", |ctx| {
+    let error = crate::test_support::last_refusal_at(b"x", cadmpeg_core::decode::ResourceDimension::RetainedBytes, "creo curve-expression ambiguous dependency text", |ctx| {
         super::joined_dependency_names(
             ctx,
             &names,
             |_| Ok(true),
             "creo curve-expression ambiguous dependency text",
         )
-    })
-    .expect_err("nine property bytes exceed the limit");
+    });
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1015,15 +1002,14 @@ fn curve_expression_intrinsic_dependency_text_refuses_before_copy() {
         .expect("service profile admits the property"),
         Some("t,T".to_string())
     );
-    let error = retained_refusal("creo curve-expression intrinsic dependency text", |ctx| {
+    let error = crate::test_support::last_refusal_at(b"x", cadmpeg_core::decode::ResourceDimension::RetainedBytes, "creo curve-expression intrinsic dependency text", |ctx| {
         super::joined_dependency_names(
             ctx,
             &names,
             |_| Ok(true),
             "creo curve-expression intrinsic dependency text",
         )
-    })
-    .expect_err("the separator is a retained byte");
+    });
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1039,10 +1025,9 @@ fn curve_expression_cyclic_dependency_text_refuses_before_copy() {
             .expect("service profile admits the joined text"),
         "alpha,beta"
     );
-    let error = retained_refusal("creo curve-expression cyclic dependency text", |ctx| {
+    let error = crate::test_support::last_refusal_at(b"x", cadmpeg_core::decode::ResourceDimension::RetainedBytes, "creo curve-expression cyclic dependency text", |ctx| {
         super::join_cyclic_dependency_names(ctx, &names)
-    })
-    .expect_err("the joined names need ten bytes");
+    });
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1099,11 +1084,10 @@ fn quantity_property_result(
 
 #[test]
 fn curve_expression_source_ordinal_value_refuses_before_text() {
-    let error = retained_refusal(
+    let error = crate::test_support::last_refusal_at(b"x", cadmpeg_core::decode::ResourceDimension::RetainedBytes,
         "creo curve-expression source ordinal value",
         quantity_property_result,
-    )
-    .expect_err("ordinal value needs one retained byte");
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "creo curve-expression source ordinal value")
@@ -1169,10 +1153,9 @@ fn curve_expression_quantity_properties_keep_value_and_dimension() {
 
 #[test]
 fn curve_expression_native_kind_refuses_before_text() {
-    let error = retained_refusal("creo curve-expression native kind", |ctx| {
+    let error = crate::test_support::last_refusal_at(b"x", cadmpeg_core::decode::ResourceDimension::RetainedBytes, "creo curve-expression native kind", |ctx| {
         super::native_curve_expression_definition(ctx, 7, 1)
-    })
-    .expect_err("native kind needs retained text");
+    });
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "creo curve-expression native kind")
@@ -1181,10 +1164,9 @@ fn curve_expression_native_kind_refuses_before_text() {
 
 #[test]
 fn curve_expression_native_entity_value_refuses_before_text() {
-    let error = retained_refusal("creo curve-expression native entity value", |ctx| {
+    let error = crate::test_support::last_refusal_at(b"x", cadmpeg_core::decode::ResourceDimension::RetainedBytes, "creo curve-expression native entity value", |ctx| {
         super::native_curve_expression_definition(ctx, 7, 1)
-    })
-    .expect_err("entity value needs one more retained byte");
+    });
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "creo curve-expression native entity value")
@@ -1193,10 +1175,9 @@ fn curve_expression_native_entity_value_refuses_before_text() {
 
 #[test]
 fn curve_expression_native_assignment_count_refuses_before_text() {
-    let error = retained_refusal("creo curve-expression native assignment count", |ctx| {
+    let error = crate::test_support::last_refusal_at(b"x", cadmpeg_core::decode::ResourceDimension::RetainedBytes, "creo curve-expression native assignment count", |ctx| {
         super::native_curve_expression_definition(ctx, 7, 1)
-    })
-    .expect_err("assignment count needs one more retained byte");
+    });
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "creo curve-expression native assignment count")
@@ -1228,10 +1209,9 @@ fn curve_expression_native_fallback_keeps_kind_and_values() {
 
 #[test]
 fn curve_expression_feature_name_refuses_before_text() {
-    let error = retained_refusal("creo curve-expression feature name", |ctx| {
+    let error = crate::test_support::last_refusal_at(b"x", cadmpeg_core::decode::ResourceDimension::RetainedBytes, "creo curve-expression feature name", |ctx| {
         super::curve_expression_feature_labels(ctx, 7)
-    })
-    .expect_err("feature name needs retained text");
+    });
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "creo curve-expression feature name")
@@ -1240,10 +1220,9 @@ fn curve_expression_feature_name_refuses_before_text() {
 
 #[test]
 fn curve_expression_feature_source_tag_refuses_before_text() {
-    let error = retained_refusal("creo curve-expression feature source tag", |ctx| {
+    let error = crate::test_support::last_refusal_at(b"x", cadmpeg_core::decode::ResourceDimension::RetainedBytes, "creo curve-expression feature source tag", |ctx| {
         super::curve_expression_feature_labels(ctx, 7)
-    })
-    .expect_err("source tag needs retained text");
+    });
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "creo curve-expression feature source tag")
@@ -1276,10 +1255,9 @@ fn curve_expression_source_text_refuses_before_join() {
             .expect("service profile admits source text"),
         "alpha\nbeta"
     );
-    let error = retained_refusal("creo curve-expression feature source text", |ctx| {
+    let error = crate::test_support::last_refusal_at(b"x", cadmpeg_core::decode::ResourceDimension::RetainedBytes, "creo curve-expression feature source text", |ctx| {
         super::curve_expression_source_text(ctx, &lines)
-    })
-    .expect_err("the joined lines need ten bytes");
+    });
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)

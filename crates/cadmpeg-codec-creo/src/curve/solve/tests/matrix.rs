@@ -4,7 +4,7 @@ use crate::curve::solve::{
     refine_nonlinear_solution, solve_unique_affine_system, AffineEquationRow,
     NONLINEAR_SOLVE_SOLUTION_TOLERANCE,
 };
-use crate::curve::test_support::with_policy;
+use crate::curve::test_support::with_expression_policy;
 use crate::curve::RelationEvaluationContext;
 use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
@@ -41,7 +41,7 @@ fn affine_matrix_elimination_refuses_work() {
         |cap| {
             let mut trial = policy;
             trial.limits.max_work_units = cap;
-            with_policy(trial, |ctx| {
+            with_expression_policy(trial, |ctx| {
                 solve_unique_affine_system(
                     ctx,
                     &mut [AffineEquationRow {
@@ -53,7 +53,7 @@ fn affine_matrix_elimination_refuses_work() {
             })
         },
     );
-    let error = with_policy(policy, |ctx| {
+    let error = with_expression_policy(policy, |ctx| {
         solve_unique_affine_system(
             ctx,
             &mut [AffineEquationRow {
@@ -102,7 +102,7 @@ fn nonlinear_ceiling_error(left: &str, seed: f64) -> CodecError {
         offset: 0,
         for_offset: 1,
     };
-    with_policy(DecodePolicy::service(), |ctx| {
+    with_expression_policy(DecodePolicy::service(), |ctx| {
         refine_nonlinear_solution(
             ctx,
             &block,
@@ -177,7 +177,7 @@ fn nonlinear_cubic_negative_seeds_preserve_progress_with_one_residual_scale() {
         for_offset: 1,
     };
     for seed in [-100.0, -10.0, -1.0, -0.1, -0.01] {
-        let solution = with_policy(DecodePolicy::service(), |ctx| {
+        let solution = with_expression_policy(DecodePolicy::service(), |ctx| {
             refine_nonlinear_solution(
                 ctx,
                 &block,
