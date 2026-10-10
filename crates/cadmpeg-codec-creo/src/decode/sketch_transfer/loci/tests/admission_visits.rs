@@ -6,7 +6,9 @@ use crate::feature::definitions::{
     FeatureSegmentTable, FeatureSkamp, FeatureSolverTableHeader, SolverSubtable,
 };
 use crate::feature::segment_rows::SegmentRow;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, ResourceLimit};
+use cadmpeg_core::decode::{
+    DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, ResourceLimit,
+};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::sketches::SketchId;
 use std::ops::ControlFlow;
@@ -40,10 +42,21 @@ fn skamp_definition(count: u32) -> FeatureDefinition {
             entity_ref: None,
             rows: Vec::new(),
             skamps: Some(SolverSubtable::Declared {
-                header: FeatureSolverTableHeader { declared_count: count, entity_ref: 0, offset: 0 },
-                rows: (1..=count).map(|id| FeatureSkamp {
-                    id, kind: 0, flags: 0, status: 1, items: Vec::new(), offset: 0,
-                }).collect(),
+                header: FeatureSolverTableHeader {
+                    declared_count: count,
+                    entity_ref: 0,
+                    offset: 0,
+                },
+                rows: (1..=count)
+                    .map(|id| FeatureSkamp {
+                        id,
+                        kind: 0,
+                        flags: 0,
+                        status: 1,
+                        items: Vec::new(),
+                        offset: 0,
+                    })
+                    .collect(),
             }),
             triples: None,
             offset: 0,
@@ -80,12 +93,26 @@ fn point_locus_visits_only_present_opaque_rows() {
     for count in [0_u32, 1, 3] {
         let definition = FeatureDefinition {
             segments: Some(FeatureSegmentTable {
-                declared_count: count, has_elided_prototype: false, entity_ref: None,
-                rows: (1..=count).map(|external_id| SegmentRow::Opaque(FeatureOpaqueSegment {
-                    kind: 99, directions: [None; 3], point_ids: [None; 2], center_id: None,
-                    arc_orientation: None, vertical_horizontal: None, radius_ref: None,
-                    radius2_ref: None, external_id, body: Vec::new(), offset: 0,
-                })).collect(),
+                declared_count: count,
+                has_elided_prototype: false,
+                entity_ref: None,
+                rows: (1..=count)
+                    .map(|external_id| {
+                        SegmentRow::Opaque(FeatureOpaqueSegment {
+                            kind: 99,
+                            directions: [None; 3],
+                            point_ids: [None; 2],
+                            center_id: None,
+                            arc_orientation: None,
+                            vertical_horizontal: None,
+                            radius_ref: None,
+                            radius2_ref: None,
+                            external_id,
+                            body: Vec::new(),
+                            offset: 0,
+                        })
+                    })
+                    .collect(),
                 offset: 0,
             }),
             ..definition()
@@ -101,8 +128,13 @@ fn point_locus_visits_only_present_opaque_rows() {
                     }
                     Ok(locus) => {
                         assert!(locus.is_none());
-                        assert!(ctx.resource_refusal().is_none(), "successful traversal stays active");
-                        let probe = ctx.charge_work_limit(u64::MAX, "test completed locus visits").expect_err("work probe");
+                        assert!(
+                            ctx.resource_refusal().is_none(),
+                            "successful traversal stays active"
+                        );
+                        let probe = ctx
+                            .charge_work_limit(u64::MAX, "test completed locus visits")
+                            .expect_err("work probe");
                         assert_eq!(probe.used, u64::from(count));
                         Some(probe)
                     }
@@ -139,14 +171,22 @@ fn skamp_walk(all_rows: bool) {
                 let refusal = match &result {
                     Err(CodecError::ResourceLimit(resource)) => {
                         assert_eq!(resource.operation, "creo relation skamp rows");
-                        assert_eq!((resource.used, resource.additional), (u64::try_from(called).expect("visits"), 1));
+                        assert_eq!(
+                            (resource.used, resource.additional),
+                            (u64::try_from(called).expect("visits"), 1)
+                        );
                         Some(*resource)
                     }
                     Ok(value) => {
                         assert_eq!(*value, ControlFlow::Continue(()));
                         assert_eq!(called, usize::try_from(count).expect("rows"));
-                        assert!(ctx.resource_refusal().is_none(), "successful traversal stays active");
-                        let probe = ctx.charge_work_limit(u64::MAX, "test completed SKAMP visits").expect_err("work probe");
+                        assert!(
+                            ctx.resource_refusal().is_none(),
+                            "successful traversal stays active"
+                        );
+                        let probe = ctx
+                            .charge_work_limit(u64::MAX, "test completed SKAMP visits")
+                            .expect_err("work probe");
                         assert_eq!(probe.used, u64::from(count));
                         Some(probe)
                     }
@@ -161,90 +201,122 @@ fn skamp_walk(all_rows: bool) {
 }
 
 #[test]
-fn section_skamp_walk_has_no_terminal_visit() { skamp_walk(false); }
+fn section_skamp_walk_has_no_terminal_visit() {
+    skamp_walk(false);
+}
 
 #[test]
-fn all_section_skamp_walk_has_no_terminal_visit() { skamp_walk(true); }
+fn all_section_skamp_walk_has_no_terminal_visit() {
+    skamp_walk(true);
+}
 
 #[test]
 fn inactive_skamps_still_consume_their_present_row_visit() {
     let mut definition = skamp_definition(3);
-    definition.relations.as_mut().expect("relations").skamps.as_mut()
-        .expect("SKAMP table").rows_mut()[0].status = 0;
-    crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, &["creo relation skamp rows"], |cap| {
-        with_work(cap, |ctx| {
-            let mut called = 0_u64;
-            let result = visit_section_skamps::<()>(&ctx, &definition, true, |_| {
-                called += 1;
-                Ok(ControlFlow::Continue(()))
-            });
-            let visited = match &result {
-                Err(CodecError::ResourceLimit(resource)) => {
-                    assert_eq!(resource.operation, "creo relation skamp rows");
-                    assert_eq!(resource.additional, 1);
-                    resource.used
+    definition
+        .relations
+        .as_mut()
+        .expect("relations")
+        .skamps
+        .as_mut()
+        .expect("SKAMP table")
+        .rows_mut()[0]
+        .status = 0;
+    crate::test_support::assert_refusal_order(
+        ResourceDimension::WorkUnits,
+        &["creo relation skamp rows"],
+        |cap| {
+            with_work(cap, |ctx| {
+                let mut called = 0_u64;
+                let result = visit_section_skamps::<()>(&ctx, &definition, true, |_| {
+                    called += 1;
+                    Ok(ControlFlow::Continue(()))
+                });
+                let visited = match &result {
+                    Err(CodecError::ResourceLimit(resource)) => {
+                        assert_eq!(resource.operation, "creo relation skamp rows");
+                        assert_eq!(resource.additional, 1);
+                        resource.used
+                    }
+                    Ok(value) => {
+                        assert_eq!(*value, ControlFlow::Continue(()));
+                        3
+                    }
+                    Err(error) => panic!("unexpected SKAMP error: {error:?}"),
+                };
+                if visited == 0 {
+                    assert_eq!(called, 0);
+                } else {
+                    assert_eq!(called.checked_add(1).expect("visited rows fit"), visited);
                 }
-                Ok(value) => { assert_eq!(*value, ControlFlow::Continue(())); 3 }
-                Err(error) => panic!("unexpected SKAMP error: {error:?}"),
-            };
-            if visited == 0 {
-                assert_eq!(called, 0);
-            } else {
-                assert_eq!(called.checked_add(1).expect("visited rows fit"), visited);
-            }
-            let refusal = match &result {
-                Err(CodecError::ResourceLimit(resource)) => Some(*resource),
-                Ok(_) => {
-                    assert!(ctx.resource_refusal().is_none(), "successful traversal stays active");
-                    let probe = ctx.charge_work_limit(u64::MAX, "test completed inactive SKAMP visits").expect_err("work probe");
-                    assert_eq!(probe.used, 3);
-                    Some(probe)
-                }
-                _ => None,
-            };
-            finish(ctx, refusal);
-            result.map(|_| ())
-        })
-    });
+                let refusal = match &result {
+                    Err(CodecError::ResourceLimit(resource)) => Some(*resource),
+                    Ok(_) => {
+                        assert!(
+                            ctx.resource_refusal().is_none(),
+                            "successful traversal stays active"
+                        );
+                        let probe = ctx
+                            .charge_work_limit(u64::MAX, "test completed inactive SKAMP visits")
+                            .expect_err("work probe");
+                        assert_eq!(probe.used, 3);
+                        Some(probe)
+                    }
+                    _ => None,
+                };
+                finish(ctx, refusal);
+                result.map(|_| ())
+            })
+        },
+    );
 }
 
 #[test]
 fn skamp_callback_break_stops_before_remaining_rows() {
     let definition = skamp_definition(3);
     for all_rows in [false, true] {
-        crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, &["creo relation skamp rows"], |cap| {
-            with_work(cap, |ctx| {
-                let mut called = 0;
-                let mut visit = |row: &FeatureSkamp| {
-                    called += 1;
-                    Ok(ControlFlow::Break(row.id))
-                };
-                let result = if all_rows {
-                    visit_all_section_skamps(&ctx, &definition, &mut visit)
-                } else {
-                    visit_section_skamps(&ctx, &definition, false, &mut visit)
-                };
-                let refusal = match &result {
-                    Err(CodecError::ResourceLimit(resource)) => {
-                        assert_eq!(resource.operation, "creo relation skamp rows");
-                        assert_eq!((resource.used, resource.additional), (0, 1));
-                        assert_eq!(called, 0);
-                        Some(*resource)
-                    }
-                    Ok(value) => {
-                        assert_eq!(*value, ControlFlow::Break(1));
-                        assert_eq!(called, 1);
-                        assert!(ctx.resource_refusal().is_none(), "successful traversal stays active");
-                        let probe = ctx.charge_work_limit(u64::MAX, "test completed SKAMP callback visits").expect_err("work probe");
-                        assert_eq!(probe.used, 1);
-                        Some(probe)
-                    }
-                    Err(error) => panic!("unexpected callback error: {error:?}"),
-                };
-                finish(ctx, refusal);
-                result.map(|_| ())
-            })
-        });
+        crate::test_support::assert_refusal_order(
+            ResourceDimension::WorkUnits,
+            &["creo relation skamp rows"],
+            |cap| {
+                with_work(cap, |ctx| {
+                    let mut called = 0;
+                    let mut visit = |row: &FeatureSkamp| {
+                        called += 1;
+                        Ok(ControlFlow::Break(row.id))
+                    };
+                    let result = if all_rows {
+                        visit_all_section_skamps(&ctx, &definition, &mut visit)
+                    } else {
+                        visit_section_skamps(&ctx, &definition, false, &mut visit)
+                    };
+                    let refusal = match &result {
+                        Err(CodecError::ResourceLimit(resource)) => {
+                            assert_eq!(resource.operation, "creo relation skamp rows");
+                            assert_eq!((resource.used, resource.additional), (0, 1));
+                            assert_eq!(called, 0);
+                            Some(*resource)
+                        }
+                        Ok(value) => {
+                            assert_eq!(*value, ControlFlow::Break(1));
+                            assert_eq!(called, 1);
+                            assert!(
+                                ctx.resource_refusal().is_none(),
+                                "successful traversal stays active"
+                            );
+                            let probe = ctx
+                                .charge_work_limit(u64::MAX, "test completed SKAMP callback visits")
+                                .expect_err("work probe");
+                            assert_eq!(probe.used, 1);
+                            Some(probe)
+                        }
+                        Err(error) => panic!("unexpected callback error: {error:?}"),
+                    };
+                    finish(ctx, refusal);
+                    result.map(|_| ())
+                })
+            },
+        );
     }
 }
 
@@ -252,27 +324,51 @@ fn skamp_callback_break_stops_before_remaining_rows() {
 fn missing_empty_and_incomplete_locus_routes_are_free_and_keep_original_refusal() {
     let sketch = SketchId::mint("creo:model:sketch#1").expect("fixture identity");
     let mut incomplete = skamp_definition(0);
-    incomplete.relations.as_mut().expect("relations").skamps.as_mut()
-        .expect("SKAMP table").header_mut().expect("header").declared_count = 1;
+    incomplete
+        .relations
+        .as_mut()
+        .expect("relations")
+        .skamps
+        .as_mut()
+        .expect("SKAMP table")
+        .header_mut()
+        .expect("header")
+        .declared_count = 1;
     let mut empty_segments = definition();
     empty_segments.segments = Some(FeatureSegmentTable {
-        declared_count: 0, has_elided_prototype: false, entity_ref: None,
-        rows: Default::default(), offset: 0,
+        declared_count: 0,
+        has_elided_prototype: false,
+        entity_ref: None,
+        rows: crate::feature::segment_rows::SegmentRows::default(),
+        offset: 0,
     });
     let mut absent_skamps = skamp_definition(0);
     absent_skamps.relations.as_mut().expect("relations").skamps = None;
-    for definition in [definition(), empty_segments, absent_skamps, skamp_definition(0), incomplete] {
+    for definition in [
+        definition(),
+        empty_segments,
+        absent_skamps,
+        skamp_definition(0),
+        incomplete,
+    ] {
         for refused in [false, true] {
             with_work(0, |ctx| {
-                let original = refused.then(|| ctx.charge_work_limit(1, "before empty locus")
-                    .expect_err("zero work cap"));
+                let original = refused.then(|| {
+                    ctx.charge_work_limit(1, "before empty locus")
+                        .expect_err("zero work cap")
+                });
                 for _ in 0..2 {
                     let results = [
-                        section_point_locus(&ctx, &definition, &sketch, 7).map(|value| value.is_none()),
-                        visit_section_skamps::<()>(&ctx, &definition, true,
-                            |_| panic!("empty SKAMP callback")).map(|value| value == ControlFlow::Continue(())),
-                        visit_all_section_skamps::<()>(&ctx, &definition,
-                            |_| panic!("empty SKAMP callback")).map(|value| value == ControlFlow::Continue(())),
+                        section_point_locus(&ctx, &definition, &sketch, 7)
+                            .map(|value| value.is_none()),
+                        visit_section_skamps::<()>(&ctx, &definition, true, |_| {
+                            panic!("empty SKAMP callback")
+                        })
+                        .map(|value| value == ControlFlow::Continue(())),
+                        visit_all_section_skamps::<()>(&ctx, &definition, |_| {
+                            panic!("empty SKAMP callback")
+                        })
+                        .map(|value| value == ControlFlow::Continue(())),
                     ];
                     for result in results {
                         if let Some(original) = original {
