@@ -5,10 +5,11 @@ use super::parameter_slot;
 use crate::decode::analytic::equations::PlaneEquation;
 use crate::decode::feature_history::draft::schema_feature_definition;
 use crate::decode::feature_history::link::section_entity_is_generated_profile;
+use crate::decode::feature_history::round::tests::radius_from_support_planes;
 use crate::decode::feature_history::round::{
     coordinate_pair_proves_torus_radii, differing_positive_lengths,
     five_coordinate_envelope_proves_torus_radii, outline_has_unique_radius_delta,
-    paired_five_coordinate_sphere_center, parallel_support_radius, round_constant_radius,
+    paired_five_coordinate_sphere_center, round_constant_radius,
     round_observed_radii, round_placed_cylinder_radii, round_support_radius, slot_fillet_cylinder,
     unique_positive_length,
 };
@@ -644,42 +645,39 @@ fn unique_parallel_round_supports_define_constant_radius() {
     })
     .expect("service profile admits positive length samples"));
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| parallel_support_radius(
+        crate::decode::with_test_decode_ctx(|ctx| radius_from_support_planes(
             ctx,
             &[
                 plane([-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
                 plane([0.0, 0.0, -6.1], [0.0, 0.0, 1.0]),
                 plane([-9.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
-            ],
-            |plane| Ok(Some(*plane))
+            ]
         ))
         .expect("service profile admits round support plane comparisons"),
         Some(0.5)
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| parallel_support_radius(
+        crate::decode::with_test_decode_ctx(|ctx| radius_from_support_planes(
             ctx,
             &[
                 plane([-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
                 plane([-9.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
                 plane([0.0, 0.0, -6.0], [0.0, 0.0, 1.0]),
                 plane([0.0, 0.0, -8.0], [0.0, 0.0, 1.0]),
-            ],
-            |plane| Ok(Some(*plane))
+            ]
         ))
         .expect("service profile admits round support plane comparisons"),
         None
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| parallel_support_radius(
+        crate::decode::with_test_decode_ctx(|ctx| radius_from_support_planes(
             ctx,
             &[
                 plane([-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
                 plane([-9.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
                 plane([0.0, 0.0, -6.0], [0.0, 0.0, 1.0]),
                 plane([0.0, 0.0, -7.0], [0.0, 0.0, 1.0]),
-            ],
-            |plane| Ok(Some(*plane))
+            ]
         ))
         .expect("service profile admits round support plane comparisons"),
         Some(0.5)

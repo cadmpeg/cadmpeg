@@ -111,7 +111,7 @@ fn generated_surface_query_counts_present_tables_and_entries_and_stops_on_ambigu
     for (table, source, expected) in [(&unique, 5, Some(12)), (&unique, 8, None), (&ambiguous, 5, None)] {
         let tables = [unrelated.clone(), table.clone()];
         // One unrelated table, one matching table, three actual entries.
-        for cap in 0..=5 {
+        crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, &["creo generated surface feature tables", "creo generated surface feature entries"], |cap| {
             let arena = DecodeArena::new();
             let policy = work_policy(cap);
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
@@ -136,7 +136,13 @@ fn generated_surface_query_counts_present_tables_and_entries_and_stops_on_ambigu
                     Err(CodecError::ResourceLimit(actual)) if actual == original));
                 assert_eq!(ctx.resource_refusal(), Some(original));
             }
-        }
+
+            if cap < 5 {
+                Err(ctx.resource_refusal().expect("present visit refusal").into())
+            } else {
+                Ok::<_, CodecError>(())
+            }
+});
     }
 }
 
@@ -145,7 +151,7 @@ fn generated_profile_shape_stops_at_first_missing_source_without_building_index(
     let mut entries = vec![entry(1, 204, None), entry(2, 203, None), entry(3, 200, None)];
     entries.extend((0..128).map(|id| entry(100 + id, 200, Some(id))));
     let table = FeatureEntityTable::new(7, 29, entries, &BTreeSet::new(), 0);
-    for cap in 0..=1 {
+    crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, &["creo generated profile remaining entries"], |cap| {
         let arena = DecodeArena::new();
         let policy = work_policy(cap);
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
@@ -166,5 +172,11 @@ fn generated_profile_shape_stops_at_first_missing_source_without_building_index(
                 Err(CodecError::ResourceLimit(actual)) if actual == original));
             assert_eq!(ctx.resource_refusal(), Some(original));
         }
-    }
+
+            if cap < 1 {
+                Err(ctx.resource_refusal().expect("present visit refusal").into())
+            } else {
+                Ok::<_, CodecError>(())
+            }
+});
 }

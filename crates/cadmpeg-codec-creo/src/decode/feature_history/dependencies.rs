@@ -712,6 +712,7 @@ pub(in super::super) fn reconcile_feature_links(
             ctx.insert_btree_set(&mut emitted, id, "creo emitted feature identity nodes")
         })?;
     }
+    let mut regeneration_storage = ctx.reserve_scoped(0, "creo regeneration edges")?;
     let mut regeneration_edges = Vec::new();
     for (index, feature_id, outputs) in
         ctx.admit_iter(output_updates, "creo reconciled feature updates")?
@@ -750,7 +751,7 @@ pub(in super::super) fn reconcile_feature_links(
             &native_dependency_ids,
             "creo reconciled native dependency IDs",
         )? {
-            let text = ctx.format_retained(
+            let (text, text_storage) = ctx.format_scoped(
                 format_args!("creo:model:feature#{dependency}"),
                 "creo reconciled native dependency IDs",
             )?;
@@ -760,6 +761,10 @@ pub(in super::super) fn reconcile_feature_links(
                     &id,
                     &feature.id,
                     "creo reconciled feature identity comparison",
+                )? && !ctx.contains(
+                    feature.dependencies.as_slice(),
+                    &id,
+                    "creo reconciled established dependency membership",
                 )?
             {
                 lookup_storage.with_storage(|| {
@@ -769,7 +774,7 @@ pub(in super::super) fn reconcile_feature_links(
                         "creo reconciled native dependencies",
                     )
                 })?;
-                native_dependencies.push(id);
+                native_dependencies.push(text_storage.commit_value(id)?);
             }
         }
         let generated_dependencies = lookup_storage.with_storage(|| {
@@ -808,7 +813,7 @@ pub(in super::super) fn reconcile_feature_links(
         feature.dependencies = cadmpeg_ir::features::DistinctMembers::try_from(dependencies, ctx)
             .map_err(cadmpeg_core::CodecError::from)?;
         if let Some(parent_id) = recipe_parent {
-            let text = ctx.format_retained(
+            let (text, parent_storage) = ctx.format_scoped(
                 format_args!("creo:model:feature#{parent_id}"),
                 "creo regeneration parent IDs",
             )?;
@@ -822,19 +827,44 @@ pub(in super::super) fn reconcile_feature_links(
                 &parent,
                 "creo regeneration parent identity lookup",
             )? {
-                let child = feature
+                let (child, child_storage) = ctx.with_scoped_storage("creo regeneration child IDs", || feature
                     .id
-                    .try_clone_for_decode(ctx, "creo regeneration child IDs")?;
-                lookup_storage.with_storage(|| {
+                    .try_clone_for_decode(ctx, "creo regeneration child IDs"))?;
+                regeneration_storage.with_storage(|| {
                     ctx.reserve_vec(&mut regeneration_edges, 1, "creo regeneration edges")
                 })?;
-                regeneration_edges.push((child, parent));
+                regeneration_edges.push((child, parent, child_storage, parent_storage));
             }
         }
     }
-    for (child, parent) in ctx.admit_iter(&regeneration_edges, "creo feature regeneration edges")? {
+    for (child, parent, _, _) in ctx.admit_iter(&regeneration_edges, "creo feature regeneration edges")? {
         ir.model
             .set_feature_regeneration_parent(ctx, child, parent)?;
+    }
+    drop((regeneration_edges, regeneration_storage));
+    let mut tree_parents = BTreeMap::new();
+    for feature in ctx.admit_iter(&ir.model.features, "creo feature tree owners")? {
+        let IrFeatureDefinition::Operation(IrFeatureOperation::TreeNode { children, .. }) =
+            feature.evaluation.definition()
+        else {
+            continue;
+        };
+        for child in ctx.admit_iter(&children[..], "creo feature tree children")? {
+            lookup_storage.with_storage(|| {
+                ctx.entry_btree_map(&mut tree_parents, child, "creo feature tree parent index")
+            })?.or_insert(&feature.id);
+        }
+    }
+    let mut parents = lookup_storage.with_storage(|| {
+        ctx.collection_vec(ir.model.features.len(), "creo feature ordering parent rows")
+    })?;
+    for feature in ctx.admit_iter(&ir.model.features, "creo feature ordering parent features")? {
+        let parent = ctx.get_btree_map(
+            &tree_parents,
+            &feature.id,
+            "creo feature tree parent lookup",
+        )?.copied().or_else(|| ir.model.feature_regeneration_parent(&feature.id));
+        parents.push(parent);
     }
     let mut remaining = lookup_storage.with_storage(|| {
         ctx.collect_vec(0..ir.model.features.len(), "creo remaining feature order")
@@ -858,7 +888,7 @@ pub(in super::super) fn reconcile_feature_links(
                         .dependencies
                         .as_slice()
                         .iter()
-                        .chain(ir.model.feature_parent(&feature.id)),
+                        .chain(parents[*index]),
                     |required| {
                         Ok(!ctx.contains_btree_set(
                             &emitted,
@@ -919,6 +949,8 @@ pub(in super::super) fn reconcile_feature_links(
             "creo remaining feature index moves",
         )
     })?;
+    drop(parents);
+    drop(tree_parents);
     for (ordinal, index) in ctx
         .admit_iter(&ordered, "creo ordered feature ordinal assignment")?
         .copied()
@@ -1014,9 +1046,10 @@ pub(in super::super) fn reconciled_dependencies(
         dependencies.push(id);
     }
     let mut native = native.into_iter();
-    while let Some(dependency) =
-        ctx.next_charged(&mut native, "creo native dependency references")?
-    {
+    while native.size_hint().1 != Some(0) {
+        let Some(dependency) = ctx.next_charged(&mut native, "creo native dependency references")? else {
+            break;
+        };
         if ctx.contains_btree_set(
             emitted,
             &dependency,

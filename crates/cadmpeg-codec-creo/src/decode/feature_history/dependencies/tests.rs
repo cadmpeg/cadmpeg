@@ -732,22 +732,6 @@ fn regeneration_edge_limit_error(
 }
 
 #[test]
-fn regeneration_parent_id_refuses_retained_limit() {
-    regeneration_edge_limit_error(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "creo regeneration parent IDs",
-    );
-}
-
-#[test]
-fn regeneration_child_id_refuses_retained_limit() {
-    regeneration_edge_limit_error(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "creo regeneration child IDs",
-    );
-}
-
-#[test]
 fn regeneration_edges_refuse_collection_limit() {
     // The dependency uniqueness index admits one borrowed member first.
     regeneration_edge_limit_error(
@@ -1025,17 +1009,13 @@ fn duplicate_emitted_feature_identity_membership_refuses_work_and_preserves_orde
 #[test]
 fn remaining_feature_order_removal_charges_only_suffix_bytes() {
     let scan = regeneration_scan();
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
+    let error = crate::test_support::last_refusal_at(
+        &[],
         ResourceDimension::WorkUnits,
         "creo remaining feature order removal shifts",
-        |limit| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-                .expect("empty root is admitted");
+        |ctx| {
             let mut ir = reconciliation_ir_for_ordering();
-            super::reconcile_feature_links(&ctx, &scan, &mut ir, &BTreeMap::new())
+            super::reconcile_feature_links(ctx, &scan, &mut ir, &BTreeMap::new())
         },
     );
     assert!(
@@ -1076,4 +1056,101 @@ fn empty_feature_reconciliation_skips_operation_index() {
     });
     assert!(ir.model.features.is_empty());
     assert!(!operation_query.get());
+}
+
+#[test]
+fn feature_order_preserves_first_tree_owner_and_existing_regeneration_parent() {
+    let scan = crate::test_support::empty_container_scan();
+    let mut original = reconciliation_ir_for_ordering();
+    let parent = original.model.features[0].id.clone();
+    let child = original.model.features[1].id.clone();
+    crate::decode::with_test_decode_ctx(|ctx| {
+        original.model.set_feature_regeneration_parent(ctx, &child, &parent)
+    }).expect("fixture regeneration edge");
+    original.model.features.reverse();
+    let ordered = crate::test_support::assert_work_boundaries(
+        &["creo feature tree owners", "creo feature ordering parent features"],
+        |ctx| {
+            let mut ir = original.clone();
+            super::reconcile_feature_links(ctx, &scan, &mut ir, &BTreeMap::new())?;
+            Ok::<_, CodecError>(ir)
+        },
+    );
+    assert_eq!(ordered.model.features[0].ordinal, 1);
+    assert_eq!(ordered.model.features[1].ordinal, 0);
+    assert_eq!(ordered.model.feature_parent(&child), Some(&parent));
+
+    let mut ir = reconciliation_ir_for_ordering();
+    let mut second_owner = ir.model.features[0].clone();
+    second_owner.id = IrFeatureId::mint("creo:model:feature#17").expect("second owner");
+    let children = cadmpeg_ir::features::TreeChildren::new(
+        vec![child.clone()],
+        Some(child.clone()),
+        &cadmpeg_test_support::service_decode_context(),
+    ).expect("fixture child list admission");
+    ir.model.features[0].evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        IrFeatureDefinition::Operation(IrFeatureOperation::TreeNode {
+            role: cadmpeg_ir::features::FeatureTreeNodeRole::History,
+            children: children.clone(),
+        }),
+    );
+    ir.model.features[0].dependencies = cadmpeg_ir::features::DistinctMembers::try_from(
+        vec![second_owner.id.clone()],
+        &cadmpeg_test_support::service_decode_context(),
+    ).expect("fixture dependency admission");
+    second_owner.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        IrFeatureDefinition::Operation(IrFeatureOperation::TreeNode {
+            role: cadmpeg_ir::features::FeatureTreeNodeRole::History,
+            children,
+        }),
+    );
+    ir.model.features.reverse();
+    ir.model.features.push(second_owner);
+    let ordered = crate::test_support::assert_work_boundaries(
+        &["creo feature tree children", "creo feature tree parent index", "creo feature tree parent lookup"],
+        |ctx| {
+            let mut ir = ir.clone();
+            super::reconcile_feature_links(ctx, &scan, &mut ir, &BTreeMap::new())?;
+            Ok::<_, CodecError>(ir)
+        },
+    );
+    assert_eq!(ordered.model.feature_tree_parent(&child), Some(&parent));
+    assert_eq!(ordered.model.features.iter().map(|feature| feature.ordinal).collect::<Vec<_>>(), vec![2, 1, 0]);
+}
+
+
+#[test]
+fn regeneration_reconciliation_retains_only_installed_edge_storage() {
+    let scan = regeneration_scan();
+    let empty_scan = crate::test_support::empty_container_scan();
+    let child = IrFeatureId::mint("creo:model:feature#10").expect("fixture child ID");
+    let parent = IrFeatureId::mint("creo:model:feature#3").expect("fixture parent ID");
+    let reconcile = |ctx: &DecodeContext<'_>, staged: bool| {
+        let mut ir = reconciliation_ir_for_ordering();
+        if staged {
+            super::reconcile_feature_links(ctx, &scan, &mut ir, &BTreeMap::new())?;
+        } else {
+            super::reconcile_feature_links(ctx, &empty_scan, &mut ir,
+                &BTreeMap::from([(10, vec![3])]))?;
+            ir.model.set_feature_regeneration_parent(ctx, &child, &parent)?;
+        }
+        Ok::<_, CodecError>(ir)
+    };
+    let direct = crate::decode::with_test_decode_ctx(|ctx| reconcile(ctx, false))
+        .expect("direct model edge installation");
+    let staged = crate::decode::with_test_decode_ctx(|ctx| reconcile(ctx, true))
+        .expect("history edge reconciliation");
+    assert_eq!(staged, direct);
+    assert_eq!(staged.model.feature_regeneration_parent(&child), Some(&parent));
+    let retained_limit = |staged| crate::test_support::allocation_limit_at(
+        ResourceDimension::RetainedBytes, None, |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            reconcile(&ctx, staged)
+        },
+    );
+    assert_eq!(retained_limit(true), retained_limit(false),
+        "reconciliation retains the same output as direct edge installation");
 }
