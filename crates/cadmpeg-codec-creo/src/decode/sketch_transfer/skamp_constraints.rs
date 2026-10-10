@@ -66,9 +66,15 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
     sketch: &SketchId,
     geometry: Option<&BTreeMap<SketchEntityId, SketchGeometry>>,
 ) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(relations) = &definition.relations else {
         return Ok(Vec::new());
     };
+    if relations.skamps().is_empty() {
+        return Ok(Vec::new());
+    }
     let mut scratch_storage = ctx.reserve_scoped(0, "creo SKAMP scratch storage")?;
     let resolved_points = if ctx.any_by(
         relations.skamps(),
@@ -1204,6 +1210,7 @@ fn sketch_constraint_loci_compatible_with_policy(
 
 #[cfg(test)]
 mod tests {
+    mod admission_recovery;
     use super::sketch_constraint_loci_compatible_with_policy;
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::sketches::{

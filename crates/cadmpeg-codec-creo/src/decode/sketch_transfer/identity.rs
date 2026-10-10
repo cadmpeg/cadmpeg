@@ -391,7 +391,14 @@ pub(in super::super) fn visit_semantic_saved_section_entities<'definition, B>(
         &'definition crate::feature::definitions::FeatureSavedEntity,
     ) -> Result<ControlFlow<B>, cadmpeg_core::CodecError>,
 ) -> Result<ControlFlow<B>, cadmpeg_core::CodecError> {
-    let Some(saved) = definition.saved_section.as_ref() else {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let Some(saved) = definition
+        .saved_section
+        .as_ref()
+        .filter(|saved| !saved.entities.is_empty())
+    else {
         return Ok(ControlFlow::Continue(()));
     };
     let found = ctx.find_map(
@@ -561,6 +568,7 @@ pub(super) fn opaque_section_segment_identity_suffix_admitted(
 
 #[cfg(test)]
 mod tests {
+    mod admission_recovery;
     use super::{
         saved_section_entity_fallback_allowed, saved_section_line_witness_allowed,
         saved_section_ordinary_geometry_allowed,
