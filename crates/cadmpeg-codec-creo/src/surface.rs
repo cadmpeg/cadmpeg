@@ -4127,27 +4127,24 @@ fn torus_radius_override_layout(body: &[u8]) -> Option<TorusRadiusOverrideLayout
     )
 }
 
-fn unique_cone_half_angle_layout(
-    body: &[u8],
-    accepts_end: impl Fn(usize) -> bool,
-) -> Option<ConeHalfAngleLayout> {
-    let mut layouts = (0..body.len()).filter_map(|start| {
-        let (value, end) = scalar::decode_positive_dict(body, start)?;
-        let value = ApexConeHalfAngle::new(value)?;
-        accepts_end(end).then_some(ConeHalfAngleLayout { value, start, end })
-    });
-    let layout = layouts.next()?;
-    layouts.next().is_none().then_some(layout)
-}
-
 fn terminal_cone_half_angle_layout(body: &[u8]) -> Option<ConeHalfAngleLayout> {
-    unique_cone_half_angle_layout(body, |end| end == body.len())
+    // Every positive-DICT token consumes exactly seven bytes. Only this start
+    // can reach the terminal boundary; earlier tokens cannot compete with it.
+    let start = body.len().checked_sub(7)?;
+    let (value, end) = scalar::decode_positive_dict(body, start)?;
+    let value = ApexConeHalfAngle::new(value)?;
+    Some(ConeHalfAngleLayout { value, start, end })
 }
 
 fn cone_half_angle_before_close(body: &[u8]) -> Option<ConeHalfAngleLayout> {
-    unique_cone_half_angle_layout(body, |end| {
-        body.get(end) == Some(&psb::token::COMPOUND_CLOSE)
-    })
+    let mut layouts = (0..body.len()).filter_map(|start| {
+        let (value, end) = scalar::decode_positive_dict(body, start)?;
+        let value = ApexConeHalfAngle::new(value)?;
+        (body.get(end) == Some(&psb::token::COMPOUND_CLOSE))
+            .then_some(ConeHalfAngleLayout { value, start, end })
+    });
+    let layout = layouts.next()?;
+    layouts.next().is_none().then_some(layout)
 }
 
 fn scalar_tokens(
@@ -6062,14 +6059,15 @@ fn decode_support_apex_cone_frame(
 ) -> Option<PositionalConeFrame> {
     const MAX_SUPPORT_FRAME_BYTES: usize = 12 * 9;
 
-    let mut reference_candidates = (0..body.len()).filter_map(|start| {
-        matches!(body.get(start), Some(0x19 | 0x32)).then_some(())?;
-        let (_, end) = scalar::decode_model_reference_coordinate(body, start, cache)?;
-        (end + 3 == body.len()).then_some(start)
-    });
-    let reference_start = reference_candidates.next()?;
-    reference_candidates.next().is_none().then_some(())?;
-    let mut apex_candidates = (0..reference_start).filter_map(|start| {
+    // Both admitted reference heads consume eight bytes, followed by the
+    // three-byte station. There is exactly one possible reference start.
+    let reference_start = body.len().checked_sub(8 + 3)?;
+    matches!(body.get(reference_start), Some(0x19 | 0x32)).then_some(())?;
+    scalar::decode_model_reference_coordinate(body, reference_start, cache)?;
+    // The surface-row lane consumes at most eight bytes per scalar, including
+    // the eight-byte IEEE form; compact cache references consume at most three.
+    let apex_lower = reference_start.saturating_sub(8);
+    let mut apex_candidates = (apex_lower..reference_start).filter_map(|start| {
         let (apex, end) = scalar::decode_in_surface_row_lane(body, start, cache)?;
         (end == reference_start && apex.is_finite()).then_some((apex, start))
     });
@@ -6078,11 +6076,9 @@ fn decode_support_apex_cone_frame(
     // Twelve scalar slots each consume at most nine bytes in this lane.
 
     let mut sole_slots = None;
-    for start in 0..apex_start {
+    let support_lower = apex_start.saturating_sub(MAX_SUPPORT_FRAME_BYTES - 3);
+    for start in support_lower..apex_start {
         let prefix = body.get(start..apex_start)?;
-        if prefix.len() > MAX_SUPPORT_FRAME_BYTES - 3 {
-            continue;
-        }
         let mut frame = [0; MAX_SUPPORT_FRAME_BYTES];
         frame[..prefix.len()].copy_from_slice(prefix);
         frame[prefix.len()..prefix.len() + 3].copy_from_slice(&[0x18, 0x18, 0x18]);
