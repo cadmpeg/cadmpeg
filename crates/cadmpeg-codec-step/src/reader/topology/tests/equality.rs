@@ -92,33 +92,37 @@ fn procedural_surface_owner_lookup_preserves_refusal() {
 
 #[test]
 fn procedural_surface_owner_index_excludes_shared_constructions() {
-    let mut ir = CadIr::empty();
-    let construction = ProceduralSurfaceId::try_from("step:data:construction#2").unwrap();
-    let first = SurfaceId::try_from("step:data:surface#1").unwrap();
-    for id in [
-        first.clone(),
-        SurfaceId::try_from("step:data:surface#3").unwrap(),
-    ] {
-        ir.model.surfaces.push(Surface {
-            id,
-            geometry: SurfaceGeometry::Procedural {
-                construction: construction.clone(),
-                cache: None,
+    for count in [2, 3] {
+        let mut ir = CadIr::empty();
+        let construction = ProceduralSurfaceId::try_from("step:data:construction#2").unwrap();
+        let first = SurfaceId::try_from("step:data:surface#1").unwrap();
+        let ids = [
+            first.clone(),
+            SurfaceId::try_from("step:data:surface#3").unwrap(),
+            SurfaceId::try_from("step:data:surface#4").unwrap(),
+        ];
+        for id in &ids[..count] {
+            ir.model.surfaces.push(Surface {
+                id: id.clone(),
+                geometry: SurfaceGeometry::Procedural {
+                    construction: construction.clone(),
+                    cache: None,
+                },
+                source_object: None,
+            });
+        }
+        ir.model.procedural_surfaces.push(ProceduralSurface::new(
+            construction,
+            ProceduralSurfaceDefinition::CurveBounded {
+                support: first,
+                boundaries: Vec::new(),
+                boundary_pcurves: Vec::new(),
+                implicit_outer: false,
             },
-            source_object: None,
-        });
+            None,
+        ));
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let index = super::super::PcurveSelectionIndex::build(&ir, &ctx).unwrap();
+        assert!(index.owned_procedurals.is_empty());
     }
-    ir.model.procedural_surfaces.push(ProceduralSurface::new(
-        construction,
-        ProceduralSurfaceDefinition::CurveBounded {
-            support: first,
-            boundaries: Vec::new(),
-            boundary_pcurves: Vec::new(),
-            implicit_outer: false,
-        },
-        None,
-    ));
-    let ctx = cadmpeg_test_support::service_decode_context();
-    let index = super::super::PcurveSelectionIndex::build(&ir, &ctx).unwrap();
-    assert!(index.owned_procedurals.is_empty());
 }
