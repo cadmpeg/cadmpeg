@@ -2895,8 +2895,8 @@ fn emit_rolling_ball_side(
         (None, None) => (None, None),
         (surface, curve) => {
             let prefix = prefix()?;
-            let surface = surface
-                .map(|support| -> Result<_, cadmpeg_core::CodecError> {
+            let (surface, curve) = match (surface, curve) {
+                (Some(surface), Some(curve)) => {
                     let id = {
                         let mut copied_storage = ctx.reserve_scoped(0, "ASM temporary identity key")?;
                         copied_storage.with_storage(|| {
@@ -2910,6 +2910,21 @@ fn emit_rolling_ball_side(
                             ))
                         })
                     }?;
+                    (Some((surface, id)), Some((curve, prefix)))
+                }
+                (Some(surface), None) => {
+                    let id = brep_id!(
+                        format,
+                        SurfaceId,
+                        "procedural_surface",
+                        prefix.then(cadmpeg_ir::identity_key!(":surface"))
+                    );
+                    (Some((surface, id)), None)
+                }
+                (None, curve) => (None, curve.map(|curve| (curve, prefix))),
+            };
+            let surface = surface
+                .map(|(support, id)| -> Result<_, cadmpeg_core::CodecError> {
                     charged_push!(
                         ctx,
                         out.surfaces,
@@ -2926,7 +2941,7 @@ fn emit_rolling_ball_side(
                 })
                 .transpose()?;
             let curve = curve
-                .map(|support| -> Result<_, cadmpeg_core::CodecError> {
+                .map(|(support, prefix)| -> Result<_, cadmpeg_core::CodecError> {
                     let id = brep_id!(
                         format,
                         CurveId,
