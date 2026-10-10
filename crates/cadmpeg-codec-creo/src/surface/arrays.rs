@@ -309,9 +309,9 @@ mod tests {
             "creo scalar array values",
             |ctx| DimensionedScalars::from_tokens(ctx, extent, vec![(None, Vec::new()); 4]),
         );
-        assert!(
-            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "creo scalar array values")
-        );
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "creo scalar array values"));
     }
 
     #[test]
@@ -489,7 +489,11 @@ mod tests {
         for len in [0, 2] {
             let extent = CountedScalars::extent(1).expect("extent");
             let values = CountedScalars::from_values(&ctx, extent, vec![Some(f64::INFINITY); len]);
-            let tokens = CountedScalars::from_tokens(&ctx, extent, vec![(Some(f64::INFINITY), vec![0xe4]); len]);
+            let tokens = CountedScalars::from_tokens(
+                &ctx,
+                extent,
+                vec![(Some(f64::INFINITY), vec![0xe4]); len],
+            );
             assert_eq!(values.expect("fixed length comparison"), None);
             assert_eq!(tokens.expect("fixed length comparison"), None);
             assert_eq!(ctx.resource_refusal(), None);
@@ -533,7 +537,6 @@ mod tests {
         assert_eq!(tokens.values(), &[]);
         assert_eq!(tokens.tokens(), Some([].as_slice()));
         assert_eq!(ctx.resource_refusal(), None);
-
     }
 
     #[test]
@@ -552,6 +555,5 @@ mod tests {
         );
         assert_eq!(array, original_array);
         assert_eq!(ctx.resource_refusal(), None);
-
     }
 }

@@ -29,7 +29,6 @@ fn fixed_short_primitive_searches_and_empty_geometry_are_free() {
         triangle_strip_geometry(&ctx, &[], 3),
         Err(TriangleStripGeometryError::Missing)
     ));
-
 }
 
 #[test]
@@ -186,5 +185,6 @@ fn primitive_shaded_pairing_refuses_at_the_first_actual_pair_without_a_second_bu
         },
     );
     assert!(matches!(error, CodecError::ResourceLimit(refusal)
-        if refusal.dimension == ResourceDimension::WorkUnits && refusal.operation == "creo primitive shaded vertices"));
+        if refusal.dimension == ResourceDimension::WorkUnits
+                && refusal.operation == "creo primitive shaded vertices"));
 }

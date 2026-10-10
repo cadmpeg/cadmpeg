@@ -14,7 +14,7 @@ use crate::surface::complete_surface_array_bounds as checked_complete_surface_ar
 use crate::surface::contour_records_for_rows;
 use crate::surface::counted_row_bounds as checked_counted_row_bounds;
 use crate::surface::cross_section_rows as checked_cross_section_rows;
-use crate::surface::cylinder_frame_readers::decode_compound_local_system_cylinder_frame as checked_decode_compound_local_system_cylinder_frame;
+use crate::surface::cylinder_frame_readers as cylinder_readers;
 use crate::surface::decode_positional_spline_replay;
 use crate::surface::decode_tabulated_cylinder_frame;
 use crate::surface::plane_envelopes_for_rows;
@@ -847,7 +847,8 @@ fn cross_section_filters_boundary_one_body_candidate() {
 
 #[test]
 fn cross_section_plane_envelope_retains_its_namespace_geometry() {
-    let payload = b"Sld_Xsections\0srf_array\0\xf8\x01\x07\x22\x04\x01\x06\0\xe4\xe4\xe4\xe4\x0f\x0f\x0f\xe4\x0f\xe4\xe3";
+    let payload = b"Sld_Xsections\0srf_array\0\xf8\x01\x07\x22\x04\x01\x06\0\xe4\
+        \xe4\xe4\xe4\x0f\x0f\x0f\xe4\x0f\xe4\xe3";
 
     let envelopes = super::with_decode_ctx(payload, |ctx| {
         crate::surface::cross_section_plane_envelopes(ctx, payload)
@@ -1391,7 +1392,9 @@ fn tabulated_cylinder_control_point_field_expands_contiguous_ids() {
 
     assert_eq!(
         records[0].field("c_pnts").map(|field| &field.value),
-        Some(&SurfaceNamedValue::ContiguousEntityReferences(vec![80, 81, 82, 83]))
+        Some(&SurfaceNamedValue::ContiguousEntityReferences(vec![
+            80, 81, 82, 83
+        ]))
     );
 }
 
@@ -1747,7 +1750,7 @@ fn decode_compound_local_system_cylinder_frame(
     cache: &scalar::ScalarCache,
 ) -> Option<crate::surface::PositionalCylinderFrame> {
     crate::decode::with_test_decode_ctx(|ctx| {
-        checked_decode_compound_local_system_cylinder_frame(ctx, body, cache)
+        cylinder_readers::decode_compound_local_system_cylinder_frame(ctx, body, cache)
     })
     .expect("cylinder fixture admission")
 }

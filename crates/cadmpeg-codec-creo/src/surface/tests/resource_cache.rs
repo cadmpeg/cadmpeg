@@ -402,7 +402,8 @@ fn placed_outline_retain_refuses_work() {
 
 #[test]
 fn unique_surface_row_retain_refuses_work() {
-    let payload = b"srf_array\0geom_id\0\x01geom_type\0\x22feat_id\0\x01next_geom_ptr\0\x01orient\0\x01boundary_type\0\x00";
+    let payload = b"srf_array\0geom_id\0\x01geom_type\0\x22feat_id\0\x01next_geo\
+        m_ptr\0\x01orient\0\x01boundary_type\0\x00";
     let error = crate::test_support::last_refusal_at(
         &[],
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
@@ -424,7 +425,8 @@ fn unique_surface_row_retain_refuses_work() {
 
 #[test]
 fn prototype_surface_row_retain_refuses_work() {
-    let payload = b"srf_array\0geom_id\0\x01geom_type\0\x22feat_id\0\x01next_geom_ptr\0\x01orient\0\x01boundary_type\0\x00";
+    let payload = b"srf_array\0geom_id\0\x01geom_type\0\x22feat_id\0\x01next_geo\
+        m_ptr\0\x01orient\0\x01boundary_type\0\x00";
     let error = crate::test_support::last_refusal_at(
         &[],
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
@@ -446,7 +448,8 @@ fn prototype_surface_row_retain_refuses_work() {
 
 #[test]
 fn boundary_surface_row_retain_refuses_work() {
-    let payload = b"srf_array\0geom_id\0\x01geom_type\0\x22feat_id\0\x01next_geom_ptr\0\x01orient\0\x01boundary_type\0\x00";
+    let payload = b"srf_array\0geom_id\0\x01geom_type\0\x22feat_id\0\x01next_geo\
+        m_ptr\0\x01orient\0\x01boundary_type\0\x00";
     let error = crate::test_support::last_refusal_at(
         &[],
         cadmpeg_core::decode::ResourceDimension::WorkUnits,

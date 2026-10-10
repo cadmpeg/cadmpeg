@@ -842,8 +842,7 @@ fn parse_positional_spline_replay(
     else {
         return Ok(None);
     };
-    let Some(mixed_derivatives) = take_spline_mixed_derivatives(body, &mut cursor, cache)
-    else {
+    let Some(mixed_derivatives) = take_spline_mixed_derivatives(body, &mut cursor, cache) else {
         return Ok(None);
     };
     let Some(u_parameters) =
@@ -5410,10 +5409,9 @@ fn decode_inline_selector_cylinder_envelope(
     }
     let close = inline_surface_envelope_close(body, cursor)?;
     let axial_span = (second_axial - first_axial).abs();
-    let spans =
-        std::array::from_fn::<_, 3, _>(|axis| Some(corners[1][axis]? - corners[0][axis]?));
-    let mut axial_axes = (0..3)
-        .filter(|axis| spans[*axis].is_some_and(|span| inline_close(span.abs(), axial_span)));
+    let spans = std::array::from_fn::<_, 3, _>(|axis| Some(corners[1][axis]? - corners[0][axis]?));
+    let mut axial_axes =
+        (0..3).filter(|axis| spans[*axis].is_some_and(|span| inline_close(span.abs(), axial_span)));
     let axis_index = axial_axes.next()?;
     axial_axes.next().is_none().then_some(())?;
     let mut radial = (0..3).filter(|axis| *axis != axis_index);
@@ -7740,9 +7738,7 @@ fn plane_envelope_compound_close(
         let Some(positive_start) = offset.checked_sub(7) else {
             continue;
         };
-        let Some((_, positive_end)) =
-            scalar::decode_positive_dict(body, positive_start)
-        else {
+        let Some((_, positive_end)) = scalar::decode_positive_dict(body, positive_start) else {
             continue;
         };
         if positive_end != offset {

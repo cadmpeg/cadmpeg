@@ -5,16 +5,30 @@ use super::super::take_spline_mixed_derivatives;
 fn assert_fixed_read(body: &[u8], start: usize, expected: Option<[[f64; 3]; 4]>, end: usize) {
     let cache = crate::scalar::ScalarCache::default();
     let mut cursor = start;
-    assert_eq!(take_spline_mixed_derivatives(body, &mut cursor, &cache), expected);
+    assert_eq!(
+        take_spline_mixed_derivatives(body, &mut cursor, &cache),
+        expected
+    );
     assert_eq!(cursor, end);
 }
 
 #[test]
 fn positional_mixed_slots_use_fixed_storage_and_preserve_scalar_widths() {
-    let body = [0xe3, 0xe3, 0xe3, 0x0d, 0x0f, 0xe4, 0xe4, 0x0d, 0x0f,
-        0x0f, 0xe4, 0x0d, 0x0d, 0xe4, 0x0f, 0xe3];
-    assert_fixed_read(&body, 3, Some([[-1.0, 0.0, 1.0], [1.0, -1.0, 0.0],
-        [0.0, 1.0, -1.0], [-1.0, 1.0, 0.0]]), 15);
+    let body = [
+        0xe3, 0xe3, 0xe3, 0x0d, 0x0f, 0xe4, 0xe4, 0x0d, 0x0f, 0x0f, 0xe4, 0x0d, 0x0d, 0xe4, 0x0f,
+        0xe3,
+    ];
+    assert_fixed_read(
+        &body,
+        3,
+        Some([
+            [-1.0, 0.0, 1.0],
+            [1.0, -1.0, 0.0],
+            [0.0, 1.0, -1.0],
+            [-1.0, 1.0, 0.0],
+        ]),
+        15,
+    );
     let mut terminal_zero = [0x0f; 12];
     terminal_zero[11] = 0x18;
     assert_fixed_read(&terminal_zero, 0, Some([[0.0; 3]; 4]), 12);
@@ -22,7 +36,12 @@ fn positional_mixed_slots_use_fixed_storage_and_preserve_scalar_widths() {
     let mut wide = vec![0x28];
     wide.extend_from_slice(&1.0_f64.to_be_bytes()[1..]);
     wide.extend_from_slice(&[0x0f; 11]);
-    assert_fixed_read(&wide, 0, Some([[1.0, 0.0, 0.0], [0.0; 3], [0.0; 3], [0.0; 3]]), 19);
+    assert_fixed_read(
+        &wide,
+        0,
+        Some([[1.0, 0.0, 0.0], [0.0; 3], [0.0; 3], [0.0; 3]]),
+        19,
+    );
 }
 
 #[test]
