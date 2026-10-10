@@ -1519,31 +1519,110 @@ fn directory_counts_refuse_exhausted_scan_work() {
     );
 }
 
+fn external_reference_route_refusal(route: usize, operation: &str) -> CodecError {
+    let file = single_part_prt();
+    let container =
+        crate::test_support::with_decode_context(|ctx| super::scan_bytes(ctx, &file)).unwrap();
+    let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| match route {
+        0 => container.has_external_references(ctx).map(|_| ()),
+        1 => container.external_reference_strings(ctx).map(|_| ()),
+        2 => container.external_reference_records(ctx).map(|_| ()),
+        _ => container
+            .external_reference_indexed_records(ctx)
+            .map(|_| ()),
+    };
+    crate::test_support::with_decode_context(decode).expect("admitted external reference route");
+    crate::test_support::resource_refusal_at(&[], ResourceDimension::WorkUnits, operation, decode)
+}
+
 #[test]
 fn external_reference_routes_refuse_unadmitted_names() {
-    let source_bytes_4 = single_part_prt();
+    for (route, operation) in [
+        "scan NX external reference detection names",
+        "scan NX external reference string names",
+        "scan NX external reference handle names",
+        "scan NX external reference index names",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let error = external_reference_route_refusal(route, operation);
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits && limit.operation == operation));
+    }
+}
 
-    let container =
-        crate::test_support::with_decode_context(|ctx| super::scan_bytes(ctx, &source_bytes_4))
-            .unwrap();
-    for route in 0..4 {
-        crate::test_support::with_decode_context_over(
+#[test]
+fn external_reference_detection_refuses_entry_work() {
+    external_reference_route_refusal(0, "scan NX external reference detection entries");
+}
+
+#[test]
+fn external_reference_strings_refuse_entry_work() {
+    external_reference_route_refusal(1, "scan NX external reference string entries");
+}
+
+#[test]
+fn external_reference_handles_refuse_entry_work() {
+    external_reference_route_refusal(2, "scan NX external reference handle entries");
+}
+
+#[test]
+fn external_reference_index_refuses_entry_work() {
+    external_reference_route_refusal(3, "scan NX external reference index entries");
+}
+
+fn cold_section_cache_refuses_work(indexed: bool, operations: [&str; 2]) {
+    let file = if indexed {
+        prt_with_indexed_om_section()
+    } else {
+        crate::test_support::test_prt::prt_with_size_framed_om_section()
+    };
+    let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        let container = super::scan_bytes(ctx, &file)?;
+        if indexed {
+            container
+                .indexed_om_sections(ctx)
+                .map(|(sections, _storage)| sections.len())
+        } else {
+            container
+                .om_sections(ctx)
+                .map(|(sections, _storage)| sections.len())
+        }
+    };
+    assert!(
+        crate::test_support::with_decode_context(decode).expect("admitted cold section cache") > 0
+    );
+    for operation in operations {
+        crate::test_support::resource_refusal_at(
             &[],
-            |policy| policy.limits.max_work_units = 1,
-            |ctx| {
-                let error = match route {
-                    0 => container.has_external_references(ctx).err(),
-                    1 => container.external_reference_strings(ctx).err(),
-                    2 => container.external_reference_records(ctx).err(),
-                    _ => container.external_reference_indexed_records(ctx).err(),
-                }
-                .expect("name scan must refuse");
-                assert!(
-                    matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "scan NX external reference names")
-                );
-            },
+            ResourceDimension::WorkUnits,
+            operation,
+            decode,
         );
     }
+}
+
+#[test]
+fn cold_framed_section_cache_refuses_named_work() {
+    cold_section_cache_refuses_work(
+        false,
+        [
+            "scan NX framed cache entries",
+            "visit NX framed cache candidates",
+        ],
+    );
+}
+
+#[test]
+fn cold_indexed_section_cache_refuses_named_work() {
+    cold_section_cache_refuses_work(
+        true,
+        [
+            "scan NX indexed cache entries",
+            "visit NX indexed cache candidates",
+        ],
+    );
 }
 
 #[test]

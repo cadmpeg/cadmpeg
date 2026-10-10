@@ -289,11 +289,11 @@ impl<'a> Container<'a> {
         ctx: &DecodeContext<'_>,
     ) -> Result<bool, CodecError> {
         for entry in &self.entries {
-            ctx.charge_work(1, "scan NX external reference entries")?;
+            ctx.charge_work(1, "scan NX external reference detection entries")?;
             if ctx.any_by(
                 entry.name.as_bytes().windows(b"ExternalReferences".len()),
                 |window| Ok(window == b"ExternalReferences"),
-                "scan NX external reference names",
+                "scan NX external reference detection names",
             )? {
                 return Ok(true);
             }
@@ -637,11 +637,11 @@ impl<'a> Container<'a> {
         let mut storage = ctx.reserve_scoped(0, "NX external reference projection scratch")?;
         let mut out = Vec::new();
         for entry in &self.entries {
-            ctx.charge_work(1, "scan NX external reference entries")?;
+            ctx.charge_work(1, "scan NX external reference string entries")?;
             if !ctx.any_by(
                 entry.name.as_bytes().windows(b"ExternalReferences".len()),
                 |window| Ok(window == b"ExternalReferences"),
-                "scan NX external reference names",
+                "scan NX external reference string names",
             )? {
                 continue;
             }
@@ -688,11 +688,11 @@ impl<'a> Container<'a> {
         let mut handles_storage = ctx.reserve_scoped(0, "nx external reference handles")?;
         let mut out = Vec::new();
         for entry in &self.entries {
-            ctx.charge_work(1, "scan NX external reference entries")?;
+            ctx.charge_work(1, "scan NX external reference handle entries")?;
             if !ctx.any_by(
                 entry.name.as_bytes().windows(b"ExternalReferences".len()),
                 |window| Ok(window == b"ExternalReferences"),
-                "scan NX external reference names",
+                "scan NX external reference handle names",
             )? {
                 continue;
             }
@@ -748,11 +748,11 @@ impl<'a> Container<'a> {
         let mut storage = ctx.reserve_scoped(0, "nx external reference indexed entries")?;
         let mut out = Vec::new();
         for entry in &self.entries {
-            ctx.charge_work(1, "scan NX external reference entries")?;
+            ctx.charge_work(1, "scan NX external reference index entries")?;
             if !ctx.any_by(
                 entry.name.as_bytes().windows(b"ExternalReferences".len()),
                 |window| Ok(window == b"ExternalReferences"),
-                "scan NX external reference names",
+                "scan NX external reference index names",
             )? {
                 continue;
             }
@@ -1369,7 +1369,7 @@ fn parse_framed_section_cache<'bytes>(
     let mut visits = entries.iter().enumerate();
     while visits.len() != 0 {
         let Some((entry_index, entry)) =
-            ctx.next_charged(&mut visits, "scan NX section cache entries")?
+            ctx.next_charged(&mut visits, "scan NX framed cache entries")?
         else {
             break;
         };
@@ -1392,7 +1392,7 @@ fn parse_framed_section_cache<'bytes>(
         let mut visits = parsed.into_iter().enumerate();
         while visits.len() != 0 {
             let Some((_, section)) =
-                ctx.next_charged(&mut visits, "form NX section cache layouts")?
+                ctx.next_charged(&mut visits, "visit NX framed cache candidates")?
             else {
                 break;
             };
@@ -1420,7 +1420,7 @@ fn parse_indexed_section_cache<'bytes>(
     let mut visits = entries.iter().enumerate();
     while visits.len() != 0 {
         let Some((entry_index, entry)) =
-            ctx.next_charged(&mut visits, "scan NX section cache entries")?
+            ctx.next_charged(&mut visits, "scan NX indexed cache entries")?
         else {
             break;
         };
@@ -1443,7 +1443,7 @@ fn parse_indexed_section_cache<'bytes>(
         let mut visits = parsed.into_iter().enumerate();
         while visits.len() != 0 {
             let Some((_, section)) =
-                ctx.next_charged(&mut visits, "form NX section cache layouts")?
+                ctx.next_charged(&mut visits, "visit NX indexed cache candidates")?
             else {
                 break;
             };
