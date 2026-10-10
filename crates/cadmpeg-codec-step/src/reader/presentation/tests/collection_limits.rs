@@ -39,7 +39,7 @@ fn decode_refuses(operation: &'static str) {
             "#1=ITEM();#2=PRESENTATION_LAYER_ASSIGNMENT('L','',(#1));",
         "step_presentation_typed_claims" | "step_presentation_style_ids" =>
             "#1=ITEM();#2=STYLED_ITEM('',(),#1);",
-        "step_presentation_style_references" | "step_presentation_appearance_targets" | "step_presentation_appearance_records" | "step_presentation_appearance_bindings" =>
+        "step_presentation_appearance_ids" | "step_presentation_style_references" | "step_presentation_appearance_targets" | "step_presentation_appearance_records" | "step_presentation_appearance_bindings" =>
             "#1=COLOUR_RGB('',1.,0.,0.);#2=PRESENTATION_STYLE_ASSIGNMENT((#1));#3=STYLED_ITEM('',(#2),#4);#4=SOURCE_ITEM();",
         _ => panic!("missing production fixture for {operation}"),
     };
@@ -59,7 +59,7 @@ fn decode_refuses(operation: &'static str) {
         let result = super::super::decode(&exchange, &topology, &mut ir, &std::collections::BTreeMap::new(), &ctx);
         if let Err(CodecError::ResourceLimit(refusal)) = &result {
             assert_eq!(ctx.resource_refusal(), Some(*refusal));
-            if refusal.operation == "step_presentation_appearance_records" { assert!(ir.model.appearances.is_empty()); }
+            if matches!(refusal.operation, "step_presentation_appearance_records" | "step_presentation_appearance_ids") { assert!(ir.model.appearances.is_empty()); }
             if refusal.operation == "step_presentation_appearance_bindings" { assert!(ir.model.appearance_bindings.is_empty()); }
             if refusal.operation == "step_presentation_layer_records" { assert!(ir.model.presentation_layers.is_empty()); }
         }
@@ -852,24 +852,7 @@ fn presentation_appearance_records_refuse_collection_limit() {
 
 #[test]
 fn presentation_appearance_ids_refuse_collection_limit() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
-    let result = ctx
-        .insert_btree_map(
-            &mut std::collections::BTreeMap::new(),
-            1_u64,
-            true,
-            "step_presentation_appearance_ids",
-        )
-        .map(|_| ());
-    assert!(matches!(
-        result,
-        Err(CodecError::ResourceLimit(refusal))
-            if refusal.operation == "step_presentation_appearance_ids"
-    ));
+    decode_refuses("step_presentation_appearance_ids");
 }
 
 #[test]
@@ -1016,7 +999,8 @@ fn color_search_refuses(
                         .expect("scope"),
                 ),
                 active: &mut BTreeSet::new(),
-                cache: &mut std::collections::BTreeMap::new(),
+                cache: &mut super::super::ColorCache::default(),
+                    completed: None,
                 losses: (
                     &mut Vec::new(),
                     &std::cell::RefCell::new(
@@ -1026,6 +1010,7 @@ fn color_search_refuses(
                 invalid_surface_sides: &mut BTreeSet::new(),
             },
             0,
+                    None,
             &ctx,
         ))
         .map(|_| ());
@@ -1065,7 +1050,8 @@ fn presentation_color_walk_frames_refuse_collection_limit() {
                         ctx.reserve_scoped(0, "color search fixture").expect("scope"),
                     ),
                     active: &mut BTreeSet::new(),
-                    cache: &mut std::collections::BTreeMap::new(),
+                    cache: &mut super::super::ColorCache::default(),
+                    completed: None,
                     losses: (
                         &mut Vec::new(),
                         &std::cell::RefCell::new(
@@ -1075,6 +1061,7 @@ fn presentation_color_walk_frames_refuse_collection_limit() {
                     invalid_surface_sides: &mut BTreeSet::new(),
                 },
                 0,
+                    None,
                 &ctx,
             );
             if let Err(CodecError::ResourceLimit(refusal)) = &result {
@@ -1128,11 +1115,13 @@ fn presentation_color_walk_visits_first_child_before_large_parameter_suffix() {
         super::super::ColorSearchState {
             storage: &storage,
             active: &mut BTreeSet::new(),
-            cache: &mut std::collections::BTreeMap::new(),
+            cache: &mut super::super::ColorCache::default(),
+                    completed: None,
             losses: (&mut losses, &reports),
             invalid_surface_sides: &mut BTreeSet::new(),
         },
         0,
+                    None,
         &ctx,
     );
     let refusal = match result {
@@ -1162,18 +1151,13 @@ fn presentation_color_cache_copy_refuses_materialized_limit() {
         crate::test_support::with_service_context(source, crate::parse::parse_inner)
             .expect("cache exchange");
     let color = cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("color");
-    let mut cache = std::collections::BTreeMap::new();
-    cache.insert(
-        (1, super::super::StyleDomain::Any),
-        Some(super::super::ColorResolution::Candidate(
-            super::super::ColorCandidate {
-                rank: super::super::SurfaceSideRank::NoUsage,
-                id: 1,
-                color,
-                name: Some("red".into()),
-            },
-        )),
-    );
+    let mut cache = super::super::ColorCache::default();
+    cache.colors.push(Some(super::super::ColorResolution::Candidate(super::super::ColorCandidate {
+        rank: super::super::SurfaceSideRank::NoUsage, id: 1, color, name: Some("red".into()),
+    })));
+    cache.values.insert((1, super::super::StyleDomain::Any), super::super::ColorCacheEntry {
+        color: 0, source: super::super::ColorCacheSource::Local, height: Some(0),
+    });
     // The cached candidate copy reserves the three bytes of its name as scratch.
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::MaterializedBytes,
@@ -1194,6 +1178,7 @@ fn presentation_color_cache_copy_refuses_materialized_limit() {
                     ),
                     active: &mut BTreeSet::new(),
                     cache: &mut cache,
+                    completed: None,
                     losses: (
                         &mut Vec::new(),
                         &std::cell::RefCell::new(
@@ -1203,6 +1188,7 @@ fn presentation_color_cache_copy_refuses_materialized_limit() {
                     invalid_surface_sides: &mut BTreeSet::new(),
                 },
                 0,
+                    None,
                 &ctx,
             );
             result

@@ -83,11 +83,8 @@ fn style_domain_name_substrings_keep_all_classifications() {
 fn style_domain_point_prefix_does_not_scan_the_name_suffix() {
     let exchange = exchange(&format!("#1=POINT{}();", "X".repeat(4096)));
     let mut policy = DecodePolicy::service();
-    // The one-record path has one 8-byte record lookup, a two-step partial
-    // probe, a one-window POINT match, a 696-unit active-set insertion, a
-    // 240-unit active-set removal, and a 729-unit cache insertion. The cap
-    // leaves room for this 1,676-unit route while the old 4,106-unit
-    // full-name-plus-pattern scan cannot fit.
+    // POINT terminates classification before the 4,096-byte name suffix.
+    // This cap admits the one-record result and cannot admit a full-name walk.
     policy.limits.max_work_units = 2048;
     crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
         let actual = super::super::StyleDomainIndex::new(ctx).and_then(|mut index| index.domain(1, &exchange))
@@ -236,8 +233,13 @@ fn color_resolution_reuses_warning_free_queries_across_styles() {
     policy.limits.max_work_units = 300_000;
     crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
         let mut shared = super::super::StyleColors {
+                exchange: &exchange,
             prefixes: BTreeMap::new(),
             values: BTreeMap::new(),
+        queries: Vec::new(),
+        frames: Vec::new(),
+        frame_storage: ctx.reserve_scoped(0, "STEP shared color frames").expect("frame scope"),
+                    completed: super::super::ColorCompletions::new(ctx).expect("completion cache"),
             ctx,
             storage: ctx.reserve_scoped(0, "shared fixture").expect("scope"),
         };
@@ -252,7 +254,6 @@ fn color_resolution_reuses_warning_free_queries_across_styles() {
             let (query, cached) = shared
                 .resolve(
                     &[2],
-                    &exchange,
                     super::super::StyleDomain::Surface,
                     &storage,
                     (&mut losses, &reports),
@@ -289,8 +290,13 @@ fn shared_color_cache_keeps_depth_cutoffs_and_per_style_warnings() {
     let exchange = exchange("#1=COLOUR_RGB('red',1.,0.,0.);#2=ITEM(#1);#3=SURFACE_SIDE_STYLE('',(#1));#4=SURFACE_STYLE_USAGE(.MIDDLE.,#3);");
     crate::test_support::with_service_context(b"", |_, ctx| {
         let mut shared = super::super::StyleColors {
+                exchange: &exchange,
             prefixes: BTreeMap::new(),
             values: BTreeMap::new(),
+        queries: Vec::new(),
+        frames: Vec::new(),
+        frame_storage: ctx.reserve_scoped(0, "STEP shared color frames").expect("frame scope"),
+                    completed: super::super::ColorCompletions::new(ctx).expect("completion cache"),
             ctx,
             storage: ctx.reserve_scoped(0, "shared fixture").expect("scope"),
         };
@@ -307,11 +313,13 @@ fn shared_color_cache_keeps_depth_cutoffs_and_per_style_warnings() {
                 super::super::ColorSearchState {
                     storage: &storage,
                     active: &mut BTreeSet::new(),
-                    cache: &mut BTreeMap::new(),
+                    cache: &mut super::super::ColorCache::default(),
+                    completed: None,
                     losses: (&mut losses, &reports),
                     invalid_surface_sides: &mut BTreeSet::new(),
                 },
                 depth,
+                    None,
                 ctx,
             )
             .expect("bounded color query");
@@ -323,7 +331,6 @@ fn shared_color_cache_keeps_depth_cutoffs_and_per_style_warnings() {
             assert!(shared
                 .resolve(
                     &[4],
-                    &exchange,
                     super::super::StyleDomain::Surface,
                     &storage,
                     (&mut losses, &reports),
@@ -359,8 +366,13 @@ fn shared_style_color_query_keeps_ordered_local_cache_history() {
                     ctx.reserve_scoped(0, "report fixture").expect("scope"),
                 );
                 let mut shared = super::super::StyleColors {
+                exchange: &exchange,
                     prefixes: BTreeMap::new(),
                     values: BTreeMap::new(),
+        queries: Vec::new(),
+        frames: Vec::new(),
+        frame_storage: ctx.reserve_scoped(0, "STEP shared color frames").expect("frame scope"),
+                    completed: super::super::ColorCompletions::new(ctx).expect("completion cache"),
             ctx,
                     storage: ctx.reserve_scoped(0, "shared fixture").expect("scope"),
                 };
@@ -372,7 +384,6 @@ fn shared_style_color_query_keeps_ordered_local_cache_history() {
                     let result = &shared
                         .resolve(
                             &references,
-                            &exchange,
                             super::super::StyleDomain::Surface,
                             &storage,
                             (&mut losses, &reports),
@@ -404,3 +415,209 @@ fn test_body(id: u64) -> cadmpeg_ir::topology::Body {
 }
 
 mod original_context;
+#[test]
+fn distinct_color_roots_reuse_a_shared_subgraph_and_claims() {
+    let mut records = String::from("#1=COLOUR_RGB('red',1.,0.,0.);#2=ITEM((");
+    for id in 3..=66 {
+        if id != 3 { records.push(','); }
+        write!(records, "#{id}").expect("reference");
+    }
+    records.push_str("));");
+    for id in 3..=66 { write!(records, "#{id}=ITEM(#1);").expect("leaf"); }
+    for id in 100..228 { write!(records, "#{id}=PRESENTATION_STYLE_ASSIGNMENT((#2));").expect("root"); }
+    let exchange = exchange(&records);
+    let mut policy = DecodePolicy::service();
+    // Each graph node and edge is stored once. A distinct query adds its one
+    // root and its ordered-query entry, not another 66-node descendant list.
+    // Repeating the 66-node graph for 128 roots needs over 8,000 cache entries
+    // alone; the shared route fits within 4,096 total collection admissions.
+    policy.limits.max_collection_items = 4096;
+    policy.limits.max_work_units = 2_000_000;
+    policy.limits.max_retained_bytes = 0;
+    crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+        let mut shared = super::super::StyleColors {
+                exchange: &exchange,
+            prefixes: BTreeMap::new(), values: BTreeMap::new(),
+        queries: Vec::new(),
+        frames: Vec::new(),
+        frame_storage: ctx.reserve_scoped(0, "STEP shared color frames").expect("frame scope"),
+            completed: super::super::ColorCompletions::new(ctx).expect("completion cache"),
+            ctx, storage: ctx.reserve_scoped(0, "distinct color fixture").expect("scope"),
+        };
+        let reports = std::cell::RefCell::new(ctx.reserve_scoped(0, "color reports").expect("scope"));
+        let mut losses = Vec::new();
+        let mut claims = std::collections::BTreeSet::new();
+        let mut claim_storage = ctx.reserve_scoped(0, "color claims").expect("scope");
+        for id in 100..228 {
+            let storage = std::cell::RefCell::new(ctx.reserve_scoped(0, "query scratch").expect("scope"));
+            let (query, cached) = shared.resolve(&[id], super::super::StyleDomain::Surface, &storage, (&mut losses, &reports)).expect("distinct root query");
+            let Some(super::super::ColorResolution::Candidate(candidate)) = &cached.color else { panic!("red candidate"); };
+            assert_eq!(candidate.id, 1);
+            assert_eq!((candidate.color.r(), candidate.color.g(), candidate.color.b()), (1.0, 0.0, 0.0));
+            shared.claim(query, super::super::StyleDomain::Surface, (&mut claims, &mut claim_storage)).expect("shared claims");
+        }
+        assert_eq!(claims, (1..=66).chain(100..228).collect());
+        assert!(losses.is_empty());
+        assert_eq!(ctx.resource_refusal(), None);
+    });
+}
+
+#[test]
+fn distinct_color_roots_preserve_warnings_and_cycles() {
+    let exchange = exchange("#1=COLOUR_RGB('red',1.,0.,0.);#2=ITEM((#3,#1));#3=ITEM(#2);#4=PRESENTATION_STYLE_ASSIGNMENT((#2));#5=PRESENTATION_STYLE_ASSIGNMENT((#2));#6=SURFACE_STYLE_USAGE($,#1);#7=PRESENTATION_STYLE_ASSIGNMENT((#6));#8=PRESENTATION_STYLE_ASSIGNMENT((#6));");
+    crate::test_support::with_service_context(b"", |_, ctx| {
+        let mut shared = super::super::StyleColors {
+                exchange: &exchange,
+            prefixes: BTreeMap::new(), values: BTreeMap::new(),
+        queries: Vec::new(),
+        frames: Vec::new(),
+        frame_storage: ctx.reserve_scoped(0, "STEP shared color frames").expect("frame scope"),
+            completed: super::super::ColorCompletions::new(ctx).expect("completion cache"),
+            ctx, storage: ctx.reserve_scoped(0, "color fixture").expect("scope"),
+        };
+        let reports = std::cell::RefCell::new(ctx.reserve_scoped(0, "reports").expect("scope"));
+        for id in [4, 5, 7, 8, 4, 8] {
+            let mut expected_losses = Vec::new();
+            let direct_storage = std::cell::RefCell::new(ctx.reserve_scoped(0, "direct query").expect("scope"));
+            let direct = super::super::find_color(id, &exchange, super::super::StyleDomain::Surface, super::super::ColorSearchState {
+                storage: &direct_storage, active: &mut std::collections::BTreeSet::new(), cache: &mut super::super::ColorCache::default(), completed: None,
+                losses: (&mut expected_losses, &reports), invalid_surface_sides: &mut std::collections::BTreeSet::new(),
+            }, 0,
+                    None, ctx).expect("direct query");
+            let mut losses = Vec::new();
+            let storage = std::cell::RefCell::new(ctx.reserve_scoped(0, "shared query").expect("scope"));
+            let cached = &shared.resolve(&[id], super::super::StyleDomain::Surface, &storage, (&mut losses, &reports)).expect("shared query").1.color;
+            match (cached, &direct) {
+                (Some(super::super::ColorResolution::Candidate(left)), Some(super::super::ColorResolution::Candidate(right))) => {
+                    assert_eq!(left.id, right.id);
+                    assert_eq!(left.color, right.color);
+                    assert_eq!(left.name, right.name);
+                    assert!(left.rank == right.rank);
+                }
+                (Some(super::super::ColorResolution::Ambiguous { rank: left }), Some(super::super::ColorResolution::Ambiguous { rank: right })) => assert!(left == right),
+                (None, None) => {},
+                _ => panic!("shared color resolution differs from the direct walk"),
+            }
+            assert_eq!(losses, expected_losses);
+        }
+    });
+}
+
+#[test]
+fn distinct_color_roots_share_safe_branches_inside_cycles_and_warnings() {
+    for warning in [false, true] {
+        let mut records = String::from("#1=COLOUR_RGB('red',1.,0.,0.);#2=ITEM((");
+        for id in 3..=66 {
+            if id != 3 { records.push(','); }
+            write!(records, "#{id}").expect("reference");
+        }
+        records.push_str("));");
+        for id in 3..=66 { write!(records, "#{id}=ITEM(#1);").expect("leaf"); }
+        records.push_str("#70=ITEM(#71);#71=ITEM(#70);#72=SURFACE_STYLE_USAGE($,#1);");
+        for id in 100..228 {
+            let children = if warning { "#72,#2" } else { "#2,#70" };
+            write!(records, "#{id}=ITEM(({children}));").expect("root");
+        }
+        let exchange = exchange(&records);
+        let mut policy = DecodePolicy::service();
+        // The first query admits the 66-node safe branch. Further queries
+        // admit only their root and the two-node exceptional branch. Even
+        // the cycle route fits 4,096 slots, whereas 128 repeated safe-branch
+        // traversals need more than 8,000 local cache entries alone.
+        policy.limits.max_collection_items = 4096;
+        policy.limits.max_work_units = 2_000_000;
+        crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+            let mut shared = super::super::StyleColors {
+                exchange: &exchange,
+                prefixes: BTreeMap::new(), values: BTreeMap::new(),
+        queries: Vec::new(),
+        frames: Vec::new(),
+        frame_storage: ctx.reserve_scoped(0, "STEP shared color frames").expect("frame scope"),
+                completed: super::super::ColorCompletions::new(ctx).expect("completion cache"),
+                ctx, storage: ctx.reserve_scoped(0, "mixed color fixture").expect("scope"),
+            };
+            let reports = std::cell::RefCell::new(ctx.reserve_scoped(0, "reports").expect("scope"));
+            let mut claims = std::collections::BTreeSet::new();
+            let mut claim_storage = ctx.reserve_scoped(0, "claims").expect("scope");
+            for id in 100..228 {
+                let mut losses = Vec::new();
+                let storage = std::cell::RefCell::new(ctx.reserve_scoped(0, "query").expect("scope"));
+                let (query, cached) = shared.resolve(&[id], super::super::StyleDomain::Surface, &storage, (&mut losses, &reports)).expect("shared safe branch");
+                let Some(super::super::ColorResolution::Candidate(candidate)) = &cached.color else { panic!("red candidate"); };
+                assert_eq!(candidate.id, 1);
+                assert_eq!((candidate.color.r(), candidate.color.g(), candidate.color.b()), (1.0, 0.0, 0.0));
+                assert_eq!(candidate.name.as_deref(), Some("red"));
+                assert!(candidate.rank == super::super::SurfaceSideRank::NoUsage);
+                assert_eq!(losses.len(), usize::from(warning));
+                if warning {
+                    assert_eq!(losses[0].message, "SURFACE_STYLE_USAGE #72 has no valid surface_side; style omitted");
+                }
+                shared.claim(query, super::super::StyleDomain::Surface, (&mut claims, &mut claim_storage)).expect("claims");
+            }
+            let mut expected: std::collections::BTreeSet<_> = (1..=66).chain(100..228).collect();
+            if !warning { expected.extend([70, 71]); }
+            assert_eq!(claims, expected);
+            assert_eq!(ctx.resource_refusal(), None);
+        });
+    }
+}
+
+#[test]
+fn distinct_non_surface_queries_preserve_surface_fallback_claim_exclusions() {
+    let exchange = exchange("#1=SURFACE_STYLE_USAGE($,#3);#2=PRESENTATION_STYLE_ASSIGNMENT((#1));#3=COLOUR_RGB('red',1.,0.,0.);#4=PRESENTATION_STYLE_ASSIGNMENT((#1));");
+    for domain in [super::super::StyleDomain::Curve, super::super::StyleDomain::Point] {
+    crate::test_support::with_service_context(b"", |_, ctx| {
+        let mut shared = super::super::StyleColors {
+            exchange: &exchange, prefixes: BTreeMap::new(), values: BTreeMap::new(),
+        queries: Vec::new(),
+        frames: Vec::new(),
+        frame_storage: ctx.reserve_scoped(0, "STEP shared color frames").expect("frame scope"),
+            completed: super::super::ColorCompletions::new(ctx).expect("completion cache"),
+            ctx, storage: ctx.reserve_scoped(0, "color fixture").expect("scope"),
+        };
+        let reports = std::cell::RefCell::new(ctx.reserve_scoped(0, "reports").expect("scope"));
+        let mut claims = std::collections::BTreeSet::new();
+        let mut claim_storage = ctx.reserve_scoped(0, "claims").expect("scope");
+        for id in [2, 4] {
+            let mut losses = Vec::new();
+            let storage = std::cell::RefCell::new(ctx.reserve_scoped(0, "query").expect("scope"));
+            let (query, cached) = shared.resolve(&[id], domain, &storage, (&mut losses, &reports)).expect("curve fallback");
+            assert!(cached.color.is_none());
+            assert_eq!(losses.len(), 1);
+            assert_eq!(losses[0].message, "SURFACE_STYLE_USAGE #1 has no valid surface_side; style omitted");
+            shared.claim(query, domain, (&mut claims, &mut claim_storage)).expect("fallback claims");
+        }
+        assert_eq!(claims, std::collections::BTreeSet::from([2, 3, 4]));
+    });
+    }
+}
+
+#[test]
+fn complex_non_surface_queries_preserve_surface_fallback_claim_exclusions() {
+    let exchange = exchange("#1=(POINT_STYLE()SURFACE_STYLE_USAGE($,#2));#2=COLOUR_RGB('',$,0.,0.);#3=PRESENTATION_STYLE_ASSIGNMENT((#1));#4=PRESENTATION_STYLE_ASSIGNMENT((#1));");
+    for domain in [super::super::StyleDomain::Curve, super::super::StyleDomain::Point] {
+        crate::test_support::with_service_context(b"", |_, ctx| {
+            let mut shared = super::super::StyleColors {
+                exchange: &exchange, prefixes: BTreeMap::new(), values: BTreeMap::new(),
+        queries: Vec::new(),
+        frames: Vec::new(),
+        frame_storage: ctx.reserve_scoped(0, "STEP shared color frames").expect("frame scope"),
+                completed: super::super::ColorCompletions::new(ctx).expect("completion cache"),
+                ctx, storage: ctx.reserve_scoped(0, "color fixture").expect("scope"),
+            };
+            let reports = std::cell::RefCell::new(ctx.reserve_scoped(0, "reports").expect("scope"));
+            let mut claims = std::collections::BTreeSet::new();
+            let mut claim_storage = ctx.reserve_scoped(0, "claims").expect("scope");
+            for id in [3, 4] {
+                let mut losses = Vec::new();
+                let storage = std::cell::RefCell::new(ctx.reserve_scoped(0, "query").expect("scope"));
+                let (query, cached) = shared.resolve(&[id], domain, &storage, (&mut losses, &reports)).expect("complex fallback");
+                assert!(cached.color.is_none());
+                assert_eq!(losses.len(), 1);
+                assert_eq!(losses[0].message, "SURFACE_STYLE_USAGE #1 has no valid surface_side; style omitted");
+                shared.claim(query, domain, (&mut claims, &mut claim_storage)).expect("fallback claims");
+            }
+            assert_eq!(claims, std::collections::BTreeSet::from([2, 3, 4]));
+        });
+    }
+}

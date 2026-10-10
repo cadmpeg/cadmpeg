@@ -573,3 +573,169 @@ fn wrapper_resolution_reuses_queries_across_target_uses() {
         }
     });
 }
+#[test]
+fn distinct_wrapper_roots_reuse_the_shared_tail() {
+    use std::fmt::Write as _;
+    let mut source = String::from("ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;");
+    for id in 1..=64 { writeln!(source, "#{id}=ANNOTATION_PLANE('','',#{});", id + 1).expect("wrapper"); }
+    source.push_str("#65=ITEM();ENDSEC;END-ISO-10303-21;");
+    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("exchange");
+    let identities = std::collections::BTreeMap::from([(65, std::collections::BTreeSet::from([String::from("target")]))]);
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    // One entry per node and edge plus reverse dependencies and the DFS stack
+    // fit within 512 admissions. Independent root walks need over 2,000 active
+    // entries alone (64 + 63 + ... + 1).
+    policy.limits.max_collection_items = 512;
+    crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+        let cache = super::WrapperCache::new(ctx).expect("cache");
+        for id in 1..=64 {
+            let Some(super::WrapperTargetResolution::Singleton(identity)) = cache.resolve(id, &identities, &exchange).expect("shared tail") else { panic!("singleton target"); };
+            assert_eq!(identity, "target");
+        }
+        assert_eq!(ctx.resource_refusal(), None);
+    });
+}
+
+#[test]
+fn native_target_probes_share_wrapper_completions() {
+    use std::fmt::Write as _;
+    let mut source = String::from("ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;");
+    for id in 1..=64 { writeln!(source, "#{id}=ANNOTATION_PLANE('','',#{});", id + 1).expect("wrapper"); }
+    source.push_str("#65=ITEM();ENDSEC;END-ISO-10303-21;");
+    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("exchange");
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 512;
+    policy.limits.max_retained_bytes = 0;
+    crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+        let cache = super::WrapperCache::new(ctx).expect("cache");
+        let mut identities = std::collections::BTreeMap::from([(65, std::collections::BTreeSet::from([String::from("target")]))]);
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        let mut storage = ctx.reserve_scoped(0, "native target index").expect("scope");
+        super::add_source_typed_targets(&mut ir, &exchange, &(1..=64).collect(), &(1..=64).collect(), &mut identities, (&mut storage, &cache), ctx).expect("shared native probes");
+        assert_eq!(identities.len(), 1);
+        assert_eq!(ctx.resource_refusal(), None);
+    });
+}
+
+#[test]
+fn wrapper_target_mutation_invalidates_completed_ancestors() {
+    const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=MAPPED_ITEM('',#2,$);#2=REPRESENTATION_MAP($,#3);#3=REPRESENTATION('',(#4,#5),$);#4=ITEM();#5=ITEM();ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner).expect("exchange");
+    crate::test_support::with_service_context(b"", |_, ctx| {
+        let cache = super::WrapperCache::new(ctx).expect("cache");
+        let mut identities = std::collections::BTreeMap::new();
+        assert!(cache.resolve(1, &identities, &exchange).expect("empty wrapper").is_none());
+        identities.insert(4, std::collections::BTreeSet::from([String::from("first")]));
+        cache.invalidate(4).expect("first mutation");
+        let Some(super::WrapperTargetResolution::Singleton(target)) = cache.resolve(1, &identities, &exchange).expect("singleton wrapper") else { panic!("singleton"); };
+        assert_eq!(target, "first");
+        identities.insert(5, std::collections::BTreeSet::from([String::from("second")]));
+        cache.invalidate(5).expect("second mutation");
+        let Some(super::WrapperTargetResolution::Ambiguous((targets, _storage))) = cache.resolve(1, &identities, &exchange).expect("ambiguous wrapper") else { panic!("ambiguity"); };
+        assert_eq!(targets, std::collections::BTreeSet::from([String::from("first"), String::from("second")]));
+    });
+}
+
+#[test]
+fn wrapper_descendant_summaries_preserve_cycle_rejection() {
+    const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=MAPPED_ITEM('',#2,$);#2=REPRESENTATION_MAP($,#3);#3=REPRESENTATION('',(#4,#5),$);#4=ITEM();#5=ANNOTATION_PLANE('','',#1);#6=ANNOTATION_PLANE('','',#4);ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner).expect("exchange");
+    crate::test_support::with_service_context(b"", |_, ctx| {
+        let cache = super::WrapperCache::new(ctx).expect("cache");
+        let identities = std::collections::BTreeMap::from([(4, std::collections::BTreeSet::from([String::from("target")]))]);
+        for id in [1, 5, 1, 5] { assert!(cache.resolve(id, &identities, &exchange).expect("cycle wrapper").is_none()); }
+        let Some(super::WrapperTargetResolution::Singleton(target)) = cache.resolve(6, &identities, &exchange).expect("acyclic sibling") else { panic!("singleton"); };
+        assert_eq!(target, "target");
+    });
+}
+
+#[test]
+fn native_target_insertions_cut_obsolete_wrapper_dependencies() {
+    use std::fmt::Write as _;
+    let mut source = String::from("ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;");
+    for id in 1..=64 { writeln!(source, "#{id}=ANNOTATION_PLANE('','',#{});", id + 1).expect("wrapper"); }
+    source.push_str("#65=ITEM();ENDSEC;END-ISO-10303-21;");
+    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("exchange");
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    // Inserting each direct target cuts its wrapper edge. Later insertions do
+    // not invalidate ancestors that already resolve at that direct target.
+    policy.limits.max_collection_items = 1024;
+    crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+        let cache = super::WrapperCache::new(ctx).expect("cache");
+        let mut identities = std::collections::BTreeMap::new();
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        let mut storage = ctx.reserve_scoped(0, "native target index").expect("scope");
+        super::add_source_typed_targets(&mut ir, &exchange, &(1..=64).collect(), &(1..=64).collect(), &mut identities, (&mut storage, &cache), ctx).expect("native insertions");
+        assert_eq!(identities.keys().copied().collect::<Vec<_>>(), (1..=64).collect::<Vec<_>>());
+        assert_eq!(ctx.resource_refusal(), None);
+    });
+}
+
+#[test]
+fn wrapper_cycle_stops_before_unvisited_sibling_graph() {
+    use std::fmt::Write as _;
+    let mut source = String::from("ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=MAPPED_ITEM('',#2,$);#2=REPRESENTATION_MAP($,#3);#3=REPRESENTATION('',(#1,#4),$);");
+    for id in 4..=100 { writeln!(source, "#{id}=ANNOTATION_PLANE('','',#{});", id + 1).expect("wrapper"); }
+    source.push_str("#101=ITEM();ENDSEC;END-ISO-10303-21;");
+    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("exchange");
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    // The root's two edges, reverse dependencies, cache node and DFS path fit
+    // within 32 admissions. The unvisited sibling chain cannot fit that cap.
+    policy.limits.max_collection_items = 32;
+    crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+        let cache = super::WrapperCache::new(ctx).expect("cache");
+        let identities = std::collections::BTreeMap::from([(101, std::collections::BTreeSet::from([String::from("target")]))]);
+        for _ in 0..2 { assert!(cache.resolve(1, &identities, &exchange).expect("cycle exits before siblings").is_none()); }
+        assert_eq!(ctx.resource_refusal(), None);
+    });
+}
+
+#[test]
+fn native_target_insertion_breaks_a_cached_wrapper_cycle() {
+    const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ANNOTATION_PLANE('','',#2);#2=ANNOTATION_PLANE('','',#1);ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner).expect("exchange");
+    crate::test_support::with_service_context(b"", |_, ctx| {
+        let cache = super::WrapperCache::new(ctx).expect("cache");
+        let mut identities = std::collections::BTreeMap::new();
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        let mut storage = ctx.reserve_scoped(0, "native target index").expect("scope");
+        super::add_source_typed_targets(&mut ir, &exchange, &(1..=2).collect(), &(1..=2).collect(), &mut identities, (&mut storage, &cache), ctx).expect("cycle probe insertion");
+        assert_eq!(identities.keys().copied().collect::<Vec<_>>(), [1]);
+        let Some(super::WrapperTargetResolution::Singleton(target)) = cache.resolve(2, &identities, &exchange).expect("cycle is cut by direct target") else { panic!("singleton after insertion"); };
+        assert_eq!(Some(&target), identities[&1].first());
+        assert_eq!(ctx.resource_refusal(), None);
+    });
+}
+
+#[test]
+fn native_probes_reuse_positive_tails_across_target_insertions() {
+    use std::fmt::Write as _;
+    let mut source = String::from("ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;");
+    for id in (1..=128).step_by(2) { writeln!(source, "#{id}=ANNOTATION_PLANE('','',#200);").expect("root"); }
+    for id in (2..=128).step_by(2) { writeln!(source, "#{id}=ITEM();").expect("leaf"); }
+    for id in 200..=263 { writeln!(source, "#{id}=ANNOTATION_PLANE('','',#{});", id + 1).expect("tail"); }
+    source.push_str("#264=MAPPED_ITEM('',#265,$);#265=REPRESENTATION_MAP($,#266);#266=REPRESENTATION('',(");
+    for id in (2..=128).step_by(2) {
+        if id != 2 { source.push(','); }
+        write!(source, "#{id}").expect("reference");
+    }
+    source.push_str("),$);ENDSEC;END-ISO-10303-21;");
+    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("exchange");
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    // The empty walk and its first invalidation cost linear storage. Once a
+    // leaf target exists, successful probes stay true across later insertions.
+    // Rebuilding all 65 shared wrapper nodes for 63 further roots exceeds this
+    // cap through cache entries alone: 130 initial entries + 65 * 63 > 4096,
+    // before edges and worklist storage.
+    policy.limits.max_collection_items = 4096;
+    crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+        let cache = super::WrapperCache::new(ctx).expect("cache");
+        let mut identities = std::collections::BTreeMap::new();
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        let mut storage = ctx.reserve_scoped(0, "native target index").expect("scope");
+        super::add_source_typed_targets(&mut ir, &exchange, &(1..=128).collect(), &(1..=128).collect(), &mut identities, (&mut storage, &cache), ctx).expect("interleaved native probes");
+        let expected = std::iter::once(1).chain((2..=128).step_by(2)).collect::<Vec<_>>();
+        assert_eq!(identities.keys().copied().collect::<Vec<_>>(), expected);
+        assert_eq!(ctx.resource_refusal(), None);
+    });
+}

@@ -68,7 +68,8 @@ fn color_result(
                     .expect("scope"),
             ),
             active: &mut BTreeSet::new(),
-            cache: &mut BTreeMap::new(),
+            cache: &mut super::super::ColorCache::default(),
+                    completed: None,
             losses: (
                 &mut Vec::new(),
                 &std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope")),
@@ -76,6 +77,7 @@ fn color_result(
             invalid_surface_sides: &mut BTreeSet::new(),
         },
         0,
+                    None,
         &ctx,
     );
     result
@@ -150,4 +152,26 @@ fn repeated_colour_retains_output_text_and_appearance_identities() {
     };
     assert_eq!(Some(refusal.used), expected_retained);
     assert_eq!(refusal.additional, 1);
+}
+
+#[test]
+fn presentation_warning_text_refuses_before_report_insertion() {
+    const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=INVISIBILITY($);ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner).expect("invisibility exchange");
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let arena = DecodeArena::new();
+    let (setup, _) = DecodeContext::from_root_bytes(b"", &arena, &DecodePolicy::service()).expect("setup");
+    let carriers = crate::reader::index::CarrierIndex::from_ir(&ir, &setup).expect("carriers");
+    let topology = crate::reader::topology::decode(&exchange, &mut ir, &carriers, &setup).expect("topology").value;
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+        assert!(matches!(super::super::decode(&exchange, &topology, &mut ir, &BTreeMap::new(), ctx), Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "step_presentation_loss_text"
+                && limit.used == 0
+                && ctx.resource_refusal() == Some(limit)));
+        assert!(ir.model.appearances.is_empty());
+        assert!(ir.model.appearance_bindings.is_empty());
+    });
 }
