@@ -191,7 +191,7 @@ fn plane_boundary_destroys_active_path_before_retaining_proof_cache() {
     let entries = directory.iter().map(|entry| (entry.sequence, entry)).collect();
     let index = ModelIndex::build(decoded.ir(), cadmpeg_ir::index::StandardIndex);
     type Key = super::super::super::PlaneBoundaryKey;
-    type Value = &'static cadmpeg_ir::topology::Edge;
+    type Value = super::super::super::PlaneBoundaryProof<'static>;
     let cache = u64::try_from(11 * (std::mem::size_of::<Key>() + std::mem::size_of::<Value>())
         + 16 * std::mem::size_of::<usize>()
         + 2 * std::mem::align_of::<Key>().max(std::mem::align_of::<Value>())

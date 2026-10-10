@@ -200,12 +200,12 @@ fn sectioned_area_pattern_plane(
     Some((point, normal))
 }
 
-type SectionCoplanarityKey = (u32, [u64; 7]);
+type SectionCoplanarityKey = (u32, super::CoplanarityPlaneKey);
 
 struct SectionedAreaGeometryCache<'ctx, 'ir> {
     ir: &'ir CadIr,
     index: Option<cadmpeg_ir::index::DecodeModelIndex<'ctx, 'ir>>,
-    proofs: BTreeMap<SectionCoplanarityKey, bool>,
+    proofs: BTreeMap<SectionCoplanarityKey, super::CoplanarityProof<'ir, bool>>,
     storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
@@ -232,25 +232,20 @@ impl<'ctx, 'ir> SectionedAreaGeometryCache<'ctx, 'ir> {
         if !resolution.is_finite() || resolution < 0.0 {
             return Ok(false);
         }
-        let (point, normal) = pattern_plane;
-        let key = (
-            sequence,
-            [
-                point.x.to_bits(),
-                point.y.to_bits(),
-                point.z.to_bits(),
-                normal.x.to_bits(),
-                normal.y.to_bits(),
-                normal.z.to_bits(),
-                resolution.to_bits(),
-            ],
-        );
-        if let Some(coplanar) = ctx.get_btree_map(
-            &self.proofs,
-            &key,
-            "iges section coplanarity proof lookup",
+        let plane_key = super::coplanarity_plane_key(pattern_plane, resolution);
+        let mut key = (sequence, plane_key);
+        if let Some(proof) = ctx.get_btree_map(
+            &self.proofs, &key, "iges section coplanarity proof lookup",
         )? {
-            return Ok(*coplanar);
+            if proof.matches(plane_key, pattern_plane, resolution) {
+                return Ok(proof.result);
+            }
+            key = (sequence, super::coplanarity_placement_key(pattern_plane, resolution));
+            if let Some(proof) = ctx.get_btree_map(
+                &self.proofs, &key, "iges section coplanarity proof lookup",
+            )? {
+                return Ok(proof.result);
+            }
         }
         if self.index.is_none() {
             self.index = Some(ModelIndex::new_model_only(self.ir, ctx)?);
@@ -263,8 +258,10 @@ impl<'ctx, 'ir> SectionedAreaGeometryCache<'ctx, 'ir> {
         let mut active = BTreeSet::new();
         let curve_id = active_storage
             .with_storage(|| crate::ids::curve_admitted(&crate::ids::Stem::directory(sequence), ctx))?;
+        let mut proven_geometry = None;
         let coplanar = if let Some(curve) = index.curves(curve_id.as_str(), ctx)? {
             if let Some(geometry) = curve.geometry.solved() {
+                proven_geometry = Some(geometry);
                 active_storage.with_storage(|| {
                     ctx.insert_btree_set(&mut active, curve_id, "iges section active curves")
                 })?;
@@ -289,7 +286,7 @@ impl<'ctx, 'ir> SectionedAreaGeometryCache<'ctx, 'ir> {
             ctx.insert_btree_map(
                 &mut self.proofs,
                 key,
-                coplanar,
+                super::CoplanarityProof { origin: pattern_plane.0, geometry: proven_geometry, result: coplanar },
                 "iges section coplanarity proof cache",
             )
         })?;
