@@ -448,6 +448,30 @@ fn native_parameter_loops_admit_proven_two_edge_circles() {
     ];
     let typed_nonlinear_curve_ids = BTreeSet::from([10, 11, 20, 21]);
 
+    let operations = std::cell::RefCell::new(Vec::new());
+    let polygon = crate::test_support::assert_refusal_order(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        &["creo typed nonlinear curve ids lookup"],
+        |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("root");
+            let result = super::super::native_parameter_loop_polygon(
+                &ctx, &outer, (5, &surface), &incidence, &solved_vertices,
+                &native_pcurves, &typed_nonlinear_curve_ids,
+            );
+            if let Err(CodecError::ResourceLimit(refusal)) = &result {
+                operations.borrow_mut().push(refusal.operation);
+            }
+            result
+        },
+    );
+    assert_eq!(polygon, Some(vec![[2.0, 0.0], [-2.0, 0.0]]));
+    assert!(!operations.borrow().contains(&"creo B-rep nonlinear half edge search"));
+    assert!(!operations.borrow().contains(&"creo B-rep parameter segment search"));
+
     assert_eq!(
         native_parameter_loop_polygon_service(
             &outer,

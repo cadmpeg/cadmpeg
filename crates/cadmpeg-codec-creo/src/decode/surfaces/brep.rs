@@ -1441,22 +1441,18 @@ fn native_parameter_loop_polygon(
     if segments.len() < 3
         && (segments.len() != 2
             || lp.half_edges()[0].curve_id == lp.half_edges()[1].curve_id
-            || ctx.any_by(
-                lp.half_edges(),
-                |half_edge| {
-                    Ok(!ctx.contains_btree_set(
-                        typed_nonlinear_curve_ids,
-                        &half_edge.curve_id,
-                        "creo typed nonlinear curve ids lookup",
-                    )?)
-                },
-                "creo B-rep nonlinear half edge search",
+            || !ctx.contains_btree_set(
+                typed_nonlinear_curve_ids,
+                &lp.half_edges()[0].curve_id,
+                "creo typed nonlinear curve ids lookup",
             )?
-            || ctx.any_by(
-                &segments,
-                |segment| Ok(parameter_points_agree(segment[0], segment[1])),
-                "creo B-rep parameter segment search",
-            )?)
+            || !ctx.contains_btree_set(
+                typed_nonlinear_curve_ids,
+                &lp.half_edges()[1].curve_id,
+                "creo typed nonlinear curve ids lookup",
+            )?
+            || parameter_points_agree(segments[0][0], segments[0][1])
+            || parameter_points_agree(segments[1][0], segments[1][1]))
         || ctx.any_by(
             &segments,
             |segment| Ok(segment.iter().flatten().any(|value| !value.is_finite())),
