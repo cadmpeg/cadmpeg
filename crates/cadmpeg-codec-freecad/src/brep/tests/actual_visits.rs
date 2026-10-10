@@ -13,14 +13,14 @@ fn grid_row_allocation_refuses_before_unmoved_values() {
         policy.limits.max_collection_items = collection_limit;
         policy.limits.max_work_units = work_limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let Err(CodecError::ResourceLimit(original)) = grid_rows(&ctx, vec![1, 2, 3, 4], 2) else {
+        let Err(CodecError::ResourceLimit(original)) = grid_rows(&ctx, (vec![1, 2, 3, 4], None), 2) else {
             panic!("row storage must refuse before its values move")
         };
         assert_eq!(original.dimension, ResourceDimension::CollectionItems);
         assert_eq!(original.operation, "FreeCAD B-rep surface row values");
         assert_eq!(original.used, used);
         assert_eq!(original.additional, 2);
-        assert!(matches!(grid_rows::<u8>(&ctx, Vec::new(), 0),
+        assert!(matches!(grid_rows::<u8>(&ctx, (Vec::new(), None), 0),
             Err(CodecError::ResourceLimit(actual)) if actual == original));
     }
 }
@@ -32,7 +32,7 @@ fn grid_rows_charge_each_moved_value_once_and_keep_order() {
     policy.limits.max_work_units = 64;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert_eq!(
-        grid_rows(&ctx, vec![1, 2, 3, 4], 2).unwrap(),
+        grid_rows(&ctx, (vec![1, 2, 3, 4], None), 2).unwrap(),
         [[1, 2], [3, 4]]
     );
 }
@@ -46,9 +46,9 @@ fn empty_and_invalid_grid_dimensions_need_no_work_and_keep_original_refusal() {
     policy.limits.max_materialized_bytes = 0;
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(grid_rows::<u8>(&ctx, Vec::new(), 2).unwrap().is_empty());
+    assert!(grid_rows::<u8>(&ctx, (Vec::new(), None), 2).unwrap().is_empty());
     assert!(
-        matches!(grid_rows(&ctx, vec![1_u8], 2), Err(CodecError::Malformed(message))
+        matches!(grid_rows(&ctx, (vec![1_u8], None), 2), Err(CodecError::Malformed(message))
         if message == "surface grid dimensions do not match pole count")
     );
     assert_eq!(ctx.resource_refusal(), None);
@@ -56,7 +56,7 @@ fn empty_and_invalid_grid_dimensions_need_no_work_and_keep_original_refusal() {
         panic!("work refusal")
     };
     for width in [0, 2] {
-        assert!(matches!(grid_rows::<u8>(&ctx, Vec::new(), width),
+        assert!(matches!(grid_rows::<u8>(&ctx, (Vec::new(), None), width),
             Err(CodecError::ResourceLimit(actual)) if actual == original));
     }
 }
@@ -154,7 +154,7 @@ fn periodic_endpoint_search_charges_only_the_two_bounded_runs() {
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(
-            matches!(super::super::normalize_periodic_knots(&ctx, knots, 2, true),
+            matches!(super::super::normalize_periodic_knots(&ctx, (knots, None), 2, true),
             Err(CodecError::Malformed(message)) if message == "periodic B-spline endpoint knots are invalid")
         );
         assert_eq!(ctx.resource_refusal(), None);
@@ -173,7 +173,7 @@ fn periodic_extension_overflow_does_not_copy_the_remaining_knots() {
         policy.limits.max_work_units = 64;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(
-            matches!(super::super::normalize_periodic_knots(&ctx, knots, 1, true),
+            matches!(super::super::normalize_periodic_knots(&ctx, (knots, None), 1, true),
             Err(CodecError::Malformed(message)) if message == "periodic B-spline extension exceeds finite knot range")
         );
         assert_eq!(ctx.resource_refusal(), None);
@@ -190,7 +190,7 @@ fn periodic_knot_extension_charges_actual_visits_and_keeps_values() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 64;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let (knots, padding) = super::super::normalize_periodic_knots(&ctx, knots, 1, true).unwrap();
+    let (knots, padding) = super::super::normalize_periodic_knots(&ctx, (knots, None), 1, true).unwrap();
     assert_eq!(padding, 1);
     assert_eq!(
         knots.iter().map(|value| value.get()).collect::<Vec<_>>(),
@@ -277,7 +277,7 @@ fn nonperiodic_knots_and_zero_padding_move_no_storage_and_preserve_refusal() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let knots = vec![FiniteReal::ONE];
     let pointer = knots.as_ptr();
-    let (knots, padding) = super::super::normalize_periodic_knots(&ctx, knots, 1, false).unwrap();
+    let (knots, padding) = super::super::normalize_periodic_knots(&ctx, (knots, None), 1, false).unwrap();
     assert_eq!(knots, [FiniteReal::ONE]);
     assert_eq!(knots.as_ptr(), pointer);
     assert_eq!(padding, 0);
@@ -290,7 +290,7 @@ fn nonperiodic_knots_and_zero_padding_move_no_storage_and_preserve_refusal() {
         panic!("work refusal")
     };
     assert!(
-        matches!(super::super::normalize_periodic_knots(&ctx, Vec::new(), 1, false),
+        matches!(super::super::normalize_periodic_knots(&ctx, (Vec::new(), None), 1, false),
         Err(CodecError::ResourceLimit(actual)) if actual == original)
     );
     assert!(
