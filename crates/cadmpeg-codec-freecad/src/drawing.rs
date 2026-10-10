@@ -25,7 +25,6 @@ pub(crate) fn transfer(
     properties: &[PropertyRecord],
 ) -> Result<Vec<DrawingRecord>, CodecError> {
     if objects.is_empty() {
-        ctx.reserve_scoped(0, "fcstd drawing object search")?;
         return Ok(Vec::new());
     }
     if !ctx.any_by(
