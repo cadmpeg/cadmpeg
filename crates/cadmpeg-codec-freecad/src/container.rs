@@ -153,10 +153,12 @@ pub(crate) fn scan<'a, 'c>(
             break;
         };
         let id = {
-            let (data, storage) = ctx.format_scoped(
-                format_args!("{index}"), "FCStd archive span ordinal",
-            )?;
-            let ordinal = ScopedData { data, _storage: storage };
+            let (data, storage) =
+                ctx.format_scoped(format_args!("{index}"), "FCStd archive span ordinal")?;
+            let ordinal = ScopedData {
+                data,
+                _storage: storage,
+            };
             crate::native::native_id_charged(ctx, "archive-span", &ordinal.data)
         }?;
         ledger.push(ArchiveSpan {
@@ -469,15 +471,18 @@ pub(crate) fn xml_envelope_counts(
         let Some(&byte) = ctx.next_charged(
             &mut bytes[offset..].iter(),
             "FCStd Document.xml lexical dispatch",
-        )? else {
+        )?
+        else {
             break;
         };
         if byte != b'<' {
-            let next = ctx.position_by(
-                &bytes[offset + 1..],
-                |byte| Ok(*byte == b'<'),
-                "FCStd Document.xml lexical text",
-            )?.map_or(bytes.len(), |delta| offset + 1 + delta);
+            let next = ctx
+                .position_by(
+                    &bytes[offset + 1..],
+                    |byte| Ok(*byte == b'<'),
+                    "FCStd Document.xml lexical text",
+                )?
+                .map_or(bytes.len(), |delta| offset + 1 + delta);
             let Some(count) = nodes.checked_add(1) else {
                 return Ok(None);
             };
@@ -503,7 +508,8 @@ pub(crate) fn xml_envelope_counts(
                 tail.windows(suffix.len()),
                 |window| Ok(window == suffix),
                 "FCStd Document.xml lexical markup suffix",
-            )? else {
+            )?
+            else {
                 return Ok(None);
             };
             offset += prefix.len() + end + suffix.len();
@@ -523,16 +529,18 @@ pub(crate) fn xml_envelope_counts(
         let closing = rest.get(1) == Some(&b'/');
         let name_start = offset + if closing { 2 } else { 1 };
         let mut local_name_start = name_start;
-        let name_end = ctx.position_by(
-            bytes[name_start..].iter().enumerate(),
-            |(index, byte)| {
-                if *byte == b':' {
-                    local_name_start = name_start + index + 1;
-                }
-                Ok(byte.is_ascii_whitespace() || matches!(*byte, b'/' | b'>'))
-            },
-            "FCStd Document.xml lexical tag name",
-        )?.map_or(bytes.len(), |delta| name_start + delta);
+        let name_end = ctx
+            .position_by(
+                bytes[name_start..].iter().enumerate(),
+                |(index, byte)| {
+                    if *byte == b':' {
+                        local_name_start = name_start + index + 1;
+                    }
+                    Ok(byte.is_ascii_whitespace() || matches!(*byte, b'/' | b'>'))
+                },
+                "FCStd Document.xml lexical tag name",
+            )?
+            .map_or(bytes.len(), |delta| name_start + delta);
         if name_end == name_start {
             return Ok(None);
         }
@@ -586,20 +594,24 @@ fn scan_tag_end(
 ) -> Result<Option<(usize, bool)>, CodecError> {
     let mut quote = None;
     let mut last_nonspace = None;
-    let end = ctx.position_by(&bytes[start..], |&byte| {
-        if quote.is_none() && byte == b'>' {
-            return Ok(true);
-        }
-        if !byte.is_ascii_whitespace() {
-            last_nonspace = Some(byte);
-        }
-        match (quote, byte) {
-            (None, b'\'' | b'"') => quote = Some(byte),
-            (Some(open), close) if open == close => quote = None,
-            _ => {}
-        }
-        Ok(false)
-    }, "FCStd Document.xml lexical tag tail")?;
+    let end = ctx.position_by(
+        &bytes[start..],
+        |&byte| {
+            if quote.is_none() && byte == b'>' {
+                return Ok(true);
+            }
+            if !byte.is_ascii_whitespace() {
+                last_nonspace = Some(byte);
+            }
+            match (quote, byte) {
+                (None, b'\'' | b'"') => quote = Some(byte),
+                (Some(open), close) if open == close => quote = None,
+                _ => {}
+            }
+            Ok(false)
+        },
+        "FCStd Document.xml lexical tag tail",
+    )?;
     Ok(end.map(|offset| (start + offset, last_nonspace == Some(b'/'))))
 }
 
@@ -724,8 +736,7 @@ pub(crate) fn logical_ledger(
     let mut typed_entries = HashSet::new();
     let mut payloads = shape_payloads.iter();
     while payloads.len() != 0 {
-        let Some(payload) = ctx.next_charged(&mut payloads, "FCStd typed entry identities")?
-        else {
+        let Some(payload) = ctx.next_charged(&mut payloads, "FCStd typed entry identities")? else {
             break;
         };
         typed_storage.with_storage(|| {
@@ -929,8 +940,7 @@ pub(crate) fn byte_coverage(
     let mut totals: [Option<u64>; 3] = [None; 3];
     let mut logical_spans = logical.iter();
     while logical_spans.len() != 0 {
-        let Some(span) = ctx.next_charged(&mut logical_spans, "FCStd entry logical spans")?
-        else {
+        let Some(span) = ctx.next_charged(&mut logical_spans, "FCStd entry logical spans")? else {
             break;
         };
         let bytes = span.span.end() - span.span.start();
@@ -977,12 +987,14 @@ pub(crate) fn byte_coverage(
         .filter_map(|(name, total)| Some((name.to_owned(), total?)))
         .collect::<BTreeMap<_, _>>();
     let physical_exact = {
-        let (data, storage) =
-            ctx.temporary_vec(physical.len(), "FCStd ordered physical spans")?;
-        let mut ordered_physical = ScopedData { data, _storage: storage };
-        ordered_physical.data.extend(
-            ctx.admit_iter(physical, "FCStd ordered physical spans")?,
-        );
+        let (data, storage) = ctx.temporary_vec(physical.len(), "FCStd ordered physical spans")?;
+        let mut ordered_physical = ScopedData {
+            data,
+            _storage: storage,
+        };
+        ordered_physical
+            .data
+            .extend(ctx.admit_iter(physical, "FCStd ordered physical spans")?);
         ctx.stable_sort_by_key(
             &mut ordered_physical.data,
             |value| value.span.start(),
@@ -1000,8 +1012,7 @@ pub(crate) fn byte_coverage(
     let mut logical_byte_len = 0_u64;
     let mut entries_iter = entries.iter();
     while entries_iter.len() != 0 {
-        let Some(entry) = ctx.next_charged(&mut entries_iter, "FCStd entry logical spans")?
-        else {
+        let Some(entry) = ctx.next_charged(&mut entries_iter, "FCStd entry logical spans")? else {
             break;
         };
         logical_byte_len = logical_byte_len
@@ -1010,12 +1021,11 @@ pub(crate) fn byte_coverage(
         if !logical_exact {
             continue;
         }
-        let spans = ctx
-            .remove_btree_map(
-                &mut spans_by_entry,
-                entry.name(),
-                "FCStd entry logical spans",
-            )?;
+        let spans = ctx.remove_btree_map(
+            &mut spans_by_entry,
+            entry.name(),
+            "FCStd entry logical spans",
+        )?;
         let mut spans = match spans {
             Some(spans) => spans,
             None => ScopedData {
@@ -1105,9 +1115,13 @@ fn push_logical_span(
     ctx.reserve_vec(output, 1, "FCStd logical ledger spans")?;
     let id = {
         let (data, storage) = ctx.format_scoped(
-            format_args!("{}", output.len()), "FCStd logical span ordinal",
+            format_args!("{}", output.len()),
+            "FCStd logical span ordinal",
         )?;
-        let ordinal = ScopedData { data, _storage: storage };
+        let ordinal = ScopedData {
+            data,
+            _storage: storage,
+        };
         crate::native::native_id_charged(ctx, "logical-span", &ordinal.data)
     }?;
     output.push(LogicalSpan {

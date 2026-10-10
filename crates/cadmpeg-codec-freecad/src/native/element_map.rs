@@ -253,7 +253,8 @@ impl ElementMapNodes {
         map_id: u64,
         mut groups: ScopedData<'_, BTreeMap<String, Vec<Vec<ElementMappedName>>>>,
     ) -> Result<Self, CodecError> {
-        let mut root_groups = ctx.collection_vec(groups.data.len(), "FreeCAD legacy root map groups")?;
+        let mut root_groups =
+            ctx.collection_vec(groups.data.len(), "FreeCAD legacy root map groups")?;
         let values = std::mem::take(&mut groups.data);
         for (indexed_name, names) in ctx.admit_iter(values, "FreeCAD legacy root map group scan")? {
             root_groups.push(ElementMapGroup {
@@ -287,10 +288,9 @@ impl ElementMapNodes {
         let mut groups = BTreeMap::new();
         let mut source_groups = self.0[root].groups.iter_mut();
         while source_groups.len() != 0 {
-            let Some(group) = ctx.next_charged(
-                &mut source_groups,
-                "FreeCAD element topology group scan",
-            )? else {
+            let Some(group) =
+                ctx.next_charged(&mut source_groups, "FreeCAD element topology group scan")?
+            else {
                 break;
             };
             group_storage.with_storage(|| {
@@ -305,10 +305,9 @@ impl ElementMapNodes {
         }
         let mut bindings = bindings.into_iter();
         while bindings.size_hint().1 != Some(0) {
-            let Some((indexed_name, source_index, id)) = ctx.next_charged(
-                &mut bindings,
-                "FreeCAD element topology binding scan",
-            )? else {
+            let Some((indexed_name, source_index, id)) =
+                ctx.next_charged(&mut bindings, "FreeCAD element topology binding scan")?
+            else {
                 break;
             };
             let Some(matches) = ctx.get_mut_btree_map(
@@ -324,7 +323,8 @@ impl ElementMapNodes {
                 let Some(names) = ctx.next_charged(
                     &mut matching_groups,
                     "FreeCAD element topology matching groups",
-                )? else {
+                )?
+                else {
                     break;
                 };
                 let Some(names) = names.get_mut(source_index) else {
@@ -332,10 +332,9 @@ impl ElementMapNodes {
                 };
                 let mut name_iter = names.iter_mut();
                 while name_iter.len() != 0 {
-                    let Some(name) = ctx.next_charged(
-                        &mut name_iter,
-                        "FreeCAD element topology name scan",
-                    )? else {
+                    let Some(name) =
+                        ctx.next_charged(&mut name_iter, "FreeCAD element topology name scan")?
+                    else {
                         break;
                     };
                     if !ctx.any_by(

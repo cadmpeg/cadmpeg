@@ -23,8 +23,11 @@ fn drawing_diagnostic_refuses_at_matching_retained_limit() {
 #[test]
 fn drawing_empty_exact_sources_are_free_and_keep_original_refusal() {
     let scalar = crate::native::ValueRecord {
-        tag: "Float".into(), order: 0, attributes: std::collections::BTreeMap::new(),
-        text: None, raw_xml: String::new(),
+        tag: "Float".into(),
+        order: 0,
+        attributes: std::collections::BTreeMap::new(),
+        text: None,
+        raw_xml: String::new(),
     };
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
@@ -34,16 +37,24 @@ fn drawing_empty_exact_sources_are_free_and_keep_original_refusal() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("context");
-    assert_eq!(super::scalar_value(&ctx, "X", "App::PropertyFloat", &scalar)
-        .expect("empty scalar attributes"), None);
+    assert_eq!(
+        super::scalar_value(&ctx, "X", "App::PropertyFloat", &scalar)
+            .expect("empty scalar attributes"),
+        None
+    );
     let index = super::ensure_unique_property_names(&ctx, &[]).expect("empty property index");
     assert!(index.0.is_empty());
     drop(index);
     let cadmpeg_core::CodecError::ResourceLimit(original) = ctx
-        .charge_work(1, "prior drawing source refusal").expect_err("work limit")
-        else { panic!("resource refusal") };
-    assert!(matches!(super::scalar_value(&ctx, "X", "App::PropertyFloat", &scalar),
-        Err(cadmpeg_core::CodecError::ResourceLimit(repeated)) if repeated == original));
+        .charge_work(1, "prior drawing source refusal")
+        .expect_err("work limit")
+    else {
+        panic!("resource refusal")
+    };
+    assert!(
+        matches!(super::scalar_value(&ctx, "X", "App::PropertyFloat", &scalar),
+        Err(cadmpeg_core::CodecError::ResourceLimit(repeated)) if repeated == original)
+    );
     assert!(matches!(super::ensure_unique_property_names(&ctx, &[]),
         Err(cadmpeg_core::CodecError::ResourceLimit(repeated)) if repeated == original));
 }
@@ -84,38 +95,41 @@ fn drawing_empty_object_and_neutral_transfers_are_zero_work_and_sticky() {
     assert!(super::transfer(&ctx, &[], &[])
         .expect("empty drawing object scan does no positive work")
         .is_empty());
-    super::transfer_neutral(
-        &ctx,
-        &mut cadmpeg_ir::document::Model::default(),
-        &[],
-        &[],
-    )
-    .expect("empty neutral drawing transfer does no positive work");
+    super::transfer_neutral(&ctx, &mut cadmpeg_ir::document::Model::default(), &[], &[])
+        .expect("empty neutral drawing transfer does no positive work");
 
     let prior = ctx
         .charge_work(1, "prior drawing refusal")
         .expect_err("work limit");
     let object_error = super::transfer(&ctx, &[], &[])
         .expect_err("empty drawing object scan preserves sticky refusal");
-    let neutral_error = super::transfer_neutral(
-        &ctx,
-        &mut cadmpeg_ir::document::Model::default(),
-        &[],
-        &[],
-    )
-    .expect_err("empty neutral drawing transfer preserves sticky refusal");
+    let neutral_error =
+        super::transfer_neutral(&ctx, &mut cadmpeg_ir::document::Model::default(), &[], &[])
+            .expect_err("empty neutral drawing transfer preserves sticky refusal");
     let cadmpeg_core::CodecError::ResourceLimit(prior) = prior else {
         panic!("resource refusal")
     };
-    assert!(matches!(object_error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit == prior));
-    assert!(matches!(neutral_error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit == prior));
+    assert!(
+        matches!(object_error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit == prior)
+    );
+    assert!(
+        matches!(neutral_error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit == prior)
+    );
 }
 
 #[test]
 fn drawing_duplicate_property_index_does_not_charge_unvisited_suffix() {
     let small = vec![
-        property_record("fcstd:native:object#View", "Duplicate", "App::PropertyString"),
-        property_record("fcstd:native:object#View", "Duplicate", "App::PropertyString"),
+        property_record(
+            "fcstd:native:object#View",
+            "Duplicate",
+            "App::PropertyString",
+        ),
+        property_record(
+            "fcstd:native:object#View",
+            "Duplicate",
+            "App::PropertyString",
+        ),
     ];
     let mut long = small.clone();
     for index in 0..32 {
@@ -137,10 +151,7 @@ fn drawing_malformed_page_carrier_does_not_charge_unvisited_object_suffix() {
     let small = vec![page.clone(), object_record("Suffix0", "Part::Feature")];
     let mut long = small.clone();
     for index in 1..32 {
-        long.push(object_record(
-            &format!("Suffix{index}"),
-            "Part::Feature",
-        ));
+        long.push(object_record(&format!("Suffix{index}"), "Part::Feature"));
     }
     let properties = [property_record(
         "fcstd:native:object#Page",

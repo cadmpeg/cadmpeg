@@ -11,9 +11,12 @@ use cadmpeg_core::CodecError;
 #[test]
 fn archive_span_decimal_ordinal_is_admitted_and_preserves_zero_based_identity() {
     let bytes = super::archive("<Document SchemaVersion=\"4\" FileVersion=\"1\"/>");
-    refusal_at(ResourceDimension::WorkUnits, &bytes, "FCStd archive span ordinal", |ctx| {
-        scan(ctx, View::over_retained(&bytes)).map(|_| ())
-    });
+    refusal_at(
+        ResourceDimension::WorkUnits,
+        &bytes,
+        "FCStd archive span ordinal",
+        |ctx| scan(ctx, View::over_retained(&bytes)).map(|_| ()),
+    );
     with_service_context(&bytes, |ctx| {
         let scanned = scan(ctx, View::over_retained(&bytes)).unwrap();
         assert!(!scanned.ledger.is_empty());
@@ -26,13 +29,28 @@ fn archive_span_decimal_ordinal_is_admitted_and_preserves_zero_based_identity() 
 
 #[test]
 fn logical_span_decimal_ordinal_refuses_before_identity_and_keeps_original_fuse() {
-    let entry = entry_record("fcstd:native:entry#extra".into(), "extra".into(),
-        ContainerRole::Auxiliary, Vec::new(), vec![0]);
-    for dimension in [ResourceDimension::WorkUnits, ResourceDimension::MaterializedBytes] {
+    let entry = entry_record(
+        "fcstd:native:entry#extra".into(),
+        "extra".into(),
+        ContainerRole::Auxiliary,
+        Vec::new(),
+        vec![0],
+    );
+    for dimension in [
+        ResourceDimension::WorkUnits,
+        ResourceDimension::MaterializedBytes,
+    ] {
         refusal_at(dimension, &[], "FCStd logical span ordinal", |ctx| {
             let mut output = Vec::new();
-            let error = push_logical_span(ctx, &mut output, &entry, 0, 1,
-                LogicalClassification::Structural).unwrap_err();
+            let error = push_logical_span(
+                ctx,
+                &mut output,
+                &entry,
+                0,
+                1,
+                LogicalClassification::Structural,
+            )
+            .unwrap_err();
             assert!(output.is_empty());
             let CodecError::ResourceLimit(original) = error else {
                 panic!("ordinal admission must refuse")
@@ -48,17 +66,43 @@ fn logical_span_decimal_ordinal_refuses_before_identity_and_keeps_original_fuse(
 
 #[test]
 fn logical_span_decimal_ordinal_preserves_identity_order_and_empty_range() {
-    let entry = entry_record("fcstd:native:entry#extra".into(), "extra".into(),
-        ContainerRole::Auxiliary, Vec::new(), vec![0, 0]);
+    let entry = entry_record(
+        "fcstd:native:entry#extra".into(),
+        "extra".into(),
+        ContainerRole::Auxiliary,
+        Vec::new(),
+        vec![0, 0],
+    );
     with_service_context(&[], |ctx| {
         let mut output: Vec<LogicalSpan> = Vec::new();
-        push_logical_span(ctx, &mut output, &entry, 0, 0,
-            LogicalClassification::Structural).unwrap();
+        push_logical_span(
+            ctx,
+            &mut output,
+            &entry,
+            0,
+            0,
+            LogicalClassification::Structural,
+        )
+        .unwrap();
         assert!(output.is_empty());
-        push_logical_span(ctx, &mut output, &entry, 0, 1,
-            LogicalClassification::Structural).unwrap();
-        push_logical_span(ctx, &mut output, &entry, 1, 2,
-            LogicalClassification::Structural).unwrap();
+        push_logical_span(
+            ctx,
+            &mut output,
+            &entry,
+            0,
+            1,
+            LogicalClassification::Structural,
+        )
+        .unwrap();
+        push_logical_span(
+            ctx,
+            &mut output,
+            &entry,
+            1,
+            2,
+            LogicalClassification::Structural,
+        )
+        .unwrap();
         assert_eq!(output[0].id, "fcstd:native:logical-span#0");
         assert_eq!(output[1].id, "fcstd:native:logical-span#1");
         assert_eq!(output[0].entry, "extra");
@@ -73,8 +117,15 @@ fn logical_span_decimal_ordinal_preserves_identity_order_and_empty_range() {
     policy.limits.max_materialized_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut output = Vec::new();
-    push_logical_span(&ctx, &mut output, &entry, 0, 0,
-        LogicalClassification::Structural).unwrap();
+    push_logical_span(
+        &ctx,
+        &mut output,
+        &entry,
+        0,
+        0,
+        LogicalClassification::Structural,
+    )
+    .unwrap();
     assert!(output.is_empty());
     assert_eq!(ctx.resource_refusal(), None);
 }

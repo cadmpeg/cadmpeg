@@ -50,8 +50,7 @@ pub(super) fn build_profiles(
     let mut ambiguous = BTreeSet::new();
     let mut entity_sources = unused.iter();
     while entity_sources.len() != 0 {
-        let Some(entity) =
-            ctx.next_charged(&mut entity_sources, "FCStd profile ambiguity scan")?
+        let Some(entity) = ctx.next_charged(&mut entity_sources, "FCStd profile ambiguity scan")?
         else {
             break;
         };
@@ -78,10 +77,9 @@ pub(super) fn build_profiles(
                 })?;
                 let mut candidates = matches.iter();
                 while candidates.len() != 0 {
-                    let Some(candidate) = ctx.next_charged(
-                        &mut candidates,
-                        "FCStd ambiguous profile matches",
-                    )? else {
+                    let Some(candidate) =
+                        ctx.next_charged(&mut candidates, "FCStd ambiguous profile matches")?
+                    else {
                         break;
                     };
                     ambiguous_storage.with_storage(|| {
@@ -324,10 +322,9 @@ impl EndpointIndex {
             let mut by_scale = BTreeMap::<u64, Vec<IndexedEndpoint>>::new();
             let mut source = profile_entities.iter();
             while source.len() != 0 {
-                let Some(index) = ctx.next_charged(
-                    &mut source,
-                    "FCStd profile endpoint extraction",
-                )? else {
+                let Some(index) =
+                    ctx.next_charged(&mut source, "FCStd profile endpoint extraction")?
+                else {
                     break;
                 };
                 if let Some((start, end)) = endpoints(&entities[*index]) {
@@ -393,10 +390,9 @@ fn endpoint_candidates<'ctx>(
             let mut matches = Vec::new();
             let mut candidates = explicit.iter();
             while candidates.len() != 0 {
-                let Some(candidate) = ctx.next_charged(
-                    &mut candidates,
-                    "FCStd explicit profile matches",
-                )? else {
+                let Some(candidate) =
+                    ctx.next_charged(&mut candidates, "FCStd explicit profile matches")?
+                else {
                     break;
                 };
                 if ctx.contains_btree_set(
@@ -557,18 +553,16 @@ fn explicit_endpoint_relations<'ctx>(
             })?;
             let mut sources = endpoints.iter();
             while sources.len() != 0 {
-                let Some(first) = ctx.next_charged(
-                    &mut sources,
-                    "FCStd explicit profile relation sources",
-                )? else {
+                let Some(first) =
+                    ctx.next_charged(&mut sources, "FCStd explicit profile relation sources")?
+                else {
                     break;
                 };
                 let mut targets = endpoints.iter();
                 while targets.len() != 0 {
-                    let Some(candidate) = ctx.next_charged(
-                        &mut targets,
-                        "FCStd explicit profile relation targets",
-                    )? else {
+                    let Some(candidate) =
+                        ctx.next_charged(&mut targets, "FCStd explicit profile relation targets")?
+                    else {
                         break;
                     };
                     if first == candidate {

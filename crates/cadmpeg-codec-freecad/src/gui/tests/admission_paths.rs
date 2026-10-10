@@ -8,7 +8,9 @@ fn gui_color_list_validation_checks_layout_without_materializing_values() {
     let mut bytes = encoded_count.to_le_bytes().to_vec();
     bytes.extend(std::iter::repeat_n(
         0_u8,
-        count.checked_mul(4).expect("test payload length fits usize"),
+        count
+            .checked_mul(4)
+            .expect("test payload length fits usize"),
     ));
     let entries = std::collections::BTreeMap::from([(
         "colors.bin".to_owned(),
@@ -32,13 +34,9 @@ fn gui_color_list_validation_checks_layout_without_materializing_values() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
     let properties = [property];
-    let material_lists = super::super::validate_gui_list_payloads(
-        &ctx,
-        &properties,
-        &entries,
-        false,
-    )
-    .expect("color-list layout needs no materialized values");
+    let material_lists =
+        super::super::validate_gui_list_payloads(&ctx, &properties, &entries, false)
+            .expect("color-list layout needs no materialized values");
     assert!(material_lists.is_empty());
 
     let cadmpeg_core::CodecError::ResourceLimit(original_refusal) = ctx
@@ -83,14 +81,8 @@ fn presentation_without_providers_skips_the_property_owner_index() {
         .expect("empty root is within policy");
     let mut plan = super::super::AppearancePlan::new(&ctx).expect("plan storage");
     let mut losses = Vec::new();
-    super::super::transfer_neutral_presentation(
-        &ctx,
-        &mut plan,
-        &graph,
-        None,
-        &mut losses,
-    )
-    .expect("no provider consumes the property owner index");
+    super::super::transfer_neutral_presentation(&ctx, &mut plan, &graph, None, &mut losses)
+        .expect("no provider consumes the property owner index");
 
     let cadmpeg_core::CodecError::ResourceLimit(original_refusal) = ctx
         .charge_work(u64::MAX, "test fused refusal")
@@ -98,14 +90,9 @@ fn presentation_without_providers_skips_the_property_owner_index() {
     else {
         panic!("expected a resource refusal");
     };
-    let refusal = super::super::transfer_neutral_presentation(
-        &ctx,
-        &mut plan,
-        &graph,
-        None,
-        &mut losses,
-    )
-    .expect_err("provider-free path must preserve a prior refusal");
+    let refusal =
+        super::super::transfer_neutral_presentation(&ctx, &mut plan, &graph, None, &mut losses)
+            .expect_err("provider-free path must preserve a prior refusal");
     assert!(matches!(
         refusal,
         cadmpeg_core::CodecError::ResourceLimit(ref failure) if failure == &original_refusal

@@ -19,7 +19,8 @@ fn first_visit_work<T>(
     operation: &str,
     read: impl Fn(&DecodeContext<'_>) -> Result<T, CodecError>,
 ) -> u64 {
-    let refusal = crate::test_support::refusal_at(ResourceDimension::WorkUnits, &[], operation, read);
+    let refusal =
+        crate::test_support::refusal_at(ResourceDimension::WorkUnits, &[], operation, read);
     let CodecError::ResourceLimit(limit) = refusal else {
         panic!("expected resource refusal");
     };
@@ -66,7 +67,10 @@ fn inline_string_hasher_does_not_build_an_entry_lookup() {
     )
     .unwrap();
     let entries = [legacy_entry("Aux.txt", b"auxiliary")];
-    for dimension in [ResourceDimension::WorkUnits, ResourceDimension::MaterializedBytes] {
+    for dimension in [
+        ResourceDimension::WorkUnits,
+        ResourceDimension::MaterializedBytes,
+    ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_work_units = u64::MAX;
@@ -111,7 +115,10 @@ fn inline_element_map_does_not_build_property_owners() {
 
 #[test]
 fn side_entry_lookup_reuses_its_live_index() {
-    let entries = [legacy_entry("A.txt", b"first"), legacy_entry("B.txt", b"second")];
+    let entries = [
+        legacy_entry("A.txt", b"first"),
+        legacy_entry("B.txt", b"second"),
+    ];
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_materialized_bytes = u64::MAX;
@@ -134,10 +141,9 @@ fn side_entry_lookup_reuses_its_live_index() {
 #[test]
 fn mapped_name_invalid_first_id_does_not_admit_the_unvisited_tail() {
     let encoded = format!(";base.0.g{}", ".1".repeat(256));
-    let work = first_visit_work(
-        "FreeCAD mapped-name string-id scan",
-        |ctx| parse_mapped_name(ctx, &encoded, &[]),
-    );
+    let work = first_visit_work("FreeCAD mapped-name string-id scan", |ctx| {
+        parse_mapped_name(ctx, &encoded, &[])
+    });
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     // One ID visit, one numeric byte, and both diagnostic formatting passes fit.
@@ -219,7 +225,8 @@ fn element_map_invalid_first_property_does_not_admit_later_properties() {
 
 #[test]
 fn hasher_scratch_is_released_before_shape_property_xml() {
-    let raw = "<Property type=\"Part::PropertyPartShape\"><Part/><StringHasher count=\"0\"/></Property>";
+    let raw =
+        "<Property type=\"Part::PropertyPartShape\"><Part/><StringHasher count=\"0\"/></Property>";
     let document = format!("<Document>{raw}</Document>");
     let xml = roxmltree::Document::parse(&document).unwrap();
     let mut property = test_property("Part::PropertyPartShape", raw);
@@ -350,6 +357,9 @@ fn legacy_record_staging_uses_scoped_storage() {
     let (count, groups) = parse_legacy_stream(&ctx, bytes, None).unwrap();
     let output = crate::element_map::legacy_map_payload(&ctx, groups, count, None).unwrap();
     drop(probe);
-    assert_eq!(output.parsed.maps.root().groups[0].names[1][0].encoded, "stable");
+    assert_eq!(
+        output.parsed.maps.root().groups[0].names[1][0].encoded,
+        "stable"
+    );
     assert_eq!(ctx.resource_refusal(), None);
 }

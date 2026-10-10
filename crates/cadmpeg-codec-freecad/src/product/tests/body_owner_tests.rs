@@ -152,7 +152,8 @@ fn product_body_prefix_is_scoped_for_an_actual_body_consumer() {
             std::slice::from_ref(&property),
             std::slice::from_ref(&payload),
             std::slice::from_ref(&body),
-        ).expect("body association");
+        )
+        .expect("body association");
         assert_eq!(definitions.len(), 1);
         assert_eq!(definitions[0].bodies, [body.id.clone()]);
         assert_eq!(occurrences.len(), 1);

@@ -25,7 +25,12 @@ fn object(name: &str, type_name: &str) -> native::ObjectRecord {
     }
 }
 
-fn property(owner: &str, name: &str, type_name: &str, value: native::ValueRecord) -> PropertyRecord {
+fn property(
+    owner: &str,
+    name: &str,
+    type_name: &str,
+    value: native::ValueRecord,
+) -> PropertyRecord {
     PropertyRecord {
         id: format!("fcstd:native:property#{owner}:{name}"),
         owner: format!("fcstd:native:object#{owner}"),
@@ -100,8 +105,13 @@ fn product_transfer_skips_owner_index_without_a_supported_object_consumer() {
         policy.limits.max_materialized_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty root is within policy");
-        let records = transfer(&ctx, &objects, std::slice::from_ref(&unused), &BTreeMap::new())
-            .expect("no object consumes the property owner index");
+        let records = transfer(
+            &ctx,
+            &objects,
+            std::slice::from_ref(&unused),
+            &BTreeMap::new(),
+        )
+        .expect("no object consumes the property owner index");
         assert!(records.is_empty());
         assert_eq!(ctx.resource_refusal(), None);
     }
@@ -136,8 +146,8 @@ fn product_transfer_admits_owner_index_for_a_real_product_consumer() {
 
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
     let records = transfer(
         &ctx,
         std::slice::from_ref(&object),
@@ -164,8 +174,8 @@ fn external_only_product_projection_still_rejects_duplicate_records_first() {
     );
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
 
     let error = super::super::transfer_neutral(
         &ctx,
@@ -195,8 +205,8 @@ fn external_only_product_projection_still_validates_unconsumed_placement() {
     );
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
 
     let error = super::super::transfer_neutral(
         &ctx,
@@ -216,22 +226,20 @@ fn external_only_product_projection_still_validates_unconsumed_placement() {
 fn external_only_product_projection_keeps_occurrence_output_without_local_indexes() {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
 
-    let (definitions, occurrences) = super::super::transfer_neutral(
-        &ctx,
-        &[external_occurrence()],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-    )
-    .expect("external-only occurrence projection");
+    let (definitions, occurrences) =
+        super::super::transfer_neutral(&ctx, &[external_occurrence()], &[], &[], &[], &[], &[])
+            .expect("external-only occurrence projection");
     assert!(definitions.is_empty());
     assert_eq!(occurrences.len(), 1);
-    assert_eq!(occurrences[0].native_ref.as_deref(), Some("fcstd:native:object#Occurrence"));
-    assert!(matches!(occurrences[0].prototype,
-        cadmpeg_ir::products::PrototypeReference::External { .. }));
+    assert_eq!(
+        occurrences[0].native_ref.as_deref(),
+        Some("fcstd:native:object#Occurrence")
+    );
+    assert!(matches!(
+        occurrences[0].prototype,
+        cadmpeg_ir::products::PrototypeReference::External { .. }
+    ));
 }

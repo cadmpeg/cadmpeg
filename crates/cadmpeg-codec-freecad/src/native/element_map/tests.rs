@@ -408,14 +408,19 @@ fn legacy_root_node_allocation_releases_the_consumed_group_tree() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let (groups, group_storage) = ctx
         .collect_scoped_btree_map(
-            ["A", "B", "C", "D", "E", "F", "G", "H"].into_iter().map(|family| {
-                (family.to_owned(), vec![vec![ElementMappedName {
-                    encoded: "stable".into(),
-                    resolved: Some("stable".into()),
-                    string_ids: Vec::new(),
-                    topology_ids: Vec::new(),
-                }]])
-            }),
+            ["A", "B", "C", "D", "E", "F", "G", "H"]
+                .into_iter()
+                .map(|family| {
+                    (
+                        family.to_owned(),
+                        vec![vec![ElementMappedName {
+                            encoded: "stable".into(),
+                            resolved: Some("stable".into()),
+                            string_ids: Vec::new(),
+                            topology_ids: Vec::new(),
+                        }]],
+                    )
+                }),
             "test legacy group tree",
         )
         .unwrap();

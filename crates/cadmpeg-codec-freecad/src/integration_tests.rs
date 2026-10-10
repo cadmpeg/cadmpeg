@@ -854,9 +854,12 @@ fn negative_detection_does_not_charge_unvisited_input() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_work_units = 0;
-        let (ctx, root) = DecodeContext::from_root_bytes(prefix, &arena, &policy)
-            .expect("root admission");
-        assert_eq!(FcstdCodec.detect(&ctx, root).expect("fixed magic"), Confidence::No);
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(prefix, &arena, &policy).expect("root admission");
+        assert_eq!(
+            FcstdCodec.detect(&ctx, root).expect("fixed magic"),
+            Confidence::No
+        );
         assert_eq!(ctx.resource_refusal(), None);
     }
 }
@@ -894,10 +897,11 @@ fn negative_detection_preserves_a_fused_refusal() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_work_units = 0;
-    let (ctx, root) = DecodeContext::from_root_bytes(b"other", &arena, &policy)
-        .expect("root admission");
-    let CodecError::ResourceLimit(original) =
-        ctx.charge_work(1, "earlier detection").expect_err("work limit")
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(b"other", &arena, &policy).expect("root admission");
+    let CodecError::ResourceLimit(original) = ctx
+        .charge_work(1, "earlier detection")
+        .expect_err("work limit")
     else {
         panic!("resource refusal")
     };

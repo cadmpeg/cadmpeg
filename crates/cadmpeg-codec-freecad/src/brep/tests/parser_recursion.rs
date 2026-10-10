@@ -24,28 +24,38 @@ enum Parser {
 fn parse(ctx: &DecodeContext<'_>, parser: Parser, nested: bool) -> Result<(), CodecError> {
     let line2d = ["1", "0", "0", "1", "0"];
     let line3d = ["1", "0", "0", "0", "0", "0", "1"];
-    let plane = ["1", "0", "0", "0", "0", "0", "1", "1", "0", "0", "0", "1", "0"];
+    let plane = [
+        "1", "0", "0", "0", "0", "0", "1", "1", "0", "0", "0", "1", "0",
+    ];
     match parser {
         Parser::TextCurve2d | Parser::TextCurve | Parser::TextSurface | Parser::TextDirectrix => {
             let mut tokens = Vec::new();
             match parser {
                 Parser::TextCurve2d => {
-                    if nested { tokens.extend(["9", "1"]); }
+                    if nested {
+                        tokens.extend(["9", "1"]);
+                    }
                     tokens.extend(line2d);
                 }
                 Parser::TextCurve => {
-                    if nested { tokens.extend(["8", "0", "1"]); }
+                    if nested {
+                        tokens.extend(["8", "0", "1"]);
+                    }
                     tokens.extend(line3d);
                 }
                 Parser::TextSurface => {
-                    if nested { tokens.extend(["11", "1"]); }
+                    if nested {
+                        tokens.extend(["11", "1"]);
+                    }
                     tokens.extend(plane);
                 }
                 Parser::TextDirectrix => {
                     if nested {
                         tokens.extend(["6", "0", "0", "1"]);
                         tokens.extend(line3d);
-                    } else { tokens.extend(plane); }
+                    } else {
+                        tokens.extend(plane);
+                    }
                 }
                 _ => unreachable!("selected text parser"),
             }
@@ -104,7 +114,11 @@ fn parse(ctx: &DecodeContext<'_>, parser: Parser, nested: bool) -> Result<(), Co
                 Parser::BinaryCurve => parse_binary_curve(&mut cursor, 0).map(drop),
                 _ => parse_binary_surface(&mut cursor, 0).map(drop),
             }?;
-            assert_eq!(cursor.remaining(), 0, "all real binary fixture bytes consumed");
+            assert_eq!(
+                cursor.remaining(),
+                0,
+                "all real binary fixture bytes consumed"
+            );
             Ok(())
         }
     }
@@ -118,26 +132,40 @@ fn assert_depth(parser: Parser, root_operation: &'static str, nested_operation: 
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         if cap != 0 {
             parse(&ctx, parser, false).expect("one actual parser frame");
-            let root = ctx.enter_nested("reuse completed parser depth").expect("root depth retired");
+            let root = ctx
+                .enter_nested("reuse completed parser depth")
+                .expect("root depth retired");
             drop(root);
         }
         if cap == 2 {
             parse(&ctx, parser, true).expect("two actual parser frames");
-            let root = ctx.enter_nested("reuse completed nested parser root").expect("root retired");
-            let nested = ctx.enter_nested("reuse completed nested parser child").expect("child retired");
+            let root = ctx
+                .enter_nested("reuse completed nested parser root")
+                .expect("root retired");
+            let nested = ctx
+                .enter_nested("reuse completed nested parser child")
+                .expect("child retired");
             drop((nested, root));
             assert_eq!(ctx.resource_refusal(), None);
             continue;
         }
         let CodecError::ResourceLimit(original) = parse(&ctx, parser, cap == 1)
-            .expect_err("caller depth ceiling refuses actual parser frame") else {
-                panic!("recursion refusal");
-            };
+            .expect_err("caller depth ceiling refuses actual parser frame")
+        else {
+            panic!("recursion refusal");
+        };
         assert_eq!(original.dimension, ResourceDimension::RecursionDepth);
         assert_eq!(original.limit, cap);
         assert_eq!(original.used, cap);
         assert_eq!(original.additional, 1);
-        assert_eq!(original.operation, if cap == 0 { root_operation } else { nested_operation });
+        assert_eq!(
+            original.operation,
+            if cap == 0 {
+                root_operation
+            } else {
+                nested_operation
+            }
+        );
         assert_eq!(ctx.resource_refusal(), Some(original));
         assert!(matches!(parse(&ctx, parser, false),
             Err(CodecError::ResourceLimit(repeated)) if repeated == original));
@@ -148,50 +176,74 @@ fn assert_depth(parser: Parser, root_operation: &'static str, nested_operation: 
 
 #[test]
 fn text_parameter_curve_parser_uses_the_original_caller_depth() {
-    assert_depth(Parser::TextCurve2d, "FreeCAD text parameter-curve parse nesting",
-        "FreeCAD text parameter-curve parse nesting");
+    assert_depth(
+        Parser::TextCurve2d,
+        "FreeCAD text parameter-curve parse nesting",
+        "FreeCAD text parameter-curve parse nesting",
+    );
 }
 
 #[test]
 fn text_curve_parser_uses_the_original_caller_depth() {
-    assert_depth(Parser::TextCurve, "FreeCAD text curve parse nesting",
-        "FreeCAD text curve parse nesting");
+    assert_depth(
+        Parser::TextCurve,
+        "FreeCAD text curve parse nesting",
+        "FreeCAD text curve parse nesting",
+    );
 }
 
 #[test]
 fn text_surface_parser_uses_the_original_caller_depth() {
-    assert_depth(Parser::TextSurface, "FreeCAD text surface parse nesting",
-        "FreeCAD text surface parse nesting");
+    assert_depth(
+        Parser::TextSurface,
+        "FreeCAD text surface parse nesting",
+        "FreeCAD text surface parse nesting",
+    );
 }
 
 #[test]
 fn binary_parameter_curve_parser_uses_the_original_caller_depth() {
-    assert_depth(Parser::BinaryCurve2d, "FreeCAD binary parameter-curve parse nesting",
-        "FreeCAD binary parameter-curve parse nesting");
+    assert_depth(
+        Parser::BinaryCurve2d,
+        "FreeCAD binary parameter-curve parse nesting",
+        "FreeCAD binary parameter-curve parse nesting",
+    );
 }
 
 #[test]
 fn binary_curve_parser_uses_the_original_caller_depth() {
-    assert_depth(Parser::BinaryCurve, "FreeCAD binary curve parse nesting",
-        "FreeCAD binary curve parse nesting");
+    assert_depth(
+        Parser::BinaryCurve,
+        "FreeCAD binary curve parse nesting",
+        "FreeCAD binary curve parse nesting",
+    );
 }
 
 #[test]
 fn binary_surface_parser_uses_the_original_caller_depth() {
-    assert_depth(Parser::BinarySurface, "FreeCAD binary surface parse nesting",
-        "FreeCAD binary surface parse nesting");
+    assert_depth(
+        Parser::BinarySurface,
+        "FreeCAD binary surface parse nesting",
+        "FreeCAD binary surface parse nesting",
+    );
 }
 
 #[test]
 fn text_surface_and_directrix_share_the_original_caller_depth() {
-    assert_depth(Parser::TextDirectrix, "FreeCAD text surface parse nesting",
-        "FreeCAD text curve parse nesting");
+    assert_depth(
+        Parser::TextDirectrix,
+        "FreeCAD text surface parse nesting",
+        "FreeCAD text curve parse nesting",
+    );
 }
 
 #[test]
 fn binary_surface_and_directrix_share_the_original_caller_depth() {
-    assert_depth(Parser::BinaryDirectrix, "FreeCAD binary surface parse nesting",
-        "FreeCAD binary curve parse nesting");
+    assert_depth(
+        Parser::BinaryDirectrix,
+        "FreeCAD binary surface parse nesting",
+        "FreeCAD binary curve parse nesting",
+    );
 }
 
 #[test]
@@ -211,7 +263,10 @@ fn native_geometry_parser_semantic_errors_retire_the_original_depth_guard() {
         policy.limits.max_recursion_depth = 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let result = match parser {
-            Parser::TextCurve2d | Parser::TextCurve | Parser::TextSurface | Parser::TextDirectrix => {
+            Parser::TextCurve2d
+            | Parser::TextCurve
+            | Parser::TextSurface
+            | Parser::TextDirectrix => {
                 let mut cursor = TokenCursor::new(&ctx, &[]);
                 match parser {
                     Parser::TextCurve2d => parse_curve2d(&mut cursor, 0, 1).map(drop),
@@ -230,7 +285,8 @@ fn native_geometry_parser_semantic_errors_retire_the_original_depth_guard() {
         };
         assert!(matches!(result, Err(CodecError::Malformed(_))));
         assert_eq!(ctx.resource_refusal(), None);
-        let depth = ctx.enter_nested("reuse semantically failed parser depth")
+        let depth = ctx
+            .enter_nested("reuse semantically failed parser depth")
             .expect("failed actual parser frame retired");
         drop(depth);
         parse(&ctx, parser, false).expect("same original context still accepts a valid leaf");

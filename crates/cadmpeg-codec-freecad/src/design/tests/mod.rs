@@ -1374,9 +1374,15 @@ fn design_body_output_prefix_refuses_at_materialized_limit() {
         |ctx| {
             let mut ir = cadmpeg_ir::document::CadIr::empty();
             super::transfer(
-                ctx, &mut ir, std::slice::from_ref(&object),
-                std::slice::from_ref(&property), std::slice::from_ref(&payload), &[], None,
-            ).map(drop)
+                ctx,
+                &mut ir,
+                std::slice::from_ref(&object),
+                std::slice::from_ref(&property),
+                std::slice::from_ref(&payload),
+                &[],
+                None,
+            )
+            .map(drop)
         },
     );
 }

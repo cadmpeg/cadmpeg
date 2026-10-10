@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{admitted_range, raw_range};
 use super::super::normalize_occt_curve_range;
+use super::{admitted_range, raw_range};
 use cadmpeg_core::decode::admission::StandardAdmission;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
@@ -16,7 +16,8 @@ fn circle() -> SolvedCurveGeometry {
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
             1.0,
-        ).expect("finite circle"),
+        )
+        .expect("finite circle"),
     )
 }
 
@@ -37,13 +38,19 @@ fn actual_curve_range_walk_obeys_original_depth_and_sticky_refusal() {
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
             let leaf = circle();
             if cap != 0 {
-                assert_eq!(normalize_occt_curve_range(&ctx, &leaf, range).unwrap(), range);
+                assert_eq!(
+                    normalize_occt_curve_range(&ctx, &leaf, range).unwrap(),
+                    range
+                );
                 let released = ctx.enter_nested("completed curve range leaf").unwrap();
                 drop(released);
             }
             let nested = place(circle());
             if cap == 2 {
-                assert_eq!(normalize_occt_curve_range(&ctx, &nested, range).unwrap(), range);
+                assert_eq!(
+                    normalize_occt_curve_range(&ctx, &nested, range).unwrap(),
+                    range
+                );
                 let root = ctx.enter_nested("completed curve range root").unwrap();
                 let child = ctx.enter_nested("completed curve range child").unwrap();
                 drop((child, root));
@@ -52,7 +59,8 @@ fn actual_curve_range_walk_obeys_original_depth_and_sticky_refusal() {
                 let selected = if cap == 0 { &leaf } else { &nested };
                 let CodecError::ResourceLimit(original) =
                     normalize_occt_curve_range(&ctx, selected, range)
-                        .expect_err("actual curve range frame exceeds caller depth") else {
+                        .expect_err("actual curve range frame exceeds caller depth")
+                else {
                     panic!("recursion refusal");
                 };
                 assert_eq!(original.dimension, ResourceDimension::RecursionDepth);
@@ -76,14 +84,33 @@ fn standard_curve_range_walk_keeps_transformed_arithmetic_and_absence() {
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
             4.0,
-        ).expect("finite parabola"),
+        )
+        .expect("finite parabola"),
     );
     let nested = place(place(parabola));
-    assert_eq!(normalize_occt_curve_range(&StandardAdmission, &nested,
-        Some(admitted_range([-2.0, 4.0]))).unwrap().map(raw_range), Some([-0.25, 0.5]));
-    assert_eq!(normalize_occt_curve_range(&StandardAdmission, &nested, None).unwrap(), None);
+    assert_eq!(
+        normalize_occt_curve_range(
+            &StandardAdmission,
+            &nested,
+            Some(admitted_range([-2.0, 4.0]))
+        )
+        .unwrap()
+        .map(raw_range),
+        Some([-0.25, 0.5])
+    );
+    assert_eq!(
+        normalize_occt_curve_range(&StandardAdmission, &nested, None).unwrap(),
+        None
+    );
     let nested = place(place(circle()));
-    assert_eq!(normalize_occt_curve_range(&StandardAdmission, &nested,
-        Some(admitted_range([-f64::MAX, f64::MAX]))).unwrap().map(raw_range),
-        Some([-f64::MAX, f64::MAX]));
+    assert_eq!(
+        normalize_occt_curve_range(
+            &StandardAdmission,
+            &nested,
+            Some(admitted_range([-f64::MAX, f64::MAX]))
+        )
+        .unwrap()
+        .map(raw_range),
+        Some([-f64::MAX, f64::MAX])
+    );
 }

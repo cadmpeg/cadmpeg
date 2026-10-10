@@ -42,16 +42,16 @@ fn body_groups_include_only_requested_exact_prefixes_in_arena_order() {
             .ensure_bodies(ctx, payload_ids)
             .expect("requested body groups");
 
-        assert_eq!(topology.bodies.keys().copied().collect::<Vec<_>>(), ["a", "a:b"]);
+        assert_eq!(
+            topology.bodies.keys().copied().collect::<Vec<_>>(),
+            ["a", "a:b"]
+        );
         assert_eq!(
             topology.bodies["a:b"]
                 .iter()
                 .map(|(_, body)| body.as_str())
                 .collect::<Vec<_>>(),
-            [
-                "fcstd:model:body#a:b:c:0",
-                "fcstd:model:body#a:b:d:2"
-            ]
+            ["fcstd:model:body#a:b:c:0", "fcstd:model:body#a:b:d:2"]
         );
         assert_eq!(
             topology.bodies["a"]
@@ -69,11 +69,7 @@ fn body_groups_include_only_requested_exact_prefixes_in_arena_order() {
         let selected = select_shape_bodies(
             ctx,
             &topology.bodies,
-            [
-                "fcstd:payload#a:b",
-                "fcstd:payload#a",
-                "fcstd:payload#a:b",
-            ],
+            ["fcstd:payload#a:b", "fcstd:payload#a", "fcstd:payload#a:b"],
         )
         .expect("source-order body selections");
         assert_eq!(
@@ -188,8 +184,8 @@ fn body_candidate_source_refusal_stops_before_a_long_suffix() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = work_cap;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
     let mut topology = TopologyIndex::new(&ir);
     let error = topology
         .ensure_bodies(&ctx, std::iter::once("fcstd:payload#payload"))

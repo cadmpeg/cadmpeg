@@ -43,8 +43,8 @@ fn primitive_prefix_index_keeps_arena_order_and_deduplicates_overlap() {
             PrimitiveStyle::Point(PrimitiveSize::Absent),
         ] {
             for prefixes in &prefix_sets {
-                let index = PrimitiveIndex::new(ctx, &ir, style, prefixes)
-                    .expect("primitive index");
+                let index =
+                    PrimitiveIndex::new(ctx, &ir, style, prefixes).expect("primitive index");
                 let requested: std::collections::BTreeSet<_> =
                     prefixes.iter().map(String::as_str).collect();
                 let indexed: std::collections::BTreeSet<_> =
@@ -117,8 +117,8 @@ fn primitive_prefix_index_adds_later_provider_prefixes_in_arena_order() {
             PrimitiveStyle::Line(PrimitiveSize::Absent),
             PrimitiveStyle::Point(PrimitiveSize::Absent),
         ] {
-            let mut index = PrimitiveIndex::new(ctx, &ir, style, &initial)
-                .expect("initial provider prefixes");
+            let mut index =
+                PrimitiveIndex::new(ctx, &ir, style, &initial).expect("initial provider prefixes");
             assert_eq!(
                 index.by_prefix.keys().copied().collect::<Vec<_>>(),
                 vec!["a:"]
@@ -184,8 +184,13 @@ fn primitive_prefix_index_storage_is_scoped_and_borrowed() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty input");
     let prefixes = [String::from("b:")];
-    PrimitiveIndex::new(&ctx, &ir, PrimitiveStyle::Line(PrimitiveSize::Absent), &prefixes)
-        .expect("borrowed index has no retained allocation");
+    PrimitiveIndex::new(
+        &ctx,
+        &ir,
+        PrimitiveStyle::Line(PrimitiveSize::Absent),
+        &prefixes,
+    )
+    .expect("borrowed index has no retained allocation");
 }
 
 #[test]
@@ -347,16 +352,17 @@ fn zero_provider_transfer_does_not_visit_source_arenas() {
     let mut populated_ir = CadIr::empty();
     for index in 0..64 {
         let key = format!("source-{index}");
-        let vertex = cadmpeg_ir::ids::VertexId::mint(format!(
-            "fcstd:model:vertex#{key}"
-        ))
-        .expect("vertex identity");
-        populated_ir.model.vertices.push(cadmpeg_ir::topology::Vertex {
-            id: vertex.clone(),
-            point: cadmpeg_ir::ids::PointId::mint(format!("fcstd:model:point#{key}"))
-                .expect("point identity"),
-            tolerance: None,
-        });
+        let vertex = cadmpeg_ir::ids::VertexId::mint(format!("fcstd:model:vertex#{key}"))
+            .expect("vertex identity");
+        populated_ir
+            .model
+            .vertices
+            .push(cadmpeg_ir::topology::Vertex {
+                id: vertex.clone(),
+                point: cadmpeg_ir::ids::PointId::mint(format!("fcstd:model:point#{key}"))
+                    .expect("point identity"),
+                tolerance: None,
+            });
         populated_ir.model.edges.push(cadmpeg_ir::topology::Edge {
             id: cadmpeg_ir::ids::EdgeId::mint(format!("fcstd:model:edge#{key}"))
                 .expect("edge identity"),

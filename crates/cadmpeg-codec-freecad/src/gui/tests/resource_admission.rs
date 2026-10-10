@@ -1559,8 +1559,12 @@ fn gui_presentation_property_map_refuses_at_caller_limit() {
         &[],
         "FCStd GUI presentation property map",
         |ctx| {
-            super::super::gui_named_entries(ctx, || Ok("record".into()), [("key", "value")].into_iter())
-                .map(|_| ())
+            super::super::gui_named_entries(
+                ctx,
+                || Ok("record".into()),
+                [("key", "value")].into_iter(),
+            )
+            .map(|_| ())
         },
     );
     assert!(

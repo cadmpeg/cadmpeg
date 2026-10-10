@@ -6,8 +6,8 @@
 mod admission_paths;
 mod body_demand;
 mod decode_budget;
-mod primitive_index;
 mod numeric_text;
+mod primitive_index;
 mod resource_admission;
 
 use cadmpeg_test_support::wire;
@@ -42,8 +42,7 @@ fn assert_untransferred_primitive_size_reports_loss(style: super::PrimitiveStyle
         .expect("empty root is within policy");
     let mut plan = super::AppearancePlan::new(&ctx).expect("plan storage");
     let prefixes = [String::new()];
-    let index = super::PrimitiveIndex::new(&ctx, &ir, style, &prefixes)
-        .expect("primitive index");
+    let index = super::PrimitiveIndex::new(&ctx, &ir, style, &prefixes).expect("primitive index");
     super::transfer_primitive_appearance(
         &ctx,
         &index,
@@ -154,8 +153,8 @@ fn negative_primitive_sizes_keep_native_values_and_report_neutral_losses() {
         super::PrimitiveStyle::Line(super::PrimitiveSize::Admitted(FiniteReal::ONE.negated())),
         super::PrimitiveStyle::Point(super::PrimitiveSize::Admitted(FiniteReal::ONE.negated())),
     ] {
-        let index = super::PrimitiveIndex::new(&ctx, &ir, style, &prefixes)
-            .expect("primitive index");
+        let index =
+            super::PrimitiveIndex::new(&ctx, &ir, style, &prefixes).expect("primitive index");
         super::transfer_primitive_appearance(
             &ctx,
             &index,

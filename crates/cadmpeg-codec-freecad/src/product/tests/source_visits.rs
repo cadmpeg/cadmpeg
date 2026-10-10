@@ -135,9 +135,15 @@ fn product_empty_source_helpers_preserve_original_fused_refusal() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty context");
-    assert!(product_record_index(&ctx, &[]).expect("empty index").is_empty());
-    assert!(linked_object_names(&ctx, &[]).expect("empty links").is_empty());
-    assert!(nonempty_subelements(&ctx, &[]).expect("empty subelements").is_empty());
+    assert!(product_record_index(&ctx, &[])
+        .expect("empty index")
+        .is_empty());
+    assert!(linked_object_names(&ctx, &[])
+        .expect("empty links")
+        .is_empty());
+    assert!(nonempty_subelements(&ctx, &[])
+        .expect("empty subelements")
+        .is_empty());
     let CodecError::ResourceLimit(original) = ctx
         .charge_work(1, "original source refusal")
         .expect_err("original refusal")
@@ -166,17 +172,25 @@ fn product_source_helpers_preserve_identity_and_source_order() {
     let index = product_record_index(&ctx, &records).expect("unique products");
     assert!(std::ptr::eq(index["A"], &records[0]));
     assert!(std::ptr::eq(index["B"], &records[1]));
-    assert_eq!(linked_object_names(&ctx, &[None, Some(target()), None]).expect("names"), ["A"]);
-    assert_eq!(nonempty_subelements(&ctx, &["".into(), "Face2".into(), "Face1".into()])
-        .expect("subelements"), ["Face2", "Face1"]);
+    assert_eq!(
+        linked_object_names(&ctx, &[None, Some(target()), None]).expect("names"),
+        ["A"]
+    );
+    assert_eq!(
+        nonempty_subelements(&ctx, &["".into(), "Face2".into(), "Face1".into()])
+            .expect("subelements"),
+        ["Face2", "Face1"]
+    );
 }
 
 #[test]
 fn product_first_malformed_object_does_not_prepay_long_suffix() {
     let object = native::ObjectRecord {
         identity: native::object_identity::ObjectIdentity::try_new(
-            "fcstd:native:object#A".into(), "A".into(),
-        ).expect("object identity"),
+            "fcstd:native:object#A".into(),
+            "A".into(),
+        )
+        .expect("object identity"),
         type_name: "App::Part".into(),
         persistent_id: None,
         view_type: None,
@@ -211,8 +225,12 @@ fn product_first_malformed_object_does_not_prepay_long_suffix() {
     };
     let diagnostic = "product property fcstd:native:property#A:Group has runtime type Wrong, expected App::PropertyLinkList for Group";
     let cap = successful_work(|ctx| {
-        let output = transfer(ctx, std::slice::from_ref(&object),
-            std::slice::from_ref(&property), &BTreeMap::new())?;
+        let output = transfer(
+            ctx,
+            std::slice::from_ref(&object),
+            std::slice::from_ref(&property),
+            &BTreeMap::new(),
+        )?;
         assert_eq!(output.len(), 1);
         assert_eq!(output[0].id, "fcstd:native:product#A");
         assert_eq!(output[0].object.as_str(), object.id().as_str());
@@ -226,8 +244,8 @@ fn product_first_malformed_object_does_not_prepay_long_suffix() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_work_units = cap;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty context");
-    let error = transfer(&ctx, &objects, &[property], &BTreeMap::new())
-        .expect_err("first runtime type");
+    let error =
+        transfer(&ctx, &objects, &[property], &BTreeMap::new()).expect_err("first runtime type");
     assert!(matches!(error, CodecError::Malformed(message) if message == diagnostic));
     assert_eq!(ctx.resource_refusal(), None);
 }
@@ -243,8 +261,14 @@ fn product_occurrence_refusal_does_not_prepay_element_suffix() {
             external_document: None,
             local_transform: None,
             placement_property: None,
-            array: native::LinkArray::try_new(Some(1), Vec::new(), Vec::new(),
-                Vec::new(), Vec::new()).expect("one stated element"),
+            array: native::LinkArray::try_new(
+                Some(1),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+            )
+            .expect("one stated element"),
             link_transform: None,
             linked_subelements: Vec::new(),
             claim_child: None,
@@ -254,28 +278,40 @@ fn product_occurrence_refusal_does_not_prepay_element_suffix() {
     };
     let cap = successful_work(|ctx| {
         let (definitions, occurrences) = super::super::transfer_neutral(
-            ctx, std::slice::from_ref(&record), &[], &[], &[], &[], &[],
+            ctx,
+            std::slice::from_ref(&record),
+            &[],
+            &[],
+            &[],
+            &[],
+            &[],
         )?;
         assert!(definitions.is_empty());
         assert_eq!(occurrences.len(), 1);
-        assert_eq!(occurrences[0].native_ref.as_deref(), Some(record.object.as_str()));
+        assert_eq!(
+            occurrences[0].native_ref.as_deref(),
+            Some(record.object.as_str())
+        );
         Ok(())
     });
     let count = cap.checked_add(1).expect("finite element count");
-    assert!(count <= 1_000_000, "short prefix fits the stated array limit");
+    assert!(
+        count <= 1_000_000,
+        "short prefix fits the stated array limit"
+    );
     let native::ProductNode::Occurrence(occurrence) = &mut record.node else {
         panic!("occurrence fixture")
     };
-    occurrence.array = native::LinkArray::try_new(Some(count), Vec::new(), Vec::new(),
-        Vec::new(), Vec::new()).expect("stated element count");
+    occurrence.array =
+        native::LinkArray::try_new(Some(count), Vec::new(), Vec::new(), Vec::new(), Vec::new())
+            .expect("stated element count");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_work_units = cap;
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty context");
-    let error = super::super::transfer_neutral(
-        &ctx, &[record], &[], &[], &[], &[], &[],
-    ).expect_err("first occurrence identity");
+    let error = super::super::transfer_neutral(&ctx, &[record], &[], &[], &[], &[], &[])
+        .expect_err("first occurrence identity");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "FreeCAD model identity"));
@@ -289,7 +325,9 @@ fn product_cycle_target_refusal_does_not_prepay_member_suffix() {
         Ok(())
     });
     let CodecError::ResourceLimit(collection) = crate::test_support::refusal_at(
-        ResourceDimension::CollectionItems, &[], "fcstd product cycle targets",
+        ResourceDimension::CollectionItems,
+        &[],
+        "fcstd product cycle targets",
         |ctx| super::super::product_cycle_nodes(ctx, &prefix),
     ) else {
         panic!("target collection refusal")
@@ -304,8 +342,8 @@ fn product_cycle_target_refusal_does_not_prepay_member_suffix() {
     policy.limits.max_work_units = cap;
     policy.limits.max_collection_items = collection.used;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty context");
-    let error = super::super::product_cycle_nodes(&ctx, &records)
-        .expect_err("first target allocation");
+    let error =
+        super::super::product_cycle_nodes(&ctx, &records).expect_err("first target allocation");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "fcstd product cycle targets"));

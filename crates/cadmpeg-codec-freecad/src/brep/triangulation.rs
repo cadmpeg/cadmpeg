@@ -51,7 +51,8 @@ impl TextTriangulation {
         let nodes = nodes
             .into_iter()
             .map(|point| {
-                FinitePoint3::new(point).ok_or_else(|| "nodes coordinates must be finite".to_owned())
+                FinitePoint3::new(point)
+                    .ok_or_else(|| "nodes coordinates must be finite".to_owned())
             })
             .collect::<Result<Vec<_>, _>>()?;
         let uv_nodes = uv_nodes

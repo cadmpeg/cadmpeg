@@ -15,7 +15,11 @@ fn with_work<T>(work: u64, call: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
 }
 
 fn nodes() -> ElementMapNodes {
-    ElementMapNodes::try_from(vec![ElementMapNode { map_id: 0, groups: Vec::new() }]).unwrap()
+    ElementMapNodes::try_from(vec![ElementMapNode {
+        map_id: 0,
+        groups: Vec::new(),
+    }])
+    .unwrap()
 }
 
 #[test]
@@ -36,9 +40,13 @@ fn empty_binding_upper_bound_needs_no_work_and_does_not_advance_adapter() {
 fn chained_binding_exhaustion_costs_only_actual_visits() {
     with_work(2, |ctx| {
         let visits = Cell::new(0);
-        let bindings = [("Edge", 1, "first")].into_iter()
+        let bindings = [("Edge", 1, "first")]
+            .into_iter()
             .chain([("Face", 2, "second")])
-            .map(|binding| { visits.set(visits.get() + 1); binding });
+            .map(|binding| {
+                visits.set(visits.get() + 1);
+                binding
+            });
         let mut input = nodes();
         // Two binding visits. An empty group tree has zero comparisons.
         input.bind_root_topology(ctx, bindings).unwrap();
@@ -68,10 +76,16 @@ fn binding_refusal_precedes_unvisited_adapter_suffix() {
     with_work(1, |ctx| {
         let visits = Cell::new(0);
         let bindings = [("Edge", 1, "first"), ("Face", 2, "second")]
-            .into_iter().map(|binding| { visits.set(visits.get() + 1); binding });
+            .into_iter()
+            .map(|binding| {
+                visits.set(visits.get() + 1);
+                binding
+            });
         let mut input = nodes();
         let error = input.bind_root_topology(ctx, bindings).unwrap_err();
-        let CodecError::ResourceLimit(original) = error else { panic!("expected visit refusal") };
+        let CodecError::ResourceLimit(original) = error else {
+            panic!("expected visit refusal")
+        };
         assert_eq!(original.operation, "FreeCAD element topology binding scan");
         assert_eq!((original.used, original.additional), (1, 1));
         assert_eq!(visits.get(), 1);
@@ -119,15 +133,18 @@ fn child_string_id_exhaustion_admits_only_actual_bytes() {
                 Ok::<(), std::convert::Infallible>(())
             },
             |message| Ok::<_, std::convert::Infallible>(message.to_string()),
-        ).unwrap();
+        )
+        .unwrap();
         match ids {
             "0" | "0.12" => {
                 assert!(result.is_ok());
                 assert_eq!(visits, ids.len());
             }
             "0." | "1.unvisited" => {
-                assert_eq!(result.unwrap_err(),
-                    "element-map node 1 group Edge child 0 has an invalid child string-id list");
+                assert_eq!(
+                    result.unwrap_err(),
+                    "element-map node 1 group Edge child 0 has an invalid child string-id list"
+                );
                 // Two bytes through the period. Empty-tail finalization is free;
                 // an invalid first field stops before the later text.
                 assert_eq!(visits, 2);

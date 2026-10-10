@@ -10,18 +10,26 @@ use std::io::Cursor;
 #[test]
 fn application_census_without_objects_skips_source_indexes() {
     let entry = crate::test_support::entry_record(
-        "fcstd:native:entry#Data.bin".into(), "Data.bin".into(),
-        cadmpeg_core::container::ContainerRole::Auxiliary, Vec::new(), vec![1; 4096],
+        "fcstd:native:entry#Data.bin".into(),
+        "Data.bin".into(),
+        cadmpeg_core::container::ContainerRole::Auxiliary,
+        Vec::new(),
+        vec![1; 4096],
     );
     let property = crate::native::PropertyRecord {
         id: "fcstd:native:property#Owner:Data".into(),
         owner: "fcstd:native:object#Owner".into(),
-        name: "Data".into(), type_name: "App::PropertyFileIncluded".into(),
-        family: crate::native::PropertyFamily::File, status: None,
+        name: "Data".into(),
+        type_name: "App::PropertyFileIncluded".into(),
+        family: crate::native::PropertyFamily::File,
+        status: None,
         body: crate::native::PropertyBody::Persisted {
-            values: Vec::new(), links: Vec::new(), side_entries: vec!["Data.bin".into()],
+            values: Vec::new(),
+            links: Vec::new(),
+            side_entries: vec!["Data.bin".into()],
             dynamic: None,
-        }, order: 0,
+        },
+        order: 0,
         xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0).expect("XML span"),
     };
     let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -33,12 +41,19 @@ fn application_census_without_objects_skips_source_indexes() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("context");
     assert!(super::wire_records(
-        &ctx, &[], std::slice::from_ref(&property), std::slice::from_ref(&entry),
-    ).expect("no application consumer").is_empty());
-    let cadmpeg_core::CodecError::ResourceLimit(original) =
-        ctx.charge_work(1, "prior application refusal").expect_err("work limit") else {
-            panic!("resource refusal")
-        };
+        &ctx,
+        &[],
+        std::slice::from_ref(&property),
+        std::slice::from_ref(&entry),
+    )
+    .expect("no application consumer")
+    .is_empty());
+    let cadmpeg_core::CodecError::ResourceLimit(original) = ctx
+        .charge_work(1, "prior application refusal")
+        .expect_err("work limit")
+    else {
+        panic!("resource refusal")
+    };
     assert!(matches!(super::wire_records(
         &ctx, &[], std::slice::from_ref(&property), std::slice::from_ref(&entry),
     ), Err(cadmpeg_core::CodecError::ResourceLimit(repeated)) if repeated == original));
@@ -57,30 +72,51 @@ fn empty_application_comparison_skips_exhausted_actual_source_and_keeps_refusal(
     let namespace = cadmpeg_ir::native::NativeNamespace::default();
     assert!(super::matches_native(&ctx, &namespace, &[], &[], &[]).expect("empty census"));
     let cadmpeg_core::CodecError::ResourceLimit(original) = ctx
-        .charge_work(1, "prior application comparison refusal").expect_err("work limit")
-        else { panic!("resource refusal") };
+        .charge_work(1, "prior application comparison refusal")
+        .expect_err("work limit")
+    else {
+        panic!("resource refusal")
+    };
     let error = super::matches_native(&ctx, &namespace, &[], &[], &[])
-        .map_err(cadmpeg_core::CodecError::from).expect_err("original refusal");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(repeated) if repeated == original));
+        .map_err(cadmpeg_core::CodecError::from)
+        .expect_err("original refusal");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(repeated) if repeated == original)
+    );
 }
 
 #[test]
 fn missing_application_arena_skips_unexecuted_expected_and_actual_visits() {
     let objects = [crate::native::ObjectRecord {
         identity: crate::native::object_identity::ObjectIdentity::try_new(
-            "fcstd:native:object#Owner".into(), "Owner".into(),
-        ).expect("object identity"),
-        type_name: "Vendor::Feature".into(), persistent_id: None, view_type: None,
-        attributes: std::collections::BTreeMap::new(), dependencies: Vec::new(),
-        dependency_allow_partial: None, order: 0, data: None,
+            "fcstd:native:object#Owner".into(),
+            "Owner".into(),
+        )
+        .expect("object identity"),
+        type_name: "Vendor::Feature".into(),
+        persistent_id: None,
+        view_type: None,
+        attributes: std::collections::BTreeMap::new(),
+        dependencies: Vec::new(),
+        dependency_allow_partial: None,
+        order: 0,
+        data: None,
     }];
     let complete_work = crate::test_support::with_service_context(&[], |ctx| {
         let mut records = super::wire_records(ctx, &objects, &[], &[]).expect("census prefix");
-        ctx.stable_sort_by(&mut records, |record| &record.id, Ord::cmp,
-            "FreeCAD application records sort").expect("census order");
+        ctx.stable_sort_by(
+            &mut records,
+            |record| &record.id,
+            Ord::cmp,
+            "FreeCAD application records sort",
+        )
+        .expect("census order");
         let cadmpeg_core::CodecError::ResourceLimit(limit) = ctx
             .charge_work(u64::MAX, "completed application comparison prefix")
-            .expect_err("work overflow") else { panic!("resource refusal") };
+            .expect_err("work overflow")
+        else {
+            panic!("resource refusal")
+        };
         limit.used
     });
     let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -88,8 +124,14 @@ fn missing_application_arena_skips_unexecuted_expected_and_actual_visits() {
     policy.limits.max_work_units = complete_work;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("context");
-    assert!(!super::matches_native(&ctx, &cadmpeg_ir::native::NativeNamespace::default(),
-        &objects, &[], &[]).expect("known missing actual arena"));
+    assert!(!super::matches_native(
+        &ctx,
+        &cadmpeg_ir::native::NativeNamespace::default(),
+        &objects,
+        &[],
+        &[]
+    )
+    .expect("known missing actual arena"));
     assert_eq!(ctx.resource_refusal(), None);
 }
 
@@ -97,25 +139,35 @@ fn missing_application_arena_skips_unexecuted_expected_and_actual_visits() {
 fn application_census_without_side_entries_skips_entry_index() {
     let mut object = crate::native::ObjectRecord {
         identity: crate::native::object_identity::ObjectIdentity::try_new(
-            "fcstd:native:object#Owner".into(), "Owner".into(),
-        ).expect("object identity"),
+            "fcstd:native:object#Owner".into(),
+            "Owner".into(),
+        )
+        .expect("object identity"),
         type_name: "Vendor::Feature".into(),
-        persistent_id: None, view_type: None,
-        attributes: std::collections::BTreeMap::new(), dependencies: Vec::new(),
-        dependency_allow_partial: None, order: 0, data: None,
+        persistent_id: None,
+        view_type: None,
+        attributes: std::collections::BTreeMap::new(),
+        dependencies: Vec::new(),
+        dependency_allow_partial: None,
+        order: 0,
+        data: None,
     };
     let entry = crate::test_support::entry_record(
-        "fcstd:native:entry#Data.bin".into(), "Data.bin".into(),
-        cadmpeg_core::container::ContainerRole::Auxiliary, Vec::new(), vec![1; 4096],
+        "fcstd:native:entry#Data.bin".into(),
+        "Data.bin".into(),
+        cadmpeg_core::container::ContainerRole::Auxiliary,
+        Vec::new(),
+        vec![1; 4096],
     );
     let complete_work = crate::test_support::with_service_context(&[], |ctx| {
         super::wire_records(ctx, std::slice::from_ref(&object), &[], &[])
             .expect("short application census");
-        let cadmpeg_core::CodecError::ResourceLimit(limit) =
-            ctx.charge_work(u64::MAX, "completed application census work")
-                .expect_err("work overflow") else {
-                    panic!("work refusal")
-                };
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = ctx
+            .charge_work(u64::MAX, "completed application census work")
+            .expect_err("work overflow")
+        else {
+            panic!("work refusal")
+        };
         limit.used
     });
     object.type_name = format!("Vendor::{}", "UnvisitedFeature".repeat(4096));
@@ -125,8 +177,12 @@ fn application_census_without_side_entries_skips_entry_index() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("context");
     let records = super::wire_records(
-        &ctx, std::slice::from_ref(&object), &[], std::slice::from_ref(&entry),
-    ).expect("entry index has no consumer");
+        &ctx,
+        std::slice::from_ref(&object),
+        &[],
+        std::slice::from_ref(&entry),
+    )
+    .expect("entry index has no consumer");
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].object, object.id());
     assert_eq!(records[0].domain, "Vendor");
@@ -138,10 +194,13 @@ fn application_census_without_side_entries_skips_entry_index() {
 fn application_inert_classification_stops_at_first_fixed_marker() {
     let property = crate::native::PropertyRecord {
         id: "fcstd:native:property#Owner:Data".into(),
-        owner: "fcstd:native:object#Owner".into(), name: "Data".into(),
+        owner: "fcstd:native:object#Owner".into(),
+        name: "Data".into(),
         type_name: format!("PropertyPythonObject{}", "Unvisited".repeat(4096)),
-        family: crate::native::PropertyFamily::Unknown, status: None,
-        body: crate::native::PropertyBody::Transient, order: 0,
+        family: crate::native::PropertyFamily::Unknown,
+        status: None,
+        body: crate::native::PropertyBody::Transient,
+        order: 0,
         xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0).expect("XML span"),
     };
     let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -151,10 +210,12 @@ fn application_inert_classification_stops_at_first_fixed_marker() {
         .expect("context");
     assert!(super::is_inert(&ctx, &property).expect("first marker"));
     assert_eq!(ctx.resource_refusal(), None);
-    let cadmpeg_core::CodecError::ResourceLimit(original) =
-        ctx.charge_work(1, "prior inert refusal").expect_err("work limit") else {
-            panic!("resource refusal")
-        };
+    let cadmpeg_core::CodecError::ResourceLimit(original) = ctx
+        .charge_work(1, "prior inert refusal")
+        .expect_err("work limit")
+    else {
+        panic!("resource refusal")
+    };
     assert!(matches!(super::is_inert(&ctx, &property),
         Err(cadmpeg_core::CodecError::ResourceLimit(repeated)) if repeated == original));
 }
@@ -723,11 +784,12 @@ fn application_repeated_payloads_borrow_the_cached_digest() {
     let complete_work = crate::test_support::with_service_context(&[], |ctx| {
         super::wire_records(ctx, &objects, &properties, &small_entries)
             .expect("small application payloads");
-        let cadmpeg_core::CodecError::ResourceLimit(limit) =
-            ctx.charge_work(u64::MAX, "completed application payload work")
-                .expect_err("work overflow") else {
-                    panic!("work refusal")
-                };
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = ctx
+            .charge_work(u64::MAX, "completed application payload work")
+            .expect_err("work overflow")
+        else {
+            panic!("work refusal")
+        };
         limit.used
     });
     let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -784,50 +846,82 @@ fn application_comparison_refuses_actual_arena_visits() {
 fn application_releases_consumed_owner_buffer_before_later_entry_index() {
     let objects = ["First", "Second"].map(|name| crate::native::ObjectRecord {
         identity: crate::native::object_identity::ObjectIdentity::try_new(
-            format!("fcstd:native:object#{name}"), name.into(),
-        ).expect("object identity"),
-        type_name: "Vendor::Feature".into(), persistent_id: None, view_type: None,
-        attributes: std::collections::BTreeMap::new(), dependencies: Vec::new(),
-        dependency_allow_partial: None, order: 0, data: None,
+            format!("fcstd:native:object#{name}"),
+            name.into(),
+        )
+        .expect("object identity"),
+        type_name: "Vendor::Feature".into(),
+        persistent_id: None,
+        view_type: None,
+        attributes: std::collections::BTreeMap::new(),
+        dependencies: Vec::new(),
+        dependency_allow_partial: None,
+        order: 0,
+        data: None,
     });
-    let entries: Vec<_> = (0..1024).map(|index| crate::test_support::entry_record(
-        format!("fcstd:native:entry#Payload{index}.bin"), format!("Payload{index}.bin"),
-        cadmpeg_core::container::ContainerRole::Auxiliary, Vec::new(), Vec::new(),
-    )).collect();
-    let mut properties: Vec<_> = (0..1024).map(|index| crate::native::PropertyRecord {
-        id: format!("fcstd:native:property#First:Value{index}"),
-        owner: objects[0].id().clone(), name: format!("Value{index}"),
-        type_name: "App::PropertyString".into(), family: crate::native::PropertyFamily::Unknown,
-        status: None, body: crate::native::PropertyBody::Transient, order: index,
-        xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0).expect("XML span"),
-    }).collect();
+    let entries: Vec<_> = (0..1024)
+        .map(|index| {
+            crate::test_support::entry_record(
+                format!("fcstd:native:entry#Payload{index}.bin"),
+                format!("Payload{index}.bin"),
+                cadmpeg_core::container::ContainerRole::Auxiliary,
+                Vec::new(),
+                Vec::new(),
+            )
+        })
+        .collect();
+    let mut properties: Vec<_> = (0..1024)
+        .map(|index| crate::native::PropertyRecord {
+            id: format!("fcstd:native:property#First:Value{index}"),
+            owner: objects[0].id().clone(),
+            name: format!("Value{index}"),
+            type_name: "App::PropertyString".into(),
+            family: crate::native::PropertyFamily::Unknown,
+            status: None,
+            body: crate::native::PropertyBody::Transient,
+            order: index,
+            xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0).expect("XML span"),
+        })
+        .collect();
     properties.push(crate::native::PropertyRecord {
         id: "fcstd:native:property#Second:Data".into(),
-        owner: objects[1].id().clone(), name: "Data".into(),
-        type_name: "App::PropertyFileIncluded".into(), family: crate::native::PropertyFamily::File,
+        owner: objects[1].id().clone(),
+        name: "Data".into(),
+        type_name: "App::PropertyFileIncluded".into(),
+        family: crate::native::PropertyFamily::File,
         status: None,
         body: crate::native::PropertyBody::Persisted {
-            values: Vec::new(), links: Vec::new(), side_entries: vec![entries[0].name().into()],
+            values: Vec::new(),
+            links: Vec::new(),
+            side_entries: vec![entries[0].name().into()],
             dynamic: None,
-        }, order: 0,
+        },
+        order: 0,
         xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0).expect("XML span"),
     });
     // Core operations are the storage oracle for the live owner and entry
     // trees. The second owner still holds the four-reference minimum vector;
     // the first owner's 1024-reference buffer has already been consumed.
     let tree_bytes = crate::test_support::with_service_context(&[], |ctx| {
-        let _owners = ctx.collect_scoped_btree_map(
-            objects.iter().map(|object| (
-                object.id().as_str(), None::<super::OwnerProperties<'_, '_>>,
-            )), "application lifetime owner-tree oracle",
-        ).expect("owner tree");
-        let _entries = ctx.collect_scoped_btree_map(
-            entries.iter().map(|entry| (entry.name(), entry)),
-            "application lifetime entry-tree oracle",
-        ).expect("entry tree");
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = ctx.reserve_scoped(
-            u64::MAX, "measure live application trees",
-        ).err().expect("materialized overflow") else {
+        let _owners = ctx
+            .collect_scoped_btree_map(
+                objects
+                    .iter()
+                    .map(|object| (object.id().as_str(), None::<super::OwnerProperties<'_, '_>>)),
+                "application lifetime owner-tree oracle",
+            )
+            .expect("owner tree");
+        let _entries = ctx
+            .collect_scoped_btree_map(
+                entries.iter().map(|entry| (entry.name(), entry)),
+                "application lifetime entry-tree oracle",
+            )
+            .expect("entry tree");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = ctx
+            .reserve_scoped(u64::MAX, "measure live application trees")
+            .err()
+            .expect("materialized overflow")
+        else {
             panic!("materialized refusal")
         };
         limit.used
@@ -835,17 +929,28 @@ fn application_releases_consumed_owner_buffer_before_later_entry_index() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_materialized_bytes = tree_bytes
-        + cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<&crate::native::PropertyRecord>());
+        + cadmpeg_core::decode::u64_from_index(
+            4 * std::mem::size_of::<&crate::native::PropertyRecord>(),
+        );
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("context");
     let records = super::wire_records(&ctx, &objects, &properties, &entries)
         .expect("consumed first-owner storage is released");
     assert_eq!(records.len(), 2);
     assert_eq!(records[0].object, objects[0].id());
-    assert_eq!(records[0].properties, properties[..1024].iter().map(|property| property.id.as_str()).collect::<Vec<_>>());
+    assert_eq!(
+        records[0].properties,
+        properties[..1024]
+            .iter()
+            .map(|property| property.id.as_str())
+            .collect::<Vec<_>>()
+    );
     assert_eq!(records[1].object, objects[1].id());
     assert_eq!(records[1].property_records.len(), 1);
     assert_eq!(records[1].property_records[0].payloads.len(), 1);
-    assert_eq!(records[1].property_records[0].payloads[0].entry, entries[0].id());
+    assert_eq!(
+        records[1].property_records[0].payloads[0].entry,
+        entries[0].id()
+    );
     assert_eq!(ctx.resource_refusal(), None);
 }

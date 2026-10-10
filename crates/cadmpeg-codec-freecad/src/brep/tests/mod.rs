@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! BREP parser and transfer unit tests.
 
-mod allocation_tests;
 mod actual_visits;
+mod allocation_tests;
 mod nesting;
 mod numeric_text;
 mod parser_recursion;

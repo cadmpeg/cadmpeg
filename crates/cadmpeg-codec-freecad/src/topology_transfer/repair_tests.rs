@@ -3,24 +3,28 @@
 use std::collections::BTreeSet;
 use std::mem::{align_of, size_of};
 
-use super::{connected_components, pcurve_geometry, transfer, Builder, GeometryIndexes, PcurveGeometryError};
-use crate::brep::{
-    NurbsCurve2d, ShapePayload, ShapePayloadRecord, Tables, TextCurve2d,
-    TextEdgeRepresentation, TextOrientation, TextPolygon3d, TextShapeUse, TextSurface,
-    TextTShape, TextTShapeGeometry, TextTShapes,
+use super::{
+    connected_components, pcurve_geometry, transfer, Builder, GeometryIndexes, PcurveGeometryError,
 };
 use crate::brep::triangulation::TextTriangulation;
+use crate::brep::{
+    NurbsCurve2d, ShapePayload, ShapePayloadRecord, Tables, TextCurve2d, TextEdgeRepresentation,
+    TextOrientation, TextPolygon3d, TextShapeUse, TextSurface, TextTShape, TextTShapeGeometry,
+    TextTShapes,
+};
 use crate::native::{PropertyBody, PropertyFamily, PropertyRecord, RetainedXml};
 use cadmpeg_core::decode::refusal_probe::RefusalProbe;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, ScopedReservation};
+use cadmpeg_core::decode::{
+    DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, ScopedReservation,
+};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::analytic::{LineCurve, PlaneSurface};
 use cadmpeg_ir::geometry::nurbs::NurbsError;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition,
-    SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, EdgeId, ShellId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -139,7 +143,7 @@ fn absent_topology_consumers_skip_populated_owner_and_geometry_indexes() {
                 let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
                 let occurrences =
                     transfer(ctx, &mut ir, payloads, &[property()], &mut losses, false)
-                    .expect("no topology index has a consumer");
+                        .expect("no topology index has a consumer");
                 assert!(occurrences.records.is_empty());
                 assert!(losses.is_empty());
                 assert_eq!(ir, original);
@@ -152,33 +156,48 @@ fn absent_topology_consumers_skip_populated_owner_and_geometry_indexes() {
 #[test]
 fn procedural_indexes_wait_for_the_first_consumer_and_reuse_the_result() {
     let mut ir = populated_ir();
-    let construction = cadmpeg_ir::ids::ProceduralSurfaceId::mint(
-        "fcstd:model:surface#Repair:construction",
-    )
-    .expect("construction identity");
+    let construction =
+        cadmpeg_ir::ids::ProceduralSurfaceId::mint("fcstd:model:surface#Repair:construction")
+            .expect("construction identity");
     let source = ir.model.surfaces[0].id.clone();
     ir.model.surfaces.push(Surface {
         id: SurfaceId::mint("fcstd:model:surface#Repair:procedural").expect("surface identity"),
-        geometry: SurfaceGeometry::Procedural { construction: construction.clone(), cache: None },
+        geometry: SurfaceGeometry::Procedural {
+            construction: construction.clone(),
+            cache: None,
+        },
         source_object: None,
     });
     ir.model.procedural_surfaces.push(ProceduralSurface::new(
         construction.clone(),
-        ProceduralSurfaceDefinition::Replica { source, transform: Transform::identity() },
+        ProceduralSurfaceDefinition::Replica {
+            source,
+            transform: Transform::identity(),
+        },
         None,
     ));
-    for operation in ["FreeCAD procedural owner scan", "FreeCAD procedural surface index scan"] {
+    for operation in [
+        "FreeCAD procedural owner scan",
+        "FreeCAD procedural surface index scan",
+    ] {
         with_limits(u64::MAX, u64::MAX, |ctx| {
             let probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
             let mut indexes = GeometryIndexes::new(ctx).expect("ordinary position indexes");
             assert!(indexes.procedural.is_none());
             drop(probe);
-            indexes.ensure_procedural(ctx, &ir).expect("first procedural consumer");
+            indexes
+                .ensure_procedural(ctx, &ir)
+                .expect("first procedural consumer");
             let procedural = indexes.procedural.as_ref().expect("procedural indexes");
             assert!(procedural.procedural_surfaces.contains(&construction));
-            assert_eq!(procedural.construction_owners.get(&construction), Some(&Some(1)));
+            assert_eq!(
+                procedural.construction_owners.get(&construction),
+                Some(&Some(1))
+            );
             let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
-            indexes.ensure_procedural(ctx, &ir).expect("existing procedural indexes");
+            indexes
+                .ensure_procedural(ctx, &ir)
+                .expect("existing procedural indexes");
             assert_eq!(ctx.resource_refusal(), None);
         });
     }
@@ -200,11 +219,18 @@ fn successful_located_curve_hits_skip_base_identity_work() {
         let tshapes = TextTShapes::default();
         let mut ir = populated_ir();
         let mut builder = builder(ctx, &payload, tables(&tshapes)).expect("builder");
-        let first = builder.located_curve(&mut ir, 1, placed_transform()).expect("first curve");
+        let first = builder
+            .located_curve(&mut ir, 1, placed_transform())
+            .expect("first curve");
         assert_eq!(ir.model.curves.len(), 2);
         for operation in ["FreeCAD base curve key", "FreeCAD base curve identity"] {
             let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
-            assert_eq!(builder.located_curve(&mut ir, 1, placed_transform()).expect("curve hit"), first);
+            assert_eq!(
+                builder
+                    .located_curve(&mut ir, 1, placed_transform())
+                    .expect("curve hit"),
+                first
+            );
             assert_eq!(ir.model.curves.len(), 2);
             assert_eq!(ctx.resource_refusal(), None);
         }
@@ -218,11 +244,18 @@ fn successful_located_surface_hits_skip_base_identity_work() {
         let tshapes = TextTShapes::default();
         let mut ir = populated_ir();
         let mut builder = builder(ctx, &payload, tables(&tshapes)).expect("builder");
-        let first = builder.located_surface(&mut ir, 1, placed_transform()).expect("first surface");
+        let first = builder
+            .located_surface(&mut ir, 1, placed_transform())
+            .expect("first surface");
         assert_eq!(ir.model.surfaces.len(), 2);
         for operation in ["FreeCAD base surface key", "FreeCAD base surface identity"] {
             let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
-            assert_eq!(builder.located_surface(&mut ir, 1, placed_transform()).expect("surface hit"), first);
+            assert_eq!(
+                builder
+                    .located_surface(&mut ir, 1, placed_transform())
+                    .expect("surface hit"),
+                first
+            );
             assert_eq!(ir.model.surfaces.len(), 2);
             assert_eq!(ctx.resource_refusal(), None);
         }
@@ -235,10 +268,16 @@ fn parameterized_polygon_releases_input_storage_before_position_indexing() {
     let polygon = TextPolygon3d {
         deflection: NonNegativeReal::ZERO,
         nodes: (0..NODES).map(|_| FinitePoint3::ZERO).collect(),
-        parameters: Some((0..NODES).map(|index| {
-            FiniteReal::new(cadmpeg_core::convert::f64_from_index(index).expect("exact fixture index"))
-                .expect("finite increasing parameter")
-        }).collect()),
+        parameters: Some(
+            (0..NODES)
+                .map(|index| {
+                    FiniteReal::new(
+                        cadmpeg_core::convert::f64_from_index(index).expect("exact fixture index"),
+                    )
+                    .expect("finite increasing parameter")
+                })
+                .collect(),
+        ),
     };
     with_limits(u64::MAX, u64::MAX, |ctx| {
         let payload = payload();
@@ -253,15 +292,27 @@ fn parameterized_polygon_releases_input_storage_before_position_indexing() {
         // Later identities and one curve-position node are smaller. A stale
         // input reservation would make the position key raise that peak.
         let _probe = RefusalProbe::arm(
-            ResourceDimension::MaterializedBytes, "FreeCAD curve position key", None,
+            ResourceDimension::MaterializedBytes,
+            "FreeCAD curve position key",
+            None,
         );
-        let id = builder.polygon_curve(
-            &mut ir, &edge, 0,
-            &TextEdgeRepresentation::Polygon3d { polygon: 1, location: 0 },
-            Transform::identity(),
-        ).expect("input buffers have been consumed before indexing");
+        let id = builder
+            .polygon_curve(
+                &mut ir,
+                &edge,
+                0,
+                &TextEdgeRepresentation::Polygon3d {
+                    polygon: 1,
+                    location: 0,
+                },
+                Transform::identity(),
+            )
+            .expect("input buffers have been consumed before indexing");
         assert_eq!(ir.model.curves.len(), 1);
-        assert_eq!(builder.geometry.curve_position(ctx, &ir, &id).unwrap(), Some(0));
+        assert_eq!(
+            builder.geometry.curve_position(ctx, &ir, &id).unwrap(),
+            Some(0)
+        );
         assert_eq!(ctx.resource_refusal(), None);
     });
 }
@@ -269,23 +320,33 @@ fn parameterized_polygon_releases_input_storage_before_position_indexing() {
 fn native_nurbs(count: usize, rational: bool, first_weight: FiniteReal) -> TextCurve2d {
     let end = cadmpeg_core::convert::f64_from_index(count - 1).expect("exact fixture index");
     let parameters: Vec<_> = (0..count)
-        .map(|index| FiniteReal::new(
-            cadmpeg_core::convert::f64_from_index(index).expect("exact fixture index") / end,
-        ).expect("finite knot"))
+        .map(|index| {
+            FiniteReal::new(
+                cadmpeg_core::convert::f64_from_index(index).expect("exact fixture index") / end,
+            )
+            .expect("finite knot")
+        })
         .collect();
     let mut knots = Vec::with_capacity(count + 2);
     knots.push(FiniteReal::ZERO);
     knots.extend_from_slice(&parameters);
     knots.push(FiniteReal::ONE);
-    let points = parameters.iter().map(|value| {
-        FinitePoint2::new(Point2::new(value.get(), 0.0)).expect("finite pole")
-    }).collect();
+    let points = parameters
+        .iter()
+        .map(|value| FinitePoint2::new(Point2::new(value.get(), 0.0)).expect("finite pole"))
+        .collect();
     let weights = rational.then(|| {
         let mut weights: Vec<_> = (0..count).map(|_| FiniteReal::ONE).collect();
         weights[0] = first_weight;
         weights
     });
-    TextCurve2d::Nurbs(NurbsCurve2d { degree: 1, knots, control_points: points, weights, periodic: false })
+    TextCurve2d::Nurbs(NurbsCurve2d {
+        degree: 1,
+        knots,
+        control_points: points,
+        weights,
+        periodic: false,
+    })
 }
 
 #[test]
@@ -293,9 +354,11 @@ fn rational_pcurve_first_zero_weight_does_not_charge_its_untouched_suffix() {
     let curve = native_nurbs(128, true, FiniteReal::ZERO);
     with_limits(1, u64::MAX, |ctx| {
         let error = pcurve_geometry(ctx, &curve).expect_err("first zero weight");
-        assert!(matches!(error, PcurveGeometryError::Nurbs(NurbsError::UnusableWeight {
+        assert!(
+            matches!(error, PcurveGeometryError::Nurbs(NurbsError::UnusableWeight {
             ref field, index: 0, weight,
-        }) if field == "pcurve poles" && weight == 0.0));
+        }) if field == "pcurve poles" && weight == 0.0)
+        );
         assert_eq!(ctx.resource_refusal(), None);
     });
     with_limits(0, u64::MAX, |ctx| {
@@ -320,7 +383,9 @@ fn triangulated_face() -> TextTShape {
 }
 
 fn append_triangulated_face(
-    ctx: &DecodeContext<'_>, triangulation: &TextTriangulation, transform: Transform,
+    ctx: &DecodeContext<'_>,
+    triangulation: &TextTriangulation,
+    transform: Transform,
 ) -> Result<(), CodecError> {
     let payload = payload();
     let tshapes = TextTShapes::from(vec![triangulated_face()]);
@@ -328,23 +393,37 @@ fn append_triangulated_face(
     tables.triangulations = std::slice::from_ref(triangulation);
     let mut ir = CadIr::empty();
     let mut builder = builder(ctx, &payload, tables)?;
-    builder.append_face(
-        &mut ir, &ShellId::mint("fcstd:model:shell#Repair:1").expect("shell identity"),
-        &TextShapeUse { shape: 1, orientation: TextOrientation::Forward, location: 0.into() },
-        transform, false,
-    ).map(|_| ())
+    builder
+        .append_face(
+            &mut ir,
+            &ShellId::mint("fcstd:model:shell#Repair:1").expect("shell identity"),
+            &TextShapeUse {
+                shape: 1,
+                orientation: TextOrientation::Forward,
+                location: 0.into(),
+            },
+            transform,
+            false,
+        )
+        .map(|_| ())
 }
 
 fn first_triangulation_failure_uses_one_visit(
-    triangulation: &TextTriangulation, transform: Transform, operation: &str, message: &str,
+    triangulation: &TextTriangulation,
+    transform: Transform,
+    operation: &str,
+    message: &str,
 ) {
     // The probe/replay derives the work already required by face setup. Its
     // next_charged boundary needs exactly one unit. Adding that unit admits
     // the failing first element, so no allowance exists for a suffix scan.
-    let error = crate::test_support::refusal_at(ResourceDimension::WorkUnits, &[], operation, |ctx| {
-        append_triangulated_face(ctx, triangulation, transform)
-    });
-    let CodecError::ResourceLimit(limit) = error else { panic!("work refusal"); };
+    let error =
+        crate::test_support::refusal_at(ResourceDimension::WorkUnits, &[], operation, |ctx| {
+            append_triangulated_face(ctx, triangulation, transform)
+        });
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("work refusal");
+    };
     assert_eq!(limit.additional, 1);
     let first_visit_need = limit.used + limit.additional;
     with_limits(first_visit_need, u64::MAX, |ctx| {
@@ -363,10 +442,15 @@ fn placed_triangulation_first_overflow_preserves_malformed_before_long_tail() {
         "deflection": 0.0, "nodes": nodes, "uv_nodes": null, "triangles": [[1, 2, 3]], "normals": null,
     })).expect("checked finite native nodes");
     let transform = Transform::affine([
-        [1.0, 0.0, 0.0, 1.0e308], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0],
-    ]).expect("finite translation");
+        [1.0, 0.0, 0.0, 1.0e308],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ])
+    .expect("finite translation");
     first_triangulation_failure_uses_one_visit(
-        &triangulation, transform, "FreeCAD placed triangulation node scan",
+        &triangulation,
+        transform,
+        "FreeCAD placed triangulation node scan",
         "placed triangulation node for face 1 contains a non-finite coordinate",
     );
 }
@@ -380,7 +464,9 @@ fn placed_triangulation_first_zero_normal_preserves_malformed_before_long_tail()
         "deflection": 0.0, "nodes": nodes, "uv_nodes": null, "triangles": [[1, 2, 3]], "normals": normals,
     })).expect("finite aligned native normals");
     first_triangulation_failure_uses_one_visit(
-        &triangulation, Transform::identity(), "FreeCAD placed triangulation normal scan",
+        &triangulation,
+        Transform::identity(),
+        "FreeCAD placed triangulation normal scan",
         "placed triangulation normal for face 1 contains a non-finite component",
     );
 }
@@ -395,21 +481,33 @@ fn connected_components_release_the_first_fanout_before_second_stack_growth() {
         // Two keys fit one B-tree root. This is core's node bound: eleven
         // key/value lanes, sixteen pointer slots and two alignment pads.
         type Group<'a> = (Vec<usize>, ScopedReservation<'a>);
-        let alignment = align_of::<&String>().max(align_of::<Group<'_>>()).max(align_of::<usize>());
+        let alignment = align_of::<&String>()
+            .max(align_of::<Group<'_>>())
+            .max(align_of::<usize>());
         let tree = 11 * (size_of::<&String>() + size_of::<Group<'_>>())
-            + 16 * size_of::<usize>() + 2 * alignment;
+            + 16 * size_of::<usize>()
+            + 2 * alignment;
         let fixed = connectivity.len() * size_of::<bool>() + tree;
         // Each candidate buffer has capacity128. At the largest later stack
         // reallocation, only the second buffer survives: 128 candidates,
         // 256 new stack slots and 128 old stack slots during the move.
         let traversal_peak = fixed + (128 + 256 + 128) * size_of::<usize>();
         let _probe = RefusalProbe::arm(
-            ResourceDimension::MaterializedBytes, "FreeCAD connected-component stack", None,
+            ResourceDimension::MaterializedBytes,
+            "FreeCAD connected-component stack",
+            None,
         );
-        drop(ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(traversal_peak), "test connectivity traversal peak")
-            .expect("analytically bounded traversal peak"));
-        assert_eq!(connected_components(ctx, &connectivity).expect("candidate buffer released"),
-            vec![(0..connectivity.len()).collect::<Vec<_>>()]);
+        drop(
+            ctx.reserve_scoped(
+                cadmpeg_core::decode::u64_from_index(traversal_peak),
+                "test connectivity traversal peak",
+            )
+            .expect("analytically bounded traversal peak"),
+        );
+        assert_eq!(
+            connected_components(ctx, &connectivity).expect("candidate buffer released"),
+            vec![(0..connectivity.len()).collect::<Vec<_>>()]
+        );
         assert_eq!(ctx.resource_refusal(), None);
     });
 }
@@ -420,13 +518,20 @@ fn pcurve_shapes(representations: Vec<TextEdgeRepresentation>) -> TextTShapes {
         "geometry": {"kind": "face", "natural_restriction": false,
             "tolerance": 0.0, "surface": 1, "location": 0, "triangulation": null}
     }])).expect("checked surface reference");
-    TextTShapes::from(vec![TextTShape {
-        geometry: TextTShapeGeometry::Edge {
-            tolerance: FiniteReal::ZERO, same_parameter: true, same_range: true,
-            degenerated: false, representations,
+    TextTShapes::from(vec![
+        TextTShape {
+            geometry: TextTShapeGeometry::Edge {
+                tolerance: FiniteReal::ZERO,
+                same_parameter: true,
+                same_range: true,
+                degenerated: false,
+                representations,
+            },
+            flags: [false; 7],
+            children: Vec::new(),
         },
-        flags: [false; 7], children: Vec::new(),
-    }, faces[0].clone()])
+        faces[0].clone(),
+    ])
 }
 
 fn support_surface() -> TextSurface {
@@ -440,8 +545,11 @@ fn support_surface() -> TextSurface {
 
 fn pcurve_representation(curve: usize) -> TextEdgeRepresentation {
     TextEdgeRepresentation::Pcurve {
-        curve, surface: 1, location: 0,
-        parameter_range: [FiniteReal::ZERO, FiniteReal::ONE], uv_endpoints: None,
+        curve,
+        surface: 1,
+        location: 0,
+        parameter_range: [FiniteReal::ZERO, FiniteReal::ONE],
+        uv_endpoints: None,
     }
 }
 
@@ -455,10 +563,16 @@ fn face_pcurve(
     builder.face_pcurve(
         &TextShapeUse {
             shape: 1,
-            orientation: if reversed { TextOrientation::Reversed } else { TextOrientation::Forward },
+            orientation: if reversed {
+                TextOrientation::Reversed
+            } else {
+                TextOrientation::Forward
+            },
             location: 0.into(),
         },
-        Transform::identity(), surface, Transform::identity(),
+        Transform::identity(),
+        surface,
+        Transform::identity(),
     )
 }
 
@@ -477,12 +591,20 @@ fn repeated_face_pcurves_reuse_checked_native_domains_without_lane_reconstructio
             builder.emit_pcurves().expect("initial checked geometry");
             assert_eq!(builder.pcurves.len(), 1);
             for operation in [
-                if rational { "FreeCAD pcurve rational pole scan" } else { "FreeCAD pcurve polynomial poles" },
+                if rational {
+                    "FreeCAD pcurve rational pole scan"
+                } else {
+                    "FreeCAD pcurve polynomial poles"
+                },
                 "FreeCAD pcurve knot scan",
             ] {
                 let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
-                let first = face_pcurve(&mut builder, false).expect("first use").expect("pcurve");
-                let second = face_pcurve(&mut builder, false).expect("second use").expect("pcurve");
+                let first = face_pcurve(&mut builder, false)
+                    .expect("first use")
+                    .expect("pcurve");
+                let second = face_pcurve(&mut builder, false)
+                    .expect("second use")
+                    .expect("pcurve");
                 assert_eq!(first, second);
                 assert_eq!(first.1, Some([FiniteReal::ZERO, FiniteReal::ONE]));
                 assert_eq!(ctx.resource_refusal(), None);
@@ -497,22 +619,41 @@ fn repeated_unavailable_face_pcurves_preserve_emission_and_use_loss_order() {
     with_limits(u64::MAX, u64::MAX, |ctx| {
         let payload = payload();
         let tshapes = pcurve_shapes(vec![pcurve_representation(1), pcurve_representation(2)]);
-        let curves = [native_nurbs(128, true, FiniteReal::ZERO), TextCurve2d::Line {
-            origin: FinitePoint2::ZERO, direction: FinitePoint2::ZERO,
-        }];
+        let curves = [
+            native_nurbs(128, true, FiniteReal::ZERO),
+            TextCurve2d::Line {
+                origin: FinitePoint2::ZERO,
+                direction: FinitePoint2::ZERO,
+            },
+        ];
         let surfaces = [support_surface()];
         let mut tables = tables(&tshapes);
         tables.curve2ds = &curves;
         tables.surfaces = &surfaces;
         let mut builder = builder(ctx, &payload, tables).expect("builder");
         builder.emit_pcurves().expect("native failures are losses");
-        let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, "FreeCAD pcurve rational pole scan", None);
-        assert!(face_pcurve(&mut builder, false).expect("first use").is_none());
-        assert!(face_pcurve(&mut builder, false).expect("second use").is_none());
+        let _probe = RefusalProbe::arm(
+            ResourceDimension::WorkUnits,
+            "FreeCAD pcurve rational pole scan",
+            None,
+        );
+        assert!(face_pcurve(&mut builder, false)
+            .expect("first use")
+            .is_none());
+        assert!(face_pcurve(&mut builder, false)
+            .expect("second use")
+            .is_none());
         let invalid = "payload fcstd:native:entry#Repair curve2ds index 1 could not enter neutral geometry: pcurve poles: weight 0 at index 0 is not a usable weight";
-        let unsupported = "payload fcstd:native:entry#Repair curve2ds index 2 could not enter neutral geometry";
-        assert_eq!(builder.losses.iter().map(|loss| loss.message.as_str()).collect::<Vec<_>>(),
-            vec![invalid, unsupported, invalid, invalid]);
+        let unsupported =
+            "payload fcstd:native:entry#Repair curve2ds index 2 could not enter neutral geometry";
+        assert_eq!(
+            builder
+                .losses
+                .iter()
+                .map(|loss| loss.message.as_str())
+                .collect::<Vec<_>>(),
+            vec![invalid, unsupported, invalid, invalid]
+        );
         assert_eq!(ctx.resource_refusal(), None);
     });
 }
@@ -523,24 +664,42 @@ fn skipped_pair_secondary_is_checked_once_on_its_first_reversed_face_use() {
         with_limits(u64::MAX, u64::MAX, |ctx| {
             let payload = payload();
             let tshapes = pcurve_shapes(vec![TextEdgeRepresentation::PcurvePair {
-                curves: [1, 2], continuity: "C0".into(), surface: 1, location: 0,
-                parameter_range: [FiniteReal::ZERO, FiniteReal::ONE], uv_endpoints: None,
+                curves: [1, 2],
+                continuity: "C0".into(),
+                surface: 1,
+                location: 0,
+                parameter_range: [FiniteReal::ZERO, FiniteReal::ONE],
+                uv_endpoints: None,
             }]);
-            let curves = [TextCurve2d::Line { origin: FinitePoint2::ZERO, direction: FinitePoint2::ZERO },
-                native_nurbs(128, true, first_weight)];
+            let curves = [
+                TextCurve2d::Line {
+                    origin: FinitePoint2::ZERO,
+                    direction: FinitePoint2::ZERO,
+                },
+                native_nurbs(128, true, first_weight),
+            ];
             let surfaces = [support_surface()];
             let mut tables = tables(&tshapes);
             tables.curve2ds = &curves;
             tables.surfaces = &surfaces;
             let mut builder = builder(ctx, &payload, tables).expect("builder");
-            builder.emit_pcurves().expect("failed primary skips the secondary");
+            builder
+                .emit_pcurves()
+                .expect("failed primary skips the secondary");
             assert!(builder.pcurves.is_empty());
             assert_eq!(builder.losses.len(), 1);
             assert!(!builder.pcurve_availability.contains_key(&2));
             let first = face_pcurve(&mut builder, true).expect("first reversed use");
             assert!(builder.pcurve_availability.contains_key(&2));
-            let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, "FreeCAD pcurve rational pole scan", None);
-            assert_eq!(face_pcurve(&mut builder, true).expect("repeated reversed use"), first);
+            let _probe = RefusalProbe::arm(
+                ResourceDimension::WorkUnits,
+                "FreeCAD pcurve rational pole scan",
+                None,
+            );
+            assert_eq!(
+                face_pcurve(&mut builder, true).expect("repeated reversed use"),
+                first
+            );
             // Domain lookup does not create the candidate that primary failure skipped.
             assert!(builder.pcurves.is_empty());
             if first_weight == FiniteReal::ZERO {
@@ -551,7 +710,8 @@ fn skipped_pair_secondary_is_checked_once_on_its_first_reversed_face_use() {
                     "payload fcstd:native:entry#Repair curve2ds index 2 could not enter neutral geometry: pcurve poles: weight 0 at index 0 is not a usable weight",
                 ]);
             } else {
-                let (id, range) = first.expect("valid secondary keeps its existing reference behavior");
+                let (id, range) =
+                    first.expect("valid secondary keeps its existing reference behavior");
                 assert!(id.as_str().ends_with("1%3A1%3A2"));
                 assert_eq!(range, Some([FiniteReal::ZERO, FiniteReal::ONE]));
                 assert_eq!(builder.losses.len(), 1);

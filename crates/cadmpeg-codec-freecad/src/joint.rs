@@ -33,17 +33,26 @@ pub(crate) fn transfer(
             continue;
         }
         let owner = property.owner.as_str();
-        if ctx.equal_bytes(owner.as_bytes(), b"fcstd:native:document#0", "fcstd joint candidate owner")? {
+        if ctx.equal_bytes(
+            owner.as_bytes(),
+            b"fcstd:native:document#0",
+            "fcstd joint candidate owner",
+        )? {
             continue;
         }
         if object_ids.is_empty() {
             let mut input = objects.iter();
             while input.len() != 0 {
-                let Some(object) = ctx.next_charged(&mut input, "fcstd joint owner objects")? else {
+                let Some(object) = ctx.next_charged(&mut input, "fcstd joint owner objects")?
+                else {
                     break;
                 };
                 object_storage.with_storage(|| {
-                    ctx.insert_hash_set(&mut object_ids, object.id().as_str(), "fcstd joint object index")
+                    ctx.insert_hash_set(
+                        &mut object_ids,
+                        object.id().as_str(),
+                        "fcstd joint object index",
+                    )
                 })?;
             }
         }
@@ -63,14 +72,23 @@ pub(crate) fn transfer(
     }
     let mut properties = properties.iter();
     while properties.len() != 0 {
-        let Some(property) = ctx.next_charged(&mut properties, "fcstd joint owner properties")? else {
+        let Some(property) = ctx.next_charged(&mut properties, "fcstd joint owner properties")?
+        else {
             break;
         };
         if !matches!(
             property.name.as_str(),
-            "ObjectToGround" | "JointType" | "Placement" | "Reference1" | "Reference2"
-                | "Placement1" | "Placement2" | "Offset1" | "Offset2"
-        ) && !is_parameter_property(&property.name) {
+            "ObjectToGround"
+                | "JointType"
+                | "Placement"
+                | "Reference1"
+                | "Reference2"
+                | "Placement1"
+                | "Placement2"
+                | "Offset1"
+                | "Offset2"
+        ) && !is_parameter_property(&property.name)
+        {
             continue;
         }
         if let Some(owned) = ctx.get_mut_btree_map(
@@ -78,9 +96,8 @@ pub(crate) fn transfer(
             property.owner.as_str(),
             "fcstd joint owner index",
         )? {
-            owner_storage.with_storage(|| {
-                ctx.push_vec(owned, property, "fcstd joint owner index")
-            })?;
+            owner_storage
+                .with_storage(|| ctx.push_vec(owned, property, "fcstd joint owner index"))?;
         }
     }
     let mut output = Vec::new();
@@ -191,7 +208,9 @@ pub(crate) fn transfer(
         let mut parameters = BTreeMap::new();
         let mut input = owned.iter();
         while input.len() != 0 {
-            let Some(property) = ctx.next_charged(&mut input, "fcstd joint parameter properties")? else {
+            let Some(property) =
+                ctx.next_charged(&mut input, "fcstd joint parameter properties")?
+            else {
                 break;
             };
             if !is_parameter_property(&property.name) {
@@ -217,9 +236,23 @@ pub(crate) fn transfer(
 }
 
 fn is_parameter_property(name: &str) -> bool {
-    matches!(name, "Angle" | "AngleMin" | "AngleMax" | "Distance" | "Distance2"
-        | "LengthMin" | "LengthMax" | "EnableAngleMin" | "EnableAngleMax"
-        | "EnableLengthMin" | "EnableLengthMax" | "Detach1" | "Detach2" | "Suppressed")
+    matches!(
+        name,
+        "Angle"
+            | "AngleMin"
+            | "AngleMax"
+            | "Distance"
+            | "Distance2"
+            | "LengthMin"
+            | "LengthMax"
+            | "EnableAngleMin"
+            | "EnableAngleMax"
+            | "EnableLengthMin"
+            | "EnableLengthMax"
+            | "Detach1"
+            | "Detach2"
+            | "Suppressed"
+    )
 }
 
 pub(crate) fn transfer_neutral(
@@ -277,12 +310,15 @@ pub(crate) fn transfer_neutral(
                         })
                 }
             };
-        let mut operand = |reference: &LinkTarget, name: &str| -> Result<JointOperand, CodecError> {
+        let mut operand = |reference: &LinkTarget,
+                           name: &str|
+         -> Result<JointOperand, CodecError> {
             let object = ctx.copy_retained_text(name, "fcstd joint operand object")?;
             let mut subelements = Vec::new();
             let mut names = reference.subelements().iter();
             while names.len() != 0 {
-                let Some(name) = ctx.next_charged(&mut names, "fcstd joint operand subelements")? else {
+                let Some(name) = ctx.next_charged(&mut names, "fcstd joint operand subelements")?
+                else {
                     break;
                 };
                 if !name.is_empty() {
@@ -304,7 +340,9 @@ pub(crate) fn transfer_neutral(
             if !occurrence_indexed {
                 let mut input = occurrences.iter();
                 while input.len() != 0 {
-                    let Some(occurrence) = ctx.next_charged(&mut input, "fcstd joint occurrences")? else {
+                    let Some(occurrence) =
+                        ctx.next_charged(&mut input, "fcstd joint occurrences")?
+                    else {
                         break;
                     };
                     if let Some(native) = occurrence.native_ref.as_deref() {

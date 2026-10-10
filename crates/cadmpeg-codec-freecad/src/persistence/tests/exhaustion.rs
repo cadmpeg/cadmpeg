@@ -16,10 +16,15 @@ fn empty_link_alias_attributes_need_no_work_and_keep_original_refusal() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     super::super::reject_link_aliases(xml.root_element(), &["obj"], &ctx).unwrap();
     assert_eq!(ctx.resource_refusal(), None);
-    let CodecError::ResourceLimit(original) = ctx.charge_work(1, "prior persistence refusal").unwrap_err()
-        else { panic!("work refusal") };
-    assert!(matches!(super::super::reject_link_aliases(xml.root_element(), &["obj"], &ctx),
-        Err(CodecError::ResourceLimit(actual)) if actual == original));
+    let CodecError::ResourceLimit(original) =
+        ctx.charge_work(1, "prior persistence refusal").unwrap_err()
+    else {
+        panic!("work refusal")
+    };
+    assert!(
+        matches!(super::super::reject_link_aliases(xml.root_element(), &["obj"], &ctx),
+        Err(CodecError::ResourceLimit(actual)) if actual == original)
+    );
 }
 
 #[test]
@@ -32,7 +37,9 @@ fn link_alias_exhaustion_costs_only_actual_attribute_visits() {
     super::super::reject_link_aliases(xml.root_element(), &["obj"], &ctx).unwrap();
     assert_eq!(ctx.resource_refusal(), None);
     let CodecError::ResourceLimit(limit) = ctx.charge_work(1, "after attribute scan").unwrap_err()
-        else { panic!("one actual attribute exhausts work") };
+    else {
+        panic!("one actual attribute exhausts work")
+    };
     assert_eq!(limit.used, 1);
 }
 
@@ -50,8 +57,10 @@ fn first_link_alias_error_does_not_visit_later_attributes() {
     // One attribute visit and the two admitted diagnostic formatting passes.
     policy.limits.max_work_units = 1 + 2 * cadmpeg_core::decode::u64_from_index(message.len());
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(super::super::reject_link_aliases(xml.root_element(), &["obj"], &ctx),
-        Err(CodecError::Malformed(actual)) if actual == message));
+    assert!(
+        matches!(super::super::reject_link_aliases(xml.root_element(), &["obj"], &ctx),
+        Err(CodecError::Malformed(actual)) if actual == message)
+    );
     assert_eq!(ctx.resource_refusal(), None);
 }
 
@@ -64,12 +73,19 @@ fn empty_value_attributes_are_not_advanced_and_keep_retained_value() {
     policy.limits.max_work_units = u64::MAX;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-        ResourceDimension::WorkUnits, "FCStd value attribute records", None,
+        ResourceDimension::WorkUnits,
+        "FCStd value attribute records",
+        None,
     );
     let mut records = Vec::new();
     super::super::parse_properties(
-        source, xml.root_element(), "fcstd:native:object#Object", &mut records, &ctx,
-    ).unwrap();
+        source,
+        xml.root_element(),
+        "fcstd:native:object#Object",
+        &mut records,
+        &ctx,
+    )
+    .unwrap();
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].name, "Label");
     assert_eq!(records[0].values().len(), 1);

@@ -40,7 +40,8 @@ pub(crate) fn transfer(
     let mut output = Vec::new();
     let mut object_visits = objects.iter();
     while object_visits.len() != 0 {
-        let Some(object) = ctx.next_charged(&mut object_visits, "fcstd product object records")? else {
+        let Some(object) = ctx.next_charged(&mut object_visits, "fcstd product object records")?
+        else {
             break;
         };
         let Some(kind) = product_kind(&object.type_name) else {
@@ -60,11 +61,7 @@ pub(crate) fn transfer(
             .as_ref()
             .expect("supported product object initializes the owner index");
         let owned = ctx
-            .get_btree_map(
-                by_owner,
-                object.id().as_str(),
-                "fcstd product owner lookup",
-            )?
+            .get_btree_map(by_owner, object.id().as_str(), "fcstd product owner lookup")?
             .map_or(&[][..], Vec::as_slice);
         let group = sole_named_property(ctx, "product", owned, "Group")?;
         let members = group
@@ -243,7 +240,8 @@ fn product_record_index<'a>(
     let mut index = HashMap::new();
     let mut record_visits = records.iter();
     while record_visits.len() != 0 {
-        let Some(record) = ctx.next_charged(&mut record_visits, "fcstd product record index")? else {
+        let Some(record) = ctx.next_charged(&mut record_visits, "fcstd product record index")?
+        else {
             break;
         };
         if ctx
@@ -290,7 +288,9 @@ pub(crate) fn transfer_neutral(
     let mut has_container_record = false;
     let mut record_visits = records.iter();
     while record_visits.len() != 0 {
-        let Some(record) = ctx.next_charged(&mut record_visits, "fcstd product component records")? else {
+        let Some(record) =
+            ctx.next_charged(&mut record_visits, "fcstd product component records")?
+        else {
             break;
         };
         if matches!(record.node, ProductNode::Occurrence(_)) {
@@ -311,12 +311,16 @@ pub(crate) fn transfer_neutral(
     }
     let mut record_visits = records.iter();
     while record_visits.len() != 0 {
-        let Some(record) = ctx.next_charged(&mut record_visits, "fcstd product component records")? else {
+        let Some(record) =
+            ctx.next_charged(&mut record_visits, "fcstd product component records")?
+        else {
             break;
         };
         let mut member_visits = record.members().iter();
         while member_visits.len() != 0 {
-            let Some(member) = ctx.next_charged(&mut member_visits, "fcstd product component members")? else {
+            let Some(member) =
+                ctx.next_charged(&mut member_visits, "fcstd product component members")?
+            else {
                 break;
             };
             if ctx.contains_hash_set(
@@ -357,7 +361,9 @@ pub(crate) fn transfer_neutral(
         }
         let mut element_visits = record.element_objects().iter();
         while element_visits.len() != 0 {
-            let Some(name) = ctx.next_charged(&mut element_visits, "fcstd product element objects")? else {
+            let Some(name) =
+                ctx.next_charged(&mut element_visits, "fcstd product element objects")?
+            else {
                 break;
             };
             storage.with_storage(|| {
@@ -368,7 +374,8 @@ pub(crate) fn transfer_neutral(
     }
     let mut joint_visits = joints.iter();
     while joint_visits.len() != 0 {
-        let Some(joint) = ctx.next_charged(&mut joint_visits, "fcstd product joint records")? else {
+        let Some(joint) = ctx.next_charged(&mut joint_visits, "fcstd product joint records")?
+        else {
             break;
         };
         for reference in joint.references() {
@@ -411,7 +418,9 @@ pub(crate) fn transfer_neutral(
     let mut placements_by_object = BTreeMap::new();
     let mut owner_visits = properties_by_owner.iter();
     while owner_visits.len() != 0 {
-        let Some((&owner, owned)) = ctx.next_charged(&mut owner_visits, "fcstd product placement owners")? else {
+        let Some((&owner, owned)) =
+            ctx.next_charged(&mut owner_visits, "fcstd product placement owners")?
+        else {
             break;
         };
         if let Some((_, Some(placement))) = selected_placement(ctx, owned)? {
@@ -452,7 +461,9 @@ pub(crate) fn transfer_neutral(
     if has_container_record {
         let mut record_visits = records.iter();
         while record_visits.len() != 0 {
-            let Some(record) = ctx.next_charged(&mut record_visits, "fcstd product projection records")? else {
+            let Some(record) =
+                ctx.next_charged(&mut record_visits, "fcstd product projection records")?
+            else {
                 break;
             };
             if matches!(record.node, ProductNode::Occurrence(_)) {
@@ -460,7 +471,9 @@ pub(crate) fn transfer_neutral(
             }
             let mut member_visits = record.members().iter();
             while member_visits.len() != 0 {
-                let Some(member) = ctx.next_charged(&mut member_visits, "fcstd product parent members")? else {
+                let Some(member) =
+                    ctx.next_charged(&mut member_visits, "fcstd product parent members")?
+                else {
                     break;
                 };
                 let member = member.as_str();
@@ -496,7 +509,9 @@ pub(crate) fn transfer_neutral(
     let mut occurrences = Vec::new();
     let mut record_visits = records.iter();
     while record_visits.len() != 0 {
-        let Some(record) = ctx.next_charged(&mut record_visits, "fcstd product projection records")? else {
+        let Some(record) =
+            ctx.next_charged(&mut record_visits, "fcstd product projection records")?
+        else {
             break;
         };
         if !matches!(record.node, ProductNode::Occurrence(_)) {
@@ -522,7 +537,9 @@ pub(crate) fn transfer_neutral(
         })?;
         let mut element_visits = 0..count;
         while element_visits.len() != 0 {
-            let Some(index) = ctx.next_charged(&mut element_visits, "fcstd product occurrence elements")? else {
+            let Some(index) =
+                ctx.next_charged(&mut element_visits, "fcstd product occurrence elements")?
+            else {
                 break;
             };
             let element = count > 1;
@@ -570,14 +587,12 @@ pub(crate) fn transfer_neutral(
                 })
                 .transpose()?;
             let occurrence_id = if element {
-                let ordinal_result = ctx.format_scoped(
-                    format_args!("{index}"), "fcstd product occurrence ordinal",
-                )?;
+                let ordinal_result =
+                    ctx.format_scoped(format_args!("{index}"), "fcstd product occurrence ordinal")?;
                 let ordinal_storage = ordinal_result.1;
                 let ordinal = ordinal_result.0;
-                let id = crate::native::model_id_charged(
-                    ctx, "occurrence", &record.object, &ordinal,
-                )?;
+                let id =
+                    crate::native::model_id_charged(ctx, "occurrence", &record.object, &ordinal)?;
                 drop((ordinal, ordinal_storage));
                 id
             } else {
@@ -655,7 +670,9 @@ pub(crate) fn transfer_neutral(
     if !component_objects.is_empty() {
         let mut object_visits = objects.iter();
         while object_visits.len() != 0 {
-            let Some(object) = ctx.next_charged(&mut object_visits, "fcstd product source objects")? else {
+            let Some(object) =
+                ctx.next_charged(&mut object_visits, "fcstd product source objects")?
+            else {
                 break;
             };
             storage.with_storage(|| {
@@ -675,7 +692,9 @@ pub(crate) fn transfer_neutral(
         let mut property_owner = HashMap::new();
         let mut property_visits = properties.iter();
         while property_visits.len() != 0 {
-            let Some(property) = ctx.next_charged(&mut property_visits, "fcstd product source properties")? else {
+            let Some(property) =
+                ctx.next_charged(&mut property_visits, "fcstd product source properties")?
+            else {
                 break;
             };
             body_lookup_storage.with_storage(|| {
@@ -690,7 +709,9 @@ pub(crate) fn transfer_neutral(
         let mut body_owners = BTreeMap::new();
         let mut payload_visits = payloads.iter();
         while payload_visits.len() != 0 {
-            let Some(payload) = ctx.next_charged(&mut payload_visits, "fcstd product shape payloads")? else {
+            let Some(payload) =
+                ctx.next_charged(&mut payload_visits, "fcstd product shape payloads")?
+            else {
                 break;
             };
             if let Some(owner) = ctx.get_hash_map(
@@ -698,8 +719,9 @@ pub(crate) fn transfer_neutral(
                 payload.property.as_str(),
                 "fcstd product payload owner",
             )? {
-                let prefix = body_lookup_storage
-                    .with_storage(|| crate::native::model_id_charged(ctx, "body", &payload.id, ""))?;
+                let prefix = body_lookup_storage.with_storage(|| {
+                    crate::native::model_id_charged(ctx, "body", &payload.id, "")
+                })?;
                 body_lookup_storage.with_storage(|| {
                     ctx.insert_btree_map(
                         &mut body_owners,
@@ -712,7 +734,8 @@ pub(crate) fn transfer_neutral(
         }
         let mut body_visits = bodies.iter();
         while body_visits.len() != 0 {
-            let Some(body) = ctx.next_charged(&mut body_visits, "fcstd product source bodies")? else {
+            let Some(body) = ctx.next_charged(&mut body_visits, "fcstd product source bodies")?
+            else {
                 break;
             };
             // The child label is one encoded segment after the payload key.
@@ -744,7 +767,9 @@ pub(crate) fn transfer_neutral(
         ctx.collection_vec(component_objects.len(), "fcstd product definitions")?;
     let mut definition_visits = component_objects.iter();
     while definition_visits.len() != 0 {
-        let Some(&object) = ctx.next_charged(&mut definition_visits, "fcstd product definition objects")? else {
+        let Some(&object) =
+            ctx.next_charged(&mut definition_visits, "fcstd product definition objects")?
+        else {
             break;
         };
         let record = ctx
@@ -799,7 +824,9 @@ pub(crate) fn transfer_neutral(
         )? {
             let mut body_visits = owned_bodies.iter();
             while body_visits.len() != 0 {
-                let Some(body) = ctx.next_charged(&mut body_visits, "fcstd product definition body records")? else {
+                let Some(body) =
+                    ctx.next_charged(&mut body_visits, "fcstd product definition body records")?
+                else {
                     break;
                 };
                 ctx.push_vec(
@@ -829,7 +856,9 @@ pub(crate) fn transfer_neutral(
 
     let mut container_visits = component_objects.iter();
     while container_visits.len() != 0 {
-        let Some(object) = ctx.next_charged(&mut container_visits, "fcstd product container objects")? else {
+        let Some(object) =
+            ctx.next_charged(&mut container_visits, "fcstd product container objects")?
+        else {
             break;
         };
         let record = ctx
@@ -877,7 +906,9 @@ pub(crate) fn transfer_neutral(
     let mut next_ordinal = HashMap::<Option<&str>, u32>::new();
     let mut ordinal_visits = occurrences.iter_mut();
     while ordinal_visits.len() != 0 {
-        let Some(occurrence) = ctx.next_charged(&mut ordinal_visits, "fcstd product ordinal occurrences")? else {
+        let Some(occurrence) =
+            ctx.next_charged(&mut ordinal_visits, "fcstd product ordinal occurrences")?
+        else {
             break;
         };
         let parent = match &occurrence.parent {
@@ -1698,7 +1729,9 @@ pub(crate) fn product_cycle_nodes<'a>(
     let mut reverse = BTreeMap::<&str, Vec<&str>>::new();
     let mut node_visits = nodes.iter();
     while node_visits.len() != 0 {
-        let Some((&source, _)) = ctx.next_charged(&mut node_visits, "fcstd product reverse nodes")? else {
+        let Some((&source, _)) =
+            ctx.next_charged(&mut node_visits, "fcstd product reverse nodes")?
+        else {
             break;
         };
         storage.with_storage(|| {
@@ -1712,12 +1745,16 @@ pub(crate) fn product_cycle_nodes<'a>(
     }
     let mut node_visits = nodes.iter();
     while node_visits.len() != 0 {
-        let Some((&source, node)) = ctx.next_charged(&mut node_visits, "fcstd product cycle nodes")? else {
+        let Some((&source, node)) =
+            ctx.next_charged(&mut node_visits, "fcstd product cycle nodes")?
+        else {
             break;
         };
         let mut targets = Vec::new();
         let mut member_visits = node.members().iter();
-        let mut prototype = node.prototype().filter(|_| node.external_document().is_none());
+        let mut prototype = node
+            .prototype()
+            .filter(|_| node.external_document().is_none());
         while member_visits.len() != 0 || prototype.is_some() {
             let target = if member_visits.len() != 0 {
                 ctx.next_charged(&mut member_visits, "fcstd product cycle members")?
@@ -1750,7 +1787,8 @@ pub(crate) fn product_cycle_nodes<'a>(
     let mut finish = Vec::new();
     let mut root_visits = nodes.iter();
     while root_visits.len() != 0 {
-        let Some((&root, _)) = ctx.next_charged(&mut root_visits, "fcstd product forward roots")? else {
+        let Some((&root, _)) = ctx.next_charged(&mut root_visits, "fcstd product forward roots")?
+        else {
             break;
         };
         if ctx.contains_hash_set(&visited, root, "fcstd product visited lookup")? {
@@ -1765,7 +1803,8 @@ pub(crate) fn product_cycle_nodes<'a>(
             let Some((current, exiting)) = ctx.next_charged(
                 &mut std::iter::from_fn(|| stack.pop()),
                 "fcstd product forward traversal",
-            )? else {
+            )?
+            else {
                 break;
             };
             if exiting {
@@ -1787,7 +1826,9 @@ pub(crate) fn product_cycle_nodes<'a>(
             {
                 let mut target_visits = targets.iter().rev();
                 while target_visits.len() != 0 {
-                    let Some(&target) = ctx.next_charged(&mut target_visits, "fcstd product forward edges")? else {
+                    let Some(&target) =
+                        ctx.next_charged(&mut target_visits, "fcstd product forward edges")?
+                    else {
                         break;
                     };
                     traversal_storage.with_storage(|| {
@@ -1819,7 +1860,8 @@ pub(crate) fn product_cycle_nodes<'a>(
             let Some(current) = ctx.next_charged(
                 &mut std::iter::from_fn(|| stack.pop()),
                 "fcstd product reverse traversal",
-            )? else {
+            )?
+            else {
                 break;
             };
             component_storage.with_storage(|| {
@@ -1830,7 +1872,9 @@ pub(crate) fn product_cycle_nodes<'a>(
             {
                 let mut source_visits = sources.iter();
                 while source_visits.len() != 0 {
-                    let Some(&source) = ctx.next_charged(&mut source_visits, "fcstd product reverse edges")? else {
+                    let Some(&source) =
+                        ctx.next_charged(&mut source_visits, "fcstd product reverse edges")?
+                    else {
                         break;
                     };
                     if storage.with_storage(|| {
@@ -1858,7 +1902,9 @@ pub(crate) fn product_cycle_nodes<'a>(
         if component.len() > 1 || self_cycle {
             let mut component_visits = component.iter();
             while component_visits.len() != 0 {
-                let Some(member) = ctx.next_charged(&mut component_visits, "fcstd product cyclic component")? else {
+                let Some(member) =
+                    ctx.next_charged(&mut component_visits, "fcstd product cyclic component")?
+                else {
                     break;
                 };
                 ctx.insert_btree_set(&mut cyclic, *member, "fcstd product cyclic nodes")?;

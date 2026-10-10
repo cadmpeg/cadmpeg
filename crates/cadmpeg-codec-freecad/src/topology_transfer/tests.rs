@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
-mod numeric_text;
-mod storage_transfer;
 mod connectivity_storage;
-mod source_indices;
+mod numeric_text;
 mod range_admission;
+mod source_indices;
+mod storage_transfer;
 use super::{
     bounded_pcurve_range, close_radial_rings, connected_components, edge_endpoint_uses,
     is_identity, normalize_occt_curve_range, normalize_pcurve_parameter_range, occurrence_label,
     pcurve_geometry, referenced_pcurve_ids, select_exact_curve_representation,
-    select_pcurve_representation, unique_fallback_polygon_representation,
-    IndexedPolygon, OccurrenceKey, SourceOccurrenceKey, Tables,
+    select_pcurve_representation, unique_fallback_polygon_representation, IndexedPolygon,
+    OccurrenceKey, SourceOccurrenceKey, Tables,
 };
 use crate::brep::{
-    surface_parameter_affine, TextCurve, TextCurve2d, TextEdgeRepresentation,
-    TextOrientation, TextShapeKind, TextShapeUse, TextSurface, TextTShapeGeometry,
+    surface_parameter_affine, TextCurve, TextCurve2d, TextEdgeRepresentation, TextOrientation,
+    TextShapeKind, TextShapeUse, TextSurface, TextTShapeGeometry,
 };
 use crate::test_support::test_archive::{archive_entries, assert_valid_document};
 use crate::FcstdCodec;
@@ -750,12 +750,20 @@ fn occt_parabola_ranges_convert_to_step_parameters() {
         .unwrap(),
     );
     assert_eq!(
-        normalize_occt_curve_range(&StandardAdmission, &geometry, Some(admitted_range([-2.0, 4.0])))
-            .expect("standard curve range walk").map(raw_range),
+        normalize_occt_curve_range(
+            &StandardAdmission,
+            &geometry,
+            Some(admitted_range([-2.0, 4.0]))
+        )
+        .expect("standard curve range walk")
+        .map(raw_range),
         Some([-0.25, 0.5])
     );
-    assert_eq!(normalize_occt_curve_range(&StandardAdmission, &geometry, None)
-        .expect("standard curve range walk"), None);
+    assert_eq!(
+        normalize_occt_curve_range(&StandardAdmission, &geometry, None)
+            .expect("standard curve range walk"),
+        None
+    );
 }
 
 #[test]
@@ -792,9 +800,13 @@ fn periodic_range_keeps_finite_endpoints_when_its_width_overflows() {
         .expect("finite circle"),
     );
     assert_eq!(
-        normalize_occt_curve_range(&StandardAdmission, &geometry, Some(admitted_range([-f64::MAX, f64::MAX])))
-            .expect("standard curve range walk")
-            .map(raw_range),
+        normalize_occt_curve_range(
+            &StandardAdmission,
+            &geometry,
+            Some(admitted_range([-f64::MAX, f64::MAX]))
+        )
+        .expect("standard curve range walk")
+        .map(raw_range),
         Some([-f64::MAX, f64::MAX])
     );
 }
@@ -923,8 +935,11 @@ fn indirect_analytic_frames_reverse_the_pcurve_u_parameter() {
         radius: cadmpeg_ir::scalar::FiniteReal::ONE,
         u_reversed: true,
     };
-    let affine = surface_parameter_affine(&cadmpeg_core::decode::admission::StandardAdmission, &surface)
-        .expect("standard surface parameter walk");
+    let affine = surface_parameter_affine(
+        &cadmpeg_core::decode::admission::StandardAdmission,
+        &surface,
+    )
+    .expect("standard surface parameter walk");
     assert_eq!(affine.u_scale, -1.0);
     assert_eq!(affine.v_scale, 1.0);
 
@@ -936,8 +951,9 @@ fn indirect_analytic_frames_reverse_the_pcurve_u_parameter() {
         half_angle: cadmpeg_ir::scalar::FiniteReal::new(std::f64::consts::FRAC_PI_3).unwrap(),
         u_reversed: true,
     };
-    let affine = surface_parameter_affine(&cadmpeg_core::decode::admission::StandardAdmission, &cone)
-        .expect("standard surface parameter walk");
+    let affine =
+        surface_parameter_affine(&cadmpeg_core::decode::admission::StandardAdmission, &cone)
+            .expect("standard surface parameter walk");
     assert_eq!(affine.u_scale, -1.0);
     assert!((affine.v_scale - 0.5).abs() < 1.0e-15);
 
@@ -946,8 +962,11 @@ fn indirect_analytic_frames_reverse_the_pcurve_u_parameter() {
             .map(|range| range.map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).unwrap())),
         basis: crate::brep::NestedSurface::try_new(cone).expect("one inline basis is admitted"),
     };
-    let affine = surface_parameter_affine(&cadmpeg_core::decode::admission::StandardAdmission, &trimmed)
-        .expect("standard surface parameter walk");
+    let affine = surface_parameter_affine(
+        &cadmpeg_core::decode::admission::StandardAdmission,
+        &trimmed,
+    )
+    .expect("standard surface parameter walk");
     assert_eq!(affine.u_scale, 1.0);
     assert_eq!(affine.u_offset, -2.0);
     assert!((affine.v_scale - 0.5).abs() < 1.0e-15);
@@ -1407,7 +1426,10 @@ fn repeated_shape_roots_without_element_map_keep_neutral_topology() {
 fn absent_element_map_skips_occurrence_only_work_and_storage() {
     let bytes = repeated_shape_roots_archive(false);
     for (dimension, operation) in [
-        (ResourceDimension::WorkUnits, "FreeCAD source topology roots"),
+        (
+            ResourceDimension::WorkUnits,
+            "FreeCAD source topology roots",
+        ),
         (
             ResourceDimension::WorkUnits,
             "FreeCAD topology occurrence property",
@@ -1698,9 +1720,13 @@ fn numerical_ranges_parabola_range_avoids_doubled_focal_overflow() {
             .unwrap(),
         );
         assert_eq!(
-            normalize_occt_curve_range(&StandardAdmission, &geometry, Some(admitted_range([-focal, focal])))
-                .expect("standard curve range walk")
-                .map(raw_range),
+            normalize_occt_curve_range(
+                &StandardAdmission,
+                &geometry,
+                Some(admitted_range([-focal, focal]))
+            )
+            .expect("standard curve range walk")
+            .map(raw_range),
             Some([-0.5, 0.5])
         );
     }

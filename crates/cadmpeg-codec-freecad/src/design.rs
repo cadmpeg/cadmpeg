@@ -93,12 +93,16 @@ pub(crate) fn transfer(
             }
             let (_property_id_storage, properties_by_id);
             (properties_by_id, _property_id_storage) = ctx.collect_scoped_btree_groups(
-                properties.iter().map(|property| (property.id.as_str(), property)),
+                properties
+                    .iter()
+                    .map(|property| (property.id.as_str(), property)),
                 "fcstd design property identity index",
             )?;
             let mut source = payloads.iter();
             while source.len() != 0 {
-                let Some(payload) = ctx.next_charged(&mut source, "fcstd design payload index inputs")? else {
+                let Some(payload) =
+                    ctx.next_charged(&mut source, "fcstd design payload index inputs")?
+                else {
                     break;
                 };
                 let Some(properties) = ctx.get_btree_map(
@@ -116,7 +120,9 @@ pub(crate) fn transfer(
                     })?;
                 let mut source = properties.iter();
                 while source.len() != 0 {
-                    let Some(property) = ctx.next_charged(&mut source, "fcstd design payload property owners")? else {
+                    let Some(property) =
+                        ctx.next_charged(&mut source, "fcstd design payload property owners")?
+                    else {
                         break;
                     };
                     if owner_storage.with_storage(|| {
@@ -145,7 +151,8 @@ pub(crate) fn transfer(
             let mut feature_ids = HashMap::new();
             let mut source = objects.iter();
             while source.len() != 0 {
-                let Some(object) = ctx.next_charged(&mut source, "fcstd design feature objects")? else {
+                let Some(object) = ctx.next_charged(&mut source, "fcstd design feature objects")?
+                else {
                     break;
                 };
                 if !is_design_object(&object.type_name) {
@@ -186,7 +193,9 @@ pub(crate) fn transfer(
                 };
                 let mut source = property.links().iter();
                 while source.len() != 0 {
-                    let Some(link) = ctx.next_charged(&mut source, "fcstd design body membership links")? else {
+                    let Some(link) =
+                        ctx.next_charged(&mut source, "fcstd design body membership links")?
+                    else {
                         break;
                     };
                     let Some(member) = link.as_ref().and_then(crate::native::LinkTarget::object)
@@ -209,7 +218,8 @@ pub(crate) fn transfer(
             let mut sketch_ids = HashMap::new();
             let mut source = objects.iter();
             while source.len() != 0 {
-                let Some(object) = ctx.next_charged(&mut source, "fcstd design sketch objects")? else {
+                let Some(object) = ctx.next_charged(&mut source, "fcstd design sketch objects")?
+                else {
                     break;
                 };
                 if !is_sketch(&object.type_name) {
@@ -239,7 +249,8 @@ pub(crate) fn transfer(
                 ctx.vector_storage(ir.model.bodies.len(), "fcstd design body ids")?;
             let mut source = ir.model.bodies.iter();
             while source.len() != 0 {
-                let Some(body) = ctx.next_charged(&mut source, "fcstd design body source ids")? else {
+                let Some(body) = ctx.next_charged(&mut source, "fcstd design body source ids")?
+                else {
                     break;
                 };
                 ctx.push_vec(&mut body_ids, &body.id, "fcstd design body ids")?;
@@ -248,8 +259,11 @@ pub(crate) fn transfer(
         })?;
     let (feature_ordinal_storage, feature_ordinals, mut cycle_affected);
     (feature_ordinals, cycle_affected, feature_ordinal_storage) = {
-        let ordering::FeatureOrdering { ordinals, cycle_affected, storage } =
-            ordering::feature_ordinals(ctx, objects, &properties_by_owner, &parent_by_member)?;
+        let ordering::FeatureOrdering {
+            ordinals,
+            cycle_affected,
+            storage,
+        } = ordering::feature_ordinals(ctx, objects, &properties_by_owner, &parent_by_member)?;
         (ordinals, cycle_affected, storage)
     };
     drop(parent_by_member);
@@ -260,7 +274,8 @@ pub(crate) fn transfer(
             let mut ordinal_by_feature = HashMap::new();
             let mut source = objects.iter();
             while source.len() != 0 {
-                let Some(object) = ctx.next_charged(&mut source, "fcstd design feature objects")? else {
+                let Some(object) = ctx.next_charged(&mut source, "fcstd design feature objects")?
+                else {
                     break;
                 };
                 if !is_design_object(&object.type_name) {
@@ -341,7 +356,9 @@ pub(crate) fn transfer(
                 ctx.insert_hash_map(
                     &mut sketch_ids,
                     object.id().as_str(),
-                    sketch.id.try_clone_for_decode(ctx, "fcstd design sketch index identity")?,
+                    sketch
+                        .id
+                        .try_clone_for_decode(ctx, "fcstd design sketch index identity")?,
                     "fcstd design sketch ids",
                 )
             })?;
@@ -350,7 +367,9 @@ pub(crate) fn transfer(
             } else {
                 FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
-                        sketch.id.try_clone_for_decode(ctx, "fcstd design sketch identity")?,
+                        sketch
+                            .id
+                            .try_clone_for_decode(ctx, "fcstd design sketch identity")?,
                     )),
                 })
             };
@@ -561,7 +580,8 @@ pub(crate) fn transfer(
         if let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) = &definition {
             let mut source = seeds.iter();
             while source.len() != 0 {
-                let Some(seed) = ctx.next_charged(&mut source, "fcstd design pattern seeds")? else {
+                let Some(seed) = ctx.next_charged(&mut source, "fcstd design pattern seeds")?
+                else {
                     break;
                 };
                 if let PatternSeed::Feature(feature) = seed {
@@ -593,7 +613,9 @@ pub(crate) fn transfer(
             let prefix = BodyOutputPrefix::new(ctx, payload)?;
             let mut source = body_ids.iter();
             while source.len() != 0 {
-                let Some(body) = ctx.next_charged(&mut source, "fcstd design body output candidates")? else {
+                let Some(body) =
+                    ctx.next_charged(&mut source, "fcstd design body output candidates")?
+                else {
                     break;
                 };
                 if !ctx.starts_with(
@@ -622,7 +644,9 @@ pub(crate) fn transfer(
             if !is_body(&object.type_name) {
                 let mut source = object.dependencies.iter();
                 while source.len() != 0 {
-                    let Some(dependency) = ctx.next_charged(&mut source, "fcstd design declared dependencies")? else {
+                    let Some(dependency) =
+                        ctx.next_charged(&mut source, "fcstd design declared dependencies")?
+                    else {
                         break;
                     };
                     ctx.push_scoped_vec(
@@ -635,12 +659,16 @@ pub(crate) fn transfer(
             }
             let mut source = owned.iter();
             while source.len() != 0 {
-                let Some(property) = ctx.next_charged(&mut source, "fcstd design dependency properties")? else {
+                let Some(property) =
+                    ctx.next_charged(&mut source, "fcstd design dependency properties")?
+                else {
                     break;
                 };
                 let mut source = property.links().iter();
                 while source.len() != 0 {
-                    let Some(link) = ctx.next_charged(&mut source, "fcstd design dependency links")? else {
+                    let Some(link) =
+                        ctx.next_charged(&mut source, "fcstd design dependency links")?
+                    else {
                         break;
                     };
                     let Some(dependency) =
@@ -662,7 +690,9 @@ pub(crate) fn transfer(
             let mut dependencies = Vec::new();
             let mut source = dependency_objects.iter();
             while source.len() != 0 {
-                let Some(&(dependency, declared)) = ctx.next_charged(&mut source, "fcstd design dependency candidate traversal")? else {
+                let Some(&(dependency, declared)) =
+                    ctx.next_charged(&mut source, "fcstd design dependency candidate traversal")?
+                else {
                     break;
                 };
                 if ctx.contains_btree_set(
@@ -705,7 +735,9 @@ pub(crate) fn transfer(
             }
             let mut source = semantic_dependencies.iter();
             while source.len() != 0 {
-                let Some(dependency) = ctx.next_charged(&mut source, "fcstd semantic dependency candidates")? else {
+                let Some(dependency) =
+                    ctx.next_charged(&mut source, "fcstd semantic dependency candidates")?
+                else {
                     break;
                 };
                 let duplicate = ctx
@@ -819,7 +851,8 @@ pub(crate) fn transfer(
     )?;
     let mut source = objects.iter();
     while source.len() != 0 {
-        let Some(object) = ctx.next_charged(&mut source, "fcstd design parameter cycle objects")? else {
+        let Some(object) = ctx.next_charged(&mut source, "fcstd design parameter cycle objects")?
+        else {
             break;
         };
         let (_object_feature_storage, object_feature);
@@ -881,8 +914,11 @@ impl<'ctx> BodyOutputPrefix<'ctx> {
         payload: &crate::brep::ShapePayloadRecord,
     ) -> Result<Self, CodecError> {
         let key = ctx
-            .position_by(payload.id.as_bytes(), |byte| Ok(*byte == b'#'),
-                "fcstd design body output identity key")?
+            .position_by(
+                payload.id.as_bytes(),
+                |byte| Ok(*byte == b'#'),
+                "fcstd design body output identity key",
+            )?
             .map_or(payload.id.as_str(), |index| &payload.id[index + 1..]);
         let (storage, text);
         (text, storage) = ctx.format_scoped(
@@ -1136,7 +1172,9 @@ fn append_operation_parameters(
     let mut owner = None;
     let mut source = properties.iter();
     while source.len() != 0 {
-        let Some(property) = ctx.next_charged(&mut source, "fcstd operation parameter properties")? else {
+        let Some(property) =
+            ctx.next_charged(&mut source, "fcstd operation parameter properties")?
+        else {
             break;
         };
         let property = *property;
@@ -1151,9 +1189,11 @@ fn append_operation_parameters(
         }
         let (owner, _owner_storage) = match &mut owner {
             Some(owner) => owner,
-            slot @ None => slot.insert(ctx.with_scoped_storage(
-                "fcstd operation parameter owner storage", || feature_id(ctx, object),
-            )?),
+            slot @ None => slot.insert(
+                ctx.with_scoped_storage("fcstd operation parameter owner storage", || {
+                    feature_id(ctx, object)
+                })?,
+            ),
         };
         if ctx.any_by(
             parameters.as_slice(),
@@ -1476,8 +1516,11 @@ fn external_link_key(
         return Ok(None);
     };
     let parent_key = ctx
-        .position_by(object.as_bytes(), |byte| Ok(*byte == b'#'),
-            "fcstd external link parent key")?
+        .position_by(
+            object.as_bytes(),
+            |byte| Ok(*byte == b'#'),
+            "fcstd external link parent key",
+        )?
         .map_or(object, |index| &object[index + 1..]);
     Ok(Some(ctx.join_retained(
         &[parent_key, subelement.as_str()],
@@ -1498,7 +1541,8 @@ fn external_link_indices(
         let mut source = references.links().iter();
         while source.len() != 0 {
             let index = references.links().len() - source.len();
-            let Some(reference) = ctx.next_charged(&mut source, "fcstd external link index")? else {
+            let Some(reference) = ctx.next_charged(&mut source, "fcstd external link index")?
+            else {
                 break;
             };
             let Some(key) = reference
@@ -1532,7 +1576,9 @@ fn sketch_attributes(
     if let Some(carrier) = carrier {
         let mut source = carrier.attributes();
         while source.len() != 0 {
-            let Some(attribute) = ctx.next_charged(&mut source, "FreeCAD sketch carrier attributes")? else {
+            let Some(attribute) =
+                ctx.next_charged(&mut source, "FreeCAD sketch carrier attributes")?
+            else {
                 break;
             };
             ctx.insert_btree_map(
@@ -1590,7 +1636,8 @@ fn parse_sketch(
         let mut source = records.iter();
         while source.len() != 0 {
             let index = records.len() - source.len();
-            let Some(node) = ctx.next_charged(&mut source, "FreeCAD sketch geometry records")? else {
+            let Some(node) = ctx.next_charged(&mut source, "FreeCAD sketch geometry records")?
+            else {
                 break;
             };
             let node = *node;
@@ -1620,7 +1667,9 @@ fn parse_sketch(
             let mut construction = false;
             let mut xml_nodes_10 = node.descendants();
             while xml_nodes_10.len() != 0 {
-                let Some(child) = ctx.next_charged(&mut xml_nodes_10, "FreeCAD design XML traversal")? else {
+                let Some(child) =
+                    ctx.next_charged(&mut xml_nodes_10, "FreeCAD design XML traversal")?
+                else {
                     break;
                 };
                 if ctx.xml_has_tag_name(child, "Construction", "FreeCAD design XML tag")? {
@@ -1705,7 +1754,9 @@ fn parse_sketch(
         let mut source = records.iter();
         while source.len() != 0 {
             let record_index = records.len() - source.len();
-            let Some(node) = ctx.next_charged(&mut source, "FreeCAD external sketch geometry records")? else {
+            let Some(node) =
+                ctx.next_charged(&mut source, "FreeCAD external sketch geometry records")?
+            else {
                 break;
             };
             if record_index < EXTERNAL_GEO_AXIS_COUNT {
@@ -1820,7 +1871,9 @@ fn parse_sketch(
         let mut source = references.links().iter();
         while source.len() != 0 {
             let external_index = references.links().len() - source.len();
-            let Some(reference) = ctx.next_charged(&mut source, "fcstd unmatched external links")? else {
+            let Some(reference) =
+                ctx.next_charged(&mut source, "fcstd unmatched external links")?
+            else {
                 break;
             };
             if ctx.contains_btree_set(
@@ -2035,7 +2088,8 @@ fn builtin_reference_usage(
     let document_root = ctx.xml_root_element(xml, "FreeCAD design XML root_element")?;
     let mut xml_nodes_11 = document_root.descendants();
     while xml_nodes_11.len() != 0 {
-        let Some(node) = ctx.next_charged(&mut xml_nodes_11, "FreeCAD design XML traversal")? else {
+        let Some(node) = ctx.next_charged(&mut xml_nodes_11, "FreeCAD design XML traversal")?
+        else {
             break;
         };
         if !ctx.xml_has_tag_name(node, "Constrain", "FreeCAD design XML tag")? {
@@ -2275,7 +2329,9 @@ fn sketch_nurbs_lanes(
     let mut expanded_count = 0_usize;
     let mut source = knots.iter();
     while source.len() != 0 {
-        let Some((_, multiplicity)) = ctx.next_charged(&mut source, "fcstd sketch NURBS expanded knot count")? else {
+        let Some((_, multiplicity)) =
+            ctx.next_charged(&mut source, "fcstd sketch NURBS expanded knot count")?
+        else {
             break;
         };
         let Some(next) = expanded_count.checked_add(*multiplicity) else {
@@ -2301,12 +2357,15 @@ fn sketch_nurbs_lanes(
     let mut full_knots = ctx.vector_storage(expanded_count, "fcstd sketch NURBS expanded knots")?;
     let mut source = knots.iter();
     while source.len() != 0 {
-        let Some((value, multiplicity)) = ctx.next_charged(&mut source, "fcstd sketch NURBS knot expansion")? else {
+        let Some((value, multiplicity)) =
+            ctx.next_charged(&mut source, "fcstd sketch NURBS knot expansion")?
+        else {
             break;
         };
         let mut source = 0..*multiplicity;
         while source.len() != 0 {
-            let Some(_) = ctx.next_charged(&mut source, "fcstd sketch NURBS knot repetition")? else {
+            let Some(_) = ctx.next_charged(&mut source, "fcstd sketch NURBS knot repetition")?
+            else {
                 break;
             };
             ctx.push_vec(&mut full_knots, *value, "fcstd sketch NURBS expanded knots")?;
@@ -2317,7 +2376,9 @@ fn sketch_nurbs_lanes(
         .with_storage(|| ctx.vector_storage(pole_count, "fcstd sketch NURBS weights"))?;
     let mut source = poles.iter();
     while source.len() != 0 {
-        let Some((point, weight)) = ctx.next_charged(&mut source, "fcstd sketch NURBS pole lanes")? else {
+        let Some((point, weight)) =
+            ctx.next_charged(&mut source, "fcstd sketch NURBS pole lanes")?
+        else {
             break;
         };
         ctx.push_vec(
@@ -2337,7 +2398,9 @@ fn sketch_nurbs_lanes(
         let mut converted = ctx.vector_storage(pole_count, "fcstd sketch NURBS nonzero weights")?;
         let mut source = weights.iter();
         while source.len() != 0 {
-            let Some(weight) = ctx.next_charged(&mut source, "fcstd sketch NURBS nonzero weights")? else {
+            let Some(weight) =
+                ctx.next_charged(&mut source, "fcstd sketch NURBS nonzero weights")?
+            else {
                 break;
             };
             ctx.push_vec(
@@ -2466,7 +2529,8 @@ fn feature_state(
     let mut state = BTreeMap::new();
     let mut source = properties.iter();
     while source.len() != 0 {
-        let Some(property) = ctx.next_charged(&mut source, "fcstd feature state properties")? else {
+        let Some(property) = ctx.next_charged(&mut source, "fcstd feature state properties")?
+        else {
             break;
         };
         if !STATE_NAMES.contains(&property.name.as_str()) {
@@ -2731,14 +2795,19 @@ fn parse_constraints(
         let mut source = operands.iter();
         while source.len() != 0 {
             let operand_index = operands.len() - source.len();
-            let Some(&(entity, position)) = ctx.next_charged(&mut source, "fcstd resolved constraint operands")? else {
+            let Some(&(entity, position)) =
+                ctx.next_charged(&mut source, "fcstd resolved constraint operands")?
+            else {
                 break;
             };
             let locus = resolved_storage.with_storage(|| resolve(entity, position))?;
             if entity >= 0 && locus.is_none() {
                 resolved_storage.with_storage(|| {
-                    ctx.push_vec(&mut unresolved_positive_operands, operand_index,
-                        "fcstd native operand candidates")
+                    ctx.push_vec(
+                        &mut unresolved_positive_operands,
+                        operand_index,
+                        "fcstd native operand candidates",
+                    )
                 })?;
             }
             if let Some(locus) = locus {
@@ -3010,11 +3079,15 @@ fn parse_constraints(
             let mut source = operands.iter();
             while source.len() != 0 {
                 let operand_index = operands.len() - source.len();
-                let Some(&(entity, position)) = ctx.next_charged(&mut source, "fcstd native constraint operands")? else {
+                let Some(&(entity, position)) =
+                    ctx.next_charged(&mut source, "fcstd native constraint operands")?
+                else {
                     break;
                 };
                 if entity >= 0 {
-                    if unresolved_positive_operands.get(unresolved_index).copied() != Some(operand_index) {
+                    if unresolved_positive_operands.get(unresolved_index).copied()
+                        != Some(operand_index)
+                    {
                         continue;
                     }
                     unresolved_index += 1;
@@ -3052,7 +3125,9 @@ fn parse_constraints(
                 ctx.vector_storage(resolved.len(), "fcstd native constraint entities")?;
             let mut source = resolved.iter();
             while source.len() != 0 {
-                let Some(locus) = ctx.next_charged(&mut source, "fcstd native constraint entities")? else {
+                let Some(locus) =
+                    ctx.next_charged(&mut source, "fcstd native constraint entities")?
+                else {
                     break;
                 };
                 ctx.push_vec(
@@ -3373,7 +3448,9 @@ fn neutral_constraint(
             let mut entities = ctx.vector_storage(loci.len(), "fcstd constraint entity copies")?;
             let mut source = loci.iter();
             while source.len() != 0 {
-                let Some(locus) = ctx.next_charged(&mut source, "fcstd constraint entity copies")? else {
+                let Some(locus) =
+                    ctx.next_charged(&mut source, "fcstd constraint entity copies")?
+                else {
                     break;
                 };
                 ctx.push_vec(
@@ -3586,10 +3663,13 @@ fn constraint_operands(
             let mut ids = ids_values.iter();
             let mut positions = positions_values.iter();
             while ids.len() != 0 {
-                let Some(&entity) = ctx.next_charged(&mut ids, "fcstd constraint entity values")? else {
+                let Some(&entity) = ctx.next_charged(&mut ids, "fcstd constraint entity values")?
+                else {
                     break;
                 };
-                let Some(&position) = ctx.next_charged(&mut positions, "fcstd constraint position values")? else {
+                let Some(&position) =
+                    ctx.next_charged(&mut positions, "fcstd constraint position values")?
+                else {
                     return Err(malformed_design(
                         ctx,
                         format_args!("ElementIds and ElementPositions counts differ"),
@@ -3759,12 +3839,14 @@ fn split_ints(ctx: &DecodeContext<'_>, value: &str) -> Result<Vec<i64>, CodecErr
     let mut values = Vec::new();
     let mut remaining = value;
     loop {
-        let (group, rest) =
-            match ctx.position_by(remaining.as_bytes(), |byte| Ok(*byte == b','),
-                "fcstd constraint integer list groups")? {
-                Some(index) => (&remaining[..index], Some(&remaining[index + 1..])),
-                None => (remaining, None),
-            };
+        let (group, rest) = match ctx.position_by(
+            remaining.as_bytes(),
+            |byte| Ok(*byte == b','),
+            "fcstd constraint integer list groups",
+        )? {
+            Some(index) => (&remaining[..index], Some(&remaining[index + 1..])),
+            None => (remaining, None),
+        };
         if ctx
             .trim_text(group, "fcstd constraint integer list group")?
             .is_empty()
@@ -6381,7 +6463,8 @@ fn native_parameters(
     let mut parameters = BTreeMap::new();
     let mut source = properties.iter();
     while source.len() != 0 {
-        let Some(property) = ctx.next_charged(&mut source, "fcstd native parameter properties")? else {
+        let Some(property) = ctx.next_charged(&mut source, "fcstd native parameter properties")?
+        else {
             break;
         };
         let Some(value) = scalar_text(ctx, property, |ctx, text| {
@@ -7002,7 +7085,9 @@ fn sweep_definition(
         let mut sections = ctx.vector_storage(profiles.len(), "fcstd solid sweep sections")?;
         let mut source = profiles.into_iter();
         while source.len() != 0 {
-            let Some(profile) = ctx.next_charged(&mut source, "fcstd solid sweep section sources")? else {
+            let Some(profile) =
+                ctx.next_charged(&mut source, "fcstd solid sweep section sources")?
+            else {
                 break;
             };
             let planar = profile.into_planar(
@@ -7025,7 +7110,9 @@ fn sweep_definition(
         let mut sections = ctx.vector_storage(profiles.len(), "fcstd sheet sweep sections")?;
         let mut source = profiles.into_iter();
         while source.len() != 0 {
-            let Some(profile) = ctx.next_charged(&mut source, "fcstd sheet sweep section sources")? else {
+            let Some(profile) =
+                ctx.next_charged(&mut source, "fcstd sheet sweep section sources")?
+            else {
                 break;
             };
             let planar = profile.into_planar(
@@ -7325,7 +7412,8 @@ fn freecad_program_version(
     let mut offset = 0_usize;
     let mut characters = value.chars();
     while !characters.as_str().is_empty() {
-        let Some(character) = ctx.next_charged(&mut characters, "fcstd program version scan")? else {
+        let Some(character) = ctx.next_charged(&mut characters, "fcstd program version scan")?
+        else {
             break;
         };
         if character.is_ascii_digit() || character == '.' {
@@ -7933,8 +8021,7 @@ fn pattern_definition(
         (seeds, storage) = selected_seeds;
         (PatternSeedCandidates::Owned(seeds), storage)
     } else {
-        let Some(feature) = predecessors.get(owner, "fcstd implicit body predecessor")?
-        else {
+        let Some(feature) = predecessors.get(owner, "fcstd implicit body predecessor")? else {
             return Ok(None);
         };
         let mut storage = ctx.reserve_scoped(0, "fcstd implicit pattern seed storage")?;
@@ -7948,67 +8035,68 @@ fn pattern_definition(
         (PatternSeedCandidates::Borrowed(seeds), storage)
     };
 
-    let pattern =
-        if kind.ends_with("MultiTransform") {
-            let Some(transformations) = property(ctx, properties, "Transformations")? else {
-                return Ok(None);
-            };
-            if transformations.links().is_empty() {
-                return Ok(None);
-            }
-            let mut stages =
-                ctx.vector_storage(transformations.links().len(), "freecad pattern stages")?;
-            let mut source = transformations.links().iter();
-            while source.len() != 0 {
-                let Some(link) = ctx.next_charged(&mut source, "fcstd pattern transformation links")? else {
-                    break;
-                };
-                let Some(target) = link.as_ref().and_then(|link| link.object()) else {
-                    return Ok(None);
-                };
-                let Some(object) =
-                    object_by_id.get(target, "fcstd pattern stage object lookup")?
-                else {
-                    return Ok(None);
-                };
-                let Some(owned) = ctx.get_btree_map(
-                    properties_by_owner,
-                    target,
-                    "fcstd pattern transformation properties",
-                )?
-                else {
-                    return Ok(None);
-                };
-                let Some(pattern) = pattern_kind::<
-                    cadmpeg_ir::features::patterns::NoNestedComposite,
-                >(ctx, &object.type_name, owned, sources)?
-                else {
-                    return Ok(None);
-                };
-                ctx.push_vec(
-                    &mut stages,
-                    PatternStage {
-                        pattern: Box::new(pattern),
-                    },
-                    "freecad pattern stages",
-                )?;
-            }
-            let Some(pattern) = cadmpeg_ir::features::patterns::CompositePattern::new(stages).ok()
-            else {
-                return Ok(None);
-            };
-            let Some(pattern) =
-                PatternKind::new(PatternTransform::Composite { stages: pattern }).ok()
-            else {
-                return Ok(None);
-            };
-            pattern
-        } else {
-            let Some(pattern) = pattern_kind(ctx, kind, properties, sources)? else {
-                return Ok(None);
-            };
-            pattern
+    let pattern = if kind.ends_with("MultiTransform") {
+        let Some(transformations) = property(ctx, properties, "Transformations")? else {
+            return Ok(None);
         };
+        if transformations.links().is_empty() {
+            return Ok(None);
+        }
+        let mut stages =
+            ctx.vector_storage(transformations.links().len(), "freecad pattern stages")?;
+        let mut source = transformations.links().iter();
+        while source.len() != 0 {
+            let Some(link) = ctx.next_charged(&mut source, "fcstd pattern transformation links")?
+            else {
+                break;
+            };
+            let Some(target) = link.as_ref().and_then(|link| link.object()) else {
+                return Ok(None);
+            };
+            let Some(object) = object_by_id.get(target, "fcstd pattern stage object lookup")?
+            else {
+                return Ok(None);
+            };
+            let Some(owned) = ctx.get_btree_map(
+                properties_by_owner,
+                target,
+                "fcstd pattern transformation properties",
+            )?
+            else {
+                return Ok(None);
+            };
+            let Some(pattern) = pattern_kind::<cadmpeg_ir::features::patterns::NoNestedComposite>(
+                ctx,
+                &object.type_name,
+                owned,
+                sources,
+            )?
+            else {
+                return Ok(None);
+            };
+            ctx.push_vec(
+                &mut stages,
+                PatternStage {
+                    pattern: Box::new(pattern),
+                },
+                "freecad pattern stages",
+            )?;
+        }
+        let Some(pattern) = cadmpeg_ir::features::patterns::CompositePattern::new(stages).ok()
+        else {
+            return Ok(None);
+        };
+        let Some(pattern) = PatternKind::new(PatternTransform::Composite { stages: pattern }).ok()
+        else {
+            return Ok(None);
+        };
+        pattern
+    } else {
+        let Some(pattern) = pattern_kind(ctx, kind, properties, sources)? else {
+            return Ok(None);
+        };
+        pattern
+    };
     let pattern_seeds = match seeds {
         PatternSeedCandidates::Borrowed(seeds) => {
             let mut output = ctx.vector_storage(seeds.len(), "fcstd pattern seed variants")?;
@@ -8019,17 +8107,22 @@ fn pattern_definition(
             };
             let mut source = seeds.into_iter();
             while source.len() != 0 {
-                let Some(seed) = ctx.next_charged(&mut source, "fcstd selected pattern seed candidates")? else {
+                let Some(seed) =
+                    ctx.next_charged(&mut source, "fcstd selected pattern seed candidates")?
+                else {
                     break;
                 };
-                ctx.push_vec(&mut output,
+                ctx.push_vec(
+                    &mut output,
                     PatternSeed::Feature(seed.try_clone_for_decode(ctx, identity_operation)?),
-                    "fcstd pattern seed variants")?;
+                    "fcstd pattern seed variants",
+                )?;
             }
             output
         }
         PatternSeedCandidates::Owned(seeds) => ctx.collect_vec(
-            seeds.into_iter().map(PatternSeed::Feature), "fcstd pattern seed variants",
+            seeds.into_iter().map(PatternSeed::Feature),
+            "fcstd pattern seed variants",
         )?,
     };
     Ok(Some(FeatureDefinition::Operation(
@@ -8052,7 +8145,8 @@ fn multi_transform_stage_seeds<'ctx>(
         return Err(CodecError::ResourceLimit(limit));
     }
     while consumers.len() != 0 {
-        let Some(consumer) = ctx.next_charged(&mut consumers, "fcstd multi-transform consumers")? else {
+        let Some(consumer) = ctx.next_charged(&mut consumers, "fcstd multi-transform consumers")?
+        else {
             break;
         };
         let Some(owned) = ctx.get_btree_map(
@@ -8124,7 +8218,9 @@ fn multi_transform_stage_seeds<'ctx>(
         let mut seeds = Vec::new();
         let mut source = selected.iter();
         while source.len() != 0 {
-            let Some(feature) = ctx.next_charged(&mut source, "fcstd multi-transform source seeds")? else {
+            let Some(feature) =
+                ctx.next_charged(&mut source, "fcstd multi-transform source seeds")?
+            else {
                 break;
             };
             let feature =
@@ -8312,7 +8408,8 @@ fn pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(
                 ctx.vector_storage(angles.len(), "fcstd circular pattern angles")?;
             let mut source = angles.iter();
             while source.len() != 0 {
-                let Some(angle) = ctx.next_charged(&mut source, "fcstd circular pattern angles")? else {
+                let Some(angle) = ctx.next_charged(&mut source, "fcstd circular pattern angles")?
+                else {
                     break;
                 };
                 let Some(angle) = cadmpeg_ir::scalar::Angle::new(angle.get().to_radians()) else {
@@ -8505,7 +8602,9 @@ fn pattern_locations(
                         ctx.vector_storage(interval_count, "freecad pattern intervals")?;
                     let mut source = 0..interval_count;
                     while source.len() != 0 {
-                        let Some(index) = ctx.next_charged(&mut source, "freecad pattern intervals")? else {
+                        let Some(index) =
+                            ctx.next_charged(&mut source, "freecad pattern intervals")?
+                        else {
                             break;
                         };
                         let explicit = spacings
@@ -8542,7 +8641,9 @@ fn pattern_locations(
     let mut location = FiniteReal::ZERO;
     let mut source = intervals.iter();
     while source.len() != 0 {
-        let Some(interval) = ctx.next_charged(&mut source, "freecad pattern location integration")? else {
+        let Some(interval) =
+            ctx.next_charged(&mut source, "freecad pattern location integration")?
+        else {
             break;
         };
         let Some(interval) = cadmpeg_ir::scalar::PositiveReal::from_finite(*interval) else {
@@ -8986,9 +9087,12 @@ fn design_identity_text(
     ctx.format_retained(
         format_args!(
             "fcstd:design:{kind}#{}{tail}",
-            ctx.position_by(object.id().as_bytes(), |byte| Ok(*byte == b'#'),
-                "fcstd design object identity key")?
-                .map_or(object.id().as_str(), |index| &object.id()[index + 1..])
+            ctx.position_by(
+                object.id().as_bytes(),
+                |byte| Ok(*byte == b'#'),
+                "fcstd design object identity key"
+            )?
+            .map_or(object.id().as_str(), |index| &object.id()[index + 1..])
         ),
         operation,
     )
@@ -9274,7 +9378,9 @@ pub(crate) fn census(
             let mut features_by_native = HashMap::new();
             let mut source = features.iter();
             while source.len() != 0 {
-                let Some(feature) = ctx.next_charged(&mut source, "FreeCAD design census feature records")? else {
+                let Some(feature) =
+                    ctx.next_charged(&mut source, "FreeCAD design census feature records")?
+                else {
                     break;
                 };
                 if let Some(native_ref) = feature.native_ref.as_deref() {

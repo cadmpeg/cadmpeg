@@ -57,16 +57,24 @@ fn empty_orchestration_paths_preserve_a_fused_refusal() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    assert!(crate::validate_native(&ctx, &ir).expect("no native namespace").is_empty());
-    assert!(crate::first_difference(&ctx, &[] as &[u8], &[], "empty comparison")
-        .expect("empty comparison").is_none());
+    assert!(crate::validate_native(&ctx, &ir)
+        .expect("no native namespace")
+        .is_empty());
+    assert!(
+        crate::first_difference(&ctx, &[] as &[u8], &[], "empty comparison")
+            .expect("empty comparison")
+            .is_none()
+    );
     crate::bind_gui_entry_references(&ctx, &mut entries, &gui).expect("empty binding");
     assert!(crate::semantic_losses(&ctx, &ir, &affected, Vec::new())
-        .expect("no semantic sources").is_empty());
-    let CodecError::ResourceLimit(original) = ctx.charge_work(1, "prior orchestration refusal")
-        .expect_err("work limit") else {
-            panic!("resource refusal")
-        };
+        .expect("no semantic sources")
+        .is_empty());
+    let CodecError::ResourceLimit(original) = ctx
+        .charge_work(1, "prior orchestration refusal")
+        .expect_err("work limit")
+    else {
+        panic!("resource refusal")
+    };
     for result in [
         crate::validate_native(&ctx, &ir).map(|_| ()),
         crate::first_difference(&ctx, &[] as &[u8], &[], "empty comparison").map(|_| ()),
@@ -81,19 +89,33 @@ fn gui_property(side_entries: Vec<String>) -> crate::native::GuiPropertyRecord {
     crate::native::GuiPropertyRecord {
         id: "fcstd:gui:property#Owner:Data".into(),
         owner: "fcstd:gui:view-provider#Owner".into(),
-        name: "Data".into(), type_name: "App::PropertyFileIncluded".into(),
-        status: None, order: 0, values: Vec::new(), side_entries,
+        name: "Data".into(),
+        type_name: "App::PropertyFileIncluded".into(),
+        status: None,
+        order: 0,
+        values: Vec::new(),
+        side_entries,
         xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0).expect("XML span"),
     }
 }
 
 #[test]
 fn gui_binding_without_side_references_skips_the_entry_index() {
-    let mut entries: Vec<_> = (0..128).map(|index| crate::test_support::entry_record(
-        format!("fcstd:native:entry#Data{index}.bin"), format!("Data{index}.bin"),
-        cadmpeg_core::container::ContainerRole::Auxiliary, Vec::new(), Vec::new(),
-    )).collect();
-    let gui = crate::gui::Graph { properties: vec![gui_property(Vec::new())], ..Default::default() };
+    let mut entries: Vec<_> = (0..128)
+        .map(|index| {
+            crate::test_support::entry_record(
+                format!("fcstd:native:entry#Data{index}.bin"),
+                format!("Data{index}.bin"),
+                cadmpeg_core::container::ContainerRole::Auxiliary,
+                Vec::new(),
+                Vec::new(),
+            )
+        })
+        .collect();
+    let gui = crate::gui::Graph {
+        properties: vec![gui_property(Vec::new())],
+        ..Default::default()
+    };
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 1;
@@ -106,29 +128,40 @@ fn gui_binding_without_side_references_skips_the_entry_index() {
     assert_eq!(ctx.resource_refusal(), None);
 
     let gui = crate::gui::Graph {
-        properties: vec![gui_property(vec![entries[0].name().into()])], ..Default::default()
+        properties: vec![gui_property(vec![entries[0].name().into()])],
+        ..Default::default()
     };
     crate::test_support::assert_collection_refusal_at(&[], "FCStd GUI entry references", |ctx| {
         let mut entries = entries.clone();
         crate::bind_gui_entry_references(ctx, &mut entries, &gui)
     });
     crate::test_support::with_service_context(&[], |ctx| {
-        crate::bind_gui_entry_references(ctx, &mut entries, &gui).expect("real side-reference consumer");
+        crate::bind_gui_entry_references(ctx, &mut entries, &gui)
+            .expect("real side-reference consumer");
     });
     assert_eq!(entries[0].referenced_by(), [gui.properties[0].id.as_str()]);
-    assert!(entries[1..].iter().all(|entry| entry.referenced_by().is_empty()));
+    assert!(entries[1..]
+        .iter()
+        .all(|entry| entry.referenced_by().is_empty()));
 }
 
 #[test]
 fn empty_logical_ledger_skips_entry_and_owner_indexes() {
     let entries = [crate::test_support::entry_record(
-        "fcstd:native:entry#Empty.bin".into(), "Empty.bin".into(),
-        cadmpeg_core::container::ContainerRole::Auxiliary, Vec::new(), Vec::new(),
+        "fcstd:native:entry#Empty.bin".into(),
+        "Empty.bin".into(),
+        cadmpeg_core::container::ContainerRole::Auxiliary,
+        Vec::new(),
+        Vec::new(),
     )];
     let properties: Vec<_> = (0..128).map(|_| gui_property(Vec::new())).collect();
     let owners = crate::LedgerOwners {
-        entries: &entries, gui_properties: &properties, gui_documents: &[],
-        shape_payloads: &[], string_tables: &[], element_maps: &[],
+        entries: &entries,
+        gui_properties: &properties,
+        gui_documents: &[],
+        shape_payloads: &[],
+        string_tables: &[],
+        element_maps: &[],
     };
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -141,10 +174,12 @@ fn empty_logical_ledger_skips_entry_and_owner_indexes() {
     crate::validate_logical_ledger(&ctx, &[], &owners, &HashSet::new(), &mut findings)
         .expect("no ledger index consumer");
     assert!(findings.is_empty());
-    let CodecError::ResourceLimit(original) = ctx.charge_work(1, "prior ledger refusal")
-        .expect_err("work limit") else {
-            panic!("resource refusal")
-        };
+    let CodecError::ResourceLimit(original) = ctx
+        .charge_work(1, "prior ledger refusal")
+        .expect_err("work limit")
+    else {
+        panic!("resource refusal")
+    };
     assert!(matches!(crate::validate_logical_ledger(
         &ctx, &[], &owners, &HashSet::new(), &mut findings,
     ), Err(CodecError::ResourceLimit(repeated)) if repeated == original));
@@ -153,51 +188,85 @@ fn empty_logical_ledger_skips_entry_and_owner_indexes() {
 #[test]
 fn logical_ledger_releases_a_consumed_group_before_the_larger_sort() {
     let counts = [128_usize, 1024];
-    let entries: Vec<_> = ["A.bin", "B.bin"].into_iter().zip(counts).map(|(name, count)| {
-        crate::test_support::entry_record(
-            format!("fcstd:native:entry#{name}"), name.into(),
-            cadmpeg_core::container::ContainerRole::Auxiliary, Vec::new(), vec![0; count],
-        )
-    }).collect();
-    let spans: Vec<_> = entries.iter().zip(counts).flat_map(|(entry, count)| {
-        (0..count).rev().map(move |index| crate::native::LogicalSpan {
-            id: format!("fcstd:native:logical#{}:{index}", entry.name()),
-            entry: entry.name().into(),
-            span: crate::native::ByteSpan::try_new(
-                cadmpeg_core::decode::u64_from_index(index),
-                cadmpeg_core::decode::u64_from_index(index + 1),
-            ).expect("nonempty interval"),
-            classification: crate::native::LogicalClassification::Structural,
+    let entries: Vec<_> = ["A.bin", "B.bin"]
+        .into_iter()
+        .zip(counts)
+        .map(|(name, count)| {
+            crate::test_support::entry_record(
+                format!("fcstd:native:entry#{name}"),
+                name.into(),
+                cadmpeg_core::container::ContainerRole::Auxiliary,
+                Vec::new(),
+                vec![0; count],
+            )
         })
-    }).collect();
+        .collect();
+    let spans: Vec<_> = entries
+        .iter()
+        .zip(counts)
+        .flat_map(|(entry, count)| {
+            (0..count)
+                .rev()
+                .map(move |index| crate::native::LogicalSpan {
+                    id: format!("fcstd:native:logical#{}:{index}", entry.name()),
+                    entry: entry.name().into(),
+                    span: crate::native::ByteSpan::try_new(
+                        cadmpeg_core::decode::u64_from_index(index),
+                        cadmpeg_core::decode::u64_from_index(index + 1),
+                    )
+                    .expect("nonempty interval"),
+                    classification: crate::native::LogicalClassification::Structural,
+                })
+        })
+        .collect();
     // Core allocation operations define the live index storage. The larger
     // group then holds one reference buffer and two usize sort buffers. The
     // earlier group has already released its buffer; map nodes remain live.
     let index_bytes = crate::test_support::with_service_context(&[], |ctx| {
-        let mut storage = ctx.reserve_scoped(0, "ledger index oracle").expect("storage");
-        let _lengths = storage.with_storage(|| ctx.collect_hash_map(
-            entries.iter().map(|entry| (entry.name(), entry.byte_len())), "ledger lengths oracle",
-        )).expect("entry lengths");
-        let _groups = ctx.collect_scoped_btree_map(
-            entries.iter().map(|entry| (entry.name(), None::<crate::LedgerSpanGroup<'_, '_>>)),
-            "ledger groups oracle",
-        ).expect("group tree");
-        let CodecError::ResourceLimit(limit) = ctx.reserve_scoped(u64::MAX, "measure ledger indexes")
-            .err().expect("materialized overflow") else {
-                panic!("materialized refusal")
-            };
+        let mut storage = ctx
+            .reserve_scoped(0, "ledger index oracle")
+            .expect("storage");
+        let _lengths = storage
+            .with_storage(|| {
+                ctx.collect_hash_map(
+                    entries.iter().map(|entry| (entry.name(), entry.byte_len())),
+                    "ledger lengths oracle",
+                )
+            })
+            .expect("entry lengths");
+        let _groups = ctx
+            .collect_scoped_btree_map(
+                entries
+                    .iter()
+                    .map(|entry| (entry.name(), None::<crate::LedgerSpanGroup<'_, '_>>)),
+                "ledger groups oracle",
+            )
+            .expect("group tree");
+        let CodecError::ResourceLimit(limit) = ctx
+            .reserve_scoped(u64::MAX, "measure ledger indexes")
+            .err()
+            .expect("materialized overflow")
+        else {
+            panic!("materialized refusal")
+        };
         limit.used
     });
     let owners = crate::LedgerOwners {
-        entries: &entries, gui_properties: &[], gui_documents: &[], shape_payloads: &[],
-        string_tables: &[], element_maps: &[],
+        entries: &entries,
+        gui_properties: &[],
+        gui_documents: &[],
+        shape_payloads: &[],
+        string_tables: &[],
+        element_maps: &[],
     };
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = index_bytes + cadmpeg_core::decode::u64_from_index(
-        counts[1] * (std::mem::size_of::<&crate::native::LogicalSpan>()
-            + 2 * std::mem::size_of::<usize>()),
-    );
+    policy.limits.max_materialized_bytes = index_bytes
+        + cadmpeg_core::decode::u64_from_index(
+            counts[1]
+                * (std::mem::size_of::<&crate::native::LogicalSpan>()
+                    + 2 * std::mem::size_of::<usize>()),
+        );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     let mut findings = Vec::new();
     crate::validate_logical_ledger(&ctx, &spans, &owners, &HashSet::new(), &mut findings)
@@ -210,34 +279,62 @@ fn logical_ledger_releases_a_consumed_group_before_the_larger_sort() {
 fn structural_ledger_and_property_owners_skip_unused_owner_indexes() {
     use crate::native::{ByteSpan, LogicalClassification, LogicalSpan, StringTableRecord};
     let entries = [crate::test_support::entry_record(
-        "fcstd:native:entry#A.bin".into(), "A.bin".into(),
-        cadmpeg_core::container::ContainerRole::Auxiliary, Vec::new(), vec![0],
+        "fcstd:native:entry#A.bin".into(),
+        "A.bin".into(),
+        cadmpeg_core::container::ContainerRole::Auxiliary,
+        Vec::new(),
+        vec![0],
     )];
     let properties: Vec<_> = (0..128).map(|_| gui_property(Vec::new())).collect();
-    let tables: Vec<_> = (0..128).map(|index| StringTableRecord::try_new(
-        index, None, false, 0, None, Vec::new(),
-    ).expect("table")).collect();
+    let tables: Vec<_> = (0..128)
+        .map(|index| {
+            StringTableRecord::try_new(index, None, false, 0, None, Vec::new()).expect("table")
+        })
+        .collect();
     let owners = crate::LedgerOwners {
-        entries: &entries, gui_properties: &properties, gui_documents: &[],
-        shape_payloads: &[], string_tables: &tables, element_maps: &[],
+        entries: &entries,
+        gui_properties: &properties,
+        gui_documents: &[],
+        shape_payloads: &[],
+        string_tables: &tables,
+        element_maps: &[],
     };
     let empty_owners = crate::LedgerOwners {
-        entries: &entries, gui_properties: &[], gui_documents: &[],
-        shape_payloads: &[], string_tables: &[], element_maps: &[],
+        entries: &entries,
+        gui_properties: &[],
+        gui_documents: &[],
+        shape_payloads: &[],
+        string_tables: &[],
+        element_maps: &[],
     };
     let property_ids = HashSet::from(["fcstd:native:property#A:Shape"]);
-    for classification in [LogicalClassification::Structural, LogicalClassification::Typed {
-        owner: "fcstd:native:property#A:Shape".into(),
-    }] {
+    for classification in [
+        LogicalClassification::Structural,
+        LogicalClassification::Typed {
+            owner: "fcstd:native:property#A:Shape".into(),
+        },
+    ] {
         let logical = [LogicalSpan {
-            id: "fcstd:native:logical#A.bin:0".into(), entry: "A.bin".into(),
-            span: ByteSpan::try_new(0, 1).expect("span"), classification,
+            id: "fcstd:native:logical#A.bin:0".into(),
+            entry: "A.bin".into(),
+            span: ByteSpan::try_new(0, 1).expect("span"),
+            classification,
         }];
         let budget = crate::test_support::with_service_context(&[], |ctx| {
-            crate::validate_logical_ledger(ctx, &logical, &empty_owners, &property_ids, &mut Vec::new())
-                .expect("short owner oracle");
-            let CodecError::ResourceLimit(limit) = ctx.charge_work(u64::MAX, "measure ledger work")
-                .expect_err("work overflow") else { panic!("work refusal") };
+            crate::validate_logical_ledger(
+                ctx,
+                &logical,
+                &empty_owners,
+                &property_ids,
+                &mut Vec::new(),
+            )
+            .expect("short owner oracle");
+            let CodecError::ResourceLimit(limit) = ctx
+                .charge_work(u64::MAX, "measure ledger work")
+                .expect_err("work overflow")
+            else {
+                panic!("work refusal")
+            };
             limit.used
         });
         let arena = DecodeArena::new();
@@ -253,34 +350,63 @@ fn structural_ledger_and_property_owners_skip_unused_owner_indexes() {
     }
 }
 
-fn mapped_name_record(string_ids: Vec<i64>, topology_ids: Vec<String>)
-    -> crate::native::element_map::ElementMapRecord
-{
+fn mapped_name_record(
+    string_ids: Vec<i64>,
+    topology_ids: Vec<String>,
+) -> crate::native::element_map::ElementMapRecord {
     use crate::native::element_map::{ElementMapNodes, ElementMapRecord, ElementMappedName};
-    let groups = std::collections::BTreeMap::from([("Vertex".into(), vec![vec![ElementMappedName {
-        encoded: "Vertex1".into(), resolved: None, string_ids, topology_ids,
-    }]])]);
+    let groups = std::collections::BTreeMap::from([(
+        "Vertex".into(),
+        vec![vec![ElementMappedName {
+            encoded: "Vertex1".into(),
+            resolved: None,
+            string_ids,
+            topology_ids,
+        }]],
+    )]);
     let maps = crate::test_support::with_service_context(&[], |ctx| {
-        let groups = ctx.collect_scoped_btree_map(groups, "validation fixture group tree")
+        let groups = ctx
+            .collect_scoped_btree_map(groups, "validation fixture group tree")
             .expect("fixture group tree");
-        ElementMapNodes::from_root_names(ctx, 0, crate::native::element_map::ScopedData {
-            data: groups.0, _storage: groups.1,
-        }).expect("root map")
+        ElementMapNodes::from_root_names(
+            ctx,
+            0,
+            crate::native::element_map::ScopedData {
+                data: groups.0,
+                _storage: groups.1,
+            },
+        )
+        .expect("root map")
     });
     ElementMapRecord {
         id: "fcstd:native:element-map#A:Shape".into(),
-        property: "fcstd:native:property#A:Shape".into(), version: "1".into(),
-        hasher_index: Some(0), source_entry: None, map_id: 0,
-        declared_count: 1, postfixes: Vec::new(), maps,
+        property: "fcstd:native:property#A:Shape".into(),
+        version: "1".into(),
+        hasher_index: Some(0),
+        source_entry: None,
+        map_id: 0,
+        declared_count: 1,
+        postfixes: Vec::new(),
+        maps,
     }
 }
 
 fn validation_string_table(index: usize) -> crate::native::StringTableRecord {
-    crate::native::StringTableRecord::try_new(index, None, false, 0, None,
+    crate::native::StringTableRecord::try_new(
+        index,
+        None,
+        false,
+        0,
+        None,
         vec![crate::native::StringTableEntry {
-            string_id: 1, flags: 0, components: Vec::new(), payload: String::new(), raw: String::new(),
+            string_id: 1,
+            flags: 0,
+            components: Vec::new(),
+            payload: String::new(),
+            raw: String::new(),
         }],
-    ).expect("table")
+    )
+    .expect("table")
 }
 
 #[test]
@@ -291,7 +417,8 @@ fn element_maps_without_identity_references_skip_both_indexes() {
             id: cadmpeg_ir::ids::VertexId::mint(format!("fcstd:model:vertex#A:{index}"))
                 .expect("vertex id"),
             point: cadmpeg_ir::ids::PointId::mint(format!("fcstd:model:point#A:{index}"))
-                .expect("point id"), tolerance: None,
+                .expect("point id"),
+            tolerance: None,
         });
     }
     let tables: Vec<_> = (0..128).map(validation_string_table).collect();
@@ -299,18 +426,31 @@ fn element_maps_without_identity_references_skip_both_indexes() {
     let property_ids = HashSet::from([maps[0].property.as_str()]);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 4 + 2 * cadmpeg_core::decode::u64_from_index(maps[0].property.len());
+    policy.limits.max_work_units =
+        4 + 2 * cadmpeg_core::decode::u64_from_index(maps[0].property.len());
     policy.limits.max_collection_items = 0;
     policy.limits.max_materialized_bytes = 0;
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     let mut findings = Vec::new();
-    crate::validate_element_maps(&ctx, &ir, &maps, &tables, &property_ids, &HashSet::new(), &mut findings)
-        .expect("no identity-index consumers");
+    crate::validate_element_maps(
+        &ctx,
+        &ir,
+        &maps,
+        &tables,
+        &property_ids,
+        &HashSet::new(),
+        &mut findings,
+    )
+    .expect("no identity-index consumers");
     assert!(findings.is_empty());
     assert_eq!(ctx.resource_refusal(), None);
-    let CodecError::ResourceLimit(original) = ctx.charge_work(u64::MAX, "prior element-map refusal")
-        .expect_err("work overflow") else { panic!("work refusal") };
+    let CodecError::ResourceLimit(original) = ctx
+        .charge_work(u64::MAX, "prior element-map refusal")
+        .expect_err("work overflow")
+    else {
+        panic!("work refusal")
+    };
     assert!(matches!(crate::validate_element_maps(
         &ctx, &ir, &[], &[], &property_ids, &HashSet::new(), &mut findings,
     ), Err(CodecError::ResourceLimit(repeated)) if repeated == original));
@@ -323,10 +463,22 @@ fn element_maps_index_only_queried_tables_and_validate_actual_references() {
     let property_ids = HashSet::from([maps[0].property.as_str()]);
     let tables: Vec<_> = (0..128).map(validation_string_table).collect();
     let budget = crate::test_support::with_service_context(&[], |ctx| {
-        crate::validate_element_maps(ctx, &ir, &maps, &tables[..1], &property_ids,
-            &HashSet::new(), &mut Vec::new()).expect("one queried table");
-        let CodecError::ResourceLimit(limit) = ctx.charge_work(u64::MAX, "measure map work")
-            .expect_err("work overflow") else { panic!("work refusal") };
+        crate::validate_element_maps(
+            ctx,
+            &ir,
+            &maps,
+            &tables[..1],
+            &property_ids,
+            &HashSet::new(),
+            &mut Vec::new(),
+        )
+        .expect("one queried table");
+        let CodecError::ResourceLimit(limit) = ctx
+            .charge_work(u64::MAX, "measure map work")
+            .expect_err("work overflow")
+        else {
+            panic!("work refusal")
+        };
         limit.used
     });
     let arena = DecodeArena::new();
@@ -335,18 +487,49 @@ fn element_maps_index_only_queried_tables_and_validate_actual_references() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     let mut findings = Vec::new();
-    crate::validate_element_maps(&ctx, &ir, &maps, &tables, &property_ids, &HashSet::new(), &mut findings)
-        .expect("only the queried table is indexed");
+    crate::validate_element_maps(
+        &ctx,
+        &ir,
+        &maps,
+        &tables,
+        &property_ids,
+        &HashSet::new(),
+        &mut findings,
+    )
+    .expect("only the queried table is indexed");
     assert!(findings.is_empty());
     assert_eq!(ctx.resource_refusal(), None);
-    crate::test_support::assert_collection_refusal_at(&[], "FreeCAD validation element maps", |ctx| {
-        crate::validate_element_maps(ctx, &ir, &maps, &tables, &property_ids, &HashSet::new(), &mut Vec::new())
-    });
-    let missing = [mapped_name_record(vec![2], vec!["fcstd:model:vertex#Absent".into()])];
+    crate::test_support::assert_collection_refusal_at(
+        &[],
+        "FreeCAD validation element maps",
+        |ctx| {
+            crate::validate_element_maps(
+                ctx,
+                &ir,
+                &maps,
+                &tables,
+                &property_ids,
+                &HashSet::new(),
+                &mut Vec::new(),
+            )
+        },
+    );
+    let missing = [mapped_name_record(
+        vec![2],
+        vec!["fcstd:model:vertex#Absent".into()],
+    )];
     let findings = crate::test_support::with_service_context(&[], |ctx| {
         let mut findings = Vec::new();
-        crate::validate_element_maps(ctx, &ir, &missing, &tables, &property_ids,
-            &HashSet::new(), &mut findings).expect("missing references produce findings");
+        crate::validate_element_maps(
+            ctx,
+            &ir,
+            &missing,
+            &tables,
+            &property_ids,
+            &HashSet::new(),
+            &mut findings,
+        )
+        .expect("missing references produce findings");
         findings
     });
     assert_eq!(findings.len(), 2);
@@ -358,18 +541,26 @@ fn element_maps_index_only_queried_tables_and_validate_actual_references() {
 fn logical_ledger_validates_gui_and_string_table_owners_on_demand() {
     use crate::native::{ByteSpan, LogicalClassification, LogicalSpan};
     let entries = [crate::test_support::entry_record(
-        "fcstd:native:entry#A.bin".into(), "A.bin".into(),
-        cadmpeg_core::container::ContainerRole::Auxiliary, Vec::new(), vec![0],
+        "fcstd:native:entry#A.bin".into(),
+        "A.bin".into(),
+        cadmpeg_core::container::ContainerRole::Auxiliary,
+        Vec::new(),
+        vec![0],
     )];
     let properties = [gui_property(Vec::new())];
     let tables = [validation_string_table(0)];
     let owners = crate::LedgerOwners {
-        entries: &entries, gui_properties: &properties, gui_documents: &[],
-        shape_payloads: &[], string_tables: &tables, element_maps: &[],
+        entries: &entries,
+        gui_properties: &properties,
+        gui_documents: &[],
+        shape_payloads: &[],
+        string_tables: &tables,
+        element_maps: &[],
     };
     for owner in [properties[0].id.clone(), tables[0].id()] {
         let logical = [LogicalSpan {
-            id: "fcstd:native:logical#A.bin:0".into(), entry: "A.bin".into(),
+            id: "fcstd:native:logical#A.bin:0".into(),
+            entry: "A.bin".into(),
             span: ByteSpan::try_new(0, 1).expect("span"),
             classification: LogicalClassification::Typed { owner },
         }];
@@ -379,8 +570,18 @@ fn logical_ledger_validates_gui_and_string_table_owners_on_demand() {
                 .expect("actual owner lookup");
             assert!(findings.is_empty());
         });
-        crate::test_support::assert_collection_refusal_at(&[], "FreeCAD validation logical ledger", |ctx| {
-            crate::validate_logical_ledger(ctx, &logical, &owners, &HashSet::new(), &mut Vec::new())
-        });
+        crate::test_support::assert_collection_refusal_at(
+            &[],
+            "FreeCAD validation logical ledger",
+            |ctx| {
+                crate::validate_logical_ledger(
+                    ctx,
+                    &logical,
+                    &owners,
+                    &HashSet::new(),
+                    &mut Vec::new(),
+                )
+            },
+        );
     }
 }
