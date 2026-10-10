@@ -123,7 +123,7 @@ fn numerical_followup_rolling_ball_requires_tangent_supports() {
 
 #[test]
 fn numerical_audit_pcurve_ranges_keep_active_domain_and_nonzero_intervals() {
-    use crate::sab::{Record, Token};
+    use crate::sab::Token;
     use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
     use cadmpeg_ir::math::Point2;
     let points = vec![Point2::new(0., 0.), Point2::new(1., 0.)];
@@ -138,10 +138,10 @@ fn numerical_audit_pcurve_ranges_keep_active_domain_and_nonzero_intervals() {
         )
         .expect("fixture pcurve construction admission")
         .unwrap();
-        let edge = Record {
-            index: 1,
-            name: "edge".into(),
-            tokens: vec![
+        let edge = crate::test_support::sab::record(
+1,
+"edge".into(),
+vec![
                 Token::Ref(-1),
                 Token::Long(-1),
                 Token::Ref(-1),
@@ -154,9 +154,9 @@ fn numerical_audit_pcurve_ranges_keep_active_domain_and_nonzero_intervals() {
                 Token::False,
             ]
             .into(),
-            offset: 0,
-            len: 0,
-        };
+0,
+0
+);
         assert_eq!(
             super::super::pcurve_ranges_on_domain(&c, Some(&edge)).map(Iterator::collect::<Vec<_>>),
             Some(vec![[0., d]])

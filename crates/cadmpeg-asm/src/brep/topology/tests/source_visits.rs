@@ -80,9 +80,13 @@ fn empty_table() -> nurbs::toks::SubtypeTable {
 }
 
 fn records() -> [Record; 3] {
-    std::array::from_fn(|index| Record {
-        index, name: "unrelated".into(), tokens: Vec::<Token>::new().into(), offset: 0, len: 0,
-    })
+    std::array::from_fn(|index| crate::test_support::sab::record(
+index,
+"unrelated".into(),
+Vec::<Token>::new().into(),
+0,
+0
+))
 }
 
 fn source_refusal(pass: SourcePass) {
@@ -151,8 +155,8 @@ source_controls!(edge_sense_record_source_refuses_one_visit,
 fn analytic_carrier_allocation_refuses_after_one_record_without_visiting_the_tail() {
     let mut source = records();
     let token_table = empty_table();
-    source[0].name = "plane-surface".into();
-    source[0].tokens = vec![Token::Position([0.0, 0.0, 0.0])].into();
+    source[0] = crate::test_support::sab::record(0, "plane-surface".into(),
+        vec![Token::Position([0.0, 0.0, 0.0])].into(), 0, 0);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     // One record visit, then one analytic carrier token visit.

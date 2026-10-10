@@ -3,7 +3,7 @@
 use crate::ids::IdFormat;
 
 const FORMAT: IdFormat = crate::asm_format!("f3d");
-use crate::sab::{Record, Token};
+use crate::sab::Token;
 
 #[test]
 fn source_attribute_string_refuses_retained_limit() {
@@ -12,13 +12,13 @@ fn source_attribute_string_refuses_retained_limit() {
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::attributes::AttributeTarget;
 
-    let record = Record {
-        index: 1,
-        name: "string-st-attrib".into(),
-        tokens: vec![Token::Str("value".into())].into(),
-        offset: 0,
-        len: 0,
-    };
+    let record = crate::test_support::sab::record(
+1,
+"string-st-attrib".into(),
+vec![Token::Str("value".into())].into(),
+0,
+0
+);
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::RetainedBytes,
         "ASM attribute string",
@@ -44,13 +44,13 @@ fn source_attribute_record_name_refuses_retained_limit() {
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::attributes::AttributeTarget;
 
-    let record = Record {
-        index: 1,
-        name: "empty-st-attrib".into(),
-        tokens: Vec::new().into(),
-        offset: 0,
-        len: 0,
-    };
+    let record = crate::test_support::sab::record(
+1,
+"empty-st-attrib".into(),
+Vec::new().into(),
+0,
+0
+);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
@@ -70,13 +70,13 @@ fn unknown_record_kind_refuses_materialized_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
-    let record = Record {
-        index: 1,
-        name: "unknown".into(),
-        tokens: Vec::new().into(),
-        offset: 0,
-        len: 0,
-    };
+    let record = crate::test_support::sab::record(
+1,
+"unknown".into(),
+Vec::new().into(),
+0,
+0
+);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = 0;
@@ -95,17 +95,17 @@ fn decimal_attribute_color_refuses_work_before_parsing() {
     use cadmpeg_core::CodecError;
     use std::collections::HashMap;
 
-    let entity = Record {
-        index: 0,
-        name: "face".into(),
-        tokens: vec![Token::Ref(1)].into(),
-        offset: 0,
-        len: 0,
-    };
-    let decimal = Record {
-        index: 1,
-        name: "entatt_color-bt-attrib".into(),
-        tokens: vec![
+    let entity = crate::test_support::sab::record(
+0,
+"face".into(),
+vec![Token::Ref(1)].into(),
+0,
+0
+);
+    let decimal = crate::test_support::sab::record(
+1,
+"entatt_color-bt-attrib".into(),
+vec![
             Token::Ref(-1),
             Token::Long(-1),
             Token::Ref(-1),
@@ -114,9 +114,9 @@ fn decimal_attribute_color_refuses_work_before_parsing() {
             Token::Str("4227264".into()),
         ]
         .into(),
-        offset: 0,
-        len: 0,
-    };
+0,
+0
+);
     let by_index = HashMap::from([(1, &decimal)]);
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::WorkUnits,

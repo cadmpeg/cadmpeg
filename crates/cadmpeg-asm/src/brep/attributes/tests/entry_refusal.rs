@@ -8,7 +8,13 @@ use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
 use std::collections::{HashMap, HashSet};
 
 fn record(tokens: Vec<Token>) -> Record {
-    Record { index: 1, name: "unknown".into(), tokens: tokens.into(), offset: 0, len: 0 }
+    crate::test_support::sab::record(
+1,
+"unknown".into(),
+tokens.into(),
+0,
+0
+)
 }
 
 #[test]

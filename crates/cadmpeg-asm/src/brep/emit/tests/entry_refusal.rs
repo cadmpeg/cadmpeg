@@ -47,7 +47,13 @@ fn surface(seed: bool) {
     let geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0), Vector3::new(1.0, 0.0, 0.0)).expect("plane input fixture")));
-    let record = crate::sab::Record { index: 7, name: "plane".into(), tokens: Vec::new().into(), offset: 0, len: 0 };
+    let record = crate::test_support::sab::record(
+7,
+"plane".into(),
+Vec::new().into(),
+0,
+0
+);
     with_owner(|ctx, storage, original| {
         if seed && original.is_none() { return; }
         let mut carriers = Carriers::default();
@@ -327,7 +333,7 @@ fn asm_missing_law_curve_domain_preserves_original_refusal() {
 #[test]
 fn asm_missing_surface_offset_domain_preserves_original_refusal() {
     use crate::nurbs::proc_curve::{EmbeddedSpringLayout, EmbeddedSurfaceOffset, EmbeddedSurfaceOffsetLayout, ProceduralCurveConstruction};
-    use crate::sab::{Record, Token};
+    use crate::sab::Token;
     let mut tokens = vec![Token::SubtypeOpen, Token::Ident("spring_int_cur".into()),
         Token::Long(23_100), Token::Enum(0), Token::Ident("nubs".into()), Token::Long(1),
         Token::Enum(0), Token::Long(2), Token::Double(2.0), Token::Long(1),
@@ -337,7 +343,13 @@ fn asm_missing_surface_offset_domain_preserves_original_refusal() {
         Token::Ident("null_surface".into()), Token::Ident("nullbs".into()), Token::Ident("nullbs".into()),
         Token::False, Token::False, Token::Long(0), Token::Long(0), Token::Long(0),
         Token::Long(7), Token::Enum(4), Token::SubtypeClose]);
-    let records = [Record { index: 7, name: "intcurve".into(), tokens: tokens.into(), offset: 0, len: 0 }];
+    let records = [crate::test_support::sab::record(
+7,
+"intcurve".into(),
+tokens.into(),
+0,
+0
+)];
     let table = super::subtype_table(&records);
     with_owner(|ctx, _, original| {
         let Some(first) = original else { return; };
@@ -415,8 +427,13 @@ fn asm_attribute_shell_index_refuses_first_source_visit() {
 
 #[test]
 fn asm_record_reference_indices_refuse_first_source_visit() {
-    let records = [crate::sab::Record { index: 0, name: "body".into(),
-        tokens: Vec::new().into(), offset: 0, len: 0 }];
+    let records = [crate::test_support::sab::record(
+0,
+"body".into(),
+Vec::new().into(),
+0,
+0
+)];
     index_source_refusal(AsmBrep::default(), &records, "ASM record reference scan");
 }
 
@@ -452,16 +469,46 @@ fn asm_empty_record_reference_indices_preserve_original_refusal() {
 
 #[test]
 fn asm_record_reference_indices_keep_transform_and_intcurve_membership() {
-    use crate::sab::{Record, Token};
+    use crate::sab::Token;
     use std::collections::{BTreeMap, HashSet};
     let body = [Token::Ref(-1), Token::Ref(-1), Token::Ref(-1), Token::Ref(-1), Token::Ref(-1), Token::Ref(1)];
     let pcurve = [Token::Ref(-1), Token::Ref(-1), Token::Ref(-1), Token::Ref(-1), Token::Ref(3)];
     let records = [
-        Record { index: 0, name: "body".into(), tokens: body.to_vec().into(), offset: 0, len: 0 },
-        Record { index: 1, name: "opaque-transform".into(), tokens: Vec::new().into(), offset: 0, len: 0 },
-        Record { index: 2, name: "opaque-pcurve".into(), tokens: pcurve.to_vec().into(), offset: 0, len: 0 },
-        Record { index: 3, name: "opaque-intcurve".into(), tokens: Vec::new().into(), offset: 0, len: 0 },
-        Record { index: 4, name: "opaque-other".into(), tokens: Vec::new().into(), offset: 0, len: 0 },
+        crate::test_support::sab::record(
+0,
+"body".into(),
+body.to_vec().into(),
+0,
+0
+),
+        crate::test_support::sab::record(
+1,
+"opaque-transform".into(),
+Vec::new().into(),
+0,
+0
+),
+        crate::test_support::sab::record(
+2,
+"opaque-pcurve".into(),
+pcurve.to_vec().into(),
+0,
+0
+),
+        crate::test_support::sab::record(
+3,
+"opaque-intcurve".into(),
+Vec::new().into(),
+0,
+0
+),
+        crate::test_support::sab::record(
+4,
+"opaque-other".into(),
+Vec::new().into(),
+0,
+0
+),
     ];
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();

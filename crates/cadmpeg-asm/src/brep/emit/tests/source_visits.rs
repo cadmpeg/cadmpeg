@@ -175,9 +175,13 @@ impl RecordPass {
 fn records() -> [Record; 3] {
     // A known carrier head with no reachable owner makes each main pass a
     // complete source scan. No output payload or index insertion is executed.
-    std::array::from_fn(|index| Record {
-        index, name: "straight".into(), tokens: Vec::<Token>::new().into(), offset: 0, len: 0,
-    })
+    std::array::from_fn(|index| crate::test_support::sab::record(
+index,
+"straight".into(),
+Vec::<Token>::new().into(),
+0,
+0
+))
 }
 
 fn source_refusal(pass: RecordPass) {

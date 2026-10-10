@@ -1121,20 +1121,20 @@ mod tests {
 
     #[test]
     fn subtype_search_refuses_before_entering_a_nested_reference() {
-        use crate::sab::{Record, Token};
+        use crate::sab::Token;
         let table_ctx = cadmpeg_test_support::service_decode_context();
-        let record = Record {
-            index: 0,
-            name: "spline".into(),
-            offset: 0,
-            len: 0,
-            tokens: vec![
+        let record = crate::test_support::sab::record(
+0,
+"spline".into(),
+vec![
                 Token::SubtypeOpen,
                 Token::Ident("construction".into()),
                 Token::SubtypeClose,
             ]
             .into(),
-        };
+0,
+0
+);
         let table = SubtypeTable::from_records(&table_ctx, &[record]).unwrap();
         let tokens = [Token::SubtypeOpen, Token::Long(0), Token::SubtypeClose];
         for returns_cache in [false, true] {

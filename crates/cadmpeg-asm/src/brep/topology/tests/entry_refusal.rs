@@ -2,9 +2,13 @@
 
 #[test]
 fn asm_absent_ring_head_preserves_original_refusal() {
-    let record = crate::sab::Record {
-        index: 0, name: "loop".into(), tokens: Vec::new().into(), offset: 0, len: 0,
-    };
+    let record = crate::test_support::sab::record(
+0,
+"loop".into(),
+Vec::new().into(),
+0,
+0
+);
     let by_index = std::collections::HashMap::new();
     let kept = std::collections::HashSet::new();
     crate::test_support::with_entry_context(|ctx, original| {

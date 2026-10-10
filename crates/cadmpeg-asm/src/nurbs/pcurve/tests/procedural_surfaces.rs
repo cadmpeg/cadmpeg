@@ -1736,13 +1736,13 @@ fn projection_layout_walks_both_tail_forms_at_both_widths() {
                         )
                         .expect("decode work admission")
                         .is_none());
-                        let record = crate::sab::Record {
-                            index: 0,
-                            name: "intcurve".into(),
-                            tokens: Vec::new().into(),
-                            offset: 0,
-                            len: malformed.len(),
-                        };
+                        let record = crate::test_support::sab::record(
+0,
+"intcurve".into(),
+Vec::new().into(),
+0,
+malformed.len()
+);
                         let edits = crate::edit::AsmEditSet::from_framed(
                             vec![record.clone()],
                             int_width,

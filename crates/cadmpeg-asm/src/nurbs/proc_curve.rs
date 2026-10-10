@@ -1129,7 +1129,7 @@ mod reference_allocation_tests {
         procedural_curve_resolving_refs,
     };
     use crate::nurbs::toks::SubtypeTable;
-    use crate::sab::{Record, Token};
+    use crate::sab::Token;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
@@ -1137,18 +1137,18 @@ mod reference_allocation_tests {
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let record = Record {
-            index: 0,
-            name: "spline".into(),
-            tokens: vec![
+        let record = crate::test_support::sab::record(
+0,
+"spline".into(),
+vec![
                 Token::SubtypeOpen,
                 Token::Ident("exact_int_cur".into()),
                 Token::SubtypeClose,
             ]
             .into(),
-            offset: 0,
-            len: 0,
-        };
+0,
+0
+);
         SubtypeTable::from_records(&ctx, &[record]).unwrap()
     }
 
@@ -4280,7 +4280,6 @@ mod cache_form_tests {
 
     #[test]
     fn cache_first_support_propagates_reference_cache_allocation_refusal() {
-        use crate::sab::Record;
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         let mut target = vec![
             Token::SubtypeOpen,
@@ -4312,13 +4311,13 @@ mod cache_form_tests {
             target.extend(point.map(Token::Double));
         }
         target.push(Token::SubtypeClose);
-        let record = Record {
-            index: 0,
-            name: "spline".into(),
-            tokens: target.into(),
-            offset: 0,
-            len: 0,
-        };
+        let record = crate::test_support::sab::record(
+0,
+"spline".into(),
+target.into(),
+0,
+0
+);
         let table = crate::nurbs::toks::SubtypeTable::from_records(
             &cadmpeg_test_support::service_decode_context(),
             &[record],

@@ -730,15 +730,16 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
 
         ctx.reserve_vec(&mut records, 1, "frame SAT record")
             .map_err(StreamFailure::from_operation)?;
-        records.push(Record {
-            index: records.len(),
-            name: ctx
+        records.push(Record::with_head_end(ctx,
+records.len(),
+ctx
                 .copy_retained_text(name, "retain SAT record name")
                 .map_err(StreamFailure::from_operation)?,
-            tokens: tokens.into(),
-            offset: rec_start,
-            len: reader.pos - rec_start,
-        });
+tokens.into(),
+rec_start,
+reader.pos - rec_start,
+head.len()
+).map_err(StreamFailure::from_operation)?);
     }
     let Some(terminator) = terminator else {
         return Err(StreamError {

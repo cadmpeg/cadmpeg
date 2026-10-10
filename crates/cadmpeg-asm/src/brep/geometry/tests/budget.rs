@@ -5,13 +5,13 @@ use crate::sab::{Record, Token};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
 fn record(tokens: Vec<Token>) -> Record {
-    Record {
-        index: 1,
-        name: "tcoedge".into(),
-        tokens: tokens.into(),
-        offset: 0,
-        len: 0,
-    }
+    crate::test_support::sab::record(
+1,
+"tcoedge".into(),
+tokens.into(),
+0,
+0
+)
 }
 
 #[test]
@@ -137,10 +137,13 @@ fn record_sense_search_admits_raw_tokens_and_keeps_scope_precedence() {
         Token::SubtypeOpen,
         Token::SubtypeClose,
     ];
-    let record = Record {
-        name: "intcurve".into(),
-        ..record(tokens)
-    };
+    let record = { let base = record(tokens); crate::test_support::sab::record(
+base.index,
+"intcurve".into(),
+base.tokens,
+base.offset,
+base.len
+) };
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::WorkUnits,
         "ASM record sense tokens",
@@ -158,9 +161,10 @@ fn record_sense_search_admits_raw_tokens_and_keeps_scope_precedence() {
     assert_eq!(limit.operation, "ASM record sense tokens");
     let ctx = cadmpeg_test_support::service_decode_context();
     assert!(!record_reversed(&ctx, &record).unwrap());
-    let plain = Record {
-        name: "intcurve".into(),
-        tokens: vec![
+    let plain = { let base = record; crate::test_support::sab::record(
+base.index,
+"intcurve".into(),
+vec![
             Token::Ident("ignored".into()),
             Token::Ref(-1),
             Token::Long(-1),
@@ -168,12 +172,16 @@ fn record_sense_search_admits_raw_tokens_and_keeps_scope_precedence() {
             Token::True,
         ]
         .into(),
-        ..record
-    };
+base.offset,
+base.len
+) };
     assert!(record_reversed(&ctx, &plain).unwrap());
-    let spline = Record {
-        name: "spline".into(),
-        ..plain
-    };
+    let spline = { let base = plain; crate::test_support::sab::record(
+base.index,
+"spline".into(),
+base.tokens,
+base.offset,
+base.len
+) };
     assert!(!record_reversed(&ctx, &spline).unwrap());
 }
