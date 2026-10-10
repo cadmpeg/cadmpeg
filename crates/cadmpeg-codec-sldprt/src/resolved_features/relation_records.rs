@@ -484,186 +484,180 @@ pub(super) fn relation_instances(
             }
         }
     }
-    let intervals = temporary_storage.with_storage(|| feature_intervals(ctx, histories, lane))?;
-    let declaration_candidates = temporary_storage.with_storage(|| {
-        relation_declaration_candidates_impl(ctx, &lane.classes, &lane.scalars, &intervals, true)
-    })?;
-    // The offsets of every relation class, ascending, to find a class between
-    // two scalars.
-    let mut relation_class_offsets = Vec::new();
-    for class in ctx.admit_iter(&lane.classes, "index SLDPRT relation group boundaries")? {
-        if relation_family(&class.name).is_some() {
-            temporary_storage.with_storage(|| {
-                ctx.push_vec(
-                    &mut relation_class_offsets,
-                    class.offset,
-                    "index SLDPRT relation group boundaries",
-                )
-            })?;
-        }
-    }
-    ctx.sort_unstable_by(
-        &mut relation_class_offsets,
-        |offset| offset,
-        Ord::cmp,
-        "index SLDPRT relation group boundaries",
-    )?;
-    let mut candidate_counts = HashMap::<&str, usize>::new();
-    for (_, scalar, _) in
-        ctx.admit_iter(&declaration_candidates, "count SLDPRT relation candidates")?
-    {
-        if let Some(count) = ctx.get_mut_hash_map(
-            &mut candidate_counts,
-            scalar.id.as_str(),
-            "lookup SLDPRT relation candidate count",
-        )? {
-            *count = count.checked_add(1).ok_or_else(|| {
-                ctx.refuse_codec_limit("count SLDPRT relation candidates", u64::MAX - 1, u64::MAX)
-            })?;
-        } else {
-            temporary_storage.with_storage(|| {
-                ctx.insert_hash_map(
-                    &mut candidate_counts,
-                    scalar.id.as_str(),
-                    1,
-                    "index SLDPRT relation records",
-                )
-            })?;
-        }
-    }
-    let mut declarations = HashMap::new();
-    for (class, scalar, family) in ctx
-        .admit_iter(
-            &declaration_candidates,
-            "index SLDPRT relation declarations",
-        )?
-        .copied()
-    {
-        if ctx.get_hash_map(
-            &candidate_counts,
-            scalar.id.as_str(),
-            "lookup SLDPRT relation candidate count",
-        )? == Some(&1)
-        {
-            temporary_storage.with_storage(|| {
-                ctx.insert_hash_map(
-                    &mut declarations,
-                    scalar.id.as_str(),
-                    (class.offset, family, class.id.as_str()),
-                    "index SLDPRT relation records",
-                )
-            })?;
-        }
-    }
-    let scalar_names = std::cell::OnceCell::new();
-    let mut groups = Vec::<RelationGroup<'_>>::new();
-    for (scalar_index, scalar) in ctx
-        .admit_iter(&lane.scalars, "group SLDPRT relation scalars")?
-        .enumerate()
-    {
-        let Some(feature_ref) = scalar.feature_ref.as_deref() else {
-            continue;
-        };
-        if !ctx.contains_hash_set(
-            &sketch_features,
-            feature_ref,
-            "select SLDPRT sketch relation scalars",
-        )? {
-            continue;
-        }
-        let declaration = ctx.get_hash_map(
-            &declarations,
-            scalar.id.as_str(),
-            "find SLDPRT relation declaration",
+    let mut groups_storage = ctx.reserve_scoped(0, "SLDPRT relation scalar groups")?;
+    let groups = {
+        let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT relation grouping indexes")?;
+        let candidates_storage;
+        let declaration_candidates;
+        (declaration_candidates, candidates_storage) = ctx.with_scoped_storage(
+            "SLDPRT relation declaration candidates",
+            || {
+                let mut intervals_storage = ctx.reserve_scoped(0, "SLDPRT relation feature intervals")?;
+                let intervals = intervals_storage.with_storage(|| feature_intervals(ctx, histories, lane))?;
+                relation_declaration_candidates_impl(ctx, &lane.classes, &lane.scalars, &intervals, true)
+            },
         )?;
-        let Some((class_offset, family, class_ref)) = declaration else {
-            if ctx
-                .get_hash_map(
-                    &candidate_counts,
-                    scalar.id.as_str(),
-                    "find SLDPRT relation candidate count",
-                )?
-                .is_some_and(|count| *count > 1)
-            {
-                continue;
-            }
-            let Some(group) = groups.last_mut() else {
-                continue;
-            };
-            let Some((last_index, last_scalar)) = group.scalars.last() else {
-                continue;
-            };
-            let same_scope_prefix = *last_index + 1 == scalar_index
-                && ctx.equal(
-                    group.feature_ref,
-                    feature_ref,
-                    "compare SLDPRT relation group features",
-                )?;
-            let has_intervening_class = if same_scope_prefix {
-                let after = ctx.partition_point(
-                    &relation_class_offsets,
-                    |offset| Ok(*offset <= last_scalar.offset),
-                    "find SLDPRT relation group boundary",
-                )?;
-                relation_class_offsets
-                    .get(after)
-                    .is_some_and(|offset| *offset < scalar.offset)
-            } else {
-                false
-            };
-            let same_scope = same_scope_prefix && !has_intervening_class;
-            let mut repeated_circle_display = same_scope
-                && group.family == FeatureInputRelationFamily::CircleDiameter
-                && scalar.role == FeatureInputScalarRole::Display
-                && scalar.operands.len() == 1;
-            if repeated_circle_display {
-                let (names, _) = match scalar_names.get() {
-                    Some(names) => names,
-                    None => {
-                        const OPERATION: &str = "index SLDPRT relation scalar names";
-                        let built = ctx.with_scoped_storage(OPERATION, || {
-                            let mut names = HashMap::new();
-                            for name in ctx.admit_iter(&lane.names, OPERATION)? {
-                                ctx.entry_hash_map(&mut names, name.id.as_str(), OPERATION)?
-                                    .or_insert(name.value.as_str());
-                            }
-                            Ok::<_, CodecError>(names)
-                        })?;
-                        scalar_names.get_or_init(|| built)
-                    }
-                };
-                repeated_circle_display = ctx.all_by(
-                    &group.scalars,
-                    |(_, candidate)| {
-                        Ok(candidate.role == FeatureInputScalarRole::Display
-                            && candidate.operands.len() == 1
-                            && candidate.operands[0].kind == scalar.operands[0].kind
-                            && candidate.operands[0].entity_index
-                                != scalar.operands[0].entity_index
-                            && same_scalar_name(ctx, candidate, scalar, names)?)
-                    },
-                    "validate SLDPRT repeated circle display scalars",
-                )?;
-            }
-            if repeated_circle_display {
+        // The offsets of every relation class, ascending, to find a class between
+        // two scalars.
+        let mut relation_class_offsets = Vec::new();
+        for class in ctx.admit_iter(&lane.classes, "index SLDPRT relation group boundaries")? {
+            if relation_family(&class.name).is_some() {
                 temporary_storage.with_storage(|| {
-                    ctx.reserve_vec(
-                        &mut group.scalars,
-                        1,
-                        "collect SLDPRT relation scalar groups",
+                    ctx.push_vec(
+                        &mut relation_class_offsets,
+                        class.offset,
+                        "index SLDPRT relation group boundaries",
                     )
                 })?;
-                group.scalars.push((scalar_index, scalar));
-            } else if same_scope && scalar.role == FeatureInputScalarRole::Driving
-                && same_relation_operand_signature(
-                    ctx,
-                    group.operands,
-                    &scalar.operands,
-                    "compare SLDPRT relation operand signatures",
-                )?
+            }
+        }
+        ctx.sort_unstable_by(
+            &mut relation_class_offsets,
+            |offset| offset,
+            Ord::cmp,
+            "index SLDPRT relation group boundaries",
+        )?;
+        let mut candidate_counts = HashMap::<&str, usize>::new();
+        for (_, scalar, _) in
+            ctx.admit_iter(&declaration_candidates, "count SLDPRT relation candidates")?
+        {
+            if let Some(count) = ctx.get_mut_hash_map(
+                &mut candidate_counts,
+                scalar.id.as_str(),
+                "lookup SLDPRT relation candidate count",
+            )? {
+                *count = count.checked_add(1).ok_or_else(|| {
+                    ctx.refuse_codec_limit("count SLDPRT relation candidates", u64::MAX - 1, u64::MAX)
+                })?;
+            } else {
+                temporary_storage.with_storage(|| {
+                    ctx.insert_hash_map(
+                        &mut candidate_counts,
+                        scalar.id.as_str(),
+                        1,
+                        "index SLDPRT relation records",
+                    )
+                })?;
+            }
+        }
+        let mut declarations = HashMap::new();
+        for (class, scalar, family) in ctx
+            .admit_iter(
+                &declaration_candidates,
+                "index SLDPRT relation declarations",
+            )?
+            .copied()
+        {
+            if ctx.get_hash_map(
+                &candidate_counts,
+                scalar.id.as_str(),
+                "lookup SLDPRT relation candidate count",
+            )? == Some(&1)
             {
-                if group.scalars.len() == 1 {
-                    temporary_storage.with_storage(|| {
+                temporary_storage.with_storage(|| {
+                    ctx.insert_hash_map(
+                        &mut declarations,
+                        scalar.id.as_str(),
+                        (class.offset, family, class.id.as_str()),
+                        "index SLDPRT relation records",
+                    )
+                })?;
+            }
+        }
+        drop(declaration_candidates);
+        drop(candidates_storage);
+        let scalar_names = std::cell::OnceCell::new();
+        let mut groups = Vec::<RelationGroup<'_>>::new();
+        for (scalar_index, scalar) in ctx
+            .admit_iter(&lane.scalars, "group SLDPRT relation scalars")?
+            .enumerate()
+        {
+            let Some(feature_ref) = scalar.feature_ref.as_deref() else {
+                continue;
+            };
+            if !ctx.contains_hash_set(
+                &sketch_features,
+                feature_ref,
+                "select SLDPRT sketch relation scalars",
+            )? {
+                continue;
+            }
+            let declaration = ctx.get_hash_map(
+                &declarations,
+                scalar.id.as_str(),
+                "find SLDPRT relation declaration",
+            )?;
+            let Some((class_offset, family, class_ref)) = declaration else {
+                if ctx
+                    .get_hash_map(
+                        &candidate_counts,
+                        scalar.id.as_str(),
+                        "find SLDPRT relation candidate count",
+                    )?
+                    .is_some_and(|count| *count > 1)
+                {
+                    continue;
+                }
+                let Some(group) = groups.last_mut() else {
+                    continue;
+                };
+                let Some((last_index, last_scalar)) = group.scalars.last() else {
+                    continue;
+                };
+                let same_scope_prefix = *last_index + 1 == scalar_index
+                    && ctx.equal(
+                        group.feature_ref,
+                        feature_ref,
+                        "compare SLDPRT relation group features",
+                    )?;
+                let has_intervening_class = if same_scope_prefix {
+                    let after = ctx.partition_point(
+                        &relation_class_offsets,
+                        |offset| Ok(*offset <= last_scalar.offset),
+                        "find SLDPRT relation group boundary",
+                    )?;
+                    relation_class_offsets
+                        .get(after)
+                        .is_some_and(|offset| *offset < scalar.offset)
+                } else {
+                    false
+                };
+                let same_scope = same_scope_prefix && !has_intervening_class;
+                let mut repeated_circle_display = same_scope
+                    && group.family == FeatureInputRelationFamily::CircleDiameter
+                    && scalar.role == FeatureInputScalarRole::Display
+                    && scalar.operands.len() == 1;
+                if repeated_circle_display {
+                    let (names, _) = match scalar_names.get() {
+                        Some(names) => names,
+                        None => {
+                            const OPERATION: &str = "index SLDPRT relation scalar names";
+                            let built = ctx.with_scoped_storage(OPERATION, || {
+                                let mut names = HashMap::new();
+                                for name in ctx.admit_iter(&lane.names, OPERATION)? {
+                                    ctx.entry_hash_map(&mut names, name.id.as_str(), OPERATION)?
+                                        .or_insert(name.value.as_str());
+                                }
+                                Ok::<_, CodecError>(names)
+                            })?;
+                            scalar_names.get_or_init(|| built)
+                        }
+                    };
+                    repeated_circle_display = ctx.all_by(
+                        &group.scalars,
+                        |(_, candidate)| {
+                            Ok(candidate.role == FeatureInputScalarRole::Display
+                                && candidate.operands.len() == 1
+                                && candidate.operands[0].kind == scalar.operands[0].kind
+                                && candidate.operands[0].entity_index
+                                    != scalar.operands[0].entity_index
+                                && same_scalar_name(ctx, candidate, scalar, names)?)
+                        },
+                        "validate SLDPRT repeated circle display scalars",
+                    )?;
+                }
+                if repeated_circle_display {
+                    groups_storage.with_storage(|| {
                         ctx.reserve_vec(
                             &mut group.scalars,
                             1,
@@ -671,102 +665,121 @@ pub(super) fn relation_instances(
                         )
                     })?;
                     group.scalars.push((scalar_index, scalar));
-                } else {
-                    let next = RelationGroup {
-                        feature_ref: group.feature_ref,
-                        family: group.family,
-                        class_ref: group.class_ref,
-                        operands: &scalar.operands,
-                        scalars: temporary_storage.with_storage(|| {
-                            ctx.alloc_filled(
+                } else if same_scope && scalar.role == FeatureInputScalarRole::Driving
+                    && same_relation_operand_signature(
+                        ctx,
+                        group.operands,
+                        &scalar.operands,
+                        "compare SLDPRT relation operand signatures",
+                    )?
+                {
+                    if group.scalars.len() == 1 {
+                        groups_storage.with_storage(|| {
+                            ctx.reserve_vec(
+                                &mut group.scalars,
                                 1,
-                                (scalar_index, scalar),
                                 "collect SLDPRT relation scalar groups",
                             )
-                        })?,
-                    };
-                    temporary_storage.with_storage(|| {
-                        ctx.reserve_vec(&mut groups, 1, "collect SLDPRT relation groups")
-                    })?;
-                    groups.push(next);
+                        })?;
+                        group.scalars.push((scalar_index, scalar));
+                    } else {
+                        let next = RelationGroup {
+                            feature_ref: group.feature_ref,
+                            family: group.family,
+                            class_ref: group.class_ref,
+                            operands: &scalar.operands,
+                            scalars: groups_storage.with_storage(|| {
+                                ctx.alloc_filled(
+                                    1,
+                                    (scalar_index, scalar),
+                                    "collect SLDPRT relation scalar groups",
+                                )
+                            })?,
+                        };
+                        groups_storage.with_storage(|| {
+                            ctx.reserve_vec(&mut groups, 1, "collect SLDPRT relation groups")
+                        })?;
+                        groups.push(next);
+                    }
                 }
-            }
-            continue;
-        };
-        // A display scalar can precede the declaration selected by its adjacent
-        // driving scalar. The driving scalar's declaration is authoritative for
-        // that pair; display-only scalars still stop at a class declaration.
-        let promote_class = if let Some(group) = groups.last() {
-            group.scalars.len() == 1
-                && group.scalars[0].1.role == FeatureInputScalarRole::Display
-                && scalar.role == FeatureInputScalarRole::Driving
-                && *class_offset > group.scalars[0].1.offset
-                && *class_offset < scalar.offset
-                && !ctx.equal(
-                    group.class_ref,
-                    class_ref,
-                    "compare SLDPRT promoted relation classes",
-                )?
-        } else {
-            false
-        };
-        let append = if let Some(group) = groups.last() {
-            (group.family == *family || promote_class)
-                && matches!(group.scalars.as_slice(), [(index, _)] if *index + 1 == scalar_index)
-                && ctx.equal(
-                    group.feature_ref,
-                    feature_ref,
-                    "compare SLDPRT relation group features",
-                )?
-                && (promote_class || ctx.equal(
-                    group.class_ref,
-                    class_ref,
-                    "compare SLDPRT relation group classes",
-                )?)
-                && same_relation_operand_signature(
-                    ctx,
-                    group.operands,
-                    &scalar.operands,
-                    "compare SLDPRT relation operand signatures",
-                )?
-        } else {
-            false
-        };
-        if append {
-            let Some(group) = groups.last_mut() else {
                 continue;
             };
-            if promote_class {
-                group.family = *family;
-                group.class_ref = *class_ref;
-            }
-            temporary_storage.with_storage(|| {
-                ctx.reserve_vec(
-                    &mut group.scalars,
-                    1,
-                    "collect SLDPRT relation scalar groups",
-                )
-            })?;
-            group.scalars.push((scalar_index, scalar));
-        } else {
-            temporary_storage.with_storage(|| {
-                ctx.reserve_vec(&mut groups, 1, "collect SLDPRT relation groups")
-            })?;
-            groups.push(RelationGroup {
-                feature_ref,
-                family: *family,
-                class_ref,
-                operands: &scalar.operands,
-                scalars: temporary_storage.with_storage(|| {
-                    ctx.alloc_filled(
+            // A display scalar can precede the declaration selected by its adjacent
+            // driving scalar. The driving scalar's declaration is authoritative for
+            // that pair; display-only scalars still stop at a class declaration.
+            let promote_class = if let Some(group) = groups.last() {
+                group.scalars.len() == 1
+                    && group.scalars[0].1.role == FeatureInputScalarRole::Display
+                    && scalar.role == FeatureInputScalarRole::Driving
+                    && *class_offset > group.scalars[0].1.offset
+                    && *class_offset < scalar.offset
+                    && !ctx.equal(
+                        group.class_ref,
+                        class_ref,
+                        "compare SLDPRT promoted relation classes",
+                    )?
+            } else {
+                false
+            };
+            let append = if let Some(group) = groups.last() {
+                (group.family == *family || promote_class)
+                    && matches!(group.scalars.as_slice(), [(index, _)] if *index + 1 == scalar_index)
+                    && ctx.equal(
+                        group.feature_ref,
+                        feature_ref,
+                        "compare SLDPRT relation group features",
+                    )?
+                    && (promote_class || ctx.equal(
+                        group.class_ref,
+                        class_ref,
+                        "compare SLDPRT relation group classes",
+                    )?)
+                    && same_relation_operand_signature(
+                        ctx,
+                        group.operands,
+                        &scalar.operands,
+                        "compare SLDPRT relation operand signatures",
+                    )?
+            } else {
+                false
+            };
+            if append {
+                let Some(group) = groups.last_mut() else {
+                    continue;
+                };
+                if promote_class {
+                    group.family = *family;
+                    group.class_ref = *class_ref;
+                }
+                groups_storage.with_storage(|| {
+                    ctx.reserve_vec(
+                        &mut group.scalars,
                         1,
-                        (scalar_index, scalar),
                         "collect SLDPRT relation scalar groups",
                     )
-                })?,
-            });
+                })?;
+                group.scalars.push((scalar_index, scalar));
+            } else {
+                groups_storage.with_storage(|| {
+                    ctx.reserve_vec(&mut groups, 1, "collect SLDPRT relation groups")
+                })?;
+                groups.push(RelationGroup {
+                    feature_ref,
+                    family: *family,
+                    class_ref,
+                    operands: &scalar.operands,
+                    scalars: groups_storage.with_storage(|| {
+                        ctx.alloc_filled(
+                            1,
+                            (scalar_index, scalar),
+                            "collect SLDPRT relation scalar groups",
+                        )
+                    })?,
+                });
+            }
         }
-    }
+        groups
+    };
     let mut instances = Vec::new();
     let mut claimed_scalar_refs = HashSet::new();
     let lane_key = ctx
@@ -811,6 +824,8 @@ pub(super) fn relation_instances(
             operands: copy_relation_operands(ctx, group.operands)?,
         });
     }
+    drop(groups);
+    drop(groups_storage);
     // A class can declare more than one scalar relation. The ordinary
     // instance grouper joins a display scalar to its adjacent driving scalar
     // when their operand signatures agree; a second scalar with a different
