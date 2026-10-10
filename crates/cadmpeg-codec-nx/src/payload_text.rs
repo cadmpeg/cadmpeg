@@ -156,19 +156,31 @@ mod tests {
         use cadmpeg_core::CodecError;
         let text = "μ Name ".repeat(4096);
         let value = PayloadText::new(text.as_str()).unwrap();
-        crate::test_support::with_decode_context_over(&[],
-            |policy| policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(text.len()),
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(text.len());
+            },
             |ctx| {
-                let owned = value.try_into_owned_for_decode(ctx, "test checked payload text copy").unwrap();
+                let owned = value
+                    .try_into_owned_for_decode(ctx, "test checked payload text copy")
+                    .unwrap();
                 assert_eq!(owned.as_str(), text);
                 assert_eq!(ctx.resource_refusal(), None);
-            });
-        for dimension in [ResourceDimension::WorkUnits, ResourceDimension::RetainedBytes] {
-            let error = crate::test_support::resource_refusal_at(&[], dimension,
-                "test checked payload text copy", |ctx| value.try_into_owned_for_decode(ctx, "test checked payload text copy"));
+            },
+        );
+        for dimension in [
+            ResourceDimension::WorkUnits,
+            ResourceDimension::RetainedBytes,
+        ] {
+            let error = crate::test_support::resource_refusal_at(
+                &[],
+                dimension,
+                "test checked payload text copy",
+                |ctx| value.try_into_owned_for_decode(ctx, "test checked payload text copy"),
+            );
             assert!(matches!(error, CodecError::ResourceLimit(limit)
                 if limit.additional == cadmpeg_core::decode::u64_from_index(text.len())));
         }
     }
-
 }
