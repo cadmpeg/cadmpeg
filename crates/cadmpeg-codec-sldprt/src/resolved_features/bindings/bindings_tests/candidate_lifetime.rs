@@ -9,7 +9,7 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 
 const TEXT: &str = "candidate";
-const TEXT_BYTES: u64 = TEXT.len() as u64;
+const TEXT_BYTES: u64 = cadmpeg_core::decode::u64_from_index(TEXT.len());
 const DROP_PROBE: &str = "probe SLDPRT binding candidate destruction";
 
 struct ObservedText<'ctx, 'session> {

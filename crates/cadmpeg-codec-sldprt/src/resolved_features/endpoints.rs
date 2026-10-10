@@ -394,6 +394,7 @@ fn extended_tagged_indexed_curve_record_ends(payload: &[u8], offset: usize) -> b
             .is_some_and(|at| class_declaration_at(payload, at))
 }
 
+#[derive(Clone, Copy)]
 pub(super) struct RosterCurveEndpointRoute<'curve, 'payload> {
     payload: &'payload [u8],
     curve: &'curve SketchInputEntity,

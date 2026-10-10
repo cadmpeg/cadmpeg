@@ -8,8 +8,10 @@ use std::collections::HashSet;
 
 // Each class-reference Vec grows to four slots. Both remain live when the
 // output range Vec grows to four slots; the singleton stable sorts need no scratch.
-const CLASS_BYTES: u64 = 8 * std::mem::size_of::<&FeatureInputClass>() as u64;
-const RANGE_BYTES: u64 = 4 * std::mem::size_of::<(u64, u64)>() as u64;
+const CLASS_BYTES: u64 =
+    8 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<&FeatureInputClass>());
+const RANGE_BYTES: u64 =
+    4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(u64, u64)>());
 const PEAK_BYTES: u64 = CLASS_BYTES + RANGE_BYTES;
 
 fn lane() -> FeatureInputLane {

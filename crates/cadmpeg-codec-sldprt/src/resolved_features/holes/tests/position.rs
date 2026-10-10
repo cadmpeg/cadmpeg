@@ -694,7 +694,7 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
     alternate_configuration.configuration = Some("alternate".into());
     for index in 0..5 {
         let mut marker = alternate_configuration.sketch_entities[0].clone();
-        marker.set_test_id(&format!("unmatched-{index}"));
+        marker.set_test_id(format!("unmatched-{index}"));
         alternate_configuration.sketch_entities.push(marker);
     }
 
