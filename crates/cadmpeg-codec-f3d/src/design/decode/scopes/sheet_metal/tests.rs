@@ -579,3 +579,5 @@ mod binding {
 mod callback_refusal;
 
 mod flange_storage;
+
+mod entry_refusal;

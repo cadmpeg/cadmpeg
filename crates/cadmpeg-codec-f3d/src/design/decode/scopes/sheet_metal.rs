@@ -893,6 +893,7 @@ pub(super) fn bind_hem_operation_from_parameters(
     parameters: &[DesignParameter],
     parameter_owners: &[DesignParameterOwner],
 ) -> Result<(), CodecError> {
+    ctx.charge_work(0, "F3D Hem parameter binding")?;
     if !matches!(scope.payload(), DesignScopePayload::Hem(_)) {
         return Ok(());
     }

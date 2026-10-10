@@ -268,6 +268,7 @@ fn bind_sketch_entity<'entities, 'ctx>(
     entities: &'entities [crate::records::entity_header::DesignEntityHeader],
     sketch_entities: &mut Option<SketchEntityIndex<'entities, 'ctx>>,
 ) -> Result<(), CodecError> {
+    ctx.charge_work(0, "F3D sketch scope binding")?;
     if !matches!(
         scope.payload(),
         scope::DesignScopePayload::Sketch(_)
@@ -323,6 +324,7 @@ fn bind_scope_constructions(
     stream_types: &HashMap<u64, (&str, u32)>,
     native: &crate::native::F3dNative,
 ) -> Result<(), CodecError> {
+    ctx.charge_work(0, "F3D scope construction binding")?;
     let parameters = &native.design_parameters;
     let parameter_owners = &native.design_parameter_owners;
     let component_occurrences = &native.design_component_occurrences;
@@ -757,6 +759,7 @@ fn admitted_scope_variant(
     group: &[(&str, u32, usize)],
     histories: &[crate::history_records::AsmHistory],
 ) -> Result<Option<usize>, CodecError> {
+    ctx.charge_work(0, "F3D scope variant admission")?;
     const HISTORY_OPERATION: &str = "scan F3D scope admission history candidates";
     let [(_, _, first), following @ ..] = group else {
         return Ok(None);
@@ -1102,6 +1105,7 @@ pub(in crate::design::decode) fn parse_parameter_scope(
     class_tag: &crate::records::references::DesignClassTag,
     byte_offset: u64,
 ) -> Result<Option<DesignParameterScope>, CodecError> {
+    ctx.charge_work(0, "F3D parameter scope entry")?;
     let Some(start) = usize::try_from(byte_offset).ok() else {
         return Ok(None);
     };
@@ -1121,6 +1125,7 @@ fn parse_scope_at(
     class_tag: [u8; 3],
     start: usize,
 ) -> Result<Option<DesignParameterScope>, CodecError> {
+    ctx.charge_work(0, "F3D parameter scope pair")?;
     let Some(search) = start.checked_add(11) else {
         return Ok(None);
     };
@@ -1164,6 +1169,7 @@ fn parse_scope_frame(
     start: usize,
     paired_at: usize,
 ) -> Result<Option<DesignParameterScope>, CodecError> {
+    ctx.charge_work(0, "F3D parameter scope frame")?;
     let (Ok(class_tag_text), Some(paired_header)) = (
         std::str::from_utf8(&class_tag),
         indexed_record_header_at(bytes, paired_at),
@@ -1547,6 +1553,7 @@ fn reference_table(
     start: usize,
     table_end: usize,
 ) -> Result<Option<ReferenceTable>, CodecError> {
+    ctx.charge_work(0, "scan F3D parameter-scope reference slots")?;
     let Some(first_slot_min) = start.checked_add(15) else {
         return Ok(None);
     };
@@ -1615,6 +1622,7 @@ fn named_parameter_scope_tail_is_valid(
     paired_at: usize,
     tail_length: usize,
 ) -> Result<Option<bool>, CodecError> {
+    ctx.charge_work(0, "F3D named parameter scope tail")?;
     let Some(label_at) = kind_end.checked_add(8) else {
         return Ok(None);
     };
