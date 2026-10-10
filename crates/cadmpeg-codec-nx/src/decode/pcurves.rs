@@ -4947,12 +4947,14 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
         let mut blend_parameter_grids = BlendParameterGridCache::new(ctx)?;
         let mut candidates = Vec::new();
         for (&xmt, edge_id) in ctx.admit_iter(edges, "nx tolerant edge traversal")? {
-            let Some(edge_fields) = graph.get(NodeKind::Edge, xmt).and_then(Node::edge_fields)
+            let Some(edge_fields) = graph
+                .get(ctx, NodeKind::Edge, xmt)?
+                .and_then(Node::edge_fields)
             else {
                 continue;
             };
             let Some(first_fin) = graph
-                .get_target(NodeKind::Fin, edge_fields.fin)
+                .get_target(ctx, NodeKind::Fin, edge_fields.fin)?
                 .and_then(Node::fin_fields)
             else {
                 continue;
@@ -4964,7 +4966,7 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
                 continue;
             }
             let Some(second_fin) = graph
-                .get_target(NodeKind::Fin, first_fin.other)
+                .get_target(ctx, NodeKind::Fin, first_fin.other)?
                 .and_then(Node::fin_fields)
             else {
                 continue;
@@ -5187,7 +5189,7 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
         annotations
             .derived(ctx, edge_id, "curve")
             .map_err(cadmpeg_core::CodecError::from)?;
-        if let Some(node) = graph.get(NodeKind::Edge, xmt) {
+        if let Some(node) = graph.get(ctx, NodeKind::Edge, xmt)? {
             annotations.note(
                 ctx,
                 &curve_id,

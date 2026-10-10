@@ -138,14 +138,13 @@ impl<'a, T: CountedValue> BorrowedValues<'a, T> {
         if bytes.is_empty() || !bytes.len().is_multiple_of(T::WIDTH) {
             return Ok(None);
         }
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(bytes.len() / T::WIDTH),
+        let width = std::num::NonZeroUsize::new(T::WIDTH)
+            .ok_or_else(|| CodecError::malformed("numeric value width must be nonzero"))?;
+        if ctx.any_by(
+            bytes.chunks_exact(width.get()),
+            |bytes| Ok(T::read(bytes).and_then(T::admit).is_none()),
             "validate NX numeric value lane",
-        )?;
-        if bytes
-            .chunks_exact(T::WIDTH)
-            .any(|bytes| T::read(bytes).and_then(T::admit).is_none())
-        {
+        )? {
             return Ok(None);
         }
         Ok(Some(Self {
@@ -158,12 +157,9 @@ impl<'a, T: CountedValue> BorrowedValues<'a, T> {
         ctx: &DecodeContext<'_>,
     ) -> Result<CountedValues<T>, CodecError> {
         let count = self.bytes.len() / T::WIDTH;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(count),
-            "materialize NX numeric value lane",
-        )?;
         let mut values = ctx.collection_vec(count, "NX numeric value payload")?;
-        for bytes in self.bytes.chunks_exact(T::WIDTH) {
+        let mut lane = self.bytes.chunks_exact(T::WIDTH);
+        while let Some(bytes) = ctx.next_charged(&mut lane, "materialize NX numeric value lane")? {
             let value = T::read(bytes)
                 .and_then(T::admit)
                 .ok_or_else(|| CodecError::malformed("invalid admitted NX numeric lane"))?;

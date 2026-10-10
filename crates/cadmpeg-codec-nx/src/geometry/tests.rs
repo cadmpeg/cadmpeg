@@ -126,11 +126,11 @@ fn offset_surface_envelope_does_not_consume_the_following_record() {
             .unwrap();
     assert_eq!(
         graph
-            .get(NodeKind::OffsetSurface, 12)
+            .node(NodeKind::OffsetSurface, 12)
             .map(crate::topology::Node::end),
         Some(offset_end)
     );
-    assert!(graph.get(NodeKind::Point, 20).is_some());
+    assert!(graph.node(NodeKind::Point, 20).is_some());
 }
 
 #[test]
@@ -308,7 +308,7 @@ fn graph_owned_point_has_no_scanner_magnitude_limit() {
             .unwrap();
     assert_eq!(
         graph
-            .get(NodeKind::Point, 11)
+            .node(NodeKind::Point, 11)
             .and_then(crate::topology::Node::point_position)
             .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(
@@ -322,7 +322,7 @@ fn graph_owned_point_has_no_scanner_magnitude_limit() {
     assert!(
         crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
             .unwrap()
-            .get(NodeKind::Point, 11)
+            .node(NodeKind::Point, 11)
             .is_none()
     );
 }
