@@ -89,10 +89,13 @@ fn disconnected_shell_faces_admit_each_tree_removal() {
             )
         },
     );
-    assert_eq!(shells, [1, 2, 3].map(|face| NeutralShellSpec {
-        faces: vec![face],
-        wire_curves: BTreeSet::new(),
-    }));
+    assert_eq!(
+        shells,
+        [1, 2, 3].map(|face| NeutralShellSpec {
+            faces: vec![face],
+            wire_curves: BTreeSet::new(),
+        })
+    );
 }
 
 #[test]

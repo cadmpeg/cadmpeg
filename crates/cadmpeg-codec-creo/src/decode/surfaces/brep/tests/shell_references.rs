@@ -56,27 +56,39 @@ fn brep_face_shell_nodes_refuse_collection_limit() {
 #[test]
 fn brep_face_shell_identity_copies_refuse_materialized_limit() {
     let error = crate::test_support::last_refusal_at(
-        &[], ResourceDimension::MaterializedBytes,
+        &[],
+        ResourceDimension::MaterializedBytes,
         "creo B-rep face-shell identity copies",
         |ctx| {
             let shell = NeutralShellSpec {
-                faces: vec![5], wire_curves: BTreeSet::from([10]),
+                faces: vec![5],
+                wire_curves: BTreeSet::from([10]),
             };
             let shell_id = ShellId::compose(&crate::identity::VISIBGEOM_SHELL, 1);
             let mut storage = ctx.reserve_scoped(0, "shell references workspace")?;
             let mut face_shell_ids = BTreeMap::new();
             let references = BrepShellReferences::from_shell(
-                ctx, &shell, &shell_id, &mut face_shell_ids, &mut storage,
+                ctx,
+                &shell,
+                &shell_id,
+                &mut face_shell_ids,
+                &mut storage,
             )?;
             assert_eq!(face_shell_ids.get(&5), Some(&shell_id));
-            assert_eq!(references.face_ids, vec![FaceId::compose(&crate::identity::VISIBGEOM_FACE, 5)]);
+            assert_eq!(
+                references.face_ids,
+                vec![FaceId::compose(&crate::identity::VISIBGEOM_FACE, 5)]
+            );
             assert_eq!(references.edge_ids.len(), 1);
             assert_eq!(references.edge_ids[0].as_str(), "creo:visibgeom:edge#10");
             Ok(())
         },
     );
-    assert_refusal(&error, ResourceDimension::MaterializedBytes,
-        "creo B-rep face-shell identity copies");
+    assert_refusal(
+        &error,
+        ResourceDimension::MaterializedBytes,
+        "creo B-rep face-shell identity copies",
+    );
 }
 
 #[test]
