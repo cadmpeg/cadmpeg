@@ -515,8 +515,8 @@ mod tests {
         assert_eq!(actual.used, 4);
         assert_eq!(actual.additional, 1);
         assert_eq!(
-            ctx.charge_work_limit(0, "observe split refusal"),
-            Err(original)
+            ctx.resource_refusal(),
+            Some(original)
         );
         assert!(
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)

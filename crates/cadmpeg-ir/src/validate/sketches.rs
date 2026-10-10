@@ -42,7 +42,6 @@ fn spatial_oriented_endpoints(
     reversed: bool,
 ) -> Result<Option<(crate::math::Point3, crate::math::Point3)>, cadmpeg_core::decode::ResourceLimit>
 {
-    ctx.charge_work_limit(0, "geometry helper boundary")?;
     let endpoints = match geometry.definition() {
         SpatialSketchGeometryDefinition::Line { start, end } => (start.get(), end.get()),
         SpatialSketchGeometryDefinition::Arc {
@@ -1908,8 +1907,6 @@ fn visit_constraint_loci<'definition>(
     mut visit: impl FnMut(&'definition SketchLocus) -> Result<(), CodecError>,
 ) -> Result<(), CodecError> {
     use crate::sketches::SketchDistanceMeasurement;
-
-    ctx.charge_work(0, "sketch constraint locus boundary")?;
     match definition {
         Constraint::CoincidentLoci { loci: members }
         | Constraint::Group { elements: members }
@@ -1969,7 +1966,6 @@ fn visit_spatial_constraint_entities<'definition, U, L>(
     definition: &'definition SpatialConstraint<U, L>,
     mut visit: impl FnMut(&'definition crate::sketches::SpatialSketchEntityId) -> Result<(), CodecError>,
 ) -> Result<(), CodecError> {
-    ctx.charge_work(0, "spatial constraint member boundary")?;
     match definition {
         SpatialConstraint::Native { .. } => {}
         SpatialConstraint::SplineGroup { entities: members }

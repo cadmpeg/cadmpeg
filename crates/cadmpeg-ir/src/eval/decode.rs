@@ -73,17 +73,7 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
 
     /// The resource refusal recorded by an allocation, charge or evaluation.
     pub(super) fn refused(&self) -> Option<ResourceLimit> {
-        if let Some(limit) = *self.refusal.borrow() {
-            return Some(limit);
-        }
-        let original = self
-            .admission
-            .work(0, "observe geometry evaluation refusal")
-            .err();
-        if let Some(limit) = original {
-            *self.refusal.borrow_mut() = Some(limit);
-        }
-        original
+        *self.refusal.borrow()
     }
 
     /// `Err` with the recorded resource refusal, or `Ok` when nothing was refused.
@@ -135,7 +125,6 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
         if self.refusal.borrow().is_some() {
             return None;
         }
-        self.work(0, work_operation)?;
         let mut values = values.into_iter();
         let mut output = Vec::new();
         while values.size_hint() != (0, Some(0)) {
@@ -155,7 +144,9 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
         count: usize,
         operation: &'static str,
     ) -> Option<()> {
-        self.work(0, operation)?;
+        if self.refusal.borrow().is_some() {
+            return None;
+        }
         match self.admission.context() {
             Some(context) => {
                 let mut storage = self.storage.borrow_mut();
@@ -177,7 +168,9 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
         count: usize,
         operation: &'static str,
     ) -> Option<(Vec<T>, Option<ScopedReservation<'ctx>>)> {
-        self.work(0, operation)?;
+        if self.refusal.borrow().is_some() {
+            return None;
+        }
         let mut values = Vec::new();
         let storage = match self.admission.context() {
             Some(context) => {
@@ -201,7 +194,9 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
         source: &[T],
         operation: &'static str,
     ) -> Option<Vec<T>> {
-        self.work(0, operation)?;
+        if self.refusal.borrow().is_some() {
+            return None;
+        }
         let mut values = Vec::new();
         match self.admission.context() {
             Some(context) => {
@@ -416,7 +411,6 @@ impl<'curve, 'ctx, 'arena: 'ctx> NurbsPointEvaluator<'curve, 'ctx, 'arena> {
         ctx: &'ctx DecodeContext<'arena>,
         curve: &'curve NurbsCurve,
     ) -> Result<Self, ResourceLimit> {
-        ctx.charge_work_limit(0, "IR B-spline basis")?;
         let support = curve.knots().len() - curve.pole_count();
         let basis = if support <= 2 {
             (
@@ -450,7 +444,6 @@ impl<'curve, 'ctx, 'arena: 'ctx> NurbsPointEvaluator<'curve, 'ctx, 'arena> {
         parameter: f64,
     ) -> Result<Result<FinitePoint3, EvaluationFailure<Point3>>, ResourceLimit> {
         let ctx = self.ctx;
-        ctx.charge_work_limit(0, "IR reusable NURBS evaluation")?;
         let _depth = if matches!(&self.basis, SupportValues::Heap(_)) {
             let depth = ctx.enter_nested_limit("geometry evaluation nesting")?;
             Some(depth)

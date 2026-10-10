@@ -49,7 +49,6 @@ pub(super) fn check_spreadsheets(
                 )?;
                 continue;
             };
-            ctx.charge_work(0, "compare spreadsheet parameter owner")?;
             let same_owner = match parameter.owner.as_ref() {
                 Some(owner) => ctx.equal_bytes(
                     owner.as_str().as_bytes(),

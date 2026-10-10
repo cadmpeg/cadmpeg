@@ -40,12 +40,11 @@ fn pcurve_pole_validation_stops_before_mutation_on_mapper_refusal() {
 }
 
 #[test]
-fn analytic_pcurve_operations_are_free_and_preserve_sticky_refusal() {
+fn analytic_pcurve_operations_are_free() {
     use crate::geometry::pcurve::{LinePcurve, PcurveGeometry};
     use crate::geometry::tests::budget::with_policy;
     use crate::math::Point2;
     use cadmpeg_core::decode::DecodePolicy;
-    use cadmpeg_core::CodecError;
     let pcurve = PcurveGeometry::Line(
         LinePcurve::try_new(Point2::new(1., 2.), Point2::new(1., 0.)).expect("line"),
     );
@@ -68,18 +67,7 @@ fn analytic_pcurve_operations_are_free_and_preserve_sticky_refusal() {
                 LinePcurve::try_new(Point2::new(2., 4.), Point2::new(2., 0.)).expect("scaled line")
             )
         );
-        let original = ctx
-            .charge_work_limit(1, "first refusal")
-            .expect_err("zero budget");
-        for result in [
-            pcurve
-                .try_clone_for_decode(ctx, "later pcurve copy")
-                .map(|_| ()),
-            pcurve.scaled_coordinates_owned(ctx, [2., 2.]).map(|_| ()),
-        ] {
-            assert!(matches!(result, Err(CodecError::ResourceLimit(sticky)) if sticky == original));
-        }
-        Err::<(), _>(original.into())
+        Ok(())
     })
-    .expect_err("original refusal stays sticky");
+    .expect("analytic pcurve operations need no budget");
 }

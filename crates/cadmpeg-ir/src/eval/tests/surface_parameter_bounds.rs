@@ -520,7 +520,7 @@ fn surface_patch_split_keeps_first_assembled_controls_through_second_refusal() {
         assert_eq!(limit.operation, "IR surface patch assembled controls");
         assert_eq!(limit.used, u64::try_from(live_bytes).unwrap());
         assert_eq!(limit.additional, 4 * u64::try_from(std::mem::size_of::<[f64; 4]>()).unwrap());
-        assert_eq!(ctx.charge_work_limit(0, "observe split refusal"), Err(limit));
+        assert_eq!(ctx.resource_refusal(), Some(limit));
         assert_eq!(super::super::split_rational_surface_patch(
             &ctx, &source.rows[0], split_u, &budget,
         ).unwrap_err(), limit);

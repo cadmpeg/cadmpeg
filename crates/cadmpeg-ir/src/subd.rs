@@ -1018,7 +1018,6 @@ impl SubdEdge {
         sector_coefficients: [FiniteReal; 2],
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Result<Self, SubdError>, cadmpeg_core::CodecError> {
-        ctx.charge_work(0, "SubD edge endpoints")?;
         if vertices[0] == vertices[1] {
             return Ok(Err(SubdError::Admission(ctx.copy_retained_text(
                 "vertices must name distinct endpoints",
@@ -1043,7 +1042,6 @@ impl SubdEdge {
         sector_coefficients: [f64; 2],
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Result<Self, SubdError>, cadmpeg_core::CodecError> {
-        ctx.charge_work(0, "SubD edge controls")?;
         Self::admit_raw_controls(
             vertices,
             sharpness,
@@ -1077,7 +1075,6 @@ impl SubdEdge {
         sector_coefficients: [f64; 2],
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Result<Self, SubdError>, cadmpeg_core::CodecError> {
-        ctx.charge_work(0, "SubD edge controls")?;
         Self::admit_raw_controls(
             vertices,
             sharpness,

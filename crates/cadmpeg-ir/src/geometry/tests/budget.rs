@@ -41,7 +41,7 @@ pub(in crate::geometry) fn with_policy<T>(
 }
 
 #[test]
-fn analytic_operations_are_free_and_preserve_sticky_refusal() {
+fn analytic_operations_are_free() {
     use crate::geometry::analytic::{LineCurve, PlaneSurface};
     use crate::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
     use crate::math::{Point3, Vector3};
@@ -83,21 +83,7 @@ fn analytic_operations_are_free_and_preserve_sticky_refusal() {
                 .unwrap()
             )
         );
-        let original = ctx
-            .charge_work_limit(1, "first refusal")
-            .expect_err("zero budget");
-        for result in [
-            line.try_clone_for_decode(ctx, "later line copy")
-                .map(|_| ()),
-            plane
-                .try_clone_for_decode(ctx, "later plane copy")
-                .map(|_| ()),
-            line.scaled_owned(ctx, scale).map(|_| ()),
-            plane.scaled_owned(ctx, scale).map(|_| ()),
-        ] {
-            assert!(matches!(result, Err(CodecError::ResourceLimit(sticky)) if sticky == original));
-        }
-        Err::<(), _>(original.into())
+        Ok(())
     })
-    .expect_err("original refusal stays sticky");
+    .expect("analytic operations need no budget");
 }
