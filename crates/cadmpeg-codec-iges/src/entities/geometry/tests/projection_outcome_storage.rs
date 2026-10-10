@@ -204,3 +204,141 @@ fn projection_merge_accepts_exact_source_and_target_work_and_releases_backing() 
     assert_eq!((first.limit, first.used, first.additional), (work, work, 1));
     assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
 }
+
+enum DuplicateOutcome<'ctx> {
+    Plain(super::super::ProjectionOutcome<'ctx>),
+    Wire(super::super::WireProjectionOutcome<'ctx>),
+}
+
+fn duplicate_outcome<'ctx>(ctx: &'ctx DecodeContext<'_>, decoded: BTreeSet<u32>, wire: bool)
+    -> DuplicateOutcome<'ctx> {
+    // These are trusted prebuilt inputs. Reserve the standard B-tree node
+    // bound without executing measured source visits or decoded insertions.
+    let nodes = if decoded.is_empty() { 0 } else { (decoded.len() - 1) / 5 + 1 };
+    let decoded_storage = ctx.reserve_scoped(u64::try_from(nodes).unwrap() * decoded_node_bytes(),
+        "test duplicate outcome source nodes").unwrap();
+    let loss_slots_storage = ctx.reserve_scoped(0, "test duplicate outcome loss slots").unwrap();
+    if wire {
+        DuplicateOutcome::Wire(super::super::WireProjectionOutcome {
+            decoded, decoded_storage, losses: Vec::new(), loss_slots_storage,
+            wire_edges: Vec::new(),
+            wire_slots_storage: ctx.reserve_scoped(0, "test duplicate outcome wire slots").unwrap(),
+        })
+    } else {
+        DuplicateOutcome::Plain(super::super::ProjectionOutcome {
+            decoded, decoded_storage, losses: Vec::new(), loss_slots_storage,
+        })
+    }
+}
+
+fn merge_duplicate_outcome(source: DuplicateOutcome<'_>, decoded: &mut BTreeSet<u32>,
+    storage: &mut cadmpeg_core::decode::ScopedReservation<'_>, ctx: &DecodeContext<'_>)
+    -> Result<(), cadmpeg_core::CodecError> {
+    let mut losses = Vec::new();
+    let mut wires = Vec::new();
+    let result = match source {
+        DuplicateOutcome::Plain(source) => source.merge_into(decoded, storage, &mut losses, ctx),
+        DuplicateOutcome::Wire(source) => source.merge_into(decoded, storage, &mut losses, &mut wires, ctx),
+    };
+    assert!(losses.is_empty() && wires.is_empty());
+    result
+}
+
+fn duplicate_key_work(count: usize) -> u64 {
+    // One root key, or at most two eleven-key levels for 64 stored keys.
+    let comparisons = match count { 1 => 1, 64 => 22, _ => panic!("unsupported fixture size") };
+    comparisons * u64::try_from(std::mem::size_of::<u32>()).unwrap()
+}
+
+fn duplicate_boundary(wire: bool, count: usize, visited: usize, before_lookup: bool) {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+    let keys: BTreeSet<_> = (1..=u32::try_from(count).unwrap()).collect();
+    let before = keys.clone();
+    let lookup = duplicate_key_work(count);
+    let work = u64::try_from(visited).unwrap() * (1 + lookup) + u64::from(before_lookup);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = work;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let initial = duplicate_outcome(&ctx, keys.clone(), wire);
+    // All actual outcomes and their reservations exist before refusal, so
+    // replay tests the owner entry rather than fixture admission on a fuse.
+    let replays: Vec<_> = (0..64).flat_map(|_| [duplicate_outcome(&ctx, keys.clone(), wire),
+        duplicate_outcome(&ctx, BTreeSet::new(), wire)]).collect();
+    let mut decoded = keys;
+    let mut storage = ctx.reserve_scoped(0, "test trusted duplicate destination").unwrap();
+    let Err(CodecError::ResourceLimit(first)) = merge_duplicate_outcome(initial, &mut decoded, &mut storage, &ctx)
+        else { panic!("expected duplicate outcome source work refusal"); };
+    assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(first.operation, if before_lookup { "iges merged decoded sequences" }
+        else { "iges merged decoded traversal" });
+    assert_eq!((first.limit, first.used, first.additional),
+        (work, work, if before_lookup { lookup } else { 1 }));
+    assert_eq!(decoded, before);
+    for replay in replays {
+        assert!(matches!(merge_duplicate_outcome(replay, &mut decoded, &mut storage, &ctx),
+            Err(CodecError::ResourceLimit(last)) if last == first));
+        assert_eq!(decoded, before);
+    }
+    drop(decoded);
+    drop(storage);
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+}
+
+#[test]
+fn projection_and_wire_duplicate_merges_refuse_first_and_last_source_visits() {
+    for wire in [false, true] {
+        for count in [1, 64] {
+            for visited in [0, count - 1] {
+                duplicate_boundary(wire, count, visited, false);
+            }
+        }
+    }
+}
+
+#[test]
+fn projection_and_wire_duplicate_merges_refuse_first_and_last_key_lookups() {
+    for wire in [false, true] {
+        for count in [1, 64] {
+            for visited in [0, count - 1] {
+                duplicate_boundary(wire, count, visited, true);
+            }
+        }
+    }
+}
+
+#[test]
+fn projection_and_wire_duplicate_merges_use_exact_whole_source_work() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+    for wire in [false, true] {
+        for count in [1, 64] {
+            let mut decoded: BTreeSet<_> = (1..=u32::try_from(count).unwrap()).collect();
+            let before = decoded.clone();
+            let work = u64::try_from(count).unwrap() * (1 + duplicate_key_work(count));
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = work;
+            policy.limits.max_collection_items = 0;
+            policy.limits.max_retained_bytes = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let source = duplicate_outcome(&ctx, decoded.clone(), wire);
+            let mut storage = ctx.reserve_scoped(0, "test trusted duplicate destination").unwrap();
+            merge_duplicate_outcome(source, &mut decoded, &mut storage, &ctx).unwrap();
+            assert_eq!(decoded, before);
+            drop(decoded);
+            drop(storage);
+            let free = ctx.reserve_scoped(16 * 1024 * 1024, "test duplicate source nodes released").unwrap();
+            drop(free);
+            let Err(CodecError::ResourceLimit(first)) = ctx.charge_work(1, "test duplicate merge exact work")
+                else { panic!("expected the merge to use its exact whole source work"); };
+            assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(first.operation, "test duplicate merge exact work");
+            assert_eq!((first.limit, first.used, first.additional), (work, work, 1));
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+        }
+    }
+}
