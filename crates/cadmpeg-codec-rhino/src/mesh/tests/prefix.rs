@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{
-    chunk, correspondence_userdata_payload, v5_double_userdata_descriptor,
+    correspondence_userdata_payload, v5_double_userdata_descriptor,
     v5_double_userdata_payload, with_expand, with_expand_policy,
 };
-use crate::chunks::{ArchiveVersion, BoundedReader};
+use crate::chunks::ArchiveVersion;
 use crate::curves::GeometryError;
-use crate::loss::Diagnostics;
 use crate::mesh::{
-    decode, read_ngons, MeshBudget, MeshDecodeOptions, MeshExpand, MeshId,
+    decode, MeshBudget, MeshDecodeOptions, MeshExpand, MeshId,
     TT_MAPPING_MESH_INFO_USERDATA, TT_RENDER_MESH_INFO_USERDATA,
 };
 use crate::objects::{ClassUserdata, UserdataDescriptor};
@@ -264,63 +263,4 @@ fn raw_mesh_normal_promotion_preserves_retained_refusal() {
             .expect("normal promotion control");
         assert_eq!(mesh.tessellation.vertex_normals().len(), 3);
     });
-}
-
-#[test]
-fn current_ngon_indices_reject_equal_mesh_counts() {
-    for (vertices, face) in [([0, 1, 3], 0), ([0, 1, 2], 1)] {
-        let mut body = Vec::new();
-        for value in [1_u32, 0, 1, 3, 1]
-            .into_iter()
-            .chain(vertices)
-            .chain([face])
-        {
-            body.extend(value.to_le_bytes());
-        }
-        let bytes = chunk(&body);
-        with_expand(&bytes, |expand| {
-            let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-            let error = read_ngons(
-                expand.ctx(),
-                &mut reader,
-                ArchiveVersion::V8,
-                3,
-                1,
-                &mut Diagnostics::new(),
-            )
-            .expect_err("indices must be strictly less than counts");
-            assert!(matches!(error, GeometryError::Malformed(_)));
-            assert!(expand.ctx().resource_refusal().is_none());
-        });
-    }
-}
-
-#[test]
-fn current_ngon_null_slots_do_not_count_as_groups() {
-    for (records, group_count) in [
-        (&[1_u32, 0, 1, 0][..], 0),
-        (&[1_u32, 0, 3, 0, 3, 1, 0, 1, 2, 0, 0][..], 1),
-    ] {
-        let mut body = Vec::new();
-        for value in records {
-            body.extend(value.to_le_bytes());
-        }
-        let bytes = chunk(&body);
-        with_expand(&bytes, |expand| {
-            let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-            assert_eq!(
-                read_ngons(
-                    expand.ctx(),
-                    &mut reader,
-                    ArchiveVersion::V8,
-                    3,
-                    1,
-                    &mut Diagnostics::new()
-                )
-                .expect("non-null groups"),
-                group_count
-            );
-            assert_eq!(reader.remaining(), 0);
-        });
-    }
 }

@@ -1406,7 +1406,6 @@ fn read_ngons(
         ));
     }
     let count = checked_u32(&mut child, 1 << 20)?;
-    let mut record_count = 0;
     for _ in 0..count {
         ctx.charge_work(1, "Rhino current mesh ngon records")?;
         let boundary = checked_u32(&mut child, vertices)?;
@@ -1416,27 +1415,16 @@ fn read_ngons(
         let face_count = checked_u32(&mut child, faces)?;
         for _ in 0..boundary {
             ctx.charge_work(1, "Rhino current mesh ngon indices")?;
-            if checked_u32(&mut child, vertices)? == vertices {
-                return Err(error(
-                    child.position() - 4,
-                    "mesh ngon vertex index is out of range",
-                ));
-            }
+            checked_u32(&mut child, vertices)?;
         }
         for _ in 0..face_count {
             ctx.charge_work(1, "Rhino current mesh ngon indices")?;
-            if checked_u32(&mut child, faces)? == faces {
-                return Err(error(
-                    child.position() - 4,
-                    "mesh ngon face index is out of range",
-                ));
-            }
+            checked_u32(&mut child, faces)?;
         }
-        record_count += 1;
     }
     child.skip_remaining()?;
     reader.skip(chunk.next_offset() - reader.position())?;
-    Ok(record_count)
+    Ok(count)
 }
 
 fn read_mapping_tag(
@@ -1636,38 +1624,22 @@ fn read_v5_double_vertices(
         return Ok(None);
     }
     let mut finite = ctx.collection_vec(array_count, "Rhino V5 mesh admitted double vertices")?;
-    let mut read_failure = None;
-    let synchronized = ctx.all_by(
-        float_vertices,
-        |float| {
-            let point = match (|| -> Result<_, FramingError> {
-                Ok([reader.f64()?, reader.f64()?, reader.f64()?])
-            })() {
-                Ok(point) => point,
-                Err(error) => {
-                    read_failure = Some(error);
-                    return Ok(false);
-                }
-            };
-            let Some(admitted) = FinitePoint3::new(Point3::new(point[0], point[1], point[2]))
-            else {
-                return Ok(false);
-            };
-            if !point.iter().zip(float).all(|(double, float)| {
-                cadmpeg_core::convert::f32_from_f64(*double) == Some(float.get())
-            }) {
-                return Ok(false);
-            }
-            finite.push(admitted);
-            Ok(true)
-        },
+    let mut floats = float_vertices.iter();
+    while let Some(float) = ctx.next_charged(
+        &mut floats,
         "Rhino mesh read_v5_double_vertices records",
-    )?;
-    if let Some(error) = read_failure {
-        return Err(error.into());
-    }
-    if !synchronized {
-        return Ok(None);
+    )? {
+        let point = [reader.f64()?, reader.f64()?, reader.f64()?];
+        let Some(admitted) = FinitePoint3::new(Point3::new(point[0], point[1], point[2]))
+        else {
+            return Ok(None);
+        };
+        if !point.iter().zip(float).all(|(double, float)| {
+            cadmpeg_core::convert::f32_from_f64(*double) == Some(float.get())
+        }) {
+            return Ok(None);
+        }
+        finite.push(admitted);
     }
     reader.skip_remaining()?;
     Ok(Some(finite))

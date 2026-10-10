@@ -1607,3 +1607,5 @@ fn read_faces_truncated_at_record_boundary() {
 }
 
 mod prefix;
+
+mod ngon_behavior;

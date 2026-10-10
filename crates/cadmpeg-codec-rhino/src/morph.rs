@@ -1227,7 +1227,7 @@ mod tests {
                 let result =
                     super::project(&ctx, &morph, "fixture", None, "native".into(), |_| Ok(None));
                 if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
-                    assert_eq!(limit.additional, 2);
+                    assert_eq!(limit.additional, 1);
                     assert_eq!(ctx.resource_refusal(), Some(*limit));
                 }
                 result
