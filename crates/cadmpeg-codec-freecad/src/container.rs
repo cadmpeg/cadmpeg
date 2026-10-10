@@ -67,8 +67,16 @@ pub(crate) fn has_document_markers(
         _ => return Ok(false),
     };
     Ok(
-        ctx.contains_bytes(document, b"<Document", "scan FreeCAD probe XML")?
-            && ctx.contains_bytes(document, b"SchemaVersion", "scan FreeCAD probe XML")?,
+        ctx.position_by(
+            document.windows(b"<Document".len()),
+            |window| Ok(window == b"<Document"),
+            "scan FreeCAD probe XML",
+        )?.is_some()
+            && ctx.position_by(
+                document.windows(b"SchemaVersion".len()),
+                |window| Ok(window == b"SchemaVersion"),
+                "scan FreeCAD probe XML",
+            )?.is_some(),
     )
 }
 
@@ -117,9 +125,8 @@ pub(crate) fn scan<'a, 'c>(
     }
     let document_view = archive.open(ctx, "Document.xml")?;
     let document_bytes = document_view.window();
-    if let Some((node_count, object_count)) = xml_envelope_counts(ctx, document_bytes)? {
+    if let Some(object_count) = xml_object_count(ctx, document_bytes)? {
         ctx.charge_entities(object_count, "admit FCStd document objects")?;
-        ctx.charge_collection_items(node_count, "FCStd Document.xml node tree")?;
     }
     let (document, schema_version, document_xml) = parse_document(ctx, document_bytes)?;
     let mut data = BTreeMap::new();
@@ -152,15 +159,10 @@ pub(crate) fn scan<'a, 'c>(
         else {
             break;
         };
-        let id = {
-            let (data, storage) =
-                ctx.format_scoped(format_args!("{index}"), "FCStd archive span ordinal")?;
-            let ordinal = ScopedData {
-                data,
-                _storage: storage,
-            };
-            crate::native::native_id_charged(ctx, "archive-span", &ordinal.data)
-        }?;
+        let id = ctx.format_retained(
+            format_args!("fcstd:native:archive-span#{index}"),
+            "FCStd archive span identity",
+        )?;
         ledger.push(ArchiveSpan {
             id,
             span: crate::native::ByteSpan::try_new(span.start, span.end)
@@ -290,7 +292,7 @@ pub(crate) fn source_attributes(
     )?;
     insert(
         cadmpeg_core::nonblank_literal!("document_kind"),
-        ctx.copy_retained_text(scan.document.document_kind().as_str(), "FCStd source kind")?,
+        ctx.copy_retained_text(scan.document.document_kind_with_admission(ctx)?.as_str(), "FCStd source kind")?,
     )?;
     insert(
         cadmpeg_core::nonblank_literal!("application_domains"),
@@ -371,7 +373,7 @@ pub(crate) fn summary_notes(
             "FCStd document root note",
         )?,
         ctx.format_retained(
-            format_args!("document kind={}", scan.document.document_kind().as_str()),
+            format_args!("document kind={}", scan.document.document_kind_with_admission(ctx)?.as_str()),
             "FCStd document kind note",
         )?,
         ctx.format_retained(
@@ -450,21 +452,18 @@ fn unique_section<'a, 'input>(
     Ok(selected)
 }
 
-// This allocation-free lexical pass admits the XML tree and direct object
-// declarations before roxmltree constructs any nodes. Syntax errors remain
+// This allocation-free lexical pass counts direct object declarations
+// before roxmltree constructs any nodes. Syntax errors remain
 // owned by the complete XML parser.
-pub(crate) fn xml_envelope_counts(
+pub(crate) fn xml_object_count(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
-) -> Result<Option<(u64, u64)>, CodecError> {
+) -> Result<Option<u64>, CodecError> {
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
     }
     let mut offset = 0;
     let mut depth = 0_usize;
-    // Include the document node. Count lexical text and markup nodes as an upper
-    // bound because roxmltree can merge adjacent text into one stored node.
-    let mut nodes = 1_u64;
     let mut objects = 0_u64;
     let mut envelope = None;
     while offset < bytes.len() {
@@ -483,10 +482,6 @@ pub(crate) fn xml_envelope_counts(
                     "FCStd Document.xml lexical text",
                 )?
                 .map_or(bytes.len(), |delta| offset + 1 + delta);
-            let Some(count) = nodes.checked_add(1) else {
-                return Ok(None);
-            };
-            nodes = count;
             offset = next;
             continue;
         }
@@ -499,10 +494,6 @@ pub(crate) fn xml_envelope_counts(
         .into_iter()
         .find(|(prefix, _)| rest.starts_with(prefix))
         {
-            let Some(count) = nodes.checked_add(1) else {
-                return Ok(None);
-            };
-            nodes = count;
             let tail = &rest[prefix.len()..];
             let Some(end) = ctx.position_by(
                 tail.windows(suffix.len()),
@@ -516,10 +507,6 @@ pub(crate) fn xml_envelope_counts(
             continue;
         }
         if rest.starts_with(b"<!") {
-            let Some(count) = nodes.checked_add(1) else {
-                return Ok(None);
-            };
-            nodes = count;
             let Some((end, _)) = scan_tag_end(ctx, bytes, offset + 2)? else {
                 return Ok(None);
             };
@@ -557,10 +544,6 @@ pub(crate) fn xml_envelope_counts(
                 envelope = None;
             }
         } else {
-            let Some(count) = nodes.checked_add(1) else {
-                return Ok(None);
-            };
-            nodes = count;
             if depth == 1 && (name == b"Objects" || name == b"Features") {
                 envelope = Some(if name == b"Objects" {
                     b"Object".as_slice()
@@ -584,7 +567,7 @@ pub(crate) fn xml_envelope_counts(
         }
         offset = end + 1;
     }
-    Ok((depth == 0).then_some((nodes, objects)))
+    Ok((depth == 0).then_some(objects))
 }
 
 fn scan_tag_end(
@@ -1113,17 +1096,10 @@ fn push_logical_span(
         return Ok(());
     }
     ctx.reserve_vec(output, 1, "FCStd logical ledger spans")?;
-    let id = {
-        let (data, storage) = ctx.format_scoped(
-            format_args!("{}", output.len()),
-            "FCStd logical span ordinal",
-        )?;
-        let ordinal = ScopedData {
-            data,
-            _storage: storage,
-        };
-        crate::native::native_id_charged(ctx, "logical-span", &ordinal.data)
-    }?;
+    let id = ctx.format_retained(
+        format_args!("fcstd:native:logical-span#{}", output.len()),
+        "FCStd logical span identity",
+    )?;
     output.push(LogicalSpan {
         id,
         entry: ctx.copy_retained_text(entry.name(), "FCStd logical span entry")?,
