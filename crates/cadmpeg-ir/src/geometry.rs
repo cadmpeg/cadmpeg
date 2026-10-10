@@ -1046,25 +1046,7 @@ impl CompoundCurveConstruction {
         components: Vec<CompoundComponent<CurveId>>,
         cache: Option<LegacyCache>,
     ) -> Result<Self, &'static str> {
-        const INVALID: &str = "compound curve parameters must be finite";
-        if components.is_empty() {
-            return Err("compound curve components must not be empty");
-        }
-        let parameters = parameters
-            .into_iter()
-            .map(FiniteReal::new)
-            .collect::<Option<Vec<_>>>()
-            .ok_or(INVALID)?;
-        let components = components
-            .into_iter()
-            .map(CompoundComponent::admit)
-            .collect::<Option<Vec<_>>>()
-            .ok_or(INVALID)?;
-        Ok(Self {
-            parameters,
-            components,
-            cache,
-        })
+        Self::validate(parameters, components, cache, |_, _| Ok::<_, &'static str>(()))?
     }
 
     /// Admit visited parameters and components within the decode budget.
@@ -1074,49 +1056,45 @@ impl CompoundCurveConstruction {
         components: Vec<CompoundComponent<CurveId>>,
         cache: Option<LegacyCache>,
     ) -> Result<Result<Self, &'static str>, CodecError> {
+        Self::validate(parameters, components, cache, |operation, work| {
+            ctx.charge_work(work, operation)
+        })
+    }
+
+    fn validate<E>(
+        parameters: Vec<f64>,
+        components: Vec<CompoundComponent<CurveId>>,
+        cache: Option<LegacyCache>,
+        mut visit: impl FnMut(&'static str, u64) -> Result<(), E>,
+    ) -> Result<Result<Self, &'static str>, E> {
         const INVALID: &str = "compound curve parameters must be finite";
         if components.is_empty() {
             return Ok(Err("compound curve components must not be empty"));
         }
-        let mut parameters = parameters.into_iter();
-        let mut admitted_parameters = Vec::new();
-        while !parameters.as_slice().is_empty() {
-            let Some(parameter) =
-                ctx.next_charged(&mut parameters, "compound curve parameter admission")?
-            else {
-                break;
-            };
-            let Some(parameter) = FiniteReal::new(parameter) else {
+        for parameter in &parameters {
+            visit("compound curve parameter admission", 1)?;
+            if !parameter.is_finite() {
                 return Ok(Err(INVALID));
-            };
-            ctx.push_vec(
-                &mut admitted_parameters,
-                parameter,
-                "compound curve parameter storage",
-            )?;
+            }
         }
-        let mut components = components.into_iter();
-        let mut admitted_components = Vec::new();
-        while !components.as_slice().is_empty() {
-            let Some(component) =
-                ctx.next_charged(&mut components, "compound curve component admission")?
-            else {
-                break;
-            };
-            let Some(component) = component.admit() else {
+        for component in &components {
+            visit("compound curve component admission", 1)?;
+            if !component.parameter.is_finite() {
                 return Ok(Err(INVALID));
-            };
-            ctx.push_vec(
-                &mut admitted_components,
-                component,
-                "compound curve component storage",
-            )?;
+            }
         }
-        Ok(Ok(Self {
-            parameters: admitted_parameters,
-            components: admitted_components,
-            cache,
-        }))
+        // Parameter conversion checks and maps each scalar. Component conversion
+        // checks and maps each component. Both input allocations move into the
+        // construction without storage admission.
+        visit("compound curve parameter admission", 2 * cadmpeg_core::decode::u64_from_index(parameters.len()))?;
+        let Some([parameters]) = FiniteReal::lanes([parameters]) else {
+            return Ok(Err(INVALID));
+        };
+        visit("compound curve component admission", cadmpeg_core::decode::u64_from_index(components.len()))?;
+        let Some(components) = components.into_iter().map(CompoundComponent::admit).collect::<Option<Vec<_>>>() else {
+            return Ok(Err(INVALID));
+        };
+        Ok(Ok(Self { parameters, components, cache }))
     }
 
     /// Return the parameters.
