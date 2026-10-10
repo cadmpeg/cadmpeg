@@ -7,6 +7,7 @@ use crate::scalar::FiniteReal;
 use cadmpeg_core::decode::ResourceLimit;
 
 pub(super) mod quadratic;
+pub(super) mod pcurve;
 
 mod surface_higher;
 mod surface_fifth;

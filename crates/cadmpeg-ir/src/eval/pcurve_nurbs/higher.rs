@@ -86,17 +86,21 @@ pub(super) fn quadratic(
     poles: DifferentialPoles<'_>,
     parameter: FiniteReal,
     max_order: usize,
-) -> HigherPcurve {
+) -> Option<HigherPcurve> {
     let missing = [Err(EvaluationFailure::NoValue); 3];
-    if max_order < 3 { return missing; }
+    if max_order < 3 { return Some(missing); }
+    if let Err(failure) = scratch.unless_refused() {
+        return Some(std::array::from_fn(|at| if at + 3 <= max_order {
+            Err(EvaluationFailure::ResourceLimit(failure))
+        } else { Err(EvaluationFailure::NoValue) }));
+    }
+    let DifferentialPoles::Stored(crate::geometry::pcurve::PcurveNurbsPoles::Rational { points }) = poles
+        else { return None; };
+    let (Ok(poles), [a, a1, a2, b, b1, b2]) = (<&[_; 3]>::try_from(points.as_slice()), knots)
+        else { return None; };
+    if a != a1 || a != a2 || b != b1 || b != b2 || a >= b { return None; }
     let evaluated = (|| {
-        scratch.unless_refused()?;
         let no_value = EvaluationFailure::NoValue;
-        let DifferentialPoles::Stored(crate::geometry::pcurve::PcurveNurbsPoles::Rational { points }) = poles
-            else { return Err(no_value); };
-        let (Ok(poles), [a, a1, a2, b, b1, b2]) = (<&[_; 3]>::try_from(points.as_slice()), knots)
-            else { return Err(no_value); };
-        if a != a1 || a != a2 || b != b1 || b != b2 || a >= b { return Err(no_value); }
         let [a, b] = FiniteReal::array([*a, *b]).ok_or(no_value)?;
         let local = super::difference_quotient(parameter, a, b, a).map_err(|failure| failure.map(|_| ()))?;
         let mut width = ExactSignedSum::default();
@@ -112,11 +116,11 @@ pub(super) fn quadratic(
         };
         Ok([vector(value.third), vector(value.fourth), vector(value.fifth)])
     })();
-    match evaluated {
+    Some(match evaluated {
         Ok(values) => values,
         Err(failure) => std::array::from_fn(|at| if at + 3 <= max_order { Err(failure) }
             else { Err(EvaluationFailure::NoValue) }),
-    }
+    })
 }
 
 pub(super) fn polynomial(

@@ -46,7 +46,7 @@ impl DifferentialPoles<'_> {
         }
     }
 
-    fn weight_at(self, index: usize) -> Option<f64> {
+    pub(in crate::eval) fn weight_at(self, index: usize) -> Option<f64> {
         match self {
             #[cfg(test)]
             Self::Raw { weights, .. } => weights.and_then(|weights| weights.get(index).copied()),
@@ -58,7 +58,7 @@ impl DifferentialPoles<'_> {
         }
     }
 
-    fn point_at(self, index: usize) -> Option<FinitePoint3> {
+    pub(in crate::eval) fn point_at(self, index: usize) -> Option<FinitePoint3> {
         match self {
             #[cfg(test)]
             Self::Raw { points, .. } => FinitePoint2::new(*points.get(index)?).map(planar_pole),
@@ -142,13 +142,15 @@ fn differential_unsettled(
         .ok_or(EvaluationFailure::NoValue)?;
     // At a finite parameter over finite knots, the basis is absent or not
     // finite only where one of its terms left the finite range.
-    let (basis, captured) = if max_order.is_some_and(|order| order >= 3) && !poles.has_weights() {
+    let (basis, captured) = if max_order.is_some_and(|order| order >= 3) && (!poles.has_weights() || degree >= 2) {
         let (basis, captured) = basis::polynomial_higher::point_basis(scratch, knots, degree, span, t,
             max_order.unwrap_or(2)).ok_or_else(|| scratch.failure(unreached))?;
         (basis, Some(captured))
     } else {
         (basis::bspline_basis(scratch, knots, degree, span, t).ok_or(unreached)?, None)
     };
+    let requested_rational = poles.has_weights() && max_order.is_some_and(|order| order >= 3);
+    let mut completed = None;
     let result = (|| {
     if !basis::all_finite(scratch, &basis).ok_or_else(|| scratch.failure(unreached))? {
         return Err(unreached);
@@ -248,14 +250,21 @@ fn differential_unsettled(
     let first_sum = sum(&first_basis);
     let first_lanes = first_sum.and_then(|sum| sum.project(base, &[(sum, point)]));
     let first = first_lanes.and_then(|lanes| finite_lanes(lanes).ok());
+    let mut completed_second = None;
     let second = first_sum.zip(first).and_then(|(first_sum, first)| {
         let second_sum = sum(second_basis.as_ref()?)?;
+        if requested_rational { completed_second = Some(second_sum); }
         finite_lanes(second_sum.project(
             base,
             &[(second_sum, point), (first_sum, first), (first_sum, first)],
         )?)
         .ok()
     });
+    if requested_rational {
+        completed = Some(super::rational::pcurve::CompletedLower {
+            orders: [Some(base), first_sum, completed_second], scale,
+        });
+    }
     let unscale_twice = |value: FiniteReal| -> Result<Option<FiniteReal>, ResourceLimit> {
         if scale.get() == 1.0 {
             Ok(Some(value))
@@ -306,16 +315,18 @@ fn differential_unsettled(
     let mut result = result;
     if result.tangent.is_ok() {
         if let Some(captured) = captured {
-            result.higher = higher::polynomial(scratch, knots, degree, span, poles, &captured,
-                max_order.unwrap_or(2));
+            let order = max_order.unwrap_or(2);
+            result.higher = if !poles.has_weights() {
+                higher::polynomial(scratch, knots, degree, span, poles, &captured, order)
+            } else if let Some(fixed) = higher::quadratic(scratch, knots, poles,
+                FiniteReal::new(t).ok_or(EvaluationFailure::NoValue)?, order) {
+                fixed
+            } else if let Some(lower) = completed {
+                super::rational::pcurve::higher(scratch, knots, degree, span, poles, lower, &captured, order)
+            } else { [Err(EvaluationFailure::NoValue); 3] };
         } else if degree == 1 && poles.has_weights() {
             if let Some(order) = max_order.filter(|order| *order >= 3) {
                 result.higher = higher::linear(scratch, knots, span, poles, &basis, order);
-            }
-        } else if degree == 2 && poles.has_weights() {
-            if let Some(order) = max_order.filter(|order| *order >= 3) {
-                result.higher = higher::quadratic(scratch, knots, poles,
-                    FiniteReal::new(t).ok_or(EvaluationFailure::NoValue)?, order);
             }
         }
     }
