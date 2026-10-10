@@ -245,13 +245,13 @@ refuse_items!(
 refuse_items!(
     face_operand_referenced_faces_refuse_collection_limit,
     Case::Referenced,
-    4,
+    3,
     "index F3D referenced operand faces"
 );
 refuse_items!(
     face_operand_alternate_faces_refuse_collection_limit,
     Case::Alternate,
-    8,
+    7,
     "collect F3D alternate selector operand faces"
 );
 refuse_items!(

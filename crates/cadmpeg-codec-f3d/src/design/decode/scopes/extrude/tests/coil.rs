@@ -85,6 +85,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             bytes[second_side_extent_offset..second_side_extent_offset + 4]
                 .copy_from_slice(&side_extents.1.to_le_bytes());
         }
+        let mut legacy_reference_count_at = None;
         if legacy_side_extents.is_some() {
             let reference_count_offset = legacy_reference_count_offset.unwrap_or_else(|| {
                 if legacy_side_extents.is_some_and(|(_, widened)| widened)
@@ -95,6 +96,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
                     252
                 }
             }) + legacy_field_shift;
+            legacy_reference_count_at = Some(reference_count_offset);
             bytes.resize(reference_count_offset, 0);
         }
         let compact_two_sided =
@@ -157,7 +159,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
                 .unwrap(),
             byte_offset: 0,
         };
-        parse_parameter_scope(
+        let parsed = parse_parameter_scope(
             &cadmpeg_test_support::service_decode_context(),
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
@@ -166,7 +168,32 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             header.byte_offset,
         )
         .unwrap()
-        .unwrap()
+        .unwrap();
+        if direction_face_extend.0 == 2 {
+            let contains_operation = if legacy_reference_count_offset == Some(283) {
+                Some("search F3D compact shifted Extrude parameter references")
+            } else if legacy_reference_count_offset.is_none() {
+                Some("search F3D shifted Extrude parameter references")
+            } else {
+                None
+            };
+            if let (Some(operation), Some(reference_count_at)) =
+                (contains_operation, legacy_reference_count_at)
+            {
+                assert!(parsed.extrude_prologue().is_some());
+                let reference_members = [reference_padding.map_or(55, |_| 77_u32)];
+                super::assert_work_refusal(operation, |ctx| {
+                    super::super::exact_legacy_shifted_extrude_prologue(
+                        ctx,
+                        &bytes,
+                        0,
+                        reference_count_at,
+                        &reference_members,
+                    )
+                });
+            }
+        }
+        parsed
     };
 
     let direct = scope(
@@ -1252,7 +1279,8 @@ fn legacy_class_415_one_sided_scope_decodes_distinct_extent_lanes() {
         .expect("class-415 one-sided scope envelope")
     };
 
-    let to_face = parse(&make_bytes(true, &TO_FACE_REFERENCES));
+    let to_face_bytes = make_bytes(true, &TO_FACE_REFERENCES);
+    let to_face = parse(&to_face_bytes);
     assert_eq!(to_face.frame_length(), 481);
     assert_eq!(to_face.reference_count_offset(), 278);
     assert_eq!(
