@@ -511,7 +511,7 @@ pub(super) fn rational_higher(
     parameter: FiniteReal,
     request: super::ModelCurveRequest,
 ) -> Result<super::curve_higher::CurveHigher, EvaluationFailure<()>> {
-    use super::rational::Homogeneous;
+    use super::rational::{quadratic, Homogeneous};
     use super::curve_higher::CurveHigher;
     scratch.unless_refused()?;
     let fourth = matches!(request, super::ModelCurveRequest::Fourth | super::ModelCurveRequest::Fifth);
@@ -546,7 +546,7 @@ pub(super) fn rational_higher(
                     width.add_factors([b.get()]);
                     width.add_factors([-a.get()]);
                     let width = width.finish().ok_or(no_value)?;
-                    return Ok(higher(Homogeneous::quadratic_higher(poles, local, width, fourth, fifth)
+                    return Ok(higher(quadratic::higher(poles, local, width, fourth, fifth)
                         .ok_or(no_value)?));
                 }
             }
