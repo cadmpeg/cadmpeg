@@ -21,15 +21,19 @@ fn transform_preflight_local_ceiling_fuses_the_original_caller_session() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = super::super::enforce_transform_depth(&directory, &ctx);
         if cap == 2 {
-            let first = match result {
-                Err(CodecError::ResourceLimit(first)) => first,
-                _ => panic!("expected the three-transform chain to refuse its third step"),
+            let Err(CodecError::ResourceLimit(first)) = result else {
+                panic!("expected the three-transform chain to refuse its third step")
             };
-            assert_eq!(first.dimension, ResourceDimension::Codec("iges_transform_depth"));
+            assert_eq!(
+                first.dimension,
+                ResourceDimension::Codec("iges_transform_depth")
+            );
             assert_eq!(first.operation, "iges_transform_depth");
             assert_eq!((first.limit, first.used, first.additional), (2, 2, 1));
             assert_eq!(ctx.resource_refusal(), Some(first));
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
+            );
         } else {
             result.unwrap();
             ctx.finish_session().unwrap();

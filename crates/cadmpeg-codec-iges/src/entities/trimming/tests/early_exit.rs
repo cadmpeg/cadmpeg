@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::*;
 use super::super::super::composite::CompositeCurveError;
+use super::*;
 use cadmpeg_core::decode::refusal_probe::RefusalProbe;
 
 const LARGE_TAIL: usize = 4096;
@@ -18,14 +18,9 @@ fn parse_projection_input(bytes: &[u8]) -> ProjectionInput {
         let (global, _, _global_storage) = crate::global::parse(&scan, ctx).unwrap();
         let (directory, quarantined) =
             crate::directory::parse(&scan, global.global_table(), ctx).unwrap();
-        let parameters = crate::parameter::assemble_with_context(
-            &scan,
-            &directory,
-            &quarantined,
-            &global,
-            ctx,
-        )
-        .unwrap();
+        let parameters =
+            crate::parameter::assemble_with_context(&scan, &directory, &quarantined, &global, ctx)
+                .unwrap();
         ProjectionInput {
             directory,
             records: parameters.records,
@@ -44,7 +39,7 @@ fn projection_subset(
             .directory
             .iter()
             .filter(|entry| directory_sequences.contains(&entry.sequence))
-            .cloned()
+            .copied()
             .collect(),
         records: input
             .records
@@ -72,7 +67,7 @@ fn run_projection(
             &input.directory,
             &input.records,
             &input.global,
-            (&ctx, &mut derivation_storage),
+            (ctx, &mut derivation_storage),
             &mut sequences,
         )?;
         let messages = outcome
@@ -158,12 +153,13 @@ fn assert_first_invalid_stops_before_large_tail(
         + attributed_loss_format_work(&expected_message, sequence)
         + u64::try_from(final_directory_scan).unwrap();
     assert!(
-        replay_limit - traversal_used < LARGE_TAIL as u64,
+        replay_limit - traversal_used < u64::try_from(LARGE_TAIL).unwrap(),
         "the post-boundary project work must stay below the unvisited tail"
     );
 
-    let result = run_projection(input, source_ir, replay_limit)
-        .unwrap_or_else(|error| panic!("the first invalid value did not stop {operation}: {error:?}"));
+    let result = run_projection(input, source_ir, replay_limit).unwrap_or_else(|error| {
+        panic!("the first invalid value did not stop {operation}: {error:?}")
+    });
     assert!(
         result.iter().any(|loss| loss == &expected_message),
         "expected loss {expected_message:?}; got {result:#?}"
@@ -292,9 +288,8 @@ fn type_143_stops_at_the_first_invalid_boundary_pointer() {
 #[test]
 fn type_144_stops_at_the_first_invalid_inner_boundary_pointer() {
     let inner_tail = repeated_fields("0", LARGE_TAIL);
-    let bytes = parameter_domain_trimmed_surface_file(&format!(
-        "144,1,0,{LARGE_TAIL},,{inner_tail};"
-    ));
+    let bytes =
+        parameter_domain_trimmed_surface_file(&format!("144,1,0,{LARGE_TAIL},,{inner_tail};"));
     let parsed = parse_projection_input(&bytes);
     let input = projection_subset(&parsed, &[3], &[3]);
     assert_first_invalid_stops_before_large_tail(
@@ -330,13 +325,11 @@ fn trimming_boundary_walk_stops_at_a_missing_definition_before_the_tail() {
     ]);
     let parsed = parse_projection_input(&bytes);
     let input = projection_subset(&parsed, &[3, 5], &[3, 5]);
-    let expected_message = entity_loss_message(144, "trimmed-surface boundary definition is missing");
+    let expected_message =
+        entity_loss_message(144, "trimmed-surface boundary definition is missing");
     let source_ir = support_plane_ir();
-    let (traversal_used, traversal_additional) = project_boundary(
-        &input,
-        &source_ir,
-        "iges trimming boundary traversal",
-    );
+    let (traversal_used, traversal_additional) =
+        project_boundary(&input, &source_ir, "iges trimming boundary traversal");
     assert_eq!(traversal_additional, 1);
 
     // Type142 D3 is intentionally invalid and emits its own loss before this
@@ -344,12 +337,13 @@ fn trimming_boundary_walk_stops_at_a_missing_definition_before_the_tail() {
     let sequence = 5;
     // The boundary step admits this first pointer. Its loss then formats the
     // message and each provenance field twice through format_retained.
-    let post_boundary_work = traversal_additional
-        + attributed_loss_format_work(&expected_message, sequence);
-    assert!(post_boundary_work < LARGE_TAIL as u64);
+    let post_boundary_work =
+        traversal_additional + attributed_loss_format_work(&expected_message, sequence);
+    assert!(post_boundary_work < u64::try_from(LARGE_TAIL).unwrap());
     let replay_limit = traversal_used + post_boundary_work;
-    let result = run_projection(&input, &source_ir, replay_limit)
-        .unwrap_or_else(|error| panic!("the missing first boundary did not stop the tail: {error:?}"));
+    let result = run_projection(&input, &source_ir, replay_limit).unwrap_or_else(|error| {
+        panic!("the missing first boundary did not stop the tail: {error:?}")
+    });
     assert!(
         result.iter().any(|loss| loss == &expected_message),
         "expected loss {expected_message:?}; got {result:#?}"
@@ -408,20 +402,29 @@ fn linear_boundary_candidates_stop_at_the_first_unusable_candidate() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = u64::MAX;
         match crate::test_support::with_policy_context(&[], &policy, |ctx| {
-            linear_boundary_rings(candidates.iter().map(Option::as_ref), BoundarySpace::Parameter, ctx).map(|_| ())
+            linear_boundary_rings(
+                candidates.iter().map(Option::as_ref),
+                BoundarySpace::Parameter,
+                ctx,
+            )
+            .map(|_| ())
         }) {
             Err(CodecError::ResourceLimit(limit)) => limit,
             Err(error) => panic!("unexpected ring refusal: {error:?}"),
-            Ok(_) => panic!("missing ring-candidate work boundary"),
+            Ok(()) => panic!("missing ring-candidate work boundary"),
         }
     };
     assert_eq!(limit.additional, 1);
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = limit.used + limit.additional;
     crate::test_support::with_policy_context(&[], &policy, |ctx| {
-        assert!(linear_boundary_rings(candidates.iter().map(Option::as_ref), BoundarySpace::Parameter, ctx)
-            .unwrap()
-            .is_none());
+        assert!(linear_boundary_rings(
+            candidates.iter().map(Option::as_ref),
+            BoundarySpace::Parameter,
+            ctx
+        )
+        .unwrap()
+        .is_none());
     });
 }
 
@@ -496,11 +499,9 @@ fn solved_composite_control_walk_stops_at_the_first_active_child() {
         + 11 * std::mem::size_of::<()>()
         + 16 * std::mem::size_of::<usize>()
         + 2 * alignment;
-    let first_cycle_work = limit.additional
-        + key_work
-        + key_work
-        + u64::try_from(removal_work).unwrap();
-    assert!(first_cycle_work < LARGE_TAIL as u64);
+    let first_cycle_work =
+        limit.additional + key_work + key_work + u64::try_from(removal_work).unwrap();
+    assert!(first_cycle_work < u64::try_from(LARGE_TAIL).unwrap());
     assert!(run(limit.used + first_cycle_work).unwrap().is_none());
 }
 
@@ -515,15 +516,9 @@ fn pcurve_pole_mapping_stops_at_the_first_invalid_point() {
     let mut knots = vec![0.0, 0.0];
     knots.extend(std::iter::repeat_n(1.0, LARGE_TAIL));
     let nurbs = crate::test_support::with_service_context(&[], |ctx| {
-        NurbsCurve::new(
-            ctx,
-            1,
-            knots,
-            NurbsPoles3::Polynomial { points },
-            false,
-        )
-        .unwrap()
-        .unwrap()
+        NurbsCurve::new(ctx, 1, knots, NurbsPoles3::Polynomial { points }, false)
+            .unwrap()
+            .unwrap()
     });
     let run = |work_limit| {
         let mut policy = DecodePolicy::service();
@@ -645,7 +640,9 @@ fn assert_boundary_lookup_admission(
         assert_eq!(sticky, limit);
         drop(sequences);
         drop(derivation_storage);
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == limit));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == limit)
+        );
         limit
     };
     let first = {
@@ -656,7 +653,10 @@ fn assert_boundary_lookup_admission(
     // comparison, with size_of::<u32>() key bytes, before the search.
     assert_eq!(first.dimension, ResourceDimension::WorkUnits);
     assert_eq!(first.operation, operation);
-    assert_eq!(first.additional, std::mem::size_of::<u32>() as u64);
+    assert_eq!(
+        first.additional,
+        u64::try_from(std::mem::size_of::<u32>()).unwrap()
+    );
     assert_eq!(first.limit, first.used);
     let next = refuse(first.used + first.additional);
     assert_eq!(next.dimension, ResourceDimension::WorkUnits);
@@ -703,6 +703,6 @@ fn missing_trimming_boundary_lookup_admits_search_before_its_loss() {
         true,
         "iges trimming boundary definition lookup",
         "iges entity loss message",
-        LOSS_MESSAGE_FIRST_FRAGMENT.len() as u64,
+        u64::try_from(LOSS_MESSAGE_FIRST_FRAGMENT.len()).unwrap(),
     );
 }

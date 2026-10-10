@@ -1,16 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
 use super::super::CompositeIndex;
+use super::*;
 
 fn first_index_step(ir: &CadIr, operation: &'static str) {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let first = match CompositeIndex::from_ir(ir, &ctx) {
-        Err(CodecError::ResourceLimit(first)) => first,
-        _ => panic!("expected first actual index source step refusal"),
+    let Err(CodecError::ResourceLimit(first)) = CompositeIndex::from_ir(ir, &ctx) else {
+        panic!("expected first actual index source step refusal")
     };
     assert_eq!(first.dimension, ResourceDimension::WorkUnits);
     assert_eq!(first.operation, operation);
@@ -33,8 +32,10 @@ fn composite_curve_index_refuses_one_visit_before_its_tail() {
             id: CurveId::mint(format!("test:model:curve#{suffix}")).unwrap(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                    Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0),
-                ).unwrap(),
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
             )),
             source_object: None,
         });
