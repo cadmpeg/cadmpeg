@@ -1457,7 +1457,7 @@ pub(super) fn emit_topology(
         "nx retained edges",
     )?;
     drop((owned_edges, candidate_edges));
-    retain_marked(&mut ir.model.edges, edge_marks);
+    retain_marked(ctx, &mut ir.model.edges, edge_marks, "nx compact emitted edges")?;
     let mut retained_vertices = BTreeSet::new();
     for edge in ctx.admit_iter(&ir.model.edges, "nx retained vertex index")? {
         storage.with_storage(|| {
@@ -1491,7 +1491,7 @@ pub(super) fn emit_topology(
         "nx retained vertices",
     )?;
     drop(retained_vertices);
-    retain_marked(&mut ir.model.vertices, vertex_marks);
+    retain_marked(ctx, &mut ir.model.vertices, vertex_marks, "nx compact emitted vertices")?;
     Ok(endpoint_witnesses)
 }
 
@@ -1704,11 +1704,16 @@ pub(super) fn keep_marks<T>(
     Ok(marks)
 }
 
-/// Keep the arena values whose mark is set, in order. The marks were produced
-/// by one admitted pass over the same arena.
-pub(super) fn retain_marked<T>(values: &mut Vec<T>, marks: Vec<bool>) {
+/// Keep the marked arena values in order. Predicate evaluation and this
+/// separate compaction pass each admit their own work.
+pub(super) fn retain_marked<T>(
+    ctx: &DecodeContext<'_>,
+    values: &mut Vec<T>,
+    marks: Vec<bool>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
     let mut marks = marks.into_iter();
-    values.retain(|_| marks.next().unwrap_or(false));
+    ctx.retain_vec(values, |_| Ok(marks.next().unwrap_or(false)), operation)
 }
 
 pub(super) struct UnresolvedTopologyStream<'inputs, 'storage> {
@@ -2638,6 +2643,30 @@ fn insert_source_attribute(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn marked_compaction_admits_moves_after_predicate_evaluation() {
+        const OPERATION: &str = "nx test marked compaction";
+        crate::test_support::resource_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            OPERATION, |ctx| {
+                let mut values = vec![1_u64, 2, 3, 4, 5];
+                let original = values.clone();
+                let mut storage = ctx.reserve_scoped(0, "nx test keep marks")?;
+                let marks = super::keep_marks(ctx, &mut storage, &values,
+                    |value| Ok(value % 2 == 1), "nx test keep marks")?;
+                let result = super::retain_marked(ctx, &mut values, marks, OPERATION);
+                if result.is_err() { assert_eq!(values, original); }
+                result
+            });
+        crate::test_support::with_decode_context(|ctx| {
+            let mut values = vec![1_u64, 2, 3, 4, 5];
+            let mut storage = ctx.reserve_scoped(0, "nx test keep marks").unwrap();
+            let marks = super::keep_marks(ctx, &mut storage, &values,
+                |value| Ok(value % 2 == 1), "nx test keep marks").unwrap();
+            super::retain_marked(ctx, &mut values, marks, OPERATION).unwrap();
+            assert_eq!(values, [1, 3, 5]);
+        });
+    }
+
     use super::super::geometry_work::GeometryWorkBudget;
     use super::{source_meta, unknown_stream, unknown_stream_metadata, CurvePointCache};
     use crate::container::Container;
