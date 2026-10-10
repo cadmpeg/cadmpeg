@@ -10,7 +10,7 @@ fn inline_recipe_windows_charge_present_comparisons_and_stop_at_conflict() {
     for length in 0..=14usize {
         let record = vec![0xff; length];
         // The four NUL-terminated names have lengths 12, 11, 12, 11.
-        let total = 2 * length.saturating_sub(11) + 2 * length.saturating_sub(10);
+        let total = 2 * record.windows(12).len() + 2 * record.windows(11).len();
         check_windows(&record, total as u64, RecipeState::None);
     }
     // A 12-byte name gives window counts 1, 2, 1, 2 in stored family order.
@@ -23,7 +23,8 @@ fn inline_recipe_windows_charge_present_comparisons_and_stop_at_conflict() {
 }
 
 fn check_windows(record: &[u8], total: u64, expected: RecipeState) {
-    for cap in 0..=total {
+    crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits,
+        &vec!["creo inline recipe scan"; usize::try_from(total).expect("fixture visits")], |cap| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = cap;
@@ -31,23 +32,25 @@ fn check_windows(record: &[u8], total: u64, expected: RecipeState) {
         policy.limits.max_retained_bytes = 0;
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let result = inline_recipe_resolution(&ctx, record);
-        if cap == total {
-            assert_eq!(result.expect("exact present-window work"), expected);
-            assert_eq!(ctx.resource_refusal(), None);
-            let refusal = ctx.charge_work_limit(1, "after inline recipe windows").expect_err("exact cap");
-            assert_eq!((refusal.dimension, refusal.used, refusal.additional),
-                (ResourceDimension::WorkUnits, total, 1));
-        } else {
-            let original = ctx.resource_refusal().expect("present window refuses");
-            assert!(matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original));
-            assert_eq!((original.dimension, original.used, original.additional, original.operation),
-                (ResourceDimension::WorkUnits, cap, 1, "creo inline recipe scan"));
+        match inline_recipe_resolution(&ctx, record) {
+            Ok(value) => {
+                assert_eq!(ctx.resource_refusal(), None);
+                assert_eq!(value, expected);
+                let refusal = ctx.charge_work_limit(1, "measure inline recipe windows").expect_err("measurement");
+                assert_eq!((refusal.used, refusal.additional), (total, 1));
+                assert!(matches!(inline_recipe_resolution(&ctx, record), Err(CodecError::ResourceLimit(actual)) if actual == refusal));
+                Ok(())
+            }
+            Err(CodecError::ResourceLimit(original)) => {
+                assert_eq!(ctx.resource_refusal(), Some(original));
+                assert_eq!(original.additional, 1);
+                assert_eq!(original.operation, "creo inline recipe scan");
+                assert!(matches!(inline_recipe_resolution(&ctx, record), Err(CodecError::ResourceLimit(actual)) if actual == original));
+                Err(CodecError::ResourceLimit(original))
+            }
+            Err(error) => Err(error),
         }
-        let original = ctx.resource_refusal().expect("original refusal");
-        assert!(matches!(inline_recipe_resolution(&ctx, record),
-            Err(CodecError::ResourceLimit(actual)) if actual == original));
-    }
+    });
 }
 
 #[test]

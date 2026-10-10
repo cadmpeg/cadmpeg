@@ -9,32 +9,29 @@ fn exact_work(
     call: impl Fn(&DecodeContext<'_>) -> Result<(), CodecError>,
 ) {
     let total: u64 = steps.iter().map(|(_, units)| units).sum();
-    for allowed in 0..=total {
+    let operations = steps.iter().map(|(operation, _)| *operation).collect::<Vec<_>>();
+    crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, &operations, |allowed| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = allowed;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let result = call(&ctx);
-        let original = if allowed == total {
-            result.expect("only present source work");
-            let refusal = ctx.charge_work_limit(1, "after present row work").expect_err("exact cap");
-            assert_eq!((refusal.used, refusal.additional), (total, 1));
-            refusal
-        } else {
-            let mut used = 0;
-            let (operation, additional) = steps.iter().find_map(|(operation, units)| {
-                if used + units > allowed { Some((*operation, *units)) }
-                else { used += units; None }
-            }).expect("next present work exceeds cap");
-            let CodecError::ResourceLimit(refusal) = result.expect_err("present work refuses")
-                else { panic!("resource refusal"); };
-            assert_eq!((refusal.dimension, refusal.operation, refusal.used, refusal.additional),
-                (ResourceDimension::WorkUnits, operation, used, additional));
-            refusal
-        };
-        assert!(matches!(call(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == original));
-        assert_eq!(ctx.resource_refusal(), Some(original));
-    }
+        match result {
+            Ok(()) => {
+                assert_eq!(ctx.resource_refusal(), None);
+                let refusal = ctx.charge_work_limit(1, "measure present row work").expect_err("measurement");
+                assert_eq!((refusal.used, refusal.additional), (total, 1));
+                assert!(matches!(call(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == refusal));
+                Ok(())
+            }
+            Err(CodecError::ResourceLimit(refusal)) => {
+                assert_eq!(ctx.resource_refusal(), Some(refusal));
+                assert!(matches!(call(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == refusal));
+                Err(CodecError::ResourceLimit(refusal))
+            }
+            Err(error) => Err(error),
+        }
+    });
 }
 
 #[test]

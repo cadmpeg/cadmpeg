@@ -414,14 +414,9 @@ pub(crate) fn reference_names(
         let Some(tail) = payload.get(name_start..) else {
             continue;
         };
-        let mut bytes = tail.iter().take(256).enumerate();
+        const NAME_WINDOW: usize = 256;
         let mut name_end = None;
-        while bytes.len() != 0 {
-            let Some((relative, byte)) =
-                ctx.next_charged(&mut bytes, "creo reference name prefix scan")?
-            else {
-                break;
-            };
+        for (relative, byte) in tail.iter().take(NAME_WINDOW).enumerate() {
             if *byte == 0 {
                 name_end = Some(name_start + relative);
                 break;
@@ -488,19 +483,9 @@ fn recipe_bindings(
         let Some(tail) = payload.get(display_start..) else {
             continue;
         };
-        let mut bytes = tail.iter().take(96).enumerate();
-        let mut display_end = None;
-        while bytes.len() != 0 {
-            let Some((relative, byte)) =
-                ctx.next_charged(&mut bytes, "creo recipe display prefix scan")?
-            else {
-                break;
-            };
-            if *byte == 0 {
-                display_end = Some(display_start + relative);
-                break;
-            }
-        }
+        const DISPLAY_WINDOW: usize = 96;
+        let display_end = tail.iter().take(DISPLAY_WINDOW).position(|byte| *byte == 0)
+            .map(|relative| display_start + relative);
         let Some(display_end) = display_end else {
             continue;
         };

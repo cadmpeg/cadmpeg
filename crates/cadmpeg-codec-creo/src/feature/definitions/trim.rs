@@ -45,14 +45,14 @@ pub(super) fn trim_entity_table(
         Some(header) => ctx.find_map(
             prototype..end,
             |offset| {
-                Ok((|| {
-                    (payload.get(offset..offset + 3)
-                        == Some(&[0xf4, 0x04, psb::token::ENTITY_REF]))
-                    .then_some(())?;
-                    let (class, after_reference) = psb::reference_id(payload, offset + 3).ok()?;
-                    (class == header.classes.table && payload.get(after_reference) == Some(&0xe2))
-                        .then_some(after_reference + 1)
-                })())
+                if payload.get(offset..offset + 3) != Some(&[0xf4, 0x04, psb::token::ENTITY_REF]) {
+                    return Ok(None);
+                }
+                let Ok((class, after_reference)) = psb::reference_id(payload, offset + 3) else {
+                    return Ok(None);
+                };
+                Ok((class == header.classes.table && payload.get(after_reference) == Some(&0xe2))
+                    .then_some(after_reference + 1))
             },
             "creo trim entity cursor",
         )?,
@@ -254,15 +254,14 @@ pub(super) fn trim_buckets(
         let Some((offset, index, next)) = ctx.find_map(
             cursor..end,
             |offset| {
-                Ok((|| {
-                    (preceding_byte(payload, offset) == Some(0xe2)).then_some(())?;
-                    let (Some(index), next) = segment_int(payload, offset) else {
-                        return None;
-                    };
-                    // The stored index is compared in the wider type the position is
-                    // counted in.
-                    (index_from_u32(index) == starts.len()).then_some((offset, index, next))
-                })())
+                if preceding_byte(payload, offset) != Some(0xe2) {
+                    return Ok(None);
+                }
+                let (Some(index), next) = segment_int(payload, offset) else {
+                    return Ok(None);
+                };
+                // Compare the stored index in the type used for positions.
+                Ok((index_from_u32(index) == starts.len()).then_some((offset, index, next)))
             },
             "creo trim bucket index",
         )?
@@ -1019,13 +1018,8 @@ pub(super) fn trim_vertex_table(
         .checked_add(b"vert_tab\0".len())
         .and_then(|after_label| after_label.checked_add(CHAINS_WINDOW))
         .map_or(end, |window_end| window_end.min(end));
-    let Some(chains) = ctx.find_bytes_in(
-        payload,
-        b"chains\0",
-        table,
-        chains_end,
-        "find Creo feature definition field",
-    )?
+    let Some(chains) = payload[table..chains_end].windows(b"chains\0".len())
+        .position(|window| window == b"chains\0").map(|relative| table + relative)
     else {
         return Ok(None);
     };

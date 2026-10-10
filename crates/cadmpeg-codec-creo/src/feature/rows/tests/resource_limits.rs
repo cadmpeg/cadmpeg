@@ -663,7 +663,9 @@ fn loop_history_trailing_field_refuses_before_retained_copy() {
         ),
         "creo loop history trailing bytes",
     );
-    assert!(run(body, u64::MAX, u64::MAX, |ctx| {
+    let retained_bytes = u64::try_from(4 * std::mem::size_of::<super::super::ParsedLoopHistoryEntry>()
+        + 4 + 1).expect("roster backing and field bytes");
+    assert!(run(body, 2, retained_bytes, |ctx| {
         super::super::loop_history_roster(ctx, body, 0, 1)
             .transpose()?
             .ok_or_else(|| CodecError::malformed("loop history trailing field"))

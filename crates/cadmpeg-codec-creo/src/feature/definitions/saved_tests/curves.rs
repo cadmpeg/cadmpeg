@@ -131,7 +131,9 @@ Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo saved conic body")
     );
-    assert_eq!(run(u64::MAX, u64::MAX).expect("conic admitted").len(), 1);
+        let retained = u64::try_from(4 * std::mem::size_of::<FeatureSavedEntity>()
+        + SAVED_CONIC_LIMIT_INPUT.len() - b"\xe0\0entity(conic)\0".len()).expect("conic backing");
+    assert_eq!(run(1, retained).expect("conic admitted").len(), 1);
 }
 
 #[test]
@@ -146,7 +148,9 @@ CodecError::ResourceLimit(limit)
             && limit.operation == "creo saved conic entities")
     );
     assert_eq!(
-        with_saved_leaf_limits(SAVED_CONIC_LIMIT_INPUT, u64::MAX, u64::MAX, |ctx| {
+        with_saved_leaf_limits(SAVED_CONIC_LIMIT_INPUT, 1,
+            u64::try_from(4 * std::mem::size_of::<FeatureSavedEntity>()
+                + SAVED_CONIC_LIMIT_INPUT.len() - b"\xe0\0entity(conic)\0".len()).expect("conic backing"), |ctx| {
             parse_saved_conic_entities(
                 ctx,
                 SAVED_CONIC_LIMIT_INPUT,
