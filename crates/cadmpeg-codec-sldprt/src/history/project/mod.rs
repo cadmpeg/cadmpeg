@@ -938,6 +938,7 @@ pub(super) fn bind_offset_plane_references(
     // A zero-distance offset with an explicit feature reference is a geometric
     // alias. Collapse only that provenance chain; independent coincident
     // planes remain distinct candidates and stay ambiguous.
+    let mut parents_storage = ctx.reserve_scoped(0, OPERATION)?;
     let mut zero_offset_parents = Vec::new();
     for (feature, reference) in ctx.admit_iter(&*features, OPERATION)?.zip(&references) {
         let parent = match feature.evaluation.definition() {
@@ -947,9 +948,15 @@ pub(super) fn bind_offset_plane_references(
             }) if same_scalar(distance.get(), 0.0) => *reference,
             _ => None,
         };
-        ctx.push_scoped_vec(&mut scratch, &mut zero_offset_parents, parent, OPERATION)?;
+        ctx.push_scoped_vec(
+            &mut parents_storage,
+            &mut zero_offset_parents,
+            parent,
+            OPERATION,
+        )?;
     }
     let roots = zero_offset_roots(ctx, &mut scratch, &zero_offset_parents)?;
+    drop((zero_offset_parents, parents_storage));
 
     for (position, feature) in ctx.admit_iter(&mut *features, OPERATION)?.enumerate() {
         let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
