@@ -628,11 +628,11 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
     .map_err(StreamFailure::from_operation)?;
     // Record name field, then payload fields until the terminator.
     'stream: loop {
+        ctx.charge_work(1, "frame SAT record")
+            .map_err(StreamFailure::from_operation)?;
         let Some((rec_start, name, _)) = reader.next_field(ctx)? else {
             break;
         };
-        ctx.charge_work(1, "frame SAT record")
-            .map_err(StreamFailure::from_operation)?;
         let mut scratch = ctx
             .reserve_scoped(0, "frame SAT record")
             .map_err(StreamFailure::from_operation)?;
@@ -651,6 +651,8 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
         let mut prims = Vec::new();
         let mut subtype_depth = 0usize;
         loop {
+            ctx.charge_work(1, "frame SAT field")
+                .map_err(StreamFailure::from_operation)?;
             let Some((at, field, integer)) = reader.next_field(ctx)? else {
                 return Err(StreamError {
                     format: StreamFormat::Text,
@@ -659,8 +661,6 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
                 }
                 .into());
             };
-            ctx.charge_work(1, "frame SAT field")
-                .map_err(StreamFailure::from_operation)?;
             if field == "#" {
                 if subtype_depth != 0 {
                     return Err(StreamError {
@@ -2143,6 +2143,7 @@ fn type_record(
 
 #[cfg(test)]
 mod tests {
+    mod frame_order;
     mod manual_scans;
     mod typing_entry;
     fn with_work_limit<T>(
