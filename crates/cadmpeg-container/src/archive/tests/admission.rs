@@ -144,11 +144,11 @@ fn stored_entry_integrity_is_checked_before_registering_output() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     snapshot.entries[0].uncompressed_size = original_size + 1;
     assert!(matches!(snapshot.open(&ctx, "stored.bin"),
-        Err(CodecError::Malformed(message)) if message == "stored size mismatch for stored.bin"));
+        Err(CodecError::Malformed(message)) if message == "stored size mismatch for ZIP entry 0"));
     snapshot.entries[0].uncompressed_size = original_size;
     snapshot.entries[0].crc32 = original_crc ^ 1;
     assert!(matches!(snapshot.open(&ctx, "stored.bin"),
-        Err(CodecError::Malformed(message)) if message == "CRC mismatch for stored.bin"));
+        Err(CodecError::Malformed(message)) if message == "CRC mismatch for ZIP entry 0"));
     snapshot.entries[0].crc32 = original_crc;
     assert_eq!(
         snapshot
