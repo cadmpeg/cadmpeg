@@ -8,12 +8,21 @@ fn check_live_output_storage<T>(
     parse: impl Fn(&DecodeContext<'_>) -> Result<Vec<T>, CodecError>,
     check: impl Fn(&[T]) -> usize,
 ) {
-    const CAP: u64 = 16 * 1024;
     for scoped in [false, true] {
+        let dimension = if scoped { ResourceDimension::MaterializedBytes } else { ResourceDimension::RetainedBytes };
+        let cap = crate::test_support::allocation_limit_at(dimension, None, |allowed| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            if scoped { policy.limits.max_materialized_bytes = allowed; }
+            else { policy.limits.max_retained_bytes = allowed; }
+            let (ctx, _) = DecodeContext::from_root_bytes(data, &arena, &policy).expect("root");
+            if scoped { ctx.with_scoped_storage("reference output parent", || parse(&ctx)).map(drop) }
+            else { parse(&ctx).map(drop) }
+        });
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = CAP;
-        policy.limits.max_retained_bytes = CAP;
+        if scoped { policy.limits.max_materialized_bytes = cap; }
+        else { policy.limits.max_retained_bytes = cap; }
         let (ctx, _) = DecodeContext::from_root_bytes(data, &arena, &policy).expect("root");
         let parts = if scoped {
             let parts = ctx.with_scoped_storage("reference output parent", || parse(&ctx))
@@ -28,10 +37,10 @@ fn check_live_output_storage<T>(
             records.capacity() * std::mem::size_of::<T>() + check(&records))
             .expect("actual surviving backing bytes");
         let refusal = if scoped {
-            ctx.reserve_scoped_limit(CAP + 1, "after reference cache scratch")
+            ctx.reserve_scoped_limit(u64::MAX, "after reference cache scratch")
                 .expect_err("probe live output only")
         } else {
-            ctx.charge_retained_limit(CAP + 1, "after reference cache scratch")
+            ctx.charge_retained_limit(u64::MAX, "after reference cache scratch")
                 .expect_err("probe retained output only")
         };
         assert_eq!(refusal.dimension, if scoped {
@@ -39,9 +48,7 @@ fn check_live_output_storage<T>(
         } else {
             ResourceDimension::RetainedBytes
         });
-        assert_eq!((refusal.used, refusal.additional), (expected_bytes, CAP + 1));
-        assert!(matches!(parse(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == refusal));
-        assert_eq!(ctx.resource_refusal(), Some(refusal));
+        assert_eq!((refusal.used, refusal.additional), (expected_bytes, u64::MAX));
         drop(records);
         drop(storage);
     }

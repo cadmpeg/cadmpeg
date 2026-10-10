@@ -747,6 +747,7 @@ fn classify(name: &str) -> SectionRole {
 /// a printable run and is not one of the header/TOC framing markers.
 fn scan_sections<'a>(
     ctx: &DecodeContext<'_>,
+    backing: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     data: &'a [u8],
     body_start: usize,
 ) -> Result<Vec<ScannedSection<'a>>, CodecError> {
@@ -819,7 +820,7 @@ fn scan_sections<'a>(
     }
 
     let mut sections = Vec::new();
-    ctx.reserve_vec(&mut sections, hits.len(), "creo scanned sections")?;
+    ctx.reserve_scoped_vec(backing, &mut sections, hits.len(), "creo scanned sections")?;
     let mut headers = hits.into_iter().peekable();
     while headers.len() != 0 {
         let Some((offset, name)) =
@@ -835,10 +836,13 @@ fn scan_sections<'a>(
 
 fn toc_sections<'a>(
     ctx: &DecodeContext<'_>,
+    backing: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     data: &'a [u8],
     header_base: usize,
 ) -> Result<Vec<ScannedSection<'a>>, CodecError> {
     let mut sections = Vec::new();
+    let mut offset_storage = ctx.reserve_scoped(0, "creo TOC section offsets")?;
+    let mut offsets = std::collections::HashSet::new();
     let mut toc_from = 0;
     while let Some(toc_offset) =
         ctx.find_bytes_from(data, TOC_START, toc_from, "creo TOC discovery scan")?
@@ -978,11 +982,15 @@ fn toc_sections<'a>(
             if !name_matches {
                 continue;
             }
+            if !offset_storage.with_storage(|| ctx.insert_hash_set(&mut offsets, offset,
+                "creo TOC section offsets"))? {
+                continue;
+            }
             let raw_name = match view_id {
                 Some(id) => ctx.format_retained(format_args!("ModelView#{id}"), "creo TOC section names")?,
                 None => ctx.copy_retained_text(name, "creo TOC section names")?,
             };
-            ctx.reserve_vec(&mut sections, 1, "creo TOC sections")?;
+            ctx.reserve_scoped_vec(backing, &mut sections, 1, "creo TOC sections")?;
             sections.extend(Section::scan(
                 ctx,
                 raw_name,
@@ -1000,17 +1008,13 @@ fn toc_sections<'a>(
             Ord::cmp,
             "creo toc sections sections ordering",
         )?;
-        ctx.dedup_by_key(
-            &mut sections,
-            |section| Ok(section.section.offset()),
-            "creo toc sections sections deduplication",
-        )?;
     }
     Ok(sections)
 }
 
 fn legacy_toc_sections<'a>(
     ctx: &DecodeContext<'_>,
+    backing: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     data: &'a [u8],
     banner_offset: usize,
 ) -> Result<Vec<ScannedSection<'a>>, CodecError> {
@@ -1084,8 +1088,8 @@ fn legacy_toc_sections<'a>(
     let Some(count_field) = legacy::text_field(ctx, &mut array_fields, true)? else {
         return Ok(Vec::new());
     };
-    let Some(count) = ctx
-        .strip_prefix(count_field, "[", "creo legacy TOC count prefix")?
+    let Some(count) = count_field
+        .strip_prefix('[')
         .and_then(|count| count.strip_suffix(']'))
     else {
         return Ok(Vec::new());
@@ -1106,6 +1110,8 @@ fn legacy_toc_sections<'a>(
         return Ok(Vec::new());
     }
     let mut sections = Vec::new();
+    let mut offset_storage = ctx.reserve_scoped(0, "creo legacy TOC section offsets")?;
+    let mut offsets = std::collections::HashSet::new();
     let mut entries = 0..count;
     while !entries.is_empty() && next < data.len() {
         let Some(_) = ctx.next_charged(&mut entries, "creo legacy TOC entries")? else {
@@ -1201,8 +1207,12 @@ fn legacy_toc_sections<'a>(
         if data.get(offset..end).is_none() {
             continue;
         }
+        if !offset_storage.with_storage(|| ctx.insert_hash_set(&mut offsets, offset,
+            "creo legacy TOC section offsets"))? {
+            continue;
+        }
         let raw_name = ctx.copy_retained_text(raw_name, "creo legacy TOC section names")?;
-        ctx.reserve_vec(&mut sections, 1, "creo legacy TOC sections")?;
+        ctx.reserve_scoped_vec(backing, &mut sections, 1, "creo legacy TOC sections")?;
         sections.extend(Section::scan(ctx, raw_name, offset, end, None, data)?);
     }
     if sections.len() > 1 {
@@ -1211,11 +1221,6 @@ fn legacy_toc_sections<'a>(
             |value| value.section.offset(),
             Ord::cmp,
             "creo legacy toc sections sections ordering",
-        )?;
-        ctx.dedup_by_key(
-            &mut sections,
-            |section| Ok(section.section.offset()),
-            "creo legacy toc sections sections deduplication",
         )?;
     }
     Ok(sections)
@@ -1893,10 +1898,16 @@ fn loop_array_sections<'a>(
     sections: &[ScannedSection<'a>],
 ) -> Result<Vec<ScannedSection<'a>>, CodecError> {
     let mut selected = Vec::new();
+    let mut offset_storage = ctx.reserve_scoped(0, "creo loop section offset storage")?;
+    let mut offsets = std::collections::HashSet::new();
     for section in ctx
         .admit_iter(model, "creo loop model section traversal")?
         .chain(ctx.admit_iter(nonvisible, "creo loop nonvisible section traversal")?)
     {
+        if !offset_storage.with_storage(|| ctx.insert_hash_set(
+            &mut offsets, section.section.offset(), "creo loop section offsets"))? {
+            continue;
+        }
         ctx.reserve_vec(&mut selected, 1, "creo loop array sections")?;
         selected.push(section.copy_retained(ctx)?);
     }
@@ -1913,7 +1924,11 @@ fn loop_array_sections<'a>(
             )?
             .is_some()
         {
-            ctx.reserve_vec(&mut selected, 1, "creo loop array sections")?;
+            if !offset_storage.with_storage(|| ctx.insert_hash_set(
+            &mut offsets, section.section.offset(), "creo loop section offsets"))? {
+            continue;
+        }
+        ctx.reserve_vec(&mut selected, 1, "creo loop array sections")?;
             selected.push(section.copy_retained(ctx)?);
         }
     }
@@ -1923,11 +1938,6 @@ fn loop_array_sections<'a>(
             |value| value.section.offset(),
             Ord::cmp,
             "creo loop array sections selected ordering",
-        )?;
-        ctx.dedup_by_key(
-            &mut selected,
-            |section| Ok(section.section.offset()),
-            "creo loop array sections selected deduplication",
         )?;
     }
     Ok(selected)
@@ -2763,6 +2773,9 @@ impl<'ctx> FeatureIdentityIndex<'ctx> {
                     } else {
                         0
                     };
+                if kinds == 0 {
+                    continue;
+                }
                 let previous = ctx
                     .entry_hash_map(
                         &mut index.reference_kinds,
@@ -3698,13 +3711,17 @@ pub(crate) fn scan_bytes<'a>(
     let body_start = toc_end.or(header_end).unwrap_or(0);
 
     let mut legacy_ascii = legacy_ascii_framing(ctx, &data)?;
+    let mut section_storage = ctx.reserve_scoped(0, "creo scanned section roster storage")?;
     let sections = if let Some(legacy) = legacy_ascii.as_ref() {
-        legacy_toc_sections(ctx, &data, legacy.banner_offset)?
+        legacy_toc_sections(ctx, &mut section_storage, &data, legacy.banner_offset)?
     } else {
-        toc_sections(ctx, &data, header_end.unwrap_or(0))?
+        toc_sections(ctx, &mut section_storage, &data, header_end.unwrap_or(0))?
     };
     let sections = if sections.is_empty() {
-        scan_sections(ctx, &data, body_start)?
+        drop(sections);
+        drop(section_storage);
+        section_storage = ctx.reserve_scoped(0, "creo scanned section roster storage")?;
+        scan_sections(ctx, &mut section_storage, &data, body_start)?
     } else {
         sections
     };
@@ -4175,6 +4192,7 @@ pub(crate) fn scan_bytes<'a>(
         ctx.reserve_vec(&mut retained_sections, 1, "creo retained scan sections")?;
         retained_sections.push(section.section);
     }
+    drop(section_storage);
 
     Ok(ContainerScan {
         framing: FramingScan {
@@ -4719,7 +4737,7 @@ mod feature_row_definition_tests {
             &[],
             ResourceDimension::WorkUnits,
             "creo TOC offset hexadecimal parsing",
-            |ctx| toc_sections(ctx, data.as_bytes(), 0),
+            |ctx| toc_sections(ctx, &mut ctx.reserve_scoped(0, "test section roster storage").expect("empty storage"), data.as_bytes(), 0),
         );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -4737,7 +4755,7 @@ mod feature_row_definition_tests {
             &[],
             ResourceDimension::WorkUnits,
             "creo TOC length hexadecimal parsing",
-            |ctx| toc_sections(ctx, data.as_bytes(), 0),
+            |ctx| toc_sections(ctx, &mut ctx.reserve_scoped(0, "test section roster storage").expect("empty storage"), data.as_bytes(), 0),
         );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -4755,7 +4773,7 @@ mod feature_row_definition_tests {
             &[],
             ResourceDimension::WorkUnits,
             "creo TOC expanded length hexadecimal parsing",
-            |ctx| toc_sections(ctx, data.as_bytes(), 0),
+            |ctx| toc_sections(ctx, &mut ctx.reserve_scoped(0, "test section roster storage").expect("empty storage"), data.as_bytes(), 0),
         );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -4769,7 +4787,7 @@ mod feature_row_definition_tests {
         let data = b"#UGC_TOC 2 18446744073709551615 0#\n";
 
         assert!(
-            crate::decode::with_test_decode_ctx(|ctx| toc_sections(ctx, data, 0))
+            crate::decode::with_test_decode_ctx(|ctx| toc_sections(ctx, &mut ctx.reserve_scoped(0, "test section roster storage").expect("empty storage"), data, 0))
                 .expect("empty TOC admitted")
                 .is_empty()
         );

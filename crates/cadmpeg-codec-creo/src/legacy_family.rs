@@ -1313,20 +1313,37 @@ mod tests {
         let persistence = complete_table();
         let index = crate::decode::with_test_decode_ctx(|ctx| super::Index::build(ctx, &persistence))
             .expect("fixture index admission").expect("fixture index");
-        // Amortized Vec growth reserves four pointer slots for the first row.
-        const ROW_CAPACITY: usize = 4;
-        let row_backing_bytes = u64::try_from(ROW_CAPACITY * std::mem::size_of::<&ObjectRecord>())
-            .expect("four pointer slots fit the byte counter");
+        let run = |cap, dimension| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = 0;
+            match dimension {
+                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
+                ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+                _ => panic!("family row allocation dimension"),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            super::array_elements(&ctx, &index, fixture_offset("root"), ITEMS_ARRAY)
+                .map(|rows| rows.map(|rows| rows.rows.len()))
+        };
+        let row_backing_bytes = crate::test_support::allocation_limit_at(
+            ResourceDimension::MaterializedBytes, None,
+            |cap| run(cap, ResourceDimension::MaterializedBytes));
+        let row_items = crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems, None,
+            |cap| run(cap, ResourceDimension::CollectionItems));
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_materialized_bytes = row_backing_bytes;
         policy.limits.max_retained_bytes = 0;
-        policy.limits.max_collection_items = 1;
+        policy.limits.max_collection_items = row_items;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let rows = super::array_elements(&ctx, &index, fixture_offset("root"), ITEMS_ARRAY)
             .expect("one scoped reference row").expect("complete item array");
         assert_eq!(rows.rows.len(), 1);
         assert_eq!(rows.rows[0].offset, fixture_offset("item"));
+        assert_eq!(row_backing_bytes, u64::try_from(
+            rows.rows.capacity() * std::mem::size_of::<&ObjectRecord>()).expect("actual row backing"));
         drop(rows);
         let replacement = ctx.reserve_scoped(row_backing_bytes, "after family reference rows")
             .expect("the row owner released its backing");

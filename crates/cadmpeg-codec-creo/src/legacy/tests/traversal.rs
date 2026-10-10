@@ -263,110 +263,40 @@ fn legacy_empty_and_fixed_lanes_are_free_and_preserve_original_refusal() {
 
 #[test]
 fn legacy_line_and_decimal_admit_only_present_source_bytes() {
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
     for (source, expected) in [(b"ab".as_slice(), b"ab".as_slice()), (b"a\nTAIL".as_slice(), b"a".as_slice())] {
-        for allowed in 0..=2 {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = allowed;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-            let result = line(&ctx, source, 0);
-            if allowed < 2 {
-                let CodecError::ResourceLimit(r) = result.expect_err("next byte visit") else {
-                    panic!("work refusal");
-                };
-                assert_eq!(r.dimension, ResourceDimension::WorkUnits);
-                assert_eq!(r.operation, "creo legacy line scan");
-                assert_eq!((r.used, r.additional), (allowed, 1));
-            } else {
-                assert_eq!(result.expect("two present bytes"), Some((expected, 2)));
-                let r = ctx.charge_work_limit(1, "after two line visits").expect_err("exact cap");
-                assert_eq!((r.used, r.additional), (2, 1));
-            }
-        }
+        let result = crate::test_support::assert_work_boundaries(&["creo legacy line scan"], |ctx| line(ctx, source, 0));
+        assert_eq!(result, Some((expected, 2)));
     }
-    for (source, expected, visits) in [
-        (b"007".as_slice(), (7, 3), 3),
-        (b"7xTAIL".as_slice(), (7, 1), 2),
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = visits;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        assert_eq!(decimal(&ctx, source, 0).expect("digits and first delimiter"), Some(expected));
-        let r = ctx.charge_work_limit(1, "after decimal visits").expect_err("exact cap");
-        assert_eq!((r.used, r.additional), (visits, 1));
+    for (source, expected) in [(b"007".as_slice(), (7, 3)), (b"7xTAIL".as_slice(), (7, 1))] {
+        let result = crate::test_support::assert_work_boundaries(&["creo legacy decimal digits"], |ctx| decimal(ctx, source, 0));
+        assert_eq!(result, Some(expected));
     }
 }
 
 #[test]
 fn legacy_text_fields_admit_present_characters_and_preserve_unicode_boundaries() {
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
     use super::super::text_field;
-    for (source, remainder, visits, first_visits) in [
-        ("é", "", 1, 1),
-        (" \u{2003}é next", "next", 4, 3),
+    for (source, remainder, operations) in [
+        ("é", "", ["creo text field whitespace"].as_slice()),
+        (" \u{2003}é next", "next", ["creo text field whitespace", "creo text field boundary"].as_slice()),
     ] {
-        for allowed in 0..=visits {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = allowed;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-            let mut pending = source;
-            let result = text_field(&ctx, &mut pending, false);
-            if allowed < visits {
-                let CodecError::ResourceLimit(r) = result.expect_err("next character visit") else {
-                    panic!("work refusal");
-                };
-                assert_eq!(r.dimension, ResourceDimension::WorkUnits);
-                assert_eq!(r.operation, if allowed < first_visits {
-                    "creo text field whitespace"
-                } else {
-                    "creo text field boundary"
-                });
-                assert_eq!((r.used, r.additional), (allowed, 1));
-                assert_eq!(pending, source);
-                let mut empty = "";
-                assert!(matches!(text_field(&ctx, &mut empty, false),
-                    Err(CodecError::ResourceLimit(original)) if original == r));
-            } else {
-                assert_eq!(result.expect("present characters"), Some("é"));
-                assert_eq!(pending, remainder);
-                let r = ctx.charge_work_limit(1, "after field character visits").expect_err("exact cap");
-                assert_eq!((r.used, r.additional), (visits, 1));
-            }
-        }
+        let actual = crate::test_support::assert_work_boundaries(
+            operations, |ctx| {
+                let mut pending = source;
+                let result = text_field(ctx, &mut pending, false);
+                if result.is_err() { assert_eq!(pending, source); }
+                result.map(|value| (value, pending))
+            });
+        assert_eq!(actual, (Some("é"), remainder));
     }
 }
 
 #[test]
 fn legacy_scope_extent_visits_exclude_terminal_probe_and_preserve_empty_output() {
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
     use super::super::{scan, Persistence};
-    for allowed in 0..=2 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = allowed;
-        policy.limits.max_materialized_bytes = 0;
-        policy.limits.max_retained_bytes = 0;
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        let result = scan(&ctx, &[], [0..0, 0..0]);
-        if allowed < 2 {
-            let CodecError::ResourceLimit(r) = result.expect_err("next extent") else {
-                panic!("work refusal");
-            };
-            assert_eq!(r.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(r.operation, "creo legacy scope extent traversal");
-            assert_eq!((r.used, r.additional), (allowed, 1));
-            assert!(matches!(scan(&ctx, &[], std::iter::empty()),
-                Err(CodecError::ResourceLimit(original)) if original == r));
-        } else {
-            assert_eq!(result.expect("two present extents"), Persistence::default());
-            let r = ctx.charge_work_limit(1, "after two extent visits").expect_err("exact cap");
-            assert_eq!((r.used, r.additional), (2, 1));
-        }
-    }
+    let actual = crate::test_support::assert_work_boundaries(&["creo legacy scope extent traversal"],
+        |ctx| scan(ctx, &[], [0..0, 0..0]));
+    assert_eq!(actual, Persistence::default());
 }
 
 #[test]

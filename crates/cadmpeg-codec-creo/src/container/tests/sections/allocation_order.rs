@@ -20,10 +20,11 @@ fn assert_rejected_without_storage(bytes: &[u8], legacy: bool) {
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).expect("root");
-    let parse = || if legacy {
-        super::super::super::legacy_toc_sections(&ctx, bytes, 0)
+    let mut section_storage = ctx.reserve_scoped(0, "test section roster storage").expect("empty storage");
+    let mut parse = || if legacy {
+        super::super::super::legacy_toc_sections(&ctx, &mut section_storage, bytes, 0)
     } else {
-        super::super::super::toc_sections(&ctx, bytes, 0)
+        super::super::super::toc_sections(&ctx, &mut section_storage, bytes, 0)
     };
     assert!(parse().expect("rejected borrowed directory row").is_empty());
     let original = ctx.charge_work_limit(u64::MAX, "after rejected TOC row")
@@ -80,7 +81,7 @@ fn deferred_toc_names_keep_decorated_and_variable_modelview_identity() {
         let length = marker.len() + 5;
         let bytes = modern_table(marker, entry, "a2", &format!("{length:x}"), "2a");
         let sections = crate::decode::with_test_decode_ctx(|ctx| {
-            super::super::super::toc_sections(ctx, &bytes, 0)
+            super::super::super::toc_sections(ctx, &mut ctx.reserve_scoped(0, "test section roster storage").expect("empty storage"), &bytes, 0)
         }).expect("complete directory");
         let [section] = sections.as_slice() else { panic!("one complete section"); };
         assert_eq!(section.section.raw_name(), marker);
