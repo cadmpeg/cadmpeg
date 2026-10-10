@@ -97,6 +97,7 @@ fn layout_release(layout: Layout, complete: bool) {
             NativeStoreInputs {
                 scan: &scan, directory: &directory, parameters: &assembly.records,
                 trailing_pointer_analysis: &assembly.trailing_pointer_analysis,
+                attribute_definition_widths: &assembly.attribute_definition_widths,
                 quarantine: QuarantinedRecords { directory: &quarantined, parameters: &assembly.quarantined },
                 structure_admitted: Some(&projection), sequences: &projection.sequences,
                 boundary_vertex_derivations: &projection.boundary_vertex_derivations,

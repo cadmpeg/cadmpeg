@@ -1486,29 +1486,17 @@ struct AttributeTableRows<'a> {
 /// The width of a Type 422 row, stated by its Type 322 definition.
 /// Invalid counts produce a named verdict that each instance can reuse.
 fn attribute_table_value_width(
-    record: &ParameterRecord,
+    width: crate::parameter::AttributeDefinitionWidth,
     end: usize,
-    ctx: &DecodeContext<'_>,
-) -> Result<Result<Option<std::num::NonZeroUsize>, UnstatableAttributeTable>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
+) -> Result<Option<std::num::NonZeroUsize>, UnstatableAttributeTable> {
+    if !width.descriptor_end.is_some_and(|required| required <= end) {
+        return Err(UnstatableAttributeTable::AttributeCount);
     }
-    let Some(attribute_count) = record.count_with_stride_before(3, 3, end) else {
-        return Ok(Err(UnstatableAttributeTable::AttributeCount));
-    };
-    Ok(crate::parameter::attribute_table_definition_width(
-        record,
-        attribute_count,
-        ctx,
-        "iges native attribute definition width scan",
-    )?
-    .map(std::num::NonZeroUsize::new)
-    .map_err(|defect| match defect {
-        crate::parameter::AttributeWidthDefect::ValueCount { attribute } => {
-            UnstatableAttributeTable::ValueCount { attribute }
-        }
+    width.values_per_row.map(std::num::NonZeroUsize::new).map_err(|defect| match defect {
+        crate::parameter::AttributeWidthDefect::AttributeCount => UnstatableAttributeTable::AttributeCount,
+        crate::parameter::AttributeWidthDefect::ValueCount { attribute } => UnstatableAttributeTable::ValueCount { attribute },
         crate::parameter::AttributeWidthDefect::ValueTotal => UnstatableAttributeTable::ValueTotal,
-    }))
+    })
 }
 
 /// The instance value grid from its cached definition width and row count.
@@ -2468,6 +2456,7 @@ pub(crate) struct NativeStoreInputs<'a, 'b> {
     pub(crate) directory: &'a [DirectoryEntry],
     pub(crate) parameters: &'a [ParameterRecord],
     pub(crate) trailing_pointer_analysis: &'a BTreeMap<u32, TrailingPointerAnalysis>,
+    pub(crate) attribute_definition_widths: &'a crate::parameter::AttributeDefinitionWidths<'a>,
     pub(crate) quarantine: QuarantinedRecords<'a>,
     pub(crate) structure_admitted: Option<&'a crate::entities::geometry::Projection<'a>>,
     pub(crate) sequences: &'a crate::entities::geometry::SourceSequences<'a>,
@@ -2488,6 +2477,7 @@ pub(crate) fn store<'ctx>(
         directory,
         parameters,
         trailing_pointer_analysis,
+        attribute_definition_widths,
         quarantine,
         structure_admitted,
         sequences,
@@ -6396,8 +6386,6 @@ pub(crate) fn store<'ctx>(
             }
             Ok::<_, CodecError>(output)
         })?;
-    let mut width_storage = ctx.reserve_scoped(0, "iges native attribute definition widths")?;
-    let mut definition_widths = BTreeMap::new();
     let (attribute_table_instances, attribute_table_instances_storage) =
         ctx.with_scoped_storage("iges native attribute table instances scratch", || {
             let mut output = Vec::new();
@@ -6418,32 +6406,14 @@ pub(crate) fn store<'ctx>(
                         crate::graph::resolved_structure_sequence(references, entry.sequence, ctx)?;
                     // Structure admission resolves only Type 322 Form 0 definitions.
                     let definition = match definition_sequence {
-                        Some(sequence) if record.is_some() => match ctx.get_btree_map(
-                            &definition_widths,
-                            &sequence,
-                            "iges native attribute definition width lookup",
-                        )? {
-                            Some(width) => *width,
-                            None => {
-                                let width = match record_by_sequence(parameters, sequence, ctx)? {
-                                    Some(definition_record) => Some(attribute_table_value_width(
-                                        definition_record,
-                                        clamped_primary_end(sequence, definition_record)?,
-                                        ctx,
-                                    )?),
-                                    None => None,
-                                };
-                                width_storage.with_storage(|| {
-                                    ctx.insert_btree_map(
-                                        &mut definition_widths,
-                                        sequence,
-                                        width,
-                                        "iges native attribute definition width nodes",
-                                    )
-                                })?;
-                                width
-                            }
-                        },
+                        Some(sequence) if record.is_some() => attribute_definition_widths.get(
+                            sequence, ctx, "iges native attribute definition width lookup",
+                        )?.map(|width| {
+                            let end = ctx.get_btree_map(
+                                &primary_ends, &sequence, "iges native primary-end cache lookup",
+                            )?.copied().unwrap_or(0);
+                            Ok::<_, CodecError>(attribute_table_value_width(width, end))
+                        }).transpose()?,
                         _ => None,
                     };
                     let value_start = if entry.form == 0 { 1 } else { 2 };
@@ -6517,8 +6487,6 @@ pub(crate) fn store<'ctx>(
             }
             Ok::<_, CodecError>(output)
         })?;
-    drop(definition_widths);
-    drop(width_storage);
     let (product_properties, product_properties_storage) =
         ctx.with_scoped_storage("iges native product properties scratch", || {
             let mut output = Vec::new();

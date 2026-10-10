@@ -94,6 +94,7 @@ fn assert_native_storage_boundary(bytes: &[u8], operation: &str) {
                     directory: &directory,
                     parameters: &assembly.records,
                     trailing_pointer_analysis: &assembly.trailing_pointer_analysis,
+                    attribute_definition_widths: &assembly.attribute_definition_widths,
                     quarantine: QuarantinedRecords {
                         directory: &quarantined_directory,
                         parameters: &assembly.quarantined,
@@ -162,6 +163,7 @@ fn assert_native_store_refusal(
                     directory: &directory,
                     parameters: &assembly.records,
                     trailing_pointer_analysis: &assembly.trailing_pointer_analysis,
+                    attribute_definition_widths: &assembly.attribute_definition_widths,
                     quarantine: QuarantinedRecords {
                         directory: &quarantined_directory,
                         parameters: &assembly.quarantined,
@@ -406,29 +408,40 @@ fn malformed_attribute_definition_keeps_resolved_prefix_references() {
 }
 
 #[test]
-fn native_attribute_width_cache_refuses_work_nodes_and_scoped_storage() {
-    let bytes = owned_test_file_with_structures(
-        &[
-            entity(322, 0, "322,4HMETA,1,1,10,1,1;"),
-            entity(422, 1, "422,1,4HITEM;"),
-        ],
-        &[(3, -1)],
-    );
-    for (dimension, operation) in [
-        (
-            ResourceDimension::WorkUnits,
-            "iges native attribute definition width scan",
-        ),
-        (
-            ResourceDimension::CollectionItems,
-            "iges native attribute definition width nodes",
-        ),
-        (
-            ResourceDimension::MaterializedBytes,
-            "iges native attribute definition width nodes",
-        ),
+fn native_attribute_instances_reuse_parameter_widths_and_defects() {
+    use cadmpeg_core::decode::refusal_probe::RefusalProbe;
+    for (definition, rows, loss) in [
+        ("322,4HMETA,1,1,10,1,1;", serde_json::json!([[{"kind":"integer","value":7}]]), None),
+        ("322,4HMETA,1,1,10,1,0;", serde_json::json!([]), None),
+        ("322,4HMETA,1,0;", serde_json::json!([]), None),
+        ("322,4HMETA,1,1,10,1,-1;", serde_json::json!([]), Some("states no value count for attribute 0")),
+        ("322,4HMETA,1,1,10,1;", serde_json::json!([]), Some("states no attribute count")),
     ] {
-        assert_boundary(&bytes, dimension, operation);
+        let bytes = owned_test_file_with_structures(
+            &[entity(322, 0, definition), entity(422, 0, "422,7;"), entity(422, 0, "422,7;")],
+            &[(3, -1), (5, -1)],
+        );
+        // A second descriptor scan would refuse. Native storage uses the parser's result.
+        let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, "iges native attribute definition width scan", None);
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        let result = IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions { policy, ..DecodeOptions::default() }).unwrap();
+        let native = result.ir().native.namespace("iges").unwrap();
+        let instances = &native.arenas()["attribute_table_instances"];
+        assert_eq!(instances.len(), 2);
+        for instance in instances {
+            assert_eq!(instance.fields()["rows"], rows);
+            assert_eq!(instance.fields()["definition"], "iges:product:attribute-definition#D1");
+        }
+        let count_losses: Vec<_> = result.report().losses.iter().filter(|loss|
+            loss.code == crate::loss::IgesLossCode::AttributeTableCountUnstatable.kind()
+        ).collect();
+        assert_eq!(count_losses.len(), if loss.is_some() { 2 } else { 0 });
+        if let Some(message) = loss {
+            for loss in count_losses {
+                assert!(loss.message.contains(message), "{}", loss.message);
+            }
+        }
     }
 }
 
@@ -598,6 +611,7 @@ fn native_store_releases_scoped_arena_scratch_after_serialization() {
             directory: &directory,
             parameters: &assembly.records,
             trailing_pointer_analysis: &assembly.trailing_pointer_analysis,
+            attribute_definition_widths: &assembly.attribute_definition_widths,
             quarantine: QuarantinedRecords {
                 directory: &quarantined_directory,
                 parameters: &assembly.quarantined,

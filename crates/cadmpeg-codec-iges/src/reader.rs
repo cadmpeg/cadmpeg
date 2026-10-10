@@ -405,6 +405,7 @@ struct PhysicalParse<'a, 'ctx> {
     quarantined_directory: Vec<directory::QuarantinedDirectoryRecord>,
     parameters: Vec<parameter::ParameterRecord>,
     trailing_pointer_analysis: BTreeMap<u32, parameter::TrailingPointerAnalysis>,
+    attribute_definition_widths: parameter::AttributeDefinitionWidths<'ctx>,
     quarantined_parameters: Vec<parameter::QuarantinedParameterRecord>,
     framing_recoveries: card::FramingRecoveries,
     references: BTreeMap<u32, Vec<graph::ReferenceEdge>>,
@@ -452,6 +453,7 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
         let parameter::ParameterAssembly {
             records: parameters,
             trailing_pointer_analysis,
+            attribute_definition_widths,
             quarantined: quarantined_parameters,
             recoveries: parameter_recoveries,
             records_storage,
@@ -494,6 +496,7 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
             quarantined_directory,
             parameters,
             trailing_pointer_analysis,
+            attribute_definition_widths,
             quarantined_parameters,
             framing_recoveries,
             references,
@@ -708,6 +711,7 @@ fn decode_with_occurrence_limits(
             directory: &parse.directory,
             parameters: &parse.parameters,
             trailing_pointer_analysis: &parse.trailing_pointer_analysis,
+            attribute_definition_widths: &parse.attribute_definition_widths,
             quarantine: native::QuarantinedRecords {
                 directory: &parse.quarantined_directory,
                 parameters: &parse.quarantined_parameters,

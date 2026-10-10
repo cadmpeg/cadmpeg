@@ -52,13 +52,13 @@ fn attribute_instances_reuse_valid_and_invalid_definition_widths() {
                     if invalid { 2 } else { 1 }
                 );
             }
-            let expected = if invalid { None } else { Some(0) };
+            let expected = if invalid { Err(crate::parameter::AttributeWidthDefect::ValueCount { attribute: ATTRIBUTES - 1 }) } else { Ok(0) };
             if overflow {
-                assert_eq!(widths.first, Some((7, Some(1))));
+                assert_eq!(widths.first.map(|(sequence, width)| (sequence, width.values_per_row)), Some((7, Ok(1))));
                 assert_eq!(widths.values.len(), 1);
-                assert_eq!(widths.values[&1], expected);
+                assert_eq!(widths.values[&1].values_per_row, expected);
             } else {
-                assert_eq!(widths.first, Some((1, expected)));
+                assert_eq!(widths.first.map(|(sequence, width)| (sequence, width.values_per_row)), Some((1, expected)));
                 assert!(widths.values.is_empty());
             }
             drop(widths);
@@ -106,10 +106,10 @@ fn attribute_width_cache_admits_nodes_before_insertion() {
         } else {
             use std::mem::{align_of, size_of};
             u64::try_from(
-                11 * (size_of::<u32>() + size_of::<Option<usize>>())
+                11 * (size_of::<u32>() + size_of::<crate::parameter::AttributeDefinitionWidth>())
                     + 16 * size_of::<usize>()
                     + 2 * align_of::<u32>()
-                        .max(align_of::<Option<usize>>())
+                        .max(align_of::<crate::parameter::AttributeDefinitionWidth>())
                         .max(align_of::<usize>()),
             )
             .unwrap()
