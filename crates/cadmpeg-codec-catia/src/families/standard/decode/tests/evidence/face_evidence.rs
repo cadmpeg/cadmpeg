@@ -829,7 +829,7 @@ fn line_pair_constraint_refuses_collection_growth_before_face_edges() {
 }
 
 #[test]
-fn circle_pair_constraint_refuses_nested_range_growth() {
+fn circle_pair_constraint_refuses_range_capacity_growth() {
     let supports = [StandardCurveSupport {
         pos: 0,
         tag: 0,
@@ -851,16 +851,31 @@ fn circle_pair_constraint_refuses_nested_range_growth() {
         matches!(face_refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_standard_circle_constraint_faces")
     );
-    let refused = crate::test_support::with_collection_limit(1, |ctx| {
-        super::super::super::edge_geometry::StandardCirclePairConstraint::new(
-            ctx, &supports, &options,
-        )
-        .map(|_| ())
-    });
+    let refused = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "catia_standard_circle_constraint_ranges",
+        |cap| {
+            crate::test_support::with_materialized_limit(cap, |ctx| {
+                super::super::super::edge_geometry::StandardCirclePairConstraint::new(
+                    ctx, &supports, &options,
+                )
+                .map(|_| ())
+            })
+        },
+    );
     assert!(
-        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        matches!(refused, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "catia_standard_circle_constraint_ranges")
     );
+    // Two counting-map keys and two range-map keys; capacity holds no rows.
+    crate::test_support::with_collection_limit(4, |ctx| {
+        assert!(
+            super::super::super::edge_geometry::StandardCirclePairConstraint::new(
+                ctx, &supports, &options
+            )
+            .is_ok()
+        );
+    });
     crate::test_support::with_service_context(|ctx| {
         assert!(
             super::super::super::edge_geometry::StandardCirclePairConstraint::new(

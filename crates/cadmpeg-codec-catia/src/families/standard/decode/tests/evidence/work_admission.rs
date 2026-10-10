@@ -59,6 +59,8 @@ fn standard_population_object_index_refuses_work_limit() {
                 &std::collections::BTreeSet::new(),
                 &HashSet::new(),
                 &mut crate::nurbs::LaneRefusals::new(),
+                &mut crate::families::standard::decode::LimitCurveIndex::new(ctx)
+                    .expect("empty index"),
             )
         });
     assert!(matches!(
@@ -78,6 +80,7 @@ fn standard_object_record_scan_refuses_caller_collection_limit() {
             &std::collections::BTreeSet::new(),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
+            &mut crate::families::standard::decode::LimitCurveIndex::new(ctx).expect("empty index"),
         )
     });
     assert!(
