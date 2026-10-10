@@ -869,7 +869,7 @@ pub(in super::super) fn transfer_positional_spline_replays(
         (usize, usize),
         (
             Vec<crate::surface::SurfaceRow>,
-            Option<crate::scalar::ScalarCache>,
+            Option<crate::scalar::CheckedScalarCache<'_>>,
         ),
     >::new();
     let mut transferred = 0;
