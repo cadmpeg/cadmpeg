@@ -678,7 +678,7 @@ fn homogeneous_product_control(
         return Ok(None);
     };
     let upper = index.min(vector_degree);
-    let lower = index.saturating_sub(scalar_degree);
+    let lower = index - index.min(scalar_degree);
     let mut control = [0.0; 4];
     if lower <= upper {
         let mut indices = lower..=upper;
