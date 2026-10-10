@@ -9,10 +9,15 @@ use cadmpeg_ir::math::Point2;
 
 fn pcurve() -> PcurveNurbs {
     PcurveNurbs::from_lanes(
-        &cadmpeg_test_support::service_decode_context(), 1,
+        &cadmpeg_test_support::service_decode_context(),
+        1,
         vec![0.0, 0.0, 1.0, 1.0],
-        vec![Point2::new(2.0, 3.0), Point2::new(5.0, 7.0)], None, false,
-    ).unwrap().unwrap()
+        vec![Point2::new(2.0, 3.0), Point2::new(5.0, 7.0)],
+        None,
+        false,
+    )
+    .unwrap()
+    .unwrap()
 }
 
 #[test]
@@ -27,7 +32,10 @@ fn unsupported_surface_chart_executes_no_input_work_or_allocation() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     for head in ["unknown", ""] {
-        assert!(matches!(normalize_pcurve_for_surface_record(&ctx, head, &[], &mut curve), Some(Ok(()))));
+        assert!(matches!(
+            normalize_pcurve_for_surface_record(&ctx, head, &[], &mut curve),
+            Some(Ok(()))
+        ));
         assert_eq!(curve, original);
     }
     ctx.finish_session().unwrap();
@@ -35,7 +43,8 @@ fn unsupported_surface_chart_executes_no_input_work_or_allocation() {
 
 #[test]
 fn invalid_pcurve_selector_executes_no_input_work_or_allocation() {
-    let table = SubtypeTable::from_records(&cadmpeg_test_support::service_decode_context(), &[]).unwrap();
+    let table =
+        SubtypeTable::from_records(&cadmpeg_test_support::service_decode_context(), &[]).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
@@ -69,14 +78,18 @@ fn manual_surface_bounds_prefix_stops_at_the_last_actual_identifier() {
                 assert!(result.unwrap().is_none());
                 ctx.finish_session().unwrap();
             } else {
-                let Err(CodecError::ResourceLimit(first)) = result else { panic!("actual identifier refusal"); };
+                let Err(CodecError::ResourceLimit(first)) = result else {
+                    panic!("actual identifier refusal");
+                };
                 assert_eq!(first.operation, "ASM trailing surface bounds prefix");
                 assert_eq!((first.limit, first.used, first.additional), (cap, cap, 1));
-                for replay in [tokens.as_slice()] {
-                    assert!(matches!(super::super::record_trailing_surface_bounds(&ctx, replay),
-                        Err(CodecError::ResourceLimit(last)) if last == first));
-                }
-                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+                assert!(
+                    matches!(super::super::record_trailing_surface_bounds(&ctx, tokens.as_slice()),
+                        Err(CodecError::ResourceLimit(last)) if last == first)
+                );
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
+                );
             }
         }
     }
@@ -87,10 +100,20 @@ fn embedded_surface_propagates_knot_refusal_before_missing_bounds() {
     use crate::nurbs::toks::Cur;
     use crate::sab::Token;
     use cadmpeg_core::decode::ResourceDimension;
-    let table = SubtypeTable::from_records(&cadmpeg_test_support::service_decode_context(), &[]).unwrap();
-    let tokens = [Token::Ident("spline".into()), Token::Ident("nubs".into()),
-        Token::Long(1), Token::Long(1), Token::Enum(0), Token::Enum(0), Token::Enum(0), Token::Enum(0),
-        Token::Long(2), Token::Long(2)];
+    let table =
+        SubtypeTable::from_records(&cadmpeg_test_support::service_decode_context(), &[]).unwrap();
+    let tokens = [
+        Token::Ident("spline".into()),
+        Token::Ident("nubs".into()),
+        Token::Long(1),
+        Token::Long(1),
+        Token::Enum(0),
+        Token::Enum(0),
+        Token::Enum(0),
+        Token::Enum(0),
+        Token::Long(2),
+        Token::Long(2),
+    ];
     // The fixed surface header reaches a two-entry knot table. The first
     // knot read needs one work unit; no knot payload or bound is present.
     for cap in [0, 1] {
@@ -109,10 +132,14 @@ fn embedded_surface_propagates_knot_refusal_before_missing_bounds() {
             assert_eq!((first.limit, first.used, first.additional), (0, 0, 1));
             for _ in 0..64 {
                 let mut cur = Cur::at(&tokens, 0);
-                assert!(matches!(super::super::optional_embedded_surface_with_bounds(&ctx, &mut cur, &table),
-                    Some(Err(CodecError::ResourceLimit(last))) if last == first));
-                    }
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+                assert!(
+                    matches!(super::super::optional_embedded_surface_with_bounds(&ctx, &mut cur, &table),
+                    Some(Err(CodecError::ResourceLimit(last))) if last == first)
+                );
+            }
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
+            );
         } else {
             assert!(result.is_none());
             ctx.finish_session().unwrap();

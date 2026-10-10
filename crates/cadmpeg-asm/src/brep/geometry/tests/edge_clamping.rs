@@ -15,11 +15,15 @@ const CURVE_ID: &str = "sat:brep:curve#domain";
 
 fn input(range: [f64; 2]) -> AsmBrep {
     let curve = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(), 1,
+        &cadmpeg_test_support::service_decode_context(),
+        1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-        None, false,
-    ).unwrap().unwrap();
+        None,
+        false,
+    )
+    .unwrap()
+    .unwrap();
     AsmBrep {
         curves: vec![Curve {
             id: CurveId::mint(CURVE_ID).unwrap(),
@@ -30,7 +34,8 @@ fn input(range: [f64; 2]) -> AsmBrep {
             id: EdgeId::mint("sat:brep:edge#domain").unwrap(),
             carrier: EdgeCarrier::new(Some(CurveId::mint(CURVE_ID).unwrap()), Some(range)).unwrap(),
             start: VertexId::mint("sat:brep:vertex#a").unwrap(),
-            end: VertexId::mint("sat:brep:vertex#b").unwrap(), tolerance: None,
+            end: VertexId::mint("sat:brep:vertex#b").unwrap(),
+            tolerance: None,
         }],
         ..Default::default()
     }
@@ -53,9 +58,15 @@ fn edge_clamping_keeps_original_identity_without_retained_copy() {
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         clamp_edge_ranges_to_carrier_domains(&ctx, &mut out).unwrap();
-        assert_eq!(out.edges[0].param_range().map(FiniteVector::get), Some(expected));
+        assert_eq!(
+            out.edges[0].param_range().map(FiniteVector::get),
+            Some(expected)
+        );
         assert_eq!(out.edges[0].curve().unwrap().as_str(), CURVE_ID);
-        assert_eq!(out.edges[0].curve().unwrap().as_str().as_ptr(), identity_backing);
+        assert_eq!(
+            out.edges[0].curve().unwrap().as_str().as_ptr(),
+            identity_backing
+        );
         assert_eq!(out.curves, expected_input.curves);
         assert_eq!(out.edges[0].id, expected_input.edges[0].id);
         assert_eq!(out.edges[0].start, expected_input.edges[0].start);
@@ -74,8 +85,10 @@ fn edge_clamping_preserves_invalid_interval_error_and_original_carrier() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(clamp_edge_ranges_to_carrier_domains(&ctx, &mut out),
-        Err(CodecError::Malformed(message)) if message == "edge param_range must be finite and ordered"));
+    assert!(
+        matches!(clamp_edge_ranges_to_carrier_domains(&ctx, &mut out),
+        Err(CodecError::Malformed(message)) if message == "edge param_range must be finite and ordered")
+    );
     assert_eq!(out.curves, expected.curves);
     assert_eq!(out.edges, expected.edges);
     ctx.finish_session().unwrap();
@@ -90,16 +103,22 @@ fn edge_clamping_preserves_original_refusal_before_any_mutation() {
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let Err(CodecError::ResourceLimit(first)) = ctx.charge_work(1, "test original clamp refusal")
-    else { panic!("expected original refusal"); };
+    else {
+        panic!("expected original refusal");
+    };
     assert_eq!(first.dimension, ResourceDimension::WorkUnits);
     assert_eq!((first.limit, first.used, first.additional), (0, 0, 1));
     for _ in 0..64 {
-        assert!(matches!(clamp_edge_ranges_to_carrier_domains(&ctx, &mut out),
-            Err(CodecError::ResourceLimit(last)) if last == first));
+        assert!(
+            matches!(clamp_edge_ranges_to_carrier_domains(&ctx, &mut out),
+            Err(CodecError::ResourceLimit(last)) if last == first)
+        );
         assert_eq!(out.curves, expected.curves);
         assert_eq!(out.edges, expected.edges);
-        assert!(matches!(clamp_edge_ranges_to_carrier_domains(&ctx, &mut AsmBrep::default()),
-            Err(CodecError::ResourceLimit(last)) if last == first));
+        assert!(
+            matches!(clamp_edge_ranges_to_carrier_domains(&ctx, &mut AsmBrep::default()),
+            Err(CodecError::ResourceLimit(last)) if last == first)
+        );
     }
     assert!(matches!(ctx.finish_session(),
         Err(CodecError::ResourceLimit(last)) if last == first));
@@ -107,11 +126,13 @@ fn edge_clamping_preserves_original_refusal_before_any_mutation() {
 
 fn rejected_carriers() -> AsmBrep {
     AsmBrep {
-        curves: (1..=3).map(|index| Curve {
-            id: CurveId::mint(format!("sat:brep:curve#{index}")).unwrap(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
-            source_object: None,
-        }).collect(),
+        curves: (1..=3)
+            .map(|index| Curve {
+                id: CurveId::mint(format!("sat:brep:curve#{index}")).unwrap(),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+                source_object: None,
+            })
+            .collect(),
         ..Default::default()
     }
 }
@@ -126,27 +147,35 @@ fn domain_source_refusal(work: u64) {
     policy.limits.max_materialized_bytes = 0;
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let Err(CodecError::ResourceLimit(first)) = clamp_edge_ranges_to_carrier_domains(&ctx, &mut out)
-    else { panic!("expected domain source refusal"); };
+    let Err(CodecError::ResourceLimit(first)) =
+        clamp_edge_ranges_to_carrier_domains(&ctx, &mut out)
+    else {
+        panic!("expected domain source refusal");
+    };
     assert_eq!(first.dimension, ResourceDimension::WorkUnits);
     assert_eq!(first.operation, "ASM edge domain curves");
     assert_eq!((first.limit, first.used, first.additional), (work, work, 1));
     assert_eq!(out.curves, expected.curves);
     for _ in 0..64 {
-        for mut replay in [rejected_carriers()] {
-            assert!(matches!(clamp_edge_ranges_to_carrier_domains(&ctx, &mut replay),
-                Err(CodecError::ResourceLimit(last)) if last == first));
-        }
+        let mut replay = rejected_carriers();
+        assert!(
+            matches!(clamp_edge_ranges_to_carrier_domains(&ctx, &mut replay),
+            Err(CodecError::ResourceLimit(last)) if last == first)
+        );
     }
     assert!(matches!(ctx.finish_session(),
         Err(CodecError::ResourceLimit(last)) if last == first));
 }
 
 #[test]
-fn edge_domain_source_refuses_before_first_curve() { domain_source_refusal(0); }
+fn edge_domain_source_refuses_before_first_curve() {
+    domain_source_refusal(0);
+}
 
 #[test]
-fn edge_domain_source_refuses_before_last_curve() { domain_source_refusal(2); }
+fn edge_domain_source_refuses_before_last_curve() {
+    domain_source_refusal(2);
+}
 
 #[test]
 fn edge_domain_source_accepts_exact_rejected_carrier_visits_and_empty_input() {
@@ -161,21 +190,31 @@ fn edge_domain_source_accepts_exact_rejected_carrier_visits_and_empty_input() {
         clamp_edge_ranges_to_carrier_domains(&ctx, &mut out).unwrap();
         assert!(out.edges.is_empty());
         assert_eq!(out.curves.len(), usize::try_from(work).unwrap());
-        if work != 0 { assert_eq!(out.curves, rejected_carriers().curves); }
+        if work != 0 {
+            assert_eq!(out.curves, rejected_carriers().curves);
+        }
         ctx.finish_session().unwrap();
     }
 }
 
 fn skipped_edge_carriers() -> AsmBrep {
-    let carriers = [EdgeCarrier::Free,
+    let carriers = [
+        EdgeCarrier::Free,
         EdgeCarrier::unbounded(Some(CurveId::mint(CURVE_ID).unwrap())),
-        EdgeCarrier::new(None, Some([1.0, 0.0])).unwrap()];
+        EdgeCarrier::new(None, Some([1.0, 0.0])).unwrap(),
+    ];
     AsmBrep {
-        edges: carriers.into_iter().enumerate().map(|(index, carrier)| Edge {
-            id: EdgeId::mint(format!("sat:brep:edge#{}", index + 1)).unwrap(), carrier,
-            start: VertexId::mint("sat:brep:vertex#a").unwrap(),
-            end: VertexId::mint("sat:brep:vertex#b").unwrap(), tolerance: None,
-        }).collect(),
+        edges: carriers
+            .into_iter()
+            .enumerate()
+            .map(|(index, carrier)| Edge {
+                id: EdgeId::mint(format!("sat:brep:edge#{}", index + 1)).unwrap(),
+                carrier,
+                start: VertexId::mint("sat:brep:vertex#a").unwrap(),
+                end: VertexId::mint("sat:brep:vertex#b").unwrap(),
+                tolerance: None,
+            })
+            .collect(),
         ..Default::default()
     }
 }
@@ -190,16 +229,21 @@ fn edge_source_refusal(work: u64) {
     policy.limits.max_materialized_bytes = 0;
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let Err(CodecError::ResourceLimit(first)) = clamp_edge_ranges_to_carrier_domains(&ctx, &mut out)
-    else { panic!("expected edge source refusal"); };
+    let Err(CodecError::ResourceLimit(first)) =
+        clamp_edge_ranges_to_carrier_domains(&ctx, &mut out)
+    else {
+        panic!("expected edge source refusal");
+    };
     assert_eq!(first.dimension, ResourceDimension::WorkUnits);
     assert_eq!(first.operation, "ASM edge range clamp");
     assert_eq!((first.limit, first.used, first.additional), (work, work, 1));
     assert_eq!(out.edges, expected.edges);
     for _ in 0..64 {
         for mut replay in [skipped_edge_carriers(), AsmBrep::default()] {
-            assert!(matches!(clamp_edge_ranges_to_carrier_domains(&ctx, &mut replay),
-                Err(CodecError::ResourceLimit(last)) if last == first));
+            assert!(
+                matches!(clamp_edge_ranges_to_carrier_domains(&ctx, &mut replay),
+                Err(CodecError::ResourceLimit(last)) if last == first)
+            );
         }
     }
     assert!(matches!(ctx.finish_session(),
@@ -207,10 +251,14 @@ fn edge_source_refusal(work: u64) {
 }
 
 #[test]
-fn edge_clamp_source_refuses_before_first_edge() { edge_source_refusal(0); }
+fn edge_clamp_source_refuses_before_first_edge() {
+    edge_source_refusal(0);
+}
 
 #[test]
-fn edge_clamp_source_refuses_before_last_edge() { edge_source_refusal(2); }
+fn edge_clamp_source_refuses_before_last_edge() {
+    edge_source_refusal(2);
+}
 
 #[test]
 fn edge_clamp_source_accepts_exact_skipped_carrier_visits() {

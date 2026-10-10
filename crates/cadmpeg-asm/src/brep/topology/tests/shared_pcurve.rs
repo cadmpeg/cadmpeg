@@ -121,29 +121,60 @@ fn shared_explicit_pcurve_decodes_once_and_keeps_each_edge_range() {
 #[test]
 fn shared_pcurve_keeps_the_last_faces_support_chart() {
     for (first, second, expected_u) in [("plane", "sphere", 1.0), ("sphere", "plane", 10.0)] {
-    let mut records = shared_records();
+        let mut records = shared_records();
 
         for (index, name) in [(9, first), (10, second)] {
-            records.push(crate::test_support::sab::record(index, name.into(), Vec::new().into(), 0, 0));
+            records.push(crate::test_support::sab::record(
+                index,
+                name.into(),
+                Vec::new().into(),
+                0,
+                0,
+            ));
         }
         records[0] = ref_record(0, "face", &[-1, -1, -1, -1, 2, -1, -1, 9]);
         records[1] = ref_record(1, "face", &[-1, -1, -1, -1, 3, -1, -1, 10]);
         let by_index = indexed_records(&records);
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
         let table = nurbs::toks::SubtypeTable::from_records(&ctx, &records).unwrap();
         let mut storage = ctx.reserve_scoped(0, "test pcurve carriers").unwrap();
         let mut out = AsmBrep::default();
         let mut carriers = Carriers::default();
-        let mut reach = Reachable { faces: [0, 1].into(), ..Reachable::default() };
-        walk_reachable_topology(TopologyContext { ctx: &ctx, by_index: &by_index,
-            token_table: &table, purpose: DecodePurpose::Model, format: crate::asm_format!("sat") },
-            &mut out, &records, &mut carriers, &mut reach, &mut storage).unwrap();
+        let mut reach = Reachable {
+            faces: [0, 1].into(),
+            ..Reachable::default()
+        };
+        walk_reachable_topology(
+            TopologyContext {
+                ctx: &ctx,
+                by_index: &by_index,
+                token_table: &table,
+                purpose: DecodePurpose::Model,
+                format: crate::asm_format!("sat"),
+            },
+            &mut out,
+            &records,
+            &mut carriers,
+            &mut reach,
+            &mut storage,
+        )
+        .unwrap();
         let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } =
-            &carriers.pcurve_geo[&crate::brep::PcurveRecordIndex(8)] else { panic!("decoded pcurve"); };
+            &carriers.pcurve_geo[&crate::brep::PcurveRecordIndex(8)]
+        else {
+            panic!("decoded pcurve");
+        };
         assert_eq!(nurbs.pole_rows().point_at(1).unwrap().get().u, expected_u);
-        assert_eq!(carriers.pcurve_parameter_ranges[&crate::brep::CoedgeRecordIndex(4)], [0.0, 0.25]);
-        assert_eq!(carriers.pcurve_parameter_ranges[&crate::brep::CoedgeRecordIndex(5)], [0.5, 1.0]);
+        assert_eq!(
+            carriers.pcurve_parameter_ranges[&crate::brep::CoedgeRecordIndex(4)],
+            [0.0, 0.25]
+        );
+        assert_eq!(
+            carriers.pcurve_parameter_ranges[&crate::brep::CoedgeRecordIndex(5)],
+            [0.5, 1.0]
+        );
         drop((carriers, reach));
         drop(storage);
         ctx.finish_session().unwrap();
@@ -154,9 +185,23 @@ fn shared_pcurve_keeps_the_last_faces_support_chart() {
 fn shared_pcurve_caches_an_unavailable_decode() {
     let mut records = shared_records();
 
-    records[8] = crate::test_support::sab::record(8, "pcurve".into(),
-        vec![Token::Ref(-1), Token::Ref(-1), Token::Ref(-1), Token::Long(0), Token::True,
-            Token::SubtypeOpen, Token::Ident("exp_par_cur".into()), Token::SubtypeClose].into(), 0, 0);
+    records[8] = crate::test_support::sab::record(
+        8,
+        "pcurve".into(),
+        vec![
+            Token::Ref(-1),
+            Token::Ref(-1),
+            Token::Ref(-1),
+            Token::Long(0),
+            Token::True,
+            Token::SubtypeOpen,
+            Token::Ident("exp_par_cur".into()),
+            Token::SubtypeClose,
+        ]
+        .into(),
+        0,
+        0,
+    );
     let by_index = indexed_records(&records);
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
@@ -164,12 +209,40 @@ fn shared_pcurve_caches_an_unavailable_decode() {
     let mut storage = ctx.reserve_scoped(0, "test pcurve carriers").unwrap();
     let mut out = AsmBrep::default();
     let mut carriers = Carriers::default();
-    let mut reach = Reachable { faces: [0, 1].into(), ..Reachable::default() };
-    let inputs = TopologyContext { ctx: &ctx, by_index: &by_index, token_table: &table,
-        purpose: DecodePurpose::Model, format: crate::asm_format!("sat") };
-    walk_reachable_topology(inputs, &mut out, &records[..1], &mut carriers, &mut reach, &mut storage).unwrap();
-    let probe = RefusalProbe::arm(ResourceDimension::WorkUnits, "ASM payload subtype token scan", None);
-    walk_reachable_topology(inputs, &mut out, &records[1..2], &mut carriers, &mut reach, &mut storage).unwrap();
+    let mut reach = Reachable {
+        faces: [0, 1].into(),
+        ..Reachable::default()
+    };
+    let inputs = TopologyContext {
+        ctx: &ctx,
+        by_index: &by_index,
+        token_table: &table,
+        purpose: DecodePurpose::Model,
+        format: crate::asm_format!("sat"),
+    };
+    walk_reachable_topology(
+        inputs,
+        &mut out,
+        &records[..1],
+        &mut carriers,
+        &mut reach,
+        &mut storage,
+    )
+    .unwrap();
+    let probe = RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "ASM payload subtype token scan",
+        None,
+    );
+    walk_reachable_topology(
+        inputs,
+        &mut out,
+        &records[1..2],
+        &mut carriers,
+        &mut reach,
+        &mut storage,
+    )
+    .unwrap();
     drop(probe);
     assert!(carriers.pcurve_geo.is_empty());
     assert!(reach.pcurves.is_empty());

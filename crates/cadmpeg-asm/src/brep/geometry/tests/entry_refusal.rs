@@ -69,13 +69,11 @@ fn rational_arc_storage_boundary(degree: usize, last_underflow: bool, exact: boo
         assert_eq!(first.operation, "ASM rational four-arc homogeneous poles");
         assert_eq!((first.limit, first.used, first.additional), (cap, 0, bytes));
         for _ in 0..64 {
-            for replay in [&source] {
-                assert!(
-                    matches!(super::super::rational_four_arc_circle(&ctx, replay),
+            assert!(
+                matches!(super::super::rational_four_arc_circle(&ctx, &source),
                     Some(Err(CodecError::ResourceLimit(last))) if last == first)
-                );
-                assert_eq!(serde_json::to_value(&source).unwrap(), before);
-            }
+            );
+            assert_eq!(serde_json::to_value(&source).unwrap(), before);
         }
         assert!(matches!(ctx.finish_session(),
             Err(CodecError::ResourceLimit(last)) if last == first));

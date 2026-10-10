@@ -155,21 +155,32 @@ mod tests {
     use cadmpeg_core::CodecError;
 
     fn stream_error() -> StreamError {
-        StreamError { format: StreamFormat::Binary, offset: 17, reason: "source detail".into() }
+        StreamError {
+            format: StreamFormat::Binary,
+            offset: 17,
+            reason: "source detail".into(),
+        }
     }
 
     #[test]
     fn stream_parse_keeps_fresh_callback_classification() {
-        let mut failures: Vec<_> = (0..64).map(|_| StreamFailure::Parse(stream_error())).collect();
+        let mut failures: Vec<_> = (0..64)
+            .map(|_| StreamFailure::Parse(stream_error()))
+            .collect();
         let mut calls = 0;
         crate::test_support::with_entry_context(|ctx, original| {
-            if original.is_some() { return; }
-            let error = failures.pop().expect("prepared syntax error").into_codec_error(ctx, |error| {
-                calls += 1;
-                assert_eq!(error.format, StreamFormat::Binary);
-                assert_eq!(error.offset, 17);
-                CodecError::Malformed(error.reason)
-            });
+            if original.is_some() {
+                return;
+            }
+            let error = failures
+                .pop()
+                .expect("prepared syntax error")
+                .into_codec_error(ctx, |error| {
+                    calls += 1;
+                    assert_eq!(error.format, StreamFormat::Binary);
+                    assert_eq!(error.offset, 17);
+                    CodecError::Malformed(error.reason)
+                });
             assert!(matches!(error, CodecError::Malformed(reason) if reason == "source detail"));
         });
         assert_eq!(calls, 64);

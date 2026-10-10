@@ -130,7 +130,9 @@ pub fn transfer_into_ir<'ir>(
     ctx.extend_vec(&mut ir.model.pcurves, pcurves, "ASM transfer pcurves")?;
     let mut source_values = IntoIterator::into_iter(procedural_surfaces);
     while source_values.len() != 0 {
-        let Some((owner, procedural)) = ctx.next_charged(&mut source_values, "ASM procedural surface transfer")? else {
+        let Some((owner, procedural)) =
+            ctx.next_charged(&mut source_values, "ASM procedural surface transfer")?
+        else {
             break;
         };
         ir.model
@@ -139,7 +141,9 @@ pub fn transfer_into_ir<'ir>(
     }
     let mut source_values = IntoIterator::into_iter(procedural_curves);
     while source_values.len() != 0 {
-        let Some((owner, procedural)) = ctx.next_charged(&mut source_values, "ASM procedural curve transfer")? else {
+        let Some((owner, procedural)) =
+            ctx.next_charged(&mut source_values, "ASM procedural curve transfer")?
+        else {
             break;
         };
         ir.model

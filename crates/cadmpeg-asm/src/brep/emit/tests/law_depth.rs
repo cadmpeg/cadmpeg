@@ -32,8 +32,14 @@ fn map(
     expression: EmbeddedLawExpression,
 ) -> Result<LawExpression, CodecError> {
     let prefix = cadmpeg_ir::identity_key!("7");
-    map_law_expression(ctx, out, crate::asm_format!("sat"),
-        LawExpressionScope::Surface(&prefix), cadmpeg_ir::identity_key!("primary"), expression)
+    map_law_expression(
+        ctx,
+        out,
+        crate::asm_format!("sat"),
+        LawExpressionScope::Surface(&prefix),
+        cadmpeg_ir::identity_key!("primary"),
+        expression,
+    )
 }
 
 #[test]
@@ -82,10 +88,12 @@ fn law_expression_releases_child_depth_for_siblings() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut out = AsmBrep::default();
     let expression = EmbeddedLawExpression::Algebraic {
-        operator: "VEC".into(), operands: vec![chain(1), chain(1), chain(1)],
+        operator: "VEC".into(),
+        operands: vec![chain(1), chain(1), chain(1)],
     };
     let expected = LawExpression::Algebraic {
-        operator: "VEC".into(), operands: vec![expected_chain(1), expected_chain(1), expected_chain(1)],
+        operator: "VEC".into(),
+        operands: vec![expected_chain(1), expected_chain(1), expected_chain(1)],
     };
     assert_eq!(map(&ctx, &mut out, expression).unwrap(), expected);
     assert_eq!(map(&ctx, &mut out, chain(2)).unwrap(), expected_chain(2));
@@ -116,7 +124,9 @@ fn law_expression_uses_actual_caller_depth() {
 #[test]
 fn law_expression_children_preserve_every_original_refusal() {
     crate::test_support::with_entry_context(|ctx, original| {
-        let Some(first) = original else { return; };
+        let Some(first) = original else {
+            return;
+        };
         let mut out = AsmBrep::default();
         assert!(matches!(map(ctx, &mut out, chain(3)),
             Err(CodecError::ResourceLimit(last)) if last == first));

@@ -68,7 +68,9 @@ fn assert_work_refusal(error: &cadmpeg_core::CodecError, operation: &str) {
     assert_eq!(limit.operation, operation);
 }
 
-fn indexed_records<'record>(records: &'record [Record<'record>]) -> HashMap<i64, &'record Record<'record>> {
+fn indexed_records<'record>(
+    records: &'record [Record<'record>],
+) -> HashMap<i64, &'record Record<'record>> {
     records
         .iter()
         .map(|record| (i64::try_from(record.index).unwrap(), record))

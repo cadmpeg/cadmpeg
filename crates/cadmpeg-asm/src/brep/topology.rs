@@ -582,11 +582,17 @@ pub(super) fn walk_reachable_topology(
                                 }.transpose()?;
                                         Ok::<_, cadmpeg_core::CodecError>(decoded)
                                     })?;
-                                    scratch.with_storage(|| ctx.insert_hash_map(
-                                        pcurve_decodes, key, decoded, "ASM pcurve decode cache",
-                                    ))?;
+                                    scratch.with_storage(|| {
+                                        ctx.insert_hash_map(
+                                            pcurve_decodes,
+                                            key,
+                                            decoded,
+                                            "ASM pcurve decode cache",
+                                        )
+                                    })?;
                                 }
-                                let mut attempt = ctx.reserve_scoped(0, "ASM explicit pcurve attempt")?;
+                                let mut attempt =
+                                    ctx.reserve_scoped(0, "ASM explicit pcurve attempt")?;
                                 let decoded = attempt.with_storage(|| {
                                     let decoded = pcurve_decodes.get(&key).and_then(Option::as_ref)
                                         .map(|(curve, native_chart)| {

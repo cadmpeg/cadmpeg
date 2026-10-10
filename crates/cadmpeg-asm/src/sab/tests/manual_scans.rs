@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::super::{
-    frame, frame_history, scan_history_boundary,
-};
+use super::super::{frame, frame_history, scan_history_boundary};
 use crate::kernel_header::RefWidth;
 use crate::stream_error::StreamFailure;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
@@ -33,12 +31,10 @@ fn manual_sab_history_scan_charges_only_actual_tokens() {
                 };
                 assert_eq!(first.operation, "scan SAB history token");
                 assert_eq!((first.limit, first.used, first.additional), (cap, cap, 1));
-                for input in [bytes.as_slice()] {
-                    assert!(
-                        matches!(scan_history_boundary(&ctx, input, 0, RefWidth::Four, None),
+                assert!(
+                    matches!(scan_history_boundary(&ctx, bytes.as_slice(), 0, RefWidth::Four, None),
                         Err(CodecError::ResourceLimit(last)) if last == first)
-                    );
-                }
+                );
                 assert!(
                     matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
                 );

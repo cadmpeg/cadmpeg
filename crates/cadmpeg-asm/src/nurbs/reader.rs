@@ -758,7 +758,6 @@ mod marker_ownership_tests {
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
         assert_eq!(limit.operation, "scan ASM owned marker token");
     }
-
 }
 
 #[cfg(test)]

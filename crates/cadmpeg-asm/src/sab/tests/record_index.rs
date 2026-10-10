@@ -108,23 +108,34 @@ fn record_index_releases_scoped_storage_after_its_last_clone() {
     policy.limits.max_materialized_bytes = 1024;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let record = Record::new(&ctx, 0, String::new(), vec![Token::False; 4].into(), 0, 0).unwrap();
-    let copy = record.try_clone_for_decode(&ctx, "test scoped record clone").unwrap();
-    assert!(std::rc::Rc::ptr_eq(&record.chunk_positions, &copy.chunk_positions));
+    let copy = record
+        .try_clone_for_decode(&ctx, "test scoped record clone")
+        .unwrap();
+    assert!(std::rc::Rc::ptr_eq(
+        &record.chunk_positions,
+        &copy.chunk_positions
+    ));
     drop(record);
     assert_eq!(copy.chunk(3), Some(&Token::False));
     drop(copy);
-    let storage = ctx.reserve_scoped(1024, "test released ASM index storage").unwrap();
+    let storage = ctx
+        .reserve_scoped(1024, "test released ASM index storage")
+        .unwrap();
     drop(storage);
     ctx.finish_session().unwrap();
 }
 
 #[test]
 fn record_index_clone_keeps_the_shared_scoped_charge_live() {
-    let owner = std::mem::size_of::<(Vec<usize>, Option<cadmpeg_core::decode::ScopedReservation<'_>>)>()
-        + 2 * std::mem::size_of::<usize>();
+    let owner = std::mem::size_of::<(
+        Vec<usize>,
+        Option<cadmpeg_core::decode::ScopedReservation<'_>>,
+    )>() + 2 * std::mem::size_of::<usize>();
     let expected = cadmpeg_core::decode::u64_from_index(owner + 4 * std::mem::size_of::<usize>());
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::MaterializedBytes, "test shared ASM index reservation", |cap| {
+        ResourceDimension::MaterializedBytes,
+        "test shared ASM index reservation",
+        |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_materialized_bytes = cap;
@@ -133,13 +144,21 @@ fn record_index_clone_keeps_the_shared_scoped_charge_live() {
             let record = Record::new(&ctx, 0, String::new(), vec![Token::False; 4].into(), 0, 0)?;
             let copy = record.try_clone_for_decode(&ctx, "test scoped record clone")?;
             drop(record);
-            let result = ctx.reserve_scoped(1, "test shared ASM index reservation").map(|_| ());
+            let result = ctx
+                .reserve_scoped(1, "test shared ASM index reservation")
+                .map(|_| ());
             assert_eq!(copy.chunk_len(), 4);
             result
-        });
-    let CodecError::ResourceLimit(limit) = error else { panic!("live shared index refusal"); };
+        },
+    );
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("live shared index refusal");
+    };
     assert_eq!(limit.operation, "test shared ASM index reservation");
-    assert_eq!((limit.limit, limit.used, limit.additional), (expected, expected, 1));
+    assert_eq!(
+        (limit.limit, limit.used, limit.additional),
+        (expected, expected, 1)
+    );
 }
 
 #[test]
@@ -150,13 +169,22 @@ fn record_index_clone_survives_its_edit_set() {
     policy.limits.max_materialized_bytes = 1024;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let copy = {
-        let record = Record::new(&ctx, 0, String::new(), vec![Token::False; 4].into(), 0, 0).unwrap();
-        let edits = crate::edit::AsmEditSet::from_framed(vec![record], crate::kernel_header::RefWidth::Four, 1.0);
-        edits.records()[0].try_clone_for_decode(&ctx, "test record cloned from edit set").unwrap()
+        let record =
+            Record::new(&ctx, 0, String::new(), vec![Token::False; 4].into(), 0, 0).unwrap();
+        let edits = crate::edit::AsmEditSet::from_framed(
+            vec![record],
+            crate::kernel_header::RefWidth::Four,
+            1.0,
+        );
+        edits.records()[0]
+            .try_clone_for_decode(&ctx, "test record cloned from edit set")
+            .unwrap()
     };
     assert_eq!(copy.chunk(3), Some(&Token::False));
     drop(copy);
-    let storage = ctx.reserve_scoped(1024, "test released edit record index").unwrap();
+    let storage = ctx
+        .reserve_scoped(1024, "test released edit record index")
+        .unwrap();
     drop(storage);
     ctx.finish_session().unwrap();
 }

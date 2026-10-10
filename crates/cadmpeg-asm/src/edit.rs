@@ -2236,7 +2236,10 @@ mod tests {
         }
     }
 
-    fn projection_fixture(width: RefWidth, early_close: bool) -> (Vec<u8>, crate::sab::Record<'static>) {
+    fn projection_fixture(
+        width: RefWidth,
+        early_close: bool,
+    ) -> (Vec<u8>, crate::sab::Record<'static>) {
         fn integer(bytes: &mut Vec<u8>, tag: u8, value: i64, width: RefWidth) {
             bytes.push(tag);
             bytes.extend_from_slice(&value.to_le_bytes()[..width.bytes()]);

@@ -12,7 +12,8 @@ fn boundary(source: &[u8], operation: &str) -> cadmpeg_core::decode::ResourceLim
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)?;
-            super::super::parse(&ctx, source).map(|_| ())
+            super::super::parse(&ctx, source)
+                .map(|_| ())
                 .map_err(|error| error.into_codec_error(&ctx, CodecError::malformed))
         },
     );
