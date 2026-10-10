@@ -421,6 +421,7 @@ fn native_surface_index_preserves_source_precedence_and_ambiguity() {
                 &ResolvedPcurveSurface::Geometry(plane(row)),
                 &mut index,
                 &mut admission,
+                None,
             )
             .expect("indexed exact geometry reuse");
             assert_eq!(id, surfaces[usize::try_from(row).expect("row")].id);
@@ -439,6 +440,7 @@ fn native_surface_index_preserves_source_precedence_and_ambiguity() {
             &ResolvedPcurveSurface::Geometry(plane(0)),
             &mut index,
             &mut admission,
+            None,
         )
         .expect("source wins");
         assert_eq!(first, ir.model.surfaces[1024].id);
@@ -456,6 +458,7 @@ fn native_surface_index_preserves_source_precedence_and_ambiguity() {
             &ResolvedPcurveSurface::Geometry(plane(0)),
             &mut index,
             &mut admission,
+            None,
         )
         .expect("ambiguous source emits");
         assert_eq!(ir.model.surfaces.len(), 1027);
@@ -468,6 +471,7 @@ fn native_surface_index_preserves_source_precedence_and_ambiguity() {
             &ResolvedPcurveSurface::Geometry(plane(0)),
             &mut index,
             &mut admission,
+            None,
         )
         .expect("ambiguous geometry emits");
         assert_eq!(ir.model.surfaces.len(), 1028);
@@ -1062,7 +1066,8 @@ fn native_surface_source_hit_skips_geometry_fingerprints() {
                 42,
                 &ResolvedPcurveSurface::Geometry(geometry),
                 &mut index,
-                &mut crate::families::FamilyEntityAdmission::new(ctx)
+                &mut crate::families::FamilyEntityAdmission::new(ctx),
+                None,
             )
             .expect("source lookup visits no geometry lanes"),
             id

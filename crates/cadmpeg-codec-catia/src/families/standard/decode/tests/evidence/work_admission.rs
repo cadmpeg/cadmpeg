@@ -88,3 +88,54 @@ fn standard_object_record_scan_refuses_caller_collection_limit() {
         if limit.operation == "catia_record_source_ranges")
     );
 }
+
+#[test]
+fn standard_edge_face_outputs_advance_one_candidate_before_child_work() {
+    let stream = b5_closed_triangle_stream();
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        standard_object_evidence_from_streams(
+            ctx,
+            std::slice::from_ref(&stream),
+            &std::collections::BTreeSet::new(),
+            &HashSet::from([300, 301, 302]),
+            &mut crate::nurbs::LaneRefusals::new(),
+            &mut crate::families::standard::decode::LimitCurveIndex::new(ctx)?,
+        )
+    };
+    let evidence = crate::test_support::with_service_context(run).expect("triangle evidence");
+    assert_eq!(evidence.edge_owner_faces.len(), 3);
+    for operation in [
+        "catia_standard_edge_face_outputs",
+        "catia_standard_edge_support_outputs",
+    ] {
+        let result = crate::test_support::with_work_refusal(operation, run);
+        assert!(
+            matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == operation && limit.additional == 1)
+        );
+    }
+}
+
+#[test]
+fn standard_procedure_validity_advances_one_evidence_before_child_work() {
+    use crate::families::standard::decode::{StandardEvidenceStore, StandardSurfaceEvidence};
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        let mut store = StandardEvidenceStore::default();
+        for tag in 0..64 {
+            store.add(
+                ctx,
+                tag,
+                StandardSurfaceEvidence::Geometry(SurfaceGeometry::Solved(
+                    SolvedSurfaceGeometry::Unknown { record: None },
+                )),
+            )?;
+        }
+        store.into_outputs(ctx, &HashSet::new())
+    };
+    let outputs = crate::test_support::with_service_context(run).expect("evidence outputs");
+    assert_eq!(outputs.0.len(), 64);
+    assert!(outputs.1.is_empty());
+    let result = crate::test_support::with_work_refusal("catia_standard_iteration", run);
+    assert!(
+        matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "catia_standard_iteration" && limit.additional == 1)
+    );
+}

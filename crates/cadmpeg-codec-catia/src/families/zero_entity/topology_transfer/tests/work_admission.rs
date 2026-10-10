@@ -143,3 +143,62 @@ fn zero_topology_curve_position_lookup_preserves_work_refusal() {
 fn zero_topology_radial_lookup_preserves_work_refusal() {
     assert_paired_face_lookup_refusal("catia_zero_topology_radial_coedge_lookup", false);
 }
+
+#[test]
+fn invalid_first_zero_entity_loop_does_not_visit_later_loops() {
+    fn work_before_rejection(tail: usize) -> u64 {
+        crate::test_support::with_service_context(|ctx| {
+            let points = [
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+            ];
+            let mut run = super::run(10, 1, points, false);
+            let loops = run
+                .face
+                .as_mut()
+                .expect("face")
+                .loops
+                .as_mut()
+                .expect("loops");
+            loops[0].forward_senses.clear();
+            let invalid = loops[0].clone();
+            loops.extend(std::iter::repeat_n(invalid, tail));
+            let mut ir = CadIr::empty();
+            ir.model.surfaces.push(Surface {
+                id: SurfaceId::mint("catia:test:surface#0").expect("identity"),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+                source_object: None,
+            });
+            let mut candidate_storage = ctx
+                .provisional_retained("invalid loop candidate")
+                .expect("scope");
+            let result = transfer_closed_face_topology(
+                &mut crate::families::FamilyEntityAdmission::new(ctx),
+                &mut ir,
+                &mut AnnotationBuilder::new(),
+                ZeroEntityClosedTopology {
+                    support_runs: &[run],
+                    surface_indices_by_position: &HashMap::from([(100, 0)]),
+                    support_curve_ids: &HashMap::new(),
+                    ownership_root: None,
+                },
+                &WorkBudget::new(100_000),
+                &mut crate::nurbs::LaneRefusals::new(),
+                &mut candidate_storage,
+            )
+            .expect("invalid loop is a semantic rejection");
+            assert!(result.is_none());
+            assert!(ir.model.faces.is_empty());
+            assert!(ir.model.edges.is_empty());
+            let CodecError::ResourceLimit(limit) = ctx
+                .charge_work(u64::MAX, "invalid loop work measurement")
+                .expect_err("measurement exceeds work limit")
+            else {
+                panic!("work limit")
+            };
+            limit.used
+        })
+    }
+    assert_eq!(work_before_rejection(0), work_before_rejection(4096));
+}

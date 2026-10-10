@@ -209,6 +209,7 @@ fn repeated_triangle_fixture(
     let outcome = attach_standard_topology(
         ctx,
         AttachStandardTopologyInputs {
+            storage: None,
             ir: &mut ir,
             annotations: &mut annotations,
             bindings: &bindings,

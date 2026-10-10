@@ -108,6 +108,7 @@ fn native_support_pcurve_midpoint_selects_an_unwitnessed_circle_branch() {
         build_standard_edge_curve(
             ctx,
             crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                support_storage: None,
                 native_surfaces:
                     &mut crate::families::standard::decode::edge_geometry::NativeSurfaceIndex::new(
                         admission.context(),
