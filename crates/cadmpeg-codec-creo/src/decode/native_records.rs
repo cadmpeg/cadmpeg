@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Native-arena nested record types moved from `decode.rs`.
+//! Native record types and their wire projections.
 
 use serde::Serialize;
 
@@ -507,16 +507,35 @@ fn serialize_variable_guess<S: serde::Serializer>(
     map.end()
 }
 
+/// Serialize scoped solver rows in their native wire order.
+pub(super) fn serialize_sketch_equations<S: serde::Serializer>(
+    table: &Option<crate::feature::definitions::FeatureEquationTable>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.collect_seq(table.as_ref().into_iter().flat_map(|table| &table.rows).map(|equation| {
+        CreoSketchEquation {
+            equation_id: equation.equation_id,
+            function_id: equation.function_id,
+            explicit_argument_count: equation.explicit_argument_count,
+            arguments: &equation.arguments,
+            arguments_body: &equation.arguments_body,
+            auxiliary_body: &equation.auxiliary_body,
+            body: &equation.body,
+            offset: equation.offset,
+        }
+    }))
+}
+
 #[derive(Serialize)]
-pub(super) struct CreoSketchEquation {
-    pub(super) equation_id: u32,
-    pub(super) function_id: u32,
-    pub(super) explicit_argument_count: Option<u32>,
-    pub(super) arguments: Vec<Option<u32>>,
-    pub(super) arguments_body: Vec<u8>,
-    pub(super) auxiliary_body: Vec<u8>,
-    pub(super) body: Vec<u8>,
-    pub(super) offset: usize,
+struct CreoSketchEquation<'a> {
+    equation_id: u32,
+    function_id: u32,
+    explicit_argument_count: Option<u32>,
+    arguments: &'a [Option<u32>],
+    arguments_body: &'a [u8],
+    auxiliary_body: &'a [u8],
+    body: &'a [u8],
+    offset: usize,
 }
 
 #[derive(Serialize)]

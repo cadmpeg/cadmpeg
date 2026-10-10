@@ -193,3 +193,46 @@ fn sketch_projection_keeps_resolved_point_maps_scoped() {
     let allowance = policy.limits.max_materialized_bytes.min(EMPTY_INPUT_MATERIALIZED_ALLOWANCE);
     ctx.reserve_scoped(allowance, "sketch projection released").expect("scratch and output released");
 }
+
+#[test]
+fn sketch_equation_projection_is_scoped_and_preserves_wire_rows() {
+    let prefix = b"eqtn_arr\0\xf2\xf8\x04\xf7\x80\x9f\xfb\xe2\
+        \xe0\x01id\0\x00\
+        \xe0\x05fcn_id\0\x02\
+        \xe0\x08arg_arr\0\xf8\x02\x2f\x08\
+        \xe0\x01aux_data\0\xf6\
+        \xf1\xf7\x80\x9f\xe2";
+    let bodies = [b"\x01\x04\x11\x12\xf6\xe2".as_slice(),
+        b"\x02\x05\xf8\x04\x13\xe4\xe5\xf6\xe2".as_slice(),
+        b"\x03\x06\xf8\x02\xf6\x14\xf6\xe2".as_slice()];
+    let mut definition = definition(true);
+    definition.offset = 100;
+    definition.body = prefix.to_vec();
+    for body in bodies { definition.body.extend_from_slice(body); }
+    definition.body.extend_from_slice(b"\xe0\x02scale\0\x99\x88");
+    let mut scan = crate::test_support::empty_container_scan();
+    scan.features.definitions.push(definition);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let (records, storage) = sketch_records(&ctx, &scan).expect("equations are projection scratch");
+    assert_eq!(records.len(), 1);
+    let wire = serde_json::to_value(&records[0]).expect("sketch wire");
+    assert_eq!(wire["equations"], serde_json::json!([
+        {"equation_id": 1, "function_id": 4, "explicit_argument_count": null,
+         "arguments": [17, 18], "arguments_body": [17, 18], "auxiliary_body": [246],
+         "body": bodies[0], "offset": 100 + prefix.len()},
+        {"equation_id": 2, "function_id": 5, "explicit_argument_count": 4,
+         "arguments": [19, 1, 0, 0], "arguments_body": [19, 228, 229], "auxiliary_body": [246],
+         "body": bodies[1], "offset": 100 + prefix.len() + bodies[0].len()},
+        {"equation_id": 3, "function_id": 6, "explicit_argument_count": 2,
+         "arguments": [null, 20], "arguments_body": [246, 20], "auxiliary_body": [246],
+         "body": bodies[2], "offset": 100 + prefix.len() + bodies[0].len() + bodies[1].len()}
+    ]));
+    drop(records);
+    drop(storage);
+    let resource = ctx.reserve_scoped_limit(u64::MAX, "equation projection release")
+        .expect_err("read live backing");
+    assert_eq!(resource.used, 0);
+}
