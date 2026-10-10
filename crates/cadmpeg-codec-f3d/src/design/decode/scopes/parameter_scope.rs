@@ -92,21 +92,15 @@ pub(crate) fn decode_parameter_scopes(
     for name in ctx.admit_iter(&names, STREAMS_OPERATION)? {
         let bytes = scan.entry_bytes(ctx, name)?;
         // The stream scope, record index and type table live for this stream only.
-        let _stream_storage;
-        let (stream, held_storage) = ctx
+        let (stream, _stream_storage) = ctx
             .with_scoped_storage("f3d Design parameter-scope stream", || {
                 native_scope_charged(ctx, name)
             })?;
-        _stream_storage = held_storage;
-        let _records_storage;
-        let (records, held_storage) = IndexedRecordOffsets::build_scoped(ctx, bytes)?;
-        _records_storage = held_storage;
-        let _stream_types_storage;
-        let (stream_types, held_storage) = ctx
+        let (records, _records_storage) = IndexedRecordOffsets::build_scoped(ctx, bytes)?;
+        let (stream_types, _stream_types_storage) = ctx
             .with_scoped_storage("f3d Design parameter-scope stream types", || {
                 crate::design::decode::meta::stream_types_by_entity(ctx, types, name)
             })?;
-        _stream_types_storage = held_storage;
         let stream_scope_start = out.len();
         // A scope is delimited by two headers carrying its record index; any
         // header can open one, and the last of its index finds no pair.
@@ -268,7 +262,6 @@ fn bind_sketch_entity<'entities, 'ctx>(
     entities: &'entities [crate::records::entity_header::DesignEntityHeader],
     sketch_entities: &mut Option<SketchEntityIndex<'entities, 'ctx>>,
 ) -> Result<(), CodecError> {
-    ctx.charge_work(0, "F3D sketch scope binding")?;
     if !matches!(
         scope.payload(),
         scope::DesignScopePayload::Sketch(_)
@@ -324,7 +317,6 @@ fn bind_scope_constructions(
     stream_types: &HashMap<u64, (&str, u32)>,
     native: &crate::native::F3dNative,
 ) -> Result<(), CodecError> {
-    ctx.charge_work(0, "F3D scope construction binding")?;
     let parameters = &native.design_parameters;
     let parameter_owners = &native.design_parameter_owners;
     let component_occurrences = &native.design_component_occurrences;
@@ -686,8 +678,7 @@ pub(crate) fn admit_history_bound_scope_variants(
         ctx.collect_indexed_vec(scopes.len(), "f3d scope admission flags", |_| Ok(true))
     })?;
     {
-        let mut identities_storage = ctx.reserve_scoped(0, OPERATION)?;
-        let mut identities = identities_storage.with_storage(|| {
+        let mut identities = storage.with_storage(|| {
             ctx.collect_indexed_vec(scopes.len(), "f3d scope admission identities", |index| {
                 let scope = &scopes[index];
                 let stream = record_stream(ctx, &scope.id)?.unwrap_or(ids::DEFAULT_STREAM);
@@ -758,7 +749,6 @@ fn admitted_scope_variant(
     group: &[(&str, u32, usize)],
     histories: &[crate::history_records::AsmHistory],
 ) -> Result<Option<usize>, CodecError> {
-    ctx.charge_work(0, "F3D scope variant admission")?;
     const HISTORY_OPERATION: &str = "scan F3D scope admission history candidates";
     let [(_, _, first), following @ ..] = group else {
         return Ok(None);
@@ -797,10 +787,12 @@ fn admitted_scope_variant(
             // An equivalent envelope is one serialization of the same logical
             // scope without its source-location and dynamic-class fields.
             let equivalent = match scope_variant_json(ctx, &scopes[*first])? {
-                Some(first_json) => ctx.all_by(
+                Some((first_tree, _first_storage)) => ctx.all_by(
                     following,
                     |(_, _, index)| match scope_variant_json(ctx, &scopes[*index])? {
-                        Some(json) => equivalent_scope_json(ctx, &first_json.0, &json.0, true),
+                        Some((tree, _storage)) => {
+                            equivalent_scope_json(ctx, &first_tree, &tree, true)
+                        }
                         None => Ok(false),
                     },
                     "scan F3D equivalent scope admission candidates",
@@ -937,21 +929,16 @@ fn equivalent_scope_json(
             if left.len() != right.len() {
                 return Ok(false);
             }
-            let mut left_items = left.iter();
             let mut right_items = right.iter();
-            // Equal exact lengths need no final end probe on either side.
-            while left_items.len() != 0 {
-                let Some(item) = ctx.next_charged(&mut left_items, OPERATION)? else {
-                    return Ok(false);
-                };
-                let Some(other) = ctx.next_charged(&mut right_items, OPERATION)? else {
-                    return Ok(false);
-                };
-                if !equivalent_scope_json(ctx, item, other, false)? {
-                    return Ok(false);
-                }
-            }
-            Ok(true)
+            ctx.all_by(
+                left,
+                |item| {
+                    right_items.next().map_or(Ok(false), |other| {
+                        equivalent_scope_json(ctx, item, other, false)
+                    })
+                },
+                OPERATION,
+            )
         }
         (Value::Object(left), Value::Object(right)) => {
             // Both maps iterate in key order, so equal member sets pair up.
@@ -961,11 +948,8 @@ fn equivalent_scope_json(
                 members: &mut serde_json::map::Iter<'value>,
                 top_level: bool,
             ) -> Result<Option<(&'value String, &'value Value)>, CodecError> {
-                // The exact remaining length makes an empty walk free.
-                while members.len() != 0 {
-                    let Some((key, value)) = ctx.next_charged(members, OPERATION)? else {
-                        return Ok(None);
-                    };
+                for (key, value) in members.by_ref() {
+                    ctx.charge_work(1, OPERATION)?;
                     if !is_scope_variant_provenance(key, top_level) {
                         return Ok(Some((key, value)));
                     }
@@ -1102,7 +1086,6 @@ pub(in crate::design::decode) fn parse_parameter_scope(
     class_tag: &crate::records::references::DesignClassTag,
     byte_offset: u64,
 ) -> Result<Option<DesignParameterScope>, CodecError> {
-    ctx.charge_work(0, "F3D parameter scope entry")?;
     let Some(start) = usize::try_from(byte_offset).ok() else {
         return Ok(None);
     };
@@ -1122,7 +1105,6 @@ fn parse_scope_at(
     class_tag: [u8; 3],
     start: usize,
 ) -> Result<Option<DesignParameterScope>, CodecError> {
-    ctx.charge_work(0, "F3D parameter scope pair")?;
     let Some(search) = start.checked_add(11) else {
         return Ok(None);
     };
@@ -1166,7 +1148,6 @@ fn parse_scope_frame(
     start: usize,
     paired_at: usize,
 ) -> Result<Option<DesignParameterScope>, CodecError> {
-    ctx.charge_work(0, "F3D parameter scope frame")?;
     let (Ok(class_tag_text), Some(paired_header)) = (
         std::str::from_utf8(&class_tag),
         indexed_record_header_at(bytes, paired_at),
@@ -1191,13 +1172,11 @@ fn parse_scope_frame(
         .checked_sub(KIND_SCAN_SPAN)
         .map_or(scan_start, |span_start| span_start.max(scan_start));
     for at in window_start..kind_scan_end {
-        let _kind_storage;
-        let Some((kind, kind_end, held_text_storage)) =
+        let Some((kind, kind_end, _kind_storage)) =
             lp_utf16_bounded_scoped(ctx, bytes, at, 1..=256, "f3d Design temporary UTF-16 text")?
         else {
             continue;
         };
-        _kind_storage = held_text_storage;
         if utf16_has_control(ctx, bytes.get(at + 4..kind_end).unwrap_or(&[]))? {
             continue;
         }
@@ -1238,8 +1217,7 @@ fn parse_scope_frame(
     let Some((kind_at, kind_end, tail_length, tail_form)) = candidate else {
         return Ok(None);
     };
-    let _kind_storage;
-    let Some((kind_text, confirmed_kind_end, held_text_storage)) = lp_utf16_bounded_scoped(
+    let Some((kind_text, confirmed_kind_end, _kind_storage)) = lp_utf16_bounded_scoped(
         ctx,
         bytes,
         kind_at,
@@ -1249,7 +1227,6 @@ fn parse_scope_frame(
     else {
         return Ok(None);
     };
-    _kind_storage = held_text_storage;
     if confirmed_kind_end != kind_end {
         return Ok(None);
     }
@@ -1331,14 +1308,13 @@ fn parse_scope_frame(
     };
     let edge_flange_operation = if matches!(kind, scope::DesignFeatureKind::EdgeFlange) {
         exact_edge_flange_operation(
-            ctx,
             bytes,
             start,
             paired_at,
             class_tag_text,
             paired_class_tag,
             reference_members,
-        )?
+        )
     } else {
         None
     };
@@ -1550,7 +1526,6 @@ fn reference_table(
     start: usize,
     table_end: usize,
 ) -> Result<Option<ReferenceTable>, CodecError> {
-    ctx.charge_work(0, "scan F3D parameter-scope reference slots")?;
     let Some(first_slot_min) = start.checked_add(15) else {
         return Ok(None);
     };
@@ -1619,12 +1594,10 @@ fn named_parameter_scope_tail_is_valid(
     paired_at: usize,
     tail_length: usize,
 ) -> Result<Option<bool>, CodecError> {
-    ctx.charge_work(0, "F3D named parameter scope tail")?;
     let Some(label_at) = kind_end.checked_add(8) else {
         return Ok(None);
     };
-    let _label_storage;
-    let Some((_label, label_end, held_text_storage)) = lp_utf16_bounded_scoped(
+    let Some((_label, label_end, _label_storage)) = lp_utf16_bounded_scoped(
         ctx,
         bytes,
         label_at,
@@ -1634,7 +1607,6 @@ fn named_parameter_scope_tail_is_valid(
     else {
         return Ok(None);
     };
-    _label_storage = held_text_storage;
     // The counted field holds the label's UTF-16 code units after its prefix.
     let label_bytes = label_end - label_at - 4;
     let marker = kind_end + 19 + label_bytes;

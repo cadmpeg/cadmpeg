@@ -7,8 +7,6 @@
 )]
 
 mod curves;
-mod entity_id;
-mod headers;
 mod index;
 mod lost_edge;
 mod persistent;
@@ -20,7 +18,3 @@ mod relations;
 mod surface;
 mod text;
 mod visibility;
-
-mod grouped_session;
-
-mod property_session;

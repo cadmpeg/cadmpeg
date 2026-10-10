@@ -3,12 +3,9 @@
 //!
 //! Every form read here lists at most `MAX_SHEET_METAL_REFERENCES` ordered
 //! references and names its roles at fixed offsets, so the frame readers do
-//! fixed work. Flange candidates stay on the stack until uniqueness is known;
-//! the caller context owns their surviving vector storage. Hem binding uses
-//! that context for parameter-owner searches and the original refusal after
-//! each parameter-kind callback.
+//! fixed work and need no decode context. Binding a `Hem` to its parameter
+//! kinds searches the decoded parameter owners and is charged.
 
-use self::flange_frame::{EdgeFlangeFrame, FixedAuxiliaryReferences, FixedEdges, FixedShape};
 use super::shared_frames::marked_record_reference;
 use crate::design::decode::byte_fields::zeros_at;
 use crate::design::decode::record_streams::{in_stream, record_stream};
@@ -30,6 +27,8 @@ use crate::records::feature::sheet_metal::DesignBendPosition;
 use crate::records::feature::sheet_metal::DesignEdgeFlangeEdge;
 use crate::records::feature::sheet_metal::DesignEdgeFlangeHeightExtent;
 use crate::records::feature::sheet_metal::DesignEdgeFlangeOperation;
+use crate::records::feature::sheet_metal::DesignEdgeFlangeSelection;
+use crate::records::feature::sheet_metal::DesignEdgeFlangeShape;
 use crate::records::feature::sheet_metal::DesignEdgeFlangeWidthParameterSource;
 use crate::records::feature::sheet_metal::DesignEdgeWidthMode;
 use crate::records::feature::sheet_metal::DesignHemOperation;
@@ -143,15 +142,13 @@ impl UnclaimedReferences {
 }
 
 pub(super) fn exact_edge_flange_operation(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     paired_at: usize,
     class_tag: &str,
     paired_class_tag: &str,
     references: &[u32],
-) -> Result<Option<DesignEdgeFlangeOperation>, CodecError> {
-    ctx.charge_work(0, "F3D fixed flange operation")?;
+) -> Option<DesignEdgeFlangeOperation> {
     // The legacy form is keyed by both class tags. The current form recovers
     // its optional header shift by agreement, so a frame that reads under more
     // than one candidate is refused as ambiguous.
@@ -228,13 +225,10 @@ pub(super) fn exact_edge_flange_operation(
         .flatten()
     {
         if resolved.replace(candidate).is_some() {
-            return Ok(None);
+            return None;
         }
     }
-    match resolved {
-        Some(frame) => frame.retain(ctx),
-        None => Ok(None),
-    }
+    resolved
 }
 
 /// One exact classed `EdgeFlange` form with `EDGES` selected edges and
@@ -469,7 +463,7 @@ fn legacy_edge_flange_operation_at<const EDGES: usize, const RESULTS: usize>(
     paired_at: usize,
     references: &[u32],
     layout: LegacyEdgeFlangeLayout<EDGES, RESULTS>,
-) -> Option<EdgeFlangeFrame> {
+) -> Option<DesignEdgeFlangeOperation> {
     if references.len() != layout.reference_count()
         || paired_at.checked_sub(start)? != layout.frame_length
         || View::u32_le_at(bytes, start.checked_add(layout.edge_count_offset)?)?
@@ -530,54 +524,49 @@ fn legacy_edge_flange_operation_at<const EDGES: usize, const RESULTS: usize>(
         *record_index = unclaimed.claim_slot(bytes, start.checked_add(offset)?)?;
     }
     // A group's recipe-backed operand is the record three after the group.
-    for group_record_index in edge_group_record_indices {
-        unclaimed.claim(group_record_index.checked_add(3)?)?;
+    let mut edge_operand_record_indices = [0; EDGES];
+    for (record_index, group_record_index) in edge_operand_record_indices
+        .iter_mut()
+        .zip(edge_group_record_indices)
+    {
+        *record_index = unclaimed.claim(group_record_index.checked_add(3)?)?;
     }
     // The unclaimed entries are the width owners, then the auxiliary
     // references, then one aggregate operand per edge.
     let width_owner_count = layout.width_owner_count();
-    let mut remaining = unclaimed.remaining();
-    let mut width_owners = [0; 4];
-    for owner in width_owners.get_mut(..width_owner_count)? {
-        *owner = remaining.next()?;
-    }
-    let auxiliary_references = match layout.auxiliary_reference_count {
-        0 => FixedAuxiliaryReferences::None,
-        12 => {
-            let mut references = [0; 12];
-            for reference in &mut references {
-                *reference = remaining.next()?;
-            }
-            FixedAuxiliaryReferences::Extended(references)
-        }
-        _ => return None,
-    };
-    let mut aggregate_operand_record_indices = [0; EDGES];
-    for operand in &mut aggregate_operand_record_indices {
-        *operand = remaining.next()?;
-    }
-    if remaining.next().is_some()
-        || (EDGES == 1
-            && Some(aggregate_operand_record_indices[0])
-                != aggregate_group_record_index.checked_add(3))
-    {
-        return None;
-    }
-    let edges = FixedEdges::from_columns(
-        &edge_wrapper_record_indices,
-        &edge_group_record_indices,
-        &aggregate_operand_record_indices,
-    )?;
-    let shape = FixedShape::distance(
-        edges,
-        Some(layout.width_mode),
-        &width_owners[..width_owner_count],
-        layout.width_parameter_source,
-    )?;
-    Some(EdgeFlangeFrame {
+    let aggregate_operand_start = width_owner_count + layout.auxiliary_reference_count;
+    let width_distance_owner_record_indices: Vec<u32> =
+        unclaimed.remaining().take(width_owner_count).collect();
+    let auxiliary_reference_record_indices: Vec<u32> = unclaimed
+        .remaining()
+        .skip(width_owner_count)
+        .take(layout.auxiliary_reference_count)
+        .collect();
+    let aggregate_operand_record_indices: Vec<u32> = unclaimed
+        .remaining()
+        .skip(aggregate_operand_start)
+        .collect();
+    let width_distance_owner_record_indices_by_edge: Vec<[u32; 2]> =
+        if layout.width_mode == DesignEdgeWidthMode::TwoSidesPerEdge {
+            let mut owners = unclaimed.remaining();
+            [(); EDGES]
+                .into_iter()
+                .map(|()| Some([owners.next()?, owners.next()?]))
+                .collect::<Option<_>>()?
+        } else {
+            Vec::new()
+        };
+    let edges = DesignEdgeFlangeEdge::from_columns(
+        Vec::from(edge_wrapper_record_indices),
+        Vec::from(edge_group_record_indices),
+        &edge_operand_record_indices,
+        aggregate_operand_record_indices,
+    )
+    .ok()?;
+    Some(DesignEdgeFlangeOperation {
         height_owner_record_index,
         angle_owner_record_index,
-        auxiliary_references,
+        auxiliary_reference_record_indices,
         settings_record_index,
         bend_radius,
         bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
@@ -586,8 +575,19 @@ fn legacy_edge_flange_operation_at<const EDGES: usize, const RESULTS: usize>(
             bytes,
             start.checked_add(layout.bend_position_offset)?,
         )?),
-        shape,
-        aggregate_group_record_index,
+        selection: DesignEdgeFlangeSelection::try_new(
+            DesignEdgeFlangeShape::from_wire(
+                edges,
+                Some(layout.width_mode),
+                width_distance_owner_record_indices,
+                width_distance_owner_record_indices_by_edge,
+                layout.width_parameter_source,
+                DesignEdgeFlangeHeightExtent::Distance,
+            )
+            .ok()?,
+            aggregate_group_record_index,
+        )
+        .ok()?,
     })
 }
 
@@ -599,7 +599,7 @@ fn edge_flange_operation_at(
     paired_at: usize,
     references: &[u32],
     header_shift: usize,
-) -> Option<EdgeFlangeFrame> {
+) -> Option<DesignEdgeFlangeOperation> {
     // The ordered reference table is in record-index order, so no role has a
     // fixed table position. Every role is instead named by a marked slot in the
     // fixed operation section, and the operand of a group is the record three
@@ -655,41 +655,40 @@ fn edge_flange_operation_at(
     unclaimed.claim(first_edge_group.checked_add(3)?)?;
     // Eight roles are claimed from a table of at most ten entries, so at most
     // `MAX_EDGE_WIDTH_DISTANCE_OWNERS` width owners remain.
-    let mut remaining = unclaimed.remaining();
-    let mut width_owners = [0; MAX_EDGE_WIDTH_DISTANCE_OWNERS];
-    let width_owner_count = unclaimed.remaining().count();
-    for owner in width_owners.get_mut(..width_owner_count)? {
-        *owner = remaining.next()?;
-    }
+    let width_distance_owner_record_indices: Vec<u32> = unclaimed.remaining().collect();
     let expected_length = 493usize
         .checked_add(result_count.checked_mul(15)?)?
-        .checked_add(width_owner_count.checked_mul(11)?)?
+        .checked_add(width_distance_owner_record_indices.len().checked_mul(11)?)?
         .checked_add(header_shift)?;
     if paired_at.checked_sub(start)? != expected_length {
         return None;
     }
-    let edges = FixedEdges::One(DesignEdgeFlangeEdge {
-        wrapper: edge_wrapper_record_index,
-        group_record_index: edge_group_record_index.try_into().ok()?,
-        aggregate_operand_record_index,
-    });
-    let shape = FixedShape::distance(
-        edges,
-        None,
-        &width_owners[..width_owner_count],
-        DesignEdgeFlangeWidthParameterSource::EdgeWidth,
-    )?;
-    Some(EdgeFlangeFrame {
+    Some(DesignEdgeFlangeOperation {
         height_owner_record_index,
         angle_owner_record_index,
-        auxiliary_references: FixedAuxiliaryReferences::None,
+        auxiliary_reference_record_indices: Vec::new(),
         settings_record_index,
         bend_radius,
         bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
         height_datum,
         bend_position,
-        shape,
-        aggregate_group_record_index,
+        selection: DesignEdgeFlangeSelection::try_new(
+            DesignEdgeFlangeShape::from_wire(
+                vec![DesignEdgeFlangeEdge {
+                    wrapper: edge_wrapper_record_index,
+                    group_record_index: edge_group_record_index.try_into().ok()?,
+                    aggregate_operand_record_index,
+                }],
+                None,
+                width_distance_owner_record_indices,
+                Vec::new(),
+                DesignEdgeFlangeWidthParameterSource::EdgeWidth,
+                DesignEdgeFlangeHeightExtent::Distance,
+            )
+            .ok()?,
+            aggregate_group_record_index,
+        )
+        .ok()?,
     })
 }
 
@@ -701,7 +700,7 @@ fn edge_flange_to_object_operation_at(
     paired_at: usize,
     references: &[u32],
     header_shift: usize,
-) -> Option<EdgeFlangeFrame> {
+) -> Option<DesignEdgeFlangeOperation> {
     // This form has one target group and one target entity-selection operand in
     // addition to the distance form's roles. The two marked references between
     // the target group and the aggregate group are fixed-frame references, not
@@ -799,29 +798,32 @@ fn edge_flange_to_object_operation_at(
     if remaining.next().is_some() || paired_at.checked_sub(start)? != 576 + header_shift {
         return None;
     }
-    Some(EdgeFlangeFrame {
+    Some(DesignEdgeFlangeOperation {
         height_owner_record_index,
         angle_owner_record_index,
-        auxiliary_references: FixedAuxiliaryReferences::None,
+        auxiliary_reference_record_indices: Vec::new(),
         settings_record_index,
         bend_radius,
         bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
         height_datum,
         bend_position,
-        shape: FixedShape::FullEdge {
-            edges: FixedEdges::One(DesignEdgeFlangeEdge {
-                wrapper: edge_wrapper_record_index,
-                group_record_index: edge_group_record_index.try_into().ok()?,
-                aggregate_operand_record_index,
-            }),
-            height: DesignEdgeFlangeHeightExtent::ToObject {
-                target_group_record_index,
-                target_operand_record_index,
-                offset_owner_record_index,
-                reference_record_indices,
+        selection: DesignEdgeFlangeSelection::try_new(
+            DesignEdgeFlangeShape::FullEdge {
+                edges: vec![DesignEdgeFlangeEdge {
+                    wrapper: edge_wrapper_record_index,
+                    group_record_index: edge_group_record_index.try_into().ok()?,
+                    aggregate_operand_record_index,
+                }],
+                height: DesignEdgeFlangeHeightExtent::ToObject {
+                    target_group_record_index,
+                    target_operand_record_index,
+                    offset_owner_record_index,
+                    reference_record_indices,
+                },
             },
-        },
-        aggregate_group_record_index,
+            aggregate_group_record_index,
+        )
+        .ok()?,
     })
 }
 
@@ -830,14 +832,12 @@ fn edge_flange_to_object_operation_at(
 /// recovered by agreement, so all candidates are evaluated and a frame that
 /// admits more than one is refused.
 fn exact_hem_operation(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     paired_at: usize,
     references: &ReferenceRun<u32>,
     has_kind: &impl Fn(u32, &str) -> Result<bool, CodecError>,
 ) -> Result<Option<DesignHemOperation>, CodecError> {
-    ctx.charge_work(0, "F3D Hem operation boundary")?;
     let mut resolved = None;
     for header_shift in SHEET_METAL_HEADER_SHIFTS {
         let candidates = [
@@ -846,7 +846,7 @@ fn exact_hem_operation(
             hem_gap_length_radius_operation_at(bytes, start, paired_at, references, header_shift),
         ];
         for candidate in candidates.into_iter().flatten() {
-            if !hem_parameter_kinds_match(ctx, &candidate, has_kind)? {
+            if !hem_parameter_kinds_match(&candidate, has_kind)? {
                 continue;
             }
             if resolved.replace(candidate).is_some() {
@@ -858,33 +858,27 @@ fn exact_hem_operation(
 }
 
 fn hem_parameter_kinds_match(
-    ctx: &DecodeContext<'_>,
     operation: &DesignHemOperation,
     has_kind: &impl Fn(u32, &str) -> Result<bool, CodecError>,
 ) -> Result<bool, CodecError> {
-    let checked_has_kind = |record_index, expected: &str| {
-        let result = has_kind(record_index, expected);
-        ctx.charge_work(0, "F3D Hem parameter kind boundary")?;
-        result
-    };
     match operation.parameter_owners {
         DesignHemParameterOwners::GapLength {
             gap_owner_record_index,
             length_owner_record_index,
-        } => Ok(checked_has_kind(gap_owner_record_index, "HemGap")?
-            && checked_has_kind(length_owner_record_index, "HemLength")?),
+        } => Ok(has_kind(gap_owner_record_index, "HemGap")?
+            && has_kind(length_owner_record_index, "HemLength")?),
         DesignHemParameterOwners::RadiusAngle {
             radius_owner_record_index,
             angle_owner_record_index,
-        } => Ok(checked_has_kind(radius_owner_record_index, "HemRadius")?
-            && checked_has_kind(angle_owner_record_index, "HemAngle")?),
+        } => Ok(has_kind(radius_owner_record_index, "HemRadius")?
+            && has_kind(angle_owner_record_index, "HemAngle")?),
         DesignHemParameterOwners::GapLengthRadius {
             gap_owner_record_index,
             length_owner_record_index,
             radius_owner_record_index,
-        } => Ok(checked_has_kind(gap_owner_record_index, "HemGap")?
-            && checked_has_kind(length_owner_record_index, "HemLength")?
-            && checked_has_kind(radius_owner_record_index, "HemRadius")?),
+        } => Ok(has_kind(gap_owner_record_index, "HemGap")?
+            && has_kind(length_owner_record_index, "HemLength")?
+            && has_kind(radius_owner_record_index, "HemRadius")?),
     }
 }
 
@@ -895,7 +889,6 @@ pub(super) fn bind_hem_operation_from_parameters(
     parameters: &[DesignParameter],
     parameter_owners: &[DesignParameterOwner],
 ) -> Result<(), CodecError> {
-    ctx.charge_work(0, "F3D Hem parameter binding")?;
     if !matches!(scope.payload(), DesignScopePayload::Hem(_)) {
         return Ok(());
     }
@@ -950,7 +943,6 @@ pub(super) fn bind_hem_operation_from_parameters(
         Ok(second.is_none() && first_kind_matches == Some(true))
     };
     let construction = exact_hem_operation(
-        ctx,
         bytes,
         start,
         paired_at,
@@ -1142,5 +1134,3 @@ fn hem_gap_length_radius_operation_at(
 
 #[cfg(test)]
 mod tests;
-
-mod flange_frame;

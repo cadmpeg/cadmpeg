@@ -1202,7 +1202,6 @@ fn legacy_sketch_nurbs_decodes_its_counted_arrays() {
             &meta,
             "Design/BulkStream.dat",
         )
-        .and_then(|(records, storage)| storage.commit_value(records))
     })
     .expect("primary NURBS frame with a nested subtype header");
     let [curve] = curves.as_slice() else {
