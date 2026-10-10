@@ -43,11 +43,16 @@ pub(super) fn source_section_ref<'a>(
             return Ok(section.name());
         }
     }
-    Ok(if matches!(scan.framing.layout, crate::container::Layout::LegacyAscii(_)) {
-        "legacy_ascii"
-    } else {
-        "unknown"
-    })
+    Ok(
+        if matches!(
+            scan.framing.layout,
+            crate::container::Layout::LegacyAscii(_)
+        ) {
+            "legacy_ascii"
+        } else {
+            "unknown"
+        },
+    )
 }
 
 pub(super) fn surface_family(kind: crate::surface::SurfaceKind) -> &'static str {
@@ -365,14 +370,13 @@ pub(super) fn design_constraint_transfer_coverage<const N: usize>(
             }
             coverage.transferred += 1;
             let native_kind_suffix = match constraint.definition.kind() {
-                SketchConstraintDefinitionInput::Native { native_kind, .. } => ctx.strip_prefix(
-                    native_kind.as_str(),
-                    native_kind_prefix,
-                    "creo native constraint kind prefix",
-                )?,
+                SketchConstraintDefinitionInput::Native { native_kind, .. } => {
+                    native_kind.as_str().strip_prefix(native_kind_prefix)
+                }
                 _ => None,
             };
             let native_kind = match native_kind_suffix {
+                Some(kind) if kind.len() <= 10 => kind.parse::<u32>().ok(),
                 Some(kind) => ctx
                     .parse_text::<u32>(kind, "creo scalar text parsing")?
                     .ok(),
@@ -436,16 +440,10 @@ pub(super) fn constraint_kind_breakdown<'a, 'ctx>(
         if *count == 0 {
             continue;
         }
-        let Some(name) = ctx.strip_prefix(key, prefix, "creo constraint kind breakdown prefix")?
-        else {
+        let Some(name) = key.strip_prefix(prefix) else {
             continue;
         };
-        let Some(kind) = ctx.strip_suffix(
-            name,
-            "_constraint_count",
-            "creo constraint kind breakdown suffix",
-        )?
-        else {
+        let Some(kind) = name.strip_suffix("_constraint_count") else {
             continue;
         };
         ctx.push_scoped_vec(
@@ -467,7 +465,8 @@ pub(super) fn curve_transfer_coverage(
     curves: &[Curve],
 ) -> Result<CurveTransferCoverage, CodecError> {
     let mut scratch = ctx.reserve_scoped(0, "creo curve coverage lookup storage")?;
-    let unique_rows_owned_storage = crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)?;
+    let unique_rows_owned_storage =
+        crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)?;
     let _unique_rows_storage = unique_rows_owned_storage.1;
     let unique_rows = unique_rows_owned_storage.0;
     let mut transferred_ids = BTreeSet::new();
@@ -480,15 +479,15 @@ pub(super) fn curve_transfer_coverage(
         else {
             continue;
         };
-        let Some(digits) = ctx.strip_prefix(
-            source.object_id.as_str(),
-            "VisibGeom:",
-            "creo coverage identity prefix",
-        )?
-        else {
+        let Some(digits) = source.object_id.as_str().strip_prefix("VisibGeom:") else {
             continue;
         };
-        let Ok(id) = ctx.parse_text::<u32>(digits, "creo scalar text parsing")? else {
+        let parsed = if digits.len() <= 10 {
+            digits.parse::<u32>()
+        } else {
+            ctx.parse_text::<u32>(digits, "creo scalar text parsing")?
+        };
+        let Ok(id) = parsed else {
             continue;
         };
         scratch.with_storage(|| {
@@ -531,7 +530,8 @@ pub(super) fn surface_transfer_coverage(
     procedural_surfaces: &[ProceduralSurface],
 ) -> Result<SurfaceTransferCoverage, CodecError> {
     let mut scratch = ctx.reserve_scoped(0, "creo surface coverage lookup storage")?;
-    let unique_rows_owned_storage = crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)?;
+    let unique_rows_owned_storage =
+        crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)?;
     let _unique_rows_storage = unique_rows_owned_storage.1;
     let unique_rows = unique_rows_owned_storage.0;
     let mut extrusion_constructions = BTreeSet::new();
@@ -582,15 +582,15 @@ pub(super) fn surface_transfer_coverage(
         else {
             continue;
         };
-        let Some(digits) = ctx.strip_prefix(
-            source.object_id.as_str(),
-            "VisibGeom:",
-            "creo coverage identity prefix",
-        )?
-        else {
+        let Some(digits) = source.object_id.as_str().strip_prefix("VisibGeom:") else {
             continue;
         };
-        let Ok(id) = ctx.parse_text::<u32>(digits, "creo scalar text parsing")? else {
+        let parsed = if digits.len() <= 10 {
+            digits.parse::<u32>()
+        } else {
+            ctx.parse_text::<u32>(digits, "creo scalar text parsing")?
+        };
+        let Ok(id) = parsed else {
             continue;
         };
         if matches!(

@@ -108,15 +108,15 @@ fn refresh_feature_outputs(
         .admit_iter(&ir.model.features, "creo feature output refresh traversal")?
         .enumerate()
     {
-        let Some(digits) = ctx.strip_prefix(
-            feature.id.as_str(),
-            "creo:model:feature#",
-            "creo model feature ID prefix",
-        )?
-        else {
+        let Some(digits) = feature.id.as_str().strip_prefix("creo:model:feature#") else {
             continue;
         };
-        let Ok(feature_id) = ctx.parse_text::<u32>(digits, "creo model feature ID parsing")? else {
+        let parsed = if digits.len() <= 10 {
+            digits.parse::<u32>()
+        } else {
+            ctx.parse_text::<u32>(digits, "creo model feature ID parsing")?
+        };
+        let Ok(feature_id) = parsed else {
             continue;
         };
         let outputs = cadmpeg_ir::features::DistinctMembers::try_from(
@@ -474,7 +474,8 @@ pub(super) fn emit_model_features(
                             )?
                             .into();
                         if let Some(text_storage) = parameter_text_storage.take() {
-                            parameters = text_storage.commit_value(std::mem::take(&mut parameters))?;
+                            parameters =
+                                text_storage.commit_value(std::mem::take(&mut parameters))?;
                         }
                         let parameters = cadmpeg_core::text::named_entries_for_decode(
                             ctx,
@@ -544,9 +545,10 @@ pub(super) fn emit_model_features(
                 ctx.copy_retained_lossy_utf8(stripped, "creo stored Feature name")
             })
             .transpose()?;
-        let source_tag = current_feature_recipe(ctx, &scan.features.operations, operation.feature_id)?
-            .map(|recipe| ctx.copy_retained_text(recipe.name(), "creo Feature source tag"))
-            .transpose()?;
+        let source_tag =
+            current_feature_recipe(ctx, &scan.features.operations, operation.feature_id)?
+                .map(|recipe| ctx.copy_retained_text(recipe.name(), "creo Feature source tag"))
+                .transpose()?;
         let native_ref = owning_feature_definition_ref(ctx, scan, operation.feature_id)?;
         let parent_index =
             current_feature_recipe_parent(ctx, &scan.features.operations, operation.feature_id)?

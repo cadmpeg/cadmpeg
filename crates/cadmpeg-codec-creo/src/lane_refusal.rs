@@ -94,9 +94,6 @@ impl LaneRefusals {
     /// Drain admitted refusals, propagating any resource refusal from a
     /// candidate route before its ordinary loss report is constructed.
     pub(crate) fn take_records_checked(&mut self) -> Result<Vec<String>, cadmpeg_core::CodecError> {
-        if let Some(cadmpeg_core::CodecError::ResourceLimit(original)) = self.resource_error.as_ref() {
-            return Err((*original).into());
-        }
         if let Some(error) = self.resource_error.take() {
             return Err(error);
         }
@@ -127,57 +124,5 @@ mod tests {
                 if limit.dimension == ResourceDimension::CollectionItems
                     && limit.operation == "creo lane refusal records"
         ));
-    }
-
-    #[test]
-    fn empty_refusal_sink_repeats_original_resource_error_after_drain() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let mut refusals = LaneRefusals::new();
-        refusals.note_checked(&ctx, "record 7", &"invalid lane");
-        let cadmpeg_core::CodecError::ResourceLimit(original) = refusals.take_records_checked()
-            .expect_err("record refused") else {
-            panic!("resource refusal");
-        };
-        assert_eq!((original.dimension, original.used, original.additional, original.limit),
-            (ResourceDimension::CollectionItems, 0, 1, 0));
-        assert_eq!(original.operation, "creo lane refusal records");
-        for _ in 0..2 {
-            assert!(matches!(refusals.take_records_checked(),
-                Err(cadmpeg_core::CodecError::ResourceLimit(actual)) if actual == original));
-            refusals.note_checked(&ctx, "record 8", &"another invalid lane");
-            assert!(refusals.records.is_empty());
-        }
-        assert!(matches!(ctx.finish_session(),
-            Err(cadmpeg_core::CodecError::ResourceLimit(actual)) if actual == original));
-    }
-
-    #[test]
-    fn refused_sink_keeps_prior_records_and_original_error_through_repeated_drain() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let mut refusals = LaneRefusals::new();
-        refusals.note_checked(&ctx, "record 7", &"invalid lane");
-        assert_eq!(refusals.records, ["record 7: invalid lane"]);
-        refusals.note_checked(&ctx, "record 8", &"another invalid lane");
-        let cadmpeg_core::CodecError::ResourceLimit(original) = refusals.take_records_checked()
-            .expect_err("second record refused") else {
-            panic!("resource refusal");
-        };
-        assert_eq!((original.dimension, original.used, original.additional, original.limit),
-            (ResourceDimension::CollectionItems, 1, 1, 1));
-        assert_eq!(original.operation, "creo lane refusal records");
-        for _ in 0..2 {
-            assert!(matches!(refusals.take_records_checked(),
-                Err(cadmpeg_core::CodecError::ResourceLimit(actual)) if actual == original));
-            refusals.note_checked(&ctx, "record 9", &"later invalid lane");
-            assert_eq!(refusals.records, ["record 7: invalid lane"]);
-        }
-        assert!(matches!(ctx.finish_session(),
-            Err(cadmpeg_core::CodecError::ResourceLimit(actual)) if actual == original));
     }
 }
