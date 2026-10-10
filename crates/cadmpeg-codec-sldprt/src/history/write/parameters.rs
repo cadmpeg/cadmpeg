@@ -154,7 +154,9 @@ fn sync_neutral_parameters(
             &feature_names,
         )?;
     }
-    let (aliases, _aliases_storage) =
+    let _aliases_storage;
+    let aliases;
+    (aliases, _aliases_storage) =
         ParameterAliases::scoped(&ctx, &parameters, &feature_names, &global_owners)?;
     if parameters_with_incoherent_dependencies(&ctx, &parameters, &aliases)? > 0 {
         return Err(CodecError::Malformed(

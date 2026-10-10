@@ -113,7 +113,9 @@ fn project_parameters_preserves_composite_txd_text_without_hiding_bad_equations(
     assert_eq!(
         {
             let ctx = cadmpeg_test_support::service_decode_context();
-            let (aliases, _storage) =
+            let _storage;
+            let aliases;
+            (aliases, _storage) =
                 ParameterAliases::scoped(&ctx, &parameters, &HashMap::new(), &HashSet::new())
                     .unwrap();
             parameters_with_unevaluable_expressions(&ctx, &parameters, &aliases, &[]).unwrap()
@@ -186,10 +188,10 @@ fn an_empty_quoted_run_is_not_a_parameter_reference() {
         definite_parameter_reference, expression_identifier_tokens, ExpressionIdentifier,
     };
     let ctx = cadmpeg_test_support::service_decode_context();
-    let tokens = expression_identifier_tokens(&ctx, "\"\" + Width")
-        .unwrap()
-        .0
-        .expect("closed quotes");
+    let _tokens_storage;
+    let tokens;
+    (tokens, _tokens_storage) = expression_identifier_tokens(&ctx, "\"\" + Width").unwrap();
+    let tokens = tokens.expect("closed quotes");
     assert_eq!(
         tokens
             .iter()
@@ -200,11 +202,12 @@ fn an_empty_quoted_run_is_not_a_parameter_reference() {
     assert!(!tokens
         .iter()
         .any(|identifier| definite_parameter_reference(&ctx, identifier).unwrap()));
+    drop((tokens, _tokens_storage));
 
-    let named = expression_identifier_tokens(&ctx, "\"D1@Sketch1\"")
-        .unwrap()
-        .0
-        .expect("closed quotes");
+    let _named_storage;
+    let named;
+    (named, _named_storage) = expression_identifier_tokens(&ctx, "\"D1@Sketch1\"").unwrap();
+    let named = named.expect("closed quotes");
     assert_eq!(
         named
             .iter()
@@ -687,7 +690,9 @@ fn parameter_value_states_borrow_stated_values() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let (aliases, _storage) =
+    let _storage;
+    let aliases;
+    (aliases, _storage) =
         ParameterAliases::scoped(&ctx, &parameters, &HashMap::new(), &HashSet::new()).unwrap();
     let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
         cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
@@ -830,7 +835,9 @@ fn display_modifier_aliases_do_not_block_expression_evaluation() {
 fn coherence_without_dependencies_builds_no_value_index() {
     let parameters = scratch_parameters();
     let ctx = cadmpeg_test_support::service_decode_context();
-    let (aliases, _storage) =
+    let _storage;
+    let aliases;
+    (aliases, _storage) =
         ParameterAliases::scoped(&ctx, &parameters, &HashMap::new(), &HashSet::new()).unwrap();
     let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
         cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
@@ -861,7 +868,9 @@ fn coherence_without_a_stated_value_leaves_expression_unread() {
     policy.limits.max_work_units = 4096;
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let (aliases, _storage) =
+    let _storage;
+    let aliases;
+    (aliases, _storage) =
         ParameterAliases::scoped(&ctx, &parameters, &HashMap::new(), &HashSet::new()).unwrap();
     assert_eq!(
         super::parameters_with_incoherent_evaluated_values(&ctx, &parameters, &aliases, &[])
@@ -914,7 +923,9 @@ fn empty_quoted_equation_alias_evaluates_consumer() {
             .value,
         Some(ParameterValue::Integer(2))
     );
-    let (aliases, _storage) =
+    let _storage;
+    let aliases;
+    (aliases, _storage) =
         ParameterAliases::scoped(&ctx, &parameters, &HashMap::new(), &HashSet::new()).unwrap();
     assert_eq!(
         parameters_with_unevaluable_expressions(&ctx, &parameters, &aliases, &[]).unwrap(),
