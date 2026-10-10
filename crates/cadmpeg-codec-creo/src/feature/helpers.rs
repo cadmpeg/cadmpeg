@@ -31,8 +31,11 @@ pub(super) fn decode_exact_scalars(
     let mut values = Vec::new();
     let mut cursor = psb::Cursor::new(payload);
     let mut slots = 0..slot_count;
-    while slots.len() != 0
-        && ctx.next_charged(&mut slots, "creo exact scalar scan")?.is_some()
+    while !slots.is_empty()
+        && cursor.pos() < payload.len()
+        && ctx
+            .next_charged(&mut slots, "creo exact scalar scan")?
+            .is_some()
     {
         let Some(value) = cursor.take_with(|data, pos| scalar::decode_in_lane(data, pos, cache))
         else {
@@ -40,7 +43,7 @@ pub(super) fn decode_exact_scalars(
         };
         storage.with_storage(|| ctx.push_vec(&mut values, value, "creo feature scalar values"))?;
     }
-    if cursor.pos() != payload.len() {
+    if !slots.is_empty() || cursor.pos() != payload.len() {
         return Ok(None);
     }
     storage.commit_value(values).map(Some)
@@ -78,17 +81,43 @@ mod tests {
         let cache = ScalarCache::from_section(&[]);
         for count in 1..=4 {
             let visits = u64::try_from(count).expect("four slots fit u64");
-            with_limits(visits, SCALAR_VECTOR_BYTES, SCALAR_VECTOR_BYTES, visits, |ctx| {
-                let values = decode_exact_scalars(ctx, &[0x0f; 4][..count], count, &cache)
-                    .expect("one visit per zero token and one four-slot vector")
-                    .expect("complete scalar lane");
-                assert_eq!(values.as_slice(), &[0.0; 4][..count]);
-                let limit = ctx.charge_work_limit(1, "after exact scalar visits")
-                    .expect_err("all permitted visits were used");
-                assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-                assert_eq!((limit.used, limit.additional), (visits, 1));
-            });
+            with_limits(
+                visits,
+                SCALAR_VECTOR_BYTES,
+                SCALAR_VECTOR_BYTES,
+                visits,
+                |ctx| {
+                    let values = decode_exact_scalars(ctx, &[0x0f; 4][..count], count, &cache)
+                        .expect("one visit per zero token and one four-slot vector")
+                        .expect("complete scalar lane");
+                    assert_eq!(values.as_slice(), &[0.0; 4][..count]);
+                    let limit = ctx
+                        .charge_work_limit(1, "after exact scalar visits")
+                        .expect_err("all permitted visits were used");
+                    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+                    assert_eq!((limit.used, limit.additional), (visits, 1));
+                },
+            );
         }
+    }
+
+    #[test]
+    fn exact_scalar_variable_width_eof_does_not_visit_an_absent_slot() {
+        let cache = ScalarCache::from_section(&[]);
+        crate::test_support::assert_refusal_order(
+            ResourceDimension::WorkUnits,
+            &["creo exact scalar scan"],
+            |work| {
+                with_limits(work, SCALAR_VECTOR_BYTES, 0, 2, |ctx| {
+                    assert_eq!(decode_exact_scalars(ctx, &[0x29, 0, 0], 2, &cache)?, None);
+                    let limit = ctx
+                        .charge_work_limit(u64::MAX, "measure exact scalar visits")
+                        .expect_err("measure completed traversal");
+                    assert_eq!(limit.used, 1);
+                    Ok::<_, CodecError>(())
+                })
+            },
+        );
     }
 
     #[test]
@@ -170,7 +199,8 @@ mod tests {
                 decode_exact_scalars(ctx, &[0x0f], 0, &cache).expect("unread payload"),
                 None
             );
-            let original = ctx.charge_work_limit(1, "prior exact scalar refusal")
+            let original = ctx
+                .charge_work_limit(1, "prior exact scalar refusal")
                 .expect_err("seed refusal");
             for (payload, count) in [(&[][..], 0), (&[0x0f][..], 2)] {
                 assert!(matches!(decode_exact_scalars(ctx, payload, count, &cache),
@@ -185,9 +215,13 @@ mod tests {
         // Undefined second token, then a valid prefix with an unread tail.
         for (payload, count) in [([0x0f, 0xff], 2), ([0x0f, 0xe4], 1)] {
             with_limits(2, SCALAR_VECTOR_BYTES, 0, 2, |ctx| {
-                assert_eq!(decode_exact_scalars(ctx, &payload, count, &cache)
-                    .expect("invalid lane does not retain output"), None);
-                let probe = ctx.reserve_scoped(SCALAR_VECTOR_BYTES, "released scalar vector")
+                assert_eq!(
+                    decode_exact_scalars(ctx, &payload, count, &cache)
+                        .expect("invalid lane does not retain output"),
+                    None
+                );
+                let probe = ctx
+                    .reserve_scoped(SCALAR_VECTOR_BYTES, "released scalar vector")
                     .expect("discarded backing releases its complete live reservation");
                 drop(probe);
                 assert!(ctx.resource_refusal().is_none());
@@ -199,15 +233,19 @@ mod tests {
     fn exact_scalar_vector_promotion_transfers_only_surviving_backing_to_parent() {
         let cache = ScalarCache::from_section(&[]);
         with_limits(1, SCALAR_VECTOR_BYTES, 0, 1, |ctx| {
-            let mut parent = ctx.reserve_scoped(0, "scalar parent scope").expect("parent lease");
-            let values = parent.with_storage(|| decode_exact_scalars(ctx, &[0x0f], 1, &cache))
+            let mut parent = ctx
+                .reserve_scoped(0, "scalar parent scope")
+                .expect("parent lease");
+            let values = parent
+                .with_storage(|| decode_exact_scalars(ctx, &[0x0f], 1, &cache))
                 .expect("existing backing transfers without a second live charge")
                 .expect("complete scalar lane");
             assert_eq!(values, [0.0]);
             assert!(ctx.resource_refusal().is_none());
             drop(values);
             drop(parent);
-            let probe = ctx.reserve_scoped(SCALAR_VECTOR_BYTES, "released scalar parent")
+            let probe = ctx
+                .reserve_scoped(SCALAR_VECTOR_BYTES, "released scalar parent")
                 .expect("parent releases the transferred backing after value drop");
             drop(probe);
         });

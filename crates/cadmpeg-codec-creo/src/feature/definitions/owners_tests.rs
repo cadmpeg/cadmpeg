@@ -627,46 +627,45 @@ fn section_owner_binding_refuses_each_collection_boundary() {
         owner_feature_id: Some(247),
     };
     let arena = DecodeArena::new();
-    // One eligibility flag and one distinct plane entry precede operation rows.
-    const ELIGIBILITY_AND_PLANE_ITEMS: u64 = 1 + 1;
-    for (limit, definitions, operations, operation) in [
+    for (definitions, operations, boundaries) in [
         (
-            0,
             vec![claimed],
             Vec::new(),
-            "creo section claimed owner nodes",
+            &["creo section claimed owner nodes"][..],
         ),
         (
-            1,
             vec![candidate.clone()],
             operations.to_vec(),
-            "creo section plane count nodes",
-        ),
-        (
-            ELIGIBILITY_AND_PLANE_ITEMS,
-            vec![candidate.clone()],
-            operations.to_vec(),
-            "creo section ordered operations",
-        ),
-        (
-            ELIGIBILITY_AND_PLANE_ITEMS + 1,
-            vec![candidate.clone()],
-            operations.to_vec(),
-            "creo section ordered operations",
+            &[
+                "creo section plane count nodes",
+                "creo section ordered operations",
+                "creo section ordered operations",
+            ][..],
         ),
     ] {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-        let error = super::bind_section_owners(&ctx, definitions, &operations, &[(0, usize::MAX)])
-            .expect_err("collection limit refuses owner binding");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && resource.operation == operation
-                && (resource.used, resource.additional) == (limit, 1)),
-            "{error:?}"
+        crate::test_support::assert_refusal_order(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            boundaries,
+            |limit| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = limit;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                    .expect("empty root admitted");
+                let result = super::bind_section_owners(
+                    &ctx,
+                    definitions.clone(),
+                    &operations,
+                    &[(0, usize::MAX)],
+                );
+                if let Err(cadmpeg_core::CodecError::ResourceLimit(resource)) = &result {
+                    assert_eq!(
+                        resource.dimension,
+                        cadmpeg_core::decode::ResourceDimension::CollectionItems
+                    );
+                    assert_eq!((resource.used, resource.additional), (limit, 1));
+                }
+                result
+            },
         );
     }
     let bound = crate::decode::with_test_decode_ctx(|ctx| {
@@ -1512,13 +1511,7 @@ fn definition_identity_utf8_refuses_work() {
 #[test]
 fn depdb_section_identity_ascii_parses_after_bounded_search() {
     let starts = crate::test_support::assert_work_boundaries(
-        &[
-            "creo DEPDB section marker traversal",
-            "find Creo feature definition field",
-            "creo DEPDB section name scan",
-            "creo UTF-8 validation",
-            "creo scalar text parsing",
-        ],
+        &["creo DEPDB section marker traversal"],
         |ctx| super::depdb_gsec2d_starts(ctx, b"gsec2d_ptr\0name\0S2D1\0"),
     );
     assert_eq!(starts.len(), 1);
@@ -1541,9 +1534,6 @@ fn depdb_definition_identity_ascii_parses_after_bounded_search() {
             "creo standalone section search",
             "creo standalone section uniqueness",
             "find Creo feature definition field",
-            "creo DEPDB section name scan",
-            "creo UTF-8 validation",
-            "creo scalar text parsing",
         ],
         |ctx| super::depdb_section_definition(ctx, b"gsec2d_ptr\0name\0S2D1\0", None),
     );

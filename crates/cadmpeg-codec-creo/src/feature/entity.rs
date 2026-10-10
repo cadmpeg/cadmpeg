@@ -374,11 +374,11 @@ pub(crate) fn entity_graph(
     let mut source = None;
     let mut offset = 0;
     while offset < payload.len() {
-        ctx.next_charged(
-            &mut (offset..payload.len()),
-            "creo feature entity token traversal",
-        )?;
         if payload[offset] == psb::token::NAMED_RECORD {
+            ctx.next_charged(
+                &mut (offset..payload.len()),
+                "creo feature entity token traversal",
+            )?;
             let Some(rest) = payload.get(offset + 2..) else {
                 break;
             };
@@ -659,6 +659,39 @@ mod tests {
     const GRAPH: &[u8] = b"\xe0\0Sld_Features\0\xe0\0N\xff\0\xf7\0";
 
     #[test]
+    fn entity_graph_fallback_token_has_one_psb_visit() {
+        const PAYLOAD: &[u8] = b"\xe0\0Sld_Features\0\xf7\x01";
+        let needed = |payload| {
+            crate::test_support::allocation_limit_at(ResourceDimension::WorkUnits, None, |work| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = work;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                entity_graph(&ctx, payload)
+            })
+        };
+        assert_eq!(needed(PAYLOAD), needed(&PAYLOAD[..PAYLOAD.len() - 2]) + 1);
+        crate::test_support::assert_refusal_order(
+            ResourceDimension::WorkUnits,
+            &[
+                "creo feature entity token traversal",
+                "creo PSB token traversal",
+            ],
+            |work| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = work;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                let (entities, references) = entity_graph(&ctx, PAYLOAD)?;
+                assert_eq!(entities.len(), 1);
+                assert_eq!(references.len(), 1);
+                assert_eq!(references[0].target_entity_id, 1);
+                Ok::<_, CodecError>(())
+            },
+        );
+    }
+
+    #[test]
     fn related_payload_enforces_class_state_domain() {
         for class in [
             RelatedClass::Class210,
@@ -875,63 +908,157 @@ mod tests {
     #[test]
     fn entry_candidates_charge_present_entries_and_terminators() {
         for count in 0..=3usize {
-            let payload: Vec<_> = (0..count).flat_map(|index| [index as u8, 1, 0xe3]).collect();
+            let payload: Vec<_> = (0..count)
+                .flat_map(|index| [u8::try_from(index).expect("fixture value fits u8"), 1, 0xe3])
+                .collect();
             // Each entry visits one counted slot and its first-byte terminator.
             // At most three entries fit the first four-slot Vec allocation.
-            let total = 2 * count as u64;
-            for cap in 0..=total {
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::service();
-                policy.limits.max_work_units = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-                let result = read_entries(&ctx, &payload, 0, count as u32);
-                if cap == total {
-                    let entries = result.expect("exact entry work").expect("complete entries");
-                    assert_eq!(entries.len(), count);
-                    for (index, entry) in entries.iter().enumerate() {
-                        assert_eq!((entry.entity_id, entry.class_id(), entry.prefixed,
-                            entry.offset, entry.end_offset),
-                            (index as u32, 1, false, 3 * index, 3 * index + 3));
+            let total = 2 * u64::try_from(count).expect("fixture value fits u64");
+            crate::test_support::assert_refusal_order(
+                ResourceDimension::WorkUnits,
+                &((0..total)
+                    .map(|cap| {
+                        if cap % 2 == 0 {
+                            "creo feature entry traversal"
+                        } else {
+                            "creo feature entry terminator"
+                        }
+                    })
+                    .collect::<Vec<_>>()),
+                |cap| {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_work_units = cap;
+                    let (ctx, _) =
+                        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                    let result = read_entries(
+                        &ctx,
+                        &payload,
+                        0,
+                        u32::try_from(count).expect("fixture value fits u32"),
+                    );
+                    let completed = result.is_ok();
+                    if completed {
+                        let entries = result.expect("exact entry work").expect("complete entries");
+                        assert_eq!(entries.len(), count);
+                        for (index, entry) in entries.iter().enumerate() {
+                            assert_eq!(
+                                (
+                                    entry.entity_id,
+                                    entry.class_id(),
+                                    entry.prefixed,
+                                    entry.offset,
+                                    entry.end_offset
+                                ),
+                                (
+                                    u32::try_from(index).expect("fixture value fits u32"),
+                                    1,
+                                    false,
+                                    3 * index,
+                                    3 * index + 3
+                                )
+                            );
+                        }
+                        assert_eq!(ctx.resource_refusal(), None);
+                        let refusal = ctx
+                            .charge_work_limit(1, "after entry visits")
+                            .expect_err("exact cap");
+                        assert_eq!(
+                            (refusal.dimension, refusal.used, refusal.additional),
+                            (ResourceDimension::WorkUnits, total, 1)
+                        );
+                    } else {
+                        let original = ctx.resource_refusal().expect("present operation refuses");
+                        assert!(
+                            matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original)
+                        );
+                        assert_eq!(
+                            (
+                                original.dimension,
+                                original.used,
+                                original.additional,
+                                original.operation
+                            ),
+                            (
+                                ResourceDimension::WorkUnits,
+                                cap,
+                                1,
+                                if cap % 2 == 0 {
+                                    "creo feature entry traversal"
+                                } else {
+                                    "creo feature entry terminator"
+                                }
+                            )
+                        );
                     }
-                    assert_eq!(ctx.resource_refusal(), None);
-                    let refusal = ctx.charge_work_limit(1, "after entry visits").expect_err("exact cap");
-                    assert_eq!((refusal.dimension, refusal.used, refusal.additional),
-                        (ResourceDimension::WorkUnits, total, 1));
-                } else {
-                    let original = ctx.resource_refusal().expect("present operation refuses");
-                    assert!(matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original));
-                    assert_eq!((original.dimension, original.used, original.additional, original.operation),
-                        (ResourceDimension::WorkUnits, cap, 1,
-                         if cap % 2 == 0 { "creo feature entry traversal" } else { "creo feature entry terminator" }));
-                }
-            }
+
+                    if completed {
+                        Ok(())
+                    } else {
+                        Err(CodecError::ResourceLimit(
+                            ctx.resource_refusal().expect("original refusal"),
+                        ))
+                    }
+                },
+            );
         }
     }
 
     #[test]
     fn entry_candidates_stop_after_invalid_first_prefix() {
         let payload = [0xf7, 0xe3];
-        for cap in 0..=1 {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            policy.limits.max_materialized_bytes = 0;
-            policy.limits.max_retained_bytes = 0;
-            policy.limits.max_collection_items = 0;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let result = read_entries(&ctx, &payload, 0, 1);
-            if cap == 1 {
-                assert_eq!(result.expect("one invalid-prefix visit"), None);
-                let refusal = ctx.charge_work_limit(1, "after invalid entry").expect_err("exact cap");
-                assert_eq!((refusal.dimension, refusal.used, refusal.additional),
-                    (ResourceDimension::WorkUnits, 1, 1));
-            } else {
-                let original = ctx.resource_refusal().expect("first entry refuses");
-                assert!(matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original));
-                assert_eq!((original.dimension, original.used, original.additional, original.operation),
-                    (ResourceDimension::WorkUnits, 0, 1, "creo feature entry traversal"));
-            }
-        }
+        crate::test_support::assert_refusal_order(
+            ResourceDimension::WorkUnits,
+            &(["creo feature entry traversal"]),
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                policy.limits.max_materialized_bytes = 0;
+                policy.limits.max_retained_bytes = 0;
+                policy.limits.max_collection_items = 0;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                let result = read_entries(&ctx, &payload, 0, 1);
+                let completed = result.is_ok();
+                if completed {
+                    assert_eq!(result.expect("one invalid-prefix visit"), None);
+                    let refusal = ctx
+                        .charge_work_limit(1, "after invalid entry")
+                        .expect_err("exact cap");
+                    assert_eq!(
+                        (refusal.dimension, refusal.used, refusal.additional),
+                        (ResourceDimension::WorkUnits, 1, 1)
+                    );
+                } else {
+                    let original = ctx.resource_refusal().expect("first entry refuses");
+                    assert!(
+                        matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original)
+                    );
+                    assert_eq!(
+                        (
+                            original.dimension,
+                            original.used,
+                            original.additional,
+                            original.operation
+                        ),
+                        (
+                            ResourceDimension::WorkUnits,
+                            0,
+                            1,
+                            "creo feature entry traversal"
+                        )
+                    );
+                }
+
+                if completed {
+                    Ok(())
+                } else {
+                    Err(CodecError::ResourceLimit(
+                        ctx.resource_refusal().expect("original refusal"),
+                    ))
+                }
+            },
+        );
     }
 
     #[test]
@@ -940,33 +1067,84 @@ mod tests {
             let payload = vec![0xf8; count];
             // No row prefix or counted table exists. Each present byte is
             // visited by the row-boundary scan and the table-byte scan once.
-            let total = 2 * count as u64;
-            for cap in 0..=total {
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::service();
-                policy.limits.max_work_units = cap;
-                policy.limits.max_materialized_bytes = 0;
-                policy.limits.max_retained_bytes = 0;
-                policy.limits.max_collection_items = 0;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-                let result = entity_tables(&ctx, &payload, &Default::default(), &Default::default());
-                if cap == total {
-                    assert!(result.expect("exact present-byte work").is_empty());
-                    let refusal = ctx.charge_work_limit(1, "after entity table bytes").expect_err("exact cap");
-                    assert_eq!((refusal.dimension, refusal.used, refusal.additional),
-                        (ResourceDimension::WorkUnits, total, 1));
+            let total = 2 * u64::try_from(count).expect("fixture value fits u64");
+            crate::test_support::assert_refusal_order(
+                ResourceDimension::WorkUnits,
+                &(if count == 0 {
+                    Vec::new()
                 } else {
-                    let original = ctx.resource_refusal().expect("present byte refuses");
-                    assert!(matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original));
-                    // Each admit_iter admits its entire exact-size byte range
-                    // before execution, so the failing pass requests n at once.
-                    let before_table_scan = cap < count as u64;
-                    assert_eq!((original.dimension, original.used, original.additional, original.operation),
-                        (ResourceDimension::WorkUnits,
-                         if before_table_scan { 0 } else { count as u64 }, count as u64,
-                         if before_table_scan { "creo feature row boundary scan" } else { "creo generated entity byte traversal" }));
-                }
-            }
+                    vec![
+                        "creo feature row boundary scan",
+                        "creo generated entity byte traversal",
+                    ]
+                }),
+                |cap| {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_work_units = cap;
+                    policy.limits.max_materialized_bytes = 0;
+                    policy.limits.max_retained_bytes = 0;
+                    policy.limits.max_collection_items = 0;
+                    let (ctx, _) =
+                        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                    let result = entity_tables(
+                        &ctx,
+                        &payload,
+                        &std::collections::BTreeSet::default(),
+                        &std::collections::BTreeSet::default(),
+                    );
+                    let completed = result.is_ok();
+                    if completed {
+                        assert!(result.expect("exact present-byte work").is_empty());
+                        let refusal = ctx
+                            .charge_work_limit(1, "after entity table bytes")
+                            .expect_err("exact cap");
+                        assert_eq!(
+                            (refusal.dimension, refusal.used, refusal.additional),
+                            (ResourceDimension::WorkUnits, total, 1)
+                        );
+                    } else {
+                        let original = ctx.resource_refusal().expect("present byte refuses");
+                        assert!(
+                            matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original)
+                        );
+                        // Each admit_iter admits its entire exact-size byte range
+                        // before execution, so the failing pass requests n at once.
+                        let before_table_scan =
+                            cap < u64::try_from(count).expect("fixture value fits u64");
+                        assert_eq!(
+                            (
+                                original.dimension,
+                                original.used,
+                                original.additional,
+                                original.operation
+                            ),
+                            (
+                                ResourceDimension::WorkUnits,
+                                if before_table_scan {
+                                    0
+                                } else {
+                                    u64::try_from(count).expect("fixture value fits u64")
+                                },
+                                u64::try_from(count).expect("fixture value fits u64"),
+                                if before_table_scan {
+                                    "creo feature row boundary scan"
+                                } else {
+                                    "creo generated entity byte traversal"
+                                }
+                            )
+                        );
+                    }
+
+                    if completed {
+                        Ok(())
+                    } else {
+                        Err(CodecError::ResourceLimit(
+                            ctx.resource_refusal().expect("original refusal"),
+                        ))
+                    }
+                },
+            );
         }
     }
 
@@ -982,16 +1160,26 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let check = |refused| {
             let results = [
-                entity_graph(&ctx, &[]).map(|(entities, references)| entities.is_empty() && references.is_empty()),
-                read_entries(&ctx, &[], 0, 0).map(|entries| entries.is_some_and(|entries| entries.is_empty())),
+                entity_graph(&ctx, &[])
+                    .map(|(entities, references)| entities.is_empty() && references.is_empty()),
+                read_entries(&ctx, &[], 0, 0)
+                    .map(|entries| entries.is_some_and(|entries| entries.is_empty())),
                 read_entries(&ctx, &[], 1, 0).map(|entries| entries.is_none()),
                 read_entries(&ctx, &[], 0, 1).map(|entries| entries.is_none()),
-                entity_tables(&ctx, &[], &Default::default(), &Default::default()).map(|tables| tables.is_empty()),
+                entity_tables(
+                    &ctx,
+                    &[],
+                    &std::collections::BTreeSet::default(),
+                    &std::collections::BTreeSet::default(),
+                )
+                .map(|tables| tables.is_empty()),
             ];
             for result in results {
                 if refused {
                     let original = ctx.resource_refusal().expect("seeded original refusal");
-                    assert!(matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original));
+                    assert!(
+                        matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original)
+                    );
                 } else {
                     assert!(result.expect("free fixed recovery"));
                 }
@@ -999,7 +1187,9 @@ mod tests {
         };
         check(false);
         assert_eq!(ctx.resource_refusal(), None);
-        let original = ctx.charge_work_limit(1, "after fixed entity recovery").expect_err("zero cap");
+        let original = ctx
+            .charge_work_limit(1, "after fixed entity recovery")
+            .expect_err("zero cap");
         check(true);
         assert_eq!(ctx.resource_refusal(), Some(original));
     }
@@ -1016,41 +1206,83 @@ mod tests {
             ([7, 1, 0, 0, 0xe3, 0xf7], 2, 3u64, true),
         ] {
             let total = 1 + terminator_visits + u64::from(second_present);
-            let backing = (4 * size_of::<super::FeatureEntityTableEntry>()) as u64;
-            for cap in 0..=total {
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::service();
-                policy.limits.max_work_units = cap;
-                policy.limits.max_materialized_bytes = backing;
-                policy.limits.max_retained_bytes = 0;
-                policy.limits.max_collection_items = 1;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-                let result = read_entries(&ctx, &payload, 0, declared);
-                if cap == total {
-                    assert_eq!(result.expect("only present input work"), None);
-                    assert!(ctx.resource_refusal().is_none());
-                    // The rejected first candidate dropped its entire Vec.
-                    let storage = ctx.reserve_scoped(backing, "after rejected entry backing")
-                        .expect("all candidate storage was released");
-                    drop(storage);
-                    let original = ctx.charge_work_limit(1, "after variable-width entry")
-                        .expect_err("exact input work used");
-                    assert_eq!((original.used, original.additional), (total, 1));
-                    assert!(matches!(read_entries(&ctx, &payload, 0, declared),
+            let backing = u64::try_from(4 * size_of::<super::FeatureEntityTableEntry>())
+                .expect("fixture value fits u64");
+            crate::test_support::assert_refusal_order(
+                ResourceDimension::WorkUnits,
+                &((0..total)
+                    .map(|cap| {
+                        if cap == 0 || (second_present && cap == 1 + terminator_visits) {
+                            "creo feature entry traversal"
+                        } else {
+                            "creo feature entry terminator"
+                        }
+                    })
+                    .collect::<Vec<_>>()),
+                |cap| {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_work_units = cap;
+                    policy.limits.max_materialized_bytes = backing;
+                    policy.limits.max_retained_bytes = 0;
+                    policy.limits.max_collection_items = 1;
+                    let (ctx, _) =
+                        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                    let result = read_entries(&ctx, &payload, 0, declared);
+                    let completed = result.is_ok();
+                    if completed {
+                        assert_eq!(result.expect("only present input work"), None);
+                        assert!(ctx.resource_refusal().is_none());
+                        // The rejected first candidate dropped its entire Vec.
+                        let storage = ctx
+                            .reserve_scoped(backing, "after rejected entry backing")
+                            .expect("all candidate storage was released");
+                        drop(storage);
+                        let original = ctx
+                            .charge_work_limit(1, "after variable-width entry")
+                            .expect_err("exact input work used");
+                        assert_eq!((original.used, original.additional), (total, 1));
+                        assert!(matches!(read_entries(&ctx, &payload, 0, declared),
                         Err(CodecError::ResourceLimit(actual)) if actual == original));
-                    assert_eq!(ctx.resource_refusal(), Some(original));
-                } else {
-                    let original = ctx.resource_refusal().expect("present operation refuses");
-                    assert!(matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original));
-                    let at_entry = cap == 0 || (second_present && cap == 1 + terminator_visits);
-                    assert_eq!((original.dimension, original.used, original.additional, original.operation),
-                        (ResourceDimension::WorkUnits, cap, 1,
-                         if at_entry { "creo feature entry traversal" } else { "creo feature entry terminator" }));
-                    assert!(matches!(read_entries(&ctx, &payload, 0, declared),
+                        assert_eq!(ctx.resource_refusal(), Some(original));
+                    } else {
+                        let original = ctx.resource_refusal().expect("present operation refuses");
+                        assert!(
+                            matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original)
+                        );
+                        let at_entry = cap == 0 || (second_present && cap == 1 + terminator_visits);
+                        assert_eq!(
+                            (
+                                original.dimension,
+                                original.used,
+                                original.additional,
+                                original.operation
+                            ),
+                            (
+                                ResourceDimension::WorkUnits,
+                                cap,
+                                1,
+                                if at_entry {
+                                    "creo feature entry traversal"
+                                } else {
+                                    "creo feature entry terminator"
+                                }
+                            )
+                        );
+                        assert!(matches!(read_entries(&ctx, &payload, 0, declared),
                         Err(CodecError::ResourceLimit(actual)) if actual == original));
-                    assert_eq!(ctx.resource_refusal(), Some(original));
-                }
-            }
+                        assert_eq!(ctx.resource_refusal(), Some(original));
+                    }
+
+                    if completed {
+                        Ok(())
+                    } else {
+                        Err(CodecError::ResourceLimit(
+                            ctx.resource_refusal().expect("original refusal"),
+                        ))
+                    }
+                },
+            );
         }
     }
 }

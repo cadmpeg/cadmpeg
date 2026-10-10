@@ -540,7 +540,7 @@ pub(crate) fn round_replay_scalars(
         .filter(|row| row.root_schema_class == Some(SchemaClass::Round))
     {
         for record_start in ctx.admit_iter(
-            0..row.body.len().saturating_sub(CR_FLAGS_ANCHOR.len() - 1),
+            0..row.body.windows(CR_FLAGS_ANCHOR.len()).len(),
             "creo round replay anchor traversal",
         )? {
             let bytes = &row.body[record_start..record_start + CR_FLAGS_ANCHOR.len()];
@@ -611,7 +611,13 @@ fn round_replay_short_scalar(
     }
     let mut offset = start;
     while offset < end {
-        ctx.next_charged(&mut (offset..end), "creo round replay scalar traversal")?;
+        let fixed = matches!(
+            body.get(offset),
+            Some(0xe0 | 0x19 | 0x28 | 0x32 | 0x37 | 0x41 | 0x31 | 0x4f | 0x90 | 0xd5 | 0xd7 | 0x18)
+        ) || scalar::decode(body, offset).is_some();
+        if fixed {
+            ctx.next_charged(&mut (offset..end), "creo round replay scalar traversal")?;
+        }
         if body.get(offset) == Some(&0x29)
             && scalar::decode(body, offset).is_some_and(|(value, after)| {
                 after == offset + 3 && after <= end && value.is_finite()
@@ -661,8 +667,9 @@ fn round_replay_fixed_token_end(
         0x18 => Some(psb::compact_int(body, offset + 1).1),
         _ => match scalar::decode(body, offset) {
             Some((_, scalar_end)) => Some(scalar_end),
-            None => psb::token_at(ctx, body, offset)?
-                .and_then(|token| offset.checked_add(token.length)),
+            None => {
+                psb::token_at(ctx, body, offset)?.and_then(|token| offset.checked_add(token.length))
+            }
         },
     };
     Ok(next.filter(|&next| next > offset && next <= end))
@@ -810,7 +817,8 @@ pub(super) fn field_value(
         let mut values = Vec::new();
         let mut items = 0..count;
         while !items.is_empty() && cursor < payload.len() {
-            let Some(_) = ctx.next_charged(&mut items, "creo compact integer field traversal")? else {
+            let Some(_) = ctx.next_charged(&mut items, "creo compact integer field traversal")?
+            else {
                 break;
             };
             let (value, next) = psb::compact_int(payload, cursor);
@@ -1048,7 +1056,9 @@ fn positional_datum_geometry_table_at(
     let mut entry_ids = Vec::new();
     let mut items = 0..count;
     while !items.is_empty() {
-        if cursor == body.len() { return Ok(None); }
+        if cursor == body.len() {
+            return Ok(None);
+        }
         let Some(index) = ctx.next_charged(&mut items, "creo positional datum traversal")? else {
             break;
         };
@@ -1104,6 +1114,8 @@ fn geometry_table_at(
     mut cursor: usize,
     mut kind: FeatureGeometryTableKind,
 ) -> Result<Option<(u32, u32, FeatureGeometryTableKind)>, CodecError> {
+    const ENTRY: &[u8] = b"\xe0\x01dtm_id\0";
+
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
     }
@@ -1142,7 +1154,6 @@ fn geometry_table_at(
             let Some(_) = ctx.next_charged(&mut items, "creo named datum traversal")? else {
                 break;
             };
-            const ENTRY: &[u8] = b"\xe0\x01dtm_id\0";
             if body.get(entry_cursor..entry_cursor + ENTRY.len()) != Some(ENTRY) {
                 entries.clear();
                 break;
@@ -1218,7 +1229,8 @@ pub(crate) fn affected_ids(
                         ids.clear();
                         break;
                     }
-                    let Some(_) = ctx.next_charged(&mut items, "creo affected ID traversal")? else {
+                    let Some(_) = ctx.next_charged(&mut items, "creo affected ID traversal")?
+                    else {
                         break;
                     };
                     let (id, next) = psb::compact_int(&row.body, cursor);
@@ -1322,7 +1334,9 @@ fn replay_ids<'a>(
     let start = cursor;
     let mut items = 0..count;
     while !items.is_empty() {
-        if cursor == run.len() { return None; }
+        if cursor == run.len() {
+            return None;
+        }
         match ctx.next_charged(&mut items, "creo replay ID traversal") {
             Ok(Some(_)) => {}
             Ok(None) => break,
@@ -1606,7 +1620,7 @@ pub(crate) fn replay_affected_ids(
             continue;
         };
         let anchor = ctx.find_map(
-            (0..row.body.len().saturating_sub(ANCHOR_LEN - 1)).rev(),
+            (0..row.body.windows(ANCHOR_LEN).len()).rev(),
             |offset| {
                 let window = &row.body[offset..offset + ANCHOR_LEN];
                 Ok((window.starts_with(ANCHOR_PREFIX)
@@ -1747,11 +1761,12 @@ fn positional_surface_merge_affected_ids(
     row: &FeatureRow,
     extents: [Option<u32>; 3],
 ) -> Option<Result<FeatureSurfaceMergeAffectedIds, CodecError>> {
+    const ANCHOR: &[u8] = &[0xf7, 0x80, 0x96];
+    const QUILT_SEPARATOR: &[u8] = &[0xf0, 0xf7, 0x80, 0x99];
+
     if let Some(refusal) = ctx.resource_refusal() {
         return Some(Err(refusal.into()));
     }
-    const ANCHOR: &[u8] = &[0xf7, 0x80, 0x96];
-    const QUILT_SEPARATOR: &[u8] = &[0xf0, 0xf7, 0x80, 0x99];
     let mut positions = row.body.windows(ANCHOR.len()).enumerate();
     if positions.len() == 0 {
         return None;
@@ -1995,7 +2010,7 @@ pub(crate) fn loop_history_entries(
     }
     let mut next_tables = std::collections::HashMap::new();
     for index in ctx.admit_iter(
-        0..keys.len().saturating_sub(1),
+        0..keys.windows(2).len(),
         "creo loop table neighbor traversal",
     )? {
         let pair = &keys[index..index + 2];
@@ -2128,7 +2143,9 @@ fn loop_history_prototypes<'a, 'ctx>(
     }
     let mut items = 0..count;
     while !items.is_empty() {
-        if cursor == body.len() { return None; }
+        if cursor == body.len() {
+            return None;
+        }
         let index = match ctx.next_charged(&mut items, "creo loop history roster traversal") {
             Ok(Some(index)) => index,
             Ok(None) => break,
@@ -2358,10 +2375,14 @@ pub(crate) fn revolution_extents(
         if row.body.get(schema_end) != Some(&2) {
             continue;
         }
-        let Some(choice_start) = row.body
+        let Some(choice_start) = row
+            .body
             .get(schema_end + 1..row.body.len().min(64))
-            .and_then(|prefix| prefix.windows(PARAMETER_CHOICE_PREFIX.len())
-                .position(|window| window == PARAMETER_CHOICE_PREFIX))
+            .and_then(|prefix| {
+                prefix
+                    .windows(PARAMETER_CHOICE_PREFIX.len())
+                    .position(|window| window == PARAMETER_CHOICE_PREFIX)
+            })
             .map(|relative| schema_end + 1 + relative + PARAMETER_CHOICE_PREFIX.len())
         else {
             continue;

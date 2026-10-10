@@ -390,6 +390,8 @@ pub(crate) fn reference_names(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<Vec<FeatureReferenceName>, CodecError> {
+    const NAME_WINDOW: usize = 256;
+
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
     }
@@ -414,14 +416,8 @@ pub(crate) fn reference_names(
         let Some(tail) = payload.get(name_start..) else {
             continue;
         };
-        let mut bytes = tail.iter().take(256).enumerate();
         let mut name_end = None;
-        while bytes.len() != 0 {
-            let Some((relative, byte)) =
-                ctx.next_charged(&mut bytes, "creo reference name prefix scan")?
-            else {
-                break;
-            };
+        for (relative, byte) in tail.iter().take(NAME_WINDOW).enumerate() {
             if *byte == 0 {
                 name_end = Some(name_start + relative);
                 break;
@@ -467,6 +463,8 @@ fn recipe_bindings(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<Vec<(u32, FeatureRecipeBinding)>, CodecError> {
+    const DISPLAY_WINDOW: usize = 96;
+
     let mut bindings = Vec::new();
     for marker in ctx.admit_iter(0..payload.len(), "creo recipe binding scan")? {
         if payload.get(marker) != Some(&psb::token::ENTITY_REF) {
@@ -488,19 +486,11 @@ fn recipe_bindings(
         let Some(tail) = payload.get(display_start..) else {
             continue;
         };
-        let mut bytes = tail.iter().take(96).enumerate();
-        let mut display_end = None;
-        while bytes.len() != 0 {
-            let Some((relative, byte)) =
-                ctx.next_charged(&mut bytes, "creo recipe display prefix scan")?
-            else {
-                break;
-            };
-            if *byte == 0 {
-                display_end = Some(display_start + relative);
-                break;
-            }
-        }
+        let display_end = tail
+            .iter()
+            .take(DISPLAY_WINDOW)
+            .position(|byte| *byte == 0)
+            .map(|relative| display_start + relative);
         let Some(display_end) = display_end else {
             continue;
         };
@@ -669,7 +659,12 @@ pub(crate) fn for_each_recipe_state(
     let states = storage.with_storage(|| parse_operation_states(ctx, payload))?;
     for state in ctx.admit_iter(states, "creo DEPDB recipe source traversal")? {
         if let Some(recipe) = state.recipe.candidate() {
-            visit(state.feature_id, state.root_schema_class(), recipe, state.offset)?;
+            visit(
+                state.feature_id,
+                state.root_schema_class(),
+                recipe,
+                state.offset,
+            )?;
         }
     }
     Ok(())
@@ -1045,11 +1040,11 @@ pub(crate) fn operations(
 
 #[cfg(test)]
 mod tests {
-    mod decode_cost;
-    mod resource_limits;
     mod admission_visits;
+    mod decode_cost;
     mod prefix_visits;
     mod recipe_owner;
+    mod resource_limits;
 
     use super::reference_names;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};

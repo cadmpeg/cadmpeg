@@ -4,12 +4,15 @@ use super::*;
 
 #[test]
 fn saved_generated_arc_body_refuses_before_retained_copy() {
-    assert!(
-        matches!(generated_arc_with_limits(u64::MAX, crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo saved generated arc body"), |cap| generated_arc_with_limits(u64::MAX, cap))),
-Err(CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo saved generated arc body")
+    let retained = crate::test_support::allocation_limit_at(
+        ResourceDimension::RetainedBytes,
+        Some("creo saved generated arc body"),
+        |cap| generated_arc_with_limits(u64::MAX, cap),
     );
+    let result = generated_arc_with_limits(u64::MAX, retained);
+    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo saved generated arc body"));
     assert_eq!(
         generated_arc_with_limits(
             u64::MAX,
@@ -27,12 +30,15 @@ Err(CodecError::ResourceLimit(limit))
 
 #[test]
 fn saved_generated_line_body_refuses_before_retained_copy() {
-    assert!(
-        matches!(generated_line_with_limits(u64::MAX, crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo saved generated line body"), |cap| generated_line_with_limits(u64::MAX, cap))),
-Err(CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo saved generated line body")
+    let retained = crate::test_support::allocation_limit_at(
+        ResourceDimension::RetainedBytes,
+        Some("creo saved generated line body"),
+        |cap| generated_line_with_limits(u64::MAX, cap),
     );
+    let result = generated_line_with_limits(u64::MAX, retained);
+    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo saved generated line body"));
     let entities = generated_line_with_limits(
         u64::MAX,
         crate::test_support::allocation_limit_at(
@@ -50,12 +56,15 @@ Err(CodecError::ResourceLimit(limit))
 
 #[test]
 fn saved_arc_body_refuses_before_retained_copy() {
-    assert!(
-        matches!(saved_circular_with_limits(u64::MAX, crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo saved arc body"), |cap| saved_circular_with_limits(u64::MAX, cap))),
-Err(CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo saved arc body")
+    let retained = crate::test_support::allocation_limit_at(
+        ResourceDimension::RetainedBytes,
+        Some("creo saved arc body"),
+        |cap| saved_circular_with_limits(u64::MAX, cap),
     );
+    let result = saved_circular_with_limits(u64::MAX, retained);
+    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo saved arc body"));
     assert_eq!(
         saved_circular_with_limits(
             u64::MAX,
@@ -73,12 +82,15 @@ Err(CodecError::ResourceLimit(limit))
 
 #[test]
 fn saved_circle_body_refuses_before_retained_copy() {
-    assert!(
-        matches!(saved_circular_with_limits(u64::MAX, crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo saved circle body"), |cap| saved_circular_with_limits(u64::MAX, cap))),
-Err(CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo saved circle body")
+    let retained = crate::test_support::allocation_limit_at(
+        ResourceDimension::RetainedBytes,
+        Some("creo saved circle body"),
+        |cap| saved_circular_with_limits(u64::MAX, cap),
     );
+    let result = saved_circular_with_limits(u64::MAX, retained);
+    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo saved circle body"));
     assert_eq!(
         saved_circular_with_limits(
             u64::MAX,
@@ -125,28 +137,30 @@ fn saved_conic_body_refuses_before_retained_copy() {
             )
         })
     };
-    assert!(
-        matches!(run(u64::MAX, crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo saved conic body"), |cap| run(u64::MAX, cap))),
-Err(CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo saved conic body")
+    let retained = crate::test_support::allocation_limit_at(
+        ResourceDimension::RetainedBytes,
+        Some("creo saved conic body"),
+        |cap| run(u64::MAX, cap),
     );
-    assert_eq!(run(u64::MAX, u64::MAX).expect("conic admitted").len(), 1);
+    let result = run(u64::MAX, retained);
+    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo saved conic body"));
+    let retained = u64::try_from(
+        4 * std::mem::size_of::<FeatureSavedEntity>() + SAVED_CONIC_LIMIT_INPUT.len()
+            - b"\xe0\0entity(conic)\0".len(),
+    )
+    .expect("conic backing");
+    assert_eq!(run(1, retained).expect("conic admitted").len(), 1);
 }
 
 #[test]
 fn saved_conic_entity_refuses_before_append() {
-    assert!(
-        matches!(crate::test_support::last_refusal_at(SAVED_CONIC_LIMIT_INPUT, ResourceDimension::CollectionItems, "creo saved conic entities", |ctx| {
-        parse_saved_conic_entities(ctx, SAVED_CONIC_LIMIT_INPUT, 0,
-            SAVED_CONIC_LIMIT_INPUT.len(), &scalar::ScalarCache::default())
-    }),
-CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo saved conic entities")
-    );
-    assert_eq!(
-        with_saved_leaf_limits(SAVED_CONIC_LIMIT_INPUT, u64::MAX, u64::MAX, |ctx| {
+    let refusal = crate::test_support::last_refusal_at(
+        SAVED_CONIC_LIMIT_INPUT,
+        ResourceDimension::CollectionItems,
+        "creo saved conic entities",
+        |ctx| {
             parse_saved_conic_entities(
                 ctx,
                 SAVED_CONIC_LIMIT_INPUT,
@@ -154,7 +168,30 @@ CodecError::ResourceLimit(limit)
                 SAVED_CONIC_LIMIT_INPUT.len(),
                 &scalar::ScalarCache::default(),
             )
-        })
+        },
+    );
+    assert!(matches!(refusal, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo saved conic entities"));
+    assert_eq!(
+        with_saved_leaf_limits(
+            SAVED_CONIC_LIMIT_INPUT,
+            1,
+            u64::try_from(
+                4 * std::mem::size_of::<FeatureSavedEntity>() + SAVED_CONIC_LIMIT_INPUT.len()
+                    - b"\xe0\0entity(conic)\0".len()
+            )
+            .expect("conic backing"),
+            |ctx| {
+                parse_saved_conic_entities(
+                    ctx,
+                    SAVED_CONIC_LIMIT_INPUT,
+                    0,
+                    SAVED_CONIC_LIMIT_INPUT.len(),
+                    &scalar::ScalarCache::default(),
+                )
+            }
+        )
         .expect("conic admitted")
         .len(),
         1
