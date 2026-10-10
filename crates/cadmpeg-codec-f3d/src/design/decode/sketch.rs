@@ -272,7 +272,9 @@ impl<'a, 'ctx, 'arena, T> Grouped<'a, 'ctx, 'arena, T> {
         ctx.charge_work(0, operation)?;
         let mut grouped = Vec::new();
         for record in ctx.admit_iter(records, operation)? {
-            if let Some(key) = key_of(record)? {
+            let key = key_of(record);
+            ctx.charge_work(0, operation)?;
+            if let Some(key) = key? {
                 ctx.push_vec(&mut grouped, (key, record), operation)?;
             }
         }
