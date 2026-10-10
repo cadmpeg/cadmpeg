@@ -149,3 +149,34 @@ fn empty_checked_trim_cache_keeps_original_refusal_and_uses_no_backing() {
             Err(CodecError::ResourceLimit(actual)) if actual == original));
     });
 }
+
+#[test]
+fn empty_checked_trim_cache_accepts_zero_limits_and_keeps_work_refusal() {
+    let mut table = radius_table();
+    table.rows.clear();
+    table.declared_count = 0;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_entities = 0;
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let cache = table.reconciled_trim_geometry(&ctx).expect("empty cache");
+    assert!(cache.coordinates.points.is_empty());
+    assert!(cache.coordinates.ambiguous.is_empty());
+    assert!(cache.radius(7).expect("absent radius").is_none());
+    drop(cache);
+    let original = ctx.charge_work_limit(1, "before empty trim cache")
+        .expect_err("zero work budget");
+    assert_eq!((original.dimension, original.used, original.additional, original.limit),
+        (ResourceDimension::WorkUnits, 0, 1, 0));
+    for _ in 0..2 {
+        assert!(matches!(table.reconciled_trim_geometry(&ctx),
+            Err(CodecError::ResourceLimit(actual)) if actual == original));
+    }
+    assert!(matches!(ctx.finish_session(),
+        Err(CodecError::ResourceLimit(actual)) if actual == original));
+}
