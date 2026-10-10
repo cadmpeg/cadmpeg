@@ -601,20 +601,19 @@ pub(crate) fn resolve_design_folder<'a, 'n>(
             .iter_mut()
             .zip([base.as_str(), active.0.as_str()])
         {
-            for name in &names {
-                let work = u64_from_index(candidate.len())
-                    .checked_add(u64_from_index(name.len()))
-                    .ok_or_else(|| {
-                        ctx.refuse_codec_limit("match F3D asset folders", u64::MAX - 1, u64::MAX)
-                    })?;
-                ctx.charge_work(work, "match F3D asset folders")?;
-                if name
-                    .strip_prefix(candidate)
-                    .is_some_and(|suffix| suffix.starts_with('/'))
-                {
-                    *slot = Some(candidate);
-                    break;
-                }
+            if ctx.any_by(
+                &names,
+                |name| {
+                    let Some(suffix) =
+                        ctx.strip_prefix(*name, candidate, "match F3D asset folders")?
+                    else {
+                        return Ok(false);
+                    };
+                    ctx.starts_with(suffix, "/", "match F3D asset folders")
+                },
+                "scan F3D asset folder entries",
+            )? {
+                *slot = Some(candidate);
             }
         }
         let folder = match folder_matches {

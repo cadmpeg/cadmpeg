@@ -162,13 +162,6 @@ impl MergeSession<'_, '_> {
             .ctx
             .admit_iter(&table.references, "merge F3Z reference rows")?
         {
-            let _occurrence_storage;
-            let (occurrence, held_storage) = self
-                .ctx
-                .with_scoped_storage("stage F3Z occurrence key", || {
-                    occurrence_key(self.ctx, reference)
-                })?;
-            _occurrence_storage = held_storage;
             let label = xref::design_for(self.ctx, table, reference)?
                 .map_or(reference.relative_path.as_str(), |design| {
                     design.display_name.as_str()
@@ -261,8 +254,7 @@ impl MergeSession<'_, '_> {
                 body: mut component_report,
                 source_fidelity: mut component_fidelity,
             } = component;
-            let _path_storage;
-            let (path, held_storage) =
+            let (path, path_storage) =
                 self.ctx
                     .with_scoped_storage("stage F3Z merge stack path", || {
                         self.ctx.copy_retained_text(
@@ -270,13 +262,12 @@ impl MergeSession<'_, '_> {
                             "retain F3Z merge stack path",
                         )
                     })?;
-            _path_storage = held_storage;
             self.ctx
                 .push_scoped_vec(stack_storage, stack, path, "grow F3Z merge stack")?;
             let descendants = {
                 let frame = MergeStackFrame {
                     stack,
-                    _path_storage,
+                    _path_storage: path_storage,
                 };
                 self.merge(
                     &mut *frame.stack,
@@ -292,6 +283,13 @@ impl MergeSession<'_, '_> {
             }
             append_feature_history(self.ctx, &parent_ir.model, &mut component_ir.model)?;
             let occurrence_start = parent_ir.model.occurrences.len();
+            let _occurrence_storage;
+            let (occurrence, held_storage) = self
+                .ctx
+                .with_scoped_storage("stage F3Z occurrence key", || {
+                    occurrence_key(self.ctx, reference)
+                })?;
+            _occurrence_storage = held_storage;
             let mut scope = OccurrenceScope {
                 ctx: self.ctx,
                 occurrence: &occurrence,

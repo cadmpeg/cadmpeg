@@ -1210,7 +1210,6 @@ impl DesignWorkPointRule {
         operation: &'static str,
         mut visit: impl FnMut(&mut DesignVertexRecipe) -> Result<(), CodecError>,
     ) -> Result<(), CodecError> {
-        ctx.charge_work(0, operation)?;
         let counted = matches!(self.form, DesignWorkPointRuleForm::Native { .. });
         let mut inputs = self.form.inputs_mut().iter_mut();
         while let Some(input) = if counted {
@@ -1221,9 +1220,7 @@ impl DesignWorkPointRule {
             if let Some(DesignWorkPointInputCarrier::VertexRecipe { recipe }) =
                 input.carrier.as_deref_mut()
             {
-                let visited = visit(recipe);
-                ctx.charge_work(0, operation)?;
-                visited?;
+                visit(recipe)?;
             }
         }
         Ok(())

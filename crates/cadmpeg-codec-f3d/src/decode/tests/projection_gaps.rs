@@ -1398,3 +1398,39 @@ fn repeated_face_assignment_token_comparison_preserves_work_refusal() {
         if limit.operation == "compare F3D face appearance assignment visual tokens")
     );
 }
+
+#[test]
+fn unused_dimension_companion_identity_index_needs_no_storage() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let mut native = F3dNative::default();
+    native.design_parameter_companions = (0..128)
+        .map(|i| {
+            DesignParameterCompanion::unbound(
+                format!("f3d:test:design-parameter-companion#{i}"),
+                220,
+                "408".to_owned().try_into().unwrap(),
+                i,
+                29,
+                std::num::NonZeroU64::new(1).unwrap(),
+                262,
+            )
+            .bound(crate::records::parameters::DesignCompanionPayload::new(
+                278,
+                100,
+                Vec::new(),
+            ))
+        })
+        .collect();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert_eq!(
+        unresolved_dimension_companion_count(&ctx, &native, &cadmpeg_ir::document::CadIr::empty())
+            .unwrap(),
+        0
+    );
+    ctx.finish_session().unwrap();
+}

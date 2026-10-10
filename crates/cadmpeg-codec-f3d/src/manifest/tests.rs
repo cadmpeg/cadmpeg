@@ -655,3 +655,42 @@ fn manifest_count_ranges_propagate_work_refusals() {
             if limit.operation == operation));
     }
 }
+
+#[test]
+fn design_folder_prefix_matching_does_not_scan_rejected_filename_tails() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let manifest = parse_top_level(
+        &cadmpeg_test_support::service_decode_context(),
+        &encode_top_level(DESIGN_GUID, &["Design"]).unwrap(),
+    )
+    .unwrap();
+    let header = encode_design_asset("Design", DESIGN_GUID).unwrap();
+    let long_name = format!("Other_{}", "x".repeat(4096));
+    let mut boundary = None;
+    for rejected in ["Other_", long_name.as_str()] {
+        let invoke = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+            resolve_design_folder(ctx, &manifest, [rejected, "Design/Manifest.dat"], |name| {
+                Ok((name == "Design/Manifest.dat").then_some(header.as_slice()))
+            })
+        };
+        assert_eq!(
+            crate::test_support::with_decode_context(invoke).unwrap(),
+            "Design"
+        );
+        let refusal = crate::test_support::resource_refusal_at(
+            ResourceDimension::WorkUnits,
+            "match F3D asset folders",
+            0,
+            invoke,
+        );
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = refusal else {
+            panic!("prefix boundary");
+        };
+        let reached = (limit.used, limit.additional);
+        if let Some(expected) = boundary {
+            assert_eq!(reached, expected);
+        } else {
+            boundary = Some(reached);
+        }
+    }
+}

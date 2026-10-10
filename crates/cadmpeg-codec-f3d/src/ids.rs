@@ -138,6 +138,7 @@ pub(crate) fn file_source_image_id(
 }
 
 /// The neutral B-rep identity for one face slot.
+#[cfg(test)]
 pub(crate) fn brep_face_id(
     index: impl Into<cadmpeg_ir::ids::IdentityKey>,
 ) -> cadmpeg_ir::ids::FaceId {
@@ -1420,7 +1421,7 @@ mod tests {
         assert_eq!(returned.operation, "split F3D history feature identity");
         assert_eq!(ctx.resource_refusal(), Some(returned));
         let cadmpeg_core::CodecError::ResourceLimit(fused) = ctx
-            .charge_work(0, "repeat history feature split refusal")
+            .charge_work(1, "repeat history feature split refusal")
             .expect_err("the original split refusal remains fused")
         else {
             panic!("history feature split refusal remains fused");

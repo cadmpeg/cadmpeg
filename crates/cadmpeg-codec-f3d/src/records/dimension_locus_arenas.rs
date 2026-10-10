@@ -5,6 +5,49 @@ use std::ops::Deref;
 
 const NONNULL_LOCUS_ERROR: &str =
     "design_dimension_locus_pairs requires two nonnull geometry loci and opaque_index";
+const NONNULL_LOCUS_OPERATION: &str = "validate F3D nonnull locus pairs";
+
+/// A semantic validation failure or the caller's admission failure.
+#[derive(Debug)]
+pub(crate) enum LocusValidationError {
+    InvalidForm,
+    Decode(cadmpeg_core::CodecError),
+}
+
+impl From<cadmpeg_core::CodecError> for LocusValidationError {
+    fn from(error: cadmpeg_core::CodecError) -> Self {
+        Self::Decode(error)
+    }
+}
+
+impl LocusValidationError {
+    pub(crate) fn into_codec_error(self, ctx: &DecodeContext<'_>) -> cadmpeg_core::CodecError {
+        match self {
+            Self::InvalidForm => ctx
+                .format_retained(
+                    format_args!("native record conversion failed: {NONNULL_LOCUS_ERROR}"),
+                    NONNULL_LOCUS_OPERATION,
+                )
+                .map_or_else(std::convert::identity, cadmpeg_core::CodecError::Malformed),
+            Self::Decode(error) => error,
+        }
+    }
+
+    pub(crate) fn into_native_error(
+        self,
+        ctx: &DecodeContext<'_>,
+    ) -> cadmpeg_ir::NativeConvertError {
+        match self {
+            Self::InvalidForm => ctx
+                .copy_retained_text(NONNULL_LOCUS_ERROR, NONNULL_LOCUS_OPERATION)
+                .map_or_else(
+                    cadmpeg_ir::NativeConvertError::Resource,
+                    cadmpeg_ir::NativeConvertError::ConversionMessage,
+                ),
+            Self::Decode(error) => cadmpeg_ir::NativeConvertError::Resource(error),
+        }
+    }
+}
 
 /// An arena containing only pairs of nonnull geometry loci with an opaque index.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -30,14 +73,15 @@ impl DesignDimensionLocusPairs {
     pub(crate) fn from_pairs_charged(
         ctx: &DecodeContext<'_>,
         pairs: Vec<DesignDimensionLocusPair>,
-    ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
-        const OPERATION: &str = "validate F3D nonnull locus pairs";
-        ctx.charge_work(0, OPERATION)?;
+    ) -> Result<Self, LocusValidationError> {
         if !pairs.is_empty()
-            && ctx.any_by(&pairs, |pair| Ok(pair.opaque_index().is_none()), OPERATION)?
+            && ctx.any_by(
+                &pairs,
+                |pair| Ok(pair.opaque_index().is_none()),
+                NONNULL_LOCUS_OPERATION,
+            )?
         {
-            let message = ctx.copy_retained_text(NONNULL_LOCUS_ERROR, OPERATION)?;
-            return Err(cadmpeg_ir::NativeConvertError::ConversionMessage(message));
+            return Err(LocusValidationError::InvalidForm);
         }
         Ok(Self(pairs))
     }
