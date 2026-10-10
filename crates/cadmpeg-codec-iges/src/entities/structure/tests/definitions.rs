@@ -12,28 +12,20 @@ use crate::parameter::{ParameterRecord, Token, TokenValue};
 use crate::test_support::test_owned::{owned_test_file_with_directory_fields, OwnedTestEntity};
 use crate::IgesCodec;
 
-fn assert_associativity_rejects_without_pointer_lookup(
+fn associativity_at_work_cap(
     form: i64,
     values: &[TokenValue],
     parameter_end: usize,
     status: [u8; 4],
-) {
+    cap: u64,
+) -> Result<bool, cadmpeg_core::CodecError> {
     let tokens = values
         .iter()
         .cloned()
-        .map(|value| Token {
-            value,
-            span: 0..0,
-        })
+        .map(|value| Token { value, span: 0..0 })
         .collect();
-    let record = ParameterRecord::from_test_tokens(
-        3,
-        0..0,
-        Vec::new(),
-        parameter_end,
-        tokens,
-        Vec::new(),
-    );
+    let record =
+        ParameterRecord::from_test_tokens(3, 0..0, Vec::new(), parameter_end, tokens, Vec::new());
     let entry = DirectoryEntry {
         source_offset: 0,
         sequence: 3,
@@ -64,19 +56,55 @@ fn assert_associativity_rejects_without_pointer_lookup(
     let association_owners = std::collections::BTreeMap::new();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
+    policy.limits.max_work_units = cap;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
 
-    assert!(!super::super::predefined_associativity_valid(
+    let result = super::super::predefined_associativity_valid(
         &entry,
         &record,
         &entries,
         &records,
         &association_owners,
         &ctx,
-    )
-    .unwrap());
-    ctx.finish_session().unwrap();
+    );
+    if let Err(cadmpeg_core::CodecError::ResourceLimit(first)) = &result {
+        assert!(
+            matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(last)) if last == *first)
+        );
+    } else {
+        ctx.finish_session().unwrap();
+    }
+    result
+}
+
+fn assert_associativity_rejects_without_pointer_lookup(
+    form: i64,
+    values: &[TokenValue],
+    parameter_end: usize,
+    status: [u8; 4],
+) {
+    assert!(!associativity_at_work_cap(form, values, parameter_end, status, 0).unwrap());
+}
+
+fn assert_associativity_visits_before_rejection(
+    form: i64,
+    values: &[TokenValue],
+    parameter_end: usize,
+    status: [u8; 4],
+    operation: &'static str,
+    additional: u64,
+) {
+    assert!(!associativity_at_work_cap(form, values, parameter_end, status, u64::MAX).unwrap());
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        |cap| associativity_at_work_cap(form, values, parameter_end, status, cap),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && limit.operation == operation && limit.additional == additional)
+    );
 }
 
 fn integer_values(values: &[i64]) -> Vec<TokenValue> {
@@ -94,12 +122,14 @@ fn invalid_form_13_header_skips_dimension_pointer_lookup() {
 }
 
 #[test]
-fn form_6_invalid_header_skips_view_lookup() {
-    assert_associativity_rejects_without_pointer_lookup(
+fn form_6_invalid_header_visits_view_before_rejection() {
+    assert_associativity_visits_before_rejection(
         6,
         &integer_values(&[99, 99, 1, 1, 1]),
         5,
         [0, 0, 0, 0],
+        "iges structure pointer lookup",
+        4,
     );
 }
 
@@ -114,12 +144,14 @@ fn form_6_invalid_count_skips_view_lookup() {
 }
 
 #[test]
-fn form_6_invalid_end_skips_view_and_member_lookups() {
-    assert_associativity_rejects_without_pointer_lookup(
+fn form_6_invalid_end_visits_view_before_rejection() {
+    assert_associativity_visits_before_rejection(
         6,
         &integer_values(&[99, 1, 1, 1, 1, 0]),
         6,
         [0, 0, 0, 0],
+        "iges structure pointer lookup",
+        4,
     );
 }
 
@@ -132,10 +164,7 @@ fn form_6_zero_visible_count_remains_valid() {
         4,
         integer_values(&[99, 1, 0, 1])
             .into_iter()
-            .map(|value| Token {
-                value,
-                span: 0..0,
-            })
+            .map(|value| Token { value, span: 0..0 })
             .collect(),
         Vec::new(),
     );
@@ -186,12 +215,14 @@ fn form_6_zero_visible_count_remains_valid() {
 }
 
 #[test]
-fn form_9_invalid_header_skips_member_lookups() {
-    assert_associativity_rejects_without_pointer_lookup(
+fn form_9_invalid_header_visits_member_before_rejection() {
+    assert_associativity_visits_before_rejection(
         9,
         &integer_values(&[99, 99, 1, 1, 1]),
         5,
         [0, 0, 0, 0],
+        "iges predefined associativity fields",
+        1,
     );
 }
 
@@ -206,12 +237,14 @@ fn form_9_zero_child_count_skips_member_lookups() {
 }
 
 #[test]
-fn form_9_invalid_end_skips_member_lookups() {
-    assert_associativity_rejects_without_pointer_lookup(
+fn form_9_invalid_end_visits_member_before_rejection() {
+    assert_associativity_visits_before_rejection(
         9,
         &integer_values(&[99, 1, 1, 1]),
         4,
         [0, 0, 0, 0],
+        "iges predefined associativity fields",
+        1,
     );
 }
 
