@@ -14,19 +14,6 @@ fn missing_schema_prefix_rejects_before_suffix_scan_and_copy() {
     assert!(crate::test_support::with_collection_limit(0, run)
         .expect("fixed prefix rejection copies no suffix")
         .is_none());
-    crate::test_support::with_work_limit(0, |ctx| {
-        let CodecError::ResourceLimit(original) = ctx
-            .charge_work(1, "before invalid schema prefix")
-            .expect_err("zero work fuse")
-        else {
-            panic!("resource refusal");
-        };
-        let CodecError::ResourceLimit(actual) = run(ctx).expect_err("sticky schema refusal") else {
-            panic!("resource refusal");
-        };
-        assert_eq!(actual, original);
-        assert_eq!(ctx.resource_refusal(), Some(original));
-    });
     bytes[CATALOG_OPEN.len() + 2] = 0xfe;
     crate::test_support::with_work_limit(0, |ctx| {
         let CodecError::ResourceLimit(limit) = parse_schema_program(ctx, &bytes, 0, None)
@@ -49,20 +36,6 @@ fn missing_relation_prefix_rejects_before_reverse_result_search() {
     assert!(crate::test_support::with_collection_limit(0, run)
         .expect("fixed opening parenthesis rejection allocates no candidate")
         .is_none());
-    crate::test_support::with_work_limit(0, |ctx| {
-        let CodecError::ResourceLimit(original) = ctx
-            .charge_work(1, "before invalid relation prefix")
-            .expect_err("zero work fuse")
-        else {
-            panic!("resource refusal");
-        };
-        let CodecError::ResourceLimit(actual) = run(ctx).expect_err("sticky relation refusal")
-        else {
-            panic!("resource refusal");
-        };
-        assert_eq!(actual, original);
-        assert_eq!(ctx.resource_refusal(), Some(original));
-    });
     crate::test_support::with_work_limit(0, |ctx| {
         let CodecError::ResourceLimit(limit) = parse_relation_signature(ctx, "() : Real\n")
             .expect_err("present prefix requires the actual result search")

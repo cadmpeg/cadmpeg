@@ -4337,7 +4337,6 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
 
         if matches!(function, "min" | "max") {
             const OPERATION: &str = "catia_formula_extremum_argument_visits";
-            self.ctx.charge_work(0, OPERATION)?;
             let mut result: Option<EvaluatedFormulaScalar> = None;
             let valid = self.ctx.all_by_limit(
                 &arguments,

@@ -34,7 +34,6 @@ fn refine_nurbs_surface_point(
     seed: Point2,
     domains: [[f64; 2]; 2],
 ) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
-    ctx.charge_work_limit(0, "catia surface refinement boundary")?;
     let mut parameters = seed;
     for _ in 0..NURBS_SURFACE_REFINEMENT_ITERATIONS {
         let Some(partials) = cadmpeg_ir::eval::finite_or_refusal(
@@ -87,7 +86,6 @@ fn visit_knot_spans(
     mut visit: impl FnMut([f64; 2]) -> Result<bool, cadmpeg_core::decode::ResourceLimit>,
     operation: &'static str,
 ) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
-    ctx.charge_work_limit(0, operation)?;
     let Some((&first, rest)) = knots.split_first() else {
         return Ok(true);
     };
@@ -108,7 +106,6 @@ pub(super) fn nurbs_surface_witness_distance(
     surface: &NurbsSurface,
     point: Point3,
 ) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
-    ctx.charge_work_limit(0, "catia surface witness boundary")?;
     let Some(domains) = nurbs_surface_parameter_domain(surface) else {
         return Ok(None);
     };
@@ -349,7 +346,7 @@ mod tests {
     }
 
     #[test]
-    fn empty_knot_span_visit_is_free_and_preserves_fusion() {
+    fn empty_knot_span_visit_is_free() {
         crate::test_support::with_work_limit(0, |ctx| {
             for knots in [&[][..], &[0.0][..]] {
                 assert!(super::visit_knot_spans(
@@ -360,13 +357,6 @@ mod tests {
                 )
                 .expect("no pair is free"));
             }
-            let original = ctx
-                .charge_work_limit(1, "test refusal")
-                .expect_err("zero work limit");
-            assert_eq!(
-                super::visit_knot_spans(ctx, &[], |_| panic!("no pair"), "test empty span"),
-                Err(original)
-            );
         });
     }
 

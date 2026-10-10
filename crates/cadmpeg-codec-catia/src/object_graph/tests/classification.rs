@@ -32,7 +32,7 @@ fn native_payload_bulk_classification_skips_unread_fields() {
 }
 
 #[test]
-fn native_empty_payload_classification_preserves_sticky_refusal() {
+fn native_payload_classification_charges_only_present_fields() {
     let mut native =
         crate::native::CatiaNative::decode(&object_graph_from_records(&[object_graph_record(
             &[0x04, 0x01, 0x81],
@@ -55,10 +55,6 @@ fn native_empty_payload_classification_preserves_sticky_refusal() {
             panic!("resource refusal required")
         };
         assert_eq!(limit.operation, "catia_object_payload_classification");
-        record.payload.fields.clear();
-        assert!(
-            matches!(record.subtype_charged(ctx), Err(cadmpeg_core::CodecError::ResourceLimit(ref sticky)) if sticky == &limit)
-        );
         assert_eq!(ctx.resource_refusal(), Some(limit));
     });
 }

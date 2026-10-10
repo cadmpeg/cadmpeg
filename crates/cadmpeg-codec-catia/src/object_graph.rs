@@ -2557,7 +2557,6 @@ pub(crate) fn classify_charged(
     fields: &[PayloadField],
 ) -> Result<PayloadSubtype, CodecError> {
     const OPERATION: &str = "catia_object_payload_classification";
-    ctx.charge_work(0, OPERATION)?;
     let mut triplets = 0usize;
     let mut atoms = 0usize;
     let mut lists = 0usize;

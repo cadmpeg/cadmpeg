@@ -953,7 +953,7 @@ fn parallel_reference_table_rejects_before_unread_rows() {
 }
 
 #[test]
-fn parallel_reference_table_empty_rows_preserve_sticky_refusal() {
+fn parallel_reference_table_charges_only_present_rows() {
     crate::test_support::with_work_limit(0, |ctx| {
         assert!(
             crate::native::CatiaDesignParallelReferenceTable::new(ctx, Vec::new(), Vec::new())
@@ -970,11 +970,6 @@ fn parallel_reference_table_empty_rows_preserve_sticky_refusal() {
             panic!("resource refusal required")
         };
         assert_eq!(limit.operation, "catia_design_reference_table_row_visits");
-        let empty =
-            crate::native::CatiaDesignParallelReferenceTable::new(ctx, Vec::new(), Vec::new());
-        assert!(
-            matches!(empty, Err(cadmpeg_core::CodecError::ResourceLimit(ref sticky)) if sticky == &limit)
-        );
         assert_eq!(ctx.resource_refusal(), Some(limit));
     });
 }
