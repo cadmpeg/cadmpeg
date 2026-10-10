@@ -57,14 +57,33 @@ fn offset_block_view_refuses_scoped_limit() {
 
 #[test]
 fn offset_block_view_refuses_work_limit() {
-    let error = offset_block_view_refusal(|policy| {
-        // The first empty-tree insertion shifts its node and pays two passes for the node it
-        // adds to the node bound, three passes in all, before the next index visit.
-        let node =
-            11 * std::mem::size_of::<(String, (&[u8], u64))>() + 18 * std::mem::size_of::<usize>();
-        policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(3 * node);
-    });
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "NX offset block view entries",
+        |ctx| {
+            let control = crate::om::EntityRecord {
+                offset: 5,
+                bytes: &[0xaa],
+            };
+            let column = crate::om::EntityRecord {
+                offset: 6,
+                bytes: &[0xbb],
+            };
+            let mut reservation = ctx.reserve_scoped(0, "NX offset block view storage")?;
+            let mut blocks = BTreeMap::new();
+            offset_data_block_bytes_for_section(
+                ctx,
+                &mut reservation,
+                &mut blocks,
+                3,
+                100,
+                &control,
+                &[column],
+            )
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "index NX offset block view"));
+            && limit.operation == "NX offset block view entries"));
 }

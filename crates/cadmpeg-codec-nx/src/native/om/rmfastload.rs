@@ -9,7 +9,10 @@ fn assign_with_counts(entries: &mut [RmFastLoadObjectId]) {
     for entry in entries.iter() {
         *counts.entry(entry.value).or_default() += 1;
     }
-    super::assign_rmfastload_object_id_identities(entries, &counts);
+    crate::test_support::with_decode_context(|ctx| {
+        super::assign_rmfastload_object_id_identities(ctx, entries, &counts)
+    })
+    .expect("admitted RMFastLoad identity assignment");
 }
 
 #[test]

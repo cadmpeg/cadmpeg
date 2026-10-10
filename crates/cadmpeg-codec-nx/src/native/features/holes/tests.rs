@@ -124,7 +124,10 @@ fn symbolic_thread_route_refusal(
 ) -> cadmpeg_core::CodecError {
     let container = symbolic_thread_container();
     let records = crate::test_support::with_decode_context(|ctx| {
-        crate::native::features::holes::feature_symbolic_threads(ctx, &container)
+        crate::native::features::holes::feature_symbolic_threads(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
     })
     .expect("admitted symbolic thread");
     assert_eq!(records.len(), 1);
@@ -135,7 +138,10 @@ fn symbolic_thread_route_refusal(
             configure(policy);
         },
         |ctx| {
-            crate::native::features::holes::feature_symbolic_threads(ctx, &container)
+            crate::native::features::FeatureHistory::new(ctx, &container)
+                .and_then(|history| {
+                    crate::native::features::holes::feature_symbolic_threads(ctx, &history)
+                })
                 .expect_err("symbolic thread resource limit")
         },
     )
@@ -710,7 +716,8 @@ fn hole_package_lane_route_refusal(
     let container = hole_package_lane_container();
     let admitted = crate::test_support::with_decode_context(|ctx| {
         crate::native::features::holes::feature_hole_package_construction_group_lanes(
-            ctx, &container,
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
         )
     })
     .expect("admitted hole package lane");
@@ -722,10 +729,13 @@ fn hole_package_lane_route_refusal(
             configure(policy);
         },
         |ctx| {
-            crate::native::features::holes::feature_hole_package_construction_group_lanes(
-                ctx, &container,
-            )
-            .expect_err("hole package lane resource limit")
+            crate::native::features::FeatureHistory::new(ctx, &container)
+                .and_then(|history| {
+                    crate::native::features::holes::feature_hole_package_construction_group_lanes(
+                        ctx, &history,
+                    )
+                })
+                .expect_err("hole package lane resource limit")
         },
     )
 }
@@ -771,8 +781,10 @@ fn repeated_scalar_block_reference_route_refusal(
 ) -> cadmpeg_core::CodecError {
     let container = repeated_scalar_block_reference_container();
     let admitted = crate::test_support::with_decode_context(|ctx| {
+        let history = crate::native::features::FeatureHistory::new(ctx, &container)?;
+        let inputs = crate::native::features::feature_input_blocks(ctx, &history)?;
         crate::native::features::holes::feature_simple_hole_repeated_scalar_lane_block_references(
-            ctx, &container,
+            ctx, &history, &inputs,
         )
     })
     .expect("admitted repeated scalar block references");
@@ -784,9 +796,8 @@ fn repeated_scalar_block_reference_route_refusal(
             configure(policy);
         },
         |ctx| {
-            crate::native::features::holes::feature_simple_hole_repeated_scalar_lane_block_references(
-        ctx, &container,
-    )
+            crate::native::features::FeatureHistory::new(ctx, &container)
+    .and_then(|history| { let inputs = crate::native::features::feature_input_blocks(ctx, &history)?; crate::native::features::holes::feature_simple_hole_repeated_scalar_lane_block_references(ctx, &history, &inputs) })
     .expect_err("repeated scalar block reference resource limit")
         },
     )
@@ -816,12 +827,21 @@ fn repeated_scalar_block_reference_route_refuses_retained_limit() {
 
 #[test]
 fn repeated_scalar_block_reference_route_refuses_scoped_limit() {
-    let error = repeated_scalar_block_reference_route_refusal(|policy| {
-        policy.limits.max_materialized_bytes = 0;
-    });
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+    let container = repeated_scalar_block_reference_container();
+    let route = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        let history = crate::native::features::FeatureHistory::new(ctx, &container)?;
+        let inputs = crate::native::features::feature_input_blocks(ctx, &history)?;
+        crate::native::features::holes::feature_simple_hole_repeated_scalar_lane_block_references(
+            ctx, &history, &inputs,
+        )
+    };
+    // Build the section caches once so every walk step charges the same route.
+    crate::test_support::with_decode_context(route).expect("admitted block references");
+    crate::test_support::resource_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "NX simple hole data block index",
+        route,
     );
 }
 
@@ -840,7 +860,10 @@ fn repeated_scalar_lane_route_refusal(
 ) -> cadmpeg_core::CodecError {
     let container = repeated_scalar_lane_container();
     let admitted = crate::test_support::with_decode_context(|ctx| {
-        crate::native::features::holes::feature_simple_hole_repeated_scalar_lanes(ctx, &container)
+        crate::native::features::holes::feature_simple_hole_repeated_scalar_lanes(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
     })
     .expect("admitted repeated scalar lane");
     assert_eq!(admitted.len(), 1);
@@ -851,10 +874,13 @@ fn repeated_scalar_lane_route_refusal(
             configure(policy);
         },
         |ctx| {
-            crate::native::features::holes::feature_simple_hole_repeated_scalar_lanes(
-                ctx, &container,
-            )
-            .expect_err("repeated scalar lane resource limit")
+            crate::native::features::FeatureHistory::new(ctx, &container)
+                .and_then(|history| {
+                    crate::native::features::holes::feature_simple_hole_repeated_scalar_lanes(
+                        ctx, &history,
+                    )
+                })
+                .expect_err("repeated scalar lane resource limit")
         },
     )
 }

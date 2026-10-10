@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Roster-owned occurrence lane admission.
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::features::NonEmptyMembers;
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
 use serde::{Deserialize, Serialize, Serializer};
 
-use super::{FastLoadComponentOccurrence, FastLoadComponentOccurrenceWire, OccurrenceLaneForm};
+use super::{
+    FastLoadComponentOccurrence, FastLoadComponentOccurrenceView, FastLoadComponentOccurrenceWire,
+    OccurrenceLaneForm,
+};
 
 /// Occurrences sharing one roster-level lane form.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
@@ -39,11 +42,11 @@ impl FastLoadOccurrences {
 
     pub(in crate::native) fn wire_records(
         &self,
-    ) -> impl Iterator<Item = FastLoadComponentOccurrenceWire> + '_ {
+    ) -> impl Iterator<Item = FastLoadComponentOccurrenceView<'_>> + '_ {
         self.0.iter().flat_map(|lane| {
             lane.records
                 .iter()
-                .map(move |record| FastLoadComponentOccurrenceWire::from((record, lane.form)))
+                .map(move |record| record.view(lane.form))
         })
     }
 
@@ -51,14 +54,40 @@ impl FastLoadOccurrences {
         ctx: &DecodeContext<'_>,
         namespace: &NativeNamespace,
     ) -> Result<Self, NativeConvertError> {
+        const OPERATION: &str = "admit NX occurrence roster";
         let wire: Vec<FastLoadComponentOccurrenceWire> =
             namespace.arena_as_for_decode(ctx, "fast_load_component_occurrences")?;
-        let work = wire.len().checked_mul(2).ok_or_else(|| {
-            ctx.refuse_codec_limit("admit NX occurrence roster", u64::MAX - 1, u64::MAX)
-        })?;
-        ctx.charge_work(u64_from_index(work), "admit NX occurrence roster")?;
-        let records = ctx.collection_vec(wire.len(), "NX admitted occurrence records")?;
-        Self::from_wire_with_storage(wire, records)
+        let Some(form) = wire.first().map(|record| record.occurrence_lane_form) else {
+            return Ok(Self::default());
+        };
+        if ctx.any_by(
+            &wire,
+            |record| Ok(record.occurrence_lane_form != form),
+            OPERATION,
+        )? {
+            return Err(lane_form_disagreement());
+        }
+        let count = wire.len();
+        let mut records = ctx.vector_storage(count, "NX admitted occurrence records")?;
+        let mut wire = wire.into_iter();
+        for _ in ctx
+            .admit_iter(&(0..count), OPERATION)
+            .map_err(cadmpeg_core::CodecError::from)?
+        {
+            ctx.reserve_vec(&mut records, 1, "NX admitted occurrence records")?;
+            let Some(record) = wire.next() else {
+                break;
+            };
+            match FastLoadComponentOccurrence::try_from(record) {
+                Ok(record) => records.push(record),
+                Err(error) => {
+                    return Err(NativeConvertError::InvalidCollection(
+                        ctx.copy_retained_text(error, OPERATION)?,
+                    ))
+                }
+            }
+        }
+        Self::from_lane(form, records)
     }
 
     fn from_wire_with_storage(
@@ -78,10 +107,7 @@ impl FastLoadOccurrences {
             .iter()
             .any(|record| record.occurrence_lane_form != form)
         {
-            return Err(NativeConvertError::InvalidCollection(
-                "fast_load_component_occurrences.occurrence_lane_form disagrees across the roster"
-                    .into(),
-            ));
+            return Err(lane_form_disagreement());
         }
         for record in wire {
             records.push(
@@ -89,15 +115,30 @@ impl FastLoadOccurrences {
                     .map_err(|error| NativeConvertError::InvalidCollection(error.into()))?,
             );
         }
-        Ok(Self(Some(OccurrenceLane {
-            form,
-            records: records.try_into().map_err(
-                |error: cadmpeg_ir::features::BodySelectionError| {
-                    NativeConvertError::InvalidCollection(error.to_string())
-                },
-            )?,
-        })))
+        Self::from_lane(form, records)
     }
+
+    /// Admit the nonempty occurrence lane that shares one lane form.
+    fn from_lane(
+        form: OccurrenceLaneForm,
+        records: Vec<FastLoadComponentOccurrence>,
+    ) -> Result<Self, NativeConvertError> {
+        let records =
+            records
+                .try_into()
+                .map_err(|_: cadmpeg_ir::features::BodySelectionError| {
+                    NativeConvertError::InvalidCollection(
+                        "fast_load_component_occurrences: empty lane".into(),
+                    )
+                })?;
+        Ok(Self(Some(OccurrenceLane { form, records })))
+    }
+}
+
+fn lane_form_disagreement() -> NativeConvertError {
+    NativeConvertError::InvalidCollection(
+        "fast_load_component_occurrences.occurrence_lane_form disagrees across the roster".into(),
+    )
 }
 
 impl TryFrom<Vec<FastLoadComponentOccurrenceWire>> for FastLoadOccurrences {

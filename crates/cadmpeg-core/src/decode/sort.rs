@@ -306,8 +306,8 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let empty: [u64; 0] = [];
         let singleton = [1_u64];
 
