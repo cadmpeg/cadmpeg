@@ -7,6 +7,7 @@ use crate::scalar::FiniteReal;
 use cadmpeg_core::decode::ResourceLimit;
 
 mod surface_higher;
+mod surface_fifth;
 pub(in crate::eval) mod tensor;
 
 /// Cloneable pole traversal. Admission precedes each input-dependent advance.

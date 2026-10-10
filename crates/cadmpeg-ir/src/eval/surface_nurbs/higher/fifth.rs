@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Requested fifth polynomial partials from the selected normalized tensor.
+//! Requested fifth partials from the selected normalized tensor.
 
 use super::{basis, decode, EvaluationFailure, ExactSignedSum, FiniteReal, FiniteVector3, NurbsSurfaceLocal, TensorWindow};
 use crate::geometry::nurbs::NurbsPoleGrid;
@@ -11,9 +11,6 @@ pub(in crate::eval::surface_nurbs) fn evaluate(
     scratch.settle((|| {
         scratch.unless_refused().map_err(EvaluationFailure::ResourceLimit)?;
         let no_value = EvaluationFailure::NoValue;
-        if !matches!(local.surface.pole_grid(), NurbsPoleGrid::Polynomial { .. }) {
-            return Err(no_value);
-        }
         let knots = [local.surface.u_knots(), local.surface.v_knots()];
         let width = |axis: usize| {
             let span = local.spans[axis];
@@ -32,12 +29,18 @@ pub(in crate::eval::surface_nurbs) fn evaluate(
         let v = rows(1).ok_or_else(|| scratch.failure(no_value))?;
         for (axis, rows) in [&u, &v].into_iter().enumerate() {
             if local.degrees[axis] >= 5 && !rows.fifth_available()
-                || local.degrees[axis] >= 4 && local.degrees[1 - axis] >= 1 && !rows.fourth_available()
+                || local.degrees[axis] >= 4
+                    && (matches!(local.surface.pole_grid(), NurbsPoleGrid::Rational { .. })
+                        || local.degrees[1 - axis] >= 1) && !rows.fourth_available()
             {
                 return Err(no_value);
             }
         }
         let (u, v) = (u.as_slice(), v.as_slice());
+        if matches!(local.surface.pole_grid(), NurbsPoleGrid::Rational { .. }) {
+            return local.base.surface_fifth(scratch, local.surface,
+                [(local.spans[0] - local.degrees[0], u), (local.spans[1] - local.degrees[1], v)], widths);
+        }
         let count = u.len().checked_mul(v.len()).ok_or(no_value)?;
         let variable = count > 2;
         const OPERATION: &str = "IR polynomial surface fifth pole traversal";
