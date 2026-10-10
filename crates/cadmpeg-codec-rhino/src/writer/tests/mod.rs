@@ -1142,4 +1142,3 @@ fn make_planar_nurbs_trimmed_face(ir: &mut CadIr) {
 }
 
 mod trim_domain;
-mod projected_knots;
