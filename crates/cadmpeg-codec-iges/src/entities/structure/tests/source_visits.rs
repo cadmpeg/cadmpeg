@@ -230,11 +230,13 @@ fn ownership_run(
     global: &crate::global::ProjectedGlobal, ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     let records = records.iter().map(|record| (record.directory_sequence, record)).collect();
-    let (outcome, rejections) = super::super::project(ir, &[], (&BTreeMap::new(), &records),
+    let (outcome, rejections, rejection_storage) = super::super::project(ir, &[], (&BTreeMap::new(), &records),
         analysis, global, ctx, &mut super::super::super::geometry::SourceSequences::default())?;
     assert!(outcome.decoded.is_empty());
     assert!(outcome.losses.is_empty());
     assert!(rejections.is_empty());
+    drop(rejections);
+    drop(rejection_storage);
     drop(outcome);
     Ok(())
 }

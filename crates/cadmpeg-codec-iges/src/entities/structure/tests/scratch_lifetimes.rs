@@ -199,13 +199,22 @@ fn assert_rejected_candidate_storage(candidate: RejectedCandidate) {
     // 24 slots and is below this candidate-plus-16-slot bound.
     let slots = u64::try_from(REJECTED_CANDIDATES * std::mem::size_of::<LossNote>()).unwrap();
     assert!(peak > slots);
-    for cap in [first - 1, peak + slots] {
+    type Rejection = super::super::PlacementRejection;
+    let rejection_nodes = if matches!(candidate, RejectedCandidate::InstanceDefinition | RejectedCandidate::InstancePoint) {
+        let nodes = (REJECTED_CANDIDATES - 1) / 5 + 1;
+        u64::try_from(nodes * (11 * (std::mem::size_of::<u32>() + std::mem::size_of::<Rejection>())
+            + 16 * std::mem::size_of::<usize>()
+            + 2 * std::mem::align_of::<u32>().max(std::mem::align_of::<Rejection>()).max(std::mem::align_of::<usize>()))).unwrap()
+    } else { 0 };
+    for cap in [first - 1, peak + slots + rejection_nodes] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_materialized_bytes = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut ir = cadmpeg_ir::CadIr::empty();
         let mut sequences = super::super::super::geometry::SourceSequences::new(&ctx).unwrap();
+        let _retained_map_probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            ResourceDimension::RetainedBytes, "iges placement rejection nodes", None);
         let result = super::super::project(&mut ir, &directory, (&entries, &records),
             &BTreeMap::new(), &global, &ctx, &mut sequences);
         if cap == first - 1 {
@@ -218,7 +227,7 @@ fn assert_rejected_candidate_storage(candidate: RejectedCandidate) {
             drop(sequences);
             assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first_refusal));
         } else {
-            let (outcome, rejections) = result.unwrap();
+            let (outcome, rejections, rejection_storage) = result.unwrap();
             assert!(outcome.decoded.is_empty());
             assert_eq!(outcome.losses.len(), REJECTED_CANDIDATES);
             for loss in &outcome.losses { assert!(loss.message.ends_with(reason)); }
@@ -227,11 +236,14 @@ fn assert_rejected_candidate_storage(candidate: RejectedCandidate) {
                 assert!(rejections.values().all(|value| *value == super::super::PlacementRejection::InvalidDefinition));
             } else { assert!(rejections.is_empty()); }
             assert_eq!(ir, cadmpeg_ir::CadIr::empty());
-            // Candidate backing is gone; only the returned loss slots remain.
-            let released = ctx.reserve_scoped(cap - slots, "test discarded structure candidate backing").unwrap();
+            // Loss slots and placement-rejection nodes remain live for their readers.
+            let released = ctx.reserve_scoped(cap - slots - rejection_nodes, "test discarded structure candidate backing").unwrap();
+            drop(released);
+            drop(rejections);
+            drop(rejection_storage);
+            let released = ctx.reserve_scoped(cap - slots, "test discarded placement rejection backing").unwrap();
             drop(released);
             drop(outcome);
-            drop(rejections);
             drop(sequences);
             let released = ctx.reserve_scoped(cap, "test destroyed structure outcome backing").unwrap();
             drop(released);
