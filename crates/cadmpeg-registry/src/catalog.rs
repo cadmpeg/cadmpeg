@@ -7,7 +7,7 @@
 //! format at once — and it settles nothing about a dialect.
 //! [`crate::resolve_and_inspect_with`] opens the resolved container.
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation, View};
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, Confidence, FormatId};
 
@@ -251,7 +251,6 @@ impl InputCatalog {
         let (matches, storage) = ctx.with_scoped_storage("detection candidates", || {
             let mut matches = Vec::new();
             for descriptor in &self.descriptors {
-                ctx.charge_work(1, "detect catalog entry")?;
                 let Some(codec) = descriptor.codec() else {
                     continue;
                 };
@@ -260,12 +259,14 @@ impl InputCatalog {
                     ctx.push_vec(&mut matches, (codec, confidence), "detection candidates")?;
                 }
             }
-            ctx.stable_sort_by(
-                &mut matches,
-                |value| &value.1,
-                |left, right| right.cmp(left),
-                "sort detection candidates",
-            )?;
+            if matches.len() > 1 {
+                ctx.stable_sort_by(
+                    &mut matches,
+                    |value| &value.1,
+                    |left, right| right.cmp(left),
+                    "sort detection candidates",
+                )?;
+            }
             Ok::<_, CodecError>(matches)
         })?;
         *output = matches;
@@ -278,12 +279,9 @@ impl InputCatalog {
         ctx: &DecodeContext<'_>,
         prefix: View<'_>,
     ) -> Result<DetectionOutcome<'_>, CodecError> {
+        let _storage;
         let mut matches = Vec::new();
-        let _storage = self.candidates(ctx, prefix, &mut matches)?;
-        ctx.charge_work(
-            u64_from_index(matches.len()) * 2,
-            "select strongest detection",
-        )?;
+        _storage = self.candidates(ctx, prefix, &mut matches)?;
         let Some(best_confidence) = matches.iter().map(|(_, confidence)| *confidence).max() else {
             return Ok(DetectionOutcome::None);
         };
@@ -321,11 +319,6 @@ impl InputCatalog {
         prefix: View<'_>,
         forced: Option<ForcedInput>,
     ) -> Result<ResolvedSource<'a>, ResolveSourceError> {
-        ctx.charge_work(
-            u64_from_index(self.descriptors.len()),
-            "resolve input source",
-        )?;
-        ctx.charge_work(u64_from_index(prefix.window().len()), "detect CADIR prefix")?;
         match forced {
             Some(ForcedInput::Codec(native)) => {
                 let codec = self
@@ -346,10 +339,13 @@ impl InputCatalog {
             }
             Some(ForcedInput::Cadir) => Ok(ResolvedSource::Cadir),
             None => match self.detect(ctx, prefix)? {
-                DetectionOutcome::None if is_cadir_prefix(prefix.window()) => {
-                    Ok(ResolvedSource::Cadir)
+                DetectionOutcome::None => {
+                    if is_cadir_prefix(ctx, prefix.window())? {
+                        Ok(ResolvedSource::Cadir)
+                    } else {
+                        Ok(ResolvedSource::Unrecognized)
+                    }
                 }
-                DetectionOutcome::None => Ok(ResolvedSource::Unrecognized),
                 DetectionOutcome::Detected { codec, confidence } => Ok(ResolvedSource::Native {
                     codec,
                     selection: Selection::Detected { confidence },
@@ -363,14 +359,23 @@ impl InputCatalog {
 /// Whether a byte prefix begins as a CADIR JSON object.
 ///
 /// Accepts UTF-8 BOM and ASCII whitespace before the opening object delimiter.
-pub(crate) fn is_cadir_prefix(prefix: &[u8]) -> bool {
+fn is_cadir_prefix(ctx: &DecodeContext<'_>, prefix: &[u8]) -> Result<bool, CodecError> {
     let prefix = prefix.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(prefix);
-    prefix.iter().find(|byte| !byte.is_ascii_whitespace()) == Some(&b'{')
+    if prefix.is_empty() {
+        return Ok(false);
+    }
+    Ok(ctx.find_by(
+        prefix.iter(),
+        |byte| Ok(!byte.is_ascii_whitespace()),
+        "detect CADIR prefix",
+    )? == Some(&b'{'))
 }
 
 #[cfg(test)]
 mod tests {
     use super::{ForcedInput, InputCatalog, ResolvedSource};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
 
     #[test]
     fn detection_candidates_keep_workspace_and_slot_refusals_typed() {
@@ -399,17 +404,120 @@ mod tests {
     }
 
     #[test]
-    fn detection_propagates_work_refusal_before_catalog_scan() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    fn cadir_fallback_propagates_input_work_refusal() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
         policy.limits.max_work_units = 0;
-        let (ctx, root) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(b"PK\x03\x04", &arena, &policy)
-                .expect("root");
+        let (ctx, root) = DecodeContext::from_root_bytes(b"PK\x03\x04", &arena, &policy)
+            .expect("root");
+        let catalog = InputCatalog { descriptors: Vec::new() };
+        let result = catalog.resolve_source(&ctx, root, None);
+        let Err(super::ResolveSourceError::Codec(CodecError::ResourceLimit(limit))) =
+            ctx.finish(result)
+        else {
+            panic!("CADIR prefix input work must refuse");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.limit, 0);
+        assert_eq!(limit.used, 0);
+        assert_eq!(limit.additional, 1);
+        assert_eq!(limit.operation, "detect CADIR prefix");
+    }
+
+    #[cfg(feature = "fcstd")]
+    #[test]
+    fn native_detection_propagates_input_work_refusal() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_work_units = 0;
+        let (ctx, root) = DecodeContext::from_root_bytes(b"PK\x03\x04", &arena, &policy)
+            .expect("root");
         let catalog = InputCatalog::with_builtins();
-        assert!(
-            matches!(catalog.detect(&ctx, root), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
-        );
+        let result = catalog.detect(&ctx, root);
+        let Err(CodecError::ResourceLimit(limit)) = ctx.finish(result) else {
+            panic!("native detection input work must refuse");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.limit, 0);
+        assert_eq!(limit.used, 0);
+        assert!(limit.additional > 0);
+    }
+
+    #[test]
+    fn cadir_prefix_search_charges_only_visited_steps() {
+        let cases: &[(&[u8], u64, bool)] = &[
+            (b"", 0, false),
+            (b"\xef\xbb\xbf", 0, false),
+            (b" \n{\"ir_version\": 1}", 3, true),
+            (b"\xef\xbb\xbf\t{\"ir_version\": 1}", 2, true),
+            (b"not CAD or JSON", 1, false),
+            (b" \n", 3, false),
+        ];
+        let catalog = InputCatalog { descriptors: Vec::new() };
+        for &(prefix, work, cadir) in cases {
+            for (budget, success) in [(work, true), (work.saturating_sub(1), false)] {
+                if !success && work == 0 {
+                    continue;
+                }
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::default();
+                policy.limits.max_work_units = budget;
+                let (ctx, root) = DecodeContext::from_root_bytes(prefix, &arena, &policy)
+                    .expect("root");
+                let result = catalog.resolve_source(&ctx, root, None);
+                let result = ctx.finish(result);
+                if success {
+                    assert!(matches!(result,
+                        Ok(ResolvedSource::Cadir) if cadir)
+                        || matches!(result, Ok(ResolvedSource::Unrecognized) if !cadir));
+                } else {
+                    let Err(super::ResolveSourceError::Codec(CodecError::ResourceLimit(limit))) = result
+                    else {
+                        panic!("one fewer visited step must refuse");
+                    };
+                    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+                    assert_eq!(limit.limit, budget);
+                    assert_eq!(limit.used, budget);
+                    assert_eq!(limit.additional, 1);
+                    assert_eq!(limit.operation, "detect CADIR prefix");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn forced_cadir_resolution_runs_no_detection_work() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_work_units = 0;
+        let (ctx, root) = DecodeContext::from_root_bytes(b"PK\x03\x04", &arena, &policy)
+            .expect("root");
+        let catalog = InputCatalog::with_builtins();
+        let result = catalog.resolve_source(&ctx, root, Some(ForcedInput::Cadir));
+        assert!(matches!(
+            ctx.finish(result),
+            Ok(ResolvedSource::Cadir)
+        ));
+    }
+
+    #[cfg(feature = "step")]
+    #[test]
+    fn forced_native_resolution_runs_no_detection_work() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_work_units = 0;
+        let (ctx, root) = DecodeContext::from_root_bytes(b"PK\x03\x04", &arena, &policy)
+            .expect("root");
+        let catalog = InputCatalog::with_builtins();
+        let forced = crate::forced_input("step")
+            .expect("embedded registry loads")
+            .expect("STEP is registered");
+        let result = catalog.resolve_source(&ctx, root, Some(forced));
+        assert!(matches!(
+            ctx.finish(result),
+            Ok(ResolvedSource::Native { codec, selection })
+                if codec.id().as_str() == "step" && selection == super::Selection::Forced
+        ));
     }
 
     fn resolve<'a>(
