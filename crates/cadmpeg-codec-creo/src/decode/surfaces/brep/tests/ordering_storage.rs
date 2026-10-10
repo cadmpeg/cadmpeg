@@ -113,7 +113,27 @@ fn accepted_parameter_ordering_transfers_only_the_original_reference_vector() {
     let bytes = u64::try_from(4 * size_of::<&crate::topology::Loop>()).expect("reference slots");
     for count in [1, 2] {
         let inputs = if count == 1 { vec![&loops[0]] } else { vec![&loops[1], &loops[0]] };
-        for cap in 0..=bytes {
+        let run = |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            ordered_native_parameter_face_loops(
+                &ctx, &inputs, (5, &surface), &incidence, &solved_vertices, &pcurves,
+                NativeCurveEvidence { typed_nonlinear_curve_ids: &typed,
+                    model_curves: &[], source_carriers: &carriers },
+            ).map(|ordered| {
+                let ordered = ordered.expect("proven ordering");
+                assert_eq!(ordered.len(), count);
+                assert!(std::ptr::eq(ordered[0], &loops[0]));
+                if count == 2 { assert!(std::ptr::eq(ordered[1], &loops[1])); }
+            })
+        };
+        let below = crate::test_support::allocation_limit_at(
+            ResourceDimension::RetainedBytes,
+            Some("creo native face ordering candidate references"), run,
+        );
+        for cap in [below, bytes] {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = cap;

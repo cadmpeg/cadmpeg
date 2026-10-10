@@ -34,8 +34,8 @@ fn assert_projection(record: &SurfacePrototypeRecord, expected: Option<[[f64; 3]
         (u64::try_from(FIELD.len()).expect("fixture name fits u64"), "creo prototype field name comparison"),
     ]).collect();
     let work: u64 = events.iter().map(|(units, _)| units).sum();
-    for cap in 0..=work + 1 {
-        let arena = DecodeArena::new();
+    let run = |ctx: &DecodeContext<'_>| prototype_mixed_derivatives(ctx, record);
+    let policy_at = |cap| {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = cap;
         policy.limits.max_retained_bytes = 0;
@@ -43,28 +43,39 @@ fn assert_projection(record: &SurfacePrototypeRecord, expected: Option<[[f64; 3]
         policy.limits.max_collection_items = 0;
         policy.limits.max_entities = 0;
         policy.limits.max_recursion_depth = 0;
+        policy
+    };
+    let observed = std::cell::RefCell::new(Vec::new());
+    crate::test_support::assert_refusal_order(
+        ResourceDimension::WorkUnits,
+        &events.iter().map(|(_, operation)| *operation).collect::<Vec<_>>(),
+        |cap| {
+            let arena = DecodeArena::new();
+            let policy = policy_at(cap);
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let result = run(&ctx);
+            if let Err(CodecError::ResourceLimit(original)) = &result {
+                        assert_eq!((original.limit, original.used), (cap, cap));
+                observed.borrow_mut().push((original.additional, original.operation));
+                for _ in 0..2 {
+                    assert!(matches!(run(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == *original));
+                }
+                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == *original));
+            }
+            result.map(|actual| assert_eq!(actual, expected))
+        },
+    );
+    assert_eq!(observed.into_inner(), events);
+    for cap in [work, work + 1] {
+        let arena = DecodeArena::new();
+        let policy = policy_at(cap);
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let run = || prototype_mixed_derivatives(&ctx, record);
-        let original = if cap >= work {
-            assert_eq!(run().expect("fixed projection admitted"), expected);
-            let original = ctx.charge_work_limit(cap - work + 1, "after mixed derivative projection")
-                .expect_err("source-derived work consumed");
-            assert_eq!(original.used, work);
-            original
-        } else {
-            let mut used = 0;
-            let (additional, operation) = events.iter().copied().find(|(units, _)| {
-                if used + units > cap { true } else { used += units; false }
-            }).expect("first refused field event");
-            let Err(CodecError::ResourceLimit(original)) = run() else {
-                panic!("field admission must refuse");
-            };
-            assert_eq!((original.dimension, original.limit, original.used, original.additional, original.operation),
-                (ResourceDimension::WorkUnits, cap, used, additional, operation));
-            original
-        };
+        assert_eq!(run(&ctx).expect("fixed projection admitted"), expected);
+        let original = ctx.charge_work_limit(cap - work + 1, "after mixed derivative projection")
+            .expect_err("source-derived work consumed");
+        assert_eq!(original.used, work);
         for _ in 0..2 {
-            assert!(matches!(run(), Err(CodecError::ResourceLimit(actual)) if actual == original));
+            assert!(matches!(run(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == original));
         }
         assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original));
     }

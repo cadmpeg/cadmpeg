@@ -1310,7 +1310,26 @@ mod tests {
                 else { "creo NURBS polynomial grid poles" };
             // One row visit precedes its two pole visits; there are two rows.
             const GRID_VISITS: u64 = 2 + 2 * 2;
-            for (allowed, stop_first) in [(0, false), (1, false), (GRID_VISITS - 1, false),
+            let run = |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                super::visit_surface_poles(&ctx, &surface, |_, _| Ok(true))
+            };
+            let first_row = crate::test_support::allocation_limit_at(
+                ResourceDimension::WorkUnits, Some(row_operation), run,
+            );
+            let first_pole = crate::test_support::allocation_limit_at(
+                ResourceDimension::WorkUnits, Some(pole_operation), run,
+            );
+            let last = crate::test_support::last_refusal_at(
+                &[], ResourceDimension::WorkUnits, pole_operation,
+                |ctx| super::visit_surface_poles(ctx, &surface, |_, _| Ok(true)),
+            );
+            let cadmpeg_core::CodecError::ResourceLimit(last) = last else { panic!("pole refusal"); };
+            assert_eq!((first_row, first_pole, last.used, last.additional), (0, 1, GRID_VISITS - 1, 1));
+            for (allowed, stop_first) in [(first_row, false), (first_pole, false), (last.limit, false),
                 (GRID_VISITS, false), (2, true)] {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
@@ -1916,7 +1935,22 @@ mod tests {
     #[test]
     fn nurbs_boundary_promotion_retains_only_the_selected_curve_backing() {
         let (surface, _) = shared_generator_surfaces();
-        for retained in [RATIONAL_BOUNDARY_BYTES - 1, RATIONAL_BOUNDARY_BYTES] {
+        let below = crate::test_support::allocation_limit_at(
+            ResourceDimension::RetainedBytes, Some("creo NURBS boundary curve storage"),
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_materialized_bytes = FOUR_RATIONAL_BOUNDARIES_BYTES;
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                let [first, second, third, fourth] = super::nurbs_surface_boundaries(
+                    &ctx, &surface, 7, &mut crate::lane_refusal::LaneRefusals::new(),
+                )?.expect("four scoped boundaries");
+                drop((second, third, fourth));
+                first.into_curve()
+            },
+        );
+        for retained in [below, RATIONAL_BOUNDARY_BYTES] {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_materialized_bytes = FOUR_RATIONAL_BOUNDARIES_BYTES;
@@ -1950,18 +1984,35 @@ mod tests {
     #[test]
     fn nurbs_boundary_vector_peak_refuses_before_the_fourth_knot_copy() {
         let (surface, _) = shared_generator_surfaces();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = FOUR_RATIONAL_BOUNDARIES_BYTES - 1;
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        let error = super::nurbs_surface_boundaries(
-            &ctx, &surface, 7, &mut crate::lane_refusal::LaneRefusals::new(),
-        ).err().expect("fourth exact knot copy exceeds the live vector peak");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::MaterializedBytes
-                && refusal.operation == "creo NURBS boundary knots"
-                && (refusal.used, refusal.additional) == (FOUR_RATIONAL_BOUNDARIES_BYTES - 4 * 8, 4 * 8)));
+        let last = std::cell::Cell::new(None);
+        crate::test_support::assert_refusal_order(
+            ResourceDimension::MaterializedBytes, &["creo NURBS boundary knots"; 4],
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_materialized_bytes = cap;
+                policy.limits.max_retained_bytes = 0;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                let result = super::nurbs_surface_boundaries(
+                    &ctx, &surface, 7, &mut crate::lane_refusal::LaneRefusals::new(),
+                ).map(|boundaries| {
+                    drop(boundaries.expect("four scoped boundaries"));
+                });
+                match &result {
+                    Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                        if refusal.operation == "creo NURBS boundary knots" => {
+                            last.set(Some(*refusal));
+                        }
+                    _ => {}
+                }
+                result
+            },
+        );
+        let refusal = last.into_inner().expect("fourth knot copy refuses");
+        assert_eq!(refusal.dimension, ResourceDimension::MaterializedBytes);
+        assert_eq!(refusal.operation, "creo NURBS boundary knots");
+        assert_eq!((refusal.used, refusal.additional),
+            (FOUR_RATIONAL_BOUNDARIES_BYTES - 4 * 8, 4 * 8));
     }
 
     #[test]

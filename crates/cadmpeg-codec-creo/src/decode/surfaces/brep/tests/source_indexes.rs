@@ -431,7 +431,22 @@ fn brep_fixed_curve_namespace_charges_only_the_record_visit() {
     let mut ir = typed_curve_id_fixture();
     ir.model.curves.truncate(1);
     ir.model.curves[0].id = CurveId::mint("creo:other:curve#7").expect("fixture identity");
-    for cap in [0, 1] {
+    let run = |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        model_typed_nonlinear_curve_ids(
+            &ctx, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+    };
+    let below = crate::test_support::allocation_limit_at(
+        ResourceDimension::WorkUnits, Some("creo model typed nonlinear curve ids curves traversal"), run,
+    );
+    for cap in [below, 1] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = cap;
@@ -464,7 +479,22 @@ fn brep_fixed_curve_namespace_keeps_numeric_suffix_admission() {
     let mut ir = typed_curve_id_fixture();
     ir.model.curves.truncate(1);
     ir.model.curves[0].id = CurveId::mint("creo:visibgeom:curve#x").expect("fixture identity");
-    for cap in [1, 2] {
+    let run = |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        model_typed_nonlinear_curve_ids(
+            &ctx, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+    };
+    let below = crate::test_support::allocation_limit_at(
+        ResourceDimension::WorkUnits, Some("creo nonlinear curve number"), run,
+    );
+    for cap in [below, 2] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = cap;

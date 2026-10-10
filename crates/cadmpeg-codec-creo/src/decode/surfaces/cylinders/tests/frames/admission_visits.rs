@@ -27,28 +27,29 @@ fn assert_exact_visits(
     operations: &[&'static str],
     query: impl Fn(&DecodeContext<'_>) -> Result<bool, CodecError>,
 ) {
-    let visits = operations.len() as u64;
-    for cap in 0..=visits {
+    let visits = u64::try_from(operations.len()).expect("fixture visits fit u64");
+    crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, operations, |cap| {
         let arena = DecodeArena::new();
         let policy = visit_policy(cap);
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let result = query(&ctx);
-        let original = if cap == visits {
-            assert!(result.expect("all present visits admitted"));
-            let original = ctx.charge_work_limit(1, "after cylinder visits").expect_err("exact visits");
-            assert_eq!((original.dimension, original.used, original.additional),
-                (ResourceDimension::WorkUnits, visits, 1));
-            original
-        } else {
-            let original = ctx.resource_refusal().expect("visit refusal");
-            assert!(matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original));
-            assert_eq!((original.dimension, original.limit, original.used, original.additional, original.operation),
-                (ResourceDimension::WorkUnits, cap, cap, 1, operations[cap as usize]));
-            original
-        };
-        assert!(matches!(query(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == original));
-        assert_eq!(ctx.resource_refusal(), Some(original));
-    }
+        if let Err(CodecError::ResourceLimit(original)) = &result {
+                        assert_eq!((original.limit, original.used), (cap, cap));
+            assert_eq!(ctx.resource_refusal().as_ref(), Some(original));
+            assert_eq!(original.additional, 1);
+            assert!(matches!(query(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == *original));
+        }
+        result.map(|matched| assert!(matched))
+    });
+    let arena = DecodeArena::new();
+    let policy = visit_policy(visits);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    assert!(query(&ctx).expect("all present visits admitted"));
+    let original = ctx.charge_work_limit(1, "after cylinder visits").expect_err("exact visits");
+    assert_eq!((original.dimension, original.used, original.additional),
+        (ResourceDimension::WorkUnits, visits, 1));
+    assert!(matches!(query(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == original));
+    assert_eq!(ctx.resource_refusal(), Some(original));
 }
 
 #[test]
@@ -153,7 +154,7 @@ fn support_tangent_absence_admits_only_present_planes_and_releases_workspace() {
             unique_support_tangent_cylinder_frame(ctx, stored, &planes).map(|frame| frame.is_none())
         });
         let arena = DecodeArena::new();
-        let policy = visit_policy(count as u64);
+        let policy = visit_policy(u64::try_from(count).expect("fixture count fits u64"));
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         assert!(unique_support_tangent_cylinder_frame(&ctx, stored, &planes).expect("present planes").is_none());
         // Empty-root effective materialized allowance is 16 MiB. Both origin
