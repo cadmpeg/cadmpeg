@@ -238,44 +238,86 @@ fn empty_projection_error(properties: &[PropertyRecord], expected: &str) {
                 placement: crate::native::frame::FiniteFrame::default(),
             },
             BTreeMap::new(),
-        ).expect("grounded joint")
+        )
+        .expect("grounded joint")
     });
     for joints in [Vec::new(), vec![joint]] {
         crate::test_support::with_service_context(&[], |ctx| {
-            let error = super::super::transfer_neutral(ctx, &[], &joints, &[], properties, &[], &[])
-                .expect_err("placement admission before empty output");
+            let error =
+                super::super::transfer_neutral(ctx, &[], &joints, &[], properties, &[], &[])
+                    .expect_err("placement admission before empty output");
             assert!(matches!(error, CodecError::Malformed(message) if message == expected));
         });
     }
 }
 
 fn valid_placement(name: &str) -> PropertyRecord {
-    property("Shape", name, "App::PropertyPlacement", value("PropertyPlacement", &[("Px", "0"), ("Py", "0"), ("Pz", "0"), ("Q0", "0"), ("Q1", "0"), ("Q2", "0"), ("Q3", "1")]))
+    property(
+        "Shape",
+        name,
+        "App::PropertyPlacement",
+        value(
+            "PropertyPlacement",
+            &[
+                ("Px", "0"),
+                ("Py", "0"),
+                ("Pz", "0"),
+                ("Q0", "0"),
+                ("Q1", "0"),
+                ("Q2", "0"),
+                ("Q3", "1"),
+            ],
+        ),
+    )
 }
 
 #[test]
 fn empty_product_projection_rejects_invalid_placement() {
-    let malformed = property("Shape", "LinkPlacement", "App::PropertyPlacement", value("PropertyPlacement", &[("Px", "0"), ("Py", "0"), ("Pz", "0")]));
+    let malformed = property(
+        "Shape",
+        "LinkPlacement",
+        "App::PropertyPlacement",
+        value(
+            "PropertyPlacement",
+            &[("Px", "0"), ("Py", "0"), ("Pz", "0")],
+        ),
+    );
     empty_projection_error(&[malformed], "placement property fcstd:native:property#Shape:LinkPlacement has an invalid Q0 quaternion component");
 }
 
 #[test]
 fn empty_product_projection_rejects_duplicate_placement() {
     let placement = valid_placement("LinkPlacement");
-    empty_projection_error(&[placement.clone(), placement], "product property LinkPlacement occurs more than once");
+    empty_projection_error(
+        &[placement.clone(), placement],
+        "product property LinkPlacement occurs more than once",
+    );
 }
 
 #[test]
 fn empty_product_projection_rejects_ambiguous_placement_policy() {
-    empty_projection_error(&[valid_placement("LinkPlacement"), valid_placement("Placement")], "LinkPlacement and Placement require a valid LinkTransform policy");
+    empty_projection_error(
+        &[
+            valid_placement("LinkPlacement"),
+            valid_placement("Placement"),
+        ],
+        "LinkPlacement and Placement require a valid LinkTransform policy",
+    );
 }
 
 #[test]
 fn non_product_link_placement_decode_preserves_malformed_message() {
     use cadmpeg_ir::Codec;
     let document = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Shape"/></Objects><ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="LinkPlacement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0"/></Property></Properties></Object></ObjectData></Document>"#;
-    let error = crate::FcstdCodec.decode(&mut std::io::Cursor::new(crate::test_support::test_archive::archive(document)), &cadmpeg_ir::DecodeOptions::default()).expect_err("invalid placement on non-product object");
-    assert!(matches!(error, cadmpeg_ir::DecodeFailure::Codec(CodecError::Malformed(message)) if message == "placement property fcstd:native:property#Shape:LinkPlacement has an invalid Q0 quaternion component"));
+    let error = crate::FcstdCodec
+        .decode(
+            &mut std::io::Cursor::new(crate::test_support::test_archive::archive(document)),
+            &cadmpeg_ir::DecodeOptions::default(),
+        )
+        .expect_err("invalid placement on non-product object");
+    assert!(
+        matches!(error, cadmpeg_ir::DecodeFailure::Codec(CodecError::Malformed(message)) if message == "placement property fcstd:native:property#Shape:LinkPlacement has an invalid Q0 quaternion component")
+    );
 }
 
 #[test]
@@ -286,13 +328,24 @@ fn product_parent_identity_retains_only_output_copies() {
         let link = external_occurrence();
         let records = [super::node(&parent, &[link.object.as_str()]), link];
         crate::test_support::with_service_context(&[], |ctx| {
-            let (_, occurrences) = super::super::transfer_neutral(ctx, &records, &[], &[], &[], &[], &[]).expect("parent projection");
-            let cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence } = &occurrences[0].parent else { panic!("child parent") };
+            let (_, occurrences) =
+                super::super::transfer_neutral(ctx, &records, &[], &[], &[], &[], &[])
+                    .expect("parent projection");
+            let cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence } =
+                &occurrences[0].parent
+            else {
+                panic!("child parent")
+            };
             assert_eq!(occurrence, &occurrences[1].id);
             assert_eq!(occurrences[0].ordinal, 0);
             assert_eq!(occurrences[1].ordinal, 0);
             assert_eq!(ctx.resource_refusal(), None);
-            let CodecError::ResourceLimit(limit) = ctx.charge_retained(u64::MAX, "retained projection measure").expect_err("retained overflow") else { panic!("resource refusal") };
+            let CodecError::ResourceLimit(limit) = ctx
+                .charge_retained(u64::MAX, "retained projection measure")
+                .expect_err("retained overflow")
+            else {
+                panic!("resource refusal")
+            };
             assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
             limit.used
         })

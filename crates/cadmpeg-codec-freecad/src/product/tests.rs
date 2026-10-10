@@ -1578,11 +1578,13 @@ fn real_lists_read_both_precisions_within_nonzero_view_bounds() {
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
         assert_eq!(rows, [[2.0, -3.0, 4.0]]);
-        assert!(list_layout::<3>(View::over_retained(&bytes).child(9, end - 1).unwrap(), "ScaleList")
+        assert!(list_layout::<3>(
+            View::over_retained(&bytes).child(9, end - 1).unwrap(),
+            "ScaleList"
+        )
         .is_err());
     }
-    assert!(list_layout::<3>(View::over_retained(&[0; 3]), "ScaleList")
-    .is_err());
+    assert!(list_layout::<3>(View::over_retained(&[0; 3]), "ScaleList").is_err());
 }
 
 #[test]
