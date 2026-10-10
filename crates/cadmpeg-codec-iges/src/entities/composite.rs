@@ -1646,6 +1646,8 @@ fn elevate_nurbs_to_degree(
             return Err(DegreeElevationError::SpanEuclideanNet { span }.into());
         };
         _lane_storage = result_lane_storage;
+        drop(elevated);
+        drop(_elevated_storage);
         let Some(target_knot_count) = target_degree.checked_add(1) else {
             return Err(DegreeElevationError::TargetDegree {
                 degree: stated_target,
@@ -1708,8 +1710,12 @@ fn elevate_nurbs_to_degree(
                 )
             })
             .map_err(DegreeElevationError::Allocation)??;
+        drop(_lane_storage);
         pieces.push((piece, [start, end], ()));
     }
+    drop(homogeneous);
+    drop(knots);
+    drop(net_storage);
     let Some(concatenated) = concatenate_nurbs(ctx, pieces, join_tolerance)? else {
         return Err(DegreeElevationError::SpansDoNotJoin.into());
     };

@@ -323,8 +323,7 @@ fn composite_internal_values_exact_net_peak_reaches_the_next_lane() {
     for rational in [false, true] { internal_value_storage_boundary(rational, true); }
 }
 
-#[test]
-fn composite_internal_value_release_preserves_elevated_geometry_and_backing() {
+fn elevated_geometry_and_backing(degree: u32) {
     const EPS_ELEVATED_POINT: f64 = 1.0e-10;
     for rational in [false, true] {
         let mut curve = internal_value_curve(rational);
@@ -337,10 +336,11 @@ fn composite_internal_value_release_preserves_elevated_geometry_and_backing() {
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut output = ctx.reserve_scoped(0, "test elevated curve output").unwrap();
-        output.with_storage(|| elevate_nurbs_to_degree(&ctx, &mut curve, [0.0, 1.0], 3, None)).unwrap();
-        assert_eq!(curve.degree(), 3);
-        assert_eq!(&curve.knots()[..4], &[0.0; 4]);
-        assert_eq!(&curve.knots()[curve.knots().len() - 4..], &[1.0; 4]);
+        output.with_storage(|| elevate_nurbs_to_degree(&ctx, &mut curve, [0.0, 1.0], degree, None)).unwrap();
+        assert_eq!(curve.degree(), degree);
+        let multiplicity = usize::try_from(degree).unwrap() + 1;
+        assert_eq!(&curve.knots()[..multiplicity], vec![0.0; multiplicity]);
+        assert_eq!(&curve.knots()[curve.knots().len() - multiplicity..], vec![1.0; multiplicity]);
         assert_eq!(matches!(curve.pole_rows(), NurbsPoles3::Rational { .. }), rational);
         for (parameter, expected) in parameters.into_iter().zip(expected) {
             let actual = cadmpeg_ir::eval::decode::nurbs_curve_point_at(
@@ -354,4 +354,79 @@ fn composite_internal_value_release_preserves_elevated_geometry_and_backing() {
         drop(free);
         ctx.finish_session().unwrap();
     }
+}
+
+#[test]
+fn composite_internal_value_release_preserves_elevated_geometry_and_backing() {
+    elevated_geometry_and_backing(3);
+}
+
+fn elevated_net_storage_boundary(rational: bool, exact: bool) {
+    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::scalar::NonZeroReal;
+    let mut curve = internal_value_curve(rational);
+    let before = serde_json::to_value(&curve).unwrap();
+    let scalar = std::mem::size_of::<f64>();
+    let refined = 5 * std::mem::size_of::<[f64; 4]>() + 8 * scalar;
+    let controls = 4 * std::mem::size_of::<FinitePoint3>();
+    let weights = if rational { 4 * std::mem::size_of::<NonZeroReal>() } else { 0 };
+    // The first piece owns its Euclidean lanes and eight knots. Its
+    // homogeneous net has no reader after Euclidean conversion.
+    let prefix = u64::try_from(refined + controls + weights + 8 * scalar).unwrap();
+    let slots = u64::try_from(4 * std::mem::size_of::<(NurbsCurve, [f64; 2], ())>()).unwrap();
+    let cap = prefix + slots - u64::from(!exact);
+    let earlier_euclidean_peak = u64::try_from(refined
+        + 4 * std::mem::size_of::<[f64; 4]>() + controls + weights).unwrap();
+    assert!(earlier_euclidean_peak < cap);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = cap;
+    policy.limits.max_retained_bytes = 0;
+    // Thirty-two items through the first elevated net, four Euclidean
+    // controls, optional four weights, four initial and four suffix knots,
+    // then one piece. Exact storage stops at the next constructor/source.
+    policy.limits.max_collection_items = 32 + 4 + u64::from(rational) * 4 + 4 + 4 + 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = elevate_nurbs_to_degree(&ctx, &mut curve, [0.0, 1.0], 3, None)
+        .expect_err("expected piece or next phase refusal");
+    let first = match error.non_resource() {
+        Err(CodecError::ResourceLimit(first)) => first,
+        _ => panic!("expected original piece storage refusal"),
+    };
+    if exact {
+        assert_eq!(first.dimension, ResourceDimension::CollectionItems);
+        assert_eq!(first.operation, if rational { "IR NURBS paired poles" }
+            else { "iges composite Bezier source copy" });
+        let items = policy.limits.max_collection_items;
+        assert_eq!((first.limit, first.used, first.additional),
+            (items, items, if rational { 1 } else { 3 }));
+    } else {
+        assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
+        assert_eq!(first.operation, "iges composite elevated span");
+        assert_eq!((first.limit, first.used, first.additional), (cap, prefix, slots));
+    }
+    for _ in 0..64 {
+        for target in [3, 2] {
+            let error = elevate_nurbs_to_degree(&ctx, &mut curve, [0.0, 1.0], target, None)
+                .expect_err("expected original refusal before degree recovery");
+            assert!(matches!(error.non_resource(), Err(CodecError::ResourceLimit(last)) if last == first));
+        }
+    }
+    assert_eq!(serde_json::to_value(&curve).unwrap(), before);
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+}
+
+#[test]
+fn composite_elevated_net_releases_before_one_short_piece_storage() {
+    for rational in [false, true] { elevated_net_storage_boundary(rational, false); }
+}
+
+#[test]
+fn composite_elevated_net_exact_piece_peak_reaches_the_next_phase() {
+    for rational in [false, true] { elevated_net_storage_boundary(rational, true); }
+}
+
+#[test]
+fn composite_refined_net_release_preserves_high_degree_geometry_and_backing() {
+    elevated_geometry_and_backing(64);
 }
