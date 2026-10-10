@@ -5137,8 +5137,7 @@ pub(super) fn feature_payload_strings(
                     continue;
                 };
                 ctx.reserve_vec(&mut strings, 1, "NX feature payload strings")?;
-                let text =
-                    ctx.copy_retained_text(value.value.as_str(), "NX feature payload string text")?;
+                let text = value.value.try_into_owned_for_decode(ctx, "NX feature payload string text")?;
                 strings.push(FeaturePayloadString {
                     id: format_feature_history_id(
                         ctx,
@@ -5155,13 +5154,7 @@ pub(super) fn feature_payload_strings(
                         None,
                     )?,
                     ordinal: ordinal_u32,
-                    value: crate::payload_text::PayloadText::new(text).map_err(|error| {
-                        ctx.format_retained(
-                            format_args!("{error}"),
-                            "NX feature payload string error",
-                        )
-                        .map_or_else(|limit| limit, CodecError::InvalidInput)
-                    })?,
+                    value: text,
                     source_offset,
                 });
             }

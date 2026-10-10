@@ -1918,3 +1918,5 @@ fn projected_curve_reference_route_refuses_work_limit() {
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
     );
 }
+
+mod text_projection;

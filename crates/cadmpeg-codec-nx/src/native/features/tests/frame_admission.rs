@@ -403,3 +403,13 @@ frame_limit_tests!(
     surface_string_frame_refuses_scoped_limit,
     surface_string_frame_refuses_work_limit
 );
+
+#[test]
+fn surface_text_projection_copies_the_checked_value() {
+    let (container, payload) = frame_fixture(FrameRoute::SurfaceString);
+    let rows = crate::test_support::with_decode_context(|ctx| run_frame_route(FrameRoute::SurfaceString, ctx, &container, &payload)).unwrap();
+    assert_eq!(rows, 14);
+    let error = crate::test_support::resource_refusal_at(&[], ResourceDimension::WorkUnits,
+        "NX surface payload string text", |ctx| run_frame_route(FrameRoute::SurfaceString, ctx, &container, &payload));
+    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.additional == 5));
+}

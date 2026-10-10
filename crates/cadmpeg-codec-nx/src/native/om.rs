@@ -5841,9 +5841,7 @@ pub(super) fn string_values(
                 let source_offset = entry_offset
                     .checked_add(cadmpeg_core::decode::u64_from_index(value.offset))
                     .ok_or_else(|| ctx.refuse_codec_limit("NX string value source offset", 0, 1))?;
-                let text = ctx.copy_retained_text(value.value.as_str(), "NX string value text")?;
-                let text = PrintableString::new(text)
-                    .map_err(|_| ctx.refuse_codec_limit("validate NX string value", 0, 1))?;
+                let text = value.value.try_into_owned_for_decode(ctx, "NX string value text")?;
                 ctx.reserve_vec(&mut output, 1, "NX native string values")?;
                 output.push(StringValue {
                     id: retained_om_three_number_id(
