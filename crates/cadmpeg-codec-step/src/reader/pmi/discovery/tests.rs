@@ -53,18 +53,27 @@ fn shared_annotations(cyclic: bool) {
         for id in 100..228 {
             let mut claims = BTreeSet::new();
             let mut claim_storage = ctx.reserve_scoped(0, "claim fixture").expect("scope");
-            let text = index.text(
-                id,
-                &exchange,
-                &geometry.value,
-                (&mut claims, &mut claim_storage),
-                (&mut losses, &reports),
-            )
-            .expect("selected text");
+            let text = index
+                .text(
+                    id,
+                    &exchange,
+                    &geometry.value,
+                    (&mut claims, &mut claim_storage),
+                    (&mut losses, &reports),
+                )
+                .expect("selected text");
             assert_eq!(text.as_deref(), Some("shared"));
             assert_eq!(claims, BTreeSet::from([5]));
-            let placement = index.placement(exchange.records().get(&id).expect("annotation"), &exchange, &geometry.value).expect("placement selection");
-            let super::PlacementSelection::Unique(placement) = placement else { panic!("one carrier"); };
+            let placement = index
+                .placement(
+                    exchange.records().get(&id).expect("annotation"),
+                    &exchange,
+                    &geometry.value,
+                )
+                .expect("placement selection");
+            let super::PlacementSelection::Unique(placement) = placement else {
+                panic!("one carrier");
+            };
             assert_eq!(placement.rows()[0][3], 0.0);
         }
         assert!(losses.is_empty());
@@ -110,15 +119,16 @@ fn indexed_annotation_text_replays_invalid_warnings_in_dfs_order() {
     assert!(expected[1].message.contains("record #2"));
     for _ in 0..2 {
         let mut actual = Vec::new();
-        assert!(index.text(
-            1,
-            &exchange,
-            &geometry.value,
-            (&mut BTreeSet::new(), &mut claims),
-            (&mut actual, &reports),
-        )
-        .expect("indexed text query")
-        .is_none());
+        assert!(index
+            .text(
+                1,
+                &exchange,
+                &geometry.value,
+                (&mut BTreeSet::new(), &mut claims),
+                (&mut actual, &reports),
+            )
+            .expect("indexed text query")
+            .is_none());
         assert_eq!(actual, expected);
     }
 }
@@ -151,15 +161,16 @@ fn annotation_index_preserves_cyclic_discovery_results() {
         Some("cycle text")
     );
     assert_eq!(
-        index.text(
-            1,
-            &exchange,
-            &geometry.value,
-            (&mut BTreeSet::new(), &mut claims),
-            (&mut Vec::new(), &reports),
-        )
-        .expect("indexed cyclic text query")
-        .as_deref(),
+        index
+            .text(
+                1,
+                &exchange,
+                &geometry.value,
+                (&mut BTreeSet::new(), &mut claims),
+                (&mut Vec::new(), &reports),
+            )
+            .expect("indexed cyclic text query")
+            .as_deref(),
         Some("cycle text")
     );
 }
@@ -168,17 +179,36 @@ fn annotation_index_preserves_cyclic_discovery_results() {
 fn annotation_index_keeps_each_cyclic_root_query_independent() {
     let exchange = exchange("#1=ITEM(#2,#3);#2=ITEM(#1);#3=TEXT_LITERAL('text',$,.LEFT.);");
     crate::test_support::with_service_context(b"", |_, ctx| {
-        let geometry = crate::reader::geometry::decode(&exchange, &mut CadIr::empty(), ctx).expect("geometry");
+        let geometry =
+            crate::reader::geometry::decode(&exchange, &mut CadIr::empty(), ctx).expect("geometry");
         let mut index = super::AnnotationDiscoveryIndex::new(ctx).expect("index");
-        let reports = std::cell::RefCell::new(ctx.reserve_scoped(0, "test reports").expect("scope"));
+        let reports =
+            std::cell::RefCell::new(ctx.reserve_scoped(0, "test reports").expect("scope"));
         let mut claims = ctx.reserve_scoped(0, "test claims").expect("scope");
         for id in [2, 1, 2] {
             let mut expected_used = BTreeSet::new();
             let mut expected_losses = Vec::new();
-            let expected = super::super::find_annotation_text(id, &exchange, &mut BTreeSet::new(), (&mut expected_used, &mut claims), (&mut expected_losses, &reports), 0, ctx).expect("root-specific DFS");
+            let expected = super::super::find_annotation_text(
+                id,
+                &exchange,
+                &mut BTreeSet::new(),
+                (&mut expected_used, &mut claims),
+                (&mut expected_losses, &reports),
+                0,
+                ctx,
+            )
+            .expect("root-specific DFS");
             let mut used = BTreeSet::new();
             let mut losses = Vec::new();
-            let actual = index.text(id, &exchange, &geometry.value, (&mut used, &mut claims), (&mut losses, &reports)).expect("cached root query");
+            let actual = index
+                .text(
+                    id,
+                    &exchange,
+                    &geometry.value,
+                    (&mut used, &mut claims),
+                    (&mut losses, &reports),
+                )
+                .expect("cached root query");
             assert_eq!(actual.as_deref(), Some("text"));
             assert_eq!(actual, expected);
             assert_eq!(used, expected_used);
@@ -192,7 +222,9 @@ fn annotation_discovery_shares_wide_child_selection_summaries() {
     for count in [16_u64, 32, 64] {
         let mut records = String::from("#1=CARTESIAN_POINT('',(0.,0.,0.));#2=DIRECTION('',(0.,0.,1.));#3=DIRECTION('',(1.,0.,0.));#5=ITEM((");
         for id in 10..10 + count {
-            if id != 10 { records.push(','); }
+            if id != 10 {
+                records.push(',');
+            }
             write!(records, "#{id}").expect("text reference");
         }
         records.push_str("));");
@@ -200,11 +232,13 @@ fn annotation_discovery_shares_wide_child_selection_summaries() {
             write!(records, "#{id}=TEXT_LITERAL('text {id}',#{placement},.LEFT.);#{placement}=AXIS2_PLACEMENT_3D('',#1,#2,#3);", placement = id + 500).expect("text and placement");
         }
         for id in 1000..1000 + count {
-            write!(records, "#{id}=ANNOTATION_TEXT_OCCURRENCE('',(),#5);").expect("annotation root");
+            write!(records, "#{id}=ANNOTATION_TEXT_OCCURRENCE('',(),#5);")
+                .expect("annotation root");
         }
         let exchange = exchange(&records);
         let setup = cadmpeg_test_support::service_decode_context();
-        let geometry = crate::reader::geometry::decode(&exchange, &mut CadIr::empty(), &setup).expect("geometry");
+        let geometry = crate::reader::geometry::decode(&exchange, &mut CadIr::empty(), &setup)
+            .expect("geometry");
         let mut policy = DecodePolicy::service();
         // At 64 roots and carriers, copied root closures need at least 4096
         // text slots. The complete text and placement queries fit in 1280 items.
@@ -212,18 +246,37 @@ fn annotation_discovery_shares_wide_child_selection_summaries() {
         policy.limits.max_work_units = 10_000 * (2 * count);
         crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
             let mut index = super::AnnotationDiscoveryIndex::new(ctx).expect("index");
-            let reports = std::cell::RefCell::new(ctx.reserve_scoped(0, "test reports").expect("scope"));
+            let reports =
+                std::cell::RefCell::new(ctx.reserve_scoped(0, "test reports").expect("scope"));
             let mut claims = ctx.reserve_scoped(0, "test claims").expect("scope");
             let mut losses = Vec::new();
             let mut used = BTreeSet::new();
             for id in 1000..1000 + count {
-                assert!(index.text(id, &exchange, &geometry.value, (&mut used, &mut claims), (&mut losses, &reports)).expect("shared text summary").is_none());
-                let placement = index.placement(exchange.records().get(&id).expect("root"), &exchange, &geometry.value).expect("shared placement summary");
-                assert!(matches!(placement, super::PlacementSelection::Ambiguous(found) if u64::try_from(found).expect("carrier count") == count));
+                assert!(index
+                    .text(
+                        id,
+                        &exchange,
+                        &geometry.value,
+                        (&mut used, &mut claims),
+                        (&mut losses, &reports)
+                    )
+                    .expect("shared text summary")
+                    .is_none());
+                let placement = index
+                    .placement(
+                        exchange.records().get(&id).expect("root"),
+                        &exchange,
+                        &geometry.value,
+                    )
+                    .expect("shared placement summary");
+                assert!(
+                    matches!(placement, super::PlacementSelection::Ambiguous(found) if u64::try_from(found).expect("carrier count") == count)
+                );
             }
             assert!(used.is_empty());
             assert_eq!(u64::try_from(losses.len()).expect("loss count"), count);
-            assert!(losses.iter().all(|loss| loss.code == crate::loss::StepLossCode::PresentationAnnotationTextUnordered.kind()));
+            assert!(losses.iter().all(|loss| loss.code
+                == crate::loss::StepLossCode::PresentationAnnotationTextUnordered.kind()));
             assert_eq!(index.summaries.len(), 1);
             assert_eq!(index.placements.len(), 1);
         });
@@ -232,21 +285,44 @@ fn annotation_discovery_shares_wide_child_selection_summaries() {
 
 #[test]
 fn annotation_discovery_releases_cached_materialization() {
-    let exchange = exchange("#1=ITEM(#2,#3);#2=TEXT_LITERAL('a',$,.LEFT.);#3=TEXT_LITERAL('b',$,.LEFT.);");
+    let exchange =
+        exchange("#1=ITEM(#2,#3);#2=TEXT_LITERAL('a',$,.LEFT.);#3=TEXT_LITERAL('b',$,.LEFT.);");
     let setup = cadmpeg_test_support::service_decode_context();
-    let geometry = crate::reader::geometry::decode(&exchange, &mut CadIr::empty(), &setup).expect("geometry");
+    let geometry =
+        crate::reader::geometry::decode(&exchange, &mut CadIr::empty(), &setup).expect("geometry");
     crate::test_support::with_service_context(b"", |_, ctx| {
         {
             let mut index = super::AnnotationDiscoveryIndex::new(ctx).expect("index");
-            let reports = std::cell::RefCell::new(ctx.reserve_scoped(0, "test reports").expect("scope"));
+            let reports =
+                std::cell::RefCell::new(ctx.reserve_scoped(0, "test reports").expect("scope"));
             let mut claims = ctx.reserve_scoped(0, "test claims").expect("scope");
             let mut used = BTreeSet::new();
             let mut losses = Vec::new();
-            assert!(index.text(1, &exchange, &geometry.value, (&mut used, &mut claims), (&mut losses, &reports)).expect("ambiguous selection").is_none());
+            assert!(index
+                .text(
+                    1,
+                    &exchange,
+                    &geometry.value,
+                    (&mut used, &mut claims),
+                    (&mut losses, &reports)
+                )
+                .expect("ambiguous selection")
+                .is_none());
             assert_eq!(losses.len(), 1);
         }
-        let cadmpeg_core::CodecError::ResourceLimit(refusal) = ctx.reserve_scoped(u64::MAX, "test cache release observation").expect_err("observation exceeds limit") else { panic!("resource refusal"); };
-        assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::MaterializedBytes);
-        assert_eq!(refusal.used, 0, "cached strings, summary nodes and report buffers were released");
+        let cadmpeg_core::CodecError::ResourceLimit(refusal) = ctx
+            .reserve_scoped(u64::MAX, "test cache release observation")
+            .expect_err("observation exceeds limit")
+        else {
+            panic!("resource refusal");
+        };
+        assert_eq!(
+            refusal.dimension,
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+        );
+        assert_eq!(
+            refusal.used, 0,
+            "cached strings, summary nodes and report buffers were released"
+        );
     });
 }

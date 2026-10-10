@@ -198,16 +198,31 @@ fn failed_measure_cycle_reuses_duplicate_edges() {
             writeln!(source, "#{id}=ITEM(#{next},#{next});", next = id + 1).expect("cyclic edge");
         }
         writeln!(source, "#{count}=ITEM(#1);ENDSEC;END-ISO-10303-21;").expect("cycle closure");
-        let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("cycle graph");
+        let (exchange, _) =
+            crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+                .expect("cycle graph");
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         // Each record needs one active entry and one completed result.
         // Exponential replay exceeds this linear collection bound.
         policy.limits.max_collection_items = 2 * count;
         crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
             let mut losses = Vec::new();
-            let reports = std::cell::RefCell::new(ctx.reserve_scoped(0, "test reports").expect("scope"));
-            let mut measurements = super::super::MeasureContext { length_scale: 1.0, angle_scale: 1.0, graph_limit: 64, losses: (&mut losses, &reports) };
-            assert!(super::super::measure(&crate::parse::Value::Reference(1), &exchange, &mut measurements, ctx).expect("linear cyclic failure").is_none());
+            let reports =
+                std::cell::RefCell::new(ctx.reserve_scoped(0, "test reports").expect("scope"));
+            let mut measurements = super::super::MeasureContext {
+                length_scale: 1.0,
+                angle_scale: 1.0,
+                graph_limit: 64,
+                losses: (&mut losses, &reports),
+            };
+            assert!(super::super::measure(
+                &crate::parse::Value::Reference(1),
+                &exchange,
+                &mut measurements,
+                ctx
+            )
+            .expect("linear cyclic failure")
+            .is_none());
             assert!(losses.is_empty());
         });
     }
@@ -216,13 +231,49 @@ fn failed_measure_cycle_reuses_duplicate_edges() {
 #[test]
 fn failed_measure_cache_requires_the_same_active_prefix() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM(#2,#3);#2=ITEM(#4,2.);#3=ITEM(#4);#4=ITEM(#2);ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("contextual cycle");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("contextual cycle");
     crate::test_support::with_service_context(b"", |_, ctx| {
         let mut losses = Vec::new();
-        let reports = std::cell::RefCell::new(ctx.reserve_scoped(0, "test reports").expect("scope"));
-        let mut measurements = super::super::MeasureContext { length_scale: 1.0, angle_scale: 1.0, graph_limit: 64, losses: (&mut losses, &reports) };
+        let reports =
+            std::cell::RefCell::new(ctx.reserve_scoped(0, "test reports").expect("scope"));
+        let mut measurements = super::super::MeasureContext {
+            length_scale: 1.0,
+            angle_scale: 1.0,
+            graph_limit: 64,
+            losses: (&mut losses, &reports),
+        };
         let mut walk = super::super::MeasureWalk::new(ctx).expect("cache");
-        assert_eq!(super::super::measure_inner(&crate::parse::Value::Reference(2), &exchange, &mut walk, 0, &mut measurements, ctx).expect("first context").expect("number").value.get(), 2.0);
-        assert_eq!(super::super::measure_inner(&crate::parse::Value::Reference(3), &exchange, &mut walk, 0, &mut measurements, ctx).expect("second context").expect("number").value.get(), 2.0);
+        assert_eq!(
+            super::super::measure_inner(
+                &crate::parse::Value::Reference(2),
+                &exchange,
+                &mut walk,
+                0,
+                &mut measurements,
+                ctx
+            )
+            .expect("first context")
+            .expect("number")
+            .value
+            .get(),
+            2.0
+        );
+        assert_eq!(
+            super::super::measure_inner(
+                &crate::parse::Value::Reference(3),
+                &exchange,
+                &mut walk,
+                0,
+                &mut measurements,
+                ctx
+            )
+            .expect("second context")
+            .expect("number")
+            .value
+            .get(),
+            2.0
+        );
     });
 }

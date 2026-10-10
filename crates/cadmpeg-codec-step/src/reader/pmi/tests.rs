@@ -21,8 +21,8 @@ use crate::{StepCodec, StepSchema, StepWriteOptions};
 mod case_equality;
 mod collection_limits;
 mod known_length;
-mod string_limits;
 mod scratch_lifetimes;
+mod string_limits;
 
 #[test]
 pub(crate) fn decode_transfers_ap242_semantic_pmi() {
@@ -1769,5 +1769,5 @@ fn typed_omitted_descent_refuses_work_limit() {
 
 mod typed_work;
 
-mod characteristic_claims;
 mod characteristic_analysis;
+mod characteristic_claims;
