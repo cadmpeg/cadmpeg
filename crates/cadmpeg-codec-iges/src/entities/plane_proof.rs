@@ -276,10 +276,10 @@ impl Default for PlaneProofSequences {
 }
 
 impl PlaneProofSequences {
-    pub(super) fn contains(&self, sequence: &u32) -> bool {
+    pub(super) fn contains(&self, sequence: u32) -> bool {
         match self {
-            Self::Inline { values, len } => values[..*len].contains(sequence),
-            Self::Indexed(values) => values.contains(sequence),
+            Self::Inline { values, len } => values[..*len].contains(&sequence),
+            Self::Indexed(values) => values.contains(&sequence),
         }
     }
 

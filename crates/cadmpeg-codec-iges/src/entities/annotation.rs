@@ -252,7 +252,7 @@ impl<'ctx, 'ir> SectionedAreaGeometryCache<'ctx, 'ir> {
                 return Ok(proof.result);
             }
         }
-        if self.sequences.contains(&sequence) {
+        if self.sequences.contains(sequence) {
             for neighbor in super::plane_proof::coplanarity_neighbors(plane_key, pattern_plane.1) {
                 if let Some(proof) = ctx.get_btree_map(
                     &self.proofs,
@@ -318,7 +318,7 @@ impl<'ctx, 'ir> SectionedAreaGeometryCache<'ctx, 'ir> {
                 "iges section coplanarity proof cache",
             )
         })?;
-        if !self.sequences.contains(&sequence) {
+        if !self.sequences.contains(sequence) {
             self.storage.with_storage(|| {
                 self.sequences
                     .insert(sequence, ctx, "iges section coplanarity proof sequences")

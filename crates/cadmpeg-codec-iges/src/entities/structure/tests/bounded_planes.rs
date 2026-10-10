@@ -668,7 +668,7 @@ fn repeated_plane_boundaries_reuse_the_complete_geometric_proof() {
             .unwrap()
             .unwrap();
         let mut proofs = super::super::PlaneBoundaryProofs {
-            sequences: Default::default(),
+            sequences: crate::entities::plane_proof::PlaneProofSequences::default(),
             proven: std::collections::BTreeMap::new(),
             storage: ctx
                 .reserve_scoped(0, "iges plane boundary proof cache")
@@ -730,7 +730,7 @@ fn repeated_plane_boundaries_reuse_the_complete_geometric_proof() {
             let index = ModelIndex::build(decoded.ir(), cadmpeg_ir::index::StandardIndex);
             let plane = super::super::plane_carrier(&index, 1, ctx)?.unwrap();
             let mut proofs = super::super::PlaneBoundaryProofs {
-                sequences: Default::default(),
+                sequences: crate::entities::plane_proof::PlaneProofSequences::default(),
                 proven: std::collections::BTreeMap::new(),
                 storage: ctx.reserve_scoped(0, "iges plane boundary proof cache")?,
             };
@@ -784,7 +784,7 @@ fn repeated_plane_boundaries_reuse_the_complete_geometric_proof() {
                 let index = ModelIndex::build(decoded.ir(), cadmpeg_ir::index::StandardIndex);
                 let plane = super::super::plane_carrier(&index, 1, ctx)?.unwrap();
                 let mut proofs = super::super::PlaneBoundaryProofs {
-                    sequences: Default::default(),
+                    sequences: crate::entities::plane_proof::PlaneProofSequences::default(),
                     proven: std::collections::BTreeMap::new(),
                     storage: ctx.reserve_scoped(0, "iges plane boundary proof cache")?,
                 };
@@ -908,7 +908,7 @@ fn bounded_plane_cache_reuses_oblique_translations_of_an_uncertified_boundary() 
     let entries = std::collections::BTreeMap::new();
     crate::test_support::with_service_context(&[], |ctx| {
         let mut proofs = super::super::PlaneBoundaryProofs {
-            sequences: Default::default(),
+            sequences: crate::entities::plane_proof::PlaneProofSequences::default(),
             proven: std::collections::BTreeMap::new(),
             storage: ctx.reserve_scoped(0, "test bounded plane proofs").unwrap(),
         };
@@ -978,7 +978,7 @@ fn bounded_plane_cache_preserves_origin_sensitive_simplicity() {
     let entries = std::collections::BTreeMap::new();
     crate::test_support::with_service_context(&[], |ctx| {
         let make_proofs = || super::super::PlaneBoundaryProofs {
-            sequences: Default::default(),
+            sequences: crate::entities::plane_proof::PlaneProofSequences::default(),
             proven: std::collections::BTreeMap::new(),
             storage: ctx
                 .reserve_scoped(0, "test origin-sensitive plane proofs")
