@@ -481,3 +481,122 @@ fn dynamic_angle_accepts_reversed_solver_line_direction() {
         .iter()
         .all(|operand| operand.entity_ref.is_none()));
 }
+
+fn explicit_point_relation() -> (
+    [crate::records::SketchInputEntity; 2],
+    crate::records::FeatureInputRelationInstance,
+) {
+    let points = [
+        sketch_marker("a", 0, 0, crate::records::SketchInputKind::Point, Some([0.0, 0.0])),
+        sketch_marker("b", 1, 1, crate::records::SketchInputKind::Point, Some([1.0, 0.0])),
+    ];
+    let mut source = dynamic_scalar(2, FeatureInputOperandKind::D6, &[0, 1], 1.0);
+    source.operands[0].entity_ref = Some("a".into());
+    source.operands[1].entity_ref = Some("b".into());
+    let relation = crate::records::FeatureInputRelationInstance {
+        id: "relation".into(), parent: "lane".into(), ordinal: 0, offset: 0,
+        family: FeatureInputRelationFamily::PointPointDistance,
+        class_ref: "class".into(), feature_ref: "sketch".into(),
+        scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+            vec![source.id], None, None,
+        ).unwrap(),
+        operands: source.operands,
+    };
+    (points, relation)
+}
+
+#[test]
+fn strict_point_match_does_not_materialize_coordinate_fallback() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let (points, expected) = explicit_point_relation();
+    let roster = [&points[0], &points[1]];
+    let mut policy = DecodePolicy::service();
+    // Two four-slot borrowed candidate vectors: 32 + 32 bytes.
+    // One four-slot (&str, &str) match vector: 128 bytes.
+    policy.limits.max_materialized_bytes = 32 + 32 + 128;
+    policy.limits.max_retained_bytes = 2 * 64;
+    policy.limits.max_collection_items = 3 * 64;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    for _ in 0..64 {
+        let mut relation = expected.clone();
+        super::super::bind_dynamic_point_relation(&ctx, &mut relation, &roster, 1.0, None).unwrap();
+        assert_eq!(relation, expected);
+        let released = ctx.reserve_scoped(192, "released strict point workspaces").unwrap();
+        drop(released);
+    }
+    assert_eq!(ctx.resource_refusal(), None);
+}
+
+#[test]
+fn strict_point_match_leaves_coordinate_probe_armed() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let (points, expected) = explicit_point_relation();
+    let roster = [&points[0], &points[1]];
+    let mut relation = expected.clone();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 192;
+    policy.limits.max_retained_bytes = 2;
+    policy.limits.max_collection_items = 3;
+    policy.limits.max_work_units = u64::MAX;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits, "collect SLDPRT relation coordinate points", None,
+    );
+    super::super::bind_dynamic_point_relation(&ctx, &mut relation, &roster, 1.0, None).unwrap();
+    assert_eq!(relation, expected);
+    assert_eq!(ctx.resource_refusal(), None);
+    let Err(CodecError::ResourceLimit(limit)) =
+        ctx.charge_work(1, "collect SLDPRT relation coordinate points")
+    else { panic!("strict match must leave coordinate probe armed"); };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(limit.operation, "collect SLDPRT relation coordinate points");
+    assert_eq!(limit.additional, 1);
+    assert_eq!(ctx.resource_refusal(), Some(limit));
+    assert!(matches!(ctx.charge_work(0, "after unused coordinate probe"),
+        Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    drop(probe);
+}
+
+#[test]
+fn strict_point_match_refuses_exact_storage_boundaries() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let (points, expected) = explicit_point_relation();
+    let roster = [&points[0], &points[1]];
+    for (dimension, cap, used, additional, operation) in [
+        (ResourceDimension::MaterializedBytes, 191, 64, 128, "collect SLDPRT dynamic point matches"),
+        (ResourceDimension::RetainedBytes, 1, 1, 1, "retain SLDPRT relation record identity"),
+        (ResourceDimension::CollectionItems, 2, 2, 1, "collect SLDPRT dynamic point matches"),
+    ] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 192;
+        policy.limits.max_retained_bytes = 2;
+        policy.limits.max_collection_items = 3;
+        match dimension {
+            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+            _ => panic!("strict point storage dimension"),
+        }
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut relation = expected.clone();
+        let Err(CodecError::ResourceLimit(limit)) =
+            super::super::bind_dynamic_point_relation(&ctx, &mut relation, &roster, 1.0, None)
+        else { panic!("strict point boundary must refuse"); };
+        assert_eq!(relation, expected);
+        assert_eq!(limit.dimension, dimension);
+        assert_eq!(limit.operation, operation);
+        assert_eq!(limit.limit, cap);
+        assert_eq!(limit.used, used);
+        assert_eq!(limit.additional, additional);
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+        assert!(matches!(ctx.charge_work(0, "after strict point storage refusal"),
+            Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    }
+}

@@ -2019,18 +2019,26 @@ fn bind_dynamic_point_relation(
         temporary_storage.with_storage(|| dynamic_point_candidates(ctx, entities, first, true))?;
     let second_candidates =
         temporary_storage.with_storage(|| dynamic_point_candidates(ctx, entities, second, true))?;
-    let mut coordinate_points = Vec::new();
-    for entity in ctx.admit_iter(entities, "collect SLDPRT relation coordinate points")? {
-        if is_finite_point(entity) {
-            temporary_storage.with_storage(|| {
-                ctx.push_vec(
-                    &mut coordinate_points,
-                    *entity,
-                    "collect SLDPRT relation coordinate points",
-                )
-            })?;
-        }
-    }
+    let coordinate_roster = std::cell::OnceCell::new();
+    let coordinate_points = || {
+        let (points, _) = match coordinate_roster.get() {
+            Some(points) => points,
+            None => {
+                const OPERATION: &str = "collect SLDPRT relation coordinate points";
+                let built = ctx.with_scoped_storage(OPERATION, || {
+                    let mut points = Vec::new();
+                    for entity in ctx.admit_iter(entities, OPERATION)? {
+                        if is_finite_point(entity) {
+                            ctx.push_vec(&mut points, *entity, OPERATION)?;
+                        }
+                    }
+                    Ok::<_, CodecError>(points)
+                })?;
+                coordinate_roster.get_or_init(|| built)
+            }
+        };
+        Ok::<_, CodecError>(points.as_slice())
+    };
     let mut matches = temporary_storage.with_storage(|| {
         dynamic_point_matches(
             ctx,
@@ -2040,14 +2048,15 @@ fn bind_dynamic_point_relation(
             horizontal,
         )
     })?;
-    if matches.is_empty() {
+    if matches.is_empty() && (first.entity_ref.is_none() || second.entity_ref.is_none()) {
+        let coordinate_points = coordinate_points()?;
         let first_fallback = if first.entity_ref.is_none() {
-            &coordinate_points
+            coordinate_points
         } else {
             &first_candidates
         };
         let second_fallback = if second.entity_ref.is_none() {
-            &coordinate_points
+            coordinate_points
         } else {
             &second_candidates
         };
@@ -2055,7 +2064,7 @@ fn bind_dynamic_point_relation(
             dynamic_point_matches(ctx, first_fallback, second_fallback, target, horizontal)
         })?;
     }
-    if matches.is_empty() {
+    if matches.is_empty() && (first.entity_ref.is_some() || second.entity_ref.is_some()) {
         let first_relaxed = if first.entity_ref.is_some() {
             Some(
                 temporary_storage
@@ -2082,14 +2091,15 @@ fn bind_dynamic_point_relation(
             )
         })?;
     }
-    if matches.is_empty() {
+    if matches.is_empty() && (first.entity_ref.is_some() || second.entity_ref.is_some()) {
+        let coordinate_points = coordinate_points()?;
         let first_relaxed = if first.entity_ref.is_some() {
-            &coordinate_points
+            coordinate_points
         } else {
             &first_candidates
         };
         let second_relaxed = if second.entity_ref.is_some() {
-            &coordinate_points
+            coordinate_points
         } else {
             &second_candidates
         };
@@ -2097,6 +2107,7 @@ fn bind_dynamic_point_relation(
             dynamic_point_matches(ctx, first_relaxed, second_relaxed, target, horizontal)
         })?;
     }
+    drop(coordinate_roster);
     ctx.sort_unstable_by(
         &mut matches,
         |value| value,
