@@ -3745,6 +3745,7 @@ pub(super) fn project<'ctx>(
             )
         })?
         else {
+            drop(native_weight_storage);
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -3759,6 +3760,8 @@ pub(super) fn project<'ctx>(
             |weight| Ok(PositiveReal::new(*weight).is_some()),
             "iges NURBS surface weight positivity",
         )? {
+            drop(native_weights);
+            drop(native_weight_storage);
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -3791,6 +3794,8 @@ pub(super) fn project<'ctx>(
         };
         let polynomial = flags[2] == Some(1);
         if polynomial && !equal_weights {
+            drop(native_weights);
+            drop(native_weight_storage);
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -3801,6 +3806,8 @@ pub(super) fn project<'ctx>(
             continue;
         }
         if !polynomial && equal_weights {
+            drop(native_weights);
+            drop(native_weight_storage);
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -3818,6 +3825,8 @@ pub(super) fn project<'ctx>(
             |index| Ok(record.number(index).and_then(FiniteReal::new).is_some()),
             "iges NURBS surface source poles",
         )? {
+            drop(native_weights);
+            drop(native_weight_storage);
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -3833,6 +3842,8 @@ pub(super) fn project<'ctx>(
                 .and_then(FiniteReal::new)
         });
         let [Some(u_start), Some(u_end), Some(v_start), Some(v_end)] = ranges else {
+            drop(native_weights);
+            drop(native_weight_storage);
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -3868,6 +3879,8 @@ pub(super) fn project<'ctx>(
             })
         };
         let Some(u_range) = clamp_range(range_start, [ranges[0], ranges[1]], u_domain) else {
+            drop(native_weights);
+            drop(native_weight_storage);
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -3881,6 +3894,8 @@ pub(super) fn project<'ctx>(
             continue;
         };
         let Some(v_range) = clamp_range(range_start + 2, [ranges[2], ranges[3]], v_domain) else {
+            drop(native_weights);
+            drop(native_weight_storage);
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -3907,6 +3922,8 @@ pub(super) fn project<'ctx>(
         }) {
             Ok(transform) => transform,
             Err(error) => {
+                drop(native_weights);
+                drop(native_weight_storage);
                 let message = error.non_resource()?;
                 super::push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{message}"))?;
                 continue;
