@@ -456,6 +456,8 @@ pub(super) fn nurbs_surface_requested_jet(
                     third, fourth,
                     fifth: if polynomial_degree.is_some_and(|degree| degree < 5) {
                         Ok([FiniteVector3::ZERO; 6])
+                    } else if polynomial_degree.is_some() {
+                        higher::fifth::evaluate(scratch, &local)
                     } else { Err(EvaluationFailure::NoValue) },
                 }
             } else if request.needs_fourth() { HigherPartials::Fourth { third, fourth } }

@@ -9,6 +9,7 @@ use cadmpeg_core::decode::ScopedReservation;
 pub(in crate::eval) struct BasisRows<'ctx, const N: usize> {
     backing: Backing<'ctx, N>,
     fourth_available: bool,
+    fifth_available: bool,
 }
 
 enum Backing<'ctx, const N: usize> {
@@ -25,7 +26,7 @@ struct HeapRows<'ctx, const N: usize> {
 impl<'ctx, const N: usize> BasisRows<'ctx, N> {
     fn new(scratch: &decode::Scratch<'ctx, '_>, support: usize) -> Option<Self> {
         if support <= 4 {
-            return Some(Self { backing: Backing::Inline { rows: [[0.0; N]; 4], len: support }, fourth_available: N == 5 });
+            return Some(Self { backing: Backing::Inline { rows: [[0.0; N]; 4], len: support }, fourth_available: N >= 5, fifth_available: N == 6 });
         }
         let (rows, storage) = scratch.temporary_vec(support, "IR requested curve basis storage")?;
         let mut heap = HeapRows { rows, _storage: storage };
@@ -34,7 +35,7 @@ impl<'ctx, const N: usize> BasisRows<'ctx, N> {
             scratch.work(1, "IR requested curve basis initialization")?;
             heap.rows.push([0.0; N]);
         }
-        Some(Self { backing: Backing::Heap(heap), fourth_available: N == 5 })
+        Some(Self { backing: Backing::Heap(heap), fourth_available: N >= 5, fifth_available: N == 6 })
     }
 
     pub(in crate::eval) fn as_slice(&self) -> &[[f64; N]] {
@@ -46,6 +47,8 @@ impl<'ctx, const N: usize> BasisRows<'ctx, N> {
 
     pub(in crate::eval) fn fourth_available(&self) -> bool { self.fourth_available }
 
+    pub(in crate::eval) fn fifth_available(&self) -> bool { self.fifth_available }
+
     fn as_mut_slice(&mut self) -> &mut [[f64; N]] {
         match &mut self.backing {
             Backing::Inline { rows, len } => &mut rows[..*len],
@@ -54,8 +57,8 @@ impl<'ctx, const N: usize> BasisRows<'ctx, N> {
     }
 }
 
-/// Four or five local-coordinate basis orders in one degree triangle.
-/// Loss of a requested fifth lane leaves the completed first four intact.
+/// Four, five or six local-coordinate basis orders in one degree triangle.
+/// Loss of a higher lane leaves the completed lower orders intact.
 /// Nonzero coefficients lost outside the normal range leave this finite-row
 /// representation unavailable. Exact zero coefficients remain exact zero.
 pub(in crate::eval) fn rows<'ctx, const N: usize>(
@@ -66,7 +69,7 @@ pub(in crate::eval) fn rows<'ctx, const N: usize>(
     t: FiniteReal,
     width: ScaledValue,
 ) -> Option<BasisRows<'ctx, N>> {
-    const { assert!(N == 4 || N == 5) };
+    const { assert!(N == 4 || N == 5 || N == 6) };
     scratch.work(0, "IR requested curve basis boundary")?;
     let support = degree.checked_add(1)?;
     let variable = support > 4;
@@ -76,7 +79,10 @@ pub(in crate::eval) fn rows<'ctx, const N: usize>(
     for level in 1..=degree {
         // D4 at this degree reads only the completed D3 of the lower degree.
         // A lost lower D4 does not constrain this independently computed row.
-        next.fourth_available = N == 5;
+        next.fourth_available = N >= 5;
+        // D5 reads the lower degree's D4. An unavailable D4 is not zero.
+        // Below degree5 the fifth derivative is identically zero.
+        next.fifth_available = N == 6 && (level < 5 || lower.fourth_available);
         if variable {
             scratch.admission.independent_cost::<()>(Some(1)).ok()?;
             scratch.work(1, "IR requested curve basis row")?;
@@ -107,8 +113,9 @@ pub(in crate::eval) fn rows<'ctx, const N: usize>(
                     sums[0].add_factors([coefficient, values[0]]);
                 }
                 let lower_needed = values[..level.min(3)].iter().any(|value| *value != 0.0);
-                let fourth_needed = N == 5 && next.fourth_available && level >= 4 && values[3] != 0.0;
-                if lower_needed || fourth_needed {
+                let fourth_needed = N >= 5 && next.fourth_available && level >= 4 && values[3] != 0.0;
+                let fifth_needed = N == 6 && next.fifth_available && level >= 5 && values[4] != 0.0;
+                if lower_needed || fourth_needed || fifth_needed {
                     let mut denominator = ExactSignedSum::default();
                     denominator.add_factors([end_knot.get()]);
                     denominator.add_factors([-start_knot.get()]);
@@ -116,7 +123,8 @@ pub(in crate::eval) fn rows<'ctx, const N: usize>(
                         .map(FiniteReal::get).filter(|ratio| ratio.is_normal());
                     let Some(ratio) = ratio else {
                         if lower_needed { return None; }
-                        next.fourth_available = false;
+                        if fourth_needed { next.fourth_available = false; }
+                        if fifth_needed { next.fifth_available = false; }
                         continue;
                     };
                     let signed_degree = if left_side { degree_real } else { -degree_real };
@@ -124,17 +132,20 @@ pub(in crate::eval) fn rows<'ctx, const N: usize>(
                         sums[order].add_factors([signed_degree, ratio, values[order - 1]]);
                     }
                     if fourth_needed { sums[4].add_factors([signed_degree, ratio, values[3]]); }
+                    if fifth_needed { sums[5].add_factors([signed_degree, ratio, values[4]]); }
                 }
             }
             let mut values = [0.0; N];
             for (order, (value, sum)) in values.iter_mut().zip(sums).enumerate() {
                 if order == 4 && !next.fourth_available { continue; }
+                if order == 5 && !next.fifth_available { continue; }
                 if let Some(sum) = sum.finish() {
                     let coefficient = sum.finite().ok().map(FiniteReal::get)
                         .filter(|coefficient| coefficient.is_normal());
                     let Some(coefficient) = coefficient else {
                         if order < 4 { return None; }
-                        next.fourth_available = false;
+                        if order == 4 { next.fourth_available = false; }
+                        else { next.fifth_available = false; }
                         continue;
                     };
                     *value = coefficient;

@@ -5,6 +5,7 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 use cadmpeg_core::CodecError;
 
 mod fourth;
+mod fifth;
 
 fn width() -> ScaledValue {
     let mut sum = ExactSignedSum::default();
