@@ -67,7 +67,7 @@ pub(crate) fn transfer(
                 ctx,
                 property,
                 geometry_kind.value_tag(),
-                Some(admitted_document.document()),
+                admitted_document.document(),
             )
         })?;
         let _root_storage = root_entry.1;
@@ -153,25 +153,8 @@ fn validate_value_root(
     ctx: &DecodeContext<'_>,
     property: &PropertyRecord,
     expected_tag: &str,
-    document: Option<&roxmltree::Document<'_>>,
+    document: &roxmltree::Document<'_>,
 ) -> Result<Option<String>, CodecError> {
-    let admitted_document;
-    let document = if let Some(document) = document {
-        document
-    } else {
-        admitted_document = ctx
-            .parse_xml(property.xml.text(), "FreeCAD XML tree")
-            .or_else(|error| {
-                let CodecError::Malformed(error) = error else {
-                    return Err(error);
-                };
-                Err(CodecError::Malformed(ctx.format_retained(
-                    format_args!("invalid geometry property XML {}: {error}", property.id),
-                    "FreeCAD geometry XML error",
-                )?))
-            })?;
-        admitted_document.document()
-    };
     let property_root = ctx.xml_root_element(document, "FreeCAD geometry property root")?;
     let mut roots = property_root.children();
     let mut root = None;
@@ -796,7 +779,10 @@ pub(crate) mod tests {
                 cadmpeg_core::decode::ResourceDimension::WorkUnits,
                 &[],
                 operation,
-                |ctx| super::validate_value_root(ctx, &property, "Points", None),
+                |ctx| {
+                let admitted = ctx.parse_xml(property.xml.text(), "FreeCAD XML tree")?;
+                super::validate_value_root(ctx, &property, "Points", admitted.document())
+            },
             );
         }
         for operation in [
@@ -831,7 +817,7 @@ pub(crate) mod tests {
             None,
         );
         assert_eq!(
-            super::validate_value_root(&ctx, &property, "Points", Some(admitted.document()))
+            super::validate_value_root(&ctx, &property, "Points", admitted.document())
                 .expect("root"),
             Some("payload".into())
         );
@@ -984,7 +970,10 @@ pub(crate) mod tests {
         crate::test_support::assert_retained_refusal_at(
             &[],
             "FreeCAD geometry root error",
-            |ctx| super::validate_value_root(ctx, &property, "Points", None),
+            |ctx| {
+                let admitted = ctx.parse_xml(property.xml.text(), "FreeCAD XML tree")?;
+                super::validate_value_root(ctx, &property, "Points", admitted.document())
+            },
         );
     }
 
@@ -1004,7 +993,7 @@ pub(crate) mod tests {
         property.xml =
             RetainedXml::from_text("<Property><Points>".into(), 0).expect("retained XML span");
         crate::test_support::assert_retained_refusal_at(&[], "FreeCAD geometry XML error", |ctx| {
-            super::validate_value_root(ctx, &property, "Points", None)
+            super::transfer(ctx, &mut cadmpeg_ir::CadIr::empty(), std::slice::from_ref(&property), &[], &mut 0)
         });
     }
 
