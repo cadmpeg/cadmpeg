@@ -309,7 +309,7 @@ fn with_inferred_partner_fixture<T>(
             &bytes,
             &records,
             super::FreeformSurfacePool {
-                surfaces: std::slice::from_ref(&carrier),
+                surfaces: &[&carrier],
                 surface_ids: &carrier_ids,
                 surface_alias_tags: &aliases,
             },
@@ -1254,4 +1254,14 @@ fn selected_reversed_coedge_preserves_retained_promotion_refusal() {
         );
         assert_eq!(ctx.resource_refusal(), Some(limit));
     });
+}
+
+#[test]
+fn pending_edge_visits_refuse_before_pop_or_replay() {
+    inferred_partner_work_refusal("catia_freeform_pending_edge_visits");
+}
+
+#[test]
+fn inferred_carrier_equality_admits_variable_surface_lanes() {
+    inferred_partner_work_refusal("catia_freeform_surface_comparison");
 }

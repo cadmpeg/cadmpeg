@@ -30,6 +30,79 @@ const EPS_HELIX_ORTHO: f64 = EPS_NURBS_GEOMETRY;
 const EPS_HELIX_PITCH_ALIGNMENT: f64 = EPS_NURBS_GEOMETRY;
 const EPS_RELATIVE_TOLERANCE: f64 = EPS_NURBS_COARSE_GEOMETRY;
 
+/// Compare the variable NURBS lanes in source order and stop at disagreement.
+pub(crate) fn nurbs_surfaces_equal(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    left: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
+    right: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
+    operation: &'static str,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    use cadmpeg_ir::geometry::nurbs::NurbsPoleGrid;
+    if left.u_degree() != right.u_degree()
+        || left.v_degree() != right.v_degree()
+        || left.u_periodic() != right.u_periodic()
+        || left.v_periodic() != right.v_periodic()
+        || left.normal_reversed() != right.normal_reversed()
+    {
+        return Ok(false);
+    }
+    for (left, right) in [
+        (left.u_knots().as_slice(), right.u_knots().as_slice()),
+        (left.v_knots().as_slice(), right.v_knots().as_slice()),
+    ] {
+        if left.len() != right.len()
+            || !ctx.all_by(
+                left.iter().zip(right),
+                |(left, right)| Ok(left == right),
+                operation,
+            )?
+        {
+            return Ok(false);
+        }
+    }
+    match (left.pole_grid(), right.pole_grid()) {
+        (NurbsPoleGrid::Polynomial { rows: left }, NurbsPoleGrid::Polynomial { rows: right }) => {
+            if left.len() != right.len() {
+                return Ok(false);
+            }
+            ctx.all_by(
+                left.iter().zip(right),
+                |(left, right)| {
+                    if left.len() != right.len() {
+                        return Ok(false);
+                    }
+                    ctx.all_by(
+                        left.iter().zip(right),
+                        |(left, right)| Ok(left == right),
+                        operation,
+                    )
+                },
+                operation,
+            )
+        }
+        (NurbsPoleGrid::Rational { rows: left }, NurbsPoleGrid::Rational { rows: right }) => {
+            if left.len() != right.len() {
+                return Ok(false);
+            }
+            ctx.all_by(
+                left.iter().zip(right),
+                |(left, right)| {
+                    if left.len() != right.len() {
+                        return Ok(false);
+                    }
+                    ctx.all_by(
+                        left.iter().zip(right),
+                        |(left, right)| Ok(left == right),
+                        operation,
+                    )
+                },
+                operation,
+            )
+        }
+        _ => Ok(false),
+    }
+}
+
 fn pcurve_weights_are_positive(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     nurbs: &PcurveNurbs,
