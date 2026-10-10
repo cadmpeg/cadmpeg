@@ -1285,13 +1285,8 @@ fn materialized_record_table_normalizes_revision_references() {
     let active = ["asmheader", "edge"]
         .into_iter()
         .enumerate()
-        .map(|(index, name)| cadmpeg_asm::sab::Record {
-            index,
-            name: name.into(),
-
-            tokens: Vec::new().into(),
-            offset: 0,
-            len: 0,
+        .map(|(index, name)| {
+            cadmpeg_asm::test_support::sab::record(index, name.into(), Vec::new().into(), 0, 0)
         })
         .collect::<Vec<_>>();
 
@@ -1392,13 +1387,8 @@ fn qualified_history_marker_remains_an_archived_record() {
     let active = ["asmheader", "body"]
         .into_iter()
         .enumerate()
-        .map(|(index, name)| cadmpeg_asm::sab::Record {
-            index,
-            name: name.into(),
-
-            tokens: Vec::new().into(),
-            offset: 0,
-            len: 0,
+        .map(|(index, name)| {
+            cadmpeg_asm::test_support::sab::record(index, name.into(), Vec::new().into(), 0, 0)
         })
         .collect::<Vec<_>>();
 

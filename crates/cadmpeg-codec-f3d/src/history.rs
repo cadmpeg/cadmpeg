@@ -927,14 +927,7 @@ fn clone_historical_record(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     record: &cadmpeg_asm::sab::Record,
 ) -> Result<cadmpeg_asm::sab::Record, cadmpeg_core::CodecError> {
-    let name = ctx.copy_retained_text(&record.name, "copy F3D historical record text")?;
-    Ok(cadmpeg_asm::sab::Record {
-        index: record.index,
-        name,
-        tokens: record.tokens.clone(),
-        offset: record.offset,
-        len: record.len,
-    })
+    record.try_clone_for_decode(ctx, "copy F3D historical record text")
 }
 
 fn clone_historical_token(

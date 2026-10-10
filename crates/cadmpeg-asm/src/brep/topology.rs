@@ -132,6 +132,7 @@ pub(super) fn keep_faces_and_carriers(
     let Carriers {
         surface_geo,
         procedural_surface_defs,
+        unknown_surface_kinds: carrier_kinds,
         ..
     } = &mut *carriers;
     let Reachable {
@@ -347,20 +348,8 @@ pub(super) fn keep_faces_and_carriers(
                     "ASM topology undecoded_carriers",
                 )
             })?;
-            if surf_rec.head() == "mesh_surface"
-                && !ctx.any_by(
-                    surf_rec.tokens.as_ref(),
-                    |token| Ok(!token.is_payload_ident()),
-                    "ASM mesh surface payload search",
-                )?
-            {
-                if !ctx.any_by(
-                    &out.mesh_surface_sentinels,
-                    |sentinel| {
-                        Ok(usize::try_from(sentinel.record_index).ok() == Some(surf_rec.index))
-                    },
-                    "ASM mesh surface sentinel search",
-                )? {
+            if surf_rec.head() == "mesh_surface" && surf_rec.chunk_len() == 0 {
+                if first_carrier {
                     ctx.reserve_vec(
                         &mut out.mesh_surface_sentinels,
                         1,
@@ -382,7 +371,27 @@ pub(super) fn keep_faces_and_carriers(
                 out.stats.mesh_surface_faces += 1;
             } else {
                 let native_kind = if surf_rec.head() == "spline" {
-                    nurbs::toks::owned_construction_subtype(ctx, &surf_rec.tokens).transpose()?
+                    if !carrier_kinds.contains_key(&surf_ref) {
+                        let native_kind =
+                            nurbs::toks::owned_construction_subtype(ctx, &surf_rec.tokens)
+                                .transpose()?;
+                        scratch.with_storage(|| {
+                            let kind = native_kind
+                                .map(|kind| {
+                                    ctx.copy_retained_text(kind, "ASM unknown surface kind")
+                                })
+                                .transpose()?;
+                            ctx.insert_hash_map(
+                                carrier_kinds,
+                                surf_ref,
+                                kind,
+                                "ASM unknown surface kind index",
+                            )
+                        })?;
+                    }
+                    carrier_kinds
+                        .get(&surf_ref)
+                        .and_then(|kind| kind.as_deref())
                 } else {
                     None
                 };
@@ -518,12 +527,45 @@ pub(super) fn walk_reachable_topology(
                                         "ASM topology kept_pcurves",
                                     )
                                 })?;
+                            } else if let Some(PcurveGeometry::Nurbs { nurbs }) =
+                                pcurve_geo.get(&super::PcurveRecordIndex(pc))
+                            {
+                                let edge =
+                                    ce.ref_at(6).and_then(|edge| by_index.get(&edge)).copied();
+                                if let Some(parameter_range) = pcurve_ranges_on_domain(nurbs, edge)
+                                    .and_then(|ranges| ranges.into_iter().next())
+                                {
+                                    scratch.with_storage(|| {
+                                        ctx.insert_hash_map(
+                                            pcurve_parameter_ranges,
+                                            super::CoedgeRecordIndex(ci),
+                                            parameter_range,
+                                            "ASM topology pcurve_parameter_ranges",
+                                        )
+                                    })?;
+                                    scratch.with_storage(|| {
+                                        ctx.insert_hash_set(
+                                            kept_pcurves,
+                                            pc,
+                                            "ASM topology kept_pcurves",
+                                        )
+                                    })?;
+                                } else {
+                                    count_kind(
+                                        ctx,
+                                        &mut out.stats.undecoded_pcurve_kinds,
+                                        prec.head(),
+                                    )?;
+                                }
                             } else {
                                 // An inline `exp_par_cur` owns its first BS2 field.
                                 // A wrapped subtype ref resolves that same typed
                                 // field. A nonzero-discriminator ref form names one
                                 // of the target intcurve's two pcurve slots; its
                                 // sign composes with the intcurve sense bit.
+                                let mut attempt =
+                                    ctx.reserve_scoped(0, "ASM explicit pcurve attempt")?;
+                                let decoded = attempt.with_storage(|| {
                                 let decoded = match (prec.chunk(3), prec.chunk(4)) {
                                     (Some(Token::Long(0)), Some(Token::True | Token::False)) => {
                                         if let Some(span) = nurbs::toks::payload_subtype_toks(
@@ -578,7 +620,7 @@ pub(super) fn walk_reachable_topology(
                                 }.transpose()?;
                                 let edge =
                                     ce.ref_at(6).and_then(|edge| by_index.get(&edge)).copied();
-                                let decoded = decoded.map(|(mut decoded, native_chart)| -> Result<_, cadmpeg_core::CodecError> {
+                                Ok::<_, cadmpeg_core::CodecError>(decoded.map(|(mut decoded, native_chart)| -> Result<_, cadmpeg_core::CodecError> {
                                     if native_chart {
                                         if let Some(surface) = face
                                             .ref_at(7)
@@ -595,8 +637,12 @@ pub(super) fn walk_reachable_topology(
                                     Ok(pcurve_ranges_on_domain(&decoded, edge)
                                         .and_then(|ranges| ranges.into_iter().next())
                                         .map(|range| (decoded, range)))
-                                }).transpose()?.flatten();
-                                if let Some((decoded, parameter_range)) = decoded {
+                                }).transpose()?.flatten())
+
+                                })?;
+                                if let Some(candidate) = decoded {
+                                    let (decoded, parameter_range) =
+                                        attempt.commit_value(candidate)?;
                                     scratch.with_storage(|| {
                                         ctx.insert_hash_map(
                                             pcurve_geo,
@@ -798,7 +844,8 @@ pub(super) fn collect_wire_topology(
         }
         let mut source_values = IntoIterator::into_iter(records);
         while source_values.len() != 0 {
-            let Some(edge) = ctx.next_charged(&mut source_values, "ASM saved edge record pass")? else {
+            let Some(edge) = ctx.next_charged(&mut source_values, "ASM saved edge record pass")?
+            else {
                 break;
             };
             let edge_index = i64::try_from(edge.index).map_err(|_| {
@@ -992,7 +1039,8 @@ pub(super) fn collect_wire_topology(
                             Some(vertex) => WireMembers::Vertex(VertexId::from(id(format, vertex))),
                             None => WireMembers::Edges(
                                 ctx.collect_vec(
-                                    ctx.admit_iter(wire_edges, "ASM wire member sources")?
+                                    wire_edges
+                                        .into_iter()
                                         .map(|edge| EdgeId::from(id(format, edge))),
                                     "ASM wire member edges",
                                 )?,
@@ -1353,43 +1401,97 @@ pub(super) fn subshell_ancestor_shells(
     records: &[Record],
     by_index: &HashMap<i64, &Record>,
 ) -> Result<HashMap<i64, i64>, cadmpeg_core::CodecError> {
-    let mut out = HashMap::new();
-    for record in ctx
-        .admit_iter(records, "ASM topology record pass")?
-        .filter(|record| record.head() == "subshell")
-    {
-        let mut owner = record.ref_at(3);
-        let mut guard_storage = ctx.reserve_scoped(0, "ASM topology visited storage")?;
-        let mut guard = HashSet::new();
-        while let Some(index) = owner {
-            ctx.charge_work(1, "ASM subshell ancestor walk")?;
-            if !guard_storage
-                .with_storage(|| ctx.insert_hash_set(&mut guard, index, "ASM topology guard"))?
-            {
-                break;
-            }
-            let Some(parent) = by_index.get(&index) else {
-                break;
-            };
-            if parent.head() == "shell" {
-                ctx.insert_hash_map(
-                    &mut out,
-                    i64::try_from(record.index).map_err(|_| {
-                        ctx.refuse_codec_limit(
-                            "ASM record index",
-                            9_223_372_036_854_775_807,
-                            cadmpeg_core::decode::u64_from_index(record.index),
-                        )
-                    })?,
+    let mut memo_storage = ctx.reserve_scoped(0, "ASM subshell ancestor cache")?;
+    let mut memo = HashMap::<i64, Option<i64>>::new();
+    let index_of = |record: &Record| {
+        i64::try_from(record.index).map_err(|_| {
+            ctx.refuse_codec_limit(
+                "ASM record index",
+                9_223_372_036_854_775_807,
+                cadmpeg_core::decode::u64_from_index(record.index),
+            )
+        })
+    };
+    let mut rooted_sources = 0;
+    let mut source = records.iter();
+    while !source.as_slice().is_empty() {
+        let Some(record) = ctx.next_charged(&mut source, "ASM topology record pass")? else {
+            break;
+        };
+        if record.head() != "subshell" {
+            continue;
+        }
+        let source_index = index_of(record)?;
+        let root = if let Some(root) = memo.get(&source_index) {
+            *root
+        } else {
+            let mut path_storage = ctx.reserve_scoped(0, "ASM topology visited storage")?;
+            let mut path = Vec::new();
+            let mut cycle = super::owner_cycle::OwnerCycle::new(source_index);
+            let mut owner = Some(source_index);
+            let root = loop {
+                let Some(index) = owner else {
+                    break None;
+                };
+                if let Some(root) = memo.get(&index) {
+                    break *root;
+                }
+                ctx.charge_work(1, "ASM subshell ancestor walk")?;
+                let Some(parent) = by_index.get(&index) else {
+                    break None;
+                };
+                if parent.head() == "shell" {
+                    break Some(index);
+                }
+                if parent.head() != "subshell" {
+                    break None;
+                }
+                ctx.push_scoped_vec(
+                    &mut path_storage,
+                    &mut path,
                     index,
-                    "ASM topology out",
+                    "ASM subshell ancestor path",
                 )?;
-                break;
+                owner = parent.ref_at(3);
+                if cycle.advance(owner) {
+                    break None;
+                }
+            };
+            cycle.trim_path(ctx, &mut path, "ASM subshell cycle entry")?;
+            memo_storage.with_storage(|| {
+                ctx.reserve_map(&mut memo, path.len(), "ASM subshell ancestor cache")
+            })?;
+            let mut entries = path.into_iter();
+            while entries.len() != 0 {
+                let Some(index) =
+                    ctx.next_charged(&mut entries, "ASM subshell ancestor cache entries")?
+                else {
+                    break;
+                };
+                memo.insert(index, root);
             }
-            if parent.head() != "subshell" {
-                break;
-            }
-            owner = parent.ref_at(3);
+            root
+        };
+        if root.is_some() {
+            rooted_sources += 1;
+        }
+    }
+    let mut out = HashMap::new();
+    if rooted_sources == 0 {
+        return Ok(out);
+    }
+    ctx.reserve_map(&mut out, rooted_sources, "ASM topology out")?;
+    let mut source = records.iter();
+    while !source.as_slice().is_empty() {
+        let Some(record) = ctx.next_charged(&mut source, "ASM topology record pass")? else {
+            break;
+        };
+        if record.head() != "subshell" {
+            continue;
+        }
+        let index = index_of(record)?;
+        if let Some(Some(root)) = memo.get(&index) {
+            out.insert(index, *root);
         }
     }
     Ok(out)

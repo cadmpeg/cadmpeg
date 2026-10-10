@@ -225,9 +225,9 @@ fn patch_layout_roles_exclude_nested_construction_caches() {
                 &surfaces,
                 int_width,
             )
-                .expect("decode work admission")
-                .expect("owned surface layout")
-                .end(),
+            .expect("decode work admission")
+            .expect("owned surface layout")
+            .end(),
             surface_end
         );
         assert!(surface_patch_layout_at(
@@ -270,9 +270,9 @@ fn patch_layout_roles_exclude_nested_construction_caches() {
                 &curves,
                 int_width,
             )
-                .expect("decode work admission")
-                .expect("first owned curve layout")
-                .end(),
+            .expect("decode work admission")
+            .expect("first owned curve layout")
+            .end(),
             curve_end
         );
         assert_eq!(
@@ -281,9 +281,9 @@ fn patch_layout_roles_exclude_nested_construction_caches() {
                 &curves,
                 int_width,
             )
-                .expect("decode work admission")
-                .expect("final owned curve layout")
-                .end(),
+            .expect("decode work admission")
+            .expect("final owned curve layout")
+            .end(),
             curve_end
         );
 
@@ -306,9 +306,9 @@ fn patch_layout_roles_exclude_nested_construction_caches() {
                 &pcurves,
                 int_width,
             )
-                .expect("decode work admission")
-                .expect("final owned pcurve layout")
-                .control_end(),
+            .expect("decode work admission")
+            .expect("final owned pcurve layout")
+            .control_end(),
             pcurve_end
         );
     }
@@ -720,20 +720,8 @@ fn an_unresolvable_subtype_reference_refuses_the_search_behind_it() {
         let reference_tokens =
             lex_test_span(&references, int_width).expect("valid single-record byte fixture");
         let records = [
-            crate::sab::Record {
-                index: 0,
-                name: String::new(),
-                tokens: definition_tokens,
-                offset: 0,
-                len: 0,
-            },
-            crate::sab::Record {
-                index: 1,
-                name: String::new(),
-                tokens: reference_tokens.clone(),
-                offset: 0,
-                len: 0,
-            },
+            crate::test_support::sab::record(0, String::new(), definition_tokens, 0, 0),
+            crate::test_support::sab::record(1, String::new(), reference_tokens.clone(), 0, 0),
         ];
         let table =
             crate::nurbs::toks::SubtypeTable::from_records(&resource_ctx, &records).unwrap();
