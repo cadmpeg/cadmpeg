@@ -240,3 +240,23 @@ fn cached_body_prefixes_keep_their_storage_live() {
         assert_eq!(topology.bodies["a"].len(), 1);
     });
 }
+
+#[test]
+fn body_prefix_lower_bound_skips_uncompared_key_suffix() {
+    let work = |suffix: usize| {
+        let ir = ir_with_bodies(&[&format!("z{}:0", "x".repeat(suffix))]);
+        let index_arena = DecodeArena::new();
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (index_ctx, _) = DecodeContext::from_root_bytes(&[], &index_arena, &policy).expect("setup context");
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("selection context");
+        let mut topology = TopologyIndex::new(&ir);
+        topology.ensure_bodies(&index_ctx, ["fcstd:payload#unused"]).expect("candidate setup");
+        topology.ensure_bodies(&ctx, ["fcstd:payload#a"]).expect("unmatched prefix");
+        assert!(topology.bodies.is_empty());
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = ctx.charge_work(u64::MAX, "measure prefix work").expect_err("work measurement") else { panic!("work refusal"); };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        limit.used
+    };
+    assert_eq!(work(1), work(65_536));
+}
