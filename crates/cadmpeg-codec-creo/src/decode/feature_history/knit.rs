@@ -750,19 +750,11 @@ pub(in super::super) fn feature_result_topology(
         format_args!("creo:model:feature-result-topology#{feature_id}"),
         "creo feature result topology ID",
     )?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(id_text.len()),
-        "creo feature result topology identity validation",
-    )?;
     let id = FeatureResultTopologyId::mint(id_text)
         .map_err(|_| CodecError::Malformed("constructed result topology ID is invalid".into()))?;
     let output_of_text = ctx.format_retained(
         format_args!("creo:model:feature#{feature_id}"),
         "creo feature result owner ID",
-    )?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(output_of_text.len()),
-        "creo feature result owner identity validation",
     )?;
     let output_of = IrFeatureId::mint(output_of_text)
         .map_err(|_| CodecError::Malformed("constructed result owner ID is invalid".into()))?;
@@ -789,10 +781,6 @@ pub(in super::super) fn generated_surface_face_refs(
         let feature_text = ctx.format_retained(
             format_args!("creo:model:feature#{}", row.feature_id),
             "creo generated surface feature IDs",
-        )?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(feature_text.len()),
-            "creo generated surface feature identity validation",
         )?;
         let feature = IrFeatureId::mint(feature_text)
             .map_err(|_| CodecError::Malformed("constructed Creo feature ID is invalid".into()))?;
@@ -834,11 +822,7 @@ pub(in super::super) fn emit_feature_result_topologies(
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut emitted = 0;
     for feature in ctx.admit_iter(&ir.model.features, "creo model features")? {
-        let Some(suffix) = ctx.strip_prefix(
-            feature.id.as_str(),
-            "creo:model:feature#",
-            "creo result topology feature identity prefix",
-        )?
+        let Some(suffix) = feature.id.as_str().strip_prefix("creo:model:feature#")
         else {
             continue;
         };

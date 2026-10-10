@@ -249,11 +249,7 @@ fn generated_input_output_bodies<'ir, 'ctx>(
     let producers = dependency_storage
         .with_storage(|| feature_generated_dependencies(ctx, feature.evaluation.definition()))?;
     for producer in ctx.admit_iter(&producers, "creo generated feature dependencies")? {
-        let Some(suffix) = ctx.strip_prefix(
-            producer.as_str(),
-            "creo:model:feature#",
-            "creo generated producer identity prefix",
-        )?
+        let Some(suffix) = producer.as_str().strip_prefix("creo:model:feature#")
         else {
             continue;
         };
@@ -286,11 +282,7 @@ fn generated_edge_output_bodies<'ir, 'ctx>(
 ) -> Result<FeatureOutputCandidates<'ir, 'ctx>, CodecError> {
     let mut outputs = FeatureOutputCandidates::new(ctx)?;
     for edge in ctx.admit_iter(edges, "creo generated edge references")? {
-        let Some(suffix) = ctx.strip_prefix(
-            edge.feature.as_str(),
-            "creo:model:feature#",
-            "creo generated edge producer identity prefix",
-        )?
+        let Some(suffix) = edge.feature.as_str().strip_prefix("creo:model:feature#")
         else {
             continue;
         };

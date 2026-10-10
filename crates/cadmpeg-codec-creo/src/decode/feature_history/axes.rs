@@ -720,10 +720,6 @@ pub(in super::super) fn model_feature_ids(
             format_args!("creo:model:feature#{feature_id}"),
             "creo model feature identity text",
         )?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(text.len()),
-            "creo model feature identity validation",
-        )?;
         let id = IrFeatureId::mint(text)
             .map_err(|_| CodecError::Malformed("constructed Creo feature ID is invalid".into()))?;
         ctx.insert_btree_set(&mut ids, id, "creo model feature identity nodes")?;

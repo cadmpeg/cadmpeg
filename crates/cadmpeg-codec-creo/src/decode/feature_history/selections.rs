@@ -230,10 +230,6 @@ pub(in super::super) fn generated_curve_edge_refs(
             format_args!("creo:model:feature#{}", row.feature_id),
             "creo generated curve feature IDs",
         )?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(feature_text.len()),
-            "creo generated curve feature identity validation",
-        )?;
         let feature = IrFeatureId::mint(feature_text)
             .map_err(|_| CodecError::Malformed("constructed Creo feature ID is invalid".into()))?;
         if !ctx.contains_btree_set(

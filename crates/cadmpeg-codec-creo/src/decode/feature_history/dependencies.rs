@@ -668,11 +668,7 @@ pub(in super::super) fn reconcile_feature_links(
         )?
         .enumerate()
     {
-        let Some(suffix) = ctx.strip_prefix(
-            feature.id.as_str(),
-            "creo:model:feature#",
-            "creo reconciliation feature identity prefix",
-        )?
+        let Some(suffix) = feature.id.as_str().strip_prefix("creo:model:feature#")
         else {
             continue;
         };
@@ -758,10 +754,6 @@ pub(in super::super) fn reconcile_feature_links(
                 format_args!("creo:model:feature#{dependency}"),
                 "creo reconciled native dependency IDs",
             )?;
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(text.len()),
-                "creo reconciled native dependency identity validation",
-            )?;
             let id = IrFeatureId::mint(text).map_err(cadmpeg_core::CodecError::malformed)?;
             if ctx.contains_btree_set(&emitted, &id, "creo reconciled feature emission lookup")?
                 && !ctx.equal(
@@ -819,10 +811,6 @@ pub(in super::super) fn reconcile_feature_links(
             let text = ctx.format_retained(
                 format_args!("creo:model:feature#{parent_id}"),
                 "creo regeneration parent IDs",
-            )?;
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(text.len()),
-                "creo regeneration parent identity validation",
             )?;
             let parent = IrFeatureId::mint(text).map_err(cadmpeg_core::CodecError::malformed)?;
             if !ctx.equal(

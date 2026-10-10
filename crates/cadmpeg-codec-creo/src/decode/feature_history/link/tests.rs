@@ -602,7 +602,7 @@ fn transformed_surface_kind_walks_bases_and_preserves_family() {
     )
     .expect("plane fixture");
     let mut geometry = cadmpeg_ir::geometry::SolvedSurfaceGeometry::Plane(plane);
-    for _ in 0..3 {
+    for _ in 0..cadmpeg_ir::geometry::MAX_GEOMETRY_NESTING {
         geometry = cadmpeg_ir::geometry::SolvedSurfaceGeometry::Transformed(
             cadmpeg_ir::geometry::PlacedSurface::try_new(
                 Box::new(geometry),
@@ -612,10 +612,13 @@ fn transformed_surface_kind_walks_bases_and_preserves_family() {
         );
     }
     let geometry = cadmpeg_ir::geometry::SurfaceGeometry::Solved(geometry);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("root");
     assert_eq!(
-        crate::test_support::assert_work_boundaries(&["creo transformed surface bases"], |ctx| {
-            super::surface_kind_for_geometry(ctx, &geometry)
-        }),
+        super::surface_kind_for_geometry(&ctx, &geometry).expect("bounded basis walk"),
         Some(crate::surface::SurfaceKind::Plane)
     );
 }

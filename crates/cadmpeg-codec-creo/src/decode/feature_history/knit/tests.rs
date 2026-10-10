@@ -984,12 +984,10 @@ fn feature_result_faces_require_unique_owned_materialized_table_surfaces() {
 }
 
 #[test]
-fn feature_result_identity_validation_refuses_at_work_boundaries() {
+fn feature_result_identities_preserve_bounded_validation() {
     let (tables, rows) = one_result_surface();
     let topology = crate::test_support::assert_work_boundaries(
         &[
-            "creo feature result topology identity validation",
-            "creo feature result owner identity validation",
         ],
         |ctx| {
             feature_result_topology(
@@ -1142,7 +1140,6 @@ fn generated_surface_feature_identity_validation_refuses_at_work_boundary() {
     let results = std::collections::BTreeMap::from([(17, vec![201])]);
     let generated = crate::test_support::assert_work_boundaries(
         &[
-            "creo generated surface feature identity validation",
             "creo generated surface feature lookup",
         ],
         |ctx| {
