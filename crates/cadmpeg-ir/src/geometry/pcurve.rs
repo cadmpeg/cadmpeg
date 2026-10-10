@@ -2345,7 +2345,6 @@ impl PcurveGeometry {
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
-        ctx.charge_work(0, operation)?;
         Ok(match self {
             Self::Line(value) => Self::Line(*value),
             Self::PolarHarmonic(value) => Self::PolarHarmonic(*value),
@@ -2458,7 +2457,6 @@ impl PcurveGeometry {
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<Option<(Point2, Point2)>, ResourceLimit> {
-        ctx.charge_work_limit(0, "pcurve line parameter visit")?;
         Ok(match self {
             Self::Line(line_pcurve) => {
                 let origin = line_pcurve.origin().as_raw();

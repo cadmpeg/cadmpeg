@@ -12,6 +12,7 @@ pub(super) trait Admission: Sized {
     type Error;
     fn index<T: Eq + Hash>(&self, count: usize) -> Result<Index<'_, T, Self>, Self::Error>;
     fn work(&self, count: usize) -> Result<(), Self::Error>;
+    fn resource_refusal(&self) -> Option<Self::Error>;
 }
 
 pub(super) struct StandardAdmission;
@@ -29,6 +30,9 @@ impl Admission for StandardAdmission {
     }
     fn work(&self, _count: usize) -> Result<(), Self::Error> {
         Ok(())
+    }
+    fn resource_refusal(&self) -> Option<Self::Error> {
+        None
     }
 }
 
@@ -50,6 +54,9 @@ impl Admission for DecodeAdmission<'_, '_> {
     fn work(&self, count: usize) -> Result<(), Self::Error> {
         self.ctx
             .charge_work_limit(u64_from_index(count), self.operation)
+    }
+    fn resource_refusal(&self) -> Option<Self::Error> {
+        self.ctx.resource_refusal()
     }
 }
 
@@ -73,15 +80,19 @@ impl<T: Eq + Hash, S: Admission> Index<'_, T, S> {
         value.hash(&mut hasher);
         let hashed = hasher.written;
         let hash = hasher.finish();
-        self.admission.work(0)?;
+        if let Some(limit) = self.admission.resource_refusal() {
+            return Err(limit);
+        }
         let inserted = self.values.insert(MemberKey {
             value,
             admission: self.admission,
             hashed,
             hash,
         });
-        // Callback refusal fuses the policy; no insertion result escapes before this check.
-        self.admission.work(0)?;
+        // Report a refusal raised by a comparison callback during insertion.
+        if let Some(limit) = self.admission.resource_refusal() {
+            return Err(limit);
+        }
         Ok(inserted)
     }
 }
@@ -194,7 +205,6 @@ pub(super) fn insert<T: PartialEq, S: AppendAdmission<T>>(
     values: &mut Vec<T>,
     value: T,
 ) -> Result<bool, S::Error> {
-    admission.work(0)?;
     for member in values.iter() {
         admission.work(1)?;
         if admission.equal(member, &value)? {

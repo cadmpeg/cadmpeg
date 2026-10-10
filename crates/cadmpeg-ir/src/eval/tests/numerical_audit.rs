@@ -370,7 +370,8 @@ fn numerical_audit_polar_derivatives_are_independent_of_radial_scale() {
         let expected_second = -(1.0 + sin * sin) / (1e200 * cos * cos * cos);
         assert!((result.tangent.unwrap().v / expected_first - 1.0).abs() <= 16.0 * f64::EPSILON);
         assert!(
-            (result.acceleration.finite().unwrap().v / expected_second - 1.0).abs() <= 16.0 * f64::EPSILON
+            (result.acceleration.finite().unwrap().v / expected_second - 1.0).abs()
+                <= 16.0 * f64::EPSILON
         );
     });
 }
@@ -798,25 +799,4 @@ fn raw_pcurve_evaluation_uses_the_callers_storage_and_work_limits() {
             .unwrap(),
     );
     ctx.finish_session().unwrap();
-}
-
-#[test]
-fn raw_pcurve_evaluation_preserves_a_fused_refusal_before_invalid_input() {
-    use crate::eval::{nurbs_pcurve_uv, EvaluationFailure};
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    use cadmpeg_core::CodecError;
-
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let original = ctx
-        .charge_work_limit(1, "original raw pcurve refusal")
-        .unwrap_err();
-    assert!(
-        matches!(nurbs_pcurve_uv(&ctx, 0, &[], &[], None, f64::NAN), Err(EvaluationFailure::ResourceLimit(limit)) if limit == original)
-    );
-    assert!(
-        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
-    );
 }

@@ -806,7 +806,9 @@ impl<'a> ser::SerializeStruct for CanonStruct<'a> {
                 ctx.charge_work(u64_from_index(json.len()), WORK)?;
                 let replayed =
                     super::replay::emit(json, CanonValue::within(ctx, *depth), *depth, ctx);
-                ctx.charge_work(0, WORK)?;
+                if let Some(limit) = ctx.resource_refusal() {
+                    return Err(Error::Resource(limit.into()));
+                }
                 *parsed = Some(replayed?);
                 Ok(())
             }

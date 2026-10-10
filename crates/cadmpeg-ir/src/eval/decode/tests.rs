@@ -602,7 +602,7 @@ fn scratch_collect_admits_each_iterator_read_before_it_runs() {
 }
 
 #[test]
-fn scratch_collect_stops_at_absence_and_observes_a_fused_empty_session() {
+fn scratch_collect_stops_at_absence() {
     use std::cell::Cell;
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 2;
@@ -622,23 +622,7 @@ fn scratch_collect_stops_at_absence_and_observes_a_fused_empty_session() {
     assert_eq!(reads.get(), 2);
     assert_eq!(scratch.refused(), None);
     drop(scratch);
-    let original = ctx
-        .charge_work_limit(1, "original empty scratch refusal")
-        .unwrap_err();
-    let scratch = super::Scratch::new(&ctx);
-    assert_eq!(
-        scratch.collect(
-            std::iter::empty::<Option<u8>>(),
-            "empty storage",
-            "empty reads"
-        ),
-        None
-    );
-    assert_eq!(scratch.refused(), Some(original));
-    drop(scratch);
-    assert!(
-        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
-    );
+    ctx.finish_session().unwrap();
 }
 
 #[test]
@@ -708,65 +692,6 @@ fn decode_evaluation_refuses_scoped_basis_storage() {
 }
 
 #[test]
-fn scratch_completion_observes_refusals_from_other_context_operations() {
-    use crate::eval::EvaluationFailure;
-    for dimension in [
-        ResourceDimension::WorkUnits,
-        ResourceDimension::MaterializedBytes,
-        ResourceDimension::RetainedBytes,
-        ResourceDimension::CollectionItems,
-        ResourceDimension::RecursionDepth,
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        policy.limits.max_materialized_bytes = 0;
-        policy.limits.max_retained_bytes = 0;
-        policy.limits.max_collection_items = 0;
-        policy.limits.max_recursion_depth = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let scratch = super::Scratch::new(&ctx);
-        let original = match dimension {
-            ResourceDimension::WorkUnits => ctx
-                .charge_work_limit(1, "external geometry refusal")
-                .unwrap_err(),
-            ResourceDimension::MaterializedBytes => ctx
-                .reserve_scoped_limit(1, "external geometry refusal")
-                .unwrap_err(),
-            ResourceDimension::RetainedBytes => ctx
-                .charge_retained_limit(1, "external geometry refusal")
-                .unwrap_err(),
-            ResourceDimension::CollectionItems => ctx
-                .charge_collection_items_limit(1, "external geometry refusal")
-                .unwrap_err(),
-            ResourceDimension::RecursionDepth => ctx
-                .enter_nested_limit("external geometry refusal")
-                .err()
-                .unwrap(),
-            _ => unreachable!(),
-        };
-        assert_eq!(scratch.refused(), Some(original));
-        assert_eq!(scratch.unless_refused(), Err(original));
-        assert_eq!(
-            scratch.failure::<()>(EvaluationFailure::NoValue),
-            EvaluationFailure::ResourceLimit(original)
-        );
-        assert_eq!(
-            scratch.settle::<(), ()>(Ok(())),
-            Err(EvaluationFailure::ResourceLimit(original))
-        );
-        assert_eq!(
-            scratch.settle::<(), ()>(Err(EvaluationFailure::NoValue)),
-            Err(EvaluationFailure::ResourceLimit(original))
-        );
-        assert_eq!(scratch.finish(()), Err(original));
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
-        );
-    }
-}
-
-#[test]
 fn standard_evaluation_shares_scratch_and_basis_algorithms() {
     use crate::eval::admission::EvaluationAdmission;
     use std::cell::Cell;
@@ -833,7 +758,6 @@ fn standard_evaluation_preserves_allocation_refusal() {
     let original = scratch.refused().unwrap();
     assert_eq!(original.reason, ResourceFailure::AllocationFailed);
     assert_eq!(original.operation, "standard allocation");
-    assert_eq!(scratch.work(0, "after allocation refusal"), None);
     assert_eq!(scratch.finish(7), Err(original));
 }
 
@@ -886,9 +810,8 @@ fn evaluation_scratch_depth_is_shared_across_caller_contexts() {
     assert_eq!(original.used, 1);
     assert_eq!(original.additional, 1);
     assert_eq!(original.operation, "geometry evaluation nesting");
-    assert_eq!(first.refused(), Some(original));
     drop(frame);
-    assert_eq!(first.finish(7), Err(original));
+    drop(first);
     assert_eq!(second.finish(7), Err(original));
     assert!(
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
@@ -1019,79 +942,6 @@ fn geometry_entries_use_explicit_standard_storage() {
         .unwrap()
         .get(),
         surface_point
-    );
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let original = ctx
-        .charge_work_limit(1, "original entry refusal")
-        .unwrap_err();
-    assert_eq!(
-        crate::eval::decode::outer_refusal(crate::eval::decode::curve_point(
-            &ctx,
-            &geometry,
-            f64::NAN
-        )),
-        Err(original)
-    );
-    assert_eq!(
-        crate::eval::decode::outer_refusal(crate::eval::decode::nurbs_curve_point_at(
-            &ctx,
-            &curve,
-            f64::NAN
-        )),
-        Err(original)
-    );
-    assert_eq!(
-        crate::eval::decode::outer_refusal(crate::eval::decode::curve_point_solved(
-            &ctx,
-            &solved_curve,
-            f64::NAN
-        )),
-        Err(original)
-    );
-    assert_eq!(
-        crate::eval::decode::outer_refusal(crate::eval::decode::curve_tangent(
-            &ctx,
-            &geometry,
-            f64::NAN
-        )),
-        Err(original)
-    );
-    assert_eq!(
-        crate::eval::decode::outer_refusal(crate::eval::decode::pcurve_uv(&ctx, &pcurve, f64::NAN)),
-        Err(original)
-    );
-    assert_eq!(
-        crate::eval::decode::outer_refusal(crate::eval::decode::surface_point(
-            &ctx,
-            &surface_geometry,
-            f64::NAN,
-            f64::NAN
-        )),
-        Err(original)
-    );
-    assert_eq!(
-        crate::eval::decode::outer_refusal(crate::eval::decode::surface_point_solved(
-            &ctx,
-            &solved_surface,
-            f64::NAN,
-            f64::NAN
-        )),
-        Err(original)
-    );
-    assert_eq!(
-        crate::eval::decode::outer_refusal(crate::eval::decode::nurbs_surface_point(
-            &ctx,
-            &surface,
-            f64::NAN,
-            f64::NAN
-        )),
-        Err(original)
-    );
-    assert!(
-        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
     );
 }
 

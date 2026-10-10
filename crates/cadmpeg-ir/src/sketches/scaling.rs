@@ -173,8 +173,6 @@ impl SketchGeometry {
     ) -> Result<Result<Self, SketchLengthScaleError>, cadmpeg_core::CodecError> {
         let result = (|| -> Result<Self, SketchLengthScaleError> {
             use SketchGeometryDefinition as Definition;
-            ctx.charge_work(0, "IR sketch unit scaling work")
-                .map_err(SketchLengthScaleError::from)?;
 
             let mut definition = self.0;
             match &mut definition {
@@ -320,8 +318,6 @@ impl SpatialSketchGeometry {
         scale: PositiveReal,
     ) -> Result<Self, SketchLengthScaleError> {
         use SpatialSketchGeometryDefinition as Definition;
-        ctx.charge_work(0, "IR spatial sketch unit scaling work")
-            .map_err(SketchLengthScaleError::from)?;
 
         let mut definition = self
             .try_clone_for_decode(ctx, "IR spatial sketch scaling copy")

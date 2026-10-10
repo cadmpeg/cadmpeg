@@ -4,7 +4,7 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 use cadmpeg_core::CodecError;
 
 #[test]
-fn replacement_lookup_preserves_each_comparison_refusal_and_empty_fuse() {
+fn replacement_lookup_preserves_each_comparison_refusal_and_empty_lookup() {
     let fixture = cadmpeg_test_support::service_decode_context();
     let replacements = std::collections::BTreeMap::from([
         ("alpha".to_owned(), "A".to_owned()),
@@ -64,12 +64,6 @@ fn replacement_lookup_preserves_each_comparison_refusal_and_empty_fuse() {
     let original = ctx
         .charge_work_limit(1, "original empty replacement refusal")
         .unwrap_err();
-    assert_eq!(
-        empty_index
-            .get(&ctx, "absent", "empty replacement lookup")
-            .unwrap_err(),
-        original
-    );
     assert!(
         matches!(super::ReplacementIndex::build(&ctx, &empty, &mut empty_storage, "empty replacement index"), Err(CodecError::ResourceLimit(limit)) if limit == original)
     );

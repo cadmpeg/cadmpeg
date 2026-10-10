@@ -46,7 +46,6 @@ pub fn project<'ctx>(
     if let Some(limit) = refusal.into_inner() {
         return Err(CodecError::ResourceLimit(limit));
     }
-    ctx.charge_work(0, operation)?;
     let value = result.map_err(|error| error.into_codec(ctx, operation))?;
     Ok(Projection {
         value,

@@ -73,7 +73,6 @@ fn pcurve_line_parameters_preserve_affine_trim_and_non_line_semantics() {
 
 #[test]
 fn pcurve_line_parameters_do_not_charge_unvisited_bases_or_fixed_leaves() {
-    use cadmpeg_core::CodecError;
     let line = PcurveGeometry::Line(LinePcurve::U_AXIS);
     let offset =
         PcurveGeometry::Offset(OffsetPcurve::try_new(2., Box::new(nested_line())).expect("offset"));
@@ -85,11 +84,7 @@ fn pcurve_line_parameters_do_not_charge_unvisited_bases_or_fixed_leaves() {
             Some((Point2::new(0., 0.), Point2::new(1., 0.)))
         );
         assert_eq!(offset.line_parameters(ctx)?, None);
-        let original = ctx
-            .charge_work_limit(1, "first refusal")
-            .expect_err("zero budget");
-        assert!(matches!(line.line_parameters(ctx), Err(sticky) if sticky == original));
-        Err::<(), CodecError>(original.into())
+        Ok(())
     })
-    .expect_err("sticky refusal");
+    .expect("fixed leaves need no budget");
 }

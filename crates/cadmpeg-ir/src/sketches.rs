@@ -1008,7 +1008,6 @@ impl SketchGeometry {
         operation: &'static str,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         use SketchGeometryDefinition as Definition;
-        ctx.charge_work(0, operation)?;
         let definition = match self.definition() {
             Definition::Nurbs { curve } => Definition::Nurbs {
                 curve: curve.try_clone_for_decode(ctx, operation)?,
@@ -1831,7 +1830,6 @@ impl SpatialSketchProfile {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
-        ctx.charge_work(0, operation)?;
         let Some(origin) = FinitePoint3::new(origin) else {
             return Ok(Err("spatial profile origin must be finite"));
         };
@@ -1854,7 +1852,6 @@ impl SpatialSketchProfile {
         operation: &'static str,
     ) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
         let [n, u] = [normal.as_raw(), u_axis.as_raw()];
-        ctx.charge_work(0, operation)?;
         let dot = n.x * u.x + n.y * u.y + n.z * u.z;
         if dot.abs() > EPS_SPATIAL_PROFILE_FRAME {
             return Ok(Err(SPATIAL_PROFILE_AXES_ERROR));
@@ -2486,7 +2483,6 @@ impl SpatialSketchGeometry {
         operation: &'static str,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         use SpatialSketchGeometryDefinition as Definition;
-        ctx.charge_work(0, operation)?;
         let definition = match &self.0 {
             Definition::Nurbs { curve } => Definition::Nurbs {
                 curve: SpatialSketchNurbsCurve(curve.0.try_clone_for_decode(ctx, operation)?),
@@ -3766,7 +3762,6 @@ impl SketchPolygon {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
-        ctx.charge_work(0, operation)?;
         if entities.len() < 3 {
             return Ok(Err(
                 "entities requires at least three distinct polygon members",

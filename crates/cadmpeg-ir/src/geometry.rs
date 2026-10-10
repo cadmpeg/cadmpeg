@@ -179,7 +179,6 @@ impl SolvedSurfaceGeometry {
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
-        ctx.charge_work(0, operation)?;
         Ok(match self {
             Self::Plane(value) => Self::Plane(*value),
             Self::Cylinder(value) => Self::Cylinder(*value),
@@ -469,7 +468,6 @@ impl SolvedCurveGeometry {
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
-        ctx.charge_work(0, operation)?;
         Ok(match self {
             Self::Line(value) => Self::Line(*value),
             Self::Circle(value) => Self::Circle(*value),

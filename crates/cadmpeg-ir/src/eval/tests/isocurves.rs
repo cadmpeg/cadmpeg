@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::eval::admission::EvaluationAdmission;
-use crate::eval::{nurbs_surface_isocurve, nurbs_surface_isoline, IsolineDirection};
+use crate::eval::nurbs_surface_isocurve;
 use crate::features::FinitePoint3;
 use crate::geometry::nurbs::{
     NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes, SurfaceParameterAxis, WeightedPole3,
@@ -60,10 +60,6 @@ fn isocurve_returns_original_refusals_in_every_used_dimension() {
             nurbs_surface_isocurve(&ctx, &surface, SurfaceParameterAxis::U, 0.5).unwrap_err();
         assert_eq!(original.dimension, dimension);
         assert_eq!(original.operation, operation);
-        assert_eq!(
-            nurbs_surface_isoline(&ctx, &surface, IsolineDirection::ConstantU, f64::NAN),
-            Err(original)
-        );
         assert!(
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
         );

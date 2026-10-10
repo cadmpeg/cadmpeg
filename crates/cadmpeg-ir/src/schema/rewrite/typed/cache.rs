@@ -48,7 +48,6 @@ impl<'ctx> ReplacementIndex<'ctx> {
         source: &str,
         operation: &'static str,
     ) -> Result<Option<&'ctx str>, ResourceLimit> {
-        ctx.charge_work_limit(0, operation)?;
         let mut low = 0;
         let mut high = self.values.len();
         while low < high {

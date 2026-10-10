@@ -337,15 +337,6 @@ fn local_surface_inverse_preserves_each_work_refusal() {
                     assert_eq!(original.dimension, ResourceDimension::WorkUnits);
                     assert_eq!(original.operation, "IR homogeneous pole traversal");
                     assert_eq!(ctx.resource_refusal(), Some(original));
-                    assert_eq!(
-                        nurbs_surface_parameter_near_point(
-                            ctx,
-                            &surface,
-                            Point3::new(f64::NAN, 0.0, 0.0),
-                            None,
-                        ),
-                        Err(original)
-                    );
                     result.map_err(cadmpeg_core::CodecError::from)
                 })
             },
@@ -396,10 +387,6 @@ fn surface_partials_preserve_scratch_refusal_and_temporary_lifetime() {
             assert_eq!((original.limit, original.used), (0, 0));
             assert!(original.additional > 0);
             assert_eq!(ctx.resource_refusal(), Some(original));
-            assert_eq!(
-                crate::eval::nurbs_surface_second_partials(ctx, &surface, f64::NAN, 0.5),
-                Err(crate::eval::EvaluationFailure::ResourceLimit(original))
-            );
         });
     }
     let mut policy = DecodePolicy::service();
