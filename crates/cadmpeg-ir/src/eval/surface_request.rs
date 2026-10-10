@@ -2,6 +2,7 @@
 //! Requested derivative order through surface carrier mappings.
 
 pub(super) mod differentials;
+pub(super) mod model;
 
 use super::admission::EvaluationAdmission;
 use super::depth::{ModelEvaluationDepthGuard, ModelEvaluationIdentity};
