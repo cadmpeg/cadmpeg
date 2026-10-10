@@ -555,9 +555,7 @@ impl<'source, 'ctx> TopologyIndex<'source, 'ctx> {
             else {
                 break;
             };
-            let payload_key = ctx
-                .split_once(payload_id, "#", "FCStd GUI identity key")?
-                .map_or(payload_id, |(_, key)| key);
+            let payload_key = crate::native::id_key_charged(ctx, payload_id, "FCStd GUI identity key")?;
             if ctx
                 .get_btree_map(
                     &self.bodies,
@@ -578,10 +576,7 @@ impl<'source, 'ctx> TopologyIndex<'source, 'ctx> {
                         "FCStd GUI body payload prefix lower bound",
                     )? {
                         let suffix = &candidate.key[payload_key.len()..];
-                        Ok(
-                            ctx.compare(suffix, ":", "FCStd GUI body payload prefix lower bound")?
-                                == std::cmp::Ordering::Less,
-                        )
+                        Ok(suffix.as_bytes().first().is_none_or(|byte| *byte < b':'))
                     } else {
                         Ok(ctx.compare(
                             candidate.key,
@@ -644,7 +639,7 @@ impl<'source, 'ctx> TopologyIndex<'source, 'ctx> {
                 key,
                 "FCStd GUI body payload source-order group",
             )? {
-                ctx.stable_sort_by_key(
+                ctx.sort_unstable_by_key(
                     bodies,
                     |(ordinal, _)| *ordinal,
                     usize::cmp,
@@ -1219,7 +1214,7 @@ fn transfer_schema_one<'ctx>(
                         let provenance = property_provenance("LineWidth")?;
                         let index = match &mut edge_index {
                             Some(index) => {
-                                index.add_prefixes(ctx, ir, style, prefixes)?;
+                                index.add_prefixes(ctx, prefixes)?;
                                 index
                             }
                             slot @ None => {
@@ -1283,7 +1278,7 @@ fn transfer_schema_one<'ctx>(
                         let provenance = property_provenance("PointSize")?;
                         let index = match &mut vertex_index {
                             Some(index) => {
-                                index.add_prefixes(ctx, ir, style, prefixes)?;
+                                index.add_prefixes(ctx, prefixes)?;
                                 index
                             }
                             slot @ None => {
@@ -2177,7 +2172,6 @@ struct PrimitiveCandidate<'source> {
 struct PrimitiveIndex<'source, 'ctx> {
     by_prefix: BTreeMap<&'source str, Vec<(usize, PrimitiveTarget<'source>)>>,
     candidates: Vec<PrimitiveCandidate<'source>>,
-    candidates_built: bool,
     index_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
     candidate_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
@@ -2192,19 +2186,53 @@ impl<'source, 'ctx> PrimitiveIndex<'source, 'ctx> {
         let mut index = Self {
             by_prefix: BTreeMap::new(),
             candidates: Vec::new(),
-            candidates_built: false,
             index_storage: ctx.reserve_scoped(0, "FCStd GUI primitive index")?,
             candidate_storage: ctx.reserve_scoped(0, "FCStd GUI primitive candidates")?,
         };
-        index.add_prefixes(ctx, ir, style, requested_prefixes)?;
+        let len = match style {
+            PrimitiveStyle::Line(_) => ir.model.edges.len(),
+            PrimitiveStyle::Point(_) => ir.model.vertices.len(),
+        };
+        let mut ordinals = 0..len;
+        while ordinals.len() != 0 {
+            let Some(ordinal) =
+                ctx.next_charged(&mut ordinals, "FCStd GUI primitive candidates")?
+            else {
+                break;
+            };
+            let (id, target) = match style {
+                PrimitiveStyle::Line(_) => {
+                    let id = &ir.model.edges[ordinal].id;
+                    (id.as_str(), PrimitiveTarget::Edge(id))
+                }
+                PrimitiveStyle::Point(_) => {
+                    let id = &ir.model.vertices[ordinal].id;
+                    (id.as_str(), PrimitiveTarget::Vertex(id))
+                }
+            };
+            let key = crate::native::id_key_charged(ctx, id, "FCStd GUI primitive identity key")?;
+            index.candidate_storage.with_storage(|| {
+                ctx.reserve_vec(&mut index.candidates, 1, "FCStd GUI primitive candidates")
+            })?;
+            index.candidates.push(PrimitiveCandidate {
+                key,
+                ordinal,
+                target,
+            });
+        }
+        ctx.sort_unstable_by(
+            &mut index.candidates,
+            |candidate| candidate.key,
+            str::cmp,
+            "FCStd GUI primitive candidate key order",
+        )?;
+        index.add_prefixes(ctx, requested_prefixes)?;
         Ok(index)
     }
 
     fn add_prefixes(
         &mut self,
         ctx: &DecodeContext<'_>,
-        ir: &'source CadIr,
-        style: PrimitiveStyle,
         prefixes: &[String],
     ) -> Result<(), CodecError> {
         if prefixes.is_empty() {
@@ -2212,9 +2240,6 @@ impl<'source, 'ctx> PrimitiveIndex<'source, 'ctx> {
                 return Err(refusal.into());
             }
             return Ok(());
-        }
-        if !self.candidates_built {
-            self.build_candidates(ctx, ir, style)?;
         }
         let mut requested_storage =
             ctx.reserve_scoped(0, "FCStd GUI requested primitive prefixes")?;
@@ -2292,68 +2317,9 @@ impl<'source, 'ctx> PrimitiveIndex<'source, 'ctx> {
                     "FCStd GUI primitive index",
                 )?;
             }
-            if let Some(members) = ctx.get_mut_btree_map(
-                &mut self.by_prefix,
-                key,
-                "FCStd GUI primitive source-order group lookup",
-            )? {
-                ctx.stable_sort_by_key(
-                    members,
-                    |(ordinal, _)| *ordinal,
-                    usize::cmp,
-                    "FCStd GUI primitive source order",
-                )?;
-            }
         }
         drop(requested);
         drop(requested_storage);
-        Ok(())
-    }
-
-    fn build_candidates(
-        &mut self,
-        ctx: &DecodeContext<'_>,
-        ir: &'source CadIr,
-        style: PrimitiveStyle,
-    ) -> Result<(), CodecError> {
-        let len = match style {
-            PrimitiveStyle::Line(_) => ir.model.edges.len(),
-            PrimitiveStyle::Point(_) => ir.model.vertices.len(),
-        };
-        let mut ordinals = 0..len;
-        while ordinals.len() != 0 {
-            let Some(ordinal) =
-                ctx.next_charged(&mut ordinals, "FCStd GUI primitive candidates")?
-            else {
-                break;
-            };
-            let (id, target) = match style {
-                PrimitiveStyle::Line(_) => {
-                    let id = &ir.model.edges[ordinal].id;
-                    (id.as_str(), PrimitiveTarget::Edge(id))
-                }
-                PrimitiveStyle::Point(_) => {
-                    let id = &ir.model.vertices[ordinal].id;
-                    (id.as_str(), PrimitiveTarget::Vertex(id))
-                }
-            };
-            let key = crate::native::id_key_charged(ctx, id, "FCStd GUI primitive identity key")?;
-            self.candidate_storage.with_storage(|| {
-                ctx.reserve_vec(&mut self.candidates, 1, "FCStd GUI primitive candidates")
-            })?;
-            self.candidates.push(PrimitiveCandidate {
-                key,
-                ordinal,
-                target,
-            });
-        }
-        ctx.stable_sort_by(
-            &mut self.candidates,
-            |candidate| candidate.key,
-            str::cmp,
-            "FCStd GUI primitive candidate key order",
-        )?;
-        self.candidates_built = true;
         Ok(())
     }
 }
@@ -2385,8 +2351,7 @@ fn shape_payload_prefixes(
         ctx.reserve_vec(&mut prefixes, 1, "FCStd GUI payload prefixes")?;
         prefixes.push(
             ctx.retained_suffix(
-                ctx.split_once(payload, "#", "FCStd GUI identity key")?
-                    .map_or(payload, |(_, key)| key),
+                crate::native::id_key_charged(ctx, payload, "FCStd GUI identity key")?,
                 ":",
                 "FCStd GUI payload prefix text",
             )?,
@@ -6684,12 +6649,12 @@ fn transfer_shape_appearances<'source, 'ir, 'ctx>(
     Ok(())
 }
 
-fn displayed_shape_bodies<'ctx>(
+fn displayed_shape_bodies<'ir, 'ctx>(
     ctx: &'ctx DecodeContext<'_>,
-    topology_index: &mut TopologyIndex<'_, 'ctx>,
+    topology_index: &mut TopologyIndex<'ir, 'ctx>,
     object_id: &str,
     shape_index: &mut ShapeIndex<'_, 'ctx>,
-) -> Result<Vec<cadmpeg_ir::ids::BodyId>, CodecError> {
+) -> Result<Vec<&'ir cadmpeg_ir::ids::BodyId>, CodecError> {
     let Some(payload) = displayed_shape_payload(ctx, object_id, shape_index)? else {
         return Ok(Vec::new());
     };
@@ -6701,11 +6666,11 @@ fn displayed_shape_bodies<'ctx>(
     )
 }
 
-fn select_shape_bodies<'a, I>(
+fn select_shape_bodies<'a, 'ir, I>(
     ctx: &DecodeContext<'_>,
-    bodies: &BTreeMap<&str, Vec<(usize, &cadmpeg_ir::ids::BodyId)>>,
+    bodies: &BTreeMap<&str, Vec<(usize, &'ir cadmpeg_ir::ids::BodyId)>>,
     payload_ids: I,
-) -> Result<Vec<cadmpeg_ir::ids::BodyId>, CodecError>
+) -> Result<Vec<&'ir cadmpeg_ir::ids::BodyId>, CodecError>
 where
     I: IntoIterator<Item = &'a str>,
     I::IntoIter: std::iter::ExactSizeIterator,
@@ -6721,9 +6686,7 @@ where
         else {
             break;
         };
-        let payload_key = ctx
-            .split_once(payload_id, "#", "FCStd GUI identity key")?
-            .map_or(payload_id, |(_, key)| key);
+        let payload_key = crate::native::id_key_charged(ctx, payload_id, "FCStd GUI identity key")?;
         let owned = ctx
             .get_btree_map(
                 bodies,
@@ -6741,7 +6704,7 @@ where
             };
             ctx.push_vec(
                 &mut body_ids,
-                body.try_clone_for_decode(ctx, "FCStd GUI displayed body identity")?,
+                *body,
                 "FCStd GUI displayed shape bodies",
             )?;
         }
@@ -7260,9 +7223,7 @@ fn transfer_topology_colors<'source, 'ir, 'ctx>(
                         });
                         emitted_appearance = true;
                     }
-                    let topology_key = ctx
-                        .split_once(topology_id, "#", "FCStd GUI identity key")?
-                        .map_or(topology_id.as_str(), |(_, key)| key);
+                    let topology_key = crate::native::id_key_charged(ctx, topology_id.as_str(), "FCStd GUI identity key")?;
                     let kind_key = topology_binding_kind(kind);
                     plan.binding_storage.with_storage(|| {
                         ctx.reserve_vec(&mut plan.bindings, 1, "FCStd GUI planned bindings")
@@ -7657,7 +7618,7 @@ mod shape_association_tests {
                 Err(cadmpeg_core::CodecError::ResourceLimit(_))
             ));
             assert!(matches!(
-                primitives.add_prefixes(ctx, &ir, style, &[]),
+                primitives.add_prefixes(ctx, &[]),
                 Err(cadmpeg_core::CodecError::ResourceLimit(_))
             ));
         });
@@ -7680,17 +7641,18 @@ mod shape_association_tests {
     }
 
     #[test]
-    fn displayed_shape_body_identity_refuses_at_retained_limit() {
+    fn displayed_shape_body_update_identity_refuses_at_materialized_limit() {
         let ir = shape_ir();
         let properties = [shape_property("property")];
         let payloads = [shape_payload("payload", "property")];
-        crate::test_support::assert_retained_refusal_at(
-            &[],
-            "FCStd GUI displayed body identity",
+        crate::test_support::materialized_refusal_at(
+            "FCStd GUI body update identity",
             |ctx| {
                 let mut topology = TopologyIndex::new(&ir);
                 let mut shape = ShapeIndex::new(ctx, &properties, &payloads, &[])?;
-                displayed_shape_bodies(ctx, &mut topology, "object", &mut shape)
+                let bodies = displayed_shape_bodies(ctx, &mut topology, "object", &mut shape)?;
+                let mut plan = super::AppearancePlan::new(ctx)?;
+                super::push_body_update(ctx, &mut plan, bodies[0], super::Assignment::Keep, Ok(None))
             },
         );
     }
@@ -7726,7 +7688,7 @@ mod shape_association_tests {
             .expect("service policy admits both source occurrences");
         assert_eq!(
             body_ids,
-            [ir.model.bodies[0].id.clone(), ir.model.bodies[0].id.clone()]
+            [&ir.model.bodies[0].id, &ir.model.bodies[0].id]
         );
     }
 
