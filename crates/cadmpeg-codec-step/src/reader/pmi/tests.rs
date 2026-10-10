@@ -22,6 +22,7 @@ mod case_equality;
 mod collection_limits;
 mod known_length;
 mod string_limits;
+mod scratch_lifetimes;
 
 #[test]
 pub(crate) fn decode_transfers_ap242_semantic_pmi() {

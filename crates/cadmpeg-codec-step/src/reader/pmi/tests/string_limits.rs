@@ -373,3 +373,62 @@ fn datum_target_form_direct_caller_preserves_materialized_refusal() {
     assert!(matches!(ctx.finish_session(),
         Err(CodecError::ResourceLimit(sticky)) if sticky == refusal));
 }
+
+fn pmi_only_result(records: &str, dimension: ResourceDimension, cap: u64) -> Result<cadmpeg_ir::CadIr, CodecError> {
+    let source = source(records);
+    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("PMI exchange");
+    let setup = cadmpeg_test_support::service_decode_context();
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let geometry = crate::reader::geometry::decode(&exchange, &mut ir, &setup)?;
+    let index = crate::reader::index::CarrierIndex::from_ir(&ir, &setup)?;
+    let topology = crate::reader::topology::decode(&exchange, &mut ir, &index, &setup)?;
+    let mut policy = DecodePolicy::service();
+    match dimension {
+        ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
+        ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
+        _ => panic!("fit storage dimension"),
+    }
+    crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+        super::super::decode(&exchange, &geometry.value, &topology.value, &mut ir, ctx).map(|_| ())
+    })?;
+    Ok(ir)
+}
+
+#[test]
+fn discarded_fit_fields_use_and_release_scratch_storage() {
+    for field in 0..4 {
+        let text = "x".repeat(16_384);
+        let mut fields = ["", "", "", ""];
+        fields[field] = &text;
+        let records = format!("#1=PLUS_MINUS_TOLERANCE(#2);#2=LIMITS_AND_FITS('{}','{}','{}','{}');", fields[0], fields[1], fields[2], fields[3]);
+        let ir = pmi_only_result(&records, ResourceDimension::RetainedBytes, 0)
+            .expect("discarded fit fields do not charge retained storage");
+        assert!(ir.model.pmi.is_empty());
+        let mut repeated = records.clone();
+        for id in 3..35 {
+            use std::fmt::Write as _;
+            write!(repeated, "#{id}=PLUS_MINUS_TOLERANCE(#2);").expect("repeated candidate");
+        }
+        let ir = pmi_only_result(&repeated, ResourceDimension::MaterializedBytes, 65_536)
+            .expect("live 16 KiB field plus 33 report slots fits; dead candidate fields would add 528 KiB");
+        assert!(ir.model.pmi.is_empty());
+        assert!(matches!(pmi_only_result(&records, ResourceDimension::MaterializedBytes, 8192),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::MaterializedBytes
+                    && refusal.operation == "step_string_text"));
+    }
+}
+
+#[test]
+fn accepted_fit_fields_charge_retained_storage() {
+    for field in 0..4 {
+        let text = "x".repeat(16_384);
+        let mut fields = ["", "", "", ""];
+        fields[field] = &text;
+        let records = format!("#1=DIMENSIONAL_SIZE(#4,'');#2=LIMITS_AND_FITS('{}','{}','{}','{}');#3=PLUS_MINUS_TOLERANCE(#1,#2);#4=ITEM();", fields[0], fields[1], fields[2], fields[3]);
+        assert!(matches!(pmi_only_result(&records, ResourceDimension::RetainedBytes, 8192),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::RetainedBytes
+                    && refusal.operation == "STEP limits-and-fits candidate scratch"));
+    }
+}

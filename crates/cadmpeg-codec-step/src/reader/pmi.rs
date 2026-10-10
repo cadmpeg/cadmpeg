@@ -409,6 +409,7 @@ pub(super) fn decode<'ctx>(
         let definition = PmiDimension::new(kind, nominal, None)
             .map_err(|error| CodecError::malformed(format_args!("dimension #{id}: {error}")))?;
         let mut aspect_targets = Vec::new();
+        let mut aspect_storage = ctx.reserve_scoped(0, "STEP dimension aspect scratch")?;
         let mut aspect_ids = BTreeSet::new();
         ctx.charge_work(0, "STEP dimension aspect partial traversal")?;
         let mut pmi_source = record.partials[..].iter();
@@ -431,7 +432,7 @@ pub(super) fn decode<'ctx>(
                         &id,
                         "STEP pmi aspect_ids contains",
                     )? {
-                        scratch_storage.with_storage(|| {
+                        aspect_storage.with_storage(|| {
                             ctx.insert_btree_set(&mut aspect_ids, id, "step_pmi_target_ids")
                         })?;
                         ctx.push_vec(
@@ -1444,6 +1445,7 @@ fn resolve_geometric_item_usages(
             else {
                 continue;
             };
+            let mut annotation_storage = ctx.reserve_scoped(0, "STEP usage annotation scratch")?;
             let mut annotation_indices = BTreeSet::new();
             if let Some(items) = ctx.get_btree_map(
                 &aspect_annotations,
@@ -1456,7 +1458,7 @@ fn resolve_geometric_item_usages(
                     for _ in 0..visited_items.len() {
                         let &index = ctx.next_charged(&mut visited_items, "STEP optional collection traversal")?
                             .ok_or_else(|| CodecError::malformed("STEP PMI traversal source ended early"))?;
-                        scratch_storage.with_storage(|| {
+                        annotation_storage.with_storage(|| {
                             ctx.insert_btree_set(
                                 &mut annotation_indices,
                                 index,
@@ -1488,7 +1490,7 @@ fn resolve_geometric_item_usages(
                                 for _ in 0..visited_items.len() {
                                     let &index = ctx.next_charged(&mut visited_items, "STEP optional collection traversal")?
                                         .ok_or_else(|| CodecError::malformed("STEP PMI traversal source ended early"))?;
-                                    scratch_storage.with_storage(|| {
+                                    annotation_storage.with_storage(|| {
                                         ctx.insert_btree_set(
                                             &mut annotation_indices,
                                             index,
@@ -2296,12 +2298,7 @@ fn find_annotation_text(
     match candidates.len() {
         0 => Ok(None),
         1 => {
-            let Some((text_id, text)) = ctx
-                .admit_iter(candidates, "STEP PMI singleton annotation text")?
-                .next()
-            else {
-                return Ok(None);
-            };
+            let (text_id, text) = candidates.into_iter().next().expect("one text candidate");
             claim_storage.with_storage(|| {
                 ctx.insert_btree_set(used, text_id, "step_pmi_annotation_text_used")
             })?;
@@ -2520,7 +2517,7 @@ fn copy_pmi_target(
 }
 
 fn datum_target_form(value: &str, ctx: &DecodeContext<'_>) -> Result<DatumTargetForm, CodecError> {
-    let form = ctx.trim_text(value, "STEP datum target form trim")?;
+    let form = value.trim();
     if form.eq_ignore_ascii_case("point") {
         Ok(DatumTargetForm::Point)
     } else if form.eq_ignore_ascii_case("line") {
