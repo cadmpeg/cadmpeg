@@ -307,7 +307,7 @@ fn procedural_support_lookup_uses_the_stored_arena_index() {
             &mut supports,
             &mut ctx.reserve_scoped(0, "test support map").expect("scope"),
             7,
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+            &SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             &mut admission,
         )?;
         assert_eq!(result, expected);

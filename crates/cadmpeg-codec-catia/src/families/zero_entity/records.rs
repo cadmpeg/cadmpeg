@@ -525,8 +525,9 @@ fn zero_entity_records_in_range(
     }
     let mut records = Vec::new();
     let mut position = range.start;
+    let mut steps = std::iter::repeat(());
     while position + a9_03::LEN <= range.end {
-        ctx.charge_work(1, "catia_zero_record_scan")?;
+        ctx.next_charged(&mut steps, "catia_zero_record_scan")?;
         if data[position + a9_03::FAMILY..position + a9_03::TAG_HI] != [0xa9, 0x03] {
             position += 1;
             continue;
@@ -636,13 +637,7 @@ fn zero_entity_nurbs_layout(
             return None;
         }
         let mut candidate = None;
-        let mut widths = 2..=max_u_distinct;
-        while let Some(u_distinct_count) =
-            match ctx.next_charged(&mut widths, "catia_zero_nurbs_lane_boundary_bytes") {
-                Ok(value) => value,
-                Err(error) => return Some(Err(error)),
-            }
-        {
+        for u_distinct_count in 2..=max_u_distinct {
             let u_after = knot_start.checked_add(u_distinct_count.checked_mul(13)?)?;
             let (u_lane, u_storage) =
                 match ctx.with_scoped_storage("catia_zero_nurbs_u_lane_workspace", || {
@@ -658,14 +653,14 @@ fn zero_entity_nurbs_layout(
                     Ok((None, _)) => continue,
                     Err(error) => return Some(Err(error)),
                 };
-            let after_dimensions = match ctx
-                .with_scoped_storage("catia_zero_nurbs_dimensions_workspace", || {
-                    u32_tokens(ctx, data, u_after, 2)
-                }) {
-                Ok((Some((_, end)), _)) => end,
-                Ok((None, _)) => continue,
-                Err(error) => return Some(Err(error)),
-            };
+            let after_dimensions = u_after.checked_add(10)?;
+            let mut dimensions = View::over_retained(data.get(u_after..after_dimensions)?);
+            let valid_dimensions = (0..2).all(|_| {
+                dimensions.u8() == Some(0x10) && dimensions.u32_le().is_some_and(|value| value != 0)
+            });
+            if !valid_dimensions {
+                continue;
+            }
             let v_start = after_dimensions.checked_add(1)?;
             if v_start > pole_marker_start {
                 continue;
@@ -737,48 +732,36 @@ fn zero_entity_nurbs_knot_lane(
             return Some(Err(error));
         }
         let lane = data.get(start..distinct_end)?;
-        let mut chunks = lane.chunks_exact(8);
-        while let Some(chunk) =
-            match ctx.next_charged(&mut chunks, "catia_zero_nurbs_distinct_knot_bytes") {
-                Ok(value) => value,
-                Err(error) => return Some(Err(error)),
-            }
-        {
+        for chunk in lane.chunks_exact(8) {
             let value = f64_le(chunk, 0)?;
             if distinct.last().is_some_and(|last| value <= *last) {
                 return None;
             }
             distinct.push(value);
         }
-        let (mults, end) = match u32_tokens(ctx, data, distinct_end, distinct_count) {
-            Ok(Some(tokens)) => tokens,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
-        let degree = mults.first().copied()?.checked_sub(1)?;
-        let mut sum = 0u32;
-        let valid = match ctx.all_by(
-            &mults,
-            |value| {
-                if let Some(next) = sum.checked_add(*value) {
-                    sum = next;
-                    Ok(true)
-                } else {
-                    Ok(false)
-                }
-            },
-            "catia_zero_nurbs_multiplicity_visits",
-        ) {
-            Ok(value) => value,
-            Err(error) => return Some(Err(error)),
-        };
-        if !valid {
-            return None;
+        let end = distinct_end.checked_add(distinct_count.checked_mul(5)?)?;
+        let token_bytes = data.get(distinct_end..end)?;
+        let mut mults = Vec::new();
+        if let Err(error) = ctx.reserve_vec(&mut mults, distinct_count, "catia_zero_u32_tokens") {
+            return Some(Err(error));
         }
+        let mut sum = 0u32;
+        for token in token_bytes.chunks_exact(5) {
+            let mut view = View::over_retained(token);
+            if view.u8() != Some(0x10) {
+                return None;
+            }
+            let value = view.u32_le()?;
+            if value == 0 {
+                return None;
+            }
+            sum = sum.checked_add(value)?;
+            mults.push(value);
+        }
+        let degree = mults.first().copied()?.checked_sub(1)?;
         let control_count = sum.checked_sub(degree.checked_add(1)?)?;
         if !(1..=9).contains(&degree)
             || usize::try_from(control_count).ok()? != expected_control_count
-            || end != distinct_end.checked_add(distinct_count.checked_mul(5)?)?
         {
             return None;
         }
@@ -973,28 +956,37 @@ fn zero_entity_surfaces(data: &[u8]) -> Vec<ZeroEntitySurface> {
             0..data.len(),
             &mut crate::nurbs::LaneRefusals::new(),
         )
+        .and_then(|(surfaces, storage)| storage.commit_value(surfaces))
     })
     .expect("test zero-entity surfaces fit the service profile")
 }
 
 /// Decode surface carriers whose records stay inside `range`.
-pub(super) fn zero_entity_surfaces_in_range(
-    ctx: &DecodeContext<'_>,
+pub(super) fn zero_entity_surfaces_in_range<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     data: &[u8],
     range: Range<usize>,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Result<Vec<ZeroEntitySurface>, CodecError> {
+) -> Result<
+    (
+        Vec<ZeroEntitySurface>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    ),
+    CodecError,
+> {
     let (records, _record_storage) = ctx
         .with_scoped_storage("catia_zero_record_workspace", || {
             zero_entity_records_in_range(ctx, data, range)
         })?;
+    let mut storage = ctx.reserve_scoped(0, "catia_zero_surface_roster_workspace")?;
     let mut surfaces = Vec::new();
     for record in ctx
         .admit_iter(&records, "catia_zero_framed_record_visits")?
         .copied()
     {
         if let Some(geometry) = zero_entity_surface_at(ctx, data, record.pos, refusal)? {
-            ctx.push_vec(
+            ctx.push_scoped_vec(
+                &mut storage,
                 &mut surfaces,
                 ZeroEntitySurface {
                     pos: record.pos,
@@ -1004,7 +996,7 @@ pub(super) fn zero_entity_surfaces_in_range(
             )?;
         }
     }
-    Ok(surfaces)
+    Ok((surfaces, storage))
 }
 
 /// Decode surface-carrier ownership and exact face-local support occurrences.
@@ -1035,11 +1027,13 @@ pub(crate) fn zero_entity_support_runs_in_range(
         })?;
     let mut runs = Vec::new();
     let mut index = 0usize;
+    let mut steps = std::iter::repeat(());
     while index + 1 < records.len() {
-        ctx.charge_work(1, "catia_zero_support_run_records")?;
+        ctx.next_charged(&mut steps, "catia_zero_support_run_records")?;
         let carrier_record = records[index];
-        let Some(carrier_geometry) =
-            zero_entity_surface_at(ctx, data, carrier_record.pos, refusal)?
+        let mut carrier_storage = ctx.reserve_scoped(0, "catia_zero_support_carrier")?;
+        let Some(carrier_geometry) = carrier_storage
+            .with_storage(|| zero_entity_surface_at(ctx, data, carrier_record.pos, refusal))?
         else {
             index += 1;
             continue;
@@ -1644,9 +1638,9 @@ fn zero_entity_loops_from_records<'ctx>(
                 };
                 let mut forward_senses = Vec::new();
                 ctx.reserve_vec(&mut forward_senses, edge_count, "catia_zero_loop_senses")?;
-                for (index, _) in ctx
-                    .admit_iter(&typed_references, "catia_zero_loop_sense_indices")?
-                    .enumerate()
+                let mut senses = typed_references.iter().enumerate();
+                while let Some((index, _)) =
+                    ctx.next_charged(&mut senses, "catia_zero_loop_sense_indices")?
                 {
                     let bit = index * 3;
                     let code = (0..3).fold(0, |code, offset| {
@@ -2883,20 +2877,12 @@ fn zero_entity_nurbs_surface(
     let Some(pole_bytes) = data.get(layout.grid..pole_end) else {
         return Ok(None);
     };
-    let mut rows = Vec::new();
     let mut row_storage = ctx.reserve_scoped(0, "catia_zero_nurbs_grid_workspace")?;
-    let mut indices = 0..index_from_u32(layout.u_count);
+    let mut rows = Vec::new();
     let mut chunks = pole_bytes.chunks_exact(24);
-    while ctx
-        .next_charged(&mut indices, "catia_zero_nurbs_row_visits")?
-        .is_some()
-    {
+    for _ in 0..index_from_u32(layout.u_count) {
         let mut row = Vec::new();
-        let mut columns = 0..index_from_u32(layout.v_count);
-        while ctx
-            .next_charged(&mut columns, "catia_zero_nurbs_pole_bytes")?
-            .is_some()
-        {
+        for _ in 0..index_from_u32(layout.v_count) {
             let Some(chunk) = chunks.next() else {
                 return Ok(None);
             };
@@ -2940,34 +2926,30 @@ fn zero_entity_expand_knots(
     distinct: &[impl Copy + Into<f64>],
     multiplicities: &[u32],
 ) -> Result<Vec<f64>, CodecError> {
+    // The carrier has at most seven controls and degree at most nine.
+    const MAX_FIXED_KNOTS: usize = 7 + 9 + 1;
+    if distinct.len() != multiplicities.len() || distinct.len() > MAX_FIXED_KNOTS {
+        return Err(CodecError::malformed(
+            "zero-entity knot lane exceeds its fixed carrier bound",
+        ));
+    }
     let mut total = 0usize;
-    let mut values = multiplicities.iter();
-    while let Some(&value) = ctx.next_charged(&mut values, "catia_zero_knot_expansion_scan")? {
-        total = usize::try_from(value)
+    for &multiplicity in multiplicities {
+        total = usize::try_from(multiplicity)
             .ok()
-            .and_then(|value| total.checked_add(value))
+            .and_then(|count| total.checked_add(count))
+            .filter(|total| *total <= MAX_FIXED_KNOTS)
             .ok_or_else(|| {
-                ctx.refuse_codec_limit("catia_zero_expanded_knots", u64::MAX, u64::MAX)
+                CodecError::malformed("zero-entity knot count exceeds its fixed carrier bound")
             })?;
     }
     let mut knots = Vec::new();
-    ctx.reserve_capacity(&mut knots, total, "catia_zero_expanded_knots")?;
-    for (knot, &multiplicity) in ctx
-        .admit_iter(distinct, "catia_zero_distinct_knot_visits")?
-        .zip(multiplicities)
-    {
-        let length = usize::try_from(multiplicity)
-            .ok()
-            .and_then(|count| knots.len().checked_add(count))
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("catia_zero_expanded_knots", u64::MAX, u64::MAX)
-            })?;
-        ctx.resize_vec(
-            &mut knots,
-            length,
-            (*knot).into(),
-            "catia_zero_knot_expansion_emit",
-        )?;
+    ctx.reserve_vec(&mut knots, total, "catia_zero_expanded_knots")?;
+    for (&knot, &multiplicity) in distinct.iter().zip(multiplicities) {
+        knots.extend(std::iter::repeat_n(
+            knot.into(),
+            index_from_u32(multiplicity),
+        ));
     }
     Ok(knots)
 }
@@ -3006,47 +2988,6 @@ fn zero_entity_torus(payload: &[u8]) -> Option<SurfaceGeometry> {
     let mut c = crate::wire::cursor::Cursor::new_at(payload, 8)?;
     let (geometry, _, _) = crate::analytic::torus_ozrr(&mut c)?;
     Some(geometry)
-}
-
-fn u32_tokens(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    at: usize,
-    count: usize,
-) -> Result<Option<(Vec<u32>, usize)>, CodecError> {
-    let mut view = View::over_retained(bytes);
-    if view.seek(at).is_none() {
-        return Ok(None);
-    }
-    let mut values = Vec::new();
-    ctx.reserve_vec(&mut values, count, "catia_zero_u32_tokens")?;
-    let Some(byte_count) = count.checked_mul(5) else {
-        return Err(ctx.refuse_codec_limit("catia_zero_u32_token_bytes", u64::MAX, u64::MAX));
-    };
-    let Some(token_bytes) = view.take(byte_count) else {
-        return Ok(None);
-    };
-    for chunk in ctx
-        .admit_iter(token_bytes, "catia_zero_u32_token_bytes")?
-        .chunks(
-            NonZeroUsize::MIN
-                .checked_add(4)
-                .ok_or_else(|| CodecError::malformed("CATIA token width is zero"))?,
-        )
-    {
-        let mut item = View::over_retained(chunk);
-        if item.u8() != Some(0x10) {
-            return Ok(None);
-        }
-        let Some(value) = item.u32_le() else {
-            return Ok(None);
-        };
-        if value == 0 {
-            return Ok(None);
-        }
-        values.push(value);
-    }
-    Ok(Some((values, view.position())))
 }
 
 #[cfg(test)]
@@ -3304,7 +3245,7 @@ mod tests {
     }
 
     #[test]
-    fn zero_entity_fixed_nurbs_lanes_propagate_caller_work_refusals() {
+    fn zero_entity_nurbs_surface_propagates_ir_validation_refusal() {
         let bytes = nurbs_carrier(
             [0x34, 0xc8],
             &[10.0, 20.0, 30.0, 40.0, 50.0],
@@ -3312,25 +3253,66 @@ mod tests {
             &[-100.0, 0.0, 100.0, 200.0, 300.0],
             &[4, 1, 1, 1, 4],
         );
-        for operation in [
-            "catia_zero_nurbs_lane_boundary_bytes",
-            "catia_zero_nurbs_distinct_knot_bytes",
-            "catia_zero_u32_token_bytes",
-            "catia_zero_nurbs_pole_bytes",
-        ] {
-            let result = crate::test_support::with_work_refusal(operation, |ctx| {
-                let result =
-                    surface_at_with_context(ctx, &bytes, 0, &mut crate::nurbs::LaneRefusals::new());
-                if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
-                    assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
-                }
-                result
-            });
-            assert!(
-                matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == operation)
-            );
-        }
+        const OPERATION: &str = "IR NURBS knot order";
+        let result = crate::test_support::with_work_refusal(OPERATION, |ctx| {
+            let result =
+                surface_at_with_context(ctx, &bytes, 0, &mut crate::nurbs::LaneRefusals::new());
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+            }
+            result
+        });
+        assert!(
+            matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == OPERATION)
+        );
+    }
+
+    #[test]
+    fn zero_entity_fixed_nurbs_layout_has_no_work_charge() {
+        let u_knots = [10.0, 20.0, 30.0, 40.0, 50.0];
+        let v_knots = [-100.0, 0.0, 100.0, 200.0, 300.0];
+        let multiplicities = [4, 1, 1, 1, 4];
+        let bytes = nurbs_carrier(
+            [0x34, 0xc8],
+            &u_knots,
+            &multiplicities,
+            &v_knots,
+            &multiplicities,
+        );
+        let layout = crate::test_support::with_work_limit(0, |ctx| {
+            super::zero_entity_nurbs_layout(ctx, &bytes, 0)
+        })
+        .expect("fixed layout has no work charge")
+        .expect("complete carrier");
+        assert_eq!(
+            layout
+                .u_distinct
+                .iter()
+                .map(|value| value.get())
+                .collect::<Vec<_>>(),
+            u_knots
+        );
+        assert_eq!(
+            layout
+                .v_distinct
+                .iter()
+                .map(|value| value.get())
+                .collect::<Vec<_>>(),
+            v_knots
+        );
+        assert_eq!(layout.u_mults, multiplicities);
+        assert_eq!(layout.v_mults, multiplicities);
+        assert_eq!(
+            (
+                layout.u_degree,
+                layout.v_degree,
+                layout.u_count,
+                layout.v_count
+            ),
+            (3, 3, 7, 7)
+        );
+        assert_eq!(layout.end, bytes.len());
     }
 
     #[test]
@@ -3429,7 +3411,35 @@ mod tests {
     }
 
     #[test]
-    fn zero_entity_nurbs_surface_propagates_pole_work_refusal() {
+    fn zero_entity_nurbs_surface_keeps_only_the_admitted_pole_grid() {
+        let bytes = nurbs_carrier(
+            [0x34, 0xc8],
+            &[10.0, 20.0, 30.0, 40.0, 50.0],
+            &[4, 1, 1, 1, 4],
+            &[-100.0, 0.0, 100.0, 200.0, 300.0],
+            &[4, 1, 1, 1, 4],
+        );
+        let surface = crate::test_support::with_retained_limit(2048, |ctx| {
+            surface_at_with_context(ctx, &bytes, 0, &mut crate::nurbs::LaneRefusals::new())
+        })
+        .expect("one grid and two knot lanes fit retained storage")
+        .expect("NURBS carrier");
+        let cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+            cadmpeg_ir::geometry::SolvedSurfaceGeometry::Nurbs(surface),
+        ) = surface
+        else {
+            panic!("NURBS carrier");
+        };
+        let cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::Polynomial { rows } = surface.pole_grid()
+        else {
+            panic!("polynomial grid");
+        };
+        assert_eq!(rows.len(), 7);
+        assert!(rows.iter().all(|row| row.len() == 7));
+    }
+
+    #[test]
+    fn zero_entity_nurbs_surface_refuses_before_pole_growth() {
         let bytes = nurbs_carrier(
             [0x34, 0xc8],
             &[10.0, 20.0, 30.0, 40.0, 50.0],
@@ -3440,14 +3450,19 @@ mod tests {
         assert!(
             zero_entity_surface_at(&bytes, 0, &mut crate::nurbs::LaneRefusals::new()).is_some()
         );
-        let limited =
-            crate::test_support::with_work_refusal("catia_zero_nurbs_pole_bytes", |ctx| {
-                surface_at_with_context(ctx, &bytes, 0, &mut crate::nurbs::LaneRefusals::new())
-            });
-        let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = limited else {
-            panic!("NURBS pole reader must refuse its work operation");
+        let limited = cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            "catia_zero_nurbs_poles",
+            |cap| {
+                crate::test_support::with_collection_limit(cap, |ctx| {
+                    surface_at_with_context(ctx, &bytes, 0, &mut crate::nurbs::LaneRefusals::new())
+                })
+            },
+        );
+        let cadmpeg_core::CodecError::ResourceLimit(error) = limited else {
+            panic!("NURBS pole growth must refuse its collection operation");
         };
-        assert_eq!(error.operation, "catia_zero_nurbs_pole_bytes");
+        assert_eq!(error.operation, "catia_zero_nurbs_poles");
     }
 
     #[test]
@@ -4683,42 +4698,39 @@ mod tests {
 #[cfg(test)]
 mod knot_work_tests {
     #[test]
-    fn zero_entity_knot_lane_propagates_caller_refusal() {
-        const OPERATION: &str = "catia_zero_distinct_knot_visits";
-        let result = crate::test_support::with_work_refusal(OPERATION, |ctx| {
-            let result = super::zero_entity_expand_knots(ctx, &[0.0, 1.0], &[2, 2]);
-            if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
-                assert_eq!(ctx.resource_refusal(), Some(*limit));
-            }
-            result
-        });
+    fn zero_entity_knot_lane_refuses_collection_growth() {
+        const OPERATION: &str = "catia_zero_expanded_knots";
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            OPERATION,
+            |cap| {
+                crate::test_support::with_collection_limit(cap, |ctx| {
+                    super::zero_entity_expand_knots(ctx, &[0.0, 1.0], &[2, 2])
+                })
+            },
+        );
         assert!(
-            matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == OPERATION)
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == OPERATION)
         );
     }
 
     #[test]
-    fn zero_entity_knot_expansion_refuses_scan_and_emission_work() {
-        for (cap, operation) in [
-            (0, "catia_zero_knot_expansion_scan"),
-            (5, "catia_zero_knot_expansion_emit"),
-        ] {
-            let result = crate::test_support::with_work_limit(cap, |ctx| {
+    fn zero_entity_fixed_knot_expansion_has_no_work_charge() {
+        assert_eq!(
+            crate::test_support::with_work_limit(0, |ctx| super::zero_entity_expand_knots(
+                ctx,
+                &[0.0, 1.0],
+                &[2, 2]
+            ))
+            .expect("fixed expansion visits no input-sized work"),
+            vec![0.0, 0.0, 1.0, 1.0]
+        );
+        let refused =
+            crate::test_support::with_retained_refusal(&[], "catia_zero_expanded_knots", |ctx| {
                 super::zero_entity_expand_knots(ctx, &[0.0, 1.0], &[2, 2])
             });
-            assert!(
-                matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                    && limit.operation == operation)
-            );
-        }
-        assert_eq!(
-            // Two count visits plus the end probe, two paired visits and four knot writes.
-            crate::test_support::with_work_limit(9, |ctx| {
-                super::zero_entity_expand_knots(ctx, &[0.0, 1.0], &[2, 2])
-            })
-            .expect("scan and emission work"),
-            vec![0.0, 0.0, 1.0, 1.0]
+        assert!(
+            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "catia_zero_expanded_knots")
         );
     }
 }

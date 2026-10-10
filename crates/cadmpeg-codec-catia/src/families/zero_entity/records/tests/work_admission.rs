@@ -239,3 +239,65 @@ fn nurbs_surface_retains_both_final_knot_lanes() {
         cadmpeg_core::decode::u64_from_index(2 * 11 * std::mem::size_of::<f64>()),
     );
 }
+
+#[test]
+fn invalid_first_packed_sense_does_not_admit_the_unread_tail() {
+    const COUNT: usize = 16;
+    const TERMINAL: u32 = 19;
+    const OP: &str = "catia_zero_loop_sense_indices";
+    let length = 13 + (2 * COUNT + 1) * 5 + 3 + (COUNT * 3).div_ceil(8);
+    let mut bytes = vec![0u8; length];
+    bytes[..4].copy_from_slice(&[
+        0xa9,
+        0x03,
+        0x62,
+        u8::try_from(length - 12).expect("frame width"),
+    ]);
+    bytes[12] = 0x80 + u8::try_from(2 * COUNT + 1).expect("reference count");
+    let mut position = 13;
+    for member in 0..COUNT {
+        for reference in [TERMINAL - 1 - u32::try_from(member).expect("member"), 1] {
+            bytes[position] = 0x10;
+            bytes[position + 1..position + 5].copy_from_slice(&reference.to_le_bytes());
+            position += 5;
+        }
+    }
+    bytes[position] = 0x10;
+    bytes[position + 1..position + 5].copy_from_slice(&TERMINAL.to_le_bytes());
+    position += 5;
+    bytes[position] = 0x80 + u8::try_from(COUNT).expect("member count");
+    bytes[position + 1] = 0x41;
+    bytes[position + 2..length - 1].fill(0xff);
+    bytes[length - 1] = 1;
+    let records = [super::super::ZeroEntityRecord {
+        pos: 0,
+        end: length,
+        tag: [0x62, u8::try_from(length - 12).expect("frame")],
+        ordinal: 1,
+    }];
+    let read = |ctx: &cadmpeg_core::decode::DecodeContext<'_>, bytes: &[u8]| {
+        super::super::zero_entity_loops_from_records(ctx, bytes, &records)
+            .map(|(loops, _storage)| loops.len())
+    };
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| read(ctx, &bytes)).expect("valid loop"),
+        1
+    );
+    bytes[position + 2] &= !7;
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| read(ctx, &bytes))
+            .expect("reject first sense"),
+        0
+    );
+    let error = crate::test_support::with_work_refusal(OP, |ctx| read(ctx, &bytes))
+        .expect_err("first visited sense");
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("work limit");
+    };
+    assert_eq!(limit.additional, 1);
+    assert_eq!(
+        crate::test_support::with_work_limit(limit.used + 1, |ctx| read(ctx, &bytes))
+            .expect("first sense fits"),
+        0
+    );
+}
