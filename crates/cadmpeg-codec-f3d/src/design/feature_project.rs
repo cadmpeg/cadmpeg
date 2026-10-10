@@ -72,6 +72,29 @@ macro_rules! or_none {
     };
 }
 
+fn unique_feature_match_for_decode<'source, T>(
+    ctx: &DecodeContext<'_>,
+    source: &'source [T],
+    mut predicate: impl FnMut(&T) -> Result<bool, CodecError>,
+    operation: &'static str,
+) -> Result<Option<&'source T>, CodecError> {
+    let mut source = source.iter();
+    let first = ctx.find_map(
+        &mut source,
+        |value| Ok(predicate(value)?.then_some(value)),
+        operation,
+    )?;
+    let Some(first) = first else {
+        return Ok(None);
+    };
+    let second = ctx.find_map(
+        &mut source,
+        |value| Ok(predicate(value)?.then_some(value)),
+        operation,
+    )?;
+    Ok(second.is_none().then_some(first))
+}
+
 fn unique_feature_match<T>(mut matches: impl Iterator<Item = T>) -> Option<T> {
     let first = matches.next()?;
     matches.next().is_none().then_some(first)
@@ -3878,7 +3901,7 @@ fn selected_work_planes<'a>(
 ) -> Result<Option<Vec<&'a DesignParameterScope>>, CodecError> {
     let mut index_storage = ctx.reserve_scoped(0, "F3D projection index scratch")?;
 
-    let stream = or_none!(native_stream(&scope.id));
+    let stream = or_none!(ids::native_stream_charged(ctx, &scope.id, "resolve F3D selected work plane stream")?);
     if group.members().is_empty() {
         return Ok(None);
     }
@@ -3892,13 +3915,23 @@ fn selected_work_planes<'a>(
         .enumerate()
     {
         let ordinal = or_none!(u32::try_from(ordinal).ok());
-        let selection = unique_feature_match(entity_selection_operands.iter().filter(|operand| {
-            native_stream(&operand.id) == Some(stream)
-                && operand.scope_record_index == scope.record_index
-                && operand.group_record_index == group.record_index
-                && operand.group_member_ordinal == ordinal
-                && operand.record_index() == *member
-        }));
+        let selection = unique_feature_match_for_decode(
+            ctx,
+            entity_selection_operands,
+            |operand| {
+                let Some(operand_stream) = ids::native_stream_charged(
+                    ctx, &operand.id, "resolve F3D selected work plane operand stream",
+                )? else { return Ok(false); };
+                Ok(ctx.equal_bytes(
+                    operand_stream.as_bytes(), stream.as_bytes(),
+                    "compare F3D selected work plane operand stream",
+                )? && operand.scope_record_index == scope.record_index
+                    && operand.group_record_index == group.record_index
+                    && operand.group_member_ordinal == ordinal
+                    && operand.record_index() == *member)
+            },
+            "visit F3D selected work plane operand",
+        )?;
         let Some(selection) = selection else {
             return Ok(None);
         };
