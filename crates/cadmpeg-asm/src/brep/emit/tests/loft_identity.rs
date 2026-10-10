@@ -337,3 +337,70 @@ fn revision_compound_empty_profiles_keep_absent_paths() { revision_profiles(fals
 
 #[test]
 fn revision_compound_borrowed_profile_scopes_keep_native_identities() { revision_profiles(true); }
+
+fn support_copy_limits(refuse: bool) {
+    use cadmpeg_core::decode::ResourceDimension;
+    const SUPPORT_ID: &str = "sat:brep:procedural_surface#7:loft:0:0:support:0";
+    let identity_bytes = u64::try_from(SUPPORT_ID.len()).unwrap();
+    // Empty-vector growth retains one large slot or four ordinary slots.
+    // Its old capacity is zero, so it moves no bytes. Only the ID copy has work.
+    let slot_bytes = std::mem::size_of::<cadmpeg_ir::geometry::Surface>();
+    let slots = if slot_bytes <= 1024 { 4 } else { 1 };
+    let backing_bytes = u64::try_from(slots * slot_bytes).unwrap();
+    for classic in [true, false] {
+        for dimension in [ResourceDimension::WorkUnits, ResourceDimension::RetainedBytes] {
+            let data = support(classic);
+            let id = SurfaceId::mint(SUPPORT_ID).unwrap();
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = identity_bytes;
+            policy.limits.max_retained_bytes = backing_bytes + identity_bytes;
+            policy.limits.max_collection_items = 1;
+            policy.limits.max_materialized_bytes = 0;
+            policy.limits.max_entities = 0;
+            policy.limits.max_recursion_depth = 0;
+            if refuse {
+                match dimension {
+                    ResourceDimension::WorkUnits => policy.limits.max_work_units -= 1,
+                    ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes -= 1,
+                    _ => unreachable!("two copy dimensions"),
+                }
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut out = AsmBrep::default();
+            let result = super::super::emit_loft_member_form(&ctx, &mut out, data, || Ok(id));
+            if !refuse {
+                assert!(matches!(result.unwrap(), LoftMemberForm::Support {
+                    surface: Some(surface), .. } if surface.as_str() == SUPPORT_ID));
+                assert_eq!(out.surfaces.len(), 1);
+                assert_eq!(out.surfaces[0].id.as_str(), SUPPORT_ID);
+                assert!(out.surfaces[0].source_object.is_none());
+                ctx.finish_session().unwrap();
+                continue;
+            }
+            let cadmpeg_core::CodecError::ResourceLimit(first) = result.unwrap_err() else {
+                panic!("copy limit refuses before surface insertion");
+            };
+            let used = if dimension == ResourceDimension::RetainedBytes { backing_bytes } else { 0 };
+            assert_eq!(first.dimension, dimension);
+            assert_eq!(first.operation, "ASM emitted identity copy");
+            assert_eq!((first.limit, first.used, first.additional),
+                (used + identity_bytes - 1, used, identity_bytes));
+            assert!(out.surfaces.is_empty() && out.curves.is_empty());
+            for _ in 0..64 {
+                assert!(matches!(super::super::emit_loft_member_form(&ctx, &mut out,
+                    support(classic), || panic!("original copy refusal skips factory")),
+                    Err(cadmpeg_core::CodecError::ResourceLimit(last)) if last == first));
+                assert!(out.surfaces.is_empty() && out.curves.is_empty());
+            }
+            assert!(matches!(ctx.finish_session(),
+                Err(cadmpeg_core::CodecError::ResourceLimit(last)) if last == first));
+        }
+    }
+}
+
+#[test]
+fn loft_support_copy_accepts_exact_work_and_retained_limits() { support_copy_limits(false); }
+
+#[test]
+fn loft_support_copy_refuses_one_short_and_keeps_original_refusal() { support_copy_limits(true); }
