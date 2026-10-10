@@ -170,7 +170,7 @@ impl DialectRecovery {
     /// Collects every version declaration the decode read from `container`.
     pub(crate) fn of(
         ctx: &DecodeContext<'_>,
-        container: &InventorContainer<'_>,
+        container: &InventorContainer<'_, '_>,
     ) -> Result<Self, CodecError> {
         let mut schemas = Vec::new();
         for descriptor in

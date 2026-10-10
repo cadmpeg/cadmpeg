@@ -56,7 +56,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
 
 fn decode_container<'a>(
     ctx: &DecodeContext<'a>,
-    container: &InventorContainer<'a>,
+    container: &InventorContainer<'a, '_>,
 ) -> Result<Decoded, CodecError> {
     // One predicate, read once from the parsed declarations: it decides the
     // admission in `primary` and the dialect-unverified loss below, and neither
@@ -1761,7 +1761,7 @@ fn project_preview_asset(
 
 fn project_protein_state(
     ctx: &DecodeContext<'_>,
-    state: &ProteinState<'_>,
+    state: &ProteinState<'_, '_>,
 ) -> Result<ProteinRecord, CodecError> {
     ctx.charge_entities(1, "admit Inventor native structural records")?;
     let id = ctx.copy_retained_text(

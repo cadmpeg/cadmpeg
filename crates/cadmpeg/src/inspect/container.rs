@@ -148,7 +148,7 @@ fn missing_compound_member_message(snapshot: &CompoundSnapshot<'_>, name: &str) 
 /// component equals it, are suggested first; with no near-miss the first
 /// entries are listed instead. Every name is shell-quoted the way the
 /// listing prints it.
-fn missing_member_message(snapshot: &ArchiveSnapshot<'_>, name: &str) -> String {
+fn missing_member_message(snapshot: &ArchiveSnapshot<'_, '_>, name: &str) -> String {
     const SHOWN: usize = 10;
     let lower = name.to_lowercase();
     let mut label = "close names";

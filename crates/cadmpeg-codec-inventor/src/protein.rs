@@ -11,12 +11,12 @@ use cadmpeg_core::CodecError;
 use crate::layout::protein_header;
 
 #[derive(Debug)]
-pub(crate) enum ProteinState<'a> {
+pub(crate) enum ProteinState<'a, 'ctx> {
     Absent,
     Empty {
         stream: CompoundStreamId,
     },
-    Package(ProteinEnvelope<'a>),
+    Package(ProteinEnvelope<'a, 'ctx>),
     Malformed {
         stream: CompoundStreamId,
         detail: String,
@@ -24,10 +24,10 @@ pub(crate) enum ProteinState<'a> {
 }
 
 #[derive(Debug)]
-pub(crate) struct ProteinEnvelope<'a> {
+pub(crate) struct ProteinEnvelope<'a, 'ctx> {
     pub(crate) stream: CompoundStreamId,
     pub(crate) declared_len: NonZeroU32,
-    pub(crate) archive: ArchiveSnapshot<'a>,
+    pub(crate) archive: ArchiveSnapshot<'a, 'ctx>,
     payload: View<'a>,
 }
 
@@ -37,10 +37,10 @@ pub(crate) struct ProteinInstanceRecords {
     pub(crate) rejected: Vec<cadmpeg_protein::RejectedRecord>,
 }
 
-pub(crate) fn parse<'a>(
-    ctx: &DecodeContext<'a>,
+pub(crate) fn parse<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'a>,
     snapshot: &CompoundSnapshot<'a>,
-) -> Result<ProteinState<'a>, CodecError> {
+) -> Result<ProteinState<'a, 'ctx>, CodecError> {
     let Some(stream) = snapshot.stream(ctx, "Protein")? else {
         return Ok(ProteinState::Absent);
     };
@@ -67,19 +67,19 @@ pub(crate) fn parse<'a>(
     })
 }
 
-enum ParsedProtein<'a> {
+enum ParsedProtein<'a, 'ctx> {
     Empty,
     Package {
         declared_len: NonZeroU32,
-        archive: ArchiveSnapshot<'a>,
+        archive: ArchiveSnapshot<'a, 'ctx>,
         payload: View<'a>,
     },
 }
 
-fn parse_stream<'a>(
-    ctx: &DecodeContext<'a>,
+fn parse_stream<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'a>,
     source: cadmpeg_core::decode::View<'a>,
-) -> Result<ParsedProtein<'a>, CodecError> {
+) -> Result<ParsedProtein<'a, 'ctx>, CodecError> {
     let mut header = source;
     let declared_len = header.req_u32_le()?;
     let Some(declared_len) = NonZeroU32::new(declared_len) else {
@@ -127,14 +127,14 @@ pub(crate) fn fuzz_parse_stream(ctx: &DecodeContext<'_>, source: View<'_>) {
 
 pub(crate) fn decode_instances(
     ctx: &DecodeContext<'_>,
-    package: &ProteinEnvelope<'_>,
+    package: &ProteinEnvelope<'_, '_>,
 ) -> Result<Vec<ProteinInstanceRecords>, CodecError> {
     decode_instances_from(ctx, &package.archive, package.payload)
 }
 
 pub(crate) fn decode_instances_with_issue(
     ctx: &DecodeContext<'_>,
-    package: &ProteinEnvelope<'_>,
+    package: &ProteinEnvelope<'_, '_>,
 ) -> Result<(Vec<ProteinInstanceRecords>, Option<String>), CodecError> {
     match decode_instances(ctx, package) {
         Ok(instances) => Ok((instances, None)),
@@ -152,7 +152,7 @@ pub(crate) fn decode_instances_with_issue(
 
 fn decode_instances_from(
     ctx: &DecodeContext<'_>,
-    archive: &ArchiveSnapshot<'_>,
+    archive: &ArchiveSnapshot<'_, '_>,
     payload: View<'_>,
 ) -> Result<Vec<ProteinInstanceRecords>, CodecError> {
     let Some(mut catalog) = cadmpeg_protein::SchemaCatalog::load(ctx, payload)? else {
