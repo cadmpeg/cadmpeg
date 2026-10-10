@@ -532,7 +532,7 @@ fn numerical_seventh_normalized_derivative_keeps_finite_results() {
 /// A cacheless law-driven sweep of the x-axis profile along the vertical
 /// spine through (7, 11, 13), displaced by `first_law` along the section
 /// normal.
-pub(in crate::eval) fn law_sweep_model(first_law: LawExpression) -> (CadIr, SurfaceId) {
+pub(super) fn law_sweep_model(first_law: LawExpression) -> (CadIr, SurfaceId) {
     let profile_id = CurveId::mint("test:model:entity#profile").expect("valid identity");
     let spine_id = CurveId::mint("test:model:entity#spine").expect("valid identity");
     let surface_id = SurfaceId::mint("test:model:entity#cacheless-sweep").expect("valid identity");
