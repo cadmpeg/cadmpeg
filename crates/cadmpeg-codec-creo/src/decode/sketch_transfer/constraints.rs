@@ -584,8 +584,7 @@ fn relation_incidence_loci(
     sketch: &SketchId,
     incidence: Option<&crate::feature::definitions::FeatureSkamp>,
 ) -> Result<Option<[SketchLocus; 2]>, cadmpeg_core::CodecError> {
-    let Some(incidence) = incidence.filter(|incidence| section_skamp_active(incidence.status))
-    else {
+    let Some(incidence) = incidence else {
         return Ok(None);
     };
     let [first, second] = incidence.items.as_slice() else {
@@ -2972,34 +2971,6 @@ pub(super) fn section_dimension_constraints_with_links<'ctx>(
                     if let Some(incidence) =
                         joined_incidence.filter(|incidence| !section_skamp_active(incidence.status))
                     {
-                        if let [first_item, second_item] = incidence.items.as_slice() {
-                            let first_result = section_skamp_locus(
-                                ctx,
-                                &locus_refusal,
-                                definition,
-                                sketch,
-                                first_item,
-                            );
-                            let first = capture_locus_refusal(&locus_refusal, first_result);
-                            let second_result = section_skamp_locus(
-                                ctx,
-                                &locus_refusal,
-                                definition,
-                                sketch,
-                                second_item,
-                            );
-                            let second = capture_locus_refusal(&locus_refusal, second_result);
-                            if let (Some(Some(first)), Some(Some(second))) = (first, second) {
-                                return Some(SketchConstraintDefinitionInput::DistanceLoci {
-                                    first,
-                                    second,
-                                    parameter: capture_constraint_refusal(
-                            &mut coordinate_refusal,
-                            parameter.try_clone_for_decode(ctx, "creo typed dimension parameter copy"),
-                        )?,
-                                });
-                            }
-                        }
                         if !incidence.items.is_empty() {
                             return Some(SketchConstraintDefinitionInput::Distance {
                                 entities: capture_constraint_refusal(

@@ -184,12 +184,22 @@ fn unknown_dimension_coordinate_does_not_build_unused_loci() {
     });
 }
 
-#[test]
-fn rejected_incidence_locus_pair_releases_its_first_identity() {
+fn assert_rejected_incidence_locus_storage(status: u32) {
     use crate::feature::definitions::{FeatureSkamp, FeatureSkampItem};
     let definition = line_definition();
-    let incidence = FeatureSkamp { id: 3, kind: 99, flags: 0, status: 1, items: vec![FeatureSkampItem { entity_id: 7, sense: 0 }, FeatureSkampItem { entity_id: 7, sense: 99 }], offset: 0 };
+    let incidence = FeatureSkamp { id: 3, kind: 99, flags: 0, status, items: vec![FeatureSkampItem { entity_id: 7, sense: 0 }, FeatureSkampItem { entity_id: 7, sense: 99 }], offset: 0 };
     let sketch = SketchId::mint("creo:model:sketch#1").expect("sketch");
+    crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, &["creo sketch entity identity"], |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let refusal = std::cell::Cell::new(None);
+        let pair = super::super::relation_incidence_loci(&ctx, &refusal, &definition, &sketch, Some(&incidence))?;
+        if let Some(error) = refusal.into_inner() { return Err(error); }
+        assert!(pair.is_none());
+        Ok(())
+    });
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 1;
@@ -201,4 +211,14 @@ fn rejected_incidence_locus_pair_releases_its_first_identity() {
     }
     assert_eq!(ctx.copy_retained_text("x", "test surviving output").expect("discarded first locus retained no bytes"), "x");
     ctx.finish_session().expect("active session");
+}
+
+#[test]
+fn rejected_incidence_locus_pair_releases_its_first_identity() {
+    assert_rejected_incidence_locus_storage(1);
+}
+
+#[test]
+fn rejected_inactive_incidence_locus_pair_releases_partial_identities() {
+    assert_rejected_incidence_locus_storage(0);
 }
