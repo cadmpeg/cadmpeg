@@ -46,6 +46,9 @@ pub fn transfer_into_ir<'ir>(
     native_format: &str,
     brep: AsmBrep,
 ) -> Result<(&'ir NativeNamespace, AsmTransferRemainder), CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if ir.native.namespace(native_format).is_some_and(|namespace| {
         ASM_NATIVE_ARENAS.iter().any(|name| {
             namespace
@@ -188,6 +191,7 @@ pub fn transfer_into_ir<'ir>(
 
 #[cfg(test)]
 mod tests {
+    mod entry_refusal;
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 
     use super::transfer_into_ir;

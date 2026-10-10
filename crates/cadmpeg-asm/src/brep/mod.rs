@@ -303,6 +303,9 @@ pub fn value_string<'value>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     mut value: &'value Value,
 ) -> Result<Option<&'value str>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     while let Value::Newtype(inner) = value {
         ctx.charge_work(1, "ASM serialized newtype walk")?;
         value = inner;
@@ -321,6 +324,9 @@ pub fn collect_entity_adjacency(
     owned: &HashSet<String, std::collections::hash_map::RandomState>,
     out: &mut HashMap<String, BTreeSet<String>, std::collections::hash_map::RandomState>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Value::Map(fields) = value else {
         return Ok(());
     };
@@ -393,6 +399,9 @@ pub fn entity_id<'value>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     value: &'value Value,
 ) -> Result<Option<&'value str>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Value::Map(fields) = value else {
         return Ok(None);
     };
@@ -464,6 +473,9 @@ pub fn retain_root_entities(
     value: &mut Value,
     reachable: &HashSet<String, std::collections::hash_map::RandomState>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Value::Map(fields) = value else {
         return Ok(());
     };
@@ -903,5 +915,68 @@ fn inherited_attribute_target(
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod serialized_id_tests {
+    #[test]
+    fn asm_non_map_entity_id_preserves_original_refusal() {
+        let values = [serde_value::Value::Unit, serde_value::Value::Bool(true),
+            serde_value::Value::U64(7), serde_value::Value::Seq(Vec::new())];
+        crate::test_support::with_entry_context(|ctx, original| {
+            for value in &values {
+                let result = super::entity_id(ctx, value);
+                match original {
+                    Some(first) => assert!(matches!(result,
+                        Err(cadmpeg_core::CodecError::ResourceLimit(last)) if last == first)),
+                    None => assert!(result.expect("fixed non-map identity recovery is free").is_none()),
+                }
+            }
+        });
+    }
+
+    #[test]
+    fn asm_scalar_value_string_preserves_original_refusal() {
+        let value = serde_value::Value::String("sat:brep:entity#7".into());
+        crate::test_support::with_entry_context(|ctx, original| {
+            let result = super::value_string(ctx, &value);
+            match original {
+                Some(first) => assert!(matches!(result,
+                    Err(cadmpeg_core::CodecError::ResourceLimit(last)) if last == first)),
+                None => assert_eq!(result.expect("borrowed string is free"), Some("sat:brep:entity#7")),
+            }
+        });
+    }
+
+    #[test]
+    fn asm_non_map_adjacency_preserves_original_refusal() {
+        let value = serde_value::Value::Unit;
+        let owned = std::collections::HashSet::new();
+        crate::test_support::with_entry_context(|ctx, original| {
+            let mut out = std::collections::HashMap::new();
+            let result = super::collect_entity_adjacency(ctx, &value, &owned, &mut out);
+            match original {
+                Some(first) => assert!(matches!(result,
+                    Err(cadmpeg_core::CodecError::ResourceLimit(last)) if last == first)),
+                None => result.expect("non-map adjacency is free"),
+            }
+            assert!(out.is_empty());
+        });
+    }
+
+    #[test]
+    fn asm_non_map_root_retention_preserves_original_refusal() {
+        let reachable = std::collections::HashSet::new();
+        crate::test_support::with_entry_context(|ctx, original| {
+            let mut value = serde_value::Value::Unit;
+            let result = super::retain_root_entities(ctx, &mut value, &reachable);
+            match original {
+                Some(first) => assert!(matches!(result,
+                    Err(cadmpeg_core::CodecError::ResourceLimit(last)) if last == first)),
+                None => result.expect("non-map retention is free"),
+            }
+            assert_eq!(value, serde_value::Value::Unit);
+        });
+    }
+}
 
 mod identity_rewrite;
