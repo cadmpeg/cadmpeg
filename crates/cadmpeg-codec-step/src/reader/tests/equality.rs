@@ -7,13 +7,18 @@ use cadmpeg_core::CodecError;
 #[test]
 fn record_type_join_keeps_source_order_without_fragment_slots() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=(BETA() ALPHA());ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).unwrap();
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     policy.limits.max_work_units = 256;
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-    assert_eq!(super::super::record_type_text(&exchange.records()[&1], &ctx, "record type fixture").unwrap(), "BETA+ALPHA");
+    assert_eq!(
+        super::super::record_type_text(&exchange.records()[&1], &ctx, "record type fixture")
+            .unwrap(),
+        "BETA+ALPHA"
+    );
     ctx.finish_session().unwrap();
 }
 
@@ -50,12 +55,17 @@ fn partial_record_search_charges_each_visited_partial() {
 #[test]
 fn named_parameter_rejects_long_unrelated_names_with_bounded_comparison() {
     let source = format!("ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=({}() LINE(1));ENDSEC;END-ISO-10303-21;", "A".repeat(8193));
-    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).unwrap();
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 2;
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-    assert!(matches!(super::super::named_parameter(&ctx, &exchange.records()[&1], "LINE", 0).unwrap(), Some(crate::parse::Value::Integer(1))));
+    assert!(matches!(
+        super::super::named_parameter(&ctx, &exchange.records()[&1], "LINE", 0).unwrap(),
+        Some(crate::parse::Value::Integer(1))
+    ));
     ctx.finish_session().unwrap();
 }
 
@@ -68,8 +78,17 @@ fn identity_suffix_search_does_not_bill_unvisited_kind_or_tail() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 16;
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-    assert_eq!(super::super::step_instance_id(&ctx, &kind).unwrap(), Some(7));
-    assert_eq!(super::super::source_record_id(&ctx, &member).unwrap(), Some(7));
-    assert_eq!(super::super::source_numeric_id(&ctx, &tail, "point").unwrap(), Some(7));
+    assert_eq!(
+        super::super::step_instance_id(&ctx, &kind).unwrap(),
+        Some(7)
+    );
+    assert_eq!(
+        super::super::source_record_id(&ctx, &member).unwrap(),
+        Some(7)
+    );
+    assert_eq!(
+        super::super::source_numeric_id(&ctx, &tail, "point").unwrap(),
+        Some(7)
+    );
     ctx.finish_session().unwrap();
 }

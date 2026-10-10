@@ -6,9 +6,7 @@ use super::{
     ONE_TRIANGLE_IN_CONTAINER, ONE_TRIANGLE_WITH_PNINDEX,
 };
 use crate::parse::Value;
-use cadmpeg_core::decode::{
-    DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
-};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
 #[test]

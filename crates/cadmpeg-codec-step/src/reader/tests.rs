@@ -294,12 +294,21 @@ use crate::StepCodec;
 #[test]
 fn semantic_decode_uses_the_decode_session_work_budget() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT('',(1.,2.,3.));ENDSEC;END-ISO-10303-21;";
-    let (exchange, diagnostics) = crate::test_support::with_service_context(source, crate::parse::parse_inner).unwrap();
+    let (exchange, diagnostics) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner).unwrap();
     let limit = crate::test_support::resource_refusal_at(
         source,
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "step_geometry_points",
-        |source, ctx| crate::reader::decode_exchange(source, exchange.clone(), &diagnostics, ctx, Packaging::Bare),
+        |source, ctx| {
+            crate::reader::decode_exchange(
+                source,
+                exchange.clone(),
+                &diagnostics,
+                ctx,
+                Packaging::Bare,
+            )
+        },
     );
     assert_eq!(limit.operation, "step_geometry_points");
 }
@@ -311,7 +320,8 @@ fn semantic_decode_charges_each_mesh_entity_once() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     // Two parsed source entities and one retained mesh entity.
     policy.limits.max_entities = 3;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(source, &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(source, &arena, &policy).unwrap();
     let decoded = super::decode(source, &ctx, Packaging::Bare).unwrap();
     assert_eq!(decoded.ir.model.entity_count(), 1);
     assert_eq!(decoded.ir.model.tessellations.len(), 1);
