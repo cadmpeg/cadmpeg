@@ -473,3 +473,122 @@ fn vertex_blend_source_accepts_exact_visits_and_empty_input() {
         ctx.finish_session().unwrap();
     }
 }
+
+fn rich_vertex_boundary(kind: u8) -> EmbeddedVertexBlend {
+    use crate::nurbs::proc_surface::{EmbeddedVertexBlendBoundary, EmbeddedVertexBlendBoundaryGeometry};
+    use cadmpeg_ir::geometry::analytic::{CircleCurve, PlaneSurface};
+    use cadmpeg_ir::geometry::VertexBlendTwists;
+    use cadmpeg_ir::math::{Point3, Vector3};
+    let origin = Point3::new(1.0, 2.0, 3.0);
+    let normal = Vector3::new(0.0, 0.0, 1.0);
+    let axis = Vector3::new(1.0, 0.0, 0.0);
+    let circle = || CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+        CircleCurve::try_new(origin, normal, axis, 2.0).unwrap()));
+    let geometry = match kind {
+        0 => EmbeddedVertexBlendBoundaryGeometry::Circle { curve: circle(),
+            curve_endpoints: [Some(0.0), Some(1.0)],
+            twists: VertexBlendTwists::Two { twists: [origin, Point3::new(4.0, 5.0, 6.0)] },
+            parameters: [0.0, 1.0], sense: true },
+        1 => EmbeddedVertexBlendBoundaryGeometry::Pcurve {
+            surface: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                PlaneSurface::try_new(origin, normal, axis).unwrap())),
+            support_bounds: [Some(0.0), Some(1.0), None, Some(2.0)], pcurve: None,
+            sense: true, fit_tolerance: cadmpeg_ir::geometry::FitTolerance::try_new(0.0).unwrap() },
+        2 => EmbeddedVertexBlendBoundaryGeometry::Plane { normal,
+            parameters: [0.0, 1.0], curve: circle(), curve_endpoints: [Some(0.0), Some(1.0)] },
+        _ => unreachable!("three rich vertex boundary forms"),
+    };
+    let mut input = vertex_blend(1);
+    input.boundaries.push(EmbeddedVertexBlendBoundary { boundary_type: true,
+        magic: axis, u_smoothing: true, v_smoothing: false, fullness: 0.5, geometry });
+    input
+}
+
+fn rich_vertex_accepts(kind: u8) {
+    use crate::nurbs::proc_surface::EmbeddedVertexBlendBoundaryGeometry;
+    use cadmpeg_ir::geometry::VertexBlendTwists;
+    use cadmpeg_ir::math::{Point3, Vector3};
+    let input = rich_vertex_boundary(kind);
+    let expected_curve = match &input.boundaries[1].geometry {
+        EmbeddedVertexBlendBoundaryGeometry::Circle { curve, .. }
+        | EmbeddedVertexBlendBoundaryGeometry::Plane { curve, .. } => Some(curve.clone()),
+        _ => None,
+    };
+    let expected_surface = match &input.boundaries[1].geometry {
+        EmbeddedVertexBlendBoundaryGeometry::Pcurve { surface, .. } => Some(surface.clone()),
+        _ => None,
+    };
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let mut out = AsmBrep::default();
+    let definition = emit_vertex_blend_surface(&ctx, &mut out, 7, input, crate::asm_format!("sat")).unwrap();
+    let ProceduralSurfaceDefinition::VertexBlend(payload) = definition else { panic!("vertex blend"); };
+    let construction = payload.construction();
+    assert_eq!(construction.boundaries.len(), 2);
+    assert!(construction.revision.is_none());
+    assert_eq!(construction.grid_size, 1);
+    let boundary = construction.boundaries[1].to_raw();
+    assert!(boundary.boundary_type && boundary.u_smoothing && !boundary.v_smoothing);
+    assert_eq!(boundary.magic, Vector3::new(1.0, 0.0, 0.0));
+    assert_eq!(boundary.fullness, 0.5);
+    match boundary.geometry {
+        VertexBlendBoundaryGeometry::Circle { curve, curve_endpoints, twists, parameters, sense } => {
+            assert_eq!(kind, 0);
+            assert_eq!(curve.as_str(), "sat:brep:procedural_surface#7:vertex_boundary1:curve");
+            assert_eq!(curve_endpoints, [Some(0.0), Some(1.0)]);
+            assert_eq!(twists, VertexBlendTwists::Two {
+                twists: [Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)] });
+            assert_eq!(parameters, [0.0, 1.0]); assert!(sense);
+            assert_eq!(out.curves[0].id, curve);
+        }
+        VertexBlendBoundaryGeometry::Pcurve { surface, support_bounds, pcurve, sense, fit_tolerance } => {
+            assert_eq!(kind, 1);
+            assert_eq!(surface.as_str(), "sat:brep:procedural_surface#7:vertex_boundary1:surface");
+            assert_eq!(support_bounds, [Some(0.0), Some(1.0), None, Some(2.0)]);
+            assert!(pcurve.is_none() && sense);
+            assert_eq!(fit_tolerance, cadmpeg_ir::geometry::FitTolerance::try_new(0.0).unwrap());
+            assert_eq!(out.surfaces[0].id, surface);
+        }
+        VertexBlendBoundaryGeometry::Plane { normal, parameters, curve, curve_endpoints } => {
+            assert_eq!(kind, 2);
+            assert_eq!(normal, Vector3::new(0.0, 0.0, 1.0));
+            assert_eq!(parameters, [0.0, 1.0]);
+            assert_eq!(curve_endpoints, [Some(0.0), Some(1.0)]);
+            assert_eq!(curve.as_str(), "sat:brep:procedural_surface#7:vertex_boundary1:curve");
+            assert_eq!(out.curves[0].id, curve);
+        }
+        _ => panic!("rich boundary form changed"),
+    }
+    assert_eq!(out.curves.len(), usize::from(expected_curve.is_some()));
+    assert_eq!(out.surfaces.len(), usize::from(expected_surface.is_some()));
+    if let Some(expected) = expected_curve {
+        assert_eq!(out.curves[0].geometry, expected); assert!(out.curves[0].source_object.is_none());
+    }
+    if let Some(expected) = expected_surface {
+        assert_eq!(out.surfaces[0].geometry, expected); assert!(out.surfaces[0].source_object.is_none());
+    }
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn vertex_circle_keeps_geometry_fields_and_source_ordinal() { rich_vertex_accepts(0); }
+
+#[test]
+fn vertex_pcurve_keeps_geometry_fields_and_source_ordinal() { rich_vertex_accepts(1); }
+
+#[test]
+fn vertex_plane_keeps_geometry_fields_and_source_ordinal() { rich_vertex_accepts(2); }
+
+#[test]
+fn rich_vertex_boundaries_keep_original_refusal_before_output_mutation() {
+    crate::test_support::with_entry_context(|ctx, original| {
+        let Some(first) = original else { return; };
+        for kind in 0..3 {
+            let mut out = AsmBrep::default();
+            assert!(matches!(emit_vertex_blend_surface(ctx, &mut out, 7,
+                rich_vertex_boundary(kind), crate::asm_format!("sat")),
+                Err(CodecError::ResourceLimit(last)) if last == first));
+            assert!(out.curves.is_empty() && out.surfaces.is_empty());
+        }
+    });
+}
