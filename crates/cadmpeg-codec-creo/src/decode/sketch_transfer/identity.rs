@@ -328,22 +328,25 @@ pub(in super::super) fn unique_saved_section_internal_ids(
     Ok(ids)
 }
 
-pub(in super::super) fn saved_section_internal_id_is_unique(
+pub(in super::super) fn saved_section_entity_by_internal_id<'definition>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    definition: &crate::feature::definitions::FeatureDefinition,
+    definition: &'definition crate::feature::definitions::FeatureDefinition,
     internal_id: u32,
-) -> Result<bool, cadmpeg_core::CodecError> {
-    let mut found_match = false;
+) -> Result<Option<&'definition crate::feature::definitions::FeatureSavedEntity>, cadmpeg_core::CodecError> {
+    let mut selected = None;
     let outcome = visit_semantic_saved_section_entities(ctx, definition, |entity| {
         if saved_section_entity_identity(entity).0 == Some(internal_id) {
-            if found_match {
+            if selected.is_some() {
                 return Ok(ControlFlow::Break(()));
             }
-            found_match = true;
+            selected = Some(entity);
         }
         Ok(ControlFlow::Continue(()))
     })?;
-    Ok(found_match && matches!(outcome, ControlFlow::Continue(())))
+    Ok(match outcome {
+        ControlFlow::Break(()) => None,
+        ControlFlow::Continue(()) => selected,
+    })
 }
 
 fn saved_section_entity_is_elided_prototype(
@@ -569,6 +572,7 @@ pub(super) fn opaque_section_segment_identity_suffix_admitted(
 #[cfg(test)]
 mod tests {
     mod admission_recovery;
+    mod record_lookup;
     use super::{
         saved_section_entity_fallback_allowed, saved_section_line_witness_allowed,
         saved_section_ordinary_geometry_allowed,
@@ -642,13 +646,13 @@ mod tests {
                 trial_policy.limits.max_work_units = cap;
                 let (trial_ctx, _) =
                     DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
-                super::saved_section_internal_id_is_unique(&trial_ctx, &short, 3)
+                super::saved_section_entity_by_internal_id(&trial_ctx, &short, 3)
             },
         );
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         assert!(
-            !super::saved_section_internal_id_is_unique(&ctx, &definition, 3)
-                .expect("uniqueness stops before the later prototype search")
+            super::saved_section_entity_by_internal_id(&ctx, &definition, 3)
+                .expect("uniqueness stops before the later prototype search").is_none()
         );
     }
 

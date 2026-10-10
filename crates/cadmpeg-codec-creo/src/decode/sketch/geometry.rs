@@ -18,7 +18,7 @@ use super::super::sketch_ids::sketch_entity_id_admitted;
 use super::radii::trim_segment_ids;
 use super::skamp::section_line_entity_fixed_coordinate;
 use crate::decode::sketch_transfer::identity::{
-    saved_section_internal_id_is_unique, saved_section_ordinary_geometry_allowed,
+    saved_section_entity_by_internal_id, saved_section_ordinary_geometry_allowed,
     visit_semantic_saved_section_entities,
 };
 use crate::decode::sketch_transfer::loci::section_saved_entity;
@@ -517,23 +517,9 @@ pub(in crate::decode) fn saved_section_line_geometry(
     let Some(internal_id) = internal_id else {
         return Ok(None);
     };
-    if !saved_section_internal_id_is_unique(ctx, definition, internal_id)? {
-        return Ok(None);
-    }
-    let mut matching_line = None;
-    let outcome = visit_semantic_saved_section_entities::<()>(ctx, definition, |entity| {
-        if let crate::feature::definitions::FeatureSavedEntity::Line(line) = entity {
-            if line.entity_id == internal_id {
-                matching_line = Some(line);
-                return Ok(ControlFlow::Break(()));
-            }
-        }
-        Ok(ControlFlow::Continue(()))
-    })?;
-    let ControlFlow::Break(()) = outcome else {
-        return Ok(None);
-    };
-    let Some(line) = matching_line else {
+    let Some(crate::feature::definitions::FeatureSavedEntity::Line(line)) =
+        saved_section_entity_by_internal_id(ctx, definition, internal_id)?
+    else {
         return Ok(None);
     };
     let [[Some(start_u), Some(start_v), _], [Some(end_u), Some(end_v), _]] = line.endpoints else {
@@ -570,20 +556,9 @@ pub(super) fn saved_section_arc_record<'a>(
     let Some(internal_id) = order.internal_id(segment.external_id) else {
         return Ok(None);
     };
-    if !saved_section_internal_id_is_unique(ctx, definition, internal_id)? {
-        return Ok(None);
-    }
-    let outcome = visit_semantic_saved_section_entities(ctx, definition, |entity| match entity {
-        crate::feature::definitions::FeatureSavedEntity::Arc(arc)
-            if arc.entity_id == internal_id =>
-        {
-            Ok(ControlFlow::Break(arc))
-        }
-        _ => Ok(ControlFlow::Continue(())),
-    })?;
-    Ok(match outcome {
-        ControlFlow::Break(arc) => Some(arc),
-        ControlFlow::Continue(()) => None,
+    Ok(match saved_section_entity_by_internal_id(ctx, definition, internal_id)? {
+        Some(crate::feature::definitions::FeatureSavedEntity::Arc(arc)) => Some(arc),
+        _ => None,
     })
 }
 

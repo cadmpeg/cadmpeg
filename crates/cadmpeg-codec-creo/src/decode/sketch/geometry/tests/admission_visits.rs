@@ -92,11 +92,10 @@ fn assert_saved_arc_record_visits(
             saved.entities.push(candidate);
         }
         saved.entities.push(target);
-        // One complete uniqueness walk plus its current core end probe,
-        // then one lookup through the target at the final row. Fixed-field
-        // carrier, angle and point conversions allocate no backing.
+        // One complete unique-record walk plus its current core end probe.
+        // Fixed-field carrier, angle and point conversions allocate no backing.
         // Generic end-probe semantics remain a separate shared request.
-        let visits = 2 * u64::try_from(count).expect("fixture count") + 1;
+        let visits = u64::try_from(count).expect("fixture count") + 1;
         for cap in 0..=visits + 1 {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
