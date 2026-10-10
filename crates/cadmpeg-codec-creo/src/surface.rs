@@ -408,12 +408,16 @@ impl SurfacePrototypeRecord {
         &self.parameters
     }
 
-    pub(crate) fn parameter_offsets_mut(
+    pub(crate) fn relocate_parameters(
         &mut self,
-    ) -> impl ExactSizeIterator<Item = (&mut usize, &mut usize)> {
-        self.parameters
-            .iter_mut()
-            .map(|parameter| (&mut parameter.offset, &mut parameter.value_offset))
+        ctx: &DecodeContext<'_>,
+        base: usize,
+    ) -> Result<(), CodecError> {
+        for parameter in ctx.admit_iter(&mut self.parameters, "creo record child relocation traversal")? {
+            parameter.offset += base;
+            parameter.value_offset += base;
+        }
+        Ok(())
     }
 
     pub(crate) fn new(
@@ -743,25 +747,6 @@ fn take_spline_scalars(
     Ok(Some(values))
 }
 
-fn spline_vectors(
-    ctx: &DecodeContext<'_>,
-    values: &[f64],
-) -> Result<Option<Vec<[f64; 3]>>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
-    if !values.len().is_multiple_of(3) {
-        return Ok(None);
-    }
-    let mut vectors = Vec::new();
-    ctx.reserve_vec(&mut vectors, values.len() / 3, "creo spline replay vectors")?;
-    for index in ctx.admit_iter(0..values.len() / 3, "creo spline vector projection")? {
-        let chunk = &values[index * 3..index * 3 + 3];
-        vectors.push([chunk[0], chunk[1], chunk[2]]);
-    }
-    Ok(Some(vectors))
-}
-
 fn take_spline_vectors(
     ctx: &DecodeContext<'_>,
     body: &[u8],
@@ -770,10 +755,28 @@ fn take_spline_vectors(
     name: &str,
     cache: &scalar::ScalarCache,
 ) -> Result<Option<Vec<[f64; 3]>>, CodecError> {
-    let Some(scalars) = take_spline_scalars(ctx, body, cursor, count, name, cache)? else {
+    let mut storage = ctx.reserve_scoped(0, "creo spline replay vector candidate")?;
+    if !count.is_multiple_of(3) || body.len().checked_sub(*cursor).is_none_or(|remaining| count > remaining) {
         return Ok(None);
-    };
-    spline_vectors(ctx, &scalars)
+    }
+    let mut vectors = Vec::new();
+    let mut slots = 0..count;
+    while !slots.is_empty() {
+        let mut vector = [0.0; 3];
+        for coordinate in &mut vector {
+            if *cursor >= body.len() { return Ok(None); }
+            let Some(_) = ctx.next_charged(&mut slots, "creo spline replay scalar dispatch")? else { return Ok(None); };
+            let Some((Some(value), next)) = named_spline_scalar_slot(
+                &SurfacePrototypeFamily::Spline(SplineLabel::Spline), name, body, *cursor, cache,
+            ) else { return Ok(None); };
+            if next <= *cursor { return Ok(None); }
+            *coordinate = value;
+            *cursor = next;
+        }
+        storage.with_storage(|| ctx.reserve_vec(&mut vectors, 1, "creo spline replay vectors"))?;
+        vectors.push(vector);
+    }
+    Ok(Some(storage.commit_value(vectors)?))
 }
 
 fn take_spline_mixed_derivatives(
@@ -940,7 +943,7 @@ pub(crate) fn decode_positional_spline_replay(
     if consumed != body.len() {
         return Ok(None);
     }
-    Ok(Some(replay.copy_retained(ctx)?))
+    Ok(Some(replay_scope.commit_value(replay)?))
 }
 
 /// One complete contour-chain entry following a positional `srf_array` row's
@@ -1584,9 +1587,10 @@ impl SurfaceParameterRecord {
         let mut close = None;
         let mut selector = false;
         let mut bytes = self.body.iter().enumerate();
-        while let Some((offset, &byte)) =
+        while bytes.len() != 0 {
+let Some((offset, &byte)) =
             ctx.next_charged(&mut bytes, "creo inline envelope delimiter search")?
-        {
+        else { break; };
             if byte == psb::token::COMPOUND_CLOSE {
                 if close.is_some() {
                     return Ok(false);
@@ -1942,9 +1946,10 @@ impl SurfaceParameterRecord {
         };
         let mut cursor = terminal.offset;
         let mut slots = terminal.slots.iter();
-        while let Some(slot) =
+        while slots.len() != 0 {
+let Some(slot) =
             ctx.next_charged(&mut slots, "creo terminal corner frame traversal")?
-        {
+        else { break; };
             if slot.offset != cursor {
                 return Ok(None);
             }
@@ -3145,6 +3150,7 @@ pub(crate) fn positional_frame_planes(
 
 /// Place axis-aligned plane outlines whose support frame selects one proven
 /// held coordinate even when other outline-coordinate relations are unresolved.
+#[cfg(test)]
 pub(crate) fn frame_bound_outline_plane_checked(
     ctx: &DecodeContext<'_>,
     record: &PlaneEnvelopeRecord,
@@ -3152,7 +3158,8 @@ pub(crate) fn frame_bound_outline_plane_checked(
 ) -> Result<Option<OutlinePlane>, CodecError> {
     let mut source = frames.iter();
     let mut selected = None;
-    while let Some(frame) = ctx.next_charged(&mut source, "creo outline support frame lookup")? {
+    while source.len() != 0 {
+let Some(frame) = ctx.next_charged(&mut source, "creo outline support frame lookup")? else { break; };
         if frame.surface_id != record.surface_id {
             continue;
         }
@@ -3398,30 +3405,15 @@ fn next_surface_array_frame(
         let Ok(count) = usize::try_from(count) else {
             continue;
         };
-        let mut end = ctx
-            .find_map(
-                payload
-                    .get(start..)
-                    .unwrap_or_default()
-                    .windows(LABEL.len())
-                    .enumerate(),
-                |(offset, bytes)| Ok((bytes == LABEL).then_some(start + offset)),
-                "find Creo surface array boundary",
-            )?
-            .unwrap_or(payload.len());
-        for terminator in [b"crv_array\0".as_slice(), b"lo_array\0", b"qlt_array\0"] {
-            if let Some(offset) = ctx.find_map(
-                payload
-                    .get(after_count..)
-                    .unwrap_or_default()
-                    .windows(terminator.len())
-                    .enumerate(),
-                |(offset, bytes)| Ok((bytes == terminator).then_some(after_count + offset)),
-                "find Creo surface array boundary",
-            )? {
-                end = end.min(offset);
-            }
-        }
+        const TERMINATORS: [&[u8]; 3] = [b"crv_array\0", b"lo_array\0", b"qlt_array\0"];
+        let end = ctx.find_map(
+            start..payload.len(),
+            |offset| Ok((payload[offset..].starts_with(LABEL)
+                || (offset >= after_count && TERMINATORS.iter().any(|label| payload[offset..].starts_with(label))))
+                .then_some(offset)),
+            "find Creo surface array boundary",
+        )?.unwrap_or(payload.len());
+        *search = end;
         return Ok(Some(SurfaceArrayFrame {
             start: after_count,
             end,
@@ -3531,7 +3523,29 @@ fn rows_with_boundaries(
     let mut scratch = ctx.reserve_scoped(0, "creo surface row scratch")?;
     let candidates =
         scratch.with_storage(|| row_candidates_with_boundaries(ctx, payload, boundary_types))?;
-    ctx.collect_retained_vec(candidates, "creo retained surface rows")
+    scratch.commit_value(candidates)
+}
+
+const NAMED_ROW_FIELDS: [&[u8]; 6] = [
+    b"geom_id\0", b"geom_type\0", b"feat_id\0", b"next_geom_ptr\0",
+    b"orient\0", b"boundary_type\0",
+];
+
+/// Find each first named-row field and the next namespace in one source walk.
+fn named_row_fields(
+    ctx: &DecodeContext<'_>, payload: &[u8], start: usize,
+) -> Result<([Option<usize>; 6], usize), CodecError> {
+    let mut fields = [None; 6];
+    let mut offsets = start..payload.len();
+    while !offsets.is_empty() {
+        let Some(offset) = ctx.next_charged(&mut offsets, "find Creo surface marker")? else { break; };
+        let tail = &payload[offset..];
+        if tail.starts_with(b"srf_array\0") { return Ok((fields, offset)); }
+        for (field, label) in fields.iter_mut().zip(NAMED_ROW_FIELDS) {
+            if field.is_none() && tail.starts_with(label) { *field = Some(offset); }
+        }
+    }
+    Ok((fields, payload.len()))
 }
 
 fn row_candidates_with_boundaries(
@@ -3539,6 +3553,7 @@ fn row_candidates_with_boundaries(
     payload: &[u8],
     boundary_types: &[BoundaryType],
 ) -> Result<Vec<SurfaceRow>, CodecError> {
+    let mut result_scope = ctx.reserve_scoped(0, "creo retained surface rows")?;
     let mut result = Vec::new();
     let mut namespace_start = 0;
     while let Some(array) = ctx.find_map(
@@ -3551,86 +3566,27 @@ fn row_candidates_with_boundaries(
         "find Creo surface marker",
     )? {
         let start = array + b"srf_array\0".len();
-        let end = ctx
-            .find_map(
-                payload
-                    .get(start..)
-                    .unwrap_or_default()
-                    .windows(b"srf_array\0".len())
-                    .enumerate(),
-                |(offset, bytes)| Ok((bytes == b"srf_array\0").then_some(start + offset)),
-                "find Creo surface marker",
-            )?
-            .unwrap_or(payload.len());
-        namespace_start = start;
-        let value = |label: &[u8]| -> Result<Option<(u32, usize)>, CodecError> {
-            Ok(ctx
-                .find_map(
-                    payload
-                        .get(start..end)
-                        .unwrap_or_default()
-                        .windows(label.len())
-                        .enumerate(),
-                    |(offset, bytes)| Ok((bytes == label).then_some(start + offset)),
-                    "find Creo surface field",
-                )?
-                .and_then(|at| {
-                    let value_start = at + label.len();
-                    let (value, after) = compact_int(payload, value_start);
-                    (after > value_start).then_some((value, at))
-                }))
+        let (fields, end) = named_row_fields(ctx, payload, start)?;
+        namespace_start = end;
+        let value = |field: usize| {
+            let at = fields[field]?;
+            let value_start = at + NAMED_ROW_FIELDS[field].len();
+            let (value, after) = compact_int(payload, value_start);
+            (after > value_start).then_some((value, at))
         };
-        let typed_kind = ctx
-            .find_map(
-                payload
-                    .get(start..end)
-                    .unwrap_or_default()
-                    .windows(b"geom_type\0".len())
-                    .enumerate(),
-                |(offset, bytes)| Ok((bytes == b"geom_type\0").then_some(start + offset)),
-                "find Creo surface marker",
-            )?
-            .and_then(|at| payload.get(at + b"geom_type\0".len()))
+        let typed_kind = fields[1]
+            .and_then(|at| payload.get(at + NAMED_ROW_FIELDS[1].len()))
             .and_then(|byte| SurfaceKind::from_byte(*byte));
         if let (Some((id, id_offset)), Some(kind), Some((feature_id, _)), Some((next_surface, _))) = (
-            value(b"geom_id\0")?,
-            typed_kind,
-            value(b"feat_id\0")?,
-            value(b"next_geom_ptr\0")?,
+            value(0), typed_kind, value(2), value(3),
         ) {
-            let Some(orientation) = ctx
-                .find_map(
-                    payload
-                        .get(start..end)
-                        .unwrap_or_default()
-                        .windows(b"orient\0".len())
-                        .enumerate(),
-                    |(offset, bytes)| Ok((bytes == b"orient\0").then_some(start + offset)),
-                    "find Creo surface marker",
-                )?
-                .and_then(|at| payload.get(at + b"orient\0".len()))
-                .copied()
-                .filter(|byte| matches!(byte, 0x01 | 0xf6))
-            else {
-                continue;
-            };
-            let Some(boundary_type) = ctx
-                .find_map(
-                    payload
-                        .get(start..end)
-                        .unwrap_or_default()
-                        .windows(b"boundary_type\0".len())
-                        .enumerate(),
-                    |(offset, bytes)| Ok((bytes == b"boundary_type\0").then_some(start + offset)),
-                    "find Creo surface marker",
-                )?
-                .and_then(|at| payload.get(at + b"boundary_type\0".len()))
-                .copied()
-                .and_then(BoundaryType::from_byte)
-            else {
-                continue;
-            };
-            ctx.reserve_vec(&mut result, 1, "creo surface rows")?;
+            let Some(orientation) = fields[4]
+                .and_then(|at| payload.get(at + NAMED_ROW_FIELDS[4].len()))
+                .copied().filter(|byte| matches!(byte, 0x01 | 0xf6)) else { continue; };
+            let Some(boundary_type) = fields[5]
+                .and_then(|at| payload.get(at + NAMED_ROW_FIELDS[5].len()))
+                .copied().and_then(BoundaryType::from_byte) else { continue; };
+            result_scope.with_storage(|| ctx.reserve_vec(&mut result, 1, "creo surface rows"))?;
             result.push(SurfaceRow {
                 id,
                 kind,
@@ -3672,7 +3628,7 @@ fn row_candidates_with_boundaries(
         if end == pos {
             continue;
         }
-        ctx.reserve_vec(&mut result, 1, "creo surface rows")?;
+        result_scope.with_storage(|| ctx.reserve_vec(&mut result, 1, "creo surface rows"))?;
         result.push(SurfaceRow {
             id,
             kind,
@@ -3741,6 +3697,7 @@ fn row_candidates_with_boundaries(
     )?;
     let mut frames = surface_array_frames(ctx, payload);
     if let Some(first) = frames.next().transpose()? {
+        let mut frame_scope = ctx.reserve_scoped(0, "creo retained surface rows")?;
         let mut framed = Vec::new();
         let mut saw_framed_candidate = false;
         for frame in std::iter::once(Ok(first)).chain(frames) {
@@ -3757,16 +3714,18 @@ fn row_candidates_with_boundaries(
             // `complete_surface_array_bounds`.
             if selected_count <= frame.count {
                 for row in ctx.admit_iter(selected, "creo framed surface row projection")? {
-                    ctx.reserve_vec(&mut framed, 1, "creo framed surface rows")?;
+                    frame_scope.with_storage(|| ctx.reserve_vec(&mut framed, 1, "creo framed surface rows"))?;
                     framed.push(row.clone());
                 }
             }
         }
         if saw_framed_candidate {
-            result = framed;
+            drop(result);
+            drop(result_scope);
+            return frame_scope.commit_value(framed);
         }
     }
-    Ok(result)
+    result_scope.commit_value(result)
 }
 
 const PROTOTYPE_PARAMETER_NAMES: &[&str] = &[
@@ -4156,29 +4115,6 @@ struct NamedPrototypeFrame<'a> {
     parameters: Vec<NamedPrototypeParameterRange<'a>>,
 }
 
-struct LossyPrototypeName<'a>(&'a [u8]);
-
-impl std::fmt::Display for LossyPrototypeName<'_> {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut remaining = self.0;
-        loop {
-            match std::str::from_utf8(remaining) {
-                Ok(valid) => return formatter.write_str(valid),
-                Err(error) => {
-                    let valid = std::str::from_utf8(&remaining[..error.valid_up_to()])
-                        .map_err(|_| std::fmt::Error)?;
-                    formatter.write_str(valid)?;
-                    formatter.write_str("\u{fffd}")?;
-                    let invalid = error
-                        .error_len()
-                        .unwrap_or(remaining.len() - error.valid_up_to());
-                    remaining = &remaining[error.valid_up_to() + invalid..];
-                }
-            }
-        }
-    }
-}
-
 fn named_prototype_frames<'a>(
     ctx: &DecodeContext<'_>,
     payload: &'a [u8],
@@ -4217,57 +4153,19 @@ fn named_prototype_frames<'a>(
                 },
                 Ok,
             )?,
-            Err(_) => SurfacePrototypeFamily::Other(ctx.format_retained(
-                format_args!("{}", LossyPrototypeName(family_bytes)),
-                "creo prototype family name",
+            Err(_) => SurfacePrototypeFamily::Other(ctx.copy_retained_lossy_utf8(
+                family_bytes, "creo prototype family name",
             )?),
         };
-        let mut record_end = ctx
-            .find_map(
-                payload
-                    .get(close + 2..)
-                    .unwrap_or_default()
-                    .windows(b"srf_prim_ptr(".len())
-                    .enumerate(),
-                |(offset, bytes)| Ok((bytes == b"srf_prim_ptr(").then_some(close + 2 + offset)),
-                "find Creo surface marker",
-            )?
-            .unwrap_or(payload.len());
-        if let Some(at) = ctx.find_map(
-            payload
-                .get(close + 2..)
-                .unwrap_or_default()
-                .windows(b"srf_prim_ptr\0".len())
-                .enumerate(),
-            |(offset, bytes)| Ok((bytes == b"srf_prim_ptr\0").then_some(close + 2 + offset)),
+        const BOUNDARY_MARKERS: [&[u8]; 6] = [
+            b"srf_prim_ptr(", b"srf_prim_ptr\0", b"\xe0\x00entity_ptr(",
+            b"crv_array\0", b"lo_array\0", b"qlt_array\0",
+        ];
+        let record_end = ctx.find_map(
+            close + 2..payload.len(),
+            |offset| Ok(BOUNDARY_MARKERS.iter().any(|marker| payload[offset..].starts_with(marker)).then_some(offset)),
             "find Creo surface marker",
-        )? {
-            record_end = record_end.min(at);
-        }
-        if let Some(at) = ctx.find_map(
-            payload
-                .get(close + 2..)
-                .unwrap_or_default()
-                .windows(b"\xe0\x00entity_ptr(".len())
-                .enumerate(),
-            |(offset, bytes)| Ok((bytes == b"\xe0\x00entity_ptr(").then_some(close + 2 + offset)),
-            "find Creo surface marker",
-        )? {
-            record_end = record_end.min(at);
-        }
-        for marker in [b"crv_array\0".as_slice(), b"lo_array\0", b"qlt_array\0"] {
-            if let Some(at) = ctx.find_map(
-                payload
-                    .get(close + 2..)
-                    .unwrap_or_default()
-                    .windows(marker.len())
-                    .enumerate(),
-                |(offset, bytes)| Ok((bytes == marker).then_some(close + 2 + offset)),
-                "find Creo surface marker",
-            )? {
-                record_end = record_end.min(at);
-            }
-        }
+        )?.unwrap_or(payload.len());
         let mut position_scope = ctx.reserve_scoped(0, "creo named prototype position scratch")?;
         let mut named = Vec::new();
         for token in psb::tokens(ctx, &payload[close + 2..record_end]) {
@@ -4388,14 +4286,8 @@ fn named_prototype_frames<'a>(
             parameters,
             offset: record_start,
         });
-        search = close + 2;
+        search = record_end;
     }
-    ctx.stable_sort_by(
-        frames.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo named prototype frames frames ordering",
-    )?;
     Ok(frames)
 }
 
@@ -4640,18 +4532,6 @@ fn scalar_tokens(
     let positional_plane_corners = (kind == SurfaceKind::Plane)
         .then(|| first_coordinate_plane_corner_tokens(body, cache))
         .flatten();
-    let mut marker_scope = ctx.reserve_scoped(0, "creo torus marker scratch")?;
-    let mut outline_markers = Vec::new();
-    if kind == SurfaceKind::TorusOrSphere {
-        for offset in ctx.admit_iter(0..body.len(), "creo torus outline marker discovery")? {
-            if let Some(marker) = torus_outline_marker(body, offset) {
-                marker_scope.with_storage(|| {
-                    ctx.reserve_vec(&mut outline_markers, 1, "creo torus outline marker items")
-                })?;
-                outline_markers.push(marker);
-            }
-        }
-    }
     let radius_layout = if kind == SurfaceKind::TorusOrSphere {
         torus_radius_override_layout(ctx, body)?
     } else {
@@ -4662,19 +4542,14 @@ fn scalar_tokens(
     } else {
         None
     };
-    let mut markers = outline_markers.iter();
-    let mut marker = ctx.next_charged(&mut markers, "creo torus outline marker traversal")?;
     let mut cursor = 0;
     let mut steps = 0..body.len();
     while cursor < body.len() {
         if ctx
-            .next_charged(&mut steps, "creo surface scalar discovery traversal")?
+            .next_charged(&mut steps, "creo surface scalar token dispatch")?
             .is_none()
         {
             break;
-        }
-        while marker.is_some_and(|(offset, _, _)| *offset < cursor) {
-            marker = ctx.next_charged(&mut markers, "creo torus outline marker traversal")?;
         }
         if let Some(&(value, start, end)) = positional_plane_corners
             .as_ref()
@@ -4690,9 +4565,11 @@ fn scalar_tokens(
             cursor = end;
             continue;
         }
-        if let Some((_, end, _)) = marker.filter(|(offset, _, _)| *offset == cursor) {
-            cursor = *end;
-            continue;
+        if kind == SurfaceKind::TorusOrSphere {
+            if let Some((_, end, _)) = torus_outline_marker(body, cursor) {
+                cursor = end;
+                continue;
+            }
         }
         if let Some(layout) = radius_layout {
             if cursor == layout.overrides.offset {
@@ -4729,7 +4606,12 @@ fn scalar_tokens(
                 cursor += 1;
                 continue;
             }
-            if marker.is_some_and(|(offset, _, _)| cursor < *offset && next > *offset) {
+            // Row scalar tokens consume at most eight bytes. Check each of
+            // their seven interior positions before accepting the token.
+            if kind == SurfaceKind::TorusOrSphere && (1..8).any(|distance| {
+                let offset = cursor + distance;
+                offset < next && torus_outline_marker(body, offset).is_some()
+            }) {
                 cursor += 1;
                 continue;
             }
@@ -5145,6 +5027,14 @@ fn inline_surface_body(
     }
 }
 
+fn sorted_inline_terminal_closes(
+    closes: &mut [usize; MAX_INLINE_FRAME_CANDIDATES], count: usize,
+) -> Option<&[usize]> {
+    let closes = closes.get_mut(..count)?;
+    closes.sort_unstable();
+    Some(closes)
+}
+
 /// Decode the local-system suffix form used by positional rows that have no
 /// axial envelope. The terminal close is part of the row grammar, so a frame
 /// is admitted only when its exact suffix ends immediately before that close.
@@ -5180,14 +5070,11 @@ fn inline_surface_suffix_body(
                 }
             }
         }
-        ctx.sort_unstable_by(
-            &mut terminal_closes[..close_count],
-            |value| value,
-            Ord::cmp,
-            "creo terminal close sort",
-        )?;
+        let Some(terminal_closes) = sorted_inline_terminal_closes(&mut terminal_closes, close_count) else {
+            return Ok(None);
+        };
         let mut previous_close = None;
-        for relative_close in terminal_closes[..close_count].iter().copied() {
+        for relative_close in terminal_closes.iter().copied() {
             if previous_close == Some(relative_close) {
                 continue;
             }
@@ -5234,11 +5121,11 @@ fn inline_surface_suffix_body(
             let carrier = match inline_suffix_witness(kind, body, local_start, cache) {
                 Some(witness)
                     if inline_suffix_witness_agrees(
-                        ctx,
                         witness,
-                        &carriers[..carrier_count],
+                        &carriers,
+                        carrier_count,
                         geometric_interpretation_count,
-                    )? =>
+                    ) =>
                 {
                     Some(witness)
                 }
@@ -5333,18 +5220,18 @@ fn decode_11_10_13_cylinder_witness(
 }
 
 fn inline_suffix_witness_agrees(
-    ctx: &DecodeContext<'_>,
     witness: InlineSurfaceCarrier,
-    candidates: &[Option<InlineSurfaceCarrier>],
+    candidates: &[Option<InlineSurfaceCarrier>; MAX_INLINE_FRAME_CANDIDATES],
+    candidate_count: usize,
     interpretation_count: usize,
-) -> Result<bool, CodecError> {
+) -> bool {
+    let Some(candidates) = candidates.get(..candidate_count) else { return false; };
     if candidates.is_empty() || candidates.len() != interpretation_count {
-        return Ok(false);
+        return false;
     }
-    Ok(match witness {
+    match witness {
         InlineSurfaceCarrier::Cylinder { frame: witness, .. } => {
-            let matching = ctx
-                .admit_iter(candidates, "creo inline witness carrier count")?
+            let matching = candidates.iter()
                 .filter(|candidate| {
                     let Some(InlineSurfaceCarrier::Cylinder {
                         frame: candidate, ..
@@ -5390,7 +5277,7 @@ fn inline_suffix_witness_agrees(
         InlineSurfaceCarrier::Torus(_)
         | InlineSurfaceCarrier::CylinderBounds(_)
         | InlineSurfaceCarrier::Tabulated { .. } => false,
-    })
+    }
 }
 
 fn decode_inline_surface_envelope(
@@ -6273,12 +6160,7 @@ fn contour_records_for_rows(
         let Some(contour_start) = contour_start else {
             continue;
         };
-        let Some(chain) =
-            parse_surface_contour_chain(ctx, payload, contour_start, row_end, row, &cache)?
-        else {
-            continue;
-        };
-        ctx.extend_vec(&mut records, chain, "creo contour record aggregation")?;
+        append_surface_contour_chain(ctx, payload, contour_start, row_end, row, &cache, &mut records)?;
     }
     ctx.stable_sort_by(
         records.as_mut_slice(),
@@ -6289,14 +6171,15 @@ fn contour_records_for_rows(
     Ok(records)
 }
 
-fn parse_surface_contour_chain(
+fn append_surface_contour_chain(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
     row: &SurfaceRow,
     cache: &scalar::ScalarCache,
-) -> Result<Option<Vec<SurfaceContourRecord>>, CodecError> {
+    records: &mut Vec<SurfaceContourRecord>,
+) -> Result<bool, CodecError> {
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
     }
@@ -6314,31 +6197,24 @@ fn parse_surface_contour_chain(
     let mut chain = Vec::new();
     let mut steps = start..end;
     loop {
-        if ctx
-            .next_charged(&mut steps, "creo surface contour chain traversal")?
-            .is_none()
-        {
-            return Ok(None);
-        }
         let contour_start = cursor;
-        if cursor.checked_add(2).is_none_or(|next| next > end) {
-            return Ok(None);
-        }
+        if cursor.checked_add(2).is_none_or(|next| next > end) { return Ok(false); }
+        let Some(_) = ctx.next_charged(&mut steps, "creo surface contour chain traversal")? else { return Ok(false); };
         let Some(head) = payload.get(cursor..cursor + 2) else {
-            return Ok(None);
+            return Ok(false);
         };
         if !(0x80..=0xbf).contains(&head[0]) {
-            return Ok(None);
+            return Ok(false);
         }
         let (curve_header_id, after_head) = compact_int(payload, cursor);
         if after_head != cursor + 2 || curve_header_id == 0 {
-            return Ok(None);
+            return Ok(false);
         }
         let Some(&trv) = payload.get(after_head) else {
-            return Ok(None);
+            return Ok(false);
         };
         if !matches!(trv, 0x00..=0x03 | 0xf6) {
-            return Ok(None);
+            return Ok(false);
         }
         let envelope_offset = after_head + 1;
         let mut parameter_envelope = [None; 4];
@@ -6347,19 +6223,20 @@ fn parse_surface_contour_chain(
             let Some((decoded, next)) =
                 decode_surface_contour_envelope_scalar(payload, cursor, cache)
             else {
-                return Ok(None);
+                return Ok(false);
             };
             if next > end || decoded.is_some_and(|value| !value.is_finite()) {
-                return Ok(None);
+                return Ok(false);
             }
             *value = decoded;
             cursor = next;
         }
+        if cursor >= end { return Ok(false); }
         let Some(&close) = payload.get(cursor) else {
-            return Ok(None);
+            return Ok(false);
         };
         if !matches!(close, psb::token::COMPOUND_CLOSE | 0xe1) {
-            return Ok(None);
+            return Ok(false);
         }
         cursor += 1;
         let contour_end = cursor;
@@ -6367,10 +6244,10 @@ fn parse_surface_contour_chain(
         let separator_reference =
             if !terminal && payload.get(cursor) == Some(&psb::token::ENTITY_REF) {
                 let Ok((reference, next)) = psb::reference_id(payload, cursor + 1) else {
-                    return Ok(None);
+                    return Ok(false);
                 };
                 if next > end {
-                    return Ok(None);
+                    return Ok(false);
                 }
                 cursor = next;
                 Some(reference)
@@ -6390,11 +6267,12 @@ fn parse_surface_contour_chain(
             envelope_offset,
         });
         if terminal {
-            let mut records = ctx.collection_vec(chain.len(), "creo contour chain entries")?;
+            ctx.reserve_vec(records, chain.len(), "creo contour chain entries")?;
+            let chain_start = records.len();
             for candidate in ctx.admit_iter(chain, "creo contour chain projection")? {
                 records.push(SurfaceContourRecord {
                     surface_id: row.id,
-                    chain_index: records.len(),
+                    chain_index: records.len() - chain_start,
                     curve_header_id: candidate.curve_header_id,
                     trv: candidate.trv,
                     parameter_envelope: candidate.parameter_envelope,
@@ -6405,10 +6283,10 @@ fn parse_surface_contour_chain(
                     surface_row_offset: row.offset,
                 });
             }
-            return Ok(Some(records));
+            return Ok(true);
         }
         if cursor >= end {
-            return Ok(None);
+            return Ok(false);
         }
     }
 }
@@ -6538,9 +6416,9 @@ fn decode_compound_support_apex_cone_frame(
     let mut candidate = None;
     let mut segment_start = 0;
     let mut offsets = body.iter().enumerate();
-    while let Some((segment_end, byte)) =
-        ctx.next_charged(&mut offsets, "creo compound cone segment traversal")?
-    {
+    while offsets.len() != 0 {
+let Some((segment_end, byte)) =
+        ctx.next_charged(&mut offsets, "creo compound cone segment traversal")? else { break; };
         if *byte != psb::token::COMPOUND_CLOSE {
             continue;
         }
@@ -6912,25 +6790,18 @@ pub(crate) fn tabulated_cylinder_curve_replays(
         let mut middle_offsets = first_body_start..terminal;
         let middle_separator_at =
             |offset| Ok((payload.get(offset..offset + 2) == Some(&[0x18, 0xe2])).then_some(offset));
-        let (Some(second_separator), Some(third_separator), None) = (
-            ctx.find_map(
-                &mut middle_offsets,
-                middle_separator_at,
-                "creo tabulated middle separator search",
-            )?,
-            ctx.find_map(
-                &mut middle_offsets,
-                middle_separator_at,
-                "creo tabulated middle separator search",
-            )?,
-            ctx.find_map(
-                &mut middle_offsets,
-                middle_separator_at,
-                "creo tabulated middle separator search",
-            )?,
-        ) else {
-            continue;
-        };
+        let Some(second_separator) = ctx.find_map(
+            &mut middle_offsets, middle_separator_at,
+            "creo tabulated middle separator search",
+        )? else { continue; };
+        let Some(third_separator) = ctx.find_map(
+            &mut middle_offsets, middle_separator_at,
+            "creo tabulated middle separator search",
+        )? else { continue; };
+        if ctx.find_map(
+            &mut middle_offsets, middle_separator_at,
+            "creo tabulated middle separator search",
+        )?.is_some() { continue; }
         let bodies = [
             &payload[control_body_start..first_separator],
             &payload[first_body_start..second_separator],
@@ -7453,16 +7324,12 @@ fn counted_parameter_scalar_slots(
         return Ok(None);
     };
     let mut slots = ctx.collection_vec(count, "creo counted parameter result slots")?;
-    let mut path = std::iter::from_fn(|| {
-        let node = &nodes[tail?];
+    while let Some(index) = tail {
+        let mut step = std::iter::once(index);
+        let Some(index) = ctx.next_charged(&mut step, "creo counted parameter result traversal")? else { break; };
+        let node = &nodes[index];
         tail = node.previous;
-        Some(node)
-    });
-    while let Some(node) = ctx.next_charged(&mut path, "creo counted parameter result traversal")? {
-        slots.push((
-            node.value,
-            ctx.copy_retained(node.raw, "creo counted parameter token bytes")?,
-        ));
+        slots.push((node.value, ctx.copy_retained(node.raw, "creo counted parameter token bytes")?));
     }
     ctx.reverse(&mut slots, "creo counted parameter result reversal")?;
     Ok(Some(slots))
@@ -8866,43 +8733,41 @@ fn id_ending_at(payload: &[u8], type_offset: usize) -> Option<(u32, usize)> {
     (payload[start] < 0x80).then_some((u32::from(payload[start]), start))
 }
 
-#[cfg(test)]
-mod tests;
 
 fn inline_local_starts<'a, 'ctx>(
-    ctx: &'a DecodeContext<'ctx>,
-    body: &'a [u8],
+    ctx: &'a DecodeContext<'ctx>, body: &'a [u8],
 ) -> impl Iterator<Item = Result<usize, CodecError>> + use<'a, 'ctx> {
     let mut initial = true;
     let mut positions = body.iter().enumerate();
     let mut finished = false;
     std::iter::from_fn(move || {
-        if finished {
-            return None;
-        }
-        let start = (|| -> Result<Option<usize>, CodecError> {
-            if let Some(refusal) = ctx.resource_refusal() {
-                return Err(refusal.into());
-            }
-            if initial {
-                initial = false;
-                return Ok(Some(0));
-            }
-            while positions.len() != 0 {
-                let Some((offset, byte)) =
-                    ctx.next_charged(&mut positions, "creo inline local-system boundary visits")?
-                else {
-                    break;
-                };
-                if *byte == psb::token::COMPOUND_CLOSE {
-                    return Ok(Some(offset + 1));
-                }
-            }
-            Ok(None)
-        })();
-        if !matches!(start, Ok(Some(_))) {
+        if finished { return None; }
+        if let Some(refusal) = ctx.resource_refusal() {
             finished = true;
+            return Some(Err(refusal.into()));
         }
-        start.transpose()
+        if initial { initial = false; return Some(Ok(0)); }
+        while positions.len() != 0 {
+            match ctx.next_charged(&mut positions, "creo inline local-system boundary visits") {
+                Ok(Some((offset, byte))) if *byte == psb::token::COMPOUND_CLOSE => return Some(Ok(offset + 1)),
+                Ok(Some(_)) => {},
+                Ok(None) => break,
+                Err(error) => { finished = true; return Some(Err(error)); },
+            }
+        }
+        finished = true;
+        None
     })
 }
+
+#[cfg(test)]
+fn parse_surface_contour_chain(
+    ctx: &DecodeContext<'_>, payload: &[u8], start: usize, end: usize,
+    row: &SurfaceRow, cache: &scalar::ScalarCache,
+) -> Result<Option<Vec<SurfaceContourRecord>>, CodecError> {
+    let mut records = Vec::new();
+    Ok(append_surface_contour_chain(ctx, payload, start, end, row, cache, &mut records)?.then_some(records))
+}
+
+#[cfg(test)]
+mod tests;

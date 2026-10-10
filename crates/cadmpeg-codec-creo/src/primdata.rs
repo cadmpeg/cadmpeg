@@ -443,23 +443,21 @@ pub(crate) fn scalar_arrays(
         return Err(refusal.into());
     }
     let mut arrays = Vec::new();
-    for field in FIELDS {
-        let name = field.as_str().as_bytes();
-        let marker_len = name.len() + 3;
-        let mut fields = data.windows(marker_len).enumerate();
-        while fields.len() != 0 {
-            let Some((offset, window)) = ctx.next_charged(
-                &mut fields, "creo primitive scalar discovery",
-            )? else {
-                break;
-            };
-            if window[0] != psb::token::NAMED_RECORD
-                || window[1] != 0x06
-                || window[2..2 + name.len()] != *name
-                || window[marker_len - 1] != 0
-            {
-                continue;
-            }
+    let mut fields = data.windows(5).enumerate();
+    while fields.len() != 0 {
+        let Some((offset, window)) = ctx.next_charged(
+            &mut fields, "creo primitive scalar discovery",
+        )? else { break; };
+        if window[0] != psb::token::NAMED_RECORD || window[1] != 0x06 {
+            continue;
+        }
+        let Some((field, marker_len)) = FIELDS.into_iter().find_map(|field| {
+            let name = field.as_str().as_bytes();
+            let marker_len = name.len() + 3;
+            (data.get(offset + 2..offset + 2 + name.len()) == Some(name)
+                && data.get(offset + marker_len - 1) == Some(&0))
+                .then_some((field, marker_len))
+        }) else { continue; };
             let opener = offset + marker_len;
             if data.get(opener) != Some(&psb::token::ARRAY_OPEN) {
                 continue;
@@ -508,15 +506,6 @@ pub(crate) fn scalar_arrays(
                 });
             }
         }
-    }
-    if arrays.len() > 1 {
-        ctx.stable_sort_by(
-            &mut arrays,
-            |value| &value.offset,
-            Ord::cmp,
-            "creo primitive scalar array ordering",
-        )?;
-    }
     Ok(arrays)
 }
 
@@ -635,35 +624,11 @@ mod tests {
     }
 
     #[test]
-    fn primitive_scalar_ordering_refuses_work_and_index_scratch_before_sorting() {
-        use cadmpeg_core::decode::ResourceDimension;
+    fn primitive_scalar_arrays_follow_discovery_order_without_sorting() {
         let bytes: Vec<_> = (0..21).flat_map(|_| named("p1", &[], 0)).collect();
-        let admitted = crate::decode::with_test_decode_ctx(|ctx| scalar_arrays(ctx, &bytes))
-            .expect("service admits ordering");
+        let admitted = work_output(|ctx| scalar_arrays(ctx, &bytes));
         assert_eq!(admitted.len(), 21);
-        assert!(admitted
-            .windows(2)
-            .all(|pair| pair[0].offset < pair[1].offset));
-        for (dimension, operation) in [
-            (
-                ResourceDimension::MaterializedBytes,
-                "creo primitive scalar arrays",
-            ),
-            (
-                ResourceDimension::WorkUnits,
-                "creo primitive scalar array ordering",
-            ),
-        ] {
-            let error = crate::test_support::last_refusal_at(&bytes, dimension, operation, |ctx| {
-                scalar_arrays(ctx, &bytes)
-            });
-            let cadmpeg_core::CodecError::ResourceLimit(resource) = error else {
-                panic!("ordering resource refusal expected");
-            };
-            assert_eq!(resource.dimension, dimension);
-            assert_eq!(resource.operation, operation);
-            assert_eq!(resource.limit + 1, resource.used + resource.additional);
-        }
+        assert!(admitted.windows(2).all(|pair| pair[0].offset < pair[1].offset));
     }
 
     #[test]
@@ -828,6 +793,36 @@ mod tests {
             .collect()
     }
 
+    fn work_output<T>(
+        run: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
+    ) -> T {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        let capped = |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let result = run(&ctx);
+            if let Err(CodecError::ResourceLimit(original)) = &result {
+                assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(original));
+                assert!(matches!(run(&ctx), Err(CodecError::ResourceLimit(actual)) if &actual == original));
+                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if &actual == original));
+            }
+            result
+        };
+        let work = crate::test_support::allocation_limit_at(ResourceDimension::WorkUnits, None, capped);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = work;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let value = run(&ctx).expect("walker admits the unchanged fixture");
+        let original = ctx.charge_work_limit(1, "after owner work route").expect_err("exact work cap");
+        assert!(matches!(run(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == original));
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original));
+        value
+    }
     fn finite_points(points: Vec<[f64; 3]>) -> Vec<FiniteVector<3>> {
         points
             .into_iter()

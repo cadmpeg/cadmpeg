@@ -112,7 +112,7 @@ fn surface_row_id_nodes_refuse_before_btree_insertion() {
             && limit.operation == "creo surface row ID nodes")
     );
     assert_eq!(
-        surface_limit_result(&payload, u64::MAX, checked_rows)
+        surface_limit_result(&payload, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, None, |cap| surface_limit_result(&payload, cap, checked_rows)), checked_rows)
             .expect("row and ID admitted")
             .len(),
         1
@@ -139,7 +139,7 @@ fn surface_framed_rows_refuse_before_result_growth() {
             && limit.operation == "creo framed surface rows")
     );
     assert_eq!(
-        surface_limit_result(payload, u64::MAX, checked_rows)
+        surface_limit_result(payload, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, None, |cap| surface_limit_result(payload, cap, checked_rows)), checked_rows)
             .expect("frame admitted")
             .len(),
         1
@@ -166,7 +166,7 @@ fn counted_surface_row_bounds_refuse_before_result_growth() {
             && limit.operation == "creo counted surface row bounds")
     );
     assert_eq!(
-        surface_limit_result(payload, u64::MAX, checked_counted_row_bounds)
+        surface_limit_result(payload, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, None, |cap| surface_limit_result(payload, cap, checked_counted_row_bounds)), checked_counted_row_bounds)
             .expect("bound admitted")
             .len(),
         1
@@ -193,7 +193,7 @@ fn complete_surface_array_bounds_refuse_before_result_growth() {
             && limit.operation == "creo complete surface array bounds")
     );
     assert_eq!(
-        surface_limit_result(payload, u64::MAX, checked_complete_surface_array_bounds)
+        surface_limit_result(payload, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, None, |cap| surface_limit_result(payload, cap, checked_complete_surface_array_bounds)), checked_complete_surface_array_bounds)
             .expect("bound admitted")
             .len(),
         1
@@ -256,7 +256,7 @@ fn prototype_parameter_spans_refuse_before_row_filter_growth() {
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo prototype parameter spans")
     );
-    assert!(surface_limit_result(payload, u64::MAX, checked_rows)
+    assert!(surface_limit_result(payload, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, None, |cap| surface_limit_result(payload, cap, checked_rows)), checked_rows)
         .expect("span admitted")
         .is_empty());
 }
@@ -286,12 +286,14 @@ fn unknown_prototype_family_refuses_before_name_copy() {
 }
 
 #[test]
-fn lossy_prototype_family_formatter_preserves_utf8_replacement() {
+fn lossy_prototype_family_preserves_utf8_replacement() {
     let raw = b"a\xff\xf0\x9f\x92z";
-    assert_eq!(
-        format!("{}", crate::surface::LossyPrototypeName(raw)),
-        String::from_utf8_lossy(raw)
-    );
+    let mut payload = b"srf_prim_ptr(".to_vec();
+    payload.extend_from_slice(raw);
+    payload.extend_from_slice(b")\0");
+    let frames = super::work_output(|ctx| super::frames_with_checked_cache(ctx, &payload));
+    assert_eq!(frames.len(), 1);
+    assert_eq!(frames[0].family.name(), String::from_utf8_lossy(raw));
 }
 
 #[test]
@@ -323,7 +325,7 @@ fn named_prototype_parameter_name_refuses_before_retained_copy() {
             && refusal.operation == "creo named prototype parameter name")
     );
     assert_eq!(
-        run(u64::MAX).expect("prototype admitted under service limits"),
+        run(crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, None, run)).expect("prototype admitted under finite limits"),
         1
     );
 }
@@ -340,7 +342,7 @@ fn contour_surface_frames_refuse_before_aggregate_growth() {
             .expect("surface frame fixture fits root limit");
         contour_records_for_rows(&ctx, payload, &[]).map(|records| records.len())
     };
-    assert_eq!(run(u64::MAX).expect("one frame admitted"), 0);
+    assert_eq!(run(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, None, run)).expect("one frame admitted"), 0);
     let error = run(crate::test_support::allocation_limit_at(
         cadmpeg_core::decode::ResourceDimension::CollectionItems,
         Some("creo contour surface frames"),
@@ -519,9 +521,9 @@ fn named_spline_slots_refuse_before_declared_count_reserve() {
         crate::test_support::allocation_limit_at(
             cadmpeg_core::decode::ResourceDimension::CollectionItems,
             Some("creo named spline scalar slots"),
-            |cap| Err::<(), _>(named_spline_limit_error(cap, u64::MAX)),
+            |cap| Err::<(), _>(named_spline_limit_error(cap, DecodePolicy::service().limits.max_retained_bytes)),
         ),
-        u64::MAX,
+        DecodePolicy::service().limits.max_retained_bytes,
     );
     assert!(matches!(
         error,
@@ -533,11 +535,11 @@ fn named_spline_slots_refuse_before_declared_count_reserve() {
 #[test]
 fn named_spline_token_refuses_before_retained_copy() {
     let error = named_spline_limit_error(
-        u64::MAX,
+        DecodePolicy::service().limits.max_collection_items,
         crate::test_support::allocation_limit_at(
             cadmpeg_core::decode::ResourceDimension::RetainedBytes,
             Some("creo named spline scalar token"),
-            |cap| Err::<(), _>(named_spline_limit_error(u64::MAX, cap)),
+            |cap| Err::<(), _>(named_spline_limit_error(DecodePolicy::service().limits.max_collection_items, cap)),
         ),
     );
     assert!(matches!(
@@ -705,7 +707,7 @@ fn positional_spline_replay_refuses_scalar_vector() {
 fn positional_spline_replay_refuses_point_vector() {
     use cadmpeg_core::decode::ResourceDimension;
     let error = spline_collection_error("creo spline replay vectors", |ctx| {
-        crate::surface::spline_vectors(ctx, &[0.0, 1.0, 2.0]).map(|_| ())
+        crate::surface::take_spline_vectors(ctx, &[0x0f, 0xe4, 0x2f, 0, 0], &mut 0, 3, "i_points", &scalar::ScalarCache::default()).map(|_| ())
     });
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)

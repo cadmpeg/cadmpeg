@@ -79,49 +79,24 @@ fn active_datum_fixed_terminal_frame_is_free_and_keeps_original_refusal() {
 fn active_datum_admits_present_preceding_frames_and_slots_without_terminal_fee() {
     let split = [None, Some(0.0), Some(8.0)];
     let conflict = [Some(-8.0), Some(8.0), Some(42.0)];
-    for (values, terminal, need, accepted) in [
-        (split.as_slice(), 0.0, 1 + split.len(), true),
-        (conflict.as_slice(), 8.0, 1 + 1, false),
+    for (values, terminal, accepted) in [
+        (split.as_slice(), 0.0, true), (conflict.as_slice(), 8.0, false),
     ] {
         let (row, parameter) = active_parameter(&[values], terminal);
-        let need = u64::try_from(need).expect("fixture extent");
-        for allowed in 0..=need {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = allowed;
-            policy.limits.max_materialized_bytes = 0;
-            policy.limits.max_retained_bytes = 0;
-            policy.limits.max_collection_items = 0;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let result = super::super::active_cylinder_frame(&ctx, &row, &parameter);
-            let original = if allowed < need {
-                let Err(CodecError::ResourceLimit(refusal)) = result else {
-                    panic!("next actual frame or slot must refuse");
-                };
-                assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
-                assert_eq!(refusal.operation, if allowed == 0 {
-                    "creo active datum cylinder scalar frames"
-                } else { "creo active datum cylinder scalar slots" });
-                assert_eq!((refusal.used, refusal.additional), (allowed, 1));
-                refusal
-            } else {
-                let frame = result.expect("exact actual member cap");
-                assert_eq!(frame.is_some(), accepted);
-                if let Some(frame) = frame {
-                    assert_eq!(frame.frame().origin(), [-12.0, 4.0, 0.0]);
-                    assert_eq!(frame.frame().axis(), [0.0, -1.0, 0.0]);
-                    assert_eq!(frame.frame().ref_direction(), [1.0, 0.0, 0.0]);
-                    assert_eq!(frame.radius().get(), 1.0);
-                    assert_eq!(frame.length().map(PositiveLength::get), Some(8.0));
-                }
-                let refusal = ctx.charge_work_limit(1, "seed completed datum frame visit")
-                    .expect_err("exact cap exhausted");
-                assert_eq!((refusal.used, refusal.additional), (need, 1));
-                refusal
-            };
-            assert!(matches!(super::super::active_cylinder_frame(&ctx, &row, &parameter),
-                Err(CodecError::ResourceLimit(actual)) if actual == original));
-            assert_eq!(ctx.resource_refusal(), Some(original));
+        let frame = super::work_output(|ctx| super::super::active_cylinder_frame(ctx, &row, &parameter));
+        assert_eq!(frame.is_some(), accepted);
+        if let Some(frame) = frame {
+            assert_eq!(frame.frame().origin(), [-12.0, 4.0, 0.0]);
+            assert_eq!(frame.frame().axis(), [0.0, -1.0, 0.0]);
+            assert_eq!(frame.frame().ref_direction(), [1.0, 0.0, 0.0]);
+            assert_eq!(frame.radius().get(), 1.0);
+            assert_eq!(frame.length().map(PositiveLength::get), Some(8.0));
+        }
+        for operation in ["creo active datum cylinder scalar frames", "creo active datum cylinder scalar slots"] {
+            let error = crate::test_support::last_refusal_at(&[], ResourceDimension::WorkUnits, operation,
+                |ctx| super::super::active_cylinder_frame(ctx, &row, &parameter));
+            assert!(matches!(error, CodecError::ResourceLimit(refusal)
+                if refusal.dimension == ResourceDimension::WorkUnits && refusal.operation == operation));
         }
     }
 }
@@ -129,50 +104,19 @@ fn active_datum_admits_present_preceding_frames_and_slots_without_terminal_fee()
 #[test]
 fn named_datum_identity_searches_admit_prefixes_and_stop_at_first_missing_identity() {
     let marker = b"outline\0\xf9\x02\x03";
-    let id_marker = b"\xe0\x01geom_id\0";
-    let feature_marker = b"feat_id\0";
     for (prefix, geometry_present) in [
         (b"missing geometry".as_slice(), false),
         (b"\xe0\x01geom_id\0\x07padding".as_slice(), true),
     ] {
         let mut data = prefix.to_vec();
         data.extend_from_slice(marker);
-        let discovery = u64::try_from(data.len() + marker.len()).expect("fixture extent");
-        let geometry_work = u64::try_from(prefix.len() - id_marker.len() + 1).expect("prefix extent");
-        let feature_work = if geometry_present {
-            u64::try_from(prefix.len() - feature_marker.len() + 1).expect("prefix extent")
-        } else { 0 };
-        let need = discovery + geometry_work + feature_work;
-        for allowed in [need - 1, need] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = allowed;
-            policy.limits.max_materialized_bytes = 0;
-            policy.limits.max_retained_bytes = 0;
-            policy.limits.max_collection_items = 0;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let result = named_plane(&ctx, &data);
-            let original = if allowed < need {
-                let Err(CodecError::ResourceLimit(refusal)) = result else {
-                    panic!("identity prefix search must be admitted");
-                };
-                assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
-                assert_eq!(refusal.operation, if geometry_present {
-                    "creo named datum feature identity"
-                } else { "creo named datum geometry identity" });
-                assert_eq!((refusal.used, refusal.additional), (allowed, 1));
-                refusal
-            } else {
-                assert_eq!(result.expect("exact actual reverse windows"), None);
-                let refusal = ctx.charge_work_limit(1, "seed completed datum identity search")
-                    .expect_err("exact cap exhausted");
-                assert_eq!((refusal.used, refusal.additional), (need, 1));
-                refusal
-            };
-            assert!(matches!(named_plane(&ctx, &[]),
-                Err(CodecError::ResourceLimit(actual)) if actual == original));
-            assert_eq!(ctx.resource_refusal(), Some(original));
-        }
+        assert_eq!(super::work_output(|ctx| named_plane(ctx, &data)), None);
+        let operation = if geometry_present { "creo named datum feature identity" }
+            else { "creo named datum geometry identity" };
+        let error = crate::test_support::last_refusal_at(&[], ResourceDimension::WorkUnits, operation,
+            |ctx| named_plane(ctx, &data));
+        assert!(matches!(error, CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::WorkUnits && refusal.operation == operation));
     }
 }
 

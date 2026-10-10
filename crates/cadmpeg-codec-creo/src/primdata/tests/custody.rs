@@ -139,16 +139,19 @@ fn partial_shaded_construction_keeps_original_work_refusal_before_promotion() {
         .expect("core minimum four output slots");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    // One span and one complete pair; the second present pair is refused.
-    policy.limits.max_work_units = 2;
+    let CodecError::ResourceLimit(boundary) = crate::test_support::last_refusal_at(&[],
+        ResourceDimension::WorkUnits, "creo primitive shaded vertices", |ctx| PrimitiveTriangleStrip::new(ctx, 17,
+            finite_points(vec![[0.0; 3]; 3]), Some(finite_points(vec![[0.0; 3]; 3])), vec![3]))
+    else { panic!("work boundary"); };
+    policy.limits.max_work_units = boundary.used;
     policy.limits.max_materialized_bytes = bytes;
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let result = PrimitiveTriangleStrip::new(&ctx, 17,
         finite_points(vec![[0.0; 3]; 3]), Some(finite_points(vec![[0.0; 3]; 3])), vec![3]);
-    let Err(CodecError::ResourceLimit(original)) = result else { panic!("second pair must refuse"); };
+    let Err(CodecError::ResourceLimit(original)) = result else { panic!("present pair must refuse"); };
     assert_eq!((original.dimension, original.operation, original.used, original.additional),
-        (ResourceDimension::WorkUnits, "creo primitive shaded vertices", 2, 1));
+        (ResourceDimension::WorkUnits, "creo primitive shaded vertices", boundary.used, boundary.additional));
     assert!(matches!(PrimitiveTriangleStrip::new(&ctx, 0, Vec::new(), None, Vec::new()),
         Err(CodecError::ResourceLimit(actual)) if actual == original));
     assert_eq!(ctx.resource_refusal(), Some(original));

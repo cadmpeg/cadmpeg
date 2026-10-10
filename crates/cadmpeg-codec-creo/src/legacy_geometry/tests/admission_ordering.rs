@@ -42,6 +42,17 @@ fn empty_legacy_geometry_routes_are_free_and_keep_original_refusal() {
     }
 }
 
+fn element_scratch_limit<T>(
+    run: impl Fn(&DecodeContext<'_>) -> Result<T, CodecError>,
+) -> u64 {
+    let error = crate::test_support::last_refusal_at(
+        &[], ResourceDimension::MaterializedBytes,
+        "creo legacy geometry array elements", run,
+    );
+    let CodecError::ResourceLimit(boundary) = error else { panic!("element scratch boundary"); };
+    boundary.used.checked_add(boundary.additional).expect("element scratch need")
+}
+
 #[test]
 fn singleton_legacy_surface_namespace_uses_no_ordering_scratch() {
     let persistence = cylinder_persistence(false);
@@ -59,7 +70,10 @@ fn singleton_legacy_surface_namespace_uses_no_ordering_scratch() {
     };
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_materialized_bytes = element_scratch_limit(|ctx| {
+        super::super::namespace(ctx, &index, "Sld_VisGeom", "active_geom",
+            LegacySurfaceNamespace::Visible, &mut Vec::new())
+    });
     // One element reference, one row and one carrier. No sort index slots.
     policy.limits.max_collection_items = 3;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
@@ -76,10 +90,10 @@ fn singleton_legacy_surface_namespace_uses_no_ordering_scratch() {
         frame: frame([0.0; 3], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
         radius: PositiveLength::new(2.0).expect("positive radius"),
     });
-    let original = ctx.reserve_scoped_limit(1, "after singleton legacy surface")
+    let original = ctx.reserve_scoped_limit(policy.limits.max_materialized_bytes + 1, "after singleton legacy surface")
         .expect_err("no materialized storage remains");
     assert_eq!((original.dimension, original.used, original.additional),
-        (ResourceDimension::MaterializedBytes, 0, 1));
+        (ResourceDimension::MaterializedBytes, 0, policy.limits.max_materialized_bytes + 1));
     assert!(matches!(super::super::namespace(&ctx, &index,
         "Sld_VisGeom", "active_geom", LegacySurfaceNamespace::Visible, &mut Vec::new()),
         Err(CodecError::ResourceLimit(actual)) if actual == original));
@@ -104,7 +118,10 @@ fn singleton_legacy_curve_namespace_uses_no_ordering_or_dedup_scratch() {
     }).expect("fixture indexes");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_materialized_bytes = element_scratch_limit(|ctx| {
+        super::super::curve_namespace(ctx, &persistence.objects,
+            &object_ids, &integer_fields, &real_fields)
+    });
     policy.limits.max_collection_items = 3;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let (rows, pcurves) = super::super::curve_namespace(&ctx, &persistence.objects,
@@ -120,10 +137,10 @@ fn singleton_legacy_curve_namespace_uses_no_ordering_or_dedup_scratch() {
         face_0_endpoints: [[0.0, 1.0], [4.0, 5.0]],
         face_1_endpoints: [[2.0, 3.0], [6.0, 7.0]], offset: 810,
     }]);
-    let original = ctx.reserve_scoped_limit(1, "after singleton legacy curve")
+    let original = ctx.reserve_scoped_limit(policy.limits.max_materialized_bytes + 1, "after singleton legacy curve")
         .expect_err("no ordering storage remains");
     assert_eq!((original.dimension, original.used, original.additional),
-        (ResourceDimension::MaterializedBytes, 0, 1));
+        (ResourceDimension::MaterializedBytes, 0, policy.limits.max_materialized_bytes + 1));
     assert!(matches!(super::super::curve_namespace(&ctx, &[],
         &object_ids, &integer_fields, &real_fields),
         Err(CodecError::ResourceLimit(actual)) if actual == original));

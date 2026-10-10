@@ -106,7 +106,7 @@ impl<Shape> Scalars<Shape> {
         let mut complete = true;
         let mut increasing = true;
         let mut previous = None;
-        if !ctx.all_by(
+        if !values.is_empty() && !ctx.all_by(
             &values,
             |value| {
                 complete &= value.is_some();
@@ -144,28 +144,35 @@ impl<Shape> Scalars<Shape> {
         let mut complete = true;
         let mut increasing = true;
         let mut previous = None;
-        if ctx.any_by(
-            &slots,
-            |(value, _)| {
-                complete &= value.is_some();
-                increasing &= match (previous, *value) {
-                    (Some(previous), Some(value)) => previous < value,
-                    (None, Some(_)) => true,
-                    (_, None) => false,
-                };
-                previous = *value;
-                Ok(value.is_some_and(|value| FiniteReal::new(value).is_none()))
-            },
-            "creo scalar array validation",
-        )? {
-            return Ok(None);
-        }
-        let mut values = ctx.collection_vec(slots.len(), "creo scalar array values")?;
-        let mut tokens = ctx.collection_vec(slots.len(), "creo scalar array tokens")?;
-        for (value, token) in ctx.admit_iter(slots, "creo scalar array filling")? {
+        let mut value_storage = ctx.reserve_scoped(0, "creo scalar array values")?;
+        let mut token_storage = ctx.reserve_scoped(0, "creo scalar array tokens")?;
+        let mut values = Vec::new();
+        let mut tokens = Vec::new();
+        let mut source = slots.into_iter();
+        let count = source.len();
+        while source.len() != 0 {
+            let Some((value, token)) = ctx.next_charged(&mut source, "creo scalar array validation")? else { break; };
+            if value.is_some_and(|value| FiniteReal::new(value).is_none()) {
+                return Ok(None);
+            }
+            complete &= value.is_some();
+            increasing &= match (previous, value) {
+                (Some(previous), Some(value)) => previous < value,
+                (None, Some(_)) => true,
+                (_, None) => false,
+            };
+            previous = value;
+            if values.is_empty() {
+                value_storage.with_storage_limit(|| ctx.reserve_capacity_limit(&mut values, count, "creo scalar array values"))?;
+                token_storage.with_storage_limit(|| ctx.reserve_capacity_limit(&mut tokens, count, "creo scalar array tokens"))?;
+            }
+            value_storage.with_storage(|| ctx.reserve_vec(&mut values, 1, "creo scalar array values"))?;
+            token_storage.with_storage(|| ctx.reserve_vec(&mut tokens, 1, "creo scalar array tokens"))?;
             values.push(value);
             tokens.push(token);
         }
+        let values = value_storage.commit_value(values)?;
+        let tokens = token_storage.commit_value(tokens)?;
         Ok(Some(Self {
             shape: extent.shape,
             values: FiniteScalarSlots(values),
@@ -410,6 +417,27 @@ mod tests {
             assert_eq!(array, before);
         }
     }
+    #[test]
+    fn rejected_scalar_token_arrays_release_partial_candidate_backing() {
+        for first in [false, true] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = 0;
+            if first { policy.limits.max_materialized_bytes = 0; }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let extent = CountedScalars::extent(3).expect("extent");
+            let values = if first { [f64::INFINITY, 1.0, 2.0] } else { [1.0, f64::INFINITY, 2.0] };
+            for _ in 0..7 {
+                assert_eq!(CountedScalars::from_tokens(&ctx, extent,
+                    values.into_iter().map(|value| (Some(value), vec![0xe4])).collect())
+                    .expect("invalid scalar candidate"), None);
+            }
+            let refusal = ctx.reserve_scoped_limit(policy.limits.max_materialized_bytes + 1,
+                "after rejected scalar tokens").expect_err("probe live candidate backing");
+            assert_eq!(refusal.used, 0);
+        }
+    }
+
     #[test]
     fn value_only_fill_clears_source_tokens() {
         let mut array = CountedScalars::empty(1).expect("extent");

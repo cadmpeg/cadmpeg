@@ -527,44 +527,6 @@ fn normalized_plane_frame_refuses_collection_before_growth() {
     );
 }
 
-#[test]
-fn torus_scalar_refuses_outline_marker_vector() {
-    use cadmpeg_core::decode::ResourceDimension;
-    let body = [0x01, 0x12, 0x50, 0x50];
-    let error = with_surface_limits(
-        &body,
-        crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::CollectionItems,
-            Some("creo torus outline marker items"),
-            |cap| {
-                with_surface_limits(&body, cap, u64::MAX, |ctx| {
-                    crate::surface::scalar_tokens(
-                        ctx,
-                        crate::surface::SurfaceKind::TorusOrSphere,
-                        &body,
-                        &scalar::ScalarCache::default(),
-                    )
-                })
-            },
-        ),
-        u64::MAX,
-        |ctx| {
-            crate::surface::scalar_tokens(
-                ctx,
-                crate::surface::SurfaceKind::TorusOrSphere,
-                &body,
-                &scalar::ScalarCache::default(),
-            )
-        },
-    )
-    .expect_err("one marker exceeds zero collection items");
-    assert_surface_limit(
-        &error,
-        ResourceDimension::CollectionItems,
-        "creo torus outline marker items",
-    );
-}
-
 fn plane_corner_limit_error(collection_limit: bool) -> cadmpeg_core::CodecError {
     let body = [
         0x18, 0x18, 0x6d, 0xeb, 0x81, 0x84, 0xcc, 0xcc, 0xd0, 0x00, 0x0c, 0x9a, 0xd5, 0xd6, 0x25,

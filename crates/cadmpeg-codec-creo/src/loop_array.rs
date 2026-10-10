@@ -314,22 +314,12 @@ fn parse_frame(
         return Ok(None);
     }
     let header_end = after_class + 2;
-    let mut end = section_end;
-    for label in ARRAY_BOUNDARY_LABELS {
-        if let Some(offset) = ctx
-            .find_map(
-                data.get(header_end..)
-                    .unwrap_or_default()
-                    .windows(label.len())
-                    .enumerate(),
-                |(offset, bytes)| Ok((bytes == label).then_some(header_end + offset)),
-                "creo loop frame boundaries",
-            )?
-            .filter(|offset| *offset < section_end)
-        {
-            end = end.min(offset);
-        }
-    }
+    let Some(tail) = data.get(header_end..section_end) else { return Ok(None); };
+    let end = ctx.find_map(
+        0..tail.len(),
+        |offset| Ok(ARRAY_BOUNDARY_LABELS.iter().any(|label| tail[offset..].starts_with(label)).then_some(header_end + offset)),
+        "creo loop frame boundaries",
+    )?.unwrap_or(section_end);
     let Some(prototype_end) = named_prototype_end(ctx, data, header_end, end, class_id)? else {
         return Ok(None);
     };
@@ -355,6 +345,7 @@ fn parse_frame(
     let mut records = Vec::new();
     let mut rows = 0..max_records;
     while cursor < end
+        && !rows.is_empty()
         && ctx
             .next_charged(&mut rows, "creo loop row traversal")?
             .is_some()
@@ -451,18 +442,6 @@ pub(crate) fn scan(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<LoopArrayScan
         }
         search = search.max(result.frames.last().map_or(search, |frame| frame.end));
     }
-    ctx.stable_sort_by(
-        result.frames.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo scan result frames ordering",
-    )?;
-    ctx.stable_sort_by(
-        result.records.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo scan result records ordering",
-    )?;
     Ok(result)
 }
 

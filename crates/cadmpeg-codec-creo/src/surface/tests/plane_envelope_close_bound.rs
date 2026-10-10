@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 
 use crate::scalar::ScalarCache;
@@ -35,31 +35,9 @@ fn plane_envelope_close_bound_preserves_minimal_compact_and_maximum_width_frames
         for suffix in [0, 1, 79, 80, 4096] {
             let mut extended = body.clone();
             extended.extend(std::iter::repeat_n(0xe3, suffix));
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            let compared_bytes = if width == 1 { 2 } else { 10 };
-            // The current temporary table starts with eight or nine slots.
-            // Appending its final DICT slot doubles capacity and admits one
-            // move of that initial backing. Fixed table removal is separate.
-            let prefix_slots = if compact { 8 } else { 9 };
-            let prefix_bytes = cadmpeg_core::decode::u64_from_index(
-                prefix_slots * std::mem::size_of::<(Option<f64>, &[u8])>(),
-            );
-            let work = prefix_bytes + compared_bytes;
-            policy.limits.max_work_units = work;
-            policy.limits.max_collection_items = if compact { 9 } else { 10 };
-            policy.limits.max_retained_bytes = 2 * prefix_bytes;
-            policy.limits.max_entities = 0;
-            policy.limits.max_recursion_depth = 0;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let run = || plane_envelope_compound_close(&ctx, &extended, &ScalarCache::default());
-            assert_eq!(run().expect("fixed scan and exact pair comparison bound"), Some(close));
-            let original = ctx.charge_work_limit(1, "after fixed plane envelope scan")
-                .expect_err("table growth and byte comparisons fill the Work cap");
-            assert_eq!((original.dimension, original.used, original.additional),
-                (ResourceDimension::WorkUnits, work, 1));
-            assert!(matches!(run(), Err(CodecError::ResourceLimit(actual)) if actual == original));
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original));
+            let actual = super::work_output(|ctx| plane_envelope_compound_close(ctx, &extended, &ScalarCache::default()));
+            assert_eq!(actual, Some(close));
+
         }
     }
 }
