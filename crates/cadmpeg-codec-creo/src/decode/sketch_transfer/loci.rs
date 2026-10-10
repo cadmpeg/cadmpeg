@@ -10,7 +10,7 @@ use super::super::sketch::skamp::{
 };
 use super::super::sketch_ids::sketch_entity_id_admitted;
 use crate::decode::sketch_transfer::identity::{
-    saved_section_entity_fallback_allowed, visit_semantic_saved_section_entities,
+    saved_section_entity_by_internal_id, saved_section_entity_fallback_allowed,
 };
 use crate::decode::sketch_transfer::profiles::{
     solver_only_section_entity_family, solver_only_section_entity_offset,
@@ -1047,41 +1047,7 @@ pub(in super::super) fn section_saved_entity<'definition>(
     let Some(internal_id) = table.internal_id(external_id) else {
         return Ok(None);
     };
-    let mut selected = None;
-    let outcome = visit_semantic_saved_section_entities(ctx, definition, |entity| {
-        let matches = match entity {
-            crate::feature::definitions::FeatureSavedEntity::Line(line) => {
-                line.entity_id == internal_id
-            }
-            crate::feature::definitions::FeatureSavedEntity::Arc(arc) => {
-                arc.entity_id == internal_id
-            }
-            crate::feature::definitions::FeatureSavedEntity::Circle(circle) => {
-                circle.entity_id == internal_id
-            }
-            crate::feature::definitions::FeatureSavedEntity::Conic(conic) => {
-                conic.entity_id == internal_id
-            }
-            crate::feature::definitions::FeatureSavedEntity::Spline(spline) => {
-                spline.entity_id == Some(internal_id)
-            }
-            crate::feature::definitions::FeatureSavedEntity::Dummy(dummy) => {
-                dummy.entity_id == Some(internal_id)
-            }
-        };
-        if !matches {
-            return Ok(ControlFlow::Continue(()));
-        }
-        if selected.is_some() {
-            return Ok(ControlFlow::Break(()));
-        }
-        selected = Some(entity);
-        Ok(ControlFlow::Continue(()))
-    })?;
-    Ok(match outcome {
-        ControlFlow::Break(()) => None,
-        ControlFlow::Continue(()) => selected,
-    })
+    saved_section_entity_by_internal_id(ctx, definition, internal_id)
 }
 
 pub(super) fn section_skamp_circular_entity(
