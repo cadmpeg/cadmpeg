@@ -828,27 +828,31 @@ pub(crate) fn admit_subtype_references(
     table: &SubtypeTable,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut scratch = ctx.reserve_scoped(0, "walk ASM subtype references")?;
-    let mut visited = std::collections::BTreeSet::new();
-    let mut source_values = IntoIterator::into_iter(records);
+    let mut admitted_depths = std::collections::HashMap::new();
+    let mut source_values = records.iter();
     while source_values.len() != 0 {
         let Some(record) = ctx.next_charged(&mut source_values, "walk ASM subtype records")? else {
             break;
         };
         let mut stack_storage = ctx.reserve_scoped(0, "walk ASM subtype references")?;
         let mut pending = Vec::new();
-        let root = (record.tokens.as_ref(), 0usize, None);
-        ctx.push_scoped_vec(
-            &mut stack_storage,
-            &mut pending,
-            root,
-            "walk ASM subtype stack",
-        )?;
-        while let Some((tokens, position, _guard)) = pending.last_mut() {
+        let root = (record.tokens.as_ref(), 0usize, None, 0usize, None);
+        ctx.push_scoped_vec(&mut stack_storage, &mut pending, root, "walk ASM subtype stack")?;
+        while let Some((tokens, position, _, depth, _)) = pending.last_mut() {
             if *position < tokens.len() {
                 ctx.charge_work(1, "scan ASM subtype references")?;
             }
             let Some(token) = tokens.get(*position) else {
-                pending.pop();
+                if let Some((_, _, definition, depth, _guard)) = pending.pop() {
+                    if let Some(index) = definition {
+                        if let Some(admitted) = admitted_depths.get_mut(&index) {
+                            *admitted = Some(depth);
+                        }
+                        if let Some((_, _, _, parent_depth, _)) = pending.last_mut() {
+                            *parent_depth = (*parent_depth).max(depth + 1);
+                        }
+                    }
+                }
                 continue;
             };
             let pos = *position;
@@ -858,37 +862,38 @@ pub(crate) fn admit_subtype_references(
             }
             let index = match (tokens.get(pos + 1), tokens.get(pos + 2)) {
                 (Some(Token::Ident(name)), Some(Token::Long(index)))
-                    if name == "ref" && *index >= 0 =>
-                {
-                    usize::try_from(*index).ok()
-                }
+                    if name == "ref" && *index >= 0 => usize::try_from(*index).ok(),
                 (Some(Token::Long(index)), Some(Token::SubtypeClose)) if *index >= 0 => {
                     usize::try_from(*index).ok()
                 }
                 _ => None,
             };
-            let Some(index) = index else {
-                continue;
-            };
-            if !ctx.insert_scoped_btree_value(
-                &mut scratch,
-                &mut visited,
-                index,
-                "visit ASM subtype reference",
-            )? {
+            let Some(index) = index else { continue };
+            if let Some(admitted) = admitted_depths.get(&index) {
+                // An active definition ends a cycle. A completed definition
+                // contributes its full admitted depth to this reference path.
+                if let Some(admitted) = *admitted {
+                    if admitted == 0 { continue; }
+                    let mut storage = ctx.reserve_scoped(0, "walk ASM admitted subtype depth")?;
+                    let mut guards = Vec::new();
+                    let mut levels = 0..admitted;
+                    while levels.len() != 0 {
+                        ctx.next_charged(&mut levels, "walk ASM admitted subtype depth")?;
+                        let guard = ctx.enter_nested("follow admitted ASM subtype reference")?;
+                        ctx.push_scoped_vec(&mut storage, &mut guards, guard, "walk ASM admitted subtype depth")?;
+                    }
+                    *depth = (*depth).max(admitted + 1);
+                }
                 continue;
             }
-            let Some(target) = table.span(index) else {
-                continue;
-            };
+            let target = table.span(index);
+            scratch.with_storage(|| ctx.insert_hash_map(
+                &mut admitted_depths, index, target.is_none().then_some(0), "visit ASM subtype reference",
+            ))?;
+            let Some(target) = target else { continue };
             let guard = ctx.enter_nested("follow ASM subtype reference")?;
-            let frame = (target.tokens(), 0usize, Some(guard));
-            ctx.push_scoped_vec(
-                &mut stack_storage,
-                &mut pending,
-                frame,
-                "walk ASM subtype stack",
-            )?;
+            let frame = (target.tokens(), 0usize, Some(index), 1usize, Some(guard));
+            ctx.push_scoped_vec(&mut stack_storage, &mut pending, frame, "walk ASM subtype stack")?;
         }
     }
     Ok(())
@@ -949,6 +954,7 @@ pub fn test_table(
 #[cfg(test)]
 mod tests {
     mod index_sources;
+    mod reference_depth;
     use super::{
         cache_scope as cache_scope_ctx, lex_test_span, marker_at,
         owned_construction_subtype as owned_construction_subtype_ctx,
