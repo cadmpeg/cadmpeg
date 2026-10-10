@@ -3467,7 +3467,11 @@ pub(super) fn bounded_unordered_cycle_assignments<'storage>(
                 }
                 return Ok(self.assignments.len() <= self.limit);
             }
-            for rank in 1..self.edges.len() {
+            let mut ranks = 1..self.edges.len();
+            while let Some(rank) = self
+                .ctx
+                .next_charged(&mut ranks, "catia_unordered_search_ranks")?
+            {
                 if used & (1 << rank) != 0 {
                     continue;
                 }
@@ -3517,13 +3521,13 @@ pub(super) fn bounded_unordered_cycle_assignments<'storage>(
                 Ord::cmp,
                 "catia_unordered_sorted_edges_sort",
             )?;
-            edges.dedup();
+            ctx.dedup_vec(&mut edges, "catia_unordered_sorted_edges_dedup")?;
             if edges.len() != edge_count {
                 return Ok(None);
             }
             let mut quotient = quotient.clone_charged(ctx)?;
             let mut nodes = Vec::new();
-            for &edge in &edges {
+            for &edge in ctx.admit_iter(&edges, "catia_unordered_nodes")? {
                 ctx.push_vec(&mut nodes, edge * 2, "catia_unordered_nodes")?;
                 ctx.push_vec(&mut nodes, edge * 2 + 1, "catia_unordered_nodes")?;
             }
@@ -3533,9 +3537,15 @@ pub(super) fn bounded_unordered_cycle_assignments<'storage>(
                 false,
                 "catia_unordered_compatible",
             )?;
-            for (left_position, &left) in nodes.iter().enumerate() {
+            for (left_position, &left) in ctx
+                .admit_iter(&nodes, "catia_unordered_compatible_rows")?
+                .enumerate()
+            {
                 let left_root = quotient.union.find(ctx, left)?;
-                for (right_position, &right) in nodes.iter().enumerate() {
+                for (right_position, &right) in ctx
+                    .admit_iter(&nodes, "catia_unordered_compatible_cells")?
+                    .enumerate()
+                {
                     let right_root = quotient.union.find(ctx, right)?;
                     compatible[left_position * nodes.len() + right_position] = left_root
                         == right_root
@@ -9083,6 +9093,7 @@ fn resolve_fixed_mesh_endpoint_assignment_domains(
         ctx: &DecodeContext<'_>,
         inputs: FixedEndpointAssignmentSearch<'_, '_, '_, '_, '_, '_, '_, '_, '_, '_>,
     ) -> Result<(), CodecError> {
+        let _depth = ctx.enter_nested("catia_fixed_assignment_search")?;
         let FixedEndpointAssignmentSearch {
             face,
             assignment_domains,
@@ -12988,7 +12999,12 @@ fn boundary_component_face_keys_refuse_unadmitted_scan() {
             Arc::new(HashSet::from([0, 1])),
             Arc::new(HashSet::from([0, 1])),
         ]);
-        propagate_common_boundary_components(ctx, &domains, &candidates, &mut quotient)
+        let result =
+            propagate_common_boundary_components(ctx, &domains, &candidates, &mut quotient);
+        if let Err(CodecError::ResourceLimit(limit)) = &result {
+            assert_eq!(ctx.resource_refusal(), Some(limit.clone()));
+        }
+        result
     });
     assert!(matches!(
         refusal,
