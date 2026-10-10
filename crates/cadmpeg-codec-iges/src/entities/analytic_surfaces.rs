@@ -33,7 +33,13 @@ fn admit_analytic<T>(
     match result {
         Ok(value) => Ok(Some(value)),
         Err(message) => {
-            push_entity_loss_with_scoped_slots(ctx, slots, losses, entry, format_args!("{message}"))?;
+            push_entity_loss_with_scoped_slots(
+                ctx,
+                slots,
+                losses,
+                entry,
+                format_args!("{message}"),
+            )?;
             Ok(None)
         }
     }
@@ -298,8 +304,10 @@ pub(super) fn project<'ctx>(
         let mut records = BTreeMap::new();
         let mut source_index_entries = parameters.iter();
         while source_index_entries.len() != 0 {
-            let Some(record) =
-                ctx.next_charged(&mut source_index_entries, "iges analytic-surface parameter index traversal")?
+            let Some(record) = ctx.next_charged(
+                &mut source_index_entries,
+                "iges analytic-surface parameter index traversal",
+            )?
             else {
                 break;
             };
@@ -313,8 +321,10 @@ pub(super) fn project<'ctx>(
         let mut entries = BTreeMap::new();
         let mut directory_entries = directory.iter();
         while !directory_entries.as_slice().is_empty() {
-            let Some(entry) =
-                ctx.next_charged(&mut directory_entries, "iges analytic-surface directory index traversal")?
+            let Some(entry) = ctx.next_charged(
+                &mut directory_entries,
+                "iges analytic-surface directory index traversal",
+            )?
             else {
                 break;
             };
@@ -336,12 +346,16 @@ pub(super) fn project<'ctx>(
 
     let mut directory_entries = directory.iter();
     while !directory_entries.as_slice().is_empty() {
-        let Some(entry) =
-            ctx.next_charged(&mut directory_entries, "iges analytic-surface directory pass")?
+        let Some(entry) = ctx.next_charged(
+            &mut directory_entries,
+            "iges analytic-surface directory pass",
+        )?
         else {
             break;
         };
-        if !(matches!(entry.entity_type, 190 | 192 | 194 | 196 | 198) && matches!(entry.form, 0 | 1)) {
+        if !(matches!(entry.entity_type, 190 | 192 | 194 | 196 | 198)
+            && matches!(entry.form, 0 | 1))
+        {
             continue;
         }
         let factor = global.length_factor_mm();
@@ -363,7 +377,13 @@ pub(super) fn project<'ctx>(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{message}"))?;
+                push_entity_loss_with_scoped_slots(
+                    ctx,
+                    &mut loss_slots_storage,
+                    &mut losses,
+                    entry,
+                    format_args!("{message}"),
+                )?;
                 continue;
             }
         };
@@ -375,8 +395,10 @@ pub(super) fn project<'ctx>(
                         let mut points = BTreeMap::new();
                         let mut source_index_entries = ir.model.points.iter();
                         while source_index_entries.len() != 0 {
-                            let Some(point) =
-                                ctx.next_charged(&mut source_index_entries, "iges analytic point index traversal")?
+                            let Some(point) = ctx.next_charged(
+                                &mut source_index_entries,
+                                "iges analytic point index traversal",
+                            )?
                             else {
                                 break;
                             };
@@ -438,7 +460,13 @@ pub(super) fn project<'ctx>(
                     Ok(axis) => axis,
                     Err(message) => {
                         let message = message.non_resource()?;
-                        push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{message}"))?;
+                        push_entity_loss_with_scoped_slots(
+                            ctx,
+                            &mut loss_slots_storage,
+                            &mut losses,
+                            entry,
+                            format_args!("{message}"),
+                        )?;
                         continue;
                     }
                 };
@@ -454,7 +482,13 @@ pub(super) fn project<'ctx>(
                     Ok(candidate) => candidate,
                     Err(message) => {
                         let message = message.non_resource()?;
-                        push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{message}"))?;
+                        push_entity_loss_with_scoped_slots(
+                            ctx,
+                            &mut loss_slots_storage,
+                            &mut losses,
+                            entry,
+                            format_args!("{message}"),
+                        )?;
                         continue;
                     }
                 };
@@ -489,7 +523,13 @@ pub(super) fn project<'ctx>(
                     Ok(axis) => axis,
                     Err(message) => {
                         let message = message.non_resource()?;
-                        push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{message}"))?;
+                        push_entity_loss_with_scoped_slots(
+                            ctx,
+                            &mut loss_slots_storage,
+                            &mut losses,
+                            entry,
+                            format_args!("{message}"),
+                        )?;
                         continue;
                     }
                 };
@@ -515,7 +555,13 @@ pub(super) fn project<'ctx>(
                     Ok(candidate) => candidate,
                     Err(message) => {
                         let message = message.non_resource()?;
-                        push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{message}"))?;
+                        push_entity_loss_with_scoped_slots(
+                            ctx,
+                            &mut loss_slots_storage,
+                            &mut losses,
+                            entry,
+                            format_args!("{message}"),
+                        )?;
                         continue;
                     }
                 };
@@ -562,7 +608,13 @@ pub(super) fn project<'ctx>(
                     Ok(axis) => axis,
                     Err(message) => {
                         let message = message.non_resource()?;
-                        push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{message}"))?;
+                        push_entity_loss_with_scoped_slots(
+                            ctx,
+                            &mut loss_slots_storage,
+                            &mut losses,
+                            entry,
+                            format_args!("{message}"),
+                        )?;
                         continue;
                     }
                 };
@@ -603,7 +655,13 @@ pub(super) fn project<'ctx>(
                     Ok(candidate) => candidate,
                     Err(message) => {
                         let message = message.non_resource()?;
-                        push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{message}"))?;
+                        push_entity_loss_with_scoped_slots(
+                            ctx,
+                            &mut loss_slots_storage,
+                            &mut losses,
+                            entry,
+                            format_args!("{message}"),
+                        )?;
                         continue;
                     }
                 };
@@ -677,7 +735,13 @@ pub(super) fn project<'ctx>(
                     Ok(axis) => axis,
                     Err(message) => {
                         let message = message.non_resource()?;
-                        push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{message}"))?;
+                        push_entity_loss_with_scoped_slots(
+                            ctx,
+                            &mut loss_slots_storage,
+                            &mut losses,
+                            entry,
+                            format_args!("{message}"),
+                        )?;
                         continue;
                     }
                 };
@@ -693,7 +757,13 @@ pub(super) fn project<'ctx>(
                     Ok(candidate) => candidate,
                     Err(message) => {
                         let message = message.non_resource()?;
-                        push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{message}"))?;
+                        push_entity_loss_with_scoped_slots(
+                            ctx,
+                            &mut loss_slots_storage,
+                            &mut losses,
+                            entry,
+                            format_args!("{message}"),
+                        )?;
                         continue;
                     }
                 };
@@ -732,7 +802,13 @@ pub(super) fn project<'ctx>(
                     Ok(axis) => axis,
                     Err(message) => {
                         let message = message.non_resource()?;
-                        push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{message}"))?;
+                        push_entity_loss_with_scoped_slots(
+                            ctx,
+                            &mut loss_slots_storage,
+                            &mut losses,
+                            entry,
+                            format_args!("{message}"),
+                        )?;
                         continue;
                     }
                 };
@@ -770,7 +846,13 @@ pub(super) fn project<'ctx>(
                     Ok(candidate) => candidate,
                     Err(message) => {
                         let message = message.non_resource()?;
-                        push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{message}"))?;
+                        push_entity_loss_with_scoped_slots(
+                            ctx,
+                            &mut loss_slots_storage,
+                            &mut losses,
+                            entry,
+                            format_args!("{message}"),
+                        )?;
                         continue;
                     }
                 };
@@ -842,7 +924,13 @@ pub(super) fn project<'ctx>(
                 Ok(source) => source,
                 Err(error) => {
                     let message = super::non_resource_error(error, ctx)?;
-                    push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{message}"))?;
+                    push_entity_loss_with_scoped_slots(
+                        ctx,
+                        &mut loss_slots_storage,
+                        &mut losses,
+                        entry,
+                        format_args!("{message}"),
+                    )?;
                     continue;
                 }
             }),
@@ -856,7 +944,12 @@ pub(super) fn project<'ctx>(
         )?;
     }
 
-    Ok(ProjectionOutcome { decoded, decoded_storage, losses, loss_slots_storage })
+    Ok(ProjectionOutcome {
+        decoded,
+        decoded_storage,
+        losses,
+        loss_slots_storage,
+    })
 }
 
 #[cfg(test)]

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
 use super::super::{resolve_transform, TransformFailure, TransformResolutionError};
+use super::*;
 
 #[test]
 fn transform_depth_overflow_is_a_structured_resource_refusal() {
@@ -264,7 +264,6 @@ fn transform_translation_overflow_after_inch_scaling_is_rejected() {
 
 #[test]
 fn transform_failures_render_original_diagnostics_without_allocating_early() {
-
     let cases = [
         (TransformFailure::Literal("transformation chain is cyclic"), "transformation chain is cyclic"),
         (TransformFailure::Depth, "transformation chain exceeds 64 entities"),

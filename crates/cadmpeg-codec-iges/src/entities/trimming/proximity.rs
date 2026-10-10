@@ -22,21 +22,31 @@ impl ProximityGrid {
     pub(super) fn new(count: usize, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
         let mut cells = HashMap::new();
         let (inline, links) = if count <= INLINE_ENDPOINTS {
-            (Some(InlineGrid {
-                cells: [None; INLINE_ENDPOINTS],
-                links: [None; INLINE_ENDPOINTS],
-            }), Vec::new())
+            (
+                Some(InlineGrid {
+                    cells: [None; INLINE_ENDPOINTS],
+                    links: [None; INLINE_ENDPOINTS],
+                }),
+                Vec::new(),
+            )
         } else {
             let links = ctx.alloc_filled(count, None, "iges boundary proximity links")?;
             ctx.reserve_map(&mut cells, count, "iges boundary proximity cells")?;
             (None, links)
         };
-        Ok(Self { inline, cells, links })
+        Ok(Self {
+            inline,
+            cells,
+            links,
+        })
     }
 
     pub(super) fn head(&self, key: &[i64; 3]) -> Option<usize> {
         match &self.inline {
-            Some(inline) => inline.cells.iter().flatten()
+            Some(inline) => inline
+                .cells
+                .iter()
+                .flatten()
                 .find_map(|(cell, head)| (cell == key).then_some(*head)),
             None => self.cells.get(key).copied(),
         }
@@ -52,13 +62,20 @@ impl ProximityGrid {
     pub(super) fn insert(&mut self, key: [i64; 3], index: usize) -> Result<(), CodecError> {
         match &mut self.inline {
             Some(inline) => {
-                if let Some(slot) = inline.cells.iter_mut().find(|slot| {
-                    slot.as_ref().is_some_and(|(cell, _)| *cell == key)
-                }) {
+                if let Some(slot) = inline
+                    .cells
+                    .iter_mut()
+                    .find(|slot| slot.as_ref().is_some_and(|(cell, _)| *cell == key))
+                {
                     inline.links[index] = slot.replace((key, index)).map(|(_, head)| head);
                 } else {
-                    let slot = inline.cells.iter_mut().find(|slot| slot.is_none())
-                        .ok_or_else(|| CodecError::malformed("boundary inline cell capacity is exhausted"))?;
+                    let slot = inline
+                        .cells
+                        .iter_mut()
+                        .find(|slot| slot.is_none())
+                        .ok_or_else(|| {
+                            CodecError::malformed("boundary inline cell capacity is exhausted")
+                        })?;
                     *slot = Some((key, index));
                 }
             }

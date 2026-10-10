@@ -216,44 +216,56 @@ fn cluster_size_storage_boundary(count: usize, exact: bool) {
         11 * (std::mem::size_of::<usize>() + std::mem::size_of::<Vec<usize>>())
             + 16 * std::mem::size_of::<usize>()
             + 2 * std::mem::align_of::<(usize, Vec<usize>)>(),
-    ).unwrap();
+    )
+    .unwrap();
     assert!(2 * parent < parent + node);
     let dimension = if exact {
         ResourceDimension::CollectionItems
     } else {
         ResourceDimension::MaterializedBytes
     };
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        dimension, operation, |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_materialized_bytes = if exact { parent + node } else { cap };
-            policy.limits.max_collection_items = if exact { cap } else { u64::MAX };
-            policy.limits.max_retained_bytes = 0;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let mut storage = ctx.reserve_scoped(0, "test cluster membership storage").unwrap();
-            let result = storage.with_storage(|| cluster_boundary_positions(&points, PositiveReal::ONE, &ctx));
-            let first = match result {
-                Err(BoundaryVertexCreationError::Resource(CodecError::ResourceLimit(first))) => first,
-                error => panic!("expected root node or member slot refusal: {error:?}"),
-            };
-            assert_eq!(first.dimension, dimension);
-            assert_eq!(first.operation, operation);
-            let expected = if exact { (2 * u64::try_from(count).unwrap() + 1, 1) } else { (parent, node) };
-            assert_eq!((first.used, first.additional), expected);
-            for _ in 0..64 {
-                assert!(matches!(cluster_boundary_positions(&points, PositiveReal::ONE, &ctx),
-                    Err(BoundaryVertexCreationError::Resource(CodecError::ResourceLimit(last))) if last == first));
-            }
-            assert_eq!(points, before);
-            drop(storage);
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
-            Err::<(), _>(CodecError::ResourceLimit(first))
-        },
-    );
-    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == dimension
+    let error = cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = if exact { parent + node } else { cap };
+        policy.limits.max_collection_items = if exact { cap } else { u64::MAX };
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut storage = ctx
+            .reserve_scoped(0, "test cluster membership storage")
+            .unwrap();
+        let result =
+            storage.with_storage(|| cluster_boundary_positions(&points, PositiveReal::ONE, &ctx));
+        let first = match result {
+            Err(BoundaryVertexCreationError::Resource(CodecError::ResourceLimit(first))) => first,
+            error => panic!("expected root node or member slot refusal: {error:?}"),
+        };
+        assert_eq!(first.dimension, dimension);
+        assert_eq!(first.operation, operation);
+        let expected = if exact {
+            (2 * u64::try_from(count).unwrap() + 1, 1)
+        } else {
+            (parent, node)
+        };
+        assert_eq!((first.used, first.additional), expected);
+        for _ in 0..64 {
+            assert!(
+                matches!(cluster_boundary_positions(&points, PositiveReal::ONE, &ctx),
+                    Err(BoundaryVertexCreationError::Resource(CodecError::ResourceLimit(last))) if last == first)
+            );
+        }
+        assert_eq!(points, before);
+        drop(storage);
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
+        );
+        Err::<(), _>(CodecError::ResourceLimit(first))
+    });
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == dimension
         && limit.operation == operation && (limit.used, limit.additional) ==
-            if exact { (2 * u64::try_from(count).unwrap() + 1, 1) } else { (parent, node) }));
+            if exact { (2 * u64::try_from(count).unwrap() + 1, 1) } else { (parent, node) })
+    );
 }
 
 #[test]
@@ -312,7 +324,8 @@ fn split_level_boundary(count: usize, completed: usize, interpolation: bool) {
         (work, work, u64::try_from(additional).unwrap())
     );
     for _ in 0..64 {
-        { let source = controls.as_slice();
+        {
+            let source = controls.as_slice();
             assert!(matches!(split_homogeneous_pcurve(source, 0.5, &ctx),
                 Err(CodecError::ResourceLimit(last)) if last == first));
         }
@@ -415,7 +428,6 @@ fn knot_interpolation_boundary(degree: usize, last: bool, exact: bool) {
                 degree, &mut knots, &mut controls, (0.5, degree + 1, 1), &ctx),
                 Err(CodecError::ResourceLimit(last)) if last == first)
             );
-
         }
         assert!(
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)

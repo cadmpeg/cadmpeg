@@ -208,6 +208,7 @@ type SectionCoplanarityKey = (u32, super::plane_proof::CoplanarityPlaneKey);
 struct SectionedAreaGeometryCache<'ctx, 'ir> {
     ir: &'ir CadIr,
     index: Option<cadmpeg_ir::index::DecodeModelIndex<'ctx, 'ir>>,
+    sequences: super::plane_proof::PlaneProofSequences,
     proofs: BTreeMap<SectionCoplanarityKey, super::plane_proof::CoplanarityProof<'ir, bool>>,
     storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
@@ -218,6 +219,7 @@ impl<'ctx, 'ir> SectionedAreaGeometryCache<'ctx, 'ir> {
             ir,
             index: None,
             proofs: BTreeMap::new(),
+            sequences: super::plane_proof::PlaneProofSequences::default(),
             storage: ctx.reserve_scoped(0, "iges section coplanarity cache scratch")?,
         })
     }
@@ -250,9 +252,17 @@ impl<'ctx, 'ir> SectionedAreaGeometryCache<'ctx, 'ir> {
                 return Ok(proof.result);
             }
         }
-        for neighbor in super::plane_proof::coplanarity_neighbors(plane_key, pattern_plane.1) {
-            if let Some(proof) = ctx.get_btree_map(&self.proofs, &(sequence, neighbor), "iges section coplanarity proof lookup")? {
-                if proof.matches(neighbor, pattern_plane, resolution) { return Ok(proof.result); }
+        if self.sequences.contains(&sequence) {
+            for neighbor in super::plane_proof::coplanarity_neighbors(plane_key, pattern_plane.1) {
+                if let Some(proof) = ctx.get_btree_map(
+                    &self.proofs,
+                    &(sequence, neighbor),
+                    "iges section coplanarity proof lookup",
+                )? {
+                    if proof.matches(neighbor, pattern_plane, resolution) {
+                        return Ok(proof.result);
+                    }
+                }
             }
         }
         if self.index.is_none() {
@@ -308,6 +318,12 @@ impl<'ctx, 'ir> SectionedAreaGeometryCache<'ctx, 'ir> {
                 "iges section coplanarity proof cache",
             )
         })?;
+        if !self.sequences.contains(&sequence) {
+            self.storage.with_storage(|| {
+                self.sequences
+                    .insert(sequence, ctx, "iges section coplanarity proof sequences")
+            })?;
+        }
         Ok(coplanar)
     }
 }

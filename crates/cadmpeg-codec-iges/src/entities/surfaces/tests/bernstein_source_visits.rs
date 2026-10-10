@@ -24,7 +24,8 @@ fn binomial_factors(count: usize, work: u64, refuses: bool) {
         assert_eq!(first.operation, "iges Bernstein binomial factors");
         assert_eq!((first.limit, first.used, first.additional), (work, work, 1));
         for _ in 0..64 {
-            { let (n, k) = (2 * count, count);
+            {
+                let (n, k) = (2 * count, count);
                 assert!(matches!(super::super::bernstein_binomial(n, k, &ctx),
                     Err(CodecError::ResourceLimit(last)) if last == first));
             }

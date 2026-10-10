@@ -40,7 +40,10 @@ fn boundary_proximity_grid_charges_cell_insertion_and_candidate_comparison() {
 #[test]
 fn boundary_proximity_grid_refuses_index_storage_before_allocation() {
     let points: Vec<_> = (0..64)
-        .map(|index| cadmpeg_ir::features::FinitePoint3::new(Point3::new(f64::from(index) * 10.0, 0.0, 0.0)).unwrap())
+        .map(|index| {
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(f64::from(index) * 10.0, 0.0, 0.0))
+                .unwrap()
+        })
         .collect();
     for operation in [
         "iges boundary proximity links",

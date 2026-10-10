@@ -297,7 +297,8 @@ fn assert_font_visit_bounds(motions: usize) {
                 assert_eq!(first.dimension, ResourceDimension::WorkUnits);
                 assert_eq!(first.operation, operation);
                 assert_eq!((first.limit, first.used, first.additional), (work, work, 1));
-                { let replay = &record;
+                {
+                    let replay = &record;
                     assert!(matches!(super::super::text_font_definition(
                         &entry, replay, &BTreeMap::new(), GlobalTable::V5Later, &ctx,
                     ), Err(CodecError::ResourceLimit(last)) if last == first));
