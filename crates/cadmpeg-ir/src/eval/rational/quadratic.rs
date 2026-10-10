@@ -4,22 +4,40 @@
 use super::{HigherLanes, Homogeneous};
 use crate::features::FinitePoint3;
 use crate::math::sum::{ExactSignedSum, ScaledValue};
-use crate::scalar::FiniteReal;
+use crate::scalar::{FiniteReal, NonZeroReal};
+use crate::units::FinitePoint2;
+
+/// The actual fixed spatial or parameter-plane source rows.
+#[derive(Clone, Copy)]
+pub(in crate::eval) enum QuadraticPoles<'a> {
+    Spatial(&'a [crate::geometry::nurbs::WeightedPole3<FinitePoint3>; 3]),
+    Planar(&'a [crate::geometry::pcurve::WeightedPole2<FinitePoint2>; 3]),
+}
+
+impl QuadraticPoles<'_> {
+    fn pole(self, index: usize) -> (FinitePoint3, NonZeroReal) {
+        match self {
+            Self::Spatial(poles) => (poles[index].point, poles[index].weight),
+            Self::Planar(poles) => (crate::eval::planar_pole(poles[index].point), poles[index].weight),
+        }
+    }
+}
 
 /// The three normalized orders of a quadratic Bezier carrier, in one
 /// fixed three-pole walk. Accumulate the expanded Bernstein terms before
 /// rounding; a tiny squared parameter remains an extended product.
 pub(in crate::eval) fn orders(
-    poles: &[crate::geometry::nurbs::WeightedPole3<FinitePoint3>; 3],
+    poles: QuadraticPoles<'_>,
     parameter: FiniteReal,
 ) -> Option<[Homogeneous; 3]> {
     let s = parameter.get();
     if !(0.0..=1.0).contains(&s) { return None; }
     let mut sums: [[ExactSignedSum; 4]; 3] =
         std::array::from_fn(|_| std::array::from_fn(|_| ExactSignedSum::default()));
-    let mut constant = poles[0].point.coordinates().map(Some);
-    for (local, pole) in poles.iter().enumerate() {
-        for (axis, coordinate) in pole.point.coordinates().into_iter().enumerate() {
+    let mut constant = poles.pole(0).0.coordinates().map(Some);
+    for local in 0..3 {
+        let (point, weight) = poles.pole(local);
+        for (axis, coordinate) in point.coordinates().into_iter().enumerate() {
             if constant[axis] != Some(coordinate) { constant[axis] = None; }
         }
         // B=[1-2s+s²,2s-2s²,s²], B'=[-2+2s,2-4s,2s].
@@ -33,14 +51,14 @@ pub(in crate::eval) fn orders(
             _ => (&[[s, s]], &[[2.0, s]], 2.0),
         };
         for (lanes, terms) in sums[..2].iter_mut().zip([base, first]) {
-            for (sum, coordinate) in lanes.iter_mut().zip([pole.point.x, pole.point.y, pole.point.z, 1.0]) {
+            for (sum, coordinate) in lanes.iter_mut().zip([point.x, point.y, point.z, 1.0]) {
                 for [u, v] in terms {
-                    sum.add_factors([*u, *v, pole.weight.get(), coordinate]);
+                    sum.add_factors([*u, *v, weight.get(), coordinate]);
                 }
             }
         }
-        for (sum, coordinate) in sums[2].iter_mut().zip([pole.point.x, pole.point.y, pole.point.z, 1.0]) {
-            sum.add_factors([second, pole.weight.get(), coordinate]);
+        for (sum, coordinate) in sums[2].iter_mut().zip([point.x, point.y, point.z, 1.0]) {
+            sum.add_factors([second, weight.get(), coordinate]);
         }
     }
     let [base, first, second] = sums.map(|lanes| Homogeneous {
@@ -53,7 +71,7 @@ pub(in crate::eval) fn orders(
 /// Only the all-three-source-pole equality from orders proves
 /// a coordinate constant. General sampled support equality does not.
 pub(in crate::eval) fn higher(
-    poles: &[crate::geometry::nurbs::WeightedPole3<FinitePoint3>; 3],
+    poles: QuadraticPoles<'_>,
     parameter: FiniteReal,
     width: ScaledValue,
     fourth: bool,

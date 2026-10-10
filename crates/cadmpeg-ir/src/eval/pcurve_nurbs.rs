@@ -312,6 +312,11 @@ fn differential_unsettled(
             if let Some(order) = max_order.filter(|order| *order >= 3) {
                 result.higher = higher::linear(scratch, knots, span, poles, &basis, order);
             }
+        } else if degree == 2 && poles.has_weights() {
+            if let Some(order) = max_order.filter(|order| *order >= 3) {
+                result.higher = higher::quadratic(scratch, knots, poles,
+                    FiniteReal::new(t).ok_or(EvaluationFailure::NoValue)?, order);
+            }
         }
     }
     Ok(result)

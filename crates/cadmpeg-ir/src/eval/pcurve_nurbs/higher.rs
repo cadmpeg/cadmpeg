@@ -78,6 +78,47 @@ pub(super) fn linear(
     }
 }
 
+/// The actual clamped three-row rational parameter-plane carrier. The
+/// expanded Bernstein owner preserves products below binary64 range.
+pub(super) fn quadratic(
+    scratch: &decode::Scratch<'_, '_>,
+    knots: &[f64],
+    poles: DifferentialPoles<'_>,
+    parameter: FiniteReal,
+    max_order: usize,
+) -> HigherPcurve {
+    let missing = [Err(EvaluationFailure::NoValue); 3];
+    if max_order < 3 { return missing; }
+    let evaluated = (|| {
+        scratch.unless_refused()?;
+        let no_value = EvaluationFailure::NoValue;
+        let DifferentialPoles::Stored(crate::geometry::pcurve::PcurveNurbsPoles::Rational { points }) = poles
+            else { return Err(no_value); };
+        let (Ok(poles), [a, a1, a2, b, b1, b2]) = (<&[_; 3]>::try_from(points.as_slice()), knots)
+            else { return Err(no_value); };
+        if a != a1 || a != a2 || b != b1 || b != b2 || a >= b { return Err(no_value); }
+        let [a, b] = FiniteReal::array([*a, *b]).ok_or(no_value)?;
+        let local = super::difference_quotient(parameter, a, b, a).map_err(|failure| failure.map(|_| ()))?;
+        let mut width = ExactSignedSum::default();
+        width.add_factors([b.get()]); width.add_factors([-a.get()]);
+        let width = width.finish().ok_or(no_value)?;
+        let value = super::super::rational::quadratic::higher(
+            super::super::rational::quadratic::QuadraticPoles::Planar(poles), local, width,
+            max_order >= 4, max_order >= 5).ok_or(no_value)?;
+        let vector = |lanes: Option<[Result<FiniteReal, f64>; 3]>| {
+            let [u, v, _] = super::super::rational::finite_lanes(lanes.ok_or(no_value)?)
+                .map_err(|_| EvaluationFailure::NonFinite(()))?;
+            Ok(FinitePoint2::from_coordinates(u, v))
+        };
+        Ok([vector(value.third), vector(value.fourth), vector(value.fifth)])
+    })();
+    match evaluated {
+        Ok(values) => values,
+        Err(failure) => std::array::from_fn(|at| if at + 3 <= max_order { Err(failure) }
+            else { Err(EvaluationFailure::NoValue) }),
+    }
+}
+
 pub(super) fn polynomial(
     scratch: &decode::Scratch<'_, '_>,
     knots: &[f64],

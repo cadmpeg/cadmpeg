@@ -546,7 +546,7 @@ pub(super) fn rational_higher(
                     width.add_factors([b.get()]);
                     width.add_factors([-a.get()]);
                     let width = width.finish().ok_or(no_value)?;
-                    return Ok(higher(quadratic::higher(poles, local, width, fourth, fifth)
+                    return Ok(higher(quadratic::higher(quadratic::QuadraticPoles::Spatial(poles), local, width, fourth, fifth)
                         .ok_or(no_value)?));
                 }
             }
