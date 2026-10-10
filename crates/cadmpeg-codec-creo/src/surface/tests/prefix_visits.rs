@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{named_record_boundary, named_record_length, SurfaceKind};
+use super::super::{named_record_boundary, named_record_length, SurfaceKind};
 use crate::scalar::ScalarCache;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
