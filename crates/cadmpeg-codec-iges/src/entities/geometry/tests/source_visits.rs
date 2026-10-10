@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::super::{linear_nurbs_parameters, BoundaryEndpoint, BoundaryVertexDerivation,
+use super::super::{consumed_support_sequences, linear_nurbs_parameters, BoundaryEndpoint, BoundaryVertexDerivation,
     BoundaryVertexSourceEndpoint, WireProjectionOutcome};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 fn outcome<'ctx>(ctx: &'ctx DecodeContext<'_>, decoded: BTreeSet<u32>) -> WireProjectionOutcome<'ctx> {
     // Prebuilt unit inputs own real backing without decode traversal or creation.
@@ -263,4 +263,114 @@ fn derivation_member_source_preserves_selected_order_and_owns_exact_copied_backi
         drop(released);
         ctx.finish_session().unwrap();
     }
+}
+
+fn assembly_record(values: &[i64]) -> crate::parameter::ParameterRecord {
+    use crate::parameter::{ParameterRecord, Token, TokenValue};
+    ParameterRecord::from_test_tokens(1, 1..2, Vec::new(), values.len(),
+        values.iter().map(|value| Token {
+            value: TokenValue::Integer(*value), span: 0..0,
+        }).collect(), Vec::new())
+}
+
+fn assembly_source_refusal(completed_members: u64) {
+    let directory = [crate::test_support::directory_target(1, 184)];
+    let record = assembly_record(&[184, 3, 0, 0, 0, 0, 0, 0]);
+    let records = BTreeMap::from([(1, &record)]);
+    // Two Directory visits and one comparison of the singleton u32 key precede
+    // the members. Zero transform pointers execute no lookup or insertion.
+    let prelude = 2 + u64::try_from(std::mem::size_of::<u32>()).unwrap();
+    let work = prelude + completed_members;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = work;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let Err(CodecError::ResourceLimit(first)) =
+        consumed_support_sequences(&directory, &records, &ctx)
+    else {
+        panic!("expected assembly member source refusal");
+    };
+    assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(first.operation, "iges consumed-support assembly members");
+    assert_eq!((first.limit, first.used, first.additional), (work, work, 1));
+    for _ in 0..64 {
+        for replay in [directory.as_slice(), &[]] {
+            assert!(matches!(consumed_support_sequences(replay, &records, &ctx),
+                Err(CodecError::ResourceLimit(last)) if last == first));
+        }
+    }
+    assert!(matches!(ctx.finish_session(),
+        Err(CodecError::ResourceLimit(last)) if last == first));
+}
+
+#[test]
+fn consumed_assembly_source_refuses_before_first_member() {
+    assembly_source_refusal(0);
+}
+
+#[test]
+fn consumed_assembly_source_refuses_before_last_member() {
+    assembly_source_refusal(2);
+}
+
+#[test]
+fn consumed_assembly_source_accepts_exact_member_work_without_backing() {
+    let directory = [crate::test_support::directory_target(1, 184)];
+    let record = assembly_record(&[184, 3, 0, 0, 0, 0, 0, 0]);
+    let records = BTreeMap::from([(1, &record)]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // Three Directory visits, one singleton u32 lookup and three member visits.
+    policy.limits.max_work_units = 3 + u64::try_from(std::mem::size_of::<u32>()).unwrap() + 3;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (consumed, storage) = consumed_support_sequences(&directory, &records, &ctx).unwrap();
+    assert!(consumed.is_empty());
+    drop(consumed);
+    drop(storage);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn consumed_assembly_source_skips_invalid_and_zero_counts_without_member_work() {
+    let directory = [crate::test_support::directory_target(1, 184)];
+    for values in [&[184][..], &[184, -1, 0, 0, 0], &[184, 10, 0, 0, 0],
+        &[184, 0, 0, 0, 0]] {
+        let record = assembly_record(values);
+        let records = BTreeMap::from([(1, &record)]);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // Only three Directory visits and the singleton lookup execute.
+        policy.limits.max_work_units = 3 + u64::try_from(std::mem::size_of::<u32>()).unwrap();
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (consumed, storage) = consumed_support_sequences(&directory, &records, &ctx).unwrap();
+        assert!(consumed.is_empty());
+        drop(consumed);
+        drop(storage);
+        ctx.finish_session().unwrap();
+    }
+}
+
+#[test]
+fn consumed_assembly_source_empty_input_executes_no_work() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (consumed, storage) = consumed_support_sequences(&[], &BTreeMap::new(), &ctx).unwrap();
+    assert!(consumed.is_empty());
+    drop(consumed);
+    drop(storage);
+    ctx.finish_session().unwrap();
 }
