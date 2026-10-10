@@ -146,3 +146,32 @@ fn native_integer_token_copy_preserves_original_refusal() {
 fn native_real_token_copy_preserves_original_refusal() {
     scalar_token(crate::parameter::TokenValue::real(2.5));
 }
+
+fn present_record_counts(record: &ParameterRecord, fresh: usize) {
+    with_count_owner(|counts, original| {
+        scalar_count(counts.counted_tail(1, Some(record), 3, 0, 1), original, fresh);
+        scalar_count(counts.counted_tail_at(1, Some(record), 3, 0, 1, 1), original, fresh);
+        scalar_count(counts.counted_complete(1, Some(record), 3, 0, 1, 1), original, fresh);
+    });
+}
+
+#[test]
+fn native_present_held_record_counts_preserve_original_refusal() {
+    use crate::parameter::{Token, TokenValue};
+    let values = [2, 7, 8];
+    let record = ParameterRecord::from_test_tokens(1, 1..2, Vec::new(), values.len(),
+        values.into_iter().map(|value| Token {
+            value: TokenValue::Integer(value), span: 0..0,
+        }).collect(), Vec::new());
+    // Both one-slot items are present before the record delimiter.
+    present_record_counts(&record, 2);
+}
+
+#[test]
+fn native_present_unreadable_record_counts_preserve_original_refusal() {
+    use crate::parameter::{Token, TokenValue};
+    let values = [TokenValue::Omitted, TokenValue::Integer(7), TokenValue::Integer(8)];
+    let record = ParameterRecord::from_test_tokens(1, 1..2, Vec::new(), values.len(),
+        values.into_iter().map(|value| Token { value, span: 0..0 }).collect(), Vec::new());
+    present_record_counts(&record, 0);
+}
