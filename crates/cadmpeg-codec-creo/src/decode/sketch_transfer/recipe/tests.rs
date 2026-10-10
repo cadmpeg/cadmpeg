@@ -8,21 +8,31 @@ fn empty_feature_operation_routes_preserve_original_refusal_without_work() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    assert!(super::current_feature_operation(&ctx, &[], 40).expect("empty selection").is_none());
-    assert!(super::current_feature_recipe(&ctx, &[], 40).expect("empty recipe").is_none());
+    assert!(super::current_feature_operation(&ctx, &[], 40)
+        .expect("empty selection")
+        .is_none());
+    assert!(super::current_feature_recipe(&ctx, &[], 40)
+        .expect("empty recipe")
+        .is_none());
     assert!(super::current_additive_feature_recipe(&ctx, &[], 40)
-        .expect("empty additive recipe").is_none());
+        .expect("empty additive recipe")
+        .is_none());
     assert!(super::current_feature_recipe_parent(&ctx, &[], 40)
-        .expect("empty recipe parent").is_none());
-    let original = ctx.charge_work_limit(1, "prior recipe refusal").expect_err("refusal");
+        .expect("empty recipe parent")
+        .is_none());
+    let original = ctx
+        .charge_work_limit(1, "prior recipe refusal")
+        .expect_err("refusal");
     for error in [
         super::current_feature_operation(&ctx, &[], 40).map(|_| ()),
         super::current_feature_recipe(&ctx, &[], 40).map(|_| ()),
         super::current_additive_feature_recipe(&ctx, &[], 40).map(|_| ()),
         super::current_feature_recipe_parent(&ctx, &[], 40).map(|_| ()),
     ] {
-        assert!(matches!(error, Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
-            if refusal == original));
+        assert!(
+            matches!(error, Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+            if refusal == original)
+        );
     }
 }
 
@@ -164,7 +174,6 @@ fn schema_conflict_does_not_admit_unused_rows_or_depdb_tail() {
     );
 }
 
-
 fn operation(feature_id: u32) -> crate::feature::operations::FeatureOperation {
     crate::feature::operations::FeatureOperation {
         feature_id,
@@ -175,7 +184,8 @@ fn operation(feature_id: u32) -> crate::feature::operations::FeatureOperation {
         ),
         display_state_conflict: false,
         depdb: Some(crate::feature::operations::DepdbPrefix {
-            schema: crate::feature::schema::SchemaClass::Protrusion, parent: 7,
+            schema: crate::feature::schema::SchemaClass::Protrusion,
+            parent: 7,
         }),
         offset: 0,
         state_offset: 0,
@@ -195,9 +205,14 @@ fn feature_operation_selector_visits_each_present_record_once() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let result = super::current_feature_operation(&ctx, &records, 40);
         if let Ok(actual) = &result {
-            assert!(std::ptr::eq(actual.expect("unique"), &records[1]));
-            let probe = ctx.charge_work_limit(u64::MAX, "test completed operation visits").expect_err("work probe");
-            assert_eq!(probe.used, u64::try_from(records.len()).expect("fixture rows"));
+            assert!(std::ptr::eq(actual.expect("unique"), &raw const records[1]));
+            let probe = ctx
+                .charge_work_limit(u64::MAX, "test completed operation visits")
+                .expect_err("work probe");
+            assert_eq!(
+                probe.used,
+                u64::try_from(records.len()).expect("fixture rows")
+            );
         } else {
             let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result else {
                 panic!("third visit must refuse");
@@ -218,7 +233,8 @@ fn feature_operation_selector_visits_each_present_record_once() {
         policy.limits.max_work_units = u64::try_from(count).expect("fixed test count");
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         assert!(super::current_feature_operation(&ctx, &records, 40)
-            .expect("only present visits").is_none());
+            .expect("only present visits")
+            .is_none());
     }
 }
 
@@ -234,13 +250,17 @@ fn feature_operation_selector_stops_at_the_second_match() {
         let result = super::current_feature_operation(&ctx, &records, 40);
         if let Ok(actual) = &result {
             assert!(actual.is_none());
-            let probe = ctx.charge_work_limit(u64::MAX, "test completed duplicate operation visits").expect_err("work probe");
+            let probe = ctx
+                .charge_work_limit(u64::MAX, "test completed duplicate operation visits")
+                .expect_err("work probe");
             assert_eq!(probe.used, 2);
         } else {
-            assert!(matches!(&result, Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+            assert!(
+                matches!(&result, Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::WorkUnits
                     && refusal.operation == "creo current feature operation rows"
-                    && refusal.used == cap && refusal.additional == 1));
+                    && refusal.used == cap && refusal.additional == 1)
+            );
         }
         result.map(|_| ())
     });
@@ -253,7 +273,10 @@ fn sweep_conflict_discriminant_does_not_traverse_stored_kind_text() {
         (OperationKind::Native, true),
         (OperationKind::Extrude, false),
         (OperationKind::Revolve, false),
-        (OperationKind::Stored("arbitrary stored family".repeat(256)), false),
+        (
+            OperationKind::Stored("arbitrary stored family".repeat(256)),
+            false,
+        ),
     ] {
         let mut scan = crate::test_support::empty_container_scan();
         let mut selected = operation(40);
@@ -268,11 +291,13 @@ fn sweep_conflict_discriminant_does_not_traverse_stored_kind_text() {
         policy.limits.max_retained_bytes = 0;
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        assert_eq!(super::feature_section_sweep_semantics_conflict(&ctx, &scan, 40)
-            .expect("one record visit and fixed variant tag"), expected);
+        assert_eq!(
+            super::feature_section_sweep_semantics_conflict(&ctx, &scan, 40)
+                .expect("one record visit and fixed variant tag"),
+            expected
+        );
     }
 }
-
 
 #[test]
 fn schema_roster_exhaustion_and_conflict_use_only_present_visits() {
@@ -292,7 +317,10 @@ fn schema_roster_exhaustion_and_conflict_use_only_present_visits() {
         policy.limits.max_retained_bytes = 0;
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        assert_eq!(feature_schema_class(&ctx, &scan, 40).expect("present visits"), expected);
+        assert_eq!(
+            feature_schema_class(&ctx, &scan, 40).expect("present visits"),
+            expected
+        );
     }
 }
 
@@ -306,7 +334,9 @@ fn schema_legacy_round_fallback_stops_at_first_match() {
     };
     let mut scan = crate::test_support::empty_container_scan();
     scan.features.legacy_rounds = vec![legacy(11), legacy(40)];
-    scan.features.legacy_rounds.extend((0..64).map(|_| legacy(12)));
+    scan.features
+        .legacy_rounds
+        .extend((0..64).map(|_| legacy(12)));
     crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, &[], |cap| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -315,13 +345,17 @@ fn schema_legacy_round_fallback_stops_at_first_match() {
         let result = feature_schema_class(&ctx, &scan, 40);
         if let Ok(actual) = &result {
             assert_eq!(*actual, Some(crate::feature::schema::SchemaClass::Round));
-            let probe = ctx.charge_work_limit(u64::MAX, "test completed legacy schema visits").expect_err("work probe");
+            let probe = ctx
+                .charge_work_limit(u64::MAX, "test completed legacy schema visits")
+                .expect_err("work probe");
             assert_eq!(probe.used, 2);
         } else {
-            assert!(matches!(&result, Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+            assert!(
+                matches!(&result, Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::WorkUnits
                     && refusal.operation == "creo legacy round schema rows"
-                    && refusal.used == cap && refusal.additional == 1));
+                    && refusal.used == cap && refusal.additional == 1)
+            );
         }
         result.map(|_| ())
     });
@@ -330,7 +364,10 @@ fn schema_legacy_round_fallback_stops_at_first_match() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    assert_eq!(feature_schema_class(&ctx, &scan, 40).expect("one nonmatching visit"), None);
+    assert_eq!(
+        feature_schema_class(&ctx, &scan, 40).expect("one nonmatching visit"),
+        None
+    );
 }
 
 #[test]
@@ -341,19 +378,27 @@ fn schema_fast_operation_class_preserves_original_refusal() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    assert_eq!(super::feature_schema_class_with_operation(&ctx, &scan, 40, Some(&selected))
-        .expect("fixed class"), Some(crate::feature::schema::SchemaClass::Protrusion));
-    let original = ctx.charge_work_limit(1, "prior schema refusal").expect_err("seed refusal");
+    assert_eq!(
+        super::feature_schema_class_with_operation(&ctx, &scan, 40, Some(&selected))
+            .expect("fixed class"),
+        Some(crate::feature::schema::SchemaClass::Protrusion)
+    );
+    let original = ctx
+        .charge_work_limit(1, "prior schema refusal")
+        .expect_err("seed refusal");
     for selected in [None, Some(&selected)] {
-        assert!(matches!(super::feature_schema_class_with_operation(&ctx, &scan, 40, selected),
-            Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) if refusal == original));
+        assert!(
+            matches!(super::feature_schema_class_with_operation(&ctx, &scan, 40, selected),
+            Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) if refusal == original)
+        );
     }
 }
 
 #[test]
 fn revolution_extent_search_keeps_first_match_and_free_exhaustion() {
     let extent = |feature_id| crate::feature::rows::FeatureRevolutionExtent {
-        feature_id, offset: 0,
+        feature_id,
+        offset: 0,
     };
     for count in 0..4 {
         let records = vec![extent(11); count];
@@ -362,7 +407,8 @@ fn revolution_extent_search_keeps_first_match_and_free_exhaustion() {
         policy.limits.max_work_units = u64::try_from(count).expect("fixed test count");
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         assert!(unique_feature_revolution_extent(&ctx, &records, 40)
-            .expect("only present records").is_none());
+            .expect("only present records")
+            .is_none());
     }
     let mut records = vec![extent(40), extent(40)];
     records.extend((0..64).map(|_| extent(11)));
@@ -374,28 +420,37 @@ fn revolution_extent_search_keeps_first_match_and_free_exhaustion() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let selected = unique_feature_revolution_extent(&ctx, &records, 40)
-        .expect("first match").expect("extent");
-    assert!(std::ptr::eq(selected, &records[0]));
-    let original = ctx.charge_work_limit(1, "prior extent refusal").expect_err("seed refusal");
+        .expect("first match")
+        .expect("extent");
+    assert!(std::ptr::eq(selected, &raw const records[0]));
+    let original = ctx
+        .charge_work_limit(1, "prior extent refusal")
+        .expect_err("seed refusal");
     assert!(matches!(unique_feature_revolution_extent(&ctx, &[], 40),
         Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) if refusal == original));
 }
 
-fn assert_first_material_without_unique_target(records: Vec<crate::feature::operations::FeatureOperation>) {
+fn assert_first_material_without_unique_target(
+    records: Vec<crate::feature::operations::FeatureOperation>,
+) {
     let mut scan = crate::test_support::empty_container_scan();
     scan.features.operations = records;
-    crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, &["creo first material identity rows"], |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let result = super::feature_is_first_material_operation(&ctx, &scan, 40);
-        if let Err(cadmpeg_core::CodecError::ResourceLimit(resource)) = &result {
-            assert_ne!(resource.operation, "creo first material operation rows");
-            assert_ne!(resource.operation, "creo first material section transforms");
-        }
-        result.map(|first| assert!(!first))
-    });
+    crate::test_support::assert_refusal_order(
+        ResourceDimension::WorkUnits,
+        &["creo first material identity rows"],
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let result = super::feature_is_first_material_operation(&ctx, &scan, 40);
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(resource)) = &result {
+                assert_ne!(resource.operation, "creo first material operation rows");
+                assert_ne!(resource.operation, "creo first material section transforms");
+            }
+            result.map(|first| assert!(!first))
+        },
+    );
 }
 
 #[test]
