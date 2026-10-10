@@ -75,6 +75,32 @@ class DenyCensusTests(unittest.TestCase):
                 status = census.main()
             return status, output.getvalue()
 
+    def test_invocations_reread_a_changed_file_at_the_same_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "src" / "wire.rs"
+            path.parent.mkdir()
+            output = io.StringIO()
+            with patch.object(census, "source_files", return_value=[path]), \
+                    patch.object(census, "EXCEPTIONS", {}), \
+                    patch.object(census, "absent_key_failures", return_value=[]), \
+                    contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
+                path.write_text('#[derive(Deserialize)] #[serde(deny_unknown_fields)] struct Wire { value: u32 }')
+                self.assertEqual(census.main(), 0)
+                path.write_text('#[derive(Deserialize)] struct Wire { value: u32 }')
+                self.assertEqual(census.main(), 1)
+            self.assertIn('Wire', output.getvalue())
+
+    def test_function_index_retains_raw_identifiers_and_nested_structs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'wire.rs'
+            path.write_text('fn r#read<T>() { struct Inner { value: T } T::deserialize(d); }')
+            entries = census.reader_function_index(path)['r#read']
+            self.assertEqual(len(entries), 1)
+            opening, end, read, parameters = entries[0]
+            self.assertIn('struct Inner', path.read_text()[opening:end])
+            self.assertEqual(read, {'T'})
+            self.assertEqual(parameters, {'T'})
+
     def item(self, path: str, name: str) -> census.Item:
         return census.Item(Path(path), 1, "struct", name, "", "")
 

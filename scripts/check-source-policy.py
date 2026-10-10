@@ -12,6 +12,8 @@ import argparse
 import ast
 from bisect import bisect_right
 from dataclasses import asdict, dataclass
+from contextvars import ContextVar
+from functools import wraps
 import json
 import re
 from pathlib import Path
@@ -19,6 +21,39 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 TEST_LINE_LIMIT = 2000
 PRODUCTION_LINE_LIMIT = 10000
+
+
+# Parsing results belong to one checker invocation. A new invocation reads the
+# current source even when tests rewrite a file at the same path.
+_ANALYSIS = ContextVar("rust_analysis", default=None)
+
+
+def cached_analysis(function):
+    """Reuse a pure source analysis inside an active checker invocation."""
+    @wraps(function)
+    def cached(*arguments, **keywords):
+        cache = _ANALYSIS.get()
+        if cache is None:
+            return function(*arguments, **keywords)
+        key = (function, arguments, tuple(sorted(keywords.items())))
+        if key not in cache:
+            cache[key] = function(*arguments, **keywords)
+        return cache[key]
+    return cached
+
+
+def analysis_session(function):
+    """Release all cached source and analysis when the outer check completes."""
+    @wraps(function)
+    def checked(*arguments, **keywords):
+        if _ANALYSIS.get() is not None:
+            return function(*arguments, **keywords)
+        token = _ANALYSIS.set({})
+        try:
+            return function(*arguments, **keywords)
+        finally:
+            _ANALYSIS.reset(token)
+    return checked
 
 
 @dataclass(frozen=True)
@@ -123,6 +158,7 @@ def item_end(code: str, start: int) -> int | None:
     return None
 
 
+@cached_analysis
 def production_source(source: str) -> tuple[str, int]:
     """Mask non-code and test-only items; return code and production line count."""
     code = mask_rust_non_code(source)
@@ -212,6 +248,7 @@ def rust_non_code_spans(text: str):
         yield start, index
 
 
+@cached_analysis
 def mask_rust_non_code(text: str) -> str:
     """Blank comments and literals while preserving positions and newlines."""
 
@@ -2453,6 +2490,7 @@ def scan_native_byte_fields(sources: dict[Path, str]) -> list[Finding]:
     return findings
 
 
+@analysis_session
 def check_source() -> list[Finding]:
     sources = {
         path.resolve(): path.read_text(encoding="utf-8", errors="replace")

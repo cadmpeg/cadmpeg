@@ -19,28 +19,17 @@ use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
 use crate::IgesCodec;
 
 fn assert_spline_collection_refusal(bytes: &[u8], operation: &str) {
-    let mut cap = 0_u64;
-    for _ in 0..4096 {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        match IgesCodec.decode(
-            &mut Cursor::new(bytes),
-            &DecodeOptions {
-                policy,
-                ..DecodeOptions::default()
-            },
-        ) {
-            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
-                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                if limit.operation == operation {
-                    return;
-                }
-                cap = limit.used + limit.additional;
-            }
-            other => panic!("expected spline collection refusal at {operation}: {other:?}"),
-        }
-    }
-    panic!("spline collection refusal was not reached: {operation}");
+    cadmpeg_test_support::decode::resource_refusal_at(
+        &crate::IgesCodec,
+        bytes,
+        &mut DecodeOptions {
+            policy: DecodePolicy::service(),
+            ..DecodeOptions::default()
+        },
+        ResourceDimension::CollectionItems,
+        operation,
+        0,
+    );
 }
 
 #[test]

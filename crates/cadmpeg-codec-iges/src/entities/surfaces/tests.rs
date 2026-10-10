@@ -99,31 +99,17 @@ const EPS_LINEAR_BEZIER_RULED: f64 = 1.0e-5;
 use super::{angular_basis, offset_indicator_parameters, tabulated_directrix_type_allowed};
 
 fn assert_surface_collection_refusal(bytes: &[u8], operation: &str) {
-    let mut cap = 0_u64;
-    for _ in 0..4096 {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        match crate::IgesCodec.decode(
-            &mut Cursor::new(bytes),
-            &DecodeOptions {
-                policy,
-                ..DecodeOptions::default()
-            },
-        ) {
-            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
-                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                if limit.operation == operation {
-                    return;
-                }
-                cap = limit.used.checked_add(limit.additional).unwrap();
-            }
-            Ok(_) => {
-                panic!("expected surface collection refusal at {operation}, but decode succeeded")
-            }
-            Err(error) => panic!("expected surface collection refusal at {operation}: {error:?}"),
-        }
-    }
-    panic!("surface collection refusal was not reached: {operation}");
+    cadmpeg_test_support::decode::resource_refusal_at(
+        &crate::IgesCodec,
+        bytes,
+        &mut DecodeOptions {
+            policy: DecodePolicy::service(),
+            ..DecodeOptions::default()
+        },
+        ResourceDimension::CollectionItems,
+        operation,
+        0,
+    );
 }
 
 #[test]

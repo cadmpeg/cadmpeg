@@ -446,46 +446,19 @@ fn x63_decode_counts_object_copies_in_retained_budget() {
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
         .expect("service profile admits the object");
 
-    let mut options = DecodeOptions::default();
-    options.policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(document.len());
-    let mut error = None;
-    for _ in 0..256 {
-        let refused = FcstdCodec
-            .decode(&mut Cursor::new(&bytes), &options)
-            .expect_err("object text copies consume the retained budget before entry retention");
-        let cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) =
-            &refused
-        else {
-            panic!("expected retained refusal: {refused:?}");
-        };
-        assert_eq!(
-            limit.dimension,
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes
-        );
-        if limit.operation == "retain FCStd entry" {
-            let exact = limit.used + limit.additional - 1;
-            options.policy.limits.max_retained_bytes = exact;
-            error = Some(
-                FcstdCodec
-                    .decode(&mut Cursor::new(&bytes), &options)
-                    .expect_err("one byte below entry need refuses"),
-            );
-            break;
-        }
-        let next = limit.used + limit.additional;
-        assert!(next > options.policy.limits.max_retained_bytes);
-        options.policy.limits.max_retained_bytes = next;
-    }
-    let error = error.expect("entry charge reached within fixture admissions");
-    assert!(
-        matches!(
-            &error,
-            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                    && limit.operation == "retain FCStd entry"
-        ),
-        "{error:?}"
+    let limit = cadmpeg_test_support::decode::resource_refusal_at(
+        &FcstdCodec,
+        &bytes,
+        &mut DecodeOptions::default(),
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain FCStd entry",
+        0,
     );
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes
+    );
+    assert_eq!(limit.operation, "retain FCStd entry");
 }
 
 #[test]

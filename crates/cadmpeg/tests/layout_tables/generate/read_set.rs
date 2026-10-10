@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Resolve layout reads from Rust tokens. Literals and comments are not paths.
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
@@ -101,40 +102,70 @@ fn production_tokens(stream: TokenStream) -> TokenStream {
 }
 
 fn test_modules(
-    items: &[syn::Item],
+    tokens: TokenStream,
     directory: &Path,
     inherited: bool,
     files: &mut BTreeSet<PathBuf>,
 ) -> Result<(), String> {
-    for item in items {
-        let syn::Item::Mod(module) = item else {
+    // Only module declarations affect external test-file ownership. Parsing
+    // function bodies and expressions into a full syntax tree repeats work
+    // that the read scanner performs below.
+    let mut tokens = tokens.into_iter().peekable();
+    let mut test_only = inherited;
+    while let Some(token) = tokens.next() {
+        if is_punct(&token, '#') {
+            if let Some(TokenTree::Group(attribute)) = tokens.peek() {
+                if attribute.delimiter() == Delimiter::Bracket {
+                    test_only |= syn::parse2::<syn::Meta>(attribute.stream())
+                        .is_ok_and(|meta| test_attribute(&meta));
+                    tokens.next();
+                    continue;
+                }
+            }
+        }
+        if matches!(&token, TokenTree::Ident(ident) if ident == "pub") {
+            if matches!(tokens.peek(), Some(TokenTree::Group(group)) if group.delimiter() == Delimiter::Parenthesis)
+            {
+                tokens.next();
+            }
             continue;
+        }
+        if !matches!(&token, TokenTree::Ident(ident) if ident == "mod") {
+            test_only = inherited;
+            continue;
+        }
+        let Some(TokenTree::Ident(name)) = tokens.next() else {
+            return Err("module declaration has no name".to_owned());
         };
-        if module.ident == "layout" {
-            continue;
-        }
-        let test_only = inherited || module.attrs.iter().any(|attr| test_attribute(&attr.meta));
-        let child = directory.join(module.ident.to_string());
-        if let Some((_, items)) = &module.content {
-            test_modules(items, &child, test_only, files)?;
-        } else {
-            let sibling = child.with_extension("rs");
-            let path = if sibling.is_file() {
-                sibling
+        let child = directory.join(name.to_string());
+        let body = tokens.next();
+        if name != "layout" {
+            if let Some(TokenTree::Group(group)) = body {
+                if group.delimiter() != Delimiter::Brace {
+                    return Err("inline module has no body".to_owned());
+                }
+                test_modules(group.stream(), &child, test_only, files)?;
             } else {
-                child.join("mod.rs")
-            };
-            if !path.is_file() {
-                continue;
+                let sibling = child.with_extension("rs");
+                let path = if sibling.is_file() {
+                    sibling
+                } else {
+                    child.join("mod.rs")
+                };
+                if path.is_file() {
+                    if test_only {
+                        files.insert(path.clone());
+                    }
+                    let source =
+                        std::fs::read_to_string(&path).map_err(|error| error.to_string())?;
+                    let tokens = source
+                        .parse::<TokenStream>()
+                        .map_err(|error| format!("{}: {error}", path.display()))?;
+                    test_modules(tokens, &child, test_only, files)?;
+                }
             }
-            if test_only {
-                files.insert(path.clone());
-            }
-            let source = std::fs::read_to_string(&path).map_err(|error| error.to_string())?;
-            let file =
-                syn::parse_file(&source).map_err(|error| format!("{}: {error}", path.display()))?;
-            test_modules(&file.items, &child, test_only, files)?;
         }
+        test_only = inherited;
     }
     Ok(())
 }
@@ -197,9 +228,12 @@ fn is_punct(token: &TokenTree, character: char) -> bool {
 }
 
 /// Collect imports in this token scope and remove them from the read stream.
-fn scope(tokens: TokenStream, inherited: &Imports) -> Result<(Imports, Vec<TokenTree>), String> {
+fn scope(
+    tokens: TokenStream,
+    inherited: &Imports,
+) -> Result<(Cow<'_, Imports>, Vec<TokenTree>), String> {
     let tokens: Vec<_> = tokens.into_iter().collect();
-    let mut imports = inherited.clone();
+    let mut imports = Cow::Borrowed(inherited);
     let mut body = Vec::new();
     let mut index = 0;
     while index < tokens.len() {
@@ -211,7 +245,7 @@ fn scope(tokens: TokenStream, inherited: &Imports) -> Result<(Imports, Vec<Token
                 .ok_or_else(|| "use statement has no semicolon".to_string())?;
             let statement = tokens[index..end].iter().cloned().collect();
             let item: syn::ItemUse = syn::parse2(statement).map_err(|error| error.to_string())?;
-            bind(&item.tree, &[], &mut imports);
+            bind(&item.tree, &[], imports.to_mut());
             index = end;
         } else {
             body.push(tokens[index].clone());
@@ -221,16 +255,18 @@ fn scope(tokens: TokenStream, inherited: &Imports) -> Result<(Imports, Vec<Token
     Ok((imports, body))
 }
 
-fn scan(
+fn scan<'a>(
     tokens: TokenStream,
-    inherited: &Imports,
+    inherited: &'a Imports,
     reads: &mut BTreeSet<(String, String)>,
-) -> Result<(), String> {
+) -> Result<Cow<'a, Imports>, String> {
     let (imports, tokens) = scope(tokens, inherited)?;
     let mut index = 0;
     while index < tokens.len() {
         match &tokens[index] {
-            TokenTree::Group(group) => scan(group.stream(), &imports, reads)?,
+            TokenTree::Group(group) => {
+                scan(group.stream(), &imports, reads)?;
+            }
             TokenTree::Ident(ident) => {
                 let mut path = vec![ident.to_string()];
                 while let Some([colon_a, colon_b, TokenTree::Ident(next)]) =
@@ -242,8 +278,19 @@ fn scan(
                     path.push(next.to_string());
                     index += 3;
                 }
-                let path = resolve(&path, &imports);
-                if let [module, record, name] = path.as_slice() {
+                let start = path
+                    .iter()
+                    .position(|part| !matches!(part.as_str(), "crate" | "self" | "super"))
+                    .unwrap_or(path.len());
+                let path = &path[start..];
+                let (prefix, suffix) = path
+                    .first()
+                    .and_then(|first| imports.paths.get(first))
+                    .map_or((path, &[][..]), |bound| (bound.as_slice(), &path[1..]));
+                let mut parts = prefix.iter().chain(suffix.iter());
+                if let (Some(module), Some(record), Some(name), None) =
+                    (parts.next(), parts.next(), parts.next(), parts.next())
+                {
                     if module == "layout" {
                         reads.insert((record.clone(), name.clone()));
                     }
@@ -253,7 +300,7 @@ fn scan(
         }
         index += 1;
     }
-    Ok(())
+    Ok(imports)
 }
 
 fn sources(directory: &Path, paths: &mut Vec<PathBuf>) -> Result<(), String> {
@@ -272,7 +319,11 @@ fn sources(directory: &Path, paths: &mut Vec<PathBuf>) -> Result<(), String> {
 }
 
 /// Imports visible through parent modules, including separate test files.
-fn parent_imports(path: &Path, root: &Path) -> Result<Imports, String> {
+fn parent_imports(
+    path: &Path,
+    root: &Path,
+    cache: &mut BTreeMap<PathBuf, Imports>,
+) -> Result<Imports, String> {
     let mut parents = Vec::new();
     let mut directory = path.parent();
     while let Some(current) = directory {
@@ -290,11 +341,16 @@ fn parent_imports(path: &Path, root: &Path) -> Result<Imports, String> {
         if parent == path || !parent.is_file() {
             continue;
         }
+        if let Some(cached) = cache.get(&parent) {
+            imports = cached.clone();
+            continue;
+        }
         let source = std::fs::read_to_string(&parent).map_err(|error| error.to_string())?;
         let tokens = source
             .parse::<TokenStream>()
             .map_err(|error| error.to_string())?;
-        imports = scope(tokens, &imports)?.0;
+        imports = scope(tokens, &imports)?.0.into_owned();
+        cache.insert(parent, imports.clone());
     }
     Ok(imports)
 }
@@ -305,18 +361,24 @@ pub(super) fn layout_reads(root: &Path) -> Result<Reads, String> {
     sources(root, &mut paths)?;
     paths.sort();
     let source = std::fs::read_to_string(root.join("lib.rs")).map_err(|error| error.to_string())?;
-    let file = syn::parse_file(&source).map_err(|error| error.to_string())?;
+    let tokens = source
+        .parse::<TokenStream>()
+        .map_err(|error| error.to_string())?;
     let mut test_files = BTreeSet::new();
-    test_modules(&file.items, root, false, &mut test_files)?;
+    test_modules(tokens, root, false, &mut test_files)?;
     let mut reads = Reads::default();
+    // Each parent has one inherited import context within this source tree.
+    // Save the imports found by its own scan so children need no second parse.
+    let mut import_cache = BTreeMap::new();
     for path in paths {
         let result = (|| {
             let source = std::fs::read_to_string(&path).map_err(|error| error.to_string())?;
             let tokens = source
                 .parse::<TokenStream>()
                 .map_err(|error| error.to_string())?;
-            let imports = parent_imports(&path, root)?;
-            scan(tokens.clone(), &imports, &mut reads.all)?;
+            let imports = parent_imports(&path, root, &mut import_cache)?;
+            let own_imports = scan(tokens.clone(), &imports, &mut reads.all)?;
+            import_cache.insert(path.clone(), own_imports.into_owned());
             if !test_files.contains(&path) {
                 scan(production_tokens(tokens), &imports, &mut reads.production)?;
             }
@@ -398,6 +460,61 @@ mod tests {
         assert!(!reads.test_only("header", "LEN"));
         assert!(reads.test_only("header", "MAGIC"));
         assert!(!reads.contains("unread", "OFFSET"));
+        Ok(())
+    }
+
+    #[test]
+    fn external_test_modules_follow_inline_visibility_and_do_not_inherit_function_attributes(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let temporary = tempfile::tempdir()?;
+        let root = temporary.path();
+        std::fs::create_dir(root.join("reader"))?;
+        std::fs::write(root.join("lib.rs"), "pub mod reader { #[cfg(test)] pub(crate) mod checks; #[test] fn test() {} pub(crate) mod production; }")?;
+        std::fs::write(
+            root.join("reader/checks.rs"),
+            "crate::layout::header::MAGIC;",
+        )?;
+        std::fs::write(
+            root.join("reader/production.rs"),
+            "crate::layout::header::LEN;",
+        )?;
+        let reads = layout_reads(root)?;
+        assert!(reads.test_only("header", "MAGIC"));
+        assert!(reads.contains("header", "LEN"));
+        assert!(!reads.test_only("header", "LEN"));
+        Ok(())
+    }
+
+    #[test]
+    fn parent_import_cache_keeps_sibling_aliases_and_rereads_new_invocations(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let temporary = tempfile::tempdir()?;
+        let root = temporary.path();
+        std::fs::write(root.join("lib.rs"), "mod first; mod second;")?;
+        for (module, record) in [("first", "header"), ("second", "row")] {
+            std::fs::create_dir(root.join(module))?;
+            std::fs::write(
+                root.join(format!("{module}.rs")),
+                format!("use crate::layout::{record} as h; mod a; mod b;"),
+            )?;
+            for child in ["a", "b"] {
+                std::fs::write(
+                    root.join(module).join(format!("{child}.rs")),
+                    "use super::h; const C: usize = h::LEN;",
+                )?;
+            }
+        }
+        let reads = layout_reads(root)?;
+        assert!(reads.contains("header", "LEN"));
+        assert!(reads.contains("row", "LEN"));
+        std::fs::write(
+            root.join("first.rs"),
+            "use crate::layout::token as h; mod a; mod b;",
+        )?;
+        let reads = layout_reads(root)?;
+        assert!(reads.contains("token", "LEN"));
+        assert!(reads.contains("row", "LEN"));
+        assert!(!reads.contains("header", "LEN"));
         Ok(())
     }
 

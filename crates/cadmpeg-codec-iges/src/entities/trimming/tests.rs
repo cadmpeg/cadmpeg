@@ -81,61 +81,31 @@ const EPS_BOUNDARY_ENDPOINT_MATCH: f64 = 1.0e-9;
 const EPS_SOURCE_BOUND_REPRESENTATION: f64 = 5.0e-7;
 
 fn assert_trimming_collection_refusal(bytes: &[u8], operation: &str, occurrence: usize) {
-    let mut matched = 0;
-    let mut cap = 0_u64;
-    for _ in 0..4096 {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        match IgesCodec.decode(
-            &mut Cursor::new(bytes),
-            &DecodeOptions {
-                policy,
-                ..DecodeOptions::default()
-            },
-        ) {
-            Err(cadmpeg_ir::codec::DecodeFailure::Codec(
-                cadmpeg_core::CodecError::ResourceLimit(limit),
-            )) => {
-                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                if limit.operation == operation {
-                    if matched == occurrence {
-                        return;
-                    }
-                    matched += 1;
-                }
-                cap = limit.used.checked_add(limit.additional).unwrap();
-            }
-            other => panic!("expected trimming collection refusal at {operation}: {other:?}"),
-        }
-    }
-    panic!("trimming collection refusal was not reached: {operation}");
+    cadmpeg_test_support::decode::resource_refusal_at(
+        &crate::IgesCodec,
+        bytes,
+        &mut DecodeOptions {
+            policy: DecodePolicy::service(),
+            ..DecodeOptions::default()
+        },
+        ResourceDimension::CollectionItems,
+        operation,
+        occurrence,
+    );
 }
 
 fn assert_trimming_retained_refusal(bytes: &[u8], operation: &str) {
-    let mut cap = 0_u64;
-    for _ in 0..4096 {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cap;
-        match IgesCodec.decode(
-            &mut Cursor::new(bytes),
-            &DecodeOptions {
-                policy,
-                ..DecodeOptions::default()
-            },
-        ) {
-            Err(cadmpeg_ir::codec::DecodeFailure::Codec(
-                cadmpeg_core::CodecError::ResourceLimit(limit),
-            )) => {
-                assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-                if limit.operation == operation {
-                    return;
-                }
-                cap = limit.used.checked_add(limit.additional).unwrap();
-            }
-            other => panic!("expected trimming retained refusal at {operation}: {other:?}"),
-        }
-    }
-    panic!("trimming retained refusal was not reached: {operation}");
+    cadmpeg_test_support::decode::resource_refusal_at(
+        &crate::IgesCodec,
+        bytes,
+        &mut DecodeOptions {
+            policy: DecodePolicy::service(),
+            ..DecodeOptions::default()
+        },
+        ResourceDimension::RetainedBytes,
+        operation,
+        0,
+    );
 }
 
 fn assert_trimming_materialized_refusal(bytes: &[u8], operation: &str) {
@@ -144,27 +114,23 @@ fn assert_trimming_materialized_refusal(bytes: &[u8], operation: &str) {
     let decoded = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
-    let mut cap = 0_u64;
-    for _ in 0..4096 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
-        match cadmpeg_ir::index::ModelIndex::new_model_only(decoded.ir(), &ctx) {
-            Err(limit) => {
-                assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
-                assert_eq!(ctx.resource_refusal().as_ref(), Some(&limit));
-                if limit.operation == operation {
-                    return;
-                }
-                let required = limit.used.checked_add(limit.additional).unwrap();
-                assert!(required > cap);
-                cap = required;
-            }
-            Ok(_) => panic!("expected trimming materialized refusal at {operation}"),
-        };
-    }
-    panic!("trimming materialized refusal was not reached: {operation}");
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        operation,
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+            cadmpeg_ir::index::ModelIndex::new_model_only(decoded.ir(), &ctx)
+                .map(|_| ())
+                .map_err(|limit| {
+                    assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+                    assert_eq!(ctx.resource_refusal().as_ref(), Some(&limit));
+                    limit.into()
+                })
+        },
+    );
 }
 
 #[test]
