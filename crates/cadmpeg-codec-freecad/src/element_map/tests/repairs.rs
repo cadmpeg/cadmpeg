@@ -97,7 +97,7 @@ fn inline_element_map_does_not_build_property_owners() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let probe = RefusalProbe::arm(
         ResourceDimension::WorkUnits,
-        "FreeCAD property ownership input",
+        "FreeCAD property ownership endpoints",
         None,
     );
     let (_, maps) = super::parse_bytes(
@@ -285,7 +285,7 @@ fn element_map_size_invalid_first_child_does_not_admit_later_children() {
 }
 
 #[test]
-fn string_hasher_marker_errors_precede_orphan_successor_errors() {
+fn string_hasher_orphan_successor_precedes_later_marker_errors() {
     assert_eq!(
         malformed_message(test_parse(
             b"<Document><StringHasher2/><Wrapper><StringHasher/></Wrapper></Document>",
@@ -293,33 +293,45 @@ fn string_hasher_marker_errors_precede_orphan_successor_errors() {
             &[],
             &[],
         )),
-        "StringHasher is not a direct document or shape-property carrier"
+        "StringHasher2 is not the direct successor of StringHasher"
     );
 }
 
 #[test]
-fn legacy_stream_record_errors_precede_indexed_name_errors() {
+fn legacy_stream_indexed_name_error_precedes_later_record_errors() {
     let bytes = b"2 1 bad 0 Edge1 good nope";
     assert_eq!(
         in_decode_context(|ctx| malformed_message(parse_legacy_stream(ctx, bytes, None))),
-        "invalid legacy string-id count \"nope\""
+        "invalid legacy indexed name"
     );
 }
 
 #[test]
-fn legacy_stream_trailing_data_precedes_indexed_name_errors() {
+fn legacy_stream_indexed_name_error_precedes_trailing_data() {
     let bytes = b"1 1 bad 0 trailing";
     assert_eq!(
         in_decode_context(|ctx| malformed_message(parse_legacy_stream(ctx, bytes, None))),
-        "legacy element map has trailing data"
+        "invalid legacy indexed name"
     );
 }
 
 #[test]
-fn legacy_element_attribute_errors_precede_indexed_name_errors() {
+fn legacy_element_indexed_name_error_precedes_later_attributes() {
     let property = test_property(
         "Part::PropertyPartShape",
         "<Property><Part/><ElementMap count=\"2\"><Element value=\"1\" key=\"bad\"/><Element/></ElementMap></Property>",
+    );
+    assert_eq!(
+        malformed_message(test_parse(b"<Document/>", 1, &[property], &[])),
+        "invalid legacy indexed name"
+    );
+}
+
+#[test]
+fn legacy_element_attribute_error_precedes_final_count() {
+    let property = test_property(
+        "Part::PropertyPartShape",
+        "<Property><Part/><ElementMap count=\"2\"><Element/></ElementMap></Property>",
     );
     assert_eq!(
         malformed_message(test_parse(b"<Document/>", 1, &[property], &[])),
@@ -328,38 +340,33 @@ fn legacy_element_attribute_errors_precede_indexed_name_errors() {
 }
 
 #[test]
-fn legacy_element_count_errors_precede_attribute_errors() {
-    let property = test_property(
-        "Part::PropertyPartShape",
-        "<Property><Part/><ElementMap count=\"2\"><Element/></ElementMap></Property>",
-    );
-    assert_eq!(
-        malformed_message(test_parse(b"<Document/>", 1, &[property], &[])),
-        "legacy ElementMap count does not match direct Element children"
-    );
-}
-
-#[test]
-fn legacy_record_staging_uses_scoped_storage() {
-    let bytes = b"1 Edge1 stable 0";
-    crate::test_support::materialized_refusal_at("FreeCAD legacy element records", |ctx| {
-        parse_legacy_stream(ctx, bytes, None).map(|_| ())
-    });
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = u64::MAX;
-    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
-    let probe = RefusalProbe::arm(
-        ResourceDimension::RetainedBytes,
-        "FreeCAD legacy element records",
-        None,
-    );
-    let (count, groups) = parse_legacy_stream(&ctx, bytes, None).unwrap();
-    let output = crate::element_map::legacy_map_payload(&ctx, groups, count, None).unwrap();
-    drop(probe);
-    assert_eq!(
-        output.parsed.maps.root().groups[0].names[1][0].encoded,
-        "stable"
-    );
-    assert_eq!(ctx.resource_refusal(), None);
+fn string_table_validation_refuses_through_the_production_parser() {
+    let document =
+        b"<Document><StringHasher count=\"2\">1.c first\n2.c.1 second\n</StringHasher></Document>";
+    let (tables, maps) = test_parse(document, 1, &[], &[]).unwrap();
+    assert!(maps.is_empty());
+    let entries = tables.as_slice()[0].entries();
+    assert_eq!(entries.len(), 2);
+    assert_eq!(entries[0].payload, "first");
+    assert_eq!(entries[1].payload, "second");
+    assert_eq!(entries[1].components, vec![1]);
+    let xml = roxmltree::Document::parse(std::str::from_utf8(document).unwrap()).unwrap();
+    for operation in [
+        "FreeCAD string table entry visits",
+        "FreeCAD string table component visits",
+        "FreeCAD string table component lookup",
+        "FreeCAD string table index",
+    ] {
+        crate::test_support::refusal_at(ResourceDimension::WorkUnits, document, operation, |ctx| {
+            super::parse_bytes(ctx, document, 1, &[], &[])
+        });
+    }
+    for dimension in [
+        ResourceDimension::MaterializedBytes,
+        ResourceDimension::CollectionItems,
+    ] {
+        crate::test_support::refusal_at(dimension, document, "FreeCAD string table index", |ctx| {
+            parse(ctx, &xml, 1, &[], &[])
+        });
+    }
 }

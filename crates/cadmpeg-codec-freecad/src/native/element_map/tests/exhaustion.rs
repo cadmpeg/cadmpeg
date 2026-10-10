@@ -115,41 +115,33 @@ fn empty_native_binding_returns_original_refusal_without_advancing() {
 #[test]
 fn child_string_id_exhaustion_admits_only_actual_bytes() {
     use crate::native::element_map::ElementMapGroup;
-    for ids in ["0", "0.12", "0.", "1.unvisited"] {
-        let mut visits = 0;
-        let result = ElementMapNodes::from_nodes(
-            vec![ElementMapNode {
-                map_id: 0,
-                groups: vec![ElementMapGroup {
-                    indexed_name: "Edge".into(),
-                    children: vec![format!("1 0 1 0 0 stable {ids}")],
-                    names: Vec::new(),
+    let diagnostic = "element-map node 1 group Edge child 0 has an invalid child string-id list";
+    let diagnostic_work = 2 * cadmpeg_core::decode::u64_from_index(diagnostic.len());
+    for (ids, work) in [
+        ("0", 40),
+        ("0.12", 48),
+        ("0.", 37 + diagnostic_work),
+        ("1.unvisited", 46 + diagnostic_work),
+    ] {
+        with_work(work, |ctx| {
+            let result = ElementMapNodes::from_nodes(
+                vec![ElementMapNode {
+                    map_id: 0,
+                    groups: vec![ElementMapGroup {
+                        indexed_name: "Edge".into(),
+                        children: vec![format!("1 0 1 0 0 stable {ids}")],
+                        names: Vec::new(),
+                    }],
                 }],
-            }],
-            |count, operation| {
-                if operation == "FreeCAD element-map child string-id scan" {
-                    visits += count;
-                }
-                Ok::<(), std::convert::Infallible>(())
-            },
-            |message| Ok::<_, std::convert::Infallible>(message.to_string()),
-        )
-        .unwrap();
-        match ids {
-            "0" | "0.12" => {
-                assert!(result.is_ok());
-                assert_eq!(visits, ids.len());
+                ctx,
+            )
+            .unwrap();
+            match ids {
+                "0" | "0.12" => assert!(result.is_ok()),
+                "0." | "1.unvisited" => assert_eq!(result.unwrap_err(), diagnostic),
+                _ => unreachable!(),
             }
-            "0." | "1.unvisited" => {
-                assert_eq!(
-                    result.unwrap_err(),
-                    "element-map node 1 group Edge child 0 has an invalid child string-id list"
-                );
-                // Two bytes through the period. Empty-tail finalization is free;
-                // an invalid first field stops before the later text.
-                assert_eq!(visits, 2);
-            }
-            _ => unreachable!(),
-        }
+            assert_eq!(ctx.resource_refusal(), None);
+        });
     }
 }

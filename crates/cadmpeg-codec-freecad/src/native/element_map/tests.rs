@@ -325,14 +325,8 @@ fn child_descriptor_validation_charges_decode_admission() {
         &[],
         "FreeCAD element-map child string-id number",
         |ctx| {
-            ElementMapNodes::from_nodes(
-                nodes.clone(),
-                |count, operation| {
-                    ctx.charge_work(cadmpeg_core::decode::u64_from_index(count), operation)
-                },
-                |message| ctx.format_retained(message, "FreeCAD element-map validation diagnostic"),
-            )?
-            .map_err(cadmpeg_core::CodecError::Malformed)
+            ElementMapNodes::from_nodes(nodes.clone(), ctx)?
+                .map_err(cadmpeg_core::CodecError::Malformed)
         },
     );
 }
@@ -355,14 +349,8 @@ fn child_descriptor_diagnostic_keeps_text_and_charges_storage() {
         &[],
         "FreeCAD element-map validation diagnostic",
         |ctx| {
-            ElementMapNodes::from_nodes(
-                nodes.clone(),
-                |count, operation| {
-                    ctx.charge_work(cadmpeg_core::decode::u64_from_index(count), operation)
-                },
-                |message| ctx.format_retained(message, "FreeCAD element-map validation diagnostic"),
-            )?
-            .map_err(cadmpeg_core::CodecError::Malformed)
+            ElementMapNodes::from_nodes(nodes.clone(), ctx)?
+                .map_err(cadmpeg_core::CodecError::Malformed)
         },
     );
 }
@@ -404,7 +392,8 @@ fn topology_binding_group_index_is_scoped_and_dedup_keeps_no_new_identity() {
 #[test]
 fn legacy_root_node_allocation_releases_the_consumed_group_tree() {
     let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = u64::MAX;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let (groups, group_storage) = ctx
         .collect_scoped_btree_map(

@@ -9,7 +9,7 @@ use crate::brep::{
 use crate::native::element_map::ScopedData;
 use crate::topology_transfer::{Builder, GeometryIndexes};
 use crate::FcstdCodec;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::ShellId;
@@ -17,12 +17,8 @@ use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
-// Both strings reserve exact bytes: topology label1 and the model identity.
-const MATERIALIZED_CAP: u64 =
-    cadmpeg_core::decode::u64_from_index("1".len() + "fcstd:model:face#EmptyFace:1".len());
-
 fn with_face<T>(
-    materialized_cap: u64,
+    surface_location: usize,
     use_face: impl FnOnce(
         &DecodeContext<'_>,
         &mut Builder<'_, '_, '_, '_>,
@@ -32,7 +28,7 @@ fn with_face<T>(
 ) -> T {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = materialized_cap;
+    policy.limits.max_materialized_bytes = 0;
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let payload = ShapePayloadRecord {
@@ -41,8 +37,13 @@ fn with_face<T>(
         entry: "Shape.brp".into(),
         payload: ShapePayload::Empty,
     };
+    let mut geometry = super::super::geometry_for_kind(TextShapeKind::Face);
+    let crate::brep::TextTShapeGeometry::Face { location, .. } = &mut geometry else {
+        unreachable!();
+    };
+    *location = surface_location.into();
     let shapes = TextTShapes::from(vec![TextTShape {
-        geometry: super::super::geometry_for_kind(TextShapeKind::Face),
+        geometry,
         flags: [false; 7],
         children: Vec::new(),
     }]);
@@ -79,8 +80,8 @@ fn with_face<T>(
 }
 
 #[test]
-fn face_without_geometry_releases_identity_candidate_and_preserves_fuse() {
-    with_face(MATERIALIZED_CAP, |ctx, builder, shell, face| {
+fn face_without_geometry_needs_no_identity_storage() {
+    with_face(0, |ctx, builder, shell, face| {
         let mut ir = CadIr::empty();
         assert_eq!(
             builder
@@ -93,48 +94,47 @@ fn face_without_geometry_releases_identity_candidate_and_preserves_fuse() {
         assert!(ir.model.tessellations.is_empty());
         assert!(ir.model.loops.is_empty());
         assert!(ir.model.coedges.is_empty());
-        let scratch = ctx
-            .reserve_scoped(MATERIALIZED_CAP, "test released face candidate")
-            .expect("all candidate backing released");
-        drop(scratch);
         assert_eq!(ctx.resource_refusal(), None);
-        let Err(CodecError::ResourceLimit(original)) =
-            ctx.retained_string(1, "test original face fuse")
-        else {
-            panic!("zero retained cap must refuse")
-        };
-        assert_eq!(original.dimension, ResourceDimension::RetainedBytes);
-        assert_eq!(
-            (original.used, original.additional, original.limit),
-            (0, 1, 0)
-        );
-        assert!(matches!(builder.append_face(&mut ir, shell, face,
-            Transform::identity(), false), Err(CodecError::ResourceLimit(actual))
-            if actual == original));
-        assert_eq!(ctx.resource_refusal(), Some(original));
     });
 }
 
 #[test]
-fn face_without_geometry_identity_candidate_refuses_at_exact_scratch_boundary() {
-    with_face(MATERIALIZED_CAP - 1, |ctx, builder, shell, face| {
-        let mut ir = CadIr::empty();
-        let Err(CodecError::ResourceLimit(original)) =
-            builder.append_face(&mut ir, shell, face, Transform::identity(), false)
-        else {
-            panic!("candidate backing must refuse one byte below its peak")
-        };
-        assert_eq!(original.dimension, ResourceDimension::MaterializedBytes);
-        assert_eq!(original.operation, "FreeCAD face identity");
-        assert_eq!(
-            (original.used, original.additional, original.limit),
-            (1, MATERIALIZED_CAP - 1, MATERIALIZED_CAP - 1)
+fn face_without_geometry_still_validates_topological_location() {
+    with_face(0, |ctx, builder, shell, face| {
+        let mut face = face.clone();
+        face.location = 1.into();
+        let error = builder
+            .append_face(
+                &mut CadIr::empty(),
+                shell,
+                &face,
+                Transform::identity(),
+                false,
+            )
+            .unwrap_err();
+        assert!(
+            matches!(error, CodecError::Malformed(message) if message == "table reference 1 is out of range")
         );
-        assert!(ir.model.faces.is_empty());
-        assert!(matches!(builder.append_face(&mut ir, shell, face,
-            Transform::identity(), false), Err(CodecError::ResourceLimit(actual))
-            if actual == original));
-        assert_eq!(ctx.resource_refusal(), Some(original));
+        assert_eq!(ctx.resource_refusal(), None);
+    });
+}
+
+#[test]
+fn face_without_geometry_still_validates_surface_location() {
+    with_face(1, |ctx, builder, shell, face| {
+        let error = builder
+            .append_face(
+                &mut CadIr::empty(),
+                shell,
+                face,
+                Transform::identity(),
+                false,
+            )
+            .unwrap_err();
+        assert!(
+            matches!(error, CodecError::Malformed(message) if message == "table reference 1 is out of range")
+        );
+        assert_eq!(ctx.resource_refusal(), None);
     });
 }
 

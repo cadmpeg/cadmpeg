@@ -23,6 +23,67 @@ use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::scalar::NonNegativeReal;
 use cadmpeg_ir::transform::Transform;
 
+fn topology_occurrence_copy_archive() -> Vec<u8> {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects><ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part ElementMap="1.0" file="Shape.brp"/><ElementMap count="1"><Element value="Edge1" key="stable"/></ElementMap></Property></Properties></Object></ObjectData></Document>"#;
+    let mut brep = String::from("CASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 0\nCurves 1\n1 0 0 0 1 0 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 3\nVe 0.001 0 0 0 0 0 1001000 *\nVe 0.001 1 0 0 0 0 1001000 *\nEd 0.001 1 1 0 1 1 0 0 1 0 1001000 +3 0 -2 0 *\n");
+    // Repeated roots retain independent bindings for the element-map consumer.
+    brep.push_str(&"+1 0 ".repeat(256));
+    brep.push('*');
+    archive_entries(&[("Document.xml", document), ("Shape.brp", brep.as_bytes())])
+}
+
+fn assert_topology_occurrence_materialized_refusal(operation: &str) {
+    use cadmpeg_ir::{Codec, DecodeOptions};
+    use std::io::Cursor;
+
+    let input = topology_occurrence_copy_archive();
+    let decoded = crate::FcstdCodec
+        .decode(&mut Cursor::new(&input), &DecodeOptions::default())
+        .expect("map-bearing repeated roots");
+    assert_eq!(decoded.ir().model.edges.len(), 256);
+    let namespace = decoded
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("native namespace");
+    let payloads = namespace
+        .arena_as::<ShapePayloadRecord>("shape_payloads")
+        .unwrap();
+    let properties = namespace
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .unwrap();
+    let maps = namespace
+        .arena_as::<crate::native::element_map::ElementMapRecord>("element_maps")
+        .unwrap();
+    assert_eq!(maps.len(), 1);
+    assert_eq!(
+        maps[0].maps.root().groups[0].names[1][0].topology_ids.len(),
+        256
+    );
+
+    crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        &input,
+        operation,
+        |ctx| {
+            let mut ir = CadIr::empty();
+            let (curves, surfaces) =
+                crate::brep::transfer_text_geometry(ctx, &payloads, &properties)?;
+            ir.model.curves = curves.curves;
+            ir.model.surfaces = surfaces.surfaces;
+            super::transfer(
+                ctx,
+                &mut ir,
+                &payloads,
+                &properties,
+                &mut Vec::new(),
+                !maps.is_empty(),
+            )
+            .map(|_| ())
+        },
+    );
+}
+
 fn unowned_triangulation_archive() -> Vec<u8> {
     let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="MeshShape" id="1"/></Objects><ObjectData Count="1"><Object name="MeshShape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData></Document>"#;
     let brep = b"CASCADE Topology V3, (c) Open Cascade
@@ -418,11 +479,8 @@ fn unowned_triangulation_normals_refuse_at_collection_limit() {
 }
 
 #[test]
-fn topology_occurrence_property_refuses_at_retained_limit() {
-    assert_codec_retained_refusal(
-        &triangulated_face_archive(),
-        "FreeCAD topology occurrence property",
-    );
+fn topology_occurrence_property_refuses_at_materialized_limit() {
+    assert_topology_occurrence_materialized_refusal("FreeCAD topology occurrence property");
 }
 
 #[test]
@@ -734,11 +792,8 @@ fn pcurve_pair_continuity_is_borrowed_without_storage() {
 }
 
 #[test]
-fn topology_occurrence_identity_refuses_at_retained_limit() {
-    assert_codec_retained_refusal(
-        &triangulated_face_archive(),
-        "FreeCAD topology occurrence identity",
-    );
+fn topology_occurrence_identity_refuses_at_materialized_limit() {
+    assert_topology_occurrence_materialized_refusal("FreeCAD topology occurrence identity");
 }
 
 macro_rules! triangulated_scratch_refusal {
