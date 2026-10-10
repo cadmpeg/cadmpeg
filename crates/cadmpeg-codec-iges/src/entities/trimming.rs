@@ -35,7 +35,7 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::units::FinitePoint2;
 use cadmpeg_ir::CadIr;
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 struct BoundarySegment {
     model_curve: u32,
@@ -190,6 +190,15 @@ fn find_cluster_root(
     Ok(root)
 }
 
+fn boundary_position_cell(point: Point3, tolerance: f64) -> [i64; 3] {
+    [point.x, point.y, point.z].map(|coordinate| {
+        cadmpeg_core::convert::truncate_f64_to_i64((coordinate / tolerance).floor())
+            // Outside the integer range, distinct finite coordinates are
+            // farther apart than the tolerance. Equal coordinates share a key.
+            .unwrap_or_else(|| i64::try_from(coordinate.to_bits() >> 1).unwrap_or_default())
+    })
+}
+
 fn cluster_boundary_positions(
     positions: &[FinitePoint3],
     tolerance: cadmpeg_ir::scalar::PositiveReal,
@@ -205,42 +214,60 @@ fn cluster_boundary_positions(
     let mut sizes = size_storage.with_storage(|| {
         ctx.alloc_filled(positions.len(), 1usize, "iges boundary cluster sizes")
     })?;
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
-    let mut source_values = IntoIterator::into_iter(positions).enumerate();
-    while source_values.len() != 0 {
-        let Some((left_index, left)) = ctx.next_charged(&mut source_values, "iges boundary clustering positions")? else {
-            break;
-        };
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
-        let mut source_values = IntoIterator::into_iter(&positions[left_index + 1..]).enumerate();
-        while source_values.len() != 0 {
-            let Some((offset, right)) = ctx.next_charged(&mut source_values, "iges boundary clustering comparisons")? else {
-                break;
-            };
-            let right_index = left_index + 1 + offset;
-            if !close(left.get(), right.get(), tolerance) {
-                continue;
-            }
-            let mut left_root = find_cluster_root(&mut parents, left_index, ctx)?;
-            let mut right_root = find_cluster_root(&mut parents, right_index, ctx)?;
-            if left_root != right_root {
-                if sizes[left_root] < sizes[right_root] {
-                    std::mem::swap(&mut left_root, &mut right_root);
+    let mut grid_storage = ctx.reserve_scoped(0, "iges boundary proximity grid storage")?;
+    let mut cells = HashMap::<[i64; 3], usize>::new();
+    let mut links = grid_storage.with_storage(|| {
+        ctx.alloc_filled(positions.len(), None, "iges boundary proximity links")
+    })?;
+    grid_storage.with_storage(|| {
+        ctx.reserve_map(&mut cells, positions.len(), "iges boundary proximity cells")
+    })?;
+    let mut input = positions.iter().enumerate();
+    while let Some((index, point)) =
+        ctx.next_charged(&mut input, "iges boundary clustering positions")?
+    {
+        let cell = boundary_position_cell(point.get(), tolerance);
+        // Two cells cover rounding at a quotient boundary. Fixed-size keys
+        // need no work admission for the neighbouring hash lookups.
+        for dx in -2_i64..=2 {
+            for dy in -2_i64..=2 {
+                for dz in -2_i64..=2 {
+                    let Some(neighbour) = cell[0].checked_add(dx)
+                        .zip(cell[1].checked_add(dy))
+                        .zip(cell[2].checked_add(dz))
+                        .map(|((x, y), z)| [x, y, z])
+                    else { continue; };
+                    let mut previous = cells.get(&neighbour).copied();
+                    while let Some(other) = previous {
+                        ctx.charge_work(1, "iges boundary clustering comparisons")?;
+                        previous = links[other];
+                        if !close(point.get(), positions[other].get(), tolerance) {
+                            continue;
+                        }
+                        let mut left_root = find_cluster_root(&mut parents, other, ctx)?;
+                        let mut right_root = find_cluster_root(&mut parents, index, ctx)?;
+                        if left_root != right_root {
+                            if sizes[left_root] < sizes[right_root] {
+                                std::mem::swap(&mut left_root, &mut right_root);
+                            }
+                            sizes[left_root] = sizes[left_root]
+                                .checked_add(sizes[right_root])
+                                .ok_or_else(|| ctx.refuse_codec_limit(
+                                    "iges boundary cluster size", u64::MAX, u64::MAX,
+                                ))?;
+                            parents[right_root] = left_root;
+                        }
+                    }
                 }
-                sizes[left_root] =
-                    sizes[left_root]
-                        .checked_add(sizes[right_root])
-                        .ok_or_else(|| {
-                            ctx.refuse_codec_limit("iges boundary cluster size", u64::MAX, u64::MAX)
-                        })?;
-                parents[right_root] = left_root;
             }
         }
+        ctx.charge_work(1, "iges boundary proximity cell insertion")?;
+        // Capacity holds one cell per endpoint, so insertion cannot grow the table.
+        links[index] = cells.insert(cell, index);
     }
+    drop(cells);
+    drop(links);
+    drop(grid_storage);
     drop(sizes);
     drop(size_storage);
     let mut root_storage = ctx.reserve_scoped(0, "iges boundary cluster roots")?;

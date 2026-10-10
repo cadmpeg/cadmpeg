@@ -291,6 +291,71 @@ fn linear_boundary_path_refuses_collection_limit_before_append() {
 }
 
 #[test]
+fn boundary_clustering_releases_consumed_root_and_grid_storage_after_sort() {
+    const CAP: u64 = 65536;
+    for count in [1, 21, 64] {
+        let points: Vec<FinitePoint3> = (0..count).map(|index| {
+            FinitePoint3::new(Point3::new(
+                f64::from(u32::try_from(index).unwrap()) * 2.0, 0.0, 0.0,
+            )).unwrap()
+        }).collect();
+        // Each singleton member vector uses core's four-slot usize minimum.
+        let members_bytes = points.len() * 4 * size_of::<usize>();
+        let cluster_bytes = points.len() * size_of::<super::super::BoundaryVertexCluster>();
+        let live = u64_from_index(members_bytes + cluster_bytes);
+        let run = |cap, refuse_extra| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            policy.limits.max_retained_bytes = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let (clusters, storage) = ctx.with_scoped_storage("discarded boundary clusters", || {
+                cluster_boundary_positions(&points, PositiveReal::ONE, &ctx)
+            }).map_err(|error| match error {
+                BoundaryVertexCreationError::Resource(error) => error,
+                error => panic!("unexpected cluster error: {error:?}"),
+            })?;
+            assert_eq!(clusters.len(), points.len());
+            for (index, cluster) in clusters.iter().enumerate() {
+                assert_eq!(cluster.members, [index]);
+                assert_eq!(cluster.representative, points[index]);
+            }
+            let free = ctx.reserve_scoped(CAP - live, "test exact live cluster output").unwrap();
+            drop(free);
+            if refuse_extra {
+                let first = match ctx.reserve_scoped(CAP - live + 1, "test cluster output remains live").unwrap_err() {
+                    CodecError::ResourceLimit(first) => first,
+                    error => panic!("expected materialized refusal: {error:?}"),
+                };
+                assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
+                assert_eq!(first.operation, "test cluster output remains live");
+                assert_eq!((first.used, first.additional), (live, CAP - live + 1));
+                for _ in 0..64 {
+                    for source in [points.as_slice(), &[]] {
+                        assert!(matches!(cluster_boundary_positions(source, PositiveReal::ONE, &ctx),
+                            Err(BoundaryVertexCreationError::Resource(CodecError::ResourceLimit(last))) if last == first));
+                    }
+                }
+                drop(clusters); drop(storage);
+                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+                Err(CodecError::ResourceLimit(first))
+            } else {
+                drop(clusters); drop(storage);
+                let released = ctx.reserve_scoped(CAP, "all boundary cluster scratch released").unwrap();
+                drop(released);
+                ctx.finish_session()
+            }
+        };
+        run(CAP, false).unwrap();
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::MaterializedBytes, "test cluster output remains live", |cap| run(cap, true),
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.limit == CAP && limit.used == live && limit.additional == CAP - live + 1));
+    }
+}
+
+#[test]
 fn boundary_clustering_releases_consumed_root_nodes_before_the_allocating_sort() {
     // The core stable sorter allocates two index lanes above twenty values.
     for count in [1, 21, 64] {
