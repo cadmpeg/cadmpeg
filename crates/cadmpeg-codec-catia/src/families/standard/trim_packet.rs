@@ -323,7 +323,7 @@ mod tests {
                     0,
                     if fan { vec![] } else { vec![length] },
                     if fan { vec![length] } else { vec![] },
-                    (0..length as u32).collect(),
+                    (0..u32::try_from(length).expect("fixed strip length")).collect(),
                 ));
                 crate::test_support::with_work_limit(1, |ctx| {
                     assert!(packet.triangles(ctx).expect("one length visit").is_empty());

@@ -1451,6 +1451,11 @@ fn body_group_validation_stops_before_trailing_coedges_and_groups() {
 fn duplicate_face_degrees_handle_descending_polygon_without_suffix_moves() {
     use super::{complete_duplicate_face_slots, EdgeBoundaryLayout, EdgeRow};
     const COUNT: usize = 512;
+    // Four endpoint updates per edge each use at most three height-four
+    // lookups: 4 * 3 * 44 * 8 = 4224 units. Amortized node work is below
+    // 700 units per edge; the remaining linear passes fit the headroom.
+    // The two descending Vec rows alone would move over four million bytes.
+    const WORK_PER_EDGE: u64 = 6000;
     let rows: Vec<_> = (0..COUNT)
         .rev()
         .map(|point| {
@@ -1471,11 +1476,6 @@ fn duplicate_face_degrees_handle_descending_polygon_without_suffix_moves() {
         .collect();
     let mut faces = vec![[0, 1]; COUNT];
     faces[0] = [0, 0];
-    // Four endpoint updates per edge each use at most three height-four
-    // lookups: 4 * 3 * 44 * 8 = 4224 units. Amortized node work is below
-    // 700 units per edge; the remaining linear passes fit the headroom.
-    // The two descending Vec rows alone would move over four million bytes.
-    const WORK_PER_EDGE: u64 = 6000;
     crate::test_support::with_work_limit(
         cadmpeg_core::decode::u64_from_index(COUNT) * WORK_PER_EDGE,
         |ctx| {

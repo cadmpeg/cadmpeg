@@ -3548,6 +3548,11 @@ mod tests {
 
     #[test]
     fn fbb_pattern_selects_sparse_handle_bucket_beside_shared_endpoint() {
+        // Both indexes precede the probed first query. A three-handle
+        // query has at most two 12-step binary searches of 1024-entry
+        // buckets, one two-step singleton search and 40 other units:
+        // (2 * 12 + 2) * (1 + 2 * 8) + 40 = 482 < 512.
+        const WORK_PER_QUERY: u64 = 512;
         let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
             let mut storage = ctx.reserve_scoped(0, "shared handle cycles")?;
             let mut indexed = Vec::new();
@@ -3619,11 +3624,6 @@ mod tests {
         let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
             panic!("work refusal");
         };
-        // Both indexes precede the probed first query. A three-handle
-        // query has at most two 12-step binary searches of 1024-entry
-        // buckets, one two-step singleton search and 40 other units:
-        // (2 * 12 + 2) * (1 + 2 * 8) + 40 = 482 < 512.
-        const WORK_PER_QUERY: u64 = 512;
         crate::test_support::with_work_limit(limit.used + 2 * 1024 * WORK_PER_QUERY, run)
             .expect("one candidate per sparse handle");
     }

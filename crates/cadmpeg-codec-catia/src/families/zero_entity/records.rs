@@ -3246,6 +3246,7 @@ mod tests {
 
     #[test]
     fn zero_entity_nurbs_surface_propagates_ir_validation_refusal() {
+        const OPERATION: &str = "IR NURBS knot order";
         let bytes = nurbs_carrier(
             [0x34, 0xc8],
             &[10.0, 20.0, 30.0, 40.0, 50.0],
@@ -3253,7 +3254,6 @@ mod tests {
             &[-100.0, 0.0, 100.0, 200.0, 300.0],
             &[4, 1, 1, 1, 4],
         );
-        const OPERATION: &str = "IR NURBS knot order";
         let result = crate::test_support::with_work_refusal(OPERATION, |ctx| {
             let result =
                 surface_at_with_context(ctx, &bytes, 0, &mut crate::nurbs::LaneRefusals::new());
