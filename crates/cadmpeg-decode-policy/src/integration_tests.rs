@@ -247,7 +247,7 @@ fn check_fixture(name: &str) {
             | "work_admitted"
             | "bounded_slices"
             | "rpitit_trait"
-        ) {
+    ) {
         command.env("CADMPEG_POLICY_CRATE_NAME", "cadmpeg_core");
     }
     if matches!(name, "container_callbacks" | "parser_zip") {
