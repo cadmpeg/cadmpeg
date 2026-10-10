@@ -4134,9 +4134,10 @@ impl StandardSupportRef<'_> {
             (Self::Geometry(right), Self::Offset(ResolvedOffsetSupport::Geometry(left))) => {
                 equality::surfaces_equal(ctx, left, right, OP)
             }
-            // Resolved extrusion support has a private curve lane. Its owner
-            // must expose a charged comparison for complete evidence equality.
-            (Self::Offset(left), Self::Offset(right)) => Ok(*left == *right),
+            (
+                Self::Offset(ResolvedOffsetSupport::Extrusion(left)),
+                Self::Offset(ResolvedOffsetSupport::Extrusion(right)),
+            ) => equality::extrusions_equal(ctx, left, right, OP),
             _ => Ok(false),
         }
     }
