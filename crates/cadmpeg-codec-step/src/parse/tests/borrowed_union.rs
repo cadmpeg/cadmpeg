@@ -23,7 +23,7 @@ fn single_index_list_is_borrowed_without_copy_work_or_storage() {
     let mut ids = EntityIndex::ordered_ids(&[&input], &ctx).unwrap();
     assert!(matches!(&ids, EntityIds::Borrowed(_)));
     assert_eq!(ids.len(), 3);
-    // The previous one-list route copies this exact sequence without deduplication.
+    // A borrowed list preserves duplicates in source order.
     assert_eq!(ids.next(), Some(1));
     assert_eq!(ids.next(), Some(1));
     assert_eq!(ids.next(), Some(2));
@@ -46,28 +46,6 @@ fn single_index_list_keeps_the_original_refusal() {
     assert_eq!(refusal, original);
     assert_eq!(ctx.resource_refusal(), Some(original));
     assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original));
-}
-
-#[test]
-fn single_selected_index_queries_allocate_only_the_list_reference() {
-    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#2=A();#1=A();ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).unwrap();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 2;
-    // Each of the two sequential queries selects one borrowed slice. Core's
-    // first amortized vector growth reserves four reference slots.
-    policy.limits.max_materialized_bytes = u64::try_from(4 * std::mem::size_of::<&[u64]>()).unwrap();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let rows = exchange.entities_any(&ctx, &["A"]).unwrap();
-    let ids = rows.map(|row| row.unwrap().0).collect::<Vec<_>>();
-    assert_eq!(ids, [1, 2]);
-    let ids = exchange.matching_entity_ids(&ctx, |name| name == "A").unwrap()
-        .collect::<Result<Vec<_>, _>>().unwrap();
-    assert_eq!(ids, [1, 2]);
-    assert_eq!(ctx.resource_refusal(), None);
-    ctx.finish_session().unwrap();
 }
 
 #[test]

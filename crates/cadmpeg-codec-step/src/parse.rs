@@ -397,6 +397,7 @@ impl EntityIndex {
 
 impl Exchange {
     /// HEADER records admitted with the cached schema and implementation level.
+    #[cfg(test)]
     pub(crate) fn header(&self) -> &[HeaderRecord] {
         &self.header
     }
@@ -717,28 +718,15 @@ pub(crate) fn parse_retained(
     parse_inner(input, ctx).or_else(|error| Err(error.into_codec_error(ctx)?))
 }
 
-/// A source graph whose storage remains temporary through its use.
-#[derive(Debug)]
-pub(crate) struct ScopedExchange<'ctx> {
-    pub(crate) exchange: Exchange,
-    pub(crate) diagnostics: Vec<ParseDiagnostic>,
-    _storage: ScopedReservation<'ctx>,
-}
-
-pub(crate) fn parse_with_context<'ctx>(
+/// Parse a source graph in storage reserved by its caller.
+pub(crate) fn parse_with_context(
     input: &[u8],
-    ctx: &'ctx DecodeContext<'_>,
-    operation: &'static str,
-) -> Result<ScopedExchange<'ctx>, CodecError> {
-    let mut storage = ctx.reserve_scoped(0, operation)?;
+    ctx: &DecodeContext<'_>,
+    storage: &mut ScopedReservation<'_>,
+) -> Result<(Exchange, Vec<ParseDiagnostic>), CodecError> {
     let parsed = storage.with_storage(|| parse_inner(input, ctx));
     // Errors leave the graph scope in independently retained text.
-    let (exchange, diagnostics) = parsed.or_else(|error| Err(error.into_codec_error(ctx)?))?;
-    Ok(ScopedExchange {
-        exchange,
-        diagnostics,
-        _storage: storage,
-    })
+    parsed.or_else(|error| Err(error.into_codec_error(ctx)?))
 }
 
 pub(crate) fn parse_inner(
@@ -1183,7 +1171,7 @@ impl Parser<'_, '_, '_> {
         if implementation_level.is_edition3()
             && data.len() == 1
             && data[0].parameters.is_empty()
-            && schema_names_for_matching.len() != 1
+            && header_admission.schema_identifiers.len() != 1
         {
             return self.err("an unnamed DATA section requires one FILE_SCHEMA identifier");
         }
@@ -1869,7 +1857,7 @@ impl Parser<'_, '_, '_> {
     }
     fn punct(&mut self, expected: &TokenKind) -> Result<(), ParseError> {
         let actual = self.next_kind()?;
-        if actual.tag() == expected.tag() {
+        if std::mem::discriminant(&actual) == std::mem::discriminant(expected) {
             Ok(())
         } else {
             self.err("unexpected token")
@@ -1878,7 +1866,7 @@ impl Parser<'_, '_, '_> {
     fn peek(&self, expected: &TokenKind) -> bool {
         self.current
             .as_ref()
-            .is_some_and(|token| token.kind.tag() == expected.tag())
+            .is_some_and(|token| std::mem::discriminant(&token.kind) == std::mem::discriminant(expected))
     }
     fn peek_name(&self, expected: &str) -> bool {
         matches!(self.current.as_ref().map(|token| &token.kind), Some(TokenKind::Name(name)) if name == expected)
@@ -2176,7 +2164,7 @@ enum HeaderDataReferences {
 fn validate_header_sections(
     implementation_level: ImplementationLevel,
     header: &[HeaderRecord],
-    schema_identifiers: &[String],
+    schema_identifiers: &BTreeSet<String>,
     budget: &DecodeContext<'_>,
 ) -> Result<Vec<HeaderDataReferences>, ValidationError> {
     let has = |name: &str| -> Result<bool, CodecError> {
@@ -2350,7 +2338,7 @@ fn valid_schema_population(
 
 fn admit_file_population(
     parameters: &[Value],
-    schema_identifiers: &[String],
+    schema_identifiers: &BTreeSet<String>,
     implementation_level: ImplementationLevel,
     budget: &DecodeContext<'_>,
 ) -> Result<BTreeSet<String>, ValidationError> {
@@ -2729,7 +2717,7 @@ fn decoded_bytes(
 }
 
 fn schema_identifier_matches(
-    schema_identifiers: &[String],
+    schema_identifiers: &BTreeSet<String>,
     schema_name: &str,
     budget: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
@@ -2739,28 +2727,10 @@ fn schema_identifier_matches(
             budget.copy_retained_text(trimmed, "step_schema_name_matching")
         }).map(|(value, storage)| (storage, value))?;
     budget.make_ascii_uppercase(&mut schema_name, "STEP schema name uppercase")?;
-    budget.any_by(
+    budget.contains_btree_set(
         schema_identifiers,
-        |identifier| {
-            let identifier =
-                budget.trim_text(identifier.as_str(), "STEP matching schema identifier trim")?;
-            if budget.equal(
-                identifier,
-                schema_name.as_str(),
-                "STEP full schema identifier equality",
-            )? {
-                return Ok(true);
-            }
-            if let Some((name, _)) = split_schema_identifier(budget, identifier)? {
-                return budget.equal(
-                    name,
-                    schema_name.as_str(),
-                    "STEP schema identifier prefix equality",
-                );
-            }
-            Ok(false)
-        },
-        "STEP schema identifier matches traversal",
+        schema_name.as_str(),
+        "STEP schema identifier match lookup",
     )
 }
 
@@ -2806,7 +2776,7 @@ fn validate_header_data_references(
 
 fn valid_data_parameters(
     parameters: &[Value],
-    schema_identifiers: &[String],
+    schema_identifiers: &BTreeSet<String>,
     implementation_level: ImplementationLevel,
     section_names: &mut BTreeSet<String>,
     budget: &DecodeContext<'_>,
@@ -2838,21 +2808,23 @@ fn valid_data_parameters(
     Ok(())
 }
 
-/// The admitted `FILE_SCHEMA` identifiers, for schema-name matching.
+/// Index normalized full identifiers and their accepted schema names.
 fn schema_names_for_matching(
     admitted: &[AdmittedSchemaIdentifier],
     budget: &DecodeContext<'_>,
-) -> Result<Vec<String>, ParseError> {
-    let mut names = Vec::new();
-    let mut visited_items = (admitted).iter();
-    budget.charge_work(0, "STEP schema names for matching traversal")?;
-    for _ in 0..visited_items.len() {
-        let identifier = budget.next_charged(&mut visited_items, "STEP schema names for matching traversal")?
-            .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
-        let source = identifier.text();
-        let mut name = budget.copy_retained_text(source, "step_schema_matching_name")?;
-        budget.make_ascii_uppercase(&mut name, "STEP schema matching name uppercase")?;
-        budget.push_vec(&mut names, name, "step_schema_matching_names")?;
+) -> Result<BTreeSet<String>, ParseError> {
+    let mut names = BTreeSet::new();
+    for identifier in budget.admit_iter(admitted, "STEP schema names for matching traversal")? {
+        let source = budget.trim_text(identifier.text(), "STEP matching schema identifier trim")?;
+        let mut full = budget.copy_retained_text(source, "step_schema_matching_name")?;
+        budget.make_ascii_uppercase(&mut full, "STEP schema matching name uppercase")?;
+        if let Some((name, _)) = split_schema_identifier(budget, &full)? {
+            if name.len() != full.len() {
+                let name = budget.copy_retained_text(name, "step_schema_matching_name")?;
+                budget.insert_btree_set(&mut names, name, "step_schema_matching_names")?;
+            }
+        }
+        budget.insert_btree_set(&mut names, full, "step_schema_matching_names")?;
     }
     Ok(names)
 }
@@ -2994,14 +2966,6 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
             .into()
     }
 
-    fn charge_nodes(&self, count: usize) -> Result<(), ResolveError> {
-        let count = u64_from_index(count);
-        self.budget
-            .charge_collection_items(count, "step_anchor_materialization")
-            .map_err(ResolveError::Resource)?;
-        Ok(())
-    }
-
     fn resolve(
         &mut self,
         value: &Value,
@@ -3039,7 +3003,6 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                     if *nodes > budget {
                         return Err(self.node_limit_error());
                     }
-                    self.charge_nodes(*nodes)?;
                     return Ok((
                         try_clone_value(value, self.budget, "step_anchor_memo_value_copy")
                             .map_err(ResolveError::Resource)?,
@@ -3084,7 +3047,6 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                 if nodes > budget {
                     return Err(self.node_limit_error());
                 }
-                self.charge_nodes(nodes)?;
                 self.storage
                     .with_storage(|| {
                         let entry = self.budget.entry_btree_map(
@@ -3103,7 +3065,6 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
         }
         match value {
             Value::List(values) => {
-                self.charge_nodes(1)?;
                 let mut nodes = 1usize;
                 let mut expanded_nodes = 0usize;
                 let mut resolved = self
@@ -3131,9 +3092,9 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                 Ok((Value::List(resolved), nodes, expanded_nodes))
             }
             Value::Typed(name, value) => {
-                self.charge_nodes(1)?;
                 let (value, nodes, expanded_nodes) =
                     self.resolve(value, stack, stack_storage, budget, depth + 1)?;
+                self.budget.charge_collection_items(1, "step_anchor_typed_value")?;
                 self.budget
                     .charge_retained(
                         u64_from_index(size_of::<Value>()),
@@ -3155,7 +3116,6 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                 ))
             }
             value => {
-                self.charge_nodes(1)?;
                 Ok((
                     try_clone_value(value, self.budget, "step_anchor_leaf_copy")
                         .map_err(ResolveError::Resource)?,
@@ -3211,16 +3171,8 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
         })
     }
 
-    fn admit_copy(&self, nodes: u64) -> Result<(), ResolveError> {
-        self.budget
-            .charge_collection_items(nodes, "step_reference_materialization")
-            .map_err(ResolveError::Resource)?;
-        Ok(())
-    }
-
     fn clone_leaf(&mut self, value: &Value) -> Result<Value, ResolveError> {
         self.consume_materialized_node()?;
-        self.admit_copy(1)?;
         try_clone_value(value, self.budget, "step_reference_leaf_copy")
             .map_err(ResolveError::Resource)
     }
@@ -3261,7 +3213,6 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
                         )
                         .into());
                 }
-                self.admit_copy(1)?;
                 let mut resolved = self
                     .budget
                     .collection_vec(values.len(), "step_reference_list_items")
@@ -3278,7 +3229,7 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
             Value::Typed(name, value) => {
                 self.consume_materialized_node()?;
                 let resolved = self.resolve_value(value, depth + 1)?;
-                self.admit_copy(1)?;
+                self.budget.charge_collection_items(1, "step_reference_typed_value")?;
                 self.budget.charge_retained(
                     u64_from_index(size_of::<Value>()),
                     "step_reference_materialization_storage",

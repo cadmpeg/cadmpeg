@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::ops::Range;
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
-use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
+use cadmpeg_core::decode::DecodeContext;
 
 use crate::parse::ParseError;
 
@@ -110,22 +110,6 @@ impl<'a> BerValue<'a> {
     }
 }
 
-/// End-of-contents offsets found during indefinite-length scanning.
-#[derive(Debug)]
-struct BerExtents<'ctx> {
-    ends: BTreeMap<usize, usize>,
-    storage: ScopedReservation<'ctx>,
-}
-
-impl<'ctx> BerExtents<'ctx> {
-    fn new(ctx: &'ctx DecodeContext<'_>) -> Result<Self, CmsError> {
-        Ok(Self {
-            ends: BTreeMap::new(),
-            storage: ctx.reserve_scoped(0, "STEP BER extent storage")?,
-        })
-    }
-}
-
 #[derive(Debug)]
 struct Ber<'a> {
     input: &'a [u8],
@@ -152,7 +136,7 @@ impl<'a> Ber<'a> {
     fn take(
         &mut self,
         ctx: &DecodeContext<'_>,
-        extents: &mut BerExtents<'_>,
+        extents: &mut BTreeMap<usize, usize>,
     ) -> Result<(u8, BerValue<'a>), CmsError> {
         let _depth = ctx.enter_nested("STEP BER nesting")?;
         let tag = self.take_tag_octet()?;
@@ -167,19 +151,17 @@ impl<'a> Ber<'a> {
             let value_start = self.at;
             let offset = self.origin + value_start;
             let value_end = if let Some(end) =
-                ctx.get_btree_map(&extents.ends, &offset, "STEP BER extent lookup")?
+                ctx.get_btree_map(extents, &offset, "STEP BER extent lookup")?
             {
                 *end - self.origin
             } else {
                 let end = self.indefinite_end(ctx, extents, value_start)?;
-                extents.storage.with_storage(|| {
-                    ctx.insert_btree_map(
-                        &mut extents.ends,
+                ctx.insert_btree_map(
+                        extents,
                         offset,
                         self.origin + end,
                         "STEP BER extent entries",
-                    )
-                })?;
+                    )?;
                 end
             };
             if !self
@@ -246,7 +228,7 @@ impl<'a> Ber<'a> {
     fn indefinite_end(
         &self,
         ctx: &DecodeContext<'_>,
-        extents: &mut BerExtents<'_>,
+        extents: &mut BTreeMap<usize, usize>,
         start: usize,
     ) -> Result<usize, CmsError> {
         let mut contents = Self {
@@ -273,7 +255,7 @@ impl<'a> Ber<'a> {
     fn take_tag(
         &mut self,
         ctx: &DecodeContext<'_>,
-        extents: &mut BerExtents<'_>,
+        extents: &mut BTreeMap<usize, usize>,
         expected: u8,
     ) -> Result<BerValue<'a>, CmsError> {
         let (tag, value) = self.take(ctx, extents)?;
@@ -298,7 +280,7 @@ fn validate_integer(value: BerValue<'_>) -> Result<(), &'static str> {
 
 fn validate_algorithm_identifier(
     ctx: &DecodeContext<'_>,
-    extents: &mut BerExtents<'_>,
+    extents: &mut BTreeMap<usize, usize>,
     value: BerValue<'_>,
 ) -> Result<(), CmsError> {
     let mut algorithm = Ber::new(value);
@@ -319,7 +301,7 @@ fn validate_algorithm_identifier(
 
 fn validate_octet_string(
     ctx: &DecodeContext<'_>,
-    extents: &mut BerExtents<'_>,
+    extents: &mut BTreeMap<usize, usize>,
     tag: u8,
     value: BerValue<'_>,
 ) -> Result<(), CmsError> {
@@ -341,7 +323,7 @@ fn validate_octet_string(
 
 fn validate_subject_key_identifier(
     ctx: &DecodeContext<'_>,
-    extents: &mut BerExtents<'_>,
+    extents: &mut BTreeMap<usize, usize>,
     tag: u8,
     value: BerValue<'_>,
 ) -> Result<(), CmsError> {
@@ -362,7 +344,7 @@ fn validate_subject_key_identifier(
 
 fn validate_digest_algorithms(
     ctx: &DecodeContext<'_>,
-    extents: &mut BerExtents<'_>,
+    extents: &mut BTreeMap<usize, usize>,
     value: BerValue<'_>,
 ) -> Result<(), CmsError> {
     let mut algorithms = Ber::new(value);
@@ -379,7 +361,7 @@ fn validate_digest_algorithms(
 
 fn validate_signer_identifier(
     ctx: &DecodeContext<'_>,
-    extents: &mut BerExtents<'_>,
+    extents: &mut BTreeMap<usize, usize>,
     tag: u8,
     value: BerValue<'_>,
 ) -> Result<(), CmsError> {
@@ -402,7 +384,7 @@ fn validate_signer_identifier(
 
 fn validate_signer_info(
     ctx: &DecodeContext<'_>,
-    extents: &mut BerExtents<'_>,
+    extents: &mut BTreeMap<usize, usize>,
     value: BerValue<'_>,
 ) -> Result<(), CmsError> {
     let mut signer = Ber::new(value);
@@ -426,7 +408,7 @@ fn validate_signer_info(
 
 fn validate_signer_infos(
     ctx: &DecodeContext<'_>,
-    extents: &mut BerExtents<'_>,
+    extents: &mut BTreeMap<usize, usize>,
     value: BerValue<'_>,
 ) -> Result<(), CmsError> {
     let mut signers = Ber::new(value);
@@ -452,8 +434,10 @@ fn require_empty(ber: &Ber<'_>) -> Result<(), &'static str> {
 /// This admits structure only. It does not compute a content digest, verify a
 /// signature value, select a public key, or apply a caller trust policy.
 fn validate_detached_cms(ctx: &DecodeContext<'_>, input: &[u8]) -> Result<(), CmsError> {
-    let mut extent_storage = BerExtents::new(ctx)?;
-    let extents = &mut extent_storage;
+    let mut storage = ctx.reserve_scoped(0, "STEP BER extent storage")?;
+    storage.with_storage(|| {
+    let mut ends = BTreeMap::new();
+    let extents = &mut ends;
     let mut content_info = Ber::new(BerValue::root(input));
     let content_info_value = content_info.take_tag(ctx, extents, 0x30)?;
     require_empty(&content_info)?;
@@ -507,6 +491,7 @@ fn validate_detached_cms(ctx: &DecodeContext<'_>, input: &[u8]) -> Result<(), Cm
         }
     }
     Err(CmsError::Invalid("CMS SignedData has no signer set"))
+    })
 }
 
 #[cfg(test)]

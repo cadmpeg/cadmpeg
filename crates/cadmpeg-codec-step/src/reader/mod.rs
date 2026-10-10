@@ -320,8 +320,9 @@ pub(crate) fn decode(
     ctx: &DecodeContext<'_>,
     packaging: Packaging,
 ) -> Result<Decoded, CodecError> {
-    let parsed = parse::parse_with_context(input, ctx, "STEP bare parsed graph storage")?;
-    decode_exchange(input, parsed.exchange, &parsed.diagnostics, ctx, packaging)
+    let mut graph_storage = ctx.reserve_scoped(0, "STEP bare parsed graph storage")?;
+    let (exchange, diagnostics) = parse::parse_with_context(input, ctx, &mut graph_storage)?;
+    decode_exchange(input, exchange, &diagnostics, ctx, packaging)
 }
 
 pub(crate) fn decode_exchange(
