@@ -13,6 +13,7 @@ mod positional_mixed;
 mod resource_cache;
 mod round_envelopes;
 mod rows;
+mod scalar_dispatch;
 mod scan;
 
 const EPS_FRAME_COMPONENT: f64 = 1.0e-12;

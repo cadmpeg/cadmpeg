@@ -4174,6 +4174,9 @@ fn scalar_tokens(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Result<Vec<SurfaceParameterScalar>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut tokens = Vec::new();
     let positional_plane_corners = (kind == SurfaceKind::Plane)
         .then(|| first_coordinate_plane_corner_tokens(body, cache))
@@ -4195,8 +4198,11 @@ fn scalar_tokens(
     } else {
         None
     };
-    let mut cursor = 0;
-    while cursor < body.len() {
+    let mut positions = 0..body.len();
+    while !positions.is_empty() {
+        let Some(cursor) = ctx.next_charged(&mut positions, "creo surface scalar token dispatch")? else {
+            break;
+        };
         if let Some(&(value, start, end)) = positional_plane_corners
             .as_ref()
             .and_then(|corners| corners.iter().find(|(_, start, _)| *start == cursor))
@@ -4208,23 +4214,23 @@ fn scalar_tokens(
                 raw,
                 offset: start,
             });
-            cursor = end;
+            positions.start = end;
             continue;
         }
         if let Some((_, end, _)) = outline_markers
             .iter()
             .find(|(offset, _, _)| *offset == cursor)
         {
-            cursor = *end;
+            positions.start = *end;
             continue;
         }
         if let Some(layout) = radius_layout {
             if cursor == layout.overrides.offset {
-                cursor = layout.radius2_start;
+                positions.start = layout.radius2_start;
                 continue;
             }
             if cursor == layout.radius2_end {
-                cursor = layout.radius1_start;
+                positions.start = layout.radius1_start;
                 continue;
             }
         }
@@ -4240,7 +4246,7 @@ fn scalar_tokens(
                     raw,
                     offset: layout.start,
                 });
-                cursor = layout.end;
+                positions.start = layout.end;
                 continue;
             }
         }
@@ -4250,24 +4256,20 @@ fn scalar_tokens(
                     .iter()
                     .any(|(_, start, _)| cursor < *start && next > *start)
             }) {
-                cursor += 1;
                 continue;
             }
             if outline_markers
                 .iter()
                 .any(|(offset, _, _)| cursor < *offset && next > *offset)
             {
-                cursor += 1;
                 continue;
             }
             if radius_layout.is_some_and(|layout| {
                 cursor < layout.overrides.offset && next > layout.overrides.offset
             }) {
-                cursor += 1;
                 continue;
             }
             if cone_half_angle.is_some_and(|layout| cursor < layout.start && next > layout.start) {
-                cursor += 1;
                 continue;
             }
             let raw = ctx.copy_retained(&body[cursor..next], "creo surface scalar token bytes")?;
@@ -4277,9 +4279,7 @@ fn scalar_tokens(
                 raw,
                 offset: cursor,
             });
-            cursor = next;
-        } else {
-            cursor += 1;
+            positions.start = next;
         }
     }
     Ok(tokens)
