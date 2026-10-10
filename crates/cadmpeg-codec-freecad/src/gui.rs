@@ -557,7 +557,8 @@ impl<'source, 'ctx> TopologyIndex<'source, 'ctx> {
             else {
                 break;
             };
-            let payload_key = crate::native::id_key_charged(ctx, payload_id, "FCStd GUI identity key")?;
+            let payload_key =
+                crate::native::id_key_charged(ctx, payload_id, "FCStd GUI identity key")?;
             if ctx
                 .get_btree_map(
                     &self.bodies,
@@ -613,13 +614,10 @@ impl<'source, 'ctx> TopologyIndex<'source, 'ctx> {
             }
             let candidates = &candidates[..count];
             let key = &candidates[0].key[..payload_key.len()];
-            if self.body_storage.is_none() {
-                self.body_storage = Some(ctx.reserve_scoped(0, "FCStd GUI body payload groups")?);
-            }
-            let storage = self
-                .body_storage
-                .as_mut()
-                .expect("body payload storage initialized for a matching group");
+            let storage = match &mut self.body_storage {
+                Some(storage) => storage,
+                slot @ None => slot.insert(ctx.reserve_scoped(0, "FCStd GUI body payload groups")?),
+            };
             let mut matches = candidates.iter();
             while matches.len() != 0 {
                 let Some(candidate) =
@@ -665,9 +663,17 @@ impl<'source, 'ctx> TopologyIndex<'source, 'ctx> {
             else {
                 break;
             };
-            let key = crate::native::id_key_charged(ctx, body.id.as_str(), "FCStd GUI body identity key")?;
+            let key = crate::native::id_key_charged(
+                ctx,
+                body.id.as_str(),
+                "FCStd GUI body identity key",
+            )?;
             if ctx
-                .position_by(key.as_bytes(), |byte| Ok(*byte == b':'), "FCStd GUI body payload key separator")?
+                .position_by(
+                    key.as_bytes(),
+                    |byte| Ok(*byte == b':'),
+                    "FCStd GUI body payload key separator",
+                )?
                 .is_none()
             {
                 continue;
@@ -1379,7 +1385,8 @@ fn transfer_schema_one<'ctx>(
                 target: AppearanceTarget::Body(
                     body.try_clone_for_decode(ctx, "FCStd GUI binding body identity")?,
                 ),
-                appearance: appearance.id
+                appearance: appearance
+                    .id
                     .try_clone_for_decode(ctx, "FCStd GUI binding appearance identity")?,
                 source_entity_id: Some(
                     ctx.copy_retained_text(object_id, "FCStd GUI binding source identity")?,
@@ -2331,13 +2338,11 @@ fn shape_payload_prefixes(
             break;
         };
         ctx.reserve_vec(&mut prefixes, 1, "FCStd GUI payload prefixes")?;
-        prefixes.push(
-            ctx.retained_suffix(
-                crate::native::id_key_charged(ctx, payload, "FCStd GUI identity key")?,
-                ":",
-                "FCStd GUI payload prefix text",
-            )?,
-        );
+        prefixes.push(ctx.retained_suffix(
+            crate::native::id_key_charged(ctx, payload, "FCStd GUI identity key")?,
+            ":",
+            "FCStd GUI payload prefix text",
+        )?);
     }
     Ok(prefixes)
 }
@@ -2429,24 +2434,24 @@ fn transfer_primitive_appearance(
         })
         .map(|(key, storage)| (storage, key))?;
     let (appearance_id, label, property, size, binding_key, object_type, precedence) = match style {
-                PrimitiveStyle::Line(width) => (
-                    edge_appearance_id(ctx, &provider_key)?,
-                    "line",
-                    cadmpeg_core::nonblank_literal!("line_width"),
-                    width,
-                    cadmpeg_ir::identity_key!("edge"),
-                    "ViewProvider Edge",
-                    "edge_over_object",
-                ),
-                PrimitiveStyle::Point(size) => (
-                    vertex_appearance_id(ctx, &provider_key)?,
-                    "point",
-                    cadmpeg_core::nonblank_literal!("point_size"),
-                    size,
-                    cadmpeg_ir::identity_key!("vertex"),
-                    "ViewProvider Vertex",
-                    "vertex_over_object",
-                ),
+        PrimitiveStyle::Line(width) => (
+            edge_appearance_id(ctx, &provider_key)?,
+            "line",
+            cadmpeg_core::nonblank_literal!("line_width"),
+            width,
+            cadmpeg_ir::identity_key!("edge"),
+            "ViewProvider Edge",
+            "edge_over_object",
+        ),
+        PrimitiveStyle::Point(size) => (
+            vertex_appearance_id(ctx, &provider_key)?,
+            "point",
+            cadmpeg_core::nonblank_literal!("point_size"),
+            size,
+            cadmpeg_ir::identity_key!("vertex"),
+            "ViewProvider Vertex",
+            "vertex_over_object",
+        ),
     };
     let admitted_size = match size {
         PrimitiveSize::Admitted(value) if value.get() >= 0.0 => Some(value),
@@ -2512,7 +2517,7 @@ fn transfer_primitive_appearance(
             }
             properties
         },
-     };
+    };
     let mut binding_sources = targets.into_iter().enumerate();
     while binding_sources.len() != 0 {
         let Some((index, target)) =
@@ -2529,7 +2534,8 @@ fn transfer_primitive_appearance(
                 format_args!("fcstd:appearance:binding#{binding_key}:{provider_key}:{index}"),
             )?,
             target,
-            appearance: appearance.id
+            appearance: appearance
+                .id
                 .try_clone_for_decode(ctx, "FCStd GUI binding appearance identity")?,
             source_entity_id: Some(
                 ctx.copy_retained_text(object_id, "FCStd GUI binding source identity")?,
@@ -5933,17 +5939,34 @@ fn parse_float_list(
     entry_name: &str,
 ) -> Result<(), CodecError> {
     let count = view.req_u32_le()?;
-    let valid = read_gui_counted(ctx, &mut view, count, 8, |view| {
-        let value = view.f64_le()?;
-        Some(value.is_finite())
-    }, "FCStd GUI float-list entries")?.ok_or_else(|| {
-        gui_malformed(ctx, format_args!("float-list entry {entry_name} count exceeds its payload"))
+    let valid = read_gui_counted(
+        ctx,
+        &mut view,
+        count,
+        8,
+        |view| {
+            let value = view.f64_le()?;
+            Some(value.is_finite())
+        },
+        "FCStd GUI float-list entries",
+    )?
+    .ok_or_else(|| {
+        gui_malformed(
+            ctx,
+            format_args!("float-list entry {entry_name} count exceeds its payload"),
+        )
     })?;
     if !valid {
-        return Err(gui_malformed(ctx, format_args!("float-list entry {entry_name} has a non-finite value")));
+        return Err(gui_malformed(
+            ctx,
+            format_args!("float-list entry {entry_name} has a non-finite value"),
+        ));
     }
     if !view.is_empty() {
-        return Err(gui_malformed(ctx, format_args!("float-list entry {entry_name} has trailing bytes")));
+        return Err(gui_malformed(
+            ctx,
+            format_args!("float-list entry {entry_name} has trailing bytes"),
+        ));
     }
     Ok(())
 }
@@ -5954,17 +5977,34 @@ fn parse_vector_list(
     entry_name: &str,
 ) -> Result<(), CodecError> {
     let count = view.req_u32_le()?;
-    let valid = read_gui_counted(ctx, &mut view, count, 24, |view| {
-        let value = [view.f64_le()?, view.f64_le()?, view.f64_le()?];
-        Some(value.iter().all(|scalar| scalar.is_finite()))
-    }, "FCStd GUI vector-list entries")?.ok_or_else(|| {
-        gui_malformed(ctx, format_args!("vector-list entry {entry_name} count exceeds its payload"))
+    let valid = read_gui_counted(
+        ctx,
+        &mut view,
+        count,
+        24,
+        |view| {
+            let value = [view.f64_le()?, view.f64_le()?, view.f64_le()?];
+            Some(value.iter().all(|scalar| scalar.is_finite()))
+        },
+        "FCStd GUI vector-list entries",
+    )?
+    .ok_or_else(|| {
+        gui_malformed(
+            ctx,
+            format_args!("vector-list entry {entry_name} count exceeds its payload"),
+        )
     })?;
     if !valid {
-        return Err(gui_malformed(ctx, format_args!("vector-list entry {entry_name} has a non-finite value")));
+        return Err(gui_malformed(
+            ctx,
+            format_args!("vector-list entry {entry_name} has a non-finite value"),
+        ));
     }
     if !view.is_empty() {
-        return Err(gui_malformed(ctx, format_args!("vector-list entry {entry_name} has trailing bytes")));
+        return Err(gui_malformed(
+            ctx,
+            format_args!("vector-list entry {entry_name} has trailing bytes"),
+        ));
     }
     Ok(())
 }
@@ -5975,17 +6015,42 @@ fn parse_placement_list(
     entry_name: &str,
 ) -> Result<(), CodecError> {
     let count = view.req_u32_le()?;
-    let valid = read_gui_counted(ctx, &mut view, count, 56, |view| {
-        let value = [view.f64_le()?, view.f64_le()?, view.f64_le()?, view.f64_le()?, view.f64_le()?, view.f64_le()?, view.f64_le()?];
-        Some(value.iter().all(|scalar| scalar.is_finite()))
-    }, "FCStd GUI placement-list entries")?.ok_or_else(|| {
-        gui_malformed(ctx, format_args!("placement-list entry {entry_name} count exceeds its payload"))
+    let valid = read_gui_counted(
+        ctx,
+        &mut view,
+        count,
+        56,
+        |view| {
+            let value = [
+                view.f64_le()?,
+                view.f64_le()?,
+                view.f64_le()?,
+                view.f64_le()?,
+                view.f64_le()?,
+                view.f64_le()?,
+                view.f64_le()?,
+            ];
+            Some(value.iter().all(|scalar| scalar.is_finite()))
+        },
+        "FCStd GUI placement-list entries",
+    )?
+    .ok_or_else(|| {
+        gui_malformed(
+            ctx,
+            format_args!("placement-list entry {entry_name} count exceeds its payload"),
+        )
     })?;
     if !valid {
-        return Err(gui_malformed(ctx, format_args!("placement-list entry {entry_name} has a non-finite value")));
+        return Err(gui_malformed(
+            ctx,
+            format_args!("placement-list entry {entry_name} has a non-finite value"),
+        ));
     }
     if !view.is_empty() {
-        return Err(gui_malformed(ctx, format_args!("placement-list entry {entry_name} has trailing bytes")));
+        return Err(gui_malformed(
+            ctx,
+            format_args!("placement-list entry {entry_name} has trailing bytes"),
+        ));
     }
     Ok(())
 }
@@ -5996,19 +6061,36 @@ fn parse_fillet_edges(
     entry_name: &str,
 ) -> Result<(), CodecError> {
     let count = view.req_u32_le()?;
-    let valid = read_gui_counted(ctx, &mut view, count, 20, |view| {
-        view.i32_le()?;
-        let radius1 = view.f64_le()?;
-        let radius2 = view.f64_le()?;
-        Some(radius1.is_finite() && radius2.is_finite())
-    }, "FCStd GUI fillet-edge entries")?.ok_or_else(|| {
-        gui_malformed(ctx, format_args!("fillet-edges entry {entry_name} count exceeds its payload"))
+    let valid = read_gui_counted(
+        ctx,
+        &mut view,
+        count,
+        20,
+        |view| {
+            view.i32_le()?;
+            let radius1 = view.f64_le()?;
+            let radius2 = view.f64_le()?;
+            Some(radius1.is_finite() && radius2.is_finite())
+        },
+        "FCStd GUI fillet-edge entries",
+    )?
+    .ok_or_else(|| {
+        gui_malformed(
+            ctx,
+            format_args!("fillet-edges entry {entry_name} count exceeds its payload"),
+        )
     })?;
     if !valid {
-        return Err(gui_malformed(ctx, format_args!("fillet-edges entry {entry_name} has a non-finite radius")));
+        return Err(gui_malformed(
+            ctx,
+            format_args!("fillet-edges entry {entry_name} has a non-finite radius"),
+        ));
     }
     if !view.is_empty() {
-        return Err(gui_malformed(ctx, format_args!("fillet-edges entry {entry_name} has trailing bytes")));
+        return Err(gui_malformed(
+            ctx,
+            format_args!("fillet-edges entry {entry_name} has trailing bytes"),
+        ));
     }
     Ok(())
 }
@@ -6073,7 +6155,10 @@ fn parse_material_list<'data>(
         return Err(refusal.into());
     }
     let count = view.counted(count.into(), 24).ok_or_else(|| {
-        gui_malformed(ctx, format_args!("GUI material list {property_id} count exceeds its payload"))
+        gui_malformed(
+            ctx,
+            format_args!("GUI material list {property_id} count exceeds its payload"),
+        )
     })?;
     let mut materials = ctx.collection_vec(count.get(), "FCStd GUI material entries")?;
     let mut indices = 0..count.get();
@@ -6088,7 +6173,10 @@ fn parse_material_list<'data>(
         let shininess = view.req_f32_le()?;
         let transparency = view.req_f32_le()?;
         let invalid = || {
-            gui_malformed(ctx, format_args!("GUI material list {property_id} has non-finite scalars"))
+            gui_malformed(
+                ctx,
+                format_args!("GUI material list {property_id} has non-finite scalars"),
+            )
         };
         materials.push(GuiMaterial {
             ambient: convert_packed_alpha(ambient, requires_alpha_conversion),
@@ -6267,30 +6355,53 @@ fn transfer_shape_appearances<'source, 'ir, 'ctx>(
             let counts = match &mut binding_counts {
                 Some(counts) => counts,
                 slot @ None => {
-                    let (counts, storage) = ctx.with_scoped_storage("FCStd GUI legacy binding counts", || {
-                        let mut counts = BTreeMap::<String, usize>::new();
-                        let mut bindings = plan.bindings.iter();
-                        while bindings.len() != 0 {
-                            let Some(binding) = ctx.next_charged(&mut bindings, "FCStd GUI legacy binding count sources")? else {
-                                break;
-                            };
-                            if !binding.appearance.as_str().starts_with(OBJECT_APPEARANCE_ID_PREFIX) {
-                                continue;
+                    let (counts, storage) =
+                        ctx.with_scoped_storage("FCStd GUI legacy binding counts", || {
+                            let mut counts = BTreeMap::<String, usize>::new();
+                            let mut bindings = plan.bindings.iter();
+                            while bindings.len() != 0 {
+                                let Some(binding) = ctx.next_charged(
+                                    &mut bindings,
+                                    "FCStd GUI legacy binding count sources",
+                                )?
+                                else {
+                                    break;
+                                };
+                                if !binding
+                                    .appearance
+                                    .as_str()
+                                    .starts_with(OBJECT_APPEARANCE_ID_PREFIX)
+                                {
+                                    continue;
+                                }
+                                if let Some(count) = ctx.get_mut_btree_map(
+                                    &mut counts,
+                                    binding.appearance.as_str(),
+                                    "FCStd GUI legacy binding count lookup",
+                                )? {
+                                    *count += 1;
+                                } else {
+                                    let key = ctx.copy_retained_text(
+                                        binding.appearance.as_str(),
+                                        "FCStd GUI legacy binding count identity",
+                                    )?;
+                                    ctx.insert_btree_map(
+                                        &mut counts,
+                                        key,
+                                        1,
+                                        "FCStd GUI legacy binding counts",
+                                    )?;
+                                }
                             }
-                            if let Some(count) = ctx.get_mut_btree_map(&mut counts, binding.appearance.as_str(), "FCStd GUI legacy binding count lookup")? {
-                                *count += 1;
-                            } else {
-                                let key = ctx.copy_retained_text(binding.appearance.as_str(), "FCStd GUI legacy binding count identity")?;
-                                ctx.insert_btree_map(&mut counts, key, 1, "FCStd GUI legacy binding counts")?;
-                            }
-                        }
-                        Ok::<_, CodecError>(counts)
-                    })?;
+                            Ok::<_, CodecError>(counts)
+                        })?;
                     binding_count_storage = Some(storage);
                     slot.insert(counts)
                 }
             };
-            let legacy_id = plan.remove_appearance_storage.with_storage(|| object_appearance_id(ctx, &provider_key))?;
+            let legacy_id = plan
+                .remove_appearance_storage
+                .with_storage(|| object_appearance_id(ctx, &provider_key))?;
             let removed_count = ctx
                 .get_btree_map(
                     counts,
@@ -6351,7 +6462,8 @@ fn transfer_shape_appearances<'source, 'ir, 'ctx>(
             plan.appearance_storage.with_storage(|| {
                 ctx.reserve_vec(&mut plan.appearances, 1, "FCStd GUI planned appearances")
             })?;
-            let appearance = material_appearance(ctx, appearance_id, &provider.name, index, material)?;
+            let appearance =
+                material_appearance(ctx, appearance_id, &provider.name, index, material)?;
             if materials.len() == 1 {
                 let mut bodies = body_ids.iter().enumerate();
                 while bodies.len() != 0 {
@@ -6380,7 +6492,8 @@ fn transfer_shape_appearances<'source, 'ir, 'ctx>(
                         target: AppearanceTarget::Body(
                             body.try_clone_for_decode(ctx, "FCStd GUI binding body identity")?,
                         ),
-                        appearance: appearance.id
+                        appearance: appearance
+                            .id
                             .try_clone_for_decode(ctx, "FCStd GUI binding appearance identity")?,
                         source_entity_id: Some(
                             ctx.copy_retained_text(object_id, "FCStd GUI binding source identity")?,
@@ -6464,11 +6577,7 @@ where
             else {
                 break;
             };
-            ctx.push_vec(
-                &mut body_ids,
-                *body,
-                "FCStd GUI displayed shape bodies",
-            )?;
+            ctx.push_vec(&mut body_ids, *body, "FCStd GUI displayed shape bodies")?;
         }
     }
     Ok(body_ids)
@@ -6985,7 +7094,11 @@ fn transfer_topology_colors<'source, 'ir, 'ctx>(
                         });
                         emitted_appearance = true;
                     }
-                    let topology_key = crate::native::id_key_charged(ctx, topology_id.as_str(), "FCStd GUI identity key")?;
+                    let topology_key = crate::native::id_key_charged(
+                        ctx,
+                        topology_id.as_str(),
+                        "FCStd GUI identity key",
+                    )?;
                     let kind_key = topology_binding_kind(kind);
                     plan.binding_storage.with_storage(|| {
                         ctx.reserve_vec(&mut plan.bindings, 1, "FCStd GUI planned bindings")
@@ -7239,7 +7352,11 @@ mod shape_association_tests {
         ir.model.bodies[0].visible = Some(true);
         ir.model.bodies[0].color = Some(cadmpeg_ir::topology::Color::from_rgba8(1, 2, 3, 255));
         let object = crate::native::ObjectRecord {
-            identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#P".into(), "P".into()).expect("object identity"),
+            identity: crate::native::object_identity::ObjectIdentity::try_new(
+                "fcstd:native:object#P".into(),
+                "P".into(),
+            )
+            .expect("object identity"),
             type_name: "Part::Feature".into(),
             persistent_id: None,
             view_type: None,
@@ -7265,7 +7382,8 @@ mod shape_association_tests {
         let text = r#"<Document><Camera settings=""/><ViewProviderData Count="1"><ViewProvider name="P"><Properties Count="0"/></ViewProvider></ViewProviderData></Document>"#;
         let xml = roxmltree::Document::parse(text).expect("GUI XML");
         crate::test_support::with_service_context(text.as_bytes(), |ctx| {
-            let (_, plan) = super::transfer_schema_one(ctx, &ir, text, &xml, None, None, &sources).expect("GUI transfer");
+            let (_, plan) = super::transfer_schema_one(ctx, &ir, text, &xml, None, None, &sources)
+                .expect("GUI transfer");
             plan.apply(ctx, &mut ir).expect("body assignments");
             assert_eq!(ir.model.bodies[0].visible, None);
             assert_eq!(ir.model.bodies[0].color, None);
@@ -7276,7 +7394,10 @@ mod shape_association_tests {
         super::Graph {
             providers: vec![crate::native::GuiViewProviderRecord {
                 id: "fcstd:native:gui-view-provider#P".into(),
-                object: Some(cadmpeg_core::text::NonBlankString::try_from("object").expect("object identity")),
+                object: Some(
+                    cadmpeg_core::text::NonBlankString::try_from("object")
+                        .expect("object identity"),
+                ),
                 name: "P".into(),
                 expanded: None,
                 order: 0,
@@ -7291,7 +7412,8 @@ mod shape_association_tests {
                 order: 0,
                 values: Vec::new(),
                 side_entries: Vec::new(),
-                xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0).expect("property XML"),
+                xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0)
+                    .expect("property XML"),
             }],
             ..Default::default()
         }
@@ -7327,9 +7449,21 @@ mod shape_association_tests {
         };
         crate::test_support::with_service_context(&[], |ctx| {
             let mut plan = super::AppearancePlan::new(ctx).expect("plan storage");
-            let error = super::transfer_shape_appearances(ctx, &mut plan, &graph, &materials, &sources, &ir, &mut None, &mut None, &mut Vec::new())
-                .expect_err("ambiguous single-material shape");
-            assert!(matches!(error, cadmpeg_core::CodecError::Malformed(message) if message == expected));
+            let error = super::transfer_shape_appearances(
+                ctx,
+                &mut plan,
+                &graph,
+                &materials,
+                &sources,
+                &ir,
+                &mut None,
+                &mut None,
+                &mut Vec::new(),
+            )
+            .expect_err("ambiguous single-material shape");
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::Malformed(message) if message == expected)
+            );
             assert!(plan.appearances.is_empty());
             assert!(plan.bindings.is_empty());
             assert!(plan.remove_appearances.is_empty());
@@ -7348,7 +7482,13 @@ mod shape_association_tests {
     fn single_material_rejects_duplicate_element_maps() {
         let map = element_map("property", vec![group("Face")]);
         assert_single_material_ambiguity(
-            &[map.clone(), ElementMapRecord { id: "map-2".into(), ..map }],
+            &[
+                map.clone(),
+                ElementMapRecord {
+                    id: "map-2".into(),
+                    ..map
+                },
+            ],
             "Shape property property has multiple element maps",
         );
     }
@@ -7374,22 +7514,41 @@ mod shape_association_tests {
             let mut plan = super::AppearancePlan::new(ctx).expect("plan storage");
             let key = super::provider_identity_key(ctx, "P").expect("provider key");
             let legacy_id = super::object_appearance_id(ctx, &key).expect("legacy identity");
-            plan.appearances.push(super::material_appearance(ctx, legacy_id.clone(), "P", 0, &material()).expect("legacy appearance"));
+            plan.appearances.push(
+                super::material_appearance(ctx, legacy_id.clone(), "P", 0, &material())
+                    .expect("legacy appearance"),
+            );
             for index in 0..2 {
-                plan.bindings.push(cadmpeg_ir::appearance::AppearanceBinding {
-                    id: cadmpeg_ir::ids::AppearanceBindingId::mint(format!("fcstd:appearance:binding#legacy:{index}")).expect("binding identity"),
-                    target: cadmpeg_ir::appearance::AppearanceTarget::Body(ir.model.bodies[0].id.clone()),
-                    appearance: legacy_id.clone(),
-                    source_entity_id: None,
-                    object_type: None,
-                    visible: None,
-                    channels: std::collections::BTreeMap::new(),
-                });
+                plan.bindings
+                    .push(cadmpeg_ir::appearance::AppearanceBinding {
+                        id: cadmpeg_ir::ids::AppearanceBindingId::mint(format!(
+                            "fcstd:appearance:binding#legacy:{index}"
+                        ))
+                        .expect("binding identity"),
+                        target: cadmpeg_ir::appearance::AppearanceTarget::Body(
+                            ir.model.bodies[0].id.clone(),
+                        ),
+                        appearance: legacy_id.clone(),
+                        source_entity_id: None,
+                        object_type: None,
+                        visible: None,
+                        channels: std::collections::BTreeMap::new(),
+                    });
             }
             let mut shape = None;
             let mut topology = None;
-            super::transfer_shape_appearances(ctx, &mut plan, &graph, &materials, &sources, &ir, &mut shape, &mut topology, &mut Vec::new())
-                .expect("single-material transfer");
+            super::transfer_shape_appearances(
+                ctx,
+                &mut plan,
+                &graph,
+                &materials,
+                &sources,
+                &ir,
+                &mut shape,
+                &mut topology,
+                &mut Vec::new(),
+            )
+            .expect("single-material transfer");
             assert_eq!(plan.removed_binding_count, 2);
             assert!(!topology.as_ref().expect("body demand").face_built);
             assert!(!topology.as_ref().expect("body demand").edge_built);
@@ -7398,13 +7557,18 @@ mod shape_association_tests {
             drop(topology);
             plan.apply(ctx, &mut ir).expect("material replacement");
             assert_eq!(ir.model.appearances.len(), 1);
-            assert_eq!(ir.model.appearances[0].id.as_str(), "fcstd:appearance:shape-material#P:1");
+            assert_eq!(
+                ir.model.appearances[0].id.as_str(),
+                "fcstd:appearance:shape-material#P:1"
+            );
             assert_eq!(ir.model.appearance_bindings.len(), 1);
-            assert_eq!(ir.model.appearance_bindings[0].appearance, ir.model.appearances[0].id);
+            assert_eq!(
+                ir.model.appearance_bindings[0].appearance,
+                ir.model.appearances[0].id
+            );
             assert_eq!(ir.model.bodies[0].color, ir.model.appearances[0].base_color);
         });
     }
-
 
     #[test]
     fn source_indexes_build_only_for_requested_channels() {
@@ -7580,16 +7744,13 @@ mod shape_association_tests {
         let ir = shape_ir();
         let properties = [shape_property("property")];
         let payloads = [shape_payload("payload", "property")];
-        crate::test_support::materialized_refusal_at(
-            "FCStd GUI body update identity",
-            |ctx| {
-                let mut topology = TopologyIndex::new(&ir);
-                let mut shape = ShapeIndex::new(ctx, &properties, &payloads, &[])?;
-                let bodies = displayed_shape_bodies(ctx, &mut topology, "object", &mut shape)?;
-                let mut plan = super::AppearancePlan::new(ctx)?;
-                super::push_body_update(ctx, &mut plan, bodies[0], super::Assignment::Keep, Ok(None))
-            },
-        );
+        crate::test_support::materialized_refusal_at("FCStd GUI body update identity", |ctx| {
+            let mut topology = TopologyIndex::new(&ir);
+            let mut shape = ShapeIndex::new(ctx, &properties, &payloads, &[])?;
+            let bodies = displayed_shape_bodies(ctx, &mut topology, "object", &mut shape)?;
+            let mut plan = super::AppearancePlan::new(ctx)?;
+            super::push_body_update(ctx, &mut plan, bodies[0], super::Assignment::Keep, Ok(None))
+        });
     }
 
     #[test]
@@ -7621,10 +7782,7 @@ mod shape_association_tests {
             .expect("empty root is within policy");
         let body_ids = select_shape_bodies(&ctx, &index.bodies, ["payload", "payload"])
             .expect("service policy admits both source occurrences");
-        assert_eq!(
-            body_ids,
-            [&ir.model.bodies[0].id, &ir.model.bodies[0].id]
-        );
+        assert_eq!(body_ids, [&ir.model.bodies[0].id, &ir.model.bodies[0].id]);
     }
 
     #[test]

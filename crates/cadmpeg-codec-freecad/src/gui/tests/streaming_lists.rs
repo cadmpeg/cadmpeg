@@ -24,8 +24,11 @@ fn validate_cases(
 
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty input");
-    let error = parse(&ctx, View::over_retained(&bytes), "values").expect_err("record work must be admitted");
-    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits));
+    let error = parse(&ctx, View::over_retained(&bytes), "values")
+        .expect_err("record work must be admitted");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits)
+    );
 
     for (count, nonfinite, trailing, expected) in [
         (2_u32, true, false, "count exceeds its payload".to_owned()),
@@ -41,7 +44,8 @@ fn validate_cases(
             bytes.push(0);
         }
         crate::test_support::with_service_context(&[], |ctx| {
-            let error = parse(ctx, View::over_retained(&bytes), "values").expect_err("invalid list");
+            let error =
+                parse(ctx, View::over_retained(&bytes), "values").expect_err("invalid list");
             assert!(matches!(error, CodecError::Malformed(message)
                 if message == format!("{label} entry values {expected}")));
         });
@@ -55,17 +59,35 @@ fn float_list_streaming_preserves_validation_and_error_order() {
 
 #[test]
 fn vector_list_streaming_preserves_validation_and_error_order() {
-    validate_cases(super::super::parse_vector_list, "vector-list", 24, 0, "value");
+    validate_cases(
+        super::super::parse_vector_list,
+        "vector-list",
+        24,
+        0,
+        "value",
+    );
 }
 
 #[test]
 fn placement_list_streaming_preserves_validation_and_error_order() {
-    validate_cases(super::super::parse_placement_list, "placement-list", 56, 0, "value");
+    validate_cases(
+        super::super::parse_placement_list,
+        "placement-list",
+        56,
+        0,
+        "value",
+    );
 }
 
 #[test]
 fn fillet_list_streaming_preserves_validation_and_error_order() {
-    validate_cases(super::super::parse_fillet_edges, "fillet-edges", 20, 4, "radius");
+    validate_cases(
+        super::super::parse_fillet_edges,
+        "fillet-edges",
+        20,
+        4,
+        "radius",
+    );
 }
 
 #[test]
@@ -79,7 +101,11 @@ fn material_list_builds_one_cache_and_reads_version_three_strings() {
         bytes.extend(0.25_f32.to_le_bytes());
         if version == 3 {
             for text in ["name", "description", "material-id"] {
-                bytes.extend(u32::try_from(text.len()).expect("text length").to_le_bytes());
+                bytes.extend(
+                    u32::try_from(text.len())
+                        .expect("text length")
+                        .to_le_bytes(),
+                );
                 bytes.extend(text.as_bytes());
             }
         }
@@ -87,9 +113,16 @@ fn material_list_builds_one_cache_and_reads_version_three_strings() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty input");
-        let (materials, _storage) = ctx.with_scoped_storage("material cache", || {
-            super::super::parse_material_list(&ctx, View::over_retained(&bytes), version, "material", true)
-        })
+        let (materials, _storage) = ctx
+            .with_scoped_storage("material cache", || {
+                super::super::parse_material_list(
+                    &ctx,
+                    View::over_retained(&bytes),
+                    version,
+                    "material",
+                    true,
+                )
+            })
             .expect("material cache");
         assert_eq!(materials.len(), 1);
         let material = &materials[0];
@@ -107,12 +140,23 @@ fn material_list_builds_one_cache_and_reads_version_three_strings() {
 fn material_list_refuses_real_cache_storage() {
     let mut bytes = 1_u32.to_le_bytes().to_vec();
     bytes.extend([0_u8; 24]);
-    for dimension in [ResourceDimension::CollectionItems, ResourceDimension::MaterializedBytes] {
-        let error = crate::test_support::refusal_at(dimension, &[], "FCStd GUI material entries", |ctx| {
-            ctx.with_scoped_storage("material cache", || {
-                super::super::parse_material_list(ctx, View::over_retained(&bytes), 2, "material", false)
-            }).map(|_| ())
-        });
+    for dimension in [
+        ResourceDimension::CollectionItems,
+        ResourceDimension::MaterializedBytes,
+    ] {
+        let error =
+            crate::test_support::refusal_at(dimension, &[], "FCStd GUI material entries", |ctx| {
+                ctx.with_scoped_storage("material cache", || {
+                    super::super::parse_material_list(
+                        ctx,
+                        View::over_retained(&bytes),
+                        2,
+                        "material",
+                        false,
+                    )
+                })
+                .map(|_| ())
+            });
         assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == dimension));
     }
 }
@@ -133,7 +177,13 @@ fn material_list_preserves_bounds_and_scalar_error_order() {
             bytes.push(0);
         }
         crate::test_support::with_service_context(&[], |ctx| {
-            let error = match super::super::parse_material_list(ctx, View::over_retained(&bytes), 2, "material", false) {
+            let error = match super::super::parse_material_list(
+                ctx,
+                View::over_retained(&bytes),
+                2,
+                "material",
+                false,
+            ) {
                 Ok(_) => panic!("invalid material list must be refused"),
                 Err(error) => error,
             };
