@@ -436,9 +436,10 @@ fn scale_feature_operation(
         } => {}
         FeatureOperation::Primitive { solid, .. } => scale_primitive_solid(ctx, solid, scale)?,
         FeatureOperation::Sweep {
-            shape: cadmpeg_ir::features::SweepShape::Solid {
-                section, sections, ..
-            },
+            shape:
+                cadmpeg_ir::features::SweepShape::Solid {
+                    section, sections, ..
+                },
             ..
         } => {
             if let cadmpeg_ir::features::SweepSection::Generated(generated) = section {
@@ -853,10 +854,11 @@ fn scale_sheet_metal_flange_width(
     width: &mut cadmpeg_ir::features::SheetMetalFlangeWidth,
     scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    use cadmpeg_ir::features::SheetMetalFlangeWidth;
+
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
     }
-    use cadmpeg_ir::features::SheetMetalFlangeWidth;
 
     match width {
         SheetMetalFlangeWidth::Symmetric { width } => scale_positive_length(ctx, width, scale)?,
@@ -2598,17 +2600,30 @@ mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_work_units = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("root");
         let mut unresolved: PatternKind = PatternKind::UNRESOLVED;
-        scale_pattern_kind(&ctx, &mut unresolved, positive(2.0)).expect("constant unresolved pattern");
+        scale_pattern_kind(&ctx, &mut unresolved, positive(2.0))
+            .expect("constant unresolved pattern");
         assert_eq!(unresolved, PatternKind::UNRESOLVED);
         let mut linear: PatternKind = PatternKind::new(PatternTransform::Linear {
-            direction: None, spacing: positive_length(3.0), count: 1, second: None,
-        }).expect("linear pattern");
+            direction: None,
+            spacing: positive_length(3.0),
+            count: 1,
+            second: None,
+        })
+        .expect("linear pattern");
         scale_pattern_kind(&ctx, &mut linear, positive(2.0)).expect("constant scalar fields");
-        assert_eq!(linear, PatternKind::new(PatternTransform::Linear {
-            direction: None, spacing: positive_length(6.0), count: 1, second: None,
-        }).expect("scaled linear pattern"));
+        assert_eq!(
+            linear,
+            PatternKind::new(PatternTransform::Linear {
+                direction: None,
+                spacing: positive_length(6.0),
+                count: 1,
+                second: None,
+            })
+            .expect("scaled linear pattern")
+        );
         assert_eq!(ctx.resource_refusal(), None);
     }
 
@@ -2617,15 +2632,31 @@ mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_work_units = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let curve = SolvedCurveGeometry::Line(cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-            Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0),
-        ).expect("line"));
-        let surface = SolvedSurfaceGeometry::Plane(cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-            Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0), Vector3::new(1.0, 0.0, 0.0),
-        ).expect("plane"));
-        assert_eq!(super::curve_parameter_scale(&ctx, &curve, positive(2.0)).expect("constant line"), Some(positive(2.0)));
-        assert_eq!(super::surface_parameter_scales(&ctx, &surface, 2.0).expect("constant plane"), [2.0, 2.0]);
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("root");
+        let curve = SolvedCurveGeometry::Line(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("line"),
+        );
+        let surface = SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("plane"),
+        );
+        assert_eq!(
+            super::curve_parameter_scale(&ctx, &curve, positive(2.0)).expect("constant line"),
+            Some(positive(2.0))
+        );
+        assert_eq!(
+            super::surface_parameter_scales(&ctx, &surface, 2.0).expect("constant plane"),
+            [2.0, 2.0]
+        );
         assert_eq!(ctx.resource_refusal(), None);
     }
 
@@ -2718,46 +2749,46 @@ mod tests {
     }
 
     fn check_member_work(mut definition: FeatureDefinition) -> FeatureDefinition {
-        let error = crate::test_support::last_refusal_at(
-            &[],
-            cadmpeg_core::decode::ResourceDimension::WorkUnits,
-            "creo unit scaling member work",
-            |ctx| scale_feature_definition(ctx, &mut definition.clone(), positive(2.0)),
-        );
-        assert!(
-            matches!(error, CodecError::ResourceLimit(resource) if resource.operation == "creo unit scaling member work")
-        );
         // Each caller supplies one actual member with only fixed scalar fields.
         crate::test_support::assert_refusal_order(
             cadmpeg_core::decode::ResourceDimension::WorkUnits,
             &["creo unit scaling member work"],
             |allowed| {
-            let mut trial = definition.clone();
-            let arena = cadmpeg_core::decode::DecodeArena::new();
-            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-            policy.limits.max_work_units = allowed;
-            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-                .expect("empty root");
-            let result = scale_feature_definition(&ctx, &mut trial, positive(2.0));
-            if allowed == 0 {
-                let CodecError::ResourceLimit(r) = result.expect_err("one present member") else {
-                    panic!("work refusal");
-                };
-                assert_eq!(r.operation, "creo unit scaling member work");
-                assert_eq!((r.used, r.additional), (0, 1));
-                assert_eq!(trial, definition, "refusal precedes the first member");
-                return Err(r.into());
-            } else {
+                let mut trial = definition.clone();
+                let arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                policy.limits.max_work_units = allowed;
+                let (ctx, _) =
+                    cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                        .expect("empty root");
+                let result = scale_feature_definition(&ctx, &mut trial, positive(2.0));
+                if allowed == 0 {
+                    let CodecError::ResourceLimit(r) = result.expect_err("one present member")
+                    else {
+                        panic!("work refusal");
+                    };
+                    assert_eq!(r.operation, "creo unit scaling member work");
+                    assert_eq!((r.used, r.additional), (0, 1));
+                    assert_eq!(trial, definition, "refusal precedes the first member");
+                    return Err(r.into());
+                }
                 result.expect("one member and no terminal visit");
-                let original = ctx.charge_work_limit(1, "after scaled member").expect_err("exact cap");
+                let original = ctx
+                    .charge_work_limit(1, "after scaled member")
+                    .expect_err("exact cap");
                 assert_eq!((original.used, original.additional), (1, 1));
                 let before = trial.clone();
-                assert!(matches!(scale_feature_definition(&ctx, &mut trial, positive(2.0)),
-                    Err(CodecError::ResourceLimit(r)) if r == original));
-                assert_eq!(trial, before, "sticky refusal precedes fixed field mutation");
-            }
-            Ok(())
-        });
+                assert!(
+                    matches!(scale_feature_definition(&ctx, &mut trial, positive(2.0)),
+                Err(CodecError::ResourceLimit(r)) if r == original)
+                );
+                assert_eq!(
+                    trial, before,
+                    "sticky refusal precedes fixed field mutation"
+                );
+                Ok(())
+            },
+        );
         crate::decode::with_test_decode_ctx(|ctx| {
             scale_feature_definition(ctx, &mut definition, positive(2.0))
         })
@@ -2988,12 +3019,15 @@ mod tests {
             scale_feature_definition(&ctx, definition, positive(2.0)).expect("no member");
         }
         assert_eq!(definitions, originals);
-        let original = ctx.charge_work_limit(1, "seed empty scaled members refusal")
+        let original = ctx
+            .charge_work_limit(1, "seed empty scaled members refusal")
             .expect_err("zero work cap");
         assert_eq!((original.used, original.additional), (0, 1));
         for definition in &mut definitions {
-            assert!(matches!(scale_feature_definition(&ctx, definition, positive(2.0)),
-                Err(CodecError::ResourceLimit(r)) if r == original));
+            assert!(
+                matches!(scale_feature_definition(&ctx, definition, positive(2.0)),
+                Err(CodecError::ResourceLimit(r)) if r == original)
+            );
         }
         assert_eq!(definitions, originals);
     }
@@ -3001,53 +3035,77 @@ mod tests {
     #[test]
     fn flange_width_scaling_admits_only_present_pairs_and_keeps_original_refusal() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        use cadmpeg_ir::features::{SheetMetalFlangeEdgeWidths, SheetMetalFlangeTwoSidedWidth, SheetMetalFlangeWidth};
+        use cadmpeg_ir::features::{
+            SheetMetalFlangeEdgeWidths, SheetMetalFlangeTwoSidedWidth, SheetMetalFlangeWidth,
+        };
         crate::test_support::assert_refusal_order(
             ResourceDimension::WorkUnits,
             &["creo unit scaling member work"; 2],
             |allowed| {
-            let mut width = SheetMetalFlangeWidth::TwoSidesPerEdge {
-                widths: SheetMetalFlangeEdgeWidths::new(vec![
-                    SheetMetalFlangeTwoSidedWidth { first: positive_length(1.0), second: positive_length(2.0) },
-                    SheetMetalFlangeTwoSidedWidth { first: positive_length(3.0), second: positive_length(4.0) },
-                ]).expect("two source edge groups"),
-            };
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = allowed;
-            policy.limits.max_materialized_bytes = 0;
-            policy.limits.max_retained_bytes = 0;
-            policy.limits.max_collection_items = 0;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-            let result = super::scale_sheet_metal_flange_width(&ctx, &mut width, positive(2.0));
-            let original = if allowed < 2 {
-                let CodecError::ResourceLimit(r) = result.expect_err("next present edge pair") else {
-                    panic!("work refusal");
+                let mut width = SheetMetalFlangeWidth::TwoSidesPerEdge {
+                    widths: SheetMetalFlangeEdgeWidths::new(vec![
+                        SheetMetalFlangeTwoSidedWidth {
+                            first: positive_length(1.0),
+                            second: positive_length(2.0),
+                        },
+                        SheetMetalFlangeTwoSidedWidth {
+                            first: positive_length(3.0),
+                            second: positive_length(4.0),
+                        },
+                    ])
+                    .expect("two source edge groups"),
                 };
-                assert_eq!(r.dimension, ResourceDimension::WorkUnits);
-                assert_eq!(r.operation, "creo unit scaling member work");
-                assert_eq!((r.used, r.additional), (allowed, 1));
-                r
-            } else {
-                result.expect("two source pairs and no terminal visit");
-                let r = ctx.charge_work_limit(1, "after flange widths").expect_err("exact cap");
-                assert_eq!((r.used, r.additional), (2, 1));
-                r
-            };
-            let before = width.clone();
-            assert!(matches!(super::scale_sheet_metal_flange_width(&ctx, &mut width, positive(2.0)),
-                Err(CodecError::ResourceLimit(r)) if r == original));
-            assert_eq!(width, before);
-            let SheetMetalFlangeWidth::TwoSidesPerEdge { widths } = &mut width else {
-                panic!("per-edge widths");
-            };
-            let rows = widths.as_mut_slice();
-            assert_eq!((rows[0].first.get(), rows[0].second.get()),
-                if allowed == 0 { (1.0, 2.0) } else { (2.0, 4.0) });
-            assert_eq!((rows[1].first.get(), rows[1].second.get()),
-                if allowed < 2 { (3.0, 4.0) } else { (6.0, 8.0) });
-            if allowed < 2 { Err(original.into()) } else { Ok(()) }
-        });
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = allowed;
+                policy.limits.max_materialized_bytes = 0;
+                policy.limits.max_retained_bytes = 0;
+                policy.limits.max_collection_items = 0;
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                let result = super::scale_sheet_metal_flange_width(&ctx, &mut width, positive(2.0));
+                let original = if allowed < 2 {
+                    let CodecError::ResourceLimit(r) = result.expect_err("next present edge pair")
+                    else {
+                        panic!("work refusal");
+                    };
+                    assert_eq!(r.dimension, ResourceDimension::WorkUnits);
+                    assert_eq!(r.operation, "creo unit scaling member work");
+                    assert_eq!((r.used, r.additional), (allowed, 1));
+                    r
+                } else {
+                    result.expect("two source pairs and no terminal visit");
+                    let r = ctx
+                        .charge_work_limit(1, "after flange widths")
+                        .expect_err("exact cap");
+                    assert_eq!((r.used, r.additional), (2, 1));
+                    r
+                };
+                let before = width.clone();
+                assert!(
+                    matches!(super::scale_sheet_metal_flange_width(&ctx, &mut width, positive(2.0)),
+                Err(CodecError::ResourceLimit(r)) if r == original)
+                );
+                assert_eq!(width, before);
+                let SheetMetalFlangeWidth::TwoSidesPerEdge { widths } = &mut width else {
+                    panic!("per-edge widths");
+                };
+                let rows = widths.as_mut_slice();
+                assert_eq!(
+                    (rows[0].first.get(), rows[0].second.get()),
+                    if allowed == 0 { (1.0, 2.0) } else { (2.0, 4.0) }
+                );
+                assert_eq!(
+                    (rows[1].first.get(), rows[1].second.get()),
+                    if allowed < 2 { (3.0, 4.0) } else { (6.0, 8.0) }
+                );
+                if allowed < 2 {
+                    Err(original.into())
+                } else {
+                    Ok(())
+                }
+            },
+        );
     }
 
     #[test]
@@ -3056,16 +3114,22 @@ mod tests {
         let mut length = Length::new(1.0).expect("finite source length");
         let mut surface = SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                Point3::new(1.0, 2.0, 3.0), Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0), 4.0,
-            ).expect("source cylinder"),
+                Point3::new(1.0, 2.0, 3.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                4.0,
+            )
+            .expect("source cylinder"),
         );
         let surface_before = surface.clone();
         let mut curve = SolvedCurveGeometry::Circle(
             cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                Point3::new(2.0, 3.0, 4.0), Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0), 5.0,
-            ).expect("source circle"),
+                Point3::new(2.0, 3.0, 4.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                5.0,
+            )
+            .expect("source circle"),
         );
         let curve_before = curve.clone();
         let mut procedural_surface = cadmpeg_ir::geometry::ProceduralSurface::new(
@@ -3073,26 +3137,35 @@ mod tests {
                 .expect("surface identity"),
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(
                 cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
-                    cadmpeg_ir::ids::CurveId::mint("synthetic:units:curve#directrix").expect("directrix identity"),
-                    None, Vector3::new(1.0, 2.0, 3.0), Some(Point3::new(4.0, 5.0, 6.0)),
+                    cadmpeg_ir::ids::CurveId::mint("synthetic:units:curve#directrix")
+                        .expect("directrix identity"),
+                    None,
+                    Vector3::new(1.0, 2.0, 3.0),
+                    Some(Point3::new(4.0, 5.0, 6.0)),
                     cadmpeg_ir::geometry::CacheContract::from_form(None),
-                ).expect("source extrusion"),
+                )
+                .expect("source extrusion"),
             ),
             None,
         );
         let procedural_surface_before = procedural_surface.clone();
         let mut procedural_curve = cadmpeg_ir::geometry::ProceduralCurve::new(
-            cadmpeg_ir::ids::ProceduralCurveId::mint("synthetic:units:curve#construction").expect("curve identity"),
+            cadmpeg_ir::ids::ProceduralCurveId::mint("synthetic:units:curve#construction")
+                .expect("curve identity"),
             cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(
                 cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
                     [0.0, 1.0],
                     cadmpeg_ir::geometry::HelixFrame {
-                        center: Point3::new(1.0, 2.0, 3.0), major: Vector3::new(4.0, 5.0, 6.0),
-                        minor: Vector3::new(-5.0, 4.0, 6.0), pitch: Vector3::new(10.0, 11.0, 12.0),
+                        center: Point3::new(1.0, 2.0, 3.0),
+                        major: Vector3::new(4.0, 5.0, 6.0),
+                        minor: Vector3::new(-5.0, 4.0, 6.0),
+                        pitch: Vector3::new(10.0, 11.0, 12.0),
                         axis: Vector3::new(0.0, 0.0, 1.0),
                     },
-                    0.25, None,
-                ).expect("source helix"),
+                    0.25,
+                    None,
+                )
+                .expect("source helix"),
             ),
         );
         let procedural_curve_before = procedural_curve.clone();
@@ -3103,22 +3176,34 @@ mod tests {
         policy.limits.max_retained_bytes = 0;
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        let original = ctx.charge_work_limit(1, "seed unit entry refusal").expect_err("zero work cap");
+        let original = ctx
+            .charge_work_limit(1, "seed unit entry refusal")
+            .expect_err("zero work cap");
         assert_eq!((original.used, original.additional), (0, 1));
-        assert!(matches!(super::scale_length(&ctx, &mut length, positive(2.0)),
-            Err(CodecError::ResourceLimit(r)) if r == original));
+        assert!(
+            matches!(super::scale_length(&ctx, &mut length, positive(2.0)),
+            Err(CodecError::ResourceLimit(r)) if r == original)
+        );
         assert_eq!(length.get(), 1.0);
-        assert!(matches!(scale_surface_geometry(&ctx, &mut surface, positive(2.0)),
-            Err(CodecError::ResourceLimit(r)) if r == original));
+        assert!(
+            matches!(scale_surface_geometry(&ctx, &mut surface, positive(2.0)),
+            Err(CodecError::ResourceLimit(r)) if r == original)
+        );
         assert_eq!(surface, surface_before);
-        assert!(matches!(scale_curve_geometry(&ctx, &mut curve, positive(2.0)),
-            Err(CodecError::ResourceLimit(r)) if r == original));
+        assert!(
+            matches!(scale_curve_geometry(&ctx, &mut curve, positive(2.0)),
+            Err(CodecError::ResourceLimit(r)) if r == original)
+        );
         assert_eq!(curve, curve_before);
-        assert!(matches!(super::scale_procedural_surface(&ctx, &mut procedural_surface, positive(2.0)),
-            Err(CodecError::ResourceLimit(r)) if r == original));
+        assert!(
+            matches!(super::scale_procedural_surface(&ctx, &mut procedural_surface, positive(2.0)),
+            Err(CodecError::ResourceLimit(r)) if r == original)
+        );
         assert_eq!(procedural_surface, procedural_surface_before);
-        assert!(matches!(super::scale_procedural_curve(&ctx, &mut procedural_curve, positive(2.0)),
-            Err(CodecError::ResourceLimit(r)) if r == original));
+        assert!(
+            matches!(super::scale_procedural_curve(&ctx, &mut procedural_curve, positive(2.0)),
+            Err(CodecError::ResourceLimit(r)) if r == original)
+        );
         assert_eq!(procedural_curve, procedural_curve_before);
     }
 }
