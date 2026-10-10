@@ -10,7 +10,7 @@ use crate::test_support::test_a5a8::a5_surface_stream;
 use crate::test_support::test_b2::{
     b2_adjacent_face_counted_owner_stream, b2_adjacent_face_owner_stream,
     b2_adjacent_secondary_face_owner_stream, b2_all_compact_owner_packet_stream, b2_circle_stream,
-    b2_class5b5c_stream, b2_cone_face_stream, b2_cone_stream, b2_counted_61_stream,
+    b2_class5b5c_stream, b2_cone_face_stream, b2_cone_stream, b2_construction_use_stream, b2_counted_61_stream,
     b2_cylinder_stream, b2_edge_node_stream, b2_edge_parameter_stream,
     b2_edge_parameter_stream_for, b2_face_node_5f_stream, b2_group_stream,
     b2_implicit_axis_cylinder_stream, b2_line_profile_stream, b2_long_61_stream,
