@@ -1,10 +1,7 @@
 use super::*;
 use crate::layout::directory_entry as directory_layout;
 
-fn parse_record(
-    bytes: &[u8],
-    version: CompoundVersion,
-) -> Result<Vec<DirectorySlot>, CodecError> {
+fn parse_record(bytes: &[u8], version: CompoundVersion) -> Result<Vec<DirectorySlot>, CodecError> {
     with_context(bytes, &DecodePolicy::service(), |ctx| {
         parse_directory(ctx, bytes, version)
     })
@@ -34,15 +31,7 @@ fn stream_entry() -> [u8; directory_layout::LEN] {
 fn storage_entry() -> [u8; directory_layout::LEN] {
     let mut bytes = [0_u8; directory_layout::LEN];
     directory_entry(
-        &mut bytes,
-        0,
-        "Storage",
-        1,
-        NO_STREAM,
-        NO_STREAM,
-        NO_STREAM,
-        0,
-        0,
+        &mut bytes, 0, "Storage", 1, NO_STREAM, NO_STREAM, NO_STREAM, 0, 0,
     );
     bytes
 }
@@ -64,10 +53,14 @@ fn root_entry() -> [u8; directory_layout::LEN] {
 }
 
 fn set_entry_size(bytes: &mut [u8; directory_layout::LEN], size: u64) {
-    bytes[directory_layout::STREAM_SIZE..directory_layout::STREAM_SIZE + 8].copy_from_slice(&size.to_le_bytes());
+    bytes[directory_layout::STREAM_SIZE..directory_layout::STREAM_SIZE + 8]
+        .copy_from_slice(&size.to_le_bytes());
 }
 
-fn parsed_size(bytes: &[u8; directory_layout::LEN], version: CompoundVersion) -> Result<u64, CodecError> {
+fn parsed_size(
+    bytes: &[u8; directory_layout::LEN],
+    version: CompoundVersion,
+) -> Result<u64, CodecError> {
     let entries = parse_record(bytes, version)?;
     Ok(entries[0].live().expect("size fixture is live").size)
 }
@@ -85,8 +78,8 @@ fn accepts_an_unallocated_entry_with_only_nostream_links() {
 fn accepts_nonzero_stream_state_bits() {
     let mut bytes = stream_entry();
     bytes[directory_layout::STATE_BITS] = 1;
-    let entries = parse_record(&bytes, CompoundVersion::V3)
-        .expect("stream State Bits are SHOULD-zero");
+    let entries =
+        parse_record(&bytes, CompoundVersion::V3).expect("stream State Bits are SHOULD-zero");
     assert!(entries[0].live().is_some());
 }
 
@@ -150,8 +143,8 @@ fn accepts_meaningful_storage_metadata() {
     bytes[directory_layout::STATE_BITS] = 1;
     bytes[directory_layout::CREATION_TIME] = 1;
     bytes[directory_layout::MODIFIED_TIME] = 1;
-    let entries = parse_record(&bytes, CompoundVersion::V3)
-        .expect("storage metadata fields are meaningful");
+    let entries =
+        parse_record(&bytes, CompoundVersion::V3).expect("storage metadata fields are meaningful");
     assert!(entries[0].live().is_some());
 }
 
@@ -176,8 +169,12 @@ fn accepts_nonzero_storage_start_and_effective_size() {
     let mut bytes = storage_entry();
     put_u32(&mut bytes, directory_layout::START_SECTOR, END_OF_CHAIN);
     set_entry_size(&mut bytes, 0xdead_beef_0000_0001);
-    for (version, size) in [(CompoundVersion::V3, 1), (CompoundVersion::V4, 0xdead_beef_0000_0001)] {
-        let entries = parse_record(&bytes, version).expect("storage allocation fields are accepted");
+    for (version, size) in [
+        (CompoundVersion::V3, 1),
+        (CompoundVersion::V4, 0xdead_beef_0000_0001),
+    ] {
+        let entries =
+            parse_record(&bytes, version).expect("storage allocation fields are accepted");
         let entry = entries[0].live().expect("live storage");
         assert_eq!(entry.start_sector, END_OF_CHAIN);
         assert_eq!(entry.size, size);
@@ -190,7 +187,10 @@ fn accepts_nonzero_root_creation_time() {
     bytes[directory_layout::CREATION_TIME] = 1;
     for version in [CompoundVersion::V3, CompoundVersion::V4] {
         let entries = parse_record(&bytes, version).expect("root creation time is accepted");
-        assert_eq!(entries[0].live().expect("live root").name.as_str(), "Root Entry");
+        assert_eq!(
+            entries[0].live().expect("live root").name.as_str(),
+            "Root Entry"
+        );
     }
 }
 

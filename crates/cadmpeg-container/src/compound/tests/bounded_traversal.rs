@@ -12,8 +12,15 @@ fn id_node_bytes() -> usize {
 fn empty_state(fat: Vec<u32>, sector_count: usize) -> CompoundState {
     let mut directory = [0_u8; 128];
     directory_entry(
-        &mut directory, 0, "Root Entry", 5, NO_STREAM, NO_STREAM, NO_STREAM,
-        END_OF_CHAIN, 0,
+        &mut directory,
+        0,
+        "Root Entry",
+        5,
+        NO_STREAM,
+        NO_STREAM,
+        NO_STREAM,
+        END_OF_CHAIN,
+        0,
     );
     let directory = with_context(&directory, &DecodePolicy::service(), |ctx| {
         parse_directory(ctx, &directory, CompoundVersion::V3).expect("root directory")
@@ -60,18 +67,30 @@ fn fat_ownership_admits_only_physical_sector_entries() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = u64::try_from(exact_work).expect("owner work fits u64");
     with_context(&[], &policy, |ctx| {
-        state.validate_sector_ownership(ctx, &[]).expect("unused FAT padding is not visited");
+        state
+            .validate_sector_ownership(ctx, &[])
+            .expect("unused FAT padding is not visited");
         assert_eq!(ctx.resource_refusal(), None);
     });
 
     policy.limits.max_work_units -= 1;
     with_context(&[], &policy, |ctx| {
-        let error = state.validate_sector_ownership(ctx, &[]).expect_err("last comparison refuses");
-        let CodecError::ResourceLimit(limit) = error else { panic!("resource refusal") };
+        let error = state
+            .validate_sector_ownership(ctx, &[])
+            .expect_err("last comparison refuses");
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("resource refusal")
+        };
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
         assert_eq!(limit.operation, "check CFB FAT ownership");
-        assert_eq!(limit.used, u64::try_from(insertion_work + physical_visits).expect("used work"));
-        assert_eq!(limit.additional, u64::try_from(membership_work).expect("comparison work"));
+        assert_eq!(
+            limit.used,
+            u64::try_from(insertion_work + physical_visits).expect("used work")
+        );
+        assert_eq!(
+            limit.additional,
+            u64::try_from(membership_work).expect("comparison work")
+        );
         assert_eq!(ctx.resource_refusal(), Some(limit));
     });
 
@@ -81,7 +100,9 @@ fn fat_ownership_admits_only_physical_sector_entries() {
     let invalid_work = insertion_work + 2 + 2 * membership_work;
     policy.limits.max_work_units = u64::try_from(invalid_work).expect("invalid owner work");
     with_context(&[], &policy, |ctx| {
-        let error = state.validate_sector_ownership(ctx, &[]).expect_err("second sector is unowned");
+        let error = state
+            .validate_sector_ownership(ctx, &[])
+            .expect_err("second sector is unowned");
         assert!(matches!(error, CodecError::Malformed(message)
             if message == "unowned CFB sector is not marked free"));
         assert_eq!(ctx.resource_refusal(), None);
@@ -97,7 +118,9 @@ fn empty_hierarchy_build_skips_the_fixed_root_record() {
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_collection_items = 0;
     with_context(&[], &policy, |ctx| {
-        assert!(build_entries(ctx, &state, 1).expect("empty hierarchy uses no work or storage").is_empty());
+        assert!(build_entries(ctx, &state, 1)
+            .expect("empty hierarchy uses no work or storage")
+            .is_empty());
         assert_eq!(ctx.resource_refusal(), None);
     });
 }
@@ -108,8 +131,15 @@ fn empty_prefix_evidence_does_not_queue_absent_links() {
     let directory = sector_mut(&mut file, 0);
     initialize_empty_directory_entries(directory);
     directory_entry(
-        directory, 0, "Root Entry", 5, NO_STREAM, NO_STREAM, NO_STREAM,
-        END_OF_CHAIN, 0,
+        directory,
+        0,
+        "Root Entry",
+        5,
+        NO_STREAM,
+        NO_STREAM,
+        NO_STREAM,
+        END_OF_CHAIN,
+        0,
     );
     let fat_visits = 1;
     let fat_words = SECTOR_SIZE / std::mem::size_of::<u32>();
@@ -123,9 +153,16 @@ fn empty_prefix_evidence_does_not_queue_absent_links() {
     let name_work = 2 * utf16_bytes + root_name.len() + root_name.len() + 1;
     let tail_records = directory_records - 1;
     let root_validation_probes = tail_records + 1;
-    let exact_work = fat_visits + fat_words + fat_role_probes + empty_difat_probe
-        + directory_visit + directory_insertion + directory_records
-        + name_work + root_validation_probes + tail_records;
+    let exact_work = fat_visits
+        + fat_words
+        + fat_role_probes
+        + empty_difat_probe
+        + directory_visit
+        + directory_insertion
+        + directory_records
+        + name_work
+        + root_validation_probes
+        + tail_records;
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = u64::try_from(exact_work).expect("prefix work fits u64");
     let arena = DecodeArena::new();
@@ -142,10 +179,15 @@ fn empty_prefix_evidence_does_not_queue_absent_links() {
         .expect("limited prefix root");
     let error = CompoundPrefixProbe::inspect_with_context(&limited_ctx, root)
         .expect_err("the real tail traversal still requires admission");
-    let CodecError::ResourceLimit(limit) = error else { panic!("resource refusal") };
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("resource refusal")
+    };
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
     assert_eq!(limit.operation, "visit CFB probe reachability");
-    assert_eq!(limit.used, u64::try_from(exact_work - 1).expect("prior work"));
+    assert_eq!(
+        limit.used,
+        u64::try_from(exact_work - 1).expect("prior work")
+    );
     assert_eq!(limit.additional, 1);
     assert_eq!(limited_ctx.resource_refusal(), Some(limit));
 }
@@ -162,15 +204,23 @@ fn unavailable_first_fat_id_stops_before_unvisited_header_ids() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = limit;
         let arena = DecodeArena::new();
-        let (ctx, root) = DecodeContext::from_root_bytes(&file, &arena, &policy).expect("prefix root");
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&file, &arena, &policy).expect("prefix root");
         let result = probe_directory_availability(&ctx, root);
         if limit == exact_work {
-            assert!(matches!(result.expect("only the first FAT id is visited"),
-                PrefixDirectoryAvailability::Incomplete));
+            assert!(matches!(
+                result.expect("only the first FAT id is visited"),
+                PrefixDirectoryAvailability::Incomplete
+            ));
             assert_eq!(ctx.resource_refusal(), None);
         } else {
-            let error = match result { Ok(_) => panic!("directory visit must refuse"), Err(error) => error };
-            let CodecError::ResourceLimit(refusal) = error else { panic!("resource refusal") };
+            let error = match result {
+                Ok(_) => panic!("directory visit must refuse"),
+                Err(error) => error,
+            };
+            let CodecError::ResourceLimit(refusal) = error else {
+                panic!("resource refusal")
+            };
             assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
             assert_eq!(refusal.operation, "visit CFB probe directory chain");
             assert_eq!((refusal.used, refusal.additional), (exact_work - 1, 1));
@@ -183,30 +233,48 @@ fn unavailable_first_fat_id_stops_before_unvisited_header_ids() {
 fn leading_fat_coverage_stops_at_the_first_unavailable_id() {
     let file = many_fat_ids(true);
     let relocation_work = (4 + 8 + 16 + 32 + 64) * std::mem::size_of::<u32>();
-    let visits_before_directory_insert = relocation_work
-        + 2 + SECTOR_SIZE / std::mem::size_of::<u32>() + 2 + 1 + 1;
+    let visits_before_directory_insert =
+        relocation_work + 2 + SECTOR_SIZE / std::mem::size_of::<u32>() + 2 + 1 + 1;
     let insertion_work = 3 * id_node_bytes();
     let exact_work = visits_before_directory_insert + insertion_work;
     for limit in [exact_work, exact_work - 1] {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = u64::try_from(limit).expect("prefix work fits u64");
         let arena = DecodeArena::new();
-        let (ctx, root) = DecodeContext::from_root_bytes(&file, &arena, &policy).expect("prefix root");
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&file, &arena, &policy).expect("prefix root");
         let result = probe_directory_availability(&ctx, root);
         if limit == exact_work {
             let available = result.expect("leading FAT covers the reachable directory");
-            let PrefixDirectoryAvailability::Ready { directory_chain, storage, .. } = available
-                else { panic!("available leading coverage must remain usable") };
+            let PrefixDirectoryAvailability::Ready {
+                directory_chain,
+                storage,
+                ..
+            } = available
+            else {
+                panic!("available leading coverage must remain usable")
+            };
             assert_eq!(directory_chain, vec![0]);
             drop((directory_chain, storage));
             assert_eq!(ctx.resource_refusal(), None);
         } else {
-            let error = match result { Ok(_) => panic!("directory insertion must refuse"), Err(error) => error };
-            let CodecError::ResourceLimit(refusal) = error else { panic!("resource refusal") };
+            let error = match result {
+                Ok(_) => panic!("directory insertion must refuse"),
+                Err(error) => error,
+            };
+            let CodecError::ResourceLimit(refusal) = error else {
+                panic!("resource refusal")
+            };
             assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
             assert_eq!(refusal.operation, "CFB probe directory visits");
-            assert_eq!(refusal.used, u64::try_from(visits_before_directory_insert).expect("prior visits"));
-            assert_eq!(refusal.additional, u64::try_from(insertion_work).expect("insertion work"));
+            assert_eq!(
+                refusal.used,
+                u64::try_from(visits_before_directory_insert).expect("prior visits")
+            );
+            assert_eq!(
+                refusal.additional,
+                u64::try_from(insertion_work).expect("insertion work")
+            );
             assert_eq!(ctx.resource_refusal(), Some(refusal));
         }
     }
@@ -230,7 +298,9 @@ fn directory_parse_admits_only_records_reached_before_malformed_type() {
     with_context(&directory, &policy, |ctx| {
         let error = parse_directory(ctx, &directory, CompoundVersion::V3)
             .expect_err("admission precedes the first type read");
-        let CodecError::ResourceLimit(first) = error else { panic!("resource refusal") };
+        let CodecError::ResourceLimit(first) = error else {
+            panic!("resource refusal")
+        };
         assert_eq!(first.dimension, ResourceDimension::WorkUnits);
         assert_eq!(first.operation, "visit CFB directory records");
         assert_eq!((first.used, first.additional), (0, 1));
@@ -249,15 +319,21 @@ fn directory_parse_admits_only_records_reached_before_malformed_type() {
             if limit == records {
                 let parsed = result.expect("every free record is admitted and checked");
                 assert_eq!(parsed.len(), records);
-                assert!(parsed.iter().all(|entry| matches!(entry, DirectorySlot::Free)));
+                assert!(parsed
+                    .iter()
+                    .all(|entry| matches!(entry, DirectorySlot::Free)));
                 assert_eq!(ctx.resource_refusal(), None);
             } else {
                 let error = result.expect_err("the final free record still needs admission");
-                let CodecError::ResourceLimit(refusal) = error else { panic!("resource refusal") };
+                let CodecError::ResourceLimit(refusal) = error else {
+                    panic!("resource refusal")
+                };
                 assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
                 assert_eq!(refusal.operation, "visit CFB directory records");
-                assert_eq!((refusal.used, refusal.additional),
-                    (u64::try_from(records - 1).expect("prior record work"), 1));
+                assert_eq!(
+                    (refusal.used, refusal.additional),
+                    (u64::try_from(records - 1).expect("prior record work"), 1)
+                );
                 assert_eq!(ctx.resource_refusal(), Some(refusal));
             }
         });
@@ -275,15 +351,19 @@ fn directory_reachability_stops_at_the_first_unreachable_live_record() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 1;
     with_context(&[], &policy, |ctx| {
-        let error = build_entries(ctx, &state, 1).expect_err("the first tail record is unreachable");
+        let error =
+            build_entries(ctx, &state, 1).expect_err("the first tail record is unreachable");
         assert!(matches!(error, CodecError::Malformed(message)
             if message == "CFB directory contains an unreachable live entry"));
         assert_eq!(ctx.resource_refusal(), None);
     });
     policy.limits.max_work_units = 0;
     with_context(&[], &policy, |ctx| {
-        let error = build_entries(ctx, &state, 1).expect_err("reachability checks admit before visiting");
-        let CodecError::ResourceLimit(refusal) = error else { panic!("resource refusal") };
+        let error =
+            build_entries(ctx, &state, 1).expect_err("reachability checks admit before visiting");
+        let CodecError::ResourceLimit(refusal) = error else {
+            panic!("resource refusal")
+        };
         assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
         assert_eq!(refusal.operation, "check CFB directory reachability");
         assert_eq!((refusal.used, refusal.additional), (0, 1));
@@ -296,14 +376,20 @@ fn directory_reachability_stops_at_the_first_unreachable_live_record() {
         with_context(&[], &policy, |ctx| {
             let result = build_entries(ctx, &state, 1);
             if limit == tail_records {
-                assert!(result.expect("all free tail records are reached").is_empty());
+                assert!(result
+                    .expect("all free tail records are reached")
+                    .is_empty());
                 assert_eq!(ctx.resource_refusal(), None);
             } else {
                 let error = result.expect_err("the last free tail record needs admission");
-                let CodecError::ResourceLimit(refusal) = error else { panic!("resource refusal") };
+                let CodecError::ResourceLimit(refusal) = error else {
+                    panic!("resource refusal")
+                };
                 assert_eq!(refusal.operation, "check CFB directory reachability");
-                assert_eq!((refusal.used, refusal.additional),
-                    (u64::try_from(tail_records - 1).expect("prior tail work"), 1));
+                assert_eq!(
+                    (refusal.used, refusal.additional),
+                    (u64::try_from(tail_records - 1).expect("prior tail work"), 1)
+                );
                 assert_eq!(ctx.resource_refusal(), Some(refusal));
             }
         });
@@ -315,10 +401,28 @@ fn prefix_reachability_stops_before_unvisited_free_records() {
     let mut file = fixture();
     let directory = sector_mut(&mut file, 0);
     initialize_empty_directory_entries(directory);
-    directory_entry(directory, 0, "Root Entry", 5, NO_STREAM, NO_STREAM,
-        NO_STREAM, END_OF_CHAIN, 0);
-    directory_entry(directory, 1, "A", 2, NO_STREAM, NO_STREAM,
-        NO_STREAM, END_OF_CHAIN, 0);
+    directory_entry(
+        directory,
+        0,
+        "Root Entry",
+        5,
+        NO_STREAM,
+        NO_STREAM,
+        NO_STREAM,
+        END_OF_CHAIN,
+        0,
+    );
+    directory_entry(
+        directory,
+        1,
+        "A",
+        2,
+        NO_STREAM,
+        NO_STREAM,
+        NO_STREAM,
+        END_OF_CHAIN,
+        0,
+    );
     // One FAT id, every FAT word, two FAT-role probes and one empty
     // DIFAT probe, one directory visit, three set-node passes precede parsing of borrowed sectors. UTF-16 decode visits its bytes twice;
     // output-byte copying and forbidden-character visits follow. Root
@@ -328,35 +432,49 @@ fn prefix_reachability_stops_before_unvisited_free_records() {
     let root_name_bytes = "Root Entry".len();
     let stream_name_bytes = "A".len();
     let name_work = |bytes: usize| 2 * (2 * bytes) + 2 * bytes + 1;
-    let prior_work = 1 + SECTOR_SIZE / 4 + 2 + 1 + 1
-        + 3 * id_node_bytes() + directory_records
-        + name_work(root_name_bytes) + name_work(stream_name_bytes)
+    let prior_work = 1
+        + SECTOR_SIZE / 4
+        + 2
+        + 1
+        + 1
+        + 3 * id_node_bytes()
+        + directory_records
+        + name_work(root_name_bytes)
+        + name_work(stream_name_bytes)
         + directory_records;
     let exact_work = prior_work + 1;
     for limit in [exact_work, exact_work - 1] {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = u64::try_from(limit).expect("prefix work fits u64");
         let arena = DecodeArena::new();
-        let (ctx, root) = DecodeContext::from_root_bytes(&file, &arena, &policy).expect("prefix root");
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&file, &arena, &policy).expect("prefix root");
         let result = CompoundPrefixProbe::inspect_with_context(&ctx, root);
         if limit == exact_work {
             let (probe, storage) = result.expect("only the reached tail slot needs admission");
-            assert_eq!(probe, CompoundPrefixProbe::Malformed(
-                "CFB directory contains an unreachable live entry".into()));
+            assert_eq!(
+                probe,
+                CompoundPrefixProbe::Malformed(
+                    "CFB directory contains an unreachable live entry".into()
+                )
+            );
             drop(storage);
             assert_eq!(ctx.resource_refusal(), None);
         } else {
             let error = result.expect_err("admission precedes the unreachable-slot check");
-            let CodecError::ResourceLimit(refusal) = error else { panic!("resource refusal") };
+            let CodecError::ResourceLimit(refusal) = error else {
+                panic!("resource refusal")
+            };
             assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
             assert_eq!(refusal.operation, "visit CFB probe reachability");
-            assert_eq!((refusal.used, refusal.additional),
-                (u64::try_from(prior_work).expect("prior prefix work"), 1));
+            assert_eq!(
+                (refusal.used, refusal.additional),
+                (u64::try_from(prior_work).expect("prior prefix work"), 1)
+            );
             assert_eq!(ctx.resource_refusal(), Some(refusal));
         }
     }
 }
-
 
 #[test]
 fn structural_records_reject_a_partial_fixed_first_before_tail_work() {
@@ -366,9 +484,15 @@ fn structural_records_reject_a_partial_fixed_first_before_tail_work() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
     with_context(&bytes[..3 * SECTOR_SIZE + 37], &policy, |ctx| {
-        let error = match crate::compound::StructuralRecords::<128>::new(ctx,
-            &bytes[..3 * SECTOR_SIZE + 37], SECTOR_SIZE, 3, Some((&first, &rest))) {
-            Ok(_) => panic!("partial fixed first sector"), Err(error) => error,
+        let error = match crate::compound::StructuralRecords::<128>::new(
+            ctx,
+            &bytes[..3 * SECTOR_SIZE + 37],
+            SECTOR_SIZE,
+            3,
+            Some((&first, &rest)),
+        ) {
+            Ok(_) => panic!("partial fixed first sector"),
+            Err(error) => error,
         };
         assert!(matches!(error, CodecError::Malformed(message)
             if message == "CFB structural sector is truncated"));
@@ -382,16 +506,28 @@ fn structural_records_reject_a_partial_fixed_first_before_tail_work() {
         policy.limits.max_retained_bytes = 0;
         policy.limits.max_collection_items = 0;
         with_context(&bytes, &policy, |ctx| {
-            let result = crate::compound::StructuralRecords::<128>::new(ctx, &bytes,
-                SECTOR_SIZE, 3, Some((&first, &rest)));
+            let result = crate::compound::StructuralRecords::<128>::new(
+                ctx,
+                &bytes,
+                SECTOR_SIZE,
+                3,
+                Some((&first, &rest)),
+            );
             if work == 2 {
                 let records = result.unwrap_or_else(|error| panic!("complete chain: {error}"));
-                let logical = (0..records.len()).flat_map(|index| records.get(index).expect("record").iter().copied()).collect::<Vec<_>>();
+                let logical = (0..records.len())
+                    .flat_map(|index| records.get(index).expect("record").iter().copied())
+                    .collect::<Vec<_>>();
                 assert_eq!(logical, vec![0xab; 3 * SECTOR_SIZE]);
                 assert_eq!(ctx.resource_refusal(), None);
             } else {
-                let error = match result { Ok(_) => panic!("last extent visit needs admission"), Err(error) => error };
-                let CodecError::ResourceLimit(refusal) = error else { panic!("resource refusal") };
+                let error = match result {
+                    Ok(_) => panic!("last extent visit needs admission"),
+                    Err(error) => error,
+                };
+                let CodecError::ResourceLimit(refusal) = error else {
+                    panic!("resource refusal")
+                };
                 assert_eq!(refusal.operation, "walk CFB structural sectors");
                 assert_eq!((refusal.used, refusal.additional), (1, 1));
                 assert_eq!(ctx.resource_refusal(), Some(refusal));
@@ -399,7 +535,6 @@ fn structural_records_reject_a_partial_fixed_first_before_tail_work() {
         });
     }
 }
-
 
 #[test]
 fn allocation_ownership_stops_at_the_first_unowned_marker() {
@@ -415,21 +550,37 @@ fn allocation_ownership_stops_at_the_first_unowned_marker() {
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = work;
             with_context(&[], &policy, |ctx| {
-                let error = state.validate_sector_ownership(ctx, &[])
+                let error = state
+                    .validate_sector_ownership(ctx, &[])
                     .expect_err("first allocation marker is unowned");
                 if work == 1 {
-                    let expected = if mini { "unowned CFB mini sector is not marked free" }
-                        else { "unowned CFB sector is not marked free" };
+                    let expected = if mini {
+                        "unowned CFB mini sector is not marked free"
+                    } else {
+                        "unowned CFB sector is not marked free"
+                    };
                     assert!(matches!(error, CodecError::Malformed(message) if message == expected));
                     assert_eq!(ctx.resource_refusal(), None);
-                    let CodecError::ResourceLimit(refusal) = ctx.charge_work(1, "after first unowned marker")
-                        .expect_err("one allocation slot was reached") else { panic!("resource refusal") };
+                    let CodecError::ResourceLimit(refusal) = ctx
+                        .charge_work(1, "after first unowned marker")
+                        .expect_err("one allocation slot was reached")
+                    else {
+                        panic!("resource refusal")
+                    };
                     assert_eq!((refusal.used, refusal.additional), (1, 1));
                 } else {
-                    let CodecError::ResourceLimit(refusal) = error else { panic!("first allocation visit") };
+                    let CodecError::ResourceLimit(refusal) = error else {
+                        panic!("first allocation visit")
+                    };
                     assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
-                    assert_eq!(refusal.operation, if mini { "visit CFB mini FAT ownership" }
-                        else { "visit CFB FAT ownership" });
+                    assert_eq!(
+                        refusal.operation,
+                        if mini {
+                            "visit CFB mini FAT ownership"
+                        } else {
+                            "visit CFB FAT ownership"
+                        }
+                    );
                     assert_eq!((refusal.used, refusal.additional), (0, 1));
                     assert_eq!(ctx.resource_refusal(), Some(refusal));
                 }
@@ -457,10 +608,20 @@ fn full_fat_loading_rejects_a_partial_first_declared_sector() {
         assert_eq!(ctx.resource_refusal(), None);
     });
     with_context(&complete, &DecodePolicy::service(), |ctx| {
-        let snapshot = CompoundSnapshot::new(ctx, cadmpeg_core::decode::View::over_retained(&complete))
-            .expect("complete first FAT sector and trailing free table");
-        let stream = snapshot.stream(ctx, "Small").expect("lookup").expect("stream");
-        assert_eq!(snapshot.open(ctx, stream).expect("unchanged payload").window(), b"small");
+        let snapshot =
+            CompoundSnapshot::new(ctx, cadmpeg_core::decode::View::over_retained(&complete))
+                .expect("complete first FAT sector and trailing free table");
+        let stream = snapshot
+            .stream(ctx, "Small")
+            .expect("lookup")
+            .expect("stream");
+        assert_eq!(
+            snapshot
+                .open(ctx, stream)
+                .expect("unchanged payload")
+                .window(),
+            b"small"
+        );
         assert_eq!(ctx.resource_refusal(), None);
     });
 }
@@ -477,16 +638,23 @@ fn early_structural_claim_failure_skips_remaining_fat_and_difat_visits() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = u64::try_from(exact_work).expect("claim work fits u64");
     with_context(&[], &policy, |ctx| {
-        let error = state.validate_sector_ownership(ctx, &[])
+        let error = state
+            .validate_sector_ownership(ctx, &[])
             .expect_err("the first FAT id already belongs to the range lock");
         assert!(matches!(error, CodecError::Malformed(message)
             if message == "CFB regular sector has duplicate structural ownership"));
         assert_eq!(ctx.resource_refusal(), None);
-        let CodecError::ResourceLimit(limit) = ctx.charge_work(1, "after failed CFB structural claim")
+        let CodecError::ResourceLimit(limit) = ctx
+            .charge_work(1, "after failed CFB structural claim")
             .expect_err("only the reached claim used the work allowance")
-        else { panic!("typed resource refusal") };
+        else {
+            panic!("typed resource refusal")
+        };
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-        assert_eq!((limit.used, limit.additional), (u64::try_from(exact_work).expect("used work"), 1));
+        assert_eq!(
+            (limit.used, limit.additional),
+            (u64::try_from(exact_work).expect("used work"), 1)
+        );
         assert_eq!(ctx.resource_refusal(), Some(limit));
     });
 }

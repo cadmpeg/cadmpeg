@@ -138,7 +138,12 @@ impl SectorChain {
         mut visit: impl FnMut(u32) -> Result<(), CodecError>,
     ) -> Result<(), CodecError> {
         visit(self.first)?;
-        ctx.fold(&self.rest, (), |(), &sector| visit(sector), "visit CFB chain sectors")
+        ctx.fold(
+            &self.rest,
+            (),
+            |(), &sector| visit(sector),
+            "visit CFB chain sectors",
+        )
     }
 
     fn get(&self, index: usize) -> Option<&u32> {
@@ -267,8 +272,7 @@ impl DirectoryName {
             name.chars(),
             |character| Ok(matches!(character, '/' | '\\' | ':' | '!')),
             "check CFB directory name characters",
-        )?
-        {
+        )? {
             return malformed(
                 "CFB directory name contains a forbidden character or exceeds 31 UTF-16 units",
             );
@@ -359,40 +363,76 @@ impl<'a, 'ctx> CompoundSnapshot<'a, 'ctx> {
         let mut construction_storage = ctx.reserve_scoped(0, "CFB construction state")?;
         let mut root_chain_storage = ctx.reserve_scoped(0, "CFB root mini-chain backing")?;
         let parsed = CompoundState::parse(
-            ctx, root.window(), &mut construction_storage, &mut root_chain_storage,
+            ctx,
+            root.window(),
+            &mut construction_storage,
+            &mut root_chain_storage,
         )?;
         let mut metadata_storage = ctx.reserve_scoped(0, "CFB snapshot metadata")?;
         let snapshot_id = NEXT_COMPOUND_SNAPSHOT_ID.fetch_add(1, AtomicOrdering::Relaxed);
         let entries = parsed.build_entries(ctx, snapshot_id, &mut metadata_storage)?;
         parsed.validate_sector_ownership(ctx, &entries)?;
         let CompoundState {
-            version, sector_count, fat, mini_fat, directory, directory_chain,
-            mini_fat_chain, root_mini_chain, fat_sectors, difat_sectors,
+            version,
+            sector_count,
+            fat,
+            mini_fat,
+            directory,
+            directory_chain,
+            mini_fat_chain,
+            root_mini_chain,
+            fat_sectors,
+            difat_sectors,
             range_lock_sector: _,
         } = parsed;
-        drop((fat, mini_fat, directory, directory_chain, mini_fat_chain, fat_sectors, difat_sectors));
+        drop((
+            fat,
+            mini_fat,
+            directory,
+            directory_chain,
+            mini_fat_chain,
+            fat_sectors,
+            difat_sectors,
+        ));
         drop(construction_storage);
         metadata_storage.absorb(&mut root_chain_storage)?;
         let mut by_path = BTreeMap::new();
         let mut streams_by_id = BTreeMap::new();
 
-        ctx.fold(&entries, 0_usize, |index, entry| {
-            let key = metadata_storage.with_storage(|| path_key(ctx, entry.path()))?;
-            // Strict sibling ordering and unique reached directory ids already
-            // prove unique nonempty, separator-free path components.
-            metadata_storage.with_storage(|| {
-                ctx.insert_btree_map(&mut by_path, key, index, "index CFB path")
-            })?;
-            if let CompoundEntry::Stream(stream) = entry {
+        ctx.fold(
+            &entries,
+            0_usize,
+            |index, entry| {
+                let key = metadata_storage.with_storage(|| path_key(ctx, entry.path()))?;
+                // Strict sibling ordering and unique reached directory ids already
+                // prove unique nonempty, separator-free path components.
                 metadata_storage.with_storage(|| {
-                    ctx.insert_btree_map(&mut streams_by_id, stream.id(), index, "index CFB stream")
+                    ctx.insert_btree_map(&mut by_path, key, index, "index CFB path")
                 })?;
-            }
-            Ok(index + 1)
-        }, "visit CFB indexed entries")?;
+                if let CompoundEntry::Stream(stream) = entry {
+                    metadata_storage.with_storage(|| {
+                        ctx.insert_btree_map(
+                            &mut streams_by_id,
+                            stream.id(),
+                            index,
+                            "index CFB stream",
+                        )
+                    })?;
+                }
+                Ok(index + 1)
+            },
+            "visit CFB indexed entries",
+        )?;
         Ok(Self {
-            root, snapshot_id, version, sector_count, root_mini_chain, entries,
-            by_path, streams_by_id, _metadata_storage: metadata_storage,
+            root,
+            snapshot_id,
+            version,
+            sector_count,
+            root_mini_chain,
+            entries,
+            by_path,
+            streams_by_id,
+            _metadata_storage: metadata_storage,
         })
     }
 
@@ -480,13 +520,20 @@ impl<'a, 'ctx> CompoundSnapshot<'a, 'ctx> {
         };
         let first = sector_view(chain.first)?;
         let (end, available_bytes, contiguous) = ctx.fold(
-            &chain.rest, (first.end(), first.window().len(), true),
+            &chain.rest,
+            (first.end(), first.window().len(), true),
             |(end, available_bytes, contiguous), &sector| {
                 let view = sector_view(sector)?;
-                let available_bytes = available_bytes.checked_add(view.window().len()).ok_or_else(|| {
-                    CodecError::Malformed("CFB available stream byte length overflow".into())
-                })?;
-                Ok((view.end(), available_bytes, contiguous && view.start() == end))
+                let available_bytes = available_bytes
+                    .checked_add(view.window().len())
+                    .ok_or_else(|| {
+                        CodecError::Malformed("CFB available stream byte length overflow".into())
+                    })?;
+                Ok((
+                    view.end(),
+                    available_bytes,
+                    contiguous && view.start() == end,
+                ))
             },
             "visit CFB stream sectors",
         )?;
@@ -504,20 +551,29 @@ impl<'a, 'ctx> CompoundSnapshot<'a, 'ctx> {
             let mut views = ctx.temporary_vec(chain.len(), "CFB stream sector views")?;
             ctx.reserve_capacity(&mut views.0, 1, "CFB stream view slot")?;
             let first_len = logical_size.min(first.window().len());
-            let first = first.child(first.start(), first.start() + first_len).ok_or_else(|| {
-                CodecError::Malformed("CFB logical first-sector range escapes input".into())
-            })?;
-            views.0.push(first);
-            ctx.fold(&chain.rest, logical_size - first_len, |remaining, &sector| {
-                let view = sector_view(sector)?;
-                let payload_len = remaining.min(view.window().len());
-                let payload = view.child(view.start(), view.start() + payload_len).ok_or_else(|| {
-                    CodecError::Malformed("CFB logical sector range escapes input".into())
+            let first = first
+                .child(first.start(), first.start() + first_len)
+                .ok_or_else(|| {
+                    CodecError::Malformed("CFB logical first-sector range escapes input".into())
                 })?;
-                ctx.reserve_capacity(&mut views.0, 1, "CFB stream view slot")?;
-                views.0.push(payload);
-                Ok(remaining - payload_len)
-            }, "visit CFB stream sectors")?;
+            views.0.push(first);
+            ctx.fold(
+                &chain.rest,
+                logical_size - first_len,
+                |remaining, &sector| {
+                    let view = sector_view(sector)?;
+                    let payload_len = remaining.min(view.window().len());
+                    let payload = view
+                        .child(view.start(), view.start() + payload_len)
+                        .ok_or_else(|| {
+                            CodecError::Malformed("CFB logical sector range escapes input".into())
+                        })?;
+                    ctx.reserve_capacity(&mut views.0, 1, "CFB stream view slot")?;
+                    views.0.push(payload);
+                    Ok(remaining - payload_len)
+                },
+                "visit CFB stream sectors",
+            )?;
             ctx.concat_views(&views.0)?
         };
         let logical_end = opened
@@ -777,10 +833,9 @@ impl CompoundState {
         {
             return malformed("CFB DIFAT does not match its declared FAT count");
         }
-        let fat_sector_set = construction_storage.with_storage(|| ctx.collect_btree_set(
-            fat_sectors.iter().copied(),
-            "collect CFB FAT sector set",
-        ))?;
+        let fat_sector_set = construction_storage.with_storage(|| {
+            ctx.collect_btree_set(fat_sectors.iter().copied(), "collect CFB FAT sector set")
+        })?;
         if fat_sector_set.len() != fat_sectors.len() {
             return malformed("duplicate CFB FAT sector");
         }
@@ -798,25 +853,30 @@ impl CompoundState {
             cadmpeg_core::decode::u64_from_index(fat_word_count),
             "parse CFB FAT words",
         )?;
-        let mut fat = construction_storage.with_storage(|| {
-            ctx.vector_storage(fat_word_count, "retain CFB FAT")
-        })?;
-        ctx.fold(&fat_sectors, (), |(), &id| {
-            let data = sector(id)
-                .ok_or_else(|| CodecError::Malformed("CFB FAT sector is absent".into()))?;
-            if data.len() != sector_size {
-                return malformed("CFB FAT sector is truncated");
-            }
-            // `sector_size` is 512 or 4096, both exact multiples of four;
-            // the length check above proves this sector has that width.
-            for raw in ctx.admit_iter(data.as_chunks::<4>().0, "decode CFB FAT words")? {
-                construction_storage.with_storage(|| {
-                    ctx.reserve_capacity(&mut fat, 1, "CFB FAT word slots")
-                })?;
-                fat.push(View::u32_le_at(raw, 0).ok_or_else(|| CodecError::Malformed("CFB FAT word is truncated".into()))?);
-            }
-            Ok(())
-        }, "visit CFB FAT sectors")?;
+        let mut fat = construction_storage
+            .with_storage(|| ctx.vector_storage(fat_word_count, "retain CFB FAT"))?;
+        ctx.fold(
+            &fat_sectors,
+            (),
+            |(), &id| {
+                let data = sector(id)
+                    .ok_or_else(|| CodecError::Malformed("CFB FAT sector is absent".into()))?;
+                if data.len() != sector_size {
+                    return malformed("CFB FAT sector is truncated");
+                }
+                // `sector_size` is 512 or 4096, both exact multiples of four;
+                // the length check above proves this sector has that width.
+                for raw in ctx.admit_iter(data.as_chunks::<4>().0, "decode CFB FAT words")? {
+                    construction_storage
+                        .with_storage(|| ctx.reserve_capacity(&mut fat, 1, "CFB FAT word slots"))?;
+                    fat.push(View::u32_le_at(raw, 0).ok_or_else(|| {
+                        CodecError::Malformed("CFB FAT word is truncated".into())
+                    })?);
+                }
+                Ok(())
+            },
+            "visit CFB FAT sectors",
+        )?;
         if fat.len() < sector_count {
             return malformed("CFB FAT does not address every physical sector");
         }
@@ -853,40 +913,65 @@ impl CompoundState {
                 NonZeroUsize::new(directory_sector_count).map(ChainLength::Declared)
             }
         };
-        let directory_chain = construction_storage.with_storage(|| chain(
-            ctx, &fat, sector_count, directory_start, directory_expected, ChainRole::Directory,
-        ))?;
-        let directory_records = StructuralRecords::new(
-            ctx, bytes, sector_size, sector_count,
-            directory_chain.as_ref().map(|chain| (&chain.first, chain.rest.as_slice())),
-        )?;
-        let directory = construction_storage.with_storage(|| {
-            parse_directory_records(ctx, &directory_records, version)
+        let directory_chain = construction_storage.with_storage(|| {
+            chain(
+                ctx,
+                &fat,
+                sector_count,
+                directory_start,
+                directory_expected,
+                ChainRole::Directory,
+            )
         })?;
+        let directory_records = StructuralRecords::new(
+            ctx,
+            bytes,
+            sector_size,
+            sector_count,
+            directory_chain
+                .as_ref()
+                .map(|chain| (&chain.first, chain.rest.as_slice())),
+        )?;
+        let directory = construction_storage
+            .with_storage(|| parse_directory_records(ctx, &directory_records, version))?;
         validate_root(ctx, &directory)?;
-        let mini_fat_chain = construction_storage.with_storage(|| chain(
-            ctx, &fat, sector_count, mini_fat_start,
-            NonZeroUsize::new(mini_fat_count).map(ChainLength::Declared), ChainRole::MiniFat,
-        ))?;
+        let mini_fat_chain = construction_storage.with_storage(|| {
+            chain(
+                ctx,
+                &fat,
+                sector_count,
+                mini_fat_start,
+                NonZeroUsize::new(mini_fat_count).map(ChainLength::Declared),
+                ChainRole::MiniFat,
+            )
+        })?;
         let mini_fat_records = StructuralRecords::<4>::new(
-            ctx, bytes, sector_size, sector_count,
-            mini_fat_chain.as_ref().map(|chain| (&chain.first, chain.rest.as_slice())),
+            ctx,
+            bytes,
+            sector_size,
+            sector_count,
+            mini_fat_chain
+                .as_ref()
+                .map(|chain| (&chain.first, chain.rest.as_slice())),
         )?;
         let mini_fat_word_count = mini_fat_records.len();
         ctx.charge_collection_items(
             cadmpeg_core::decode::u64_from_index(mini_fat_word_count),
             "parse CFB mini FAT words",
         )?;
-        let mut mini_fat = construction_storage.with_storage(|| {
-            ctx.vector_storage(mini_fat_word_count, "retain CFB mini FAT")
-        })?;
+        let mut mini_fat = construction_storage
+            .with_storage(|| ctx.vector_storage(mini_fat_word_count, "retain CFB mini FAT"))?;
         for index in 0..mini_fat_word_count {
             ctx.charge_work(1, "decode CFB mini FAT words")?;
             let raw = mini_fat_records.get(index)?;
             construction_storage.with_storage(|| {
                 ctx.reserve_capacity(&mut mini_fat, 1, "CFB mini FAT word slots")
             })?;
-            mini_fat.push(View::u32_le_at(raw, 0).ok_or_else(|| CodecError::Malformed("CFB mini FAT word is truncated".into()))?);
+            mini_fat.push(
+                View::u32_le_at(raw, 0).ok_or_else(|| {
+                    CodecError::Malformed("CFB mini FAT word is truncated".into())
+                })?,
+            );
         }
         let root = directory_root(&directory)?;
         let root_sectors = usize::try_from(root.size)
@@ -894,10 +979,16 @@ impl CompoundState {
                 CodecError::Malformed("CFB root mini-stream size does not fit memory".into())
             })?
             .div_ceil(sector_size);
-        let root_mini_chain = root_chain_storage.with_storage(|| chain(
-            ctx, &fat, sector_count, root.start_sector,
-            NonZeroUsize::new(root_sectors).map(ChainLength::Declared), ChainRole::RootMiniStream,
-        ))?;
+        let root_mini_chain = root_chain_storage.with_storage(|| {
+            chain(
+                ctx,
+                &fat,
+                sector_count,
+                root.start_sector,
+                NonZeroUsize::new(root_sectors).map(ChainLength::Declared),
+                ChainRole::RootMiniStream,
+            )
+        })?;
         Ok(Self {
             version,
             sector_count,
@@ -939,9 +1030,11 @@ impl CompoundState {
             |id, entry| {
                 if matches!(entry, DirectorySlot::Live(_)) {
                     let reachable = match u32::try_from(id) {
-                        Ok(id) => {
-                            ctx.contains_btree_set(&reached.0, &id, "check CFB reachable directory id")?
-                        }
+                        Ok(id) => ctx.contains_btree_set(
+                            &reached.0,
+                            &id,
+                            "check CFB reachable directory id",
+                        )?,
                         Err(_) => false,
                     };
                     if !reachable {
@@ -1006,9 +1099,7 @@ impl CompoundState {
                     "retain CFB entry path",
                 )?,
                 Some(parent_index) => {
-                    let Some(parent_path) = output
-                        .get(parent_index)
-                        .map(CompoundEntry::path)
+                    let Some(parent_path) = output.get(parent_index).map(CompoundEntry::path)
                     else {
                         return malformed("CFB storage parent path index is out of range");
                     };
@@ -1060,15 +1151,12 @@ impl CompoundState {
                             ChainRole::MiniStream,
                         ),
                     };
-                    let empty = || {
-                        StreamData::Empty(if entry.start_sector == FREE_SECTOR {
+                    let data = match NonZeroU64::new(entry.size) {
+                        None => StreamData::Empty(if entry.start_sector == FREE_SECTOR {
                             EmptyStreamStart::FreeSector
                         } else {
                             EmptyStreamStart::EndOfChain
-                        })
-                    };
-                    let data = match NonZeroU64::new(entry.size) {
-                        None => empty(),
+                        }),
                         Some(logical_size) => {
                             let expected = usize::try_from(logical_size.get())
                                 .map_err(|_| {
@@ -1077,13 +1165,21 @@ impl CompoundState {
                                     )
                                 })?
                                 .div_ceil(width);
-                            let sectors = metadata_storage.with_storage(|| chain(
-                                ctx, fat, count, entry.start_sector,
-                                NonZeroUsize::new(expected).map(ChainLength::Declared), role,
-                            ))?;
+                            let sectors = metadata_storage.with_storage(|| {
+                                chain(
+                                    ctx,
+                                    fat,
+                                    count,
+                                    entry.start_sector,
+                                    NonZeroUsize::new(expected).map(ChainLength::Declared),
+                                    role,
+                                )
+                            })?;
                             // A declared nonzero chain cannot return an empty success.
                             let chain = sectors.ok_or_else(|| {
-                                CodecError::Malformed("nonzero CFB stream has no sector chain".into())
+                                CodecError::Malformed(
+                                    "nonzero CFB stream has no sector chain".into(),
+                                )
                             })?;
                             StreamData::Allocated {
                                 allocation,
@@ -1177,72 +1273,89 @@ impl CompoundState {
             })?
             .div_ceil(MINI_SECTOR_SIZE);
 
-        ctx.fold(entries, (), |(), entry| {
-            if let CompoundEntry::Stream(stream) = entry {
-                let StreamData::Allocated {
-                    allocation, chain, ..
-                } = &stream.data
-                else {
-                    return Ok(());
-                };
-                let allocation = *allocation;
-                let target = if allocation == CompoundAllocation::Regular {
-                    &mut used
-                } else {
-                    &mut mini_used
-                };
-                let mut remaining = stream.logical_size();
-                chain.visit(ctx, |sector| {
-                    let payload =
-                        remaining.min(cadmpeg_core::decode::u64_from_index(MINI_SECTOR_SIZE));
-                    remaining -= payload;
-                    if allocation == CompoundAllocation::Mini
-                        && (cadmpeg_core::decode::index_from_u32(sector) >= mini_capacity
-                            || u64::from(sector)
-                                .checked_mul(cadmpeg_core::decode::u64_from_index(MINI_SECTOR_SIZE))
-                                .and_then(|offset| offset.checked_add(payload))
-                                .is_none_or(|end| end > root_size))
-                    {
-                        return malformed("CFB mini stream escapes the root mini stream");
-                    }
-                    if !ctx.insert_scoped_btree_set(
-                        &mut scratch,
-                        target,
-                        sector,
-                        "compare CFB owned sectors",
-                        "validate CFB sector ownership",
-                    )? {
-                        return malformed("CFB stream sector has duplicate ownership");
-                    }
-                    Ok(())
-                })?;
-            }
-            Ok(())
-        }, "visit CFB stream ownership")?;
+        ctx.fold(
+            entries,
+            (),
+            |(), entry| {
+                if let CompoundEntry::Stream(stream) = entry {
+                    let StreamData::Allocated {
+                        allocation, chain, ..
+                    } = &stream.data
+                    else {
+                        return Ok(());
+                    };
+                    let allocation = *allocation;
+                    let target = if allocation == CompoundAllocation::Regular {
+                        &mut used
+                    } else {
+                        &mut mini_used
+                    };
+                    let mut remaining = stream.logical_size();
+                    chain.visit(ctx, |sector| {
+                        let payload =
+                            remaining.min(cadmpeg_core::decode::u64_from_index(MINI_SECTOR_SIZE));
+                        remaining -= payload;
+                        if allocation == CompoundAllocation::Mini
+                            && (cadmpeg_core::decode::index_from_u32(sector) >= mini_capacity
+                                || u64::from(sector)
+                                    .checked_mul(cadmpeg_core::decode::u64_from_index(
+                                        MINI_SECTOR_SIZE,
+                                    ))
+                                    .and_then(|offset| offset.checked_add(payload))
+                                    .is_none_or(|end| end > root_size))
+                        {
+                            return malformed("CFB mini stream escapes the root mini stream");
+                        }
+                        if !ctx.insert_scoped_btree_set(
+                            &mut scratch,
+                            target,
+                            sector,
+                            "compare CFB owned sectors",
+                            "validate CFB sector ownership",
+                        )? {
+                            return malformed("CFB stream sector has duplicate ownership");
+                        }
+                        Ok(())
+                    })?;
+                }
+                Ok(())
+            },
+            "visit CFB stream ownership",
+        )?;
 
-        ctx.fold(&self.mini_fat, 0_usize, |ordinal, marker| {
-            let sector = ordinal;
-            let sector = u32::try_from(sector)
-                .map_err(|_| CodecError::Malformed("CFB mini-sector id exceeds u32".into()))?;
-            if !ctx.contains_btree_set(&mini_used, &sector, "check CFB mini FAT ownership")?
-                && *marker != FREE_SECTOR
-            {
-                return malformed("unowned CFB mini sector is not marked free");
-            }
-            Ok(ordinal + 1)
-        }, "visit CFB mini FAT ownership")?;
+        ctx.fold(
+            &self.mini_fat,
+            0_usize,
+            |ordinal, marker| {
+                let sector = ordinal;
+                let sector = u32::try_from(sector)
+                    .map_err(|_| CodecError::Malformed("CFB mini-sector id exceeds u32".into()))?;
+                if !ctx.contains_btree_set(&mini_used, &sector, "check CFB mini FAT ownership")?
+                    && *marker != FREE_SECTOR
+                {
+                    return malformed("unowned CFB mini sector is not marked free");
+                }
+                Ok(ordinal + 1)
+            },
+            "visit CFB mini FAT ownership",
+        )?;
 
-        ctx.fold(&self.fat[..self.sector_count.min(self.fat.len())], 0_usize, |ordinal, marker| {
-            let sector = ordinal;
-            let sector = u32::try_from(sector)
-                .map_err(|_| CodecError::Malformed("CFB sector id exceeds u32".into()))?;
-            if !ctx.contains_btree_set(&used, &sector, "check CFB FAT ownership")?
-                && *marker != FREE_SECTOR
-            {
-                return malformed("unowned CFB sector is not marked free");
-            }
-            Ok(ordinal + 1)
-        }, "visit CFB FAT ownership")?;
+        ctx.fold(
+            &self.fat[..self.sector_count.min(self.fat.len())],
+            0_usize,
+            |ordinal, marker| {
+                let sector = ordinal;
+                let sector = u32::try_from(sector)
+                    .map_err(|_| CodecError::Malformed("CFB sector id exceeds u32".into()))?;
+                if !ctx.contains_btree_set(&used, &sector, "check CFB FAT ownership")?
+                    && *marker != FREE_SECTOR
+                {
+                    return malformed("unowned CFB sector is not marked free");
+                }
+                Ok(ordinal + 1)
+            },
+            "visit CFB FAT ownership",
+        )?;
         Ok(())
     }
 }
@@ -1320,9 +1433,7 @@ fn probe_directory_availability<'ctx>(
         || prefix.get(34..40) != Some(&[0; 6])
         || View::u32_le_at(prefix, 56) != Some(4096)
     {
-        return Ok(PrefixDirectoryAvailability::Malformed(
-            "invalid CFB header",
-        ));
+        return Ok(PrefixDirectoryAvailability::Malformed("invalid CFB header"));
     }
     if version == CompoundVersion::V4 && prefix[512..4096].iter().any(|byte| *byte != 0) {
         return Ok(PrefixDirectoryAvailability::Malformed(
@@ -1341,7 +1452,8 @@ fn probe_directory_availability<'ctx>(
     let Some(difat_start) = View::u32_le_at(prefix, 68) else {
         return Ok(PrefixDirectoryAvailability::Incomplete);
     };
-    let Some(difat_count) = View::u32_le_at(prefix, 72).and_then(|v| usize::try_from(v).ok()) else {
+    let Some(difat_count) = View::u32_le_at(prefix, 72).and_then(|v| usize::try_from(v).ok())
+    else {
         return Ok(PrefixDirectoryAvailability::Incomplete);
     };
     if fat_count == 0
@@ -1451,33 +1563,41 @@ fn probe_directory_availability<'ctx>(
 
     let mut fat = (Vec::new(), ctx.reserve_scoped(0, "CFB probe FAT words")?);
     let mut loaded_fat_count = 0;
-    ctx.find_map(&fat_sectors.0, |&id| {
-        if cadmpeg_core::decode::index_from_u32(id) >= available {
-            return Ok(Some(()));
-        }
-        // An id below `available` addresses a complete sector in this prefix.
-        let start = (cadmpeg_core::decode::index_from_u32(id) + 1) * sector_size;
-        let raw = &prefix[start..start + sector_size];
-        // Available sectors contain complete words, so the admitted width is exact.
-        ctx.reserve_scoped_vec(&mut fat.1, &mut fat.0, raw.len() / 4, "CFB probe FAT words")?;
-        for word in ctx.admit_iter(raw.as_chunks::<4>().0, "decode CFB probe FAT words")? {
-            fat.1.with_storage(|| {
-                ctx.reserve_capacity(&mut fat.0, 1, "CFB probe FAT word slot")
-            })?;
-            fat.0.push(View::u32_le_at(word, 0).ok_or_else(|| CodecError::Malformed("CFB probe FAT word is truncated".into()))?);
-        }
-        loaded_fat_count += 1;
-        Ok((loaded_fat_count == fat_count).then_some(()))
-    }, "visit CFB FAT sectors")?;
+    ctx.find_map(
+        &fat_sectors.0,
+        |&id| {
+            if cadmpeg_core::decode::index_from_u32(id) >= available {
+                return Ok(Some(()));
+            }
+            // An id below `available` addresses a complete sector in this prefix.
+            let start = (cadmpeg_core::decode::index_from_u32(id) + 1) * sector_size;
+            let raw = &prefix[start..start + sector_size];
+            // Available sectors contain complete words, so the admitted width is exact.
+            ctx.reserve_scoped_vec(&mut fat.1, &mut fat.0, raw.len() / 4, "CFB probe FAT words")?;
+            for word in ctx.admit_iter(raw.as_chunks::<4>().0, "decode CFB probe FAT words")? {
+                fat.1.with_storage(|| {
+                    ctx.reserve_capacity(&mut fat.0, 1, "CFB probe FAT word slot")
+                })?;
+                fat.0.push(View::u32_le_at(word, 0).ok_or_else(|| {
+                    CodecError::Malformed("CFB probe FAT word is truncated".into())
+                })?);
+            }
+            loaded_fat_count += 1;
+            Ok((loaded_fat_count == fat_count).then_some(()))
+        },
+        "visit CFB FAT sectors",
+    )?;
     let fat_role_stop = ctx.find_map(
         &fat_sectors.0[..loaded_fat_count.min(fat_sectors.0.len())],
-        |id| Ok(match fat.0.get(cadmpeg_core::decode::index_from_u32(*id)) {
-            None => Some(PrefixDirectoryAvailability::Incomplete),
-            Some(&FAT_SECTOR) => None,
-            Some(_) => Some(PrefixDirectoryAvailability::Malformed(
-                "CFB allocation sector has the wrong role marker",
-            )),
-        }),
+        |id| {
+            Ok(match fat.0.get(cadmpeg_core::decode::index_from_u32(*id)) {
+                None => Some(PrefixDirectoryAvailability::Incomplete),
+                Some(&FAT_SECTOR) => None,
+                Some(_) => Some(PrefixDirectoryAvailability::Malformed(
+                    "CFB allocation sector has the wrong role marker",
+                )),
+            })
+        },
         "check CFB probe FAT roles",
     )?;
     if let Some(stop) = fat_role_stop {
@@ -1485,13 +1605,15 @@ fn probe_directory_availability<'ctx>(
     }
     let difat_role_stop = ctx.find_map(
         &seen_difat,
-        |id| Ok(match fat.0.get(cadmpeg_core::decode::index_from_u32(*id)) {
-            None => Some(PrefixDirectoryAvailability::Incomplete),
-            Some(&DIFAT_SECTOR) => None,
-            Some(_) => Some(PrefixDirectoryAvailability::Malformed(
-                "CFB allocation sector has the wrong role marker",
-            )),
-        }),
+        |id| {
+            Ok(match fat.0.get(cadmpeg_core::decode::index_from_u32(*id)) {
+                None => Some(PrefixDirectoryAvailability::Incomplete),
+                Some(&DIFAT_SECTOR) => None,
+                Some(_) => Some(PrefixDirectoryAvailability::Malformed(
+                    "CFB allocation sector has the wrong role marker",
+                )),
+            })
+        },
         "check CFB probe DIFAT roles",
     )?;
     if let Some(stop) = difat_role_stop {
@@ -1590,33 +1712,37 @@ impl CompoundPrefixProbe {
         ctx: &'ctx DecodeContext<'_>,
         prefix: View<'_>,
     ) -> Result<(Self, ScopedReservation<'ctx>), CodecError> {
-        let (version, available, directory_chain) =
-            match probe_directory_availability(ctx, prefix)? {
-                PrefixDirectoryAvailability::NotCompound => {
-                    return Ok((
-                        Self::NotCompound,
-                        ctx.reserve_scoped(0, "CFB prefix probe result")?,
-                    ));
-                }
-                PrefixDirectoryAvailability::Incomplete => {
-                    return Ok((
-                        Self::Incomplete,
-                        ctx.reserve_scoped(0, "CFB prefix probe result")?,
-                    ));
-                }
-                PrefixDirectoryAvailability::Malformed(detail) => {
-                    return malformed_prefix_probe(ctx, detail);
-                }
-                PrefixDirectoryAvailability::Ready {
-                    version,
-                    available,
-                    directory_chain,
-                    storage,
-                } => (version, available, (directory_chain, storage)),
-            };
+        let (version, available, directory_chain) = match probe_directory_availability(ctx, prefix)?
+        {
+            PrefixDirectoryAvailability::NotCompound => {
+                return Ok((
+                    Self::NotCompound,
+                    ctx.reserve_scoped(0, "CFB prefix probe result")?,
+                ));
+            }
+            PrefixDirectoryAvailability::Incomplete => {
+                return Ok((
+                    Self::Incomplete,
+                    ctx.reserve_scoped(0, "CFB prefix probe result")?,
+                ));
+            }
+            PrefixDirectoryAvailability::Malformed(detail) => {
+                return malformed_prefix_probe(ctx, detail);
+            }
+            PrefixDirectoryAvailability::Ready {
+                version,
+                available,
+                directory_chain,
+                storage,
+            } => (version, available, (directory_chain, storage)),
+        };
         let prefix = prefix.window();
         let directory_records = StructuralRecords::new(
-            ctx, prefix, version.sector_size(), available, directory_chain.0.split_first(),
+            ctx,
+            prefix,
+            version.sector_size(),
+            available,
+            directory_chain.0.split_first(),
         )?;
         let parsed = ctx.with_scoped_storage("parse CFB prefix directory", || {
             parse_directory_records(ctx, &directory_records, version)
@@ -1680,9 +1806,7 @@ impl CompoundPrefixProbe {
                         "CFB probe live entries",
                         "CFB probe live entries",
                     )? {
-                        return Err(PrefixEvidenceFailure::Malformed(
-                            "CFB directory link cycle",
-                        ));
+                        return Err(PrefixEvidenceFailure::Malformed("CFB directory link cycle"));
                     }
                     let path = match parent_index {
                         None => ctx.copy_scoped_text(
@@ -1692,11 +1816,9 @@ impl CompoundPrefixProbe {
                         )?,
                         Some(parent_index) => {
                             let Some(parent) = names.0.get(parent_index) else {
-                                return Err(PrefixEvidenceFailure::Error(
-                                    CodecError::Malformed(
-                                        "CFB probe parent path index is out of range".into(),
-                                    ),
-                                ));
+                                return Err(PrefixEvidenceFailure::Error(CodecError::Malformed(
+                                    "CFB probe parent path index is out of range".into(),
+                                )));
                             };
                             ctx.format_scoped_text(
                                 &mut names.1,
@@ -1706,12 +1828,7 @@ impl CompoundPrefixProbe {
                         }
                     };
                     let path_index = names.0.len();
-                    ctx.push_scoped_vec(
-                        &mut names.1,
-                        &mut names.0,
-                        path,
-                        "CFB probe paths",
-                    )?;
+                    ctx.push_scoped_vec(&mut names.1, &mut names.0, path, "CFB probe paths")?;
                     if entry.left != NO_STREAM {
                         ctx.push_vec(
                             &mut pending,
@@ -1757,7 +1874,9 @@ impl CompoundPrefixProbe {
                                 Err(_) => false,
                             };
                             if !reachable {
-                                return malformed("CFB directory contains an unreachable live entry");
+                                return malformed(
+                                    "CFB directory contains an unreachable live entry",
+                                );
                             }
                         }
                         Ok(id + 1)
@@ -1765,12 +1884,14 @@ impl CompoundPrefixProbe {
                     "visit CFB probe reachability",
                 );
                 match reachability {
-                    Ok(_) => {},
+                    Ok(_) => {}
                     // The callback's only structural failure is this fixed
                     // reachability diagnostic; admission failures remain typed.
-                    Err(CodecError::Malformed(_)) => return Err(PrefixEvidenceFailure::Malformed(
-                        "CFB directory contains an unreachable live entry",
-                    )),
+                    Err(CodecError::Malformed(_)) => {
+                        return Err(PrefixEvidenceFailure::Malformed(
+                            "CFB directory contains an unreachable live entry",
+                        ))
+                    }
                     Err(error) => return Err(PrefixEvidenceFailure::Error(error)),
                 }
                 Ok(())
@@ -1824,10 +1945,7 @@ pub fn read_detection_prefix<R: Read + ?Sized>(
     loop {
         ctx.charge_work(1, "visit CFB detection prefix")?;
         let availability = probe_directory_availability(ctx, View::over_retained(&bytes))?;
-        let incomplete = matches!(
-            &availability,
-            PrefixDirectoryAvailability::Incomplete
-        );
+        let incomplete = matches!(&availability, PrefixDirectoryAvailability::Incomplete);
         drop(availability);
         if !incomplete {
             return Ok(bytes);
@@ -1851,7 +1969,9 @@ pub fn read_detection_prefix<R: Read + ?Sized>(
 
 #[cfg(test)]
 fn parse_directory(
-    ctx: &DecodeContext<'_>, bytes: &[u8], version: CompoundVersion,
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    version: CompoundVersion,
 ) -> Result<Vec<DirectorySlot>, CodecError> {
     let (records, remainder) = bytes.as_chunks::<{ directory_layout::LEN }>();
     if !remainder.is_empty() {
@@ -1887,10 +2007,12 @@ fn parse_directory_records(
             5 => DirectoryKind::Root,
             _ => return malformed("invalid CFB directory object type"),
         };
-        let child = View::u32_le_at(raw, directory_layout::CHILD).ok_or_else(|| CodecError::Malformed("CFB directory field is truncated".into()))?;
-        let start_sector =
-            View::u32_le_at(raw, directory_layout::START_SECTOR).ok_or_else(|| CodecError::Malformed("CFB directory field is truncated".into()))?;
-        let mut size = View::u64_le_at(raw, directory_layout::STREAM_SIZE).ok_or_else(|| CodecError::Malformed("CFB directory field is truncated".into()))?;
+        let child = View::u32_le_at(raw, directory_layout::CHILD)
+            .ok_or_else(|| CodecError::Malformed("CFB directory field is truncated".into()))?;
+        let start_sector = View::u32_le_at(raw, directory_layout::START_SECTOR)
+            .ok_or_else(|| CodecError::Malformed("CFB directory field is truncated".into()))?;
+        let mut size = View::u64_le_at(raw, directory_layout::STREAM_SIZE)
+            .ok_or_else(|| CodecError::Malformed("CFB directory field is truncated".into()))?;
         if version == CompoundVersion::V3 {
             size &= 0xffff_ffff;
         }
@@ -1900,21 +2022,30 @@ fn parse_directory_records(
         {
             return malformed("CFB v3 stream size exceeds 0x80000000");
         }
-        let name_len = usize::from(View::u16_le_at(raw, directory_layout::NAME_LENGTH)
-            .ok_or_else(|| CodecError::Malformed("CFB directory name length is truncated".into()))?);
+        let name_len = usize::from(
+            View::u16_le_at(raw, directory_layout::NAME_LENGTH).ok_or_else(|| {
+                CodecError::Malformed("CFB directory name length is truncated".into())
+            })?,
+        );
         let name = {
             if !(2..=directory_layout::NAME_LENGTH - directory_layout::NAME).contains(&name_len)
                 || !name_len.is_multiple_of(2)
-                || raw[directory_layout::NAME + name_len - 2..directory_layout::NAME + name_len] != [0, 0]
+                || raw[directory_layout::NAME + name_len - 2..directory_layout::NAME + name_len]
+                    != [0, 0]
             {
                 return malformed("invalid CFB directory name length or terminator");
             }
             // The field is fixed at 64 bytes. Only counted content precedes
             // the required final terminator; uncounted padding is ignored.
             let name_field = raw[directory_layout::NAME..directory_layout::NAME_LENGTH]
-                .as_chunks::<{ directory_layout::NAME_LENGTH - directory_layout::NAME }>().0[0];
-            let name =
-                ctx.utf16le_text(&name_field, (name_len - 2) / 2, false, "decode CFB directory name")?;
+                .as_chunks::<{ directory_layout::NAME_LENGTH - directory_layout::NAME }>()
+                .0[0];
+            let name = ctx.utf16le_text(
+                &name_field,
+                (name_len - 2) / 2,
+                false,
+                "decode CFB directory name",
+            )?;
             DirectoryName::new(ctx, name)?
         };
         let color = match raw[directory_layout::COLOR] {
@@ -1926,8 +2057,10 @@ fn parse_directory_records(
             name,
             kind,
             color,
-            left: View::u32_le_at(raw, directory_layout::LEFT).ok_or_else(|| CodecError::Malformed("CFB directory field is truncated".into()))?,
-            right: View::u32_le_at(raw, directory_layout::RIGHT).ok_or_else(|| CodecError::Malformed("CFB directory field is truncated".into()))?,
+            left: View::u32_le_at(raw, directory_layout::LEFT)
+                .ok_or_else(|| CodecError::Malformed("CFB directory field is truncated".into()))?,
+            right: View::u32_le_at(raw, directory_layout::RIGHT)
+                .ok_or_else(|| CodecError::Malformed("CFB directory field is truncated".into()))?,
             child,
             start_sector,
             size,
@@ -2075,14 +2208,16 @@ fn cfb_name_cmp(ctx: &DecodeContext<'_>, left: &str, right: &str) -> Result<Orde
     // Each iterator step yields one UTF-16 unit from at most one scalar.
     // Stop admission at the first differing pair; equal names reach the end
     // probe. The complete length scans above remain separate actual work.
-    Ok(ctx.find_map(
-        left.encode_utf16().zip(right.encode_utf16()),
-        |(left, right)| {
-            let order = cfb_upper_unit(left).cmp(&cfb_upper_unit(right));
-            Ok((order != Ordering::Equal).then_some(order))
-        },
-        "compare CFB sibling names",
-    )?.unwrap_or(Ordering::Equal))
+    Ok(ctx
+        .find_map(
+            left.encode_utf16().zip(right.encode_utf16()),
+            |(left, right)| {
+                let order = cfb_upper_unit(left).cmp(&cfb_upper_unit(right));
+                Ok((order != Ordering::Equal).then_some(order))
+            },
+            "compare CFB sibling names",
+        )?
+        .unwrap_or(Ordering::Equal))
 }
 
 fn path_key(ctx: &DecodeContext<'_>, path: &str) -> Result<Vec<Vec<u16>>, CodecError> {
@@ -2100,7 +2235,11 @@ fn path_key(ctx: &DecodeContext<'_>, path: &str) -> Result<Vec<Vec<u16>>, CodecE
             let mut encoded = [0_u16; 2];
             let units = character.encode_utf16(&mut encoded);
             // A scalar always yields one unit or one surrogate pair.
-            ctx.push_vec(&mut component, cfb_upper_unit(units[0]), "CFB path key units")?;
+            ctx.push_vec(
+                &mut component,
+                cfb_upper_unit(units[0]),
+                "CFB path key units",
+            )?;
             if let Some(&second) = units.get(1) {
                 ctx.push_vec(&mut component, cfb_upper_unit(second), "CFB path key units")?;
             }
@@ -2290,8 +2429,11 @@ enum StructuralRecords<'a, const WIDTH: usize> {
 
 impl<'a, const WIDTH: usize> StructuralRecords<'a, WIDTH> {
     fn new(
-        ctx: &DecodeContext<'_>, bytes: &'a [u8], sector_size: usize,
-        sector_count: usize, sectors: Option<(&'a u32, &'a [u32])>,
+        ctx: &DecodeContext<'_>,
+        bytes: &'a [u8],
+        sector_size: usize,
+        sector_count: usize,
+        sectors: Option<(&'a u32, &'a [u32])>,
     ) -> Result<Self, CodecError> {
         // The two production widths, 4 and 128, tile both header-selected
         // sector widths, 512 and 4096. No record crosses a sector boundary.
@@ -2299,7 +2441,9 @@ impl<'a, const WIDTH: usize> StructuralRecords<'a, WIDTH> {
             return malformed("CFB structural records do not tile their sectors");
         }
         let (first, rest) = sectors.map_or((None, &[][..]), |(first, rest)| (Some(first), rest));
-        let records = rest.len().checked_add(usize::from(first.is_some()))
+        let records = rest
+            .len()
+            .checked_add(usize::from(first.is_some()))
             .and_then(|count| count.checked_mul(sector_size / WIDTH))
             .ok_or_else(|| CodecError::Malformed("CFB structural record count overflow".into()))?;
         let validate = |sector| -> Result<(), CodecError> {
@@ -2310,9 +2454,22 @@ impl<'a, const WIDTH: usize> StructuralRecords<'a, WIDTH> {
             }
             Ok(())
         };
-        if let Some(&sector) = first { validate(sector)?; }
-        ctx.fold(rest, (), |(), &sector| validate(sector), "walk CFB structural sectors")?;
-        Ok(Self::Sectors { bytes, sector_size, sector_count, sectors, records })
+        if let Some(&sector) = first {
+            validate(sector)?;
+        }
+        ctx.fold(
+            rest,
+            (),
+            |(), &sector| validate(sector),
+            "walk CFB structural sectors",
+        )?;
+        Ok(Self::Sectors {
+            bytes,
+            sector_size,
+            sector_count,
+            sectors,
+            records,
+        })
     }
 
     fn len(&self) -> usize {
@@ -2328,16 +2485,31 @@ impl<'a, const WIDTH: usize> StructuralRecords<'a, WIDTH> {
         match self {
             #[cfg(test)]
             Self::Contiguous(records) => records.get(index).ok_or_else(missing),
-            Self::Sectors { bytes, sector_size, sector_count, sectors, records } => {
-                if index >= *records { return Err(missing()); }
+            Self::Sectors {
+                bytes,
+                sector_size,
+                sector_count,
+                sectors,
+                records,
+            } => {
+                if index >= *records {
+                    return Err(missing());
+                }
                 let records_per_sector = sector_size / WIDTH;
                 let sector_index = index / records_per_sector;
                 let (first, rest) = sectors.ok_or_else(missing)?;
-                let sector = if sector_index == 0 { first }
-                    else { rest.get(sector_index - 1).ok_or_else(missing)? };
+                let sector = if sector_index == 0 {
+                    first
+                } else {
+                    rest.get(sector_index - 1).ok_or_else(missing)?
+                };
                 let bytes = sector_slice(bytes, *sector_size, *sector_count, *sector)
                     .ok_or_else(missing)?;
-                bytes.as_chunks::<WIDTH>().0.get(index % records_per_sector).ok_or_else(missing)
+                bytes
+                    .as_chunks::<WIDTH>()
+                    .0
+                    .get(index % records_per_sector)
+                    .ok_or_else(missing)
             }
         }
     }
@@ -2385,11 +2557,11 @@ mod tests {
     use std::cmp::Ordering;
     use std::io::{self, Read};
 
+    use crate::layout::directory_entry as directory_layout;
     use cadmpeg_core::container::ContainerRole;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     use cadmpeg_test_support::bytes::{put_u16, put_u32};
-    use crate::layout::directory_entry as directory_layout;
 
     use super::{
         cfb_name_cmp, cfb_upper_unit, chain, parse_directory, path_key, range_lock_sector,
@@ -2399,7 +2571,6 @@ mod tests {
     };
 
     mod bounded_traversal;
-    mod structural_records;
     mod chains;
     mod directory_fields;
     mod fat_coverage;
@@ -2409,6 +2580,7 @@ mod tests {
     mod snapshot_lifetime;
     mod stream_extents;
     mod stream_open;
+    mod structural_records;
 
     const SECTOR_SIZE: usize = 512;
 
@@ -2445,7 +2617,9 @@ mod tests {
     }
 
     fn build_entries(
-        ctx: &DecodeContext<'_>, state: &CompoundState, snapshot_id: u64,
+        ctx: &DecodeContext<'_>,
+        state: &CompoundState,
+        snapshot_id: u64,
     ) -> Result<Vec<CompoundEntry>, CodecError> {
         let mut metadata = ctx.reserve_scoped(0, "test CFB entry metadata")?;
         let entries = state.build_entries(ctx, snapshot_id, &mut metadata)?;
@@ -2512,27 +2686,52 @@ mod tests {
         policy.limits.max_retained_bytes = 0;
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
-        let records = super::StructuralRecords::<128>::new(&ctx, &bytes, 512, 2, Some((&first, &rest)))
-            .expect("borrowed structural records");
-        let logical = (0..records.len()).flat_map(|index| records.get(index).expect("record").iter().copied()).collect::<Vec<_>>();
+        let records =
+            super::StructuralRecords::<128>::new(&ctx, &bytes, 512, 2, Some((&first, &rest)))
+                .expect("borrowed structural records");
+        let logical = (0..records.len())
+            .flat_map(|index| records.get(index).expect("record").iter().copied())
+            .collect::<Vec<_>>();
         assert_eq!(logical, [0xabu8; 1024]);
-        assert_eq!(records.get(0).expect("first record").as_ptr(), bytes[1024..].as_ptr());
-        assert_eq!(records.get(4).expect("next sector record").as_ptr(), bytes[512..].as_ptr());
+        assert_eq!(
+            records.get(0).expect("first record").as_ptr(),
+            bytes[1024..].as_ptr()
+        );
+        assert_eq!(
+            records.get(4).expect("next sector record").as_ptr(),
+            bytes[512..].as_ptr()
+        );
         assert_eq!(ctx.resource_refusal(), None);
         policy.limits.max_work_units = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
-        assert_eq!(super::StructuralRecords::<128>::new(&ctx, &bytes, 512, 2, None)
-            .expect("empty chain").len(), 0);
-        assert_eq!(super::StructuralRecords::<128>::new(&ctx, &bytes, 512, 2, Some((&first, &[])))
-            .expect("fixed first uses no traversal or copy work").len(), 4);
-        let error = match super::StructuralRecords::<128>::new(&ctx, &bytes, 512, 2, Some((&first, &rest))) {
-            Ok(_) => panic!("variable tail needs admission"), Err(error) => error,
+        assert_eq!(
+            super::StructuralRecords::<128>::new(&ctx, &bytes, 512, 2, None)
+                .expect("empty chain")
+                .len(),
+            0
+        );
+        assert_eq!(
+            super::StructuralRecords::<128>::new(&ctx, &bytes, 512, 2, Some((&first, &[])))
+                .expect("fixed first uses no traversal or copy work")
+                .len(),
+            4
+        );
+        let error =
+            match super::StructuralRecords::<128>::new(&ctx, &bytes, 512, 2, Some((&first, &rest)))
+            {
+                Ok(_) => panic!("variable tail needs admission"),
+                Err(error) => error,
+            };
+        let CodecError::ResourceLimit(first) = error else {
+            panic!("tail refusal")
         };
-        let CodecError::ResourceLimit(first) = error else { panic!("tail refusal") };
         assert_eq!(first.operation, "walk CFB structural sectors");
         assert_eq!((first.used, first.additional), (0, 1));
-        let CodecError::ResourceLimit(repeated) = ctx.charge_work(1, "later").expect_err("fused refusal")
-            else { panic!("refusal") };
+        let CodecError::ResourceLimit(repeated) =
+            ctx.charge_work(1, "later").expect_err("fused refusal")
+        else {
+            panic!("refusal")
+        };
         assert_eq!(first, repeated);
     }
 
@@ -2601,17 +2800,7 @@ mod tests {
             END_OF_CHAIN,
             0,
         );
-        directory_entry(
-            &mut directory,
-            1,
-            "A",
-            1,
-            NO_STREAM,
-            NO_STREAM,
-            2,
-            0,
-            0,
-        );
+        directory_entry(&mut directory, 1, "A", 1, NO_STREAM, NO_STREAM, 2, 0, 0);
         directory_entry(
             &mut directory,
             2,
@@ -2676,7 +2865,6 @@ mod tests {
         }
     }
 
-
     #[test]
     fn storage_parent_path_uses_output_ordinal_at_exact_scratch_peak() {
         let file = fixture();
@@ -2696,17 +2884,7 @@ mod tests {
             END_OF_CHAIN,
             0,
         );
-        directory_entry(
-            &mut directory,
-            1,
-            &name,
-            1,
-            NO_STREAM,
-            NO_STREAM,
-            2,
-            0,
-            0,
-        );
+        directory_entry(&mut directory, 1, &name, 1, NO_STREAM, NO_STREAM, 2, 0, 0);
         directory_entry(
             &mut directory,
             2,
@@ -2738,17 +2916,16 @@ mod tests {
         let metadata_bytes = name.len() + 4 * std::mem::size_of::<CompoundEntry>();
         let exact_peak = metadata_bytes + 2 * node_bytes + pending_bytes;
         let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes =
-            cadmpeg_core::decode::u64_from_index(exact_peak);
+        policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(exact_peak);
         let bounded_entries = with_context(&[], &policy, |ctx| build_entries(ctx, &state, 1))
             .expect("owned parent path fits the derived scoped peak");
         assert_eq!(bounded_entries[1].path(), format!("{name}/B"));
 
-        policy.limits.max_materialized_bytes =
-            cadmpeg_core::decode::u64_from_index(exact_peak - 1);
+        policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(exact_peak - 1);
         let error = with_context(&[], &policy, |ctx| build_entries(ctx, &state, 1))
             .expect_err("one byte below the child validation peak refuses");
-        let expected_used = cadmpeg_core::decode::u64_from_index(metadata_bytes + node_bytes + pending_bytes);
+        let expected_used =
+            cadmpeg_core::decode::u64_from_index(metadata_bytes + node_bytes + pending_bytes);
         let expected_additional = cadmpeg_core::decode::u64_from_index(node_bytes);
         assert!(matches!(
             error,
@@ -2821,8 +2998,8 @@ mod tests {
         // FAT loading overlaps four id slots with the FAT words. Directory
         // traversal then overlaps those words with one visit node and the
         // four-slot minimum capacity of its chain vector.
-        let fat_loading_peak = 4 * std::mem::size_of::<u32>()
-            + (sector_size / 4) * std::mem::size_of::<u32>();
+        let fat_loading_peak =
+            4 * std::mem::size_of::<u32>() + (sector_size / 4) * std::mem::size_of::<u32>();
         let directory_chain_peak = (sector_size / 4) * std::mem::size_of::<u32>()
             + id_node_bytes
             + 4 * std::mem::size_of::<u32>();
@@ -2832,8 +3009,7 @@ mod tests {
         // allowance admits only input slots, one FAT id, the FAT words, one
         // directory visit key and one chain slot; directory materialization
         // would need additional collection items.
-        policy.limits.max_materialized_bytes =
-            cadmpeg_core::decode::u64_from_index(file.len());
+        policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(file.len());
         let acquired_and_available_items = file.len() + 1 + sector_size / 4 + 1 + 1;
         policy.limits.max_collection_items =
             cadmpeg_core::decode::u64_from_index(acquired_and_available_items);
@@ -2845,15 +3021,20 @@ mod tests {
             .expect("readiness stops after structural directory availability");
 
         assert_eq!(prefix, file);
-        assert_eq!(source.position(), cadmpeg_core::decode::u64_from_index(file.len()));
+        assert_eq!(
+            source.position(),
+            cadmpeg_core::decode::u64_from_index(file.len())
+        );
 
-        policy.limits.max_materialized_bytes =
-            cadmpeg_core::decode::u64_from_index(stage_peak);
+        policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(stage_peak);
         let (ctx, root) = DecodeContext::from_root_bytes(&file, &arena, &policy)
             .expect("fixture root fits the input limit");
         let (probe, storage) = CompoundPrefixProbe::inspect_with_context(&ctx, root)
             .expect("borrowed records fit the structural-stage allowance");
-        assert_eq!(probe, CompoundPrefixProbe::DirectoryEvidence(vec!["Wide".into()]));
+        assert_eq!(
+            probe,
+            CompoundPrefixProbe::DirectoryEvidence(vec!["Wide".into()])
+        );
         drop(storage);
         assert_eq!(ctx.resource_refusal(), None);
     }
@@ -2868,8 +3049,10 @@ mod tests {
             .expect("fixture root fits the input limit");
         let (probe, storage) = CompoundPrefixProbe::inspect_with_context(&ctx, root)
             .expect("temporary probe phases fit their live storage");
-        assert!(matches!(&probe, CompoundPrefixProbe::DirectoryEvidence(paths)
-            if paths.len() == 1 && paths[0].as_str() == "Wide"));
+        assert!(
+            matches!(&probe, CompoundPrefixProbe::DirectoryEvidence(paths)
+            if paths.len() == 1 && paths[0].as_str() == "Wide")
+        );
 
         // The path text uses four bytes. The amortized Vec<String> starts at
         // four slots, so the returned owner holds only those slots and text.
@@ -2906,10 +3089,7 @@ mod tests {
             .iter()
             .map(CompoundEntry::path)
             .collect::<Vec<_>>();
-        assert_eq!(
-            paths,
-            vec!["Store", "Store/A", "Store/A/B", "Store/C"]
-        );
+        assert_eq!(paths, vec!["Store", "Store/A", "Store/A/B", "Store/C"]);
     }
 
     #[test]
@@ -2979,7 +3159,6 @@ mod tests {
         assert!(!snapshot_parses(&file));
     }
 
-
     #[test]
     fn fat_id_population_is_refused_before_exceeding_its_declaration() {
         let mut file = fixture();
@@ -3029,8 +3208,8 @@ mod tests {
         let file = fixture();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = u64::try_from(file.len() - 1)
-            .expect("synthetic prefix size fits work units");
+        policy.limits.max_work_units =
+            u64::try_from(file.len() - 1).expect("synthetic prefix size fits work units");
         let (ctx, root) =
             DecodeContext::from_root_bytes(&file, &arena, &policy).expect("fixture root");
         let (probe, storage) = CompoundPrefixProbe::inspect_with_context(&ctx, root)
@@ -3076,8 +3255,8 @@ mod tests {
         let id_node_bytes = 11 * std::mem::size_of::<u32>()
             + 16 * std::mem::size_of::<usize>()
             + 2 * std::mem::align_of::<u32>().max(std::mem::align_of::<usize>());
-        let work_limit = u64::try_from(1 + 3 * id_node_bytes + 1)
-            .expect("DIFAT work total fits u64");
+        let work_limit =
+            u64::try_from(1 + 3 * id_node_bytes + 1).expect("DIFAT work total fits u64");
         policy.limits.max_work_units = work_limit;
         let (ctx, root) =
             DecodeContext::from_root_bytes(&file, &arena, &policy).expect("fixture root");
@@ -3101,8 +3280,8 @@ mod tests {
         let mut policy = DecodePolicy::service();
         // The path visits one FAT id, 128 FAT words, and one role-check item
         // before returning the specified malformed result.
-        policy.limits.max_work_units = u64::try_from(1 + SECTOR_SIZE / 4 + 1)
-            .expect("work total fits u64");
+        policy.limits.max_work_units =
+            u64::try_from(1 + SECTOR_SIZE / 4 + 1).expect("work total fits u64");
         let (ctx, root) =
             DecodeContext::from_root_bytes(&file, &arena, &policy).expect("fixture root");
         let (probe, storage) = CompoundPrefixProbe::inspect_with_context(&ctx, root)
@@ -3130,8 +3309,8 @@ mod tests {
         let id_node_bytes = 11 * std::mem::size_of::<u32>()
             + 16 * std::mem::size_of::<usize>()
             + 2 * std::mem::align_of::<u32>().max(std::mem::align_of::<usize>());
-        let fat_loading_peak = 4 * std::mem::size_of::<u32>()
-            + (SECTOR_SIZE / 4) * std::mem::size_of::<u32>();
+        let fat_loading_peak =
+            4 * std::mem::size_of::<u32>() + (SECTOR_SIZE / 4) * std::mem::size_of::<u32>();
         let directory_chain_peak = (SECTOR_SIZE / 4) * std::mem::size_of::<u32>()
             + 4 * std::mem::size_of::<u32>()
             + id_node_bytes;
@@ -3151,8 +3330,7 @@ mod tests {
         );
         drop(storage);
 
-        policy.limits.max_materialized_bytes =
-            cadmpeg_core::decode::u64_from_index(exact_peak - 1);
+        policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(exact_peak - 1);
         let (ctx, root) =
             DecodeContext::from_root_bytes(&file, &arena, &policy).expect("fixture root");
         let error = CompoundPrefixProbe::inspect_with_context(&ctx, root)
@@ -3829,28 +4007,8 @@ mod tests {
             END_OF_CHAIN,
             0,
         );
-        directory_entry(
-            directory,
-            1,
-            "Store",
-            1,
-            NO_STREAM,
-            NO_STREAM,
-            2,
-            0,
-            0,
-        );
-        directory_entry(
-            directory,
-            2,
-            "A",
-            1,
-            NO_STREAM,
-            3,
-            4,
-            0,
-            0,
-        );
+        directory_entry(directory, 1, "Store", 1, NO_STREAM, NO_STREAM, 2, 0, 0);
+        directory_entry(directory, 2, "A", 1, NO_STREAM, 3, 4, 0, 0);
         directory_entry(
             directory,
             3,
@@ -3892,7 +4050,8 @@ mod tests {
         start_sector: u32,
         size: u64,
     ) {
-        let entry = &mut directory[index * directory_layout::LEN..(index + 1) * directory_layout::LEN];
+        let entry =
+            &mut directory[index * directory_layout::LEN..(index + 1) * directory_layout::LEN];
         let encoded = name.encode_utf16().collect::<Vec<_>>();
         for (offset, unit) in encoded.iter().enumerate() {
             put_u16(entry, directory_layout::NAME + offset * 2, *unit);
@@ -3908,7 +4067,8 @@ mod tests {
         put_u32(entry, directory_layout::RIGHT, right);
         put_u32(entry, directory_layout::CHILD, child);
         put_u32(entry, directory_layout::START_SECTOR, start_sector);
-        entry[directory_layout::STREAM_SIZE..directory_layout::LEN].copy_from_slice(&size.to_le_bytes());
+        entry[directory_layout::STREAM_SIZE..directory_layout::LEN]
+            .copy_from_slice(&size.to_le_bytes());
     }
 
     fn sector_mut(file: &mut [u8], id: usize) -> &mut [u8] {
