@@ -15,7 +15,8 @@ fn materialized_peak(control: impl FnOnce(&DecodeContext<'_>)) -> u64 {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let probe = RefusalProbe::arm(ResourceDimension::MaterializedBytes, "storage peak", None);
     control(&ctx);
-    let CodecError::ResourceLimit(limit) = ctx.reserve_scoped(u64::MAX, "storage peak").unwrap_err()
+    let CodecError::ResourceLimit(limit) =
+        ctx.reserve_scoped(u64::MAX, "storage peak").unwrap_err()
     else {
         panic!("peak probe must refuse")
     };
@@ -25,20 +26,32 @@ fn materialized_peak(control: impl FnOnce(&DecodeContext<'_>)) -> u64 {
 
 fn live_indexes(ctx: &DecodeContext<'_>, names: &[&str], node: roxmltree::Node<'_, '_>) {
     let mut storage = ctx.reserve_scoped(0, "live indexes control").unwrap();
-    let dependencies = storage.with_storage(|| {
-        ctx.collect_hash_map(names.iter().map(|&name| (name, DependencyInfo {
-            dependencies: Vec::new(),
-            storage: ctx.reserve_scoped(0, "empty dependencies control").unwrap(),
-            allow_partial: None,
-            order: 0,
-        })), "dependency table control")
-    }).unwrap();
-    let data = storage.with_storage(|| {
-        ctx.collect_hash_map(names.iter().map(|&name| (name, node)), "data table control")
-    }).unwrap();
-    let declared = storage.with_storage(|| {
-        ctx.collect_hash_set(names.iter().copied(), "declared names control")
-    }).unwrap();
+    let dependencies = storage
+        .with_storage(|| {
+            ctx.collect_hash_map(
+                names.iter().map(|&name| {
+                    (
+                        name,
+                        DependencyInfo {
+                            dependencies: Vec::new(),
+                            storage: ctx.reserve_scoped(0, "empty dependencies control").unwrap(),
+                            allow_partial: None,
+                            order: 0,
+                        },
+                    )
+                }),
+                "dependency table control",
+            )
+        })
+        .unwrap();
+    let data = storage
+        .with_storage(|| {
+            ctx.collect_hash_map(names.iter().map(|&name| (name, node)), "data table control")
+        })
+        .unwrap();
+    let declared = storage
+        .with_storage(|| ctx.collect_hash_set(names.iter().copied(), "declared names control"))
+        .unwrap();
     drop((declared, data, dependencies, storage));
 }
 
@@ -55,14 +68,17 @@ fn dependency_framing_storage_retires_before_the_data_lookup() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = parse_document(text, &xml, FcstdDialect::Schema4, &ctx);
         if below {
-            let CodecError::ResourceLimit(original) = result.err().expect("live indexes need storage")
+            let CodecError::ResourceLimit(original) =
+                result.err().expect("live indexes need storage")
             else {
                 panic!("scratch storage must refuse")
             };
             assert_eq!(original.dimension, ResourceDimension::MaterializedBytes);
             assert_eq!(ctx.resource_refusal(), Some(original));
-            assert!(matches!(parse_document(text, &xml, FcstdDialect::Schema4, &ctx),
-                Err(CodecError::ResourceLimit(actual)) if actual == original));
+            assert!(
+                matches!(parse_document(text, &xml, FcstdDialect::Schema4, &ctx),
+                Err(CodecError::ResourceLimit(actual)) if actual == original)
+            );
         } else {
             let graph = result.unwrap();
             assert_eq!(graph.objects.len(), 1);
@@ -82,13 +98,22 @@ fn property_name_set_retires_before_the_original_count_diagnostic() {
     let owner = "A".repeat(4096);
     let expected = format!("Properties Count=2 but 1 properties were found for {owner}");
     let cap = materialized_peak(|ctx| {
-        let mut node_storage = ctx.reserve_scoped(0, "live property nodes control").unwrap();
-        let mut nodes = Vec::new();
-        ctx.push_scoped_vec(&mut node_storage, &mut nodes, xml.root_element(), "property node control")
+        let mut node_storage = ctx
+            .reserve_scoped(0, "live property nodes control")
             .unwrap();
-        let diagnostic = ctx.with_scoped_storage("diagnostic control", || {
-            ctx.format_retained(format_args!("{expected}"), "diagnostic text control")
-        }).unwrap();
+        let mut nodes = Vec::new();
+        ctx.push_scoped_vec(
+            &mut node_storage,
+            &mut nodes,
+            xml.root_element(),
+            "property node control",
+        )
+        .unwrap();
+        let diagnostic = ctx
+            .with_scoped_storage("diagnostic control", || {
+                ctx.format_retained(format_args!("{expected}"), "diagnostic text control")
+            })
+            .unwrap();
         drop((diagnostic, nodes, node_storage));
     });
     for below in [false, true] {
@@ -98,13 +123,11 @@ fn property_name_set_retires_before_the_original_count_diagnostic() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut output = Vec::new();
         // The diagnostic is a scoped result owned together with its guard.
-        let result = ctx
-            .with_scoped_storage("property diagnostic result", || {
-                Ok::<_, CodecError>(
-                    parse_properties(text, xml.root_element(), &owner, &mut output, &ctx)
-                        .unwrap_err(),
-                )
-            });
+        let result = ctx.with_scoped_storage("property diagnostic result", || {
+            Ok::<_, CodecError>(
+                parse_properties(text, xml.root_element(), &owner, &mut output, &ctx).unwrap_err(),
+            )
+        });
         assert!(output.is_empty());
         if below {
             let CodecError::ResourceLimit(original) = result.unwrap_err() else {
@@ -139,21 +162,34 @@ fn consumed_dependency_vector_retires_before_the_next_object() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = u64::MAX;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let result = ctx.with_scoped_storage("persistence graph control", || {
-        parse_document(&text, &xml, FcstdDialect::Schema4, &ctx)
-    }).unwrap();
+    let result = ctx
+        .with_scoped_storage("persistence graph control", || {
+            parse_document(&text, &xml, FcstdDialect::Schema4, &ctx)
+        })
+        .unwrap();
     let graph_storage = result.1;
     let graph = result.0;
     assert_eq!(graph.objects.len(), 2);
     assert_eq!(graph.objects[0].dependencies.len(), DEPENDENCIES);
-    assert!(graph.objects[0].dependencies.iter().all(|id| id == "fcstd:native:object#B"));
+    assert!(graph.objects[0]
+        .dependencies
+        .iter()
+        .all(|id| id == "fcstd:native:object#B"));
     assert!(graph.objects[1].dependencies.is_empty());
     assert_eq!(graph.objects[1].type_name, long_type);
     // Measure the completed graph with its live indexes, after parse scratch retired.
-    let probe = RefusalProbe::arm(ResourceDimension::MaterializedBytes, "graph storage control", None);
+    let probe = RefusalProbe::arm(
+        ResourceDimension::MaterializedBytes,
+        "graph storage control",
+        None,
+    );
     live_indexes(&ctx, &["A", "B"], xml.root_element());
-    let CodecError::ResourceLimit(limit) = ctx.reserve_scoped(u64::MAX, "graph storage control").unwrap_err()
-    else { panic!("graph storage control must refuse") };
+    let CodecError::ResourceLimit(limit) = ctx
+        .reserve_scoped(u64::MAX, "graph storage control")
+        .unwrap_err()
+    else {
+        panic!("graph storage control must refuse")
+    };
     let cap = limit.limit;
     drop(probe);
     let arena = DecodeArena::new();

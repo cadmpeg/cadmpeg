@@ -46,11 +46,16 @@ fn materialized_peak(control: impl FnOnce(&DecodeContext<'_>)) -> u64 {
     policy.limits.max_materialized_bytes = u64::MAX;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-        cadmpeg_core::decode::ResourceDimension::MaterializedBytes, "storage peak", None,
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "storage peak",
+        None,
     );
     control(&ctx);
-    let CodecError::ResourceLimit(limit) = ctx.reserve_scoped(u64::MAX, "storage peak").unwrap_err()
-    else { panic!("peak probe must refuse") };
+    let CodecError::ResourceLimit(limit) =
+        ctx.reserve_scoped(u64::MAX, "storage peak").unwrap_err()
+    else {
+        panic!("peak probe must refuse")
+    };
     drop(probe);
     limit.limit
 }
@@ -112,10 +117,12 @@ fn consumed_logical_group_releases_scratch_before_next_group_sort() {
         .collect();
     let control_entries = [entry("First", 1), entry("Second", SECOND)];
     let mut control_logical: Vec<_> = std::iter::once(logical[0].clone())
-        .chain(logical[FIRST..].iter().cloned()).collect();
+        .chain(logical[FIRST..].iter().cloned())
+        .collect();
     control_logical[0] = self::logical("First", 0, 1);
     let cap = materialized_peak(|ctx| {
-        let coverage = byte_coverage(ctx, &physical, &control_entries, &control_logical, 1).unwrap();
+        let coverage =
+            byte_coverage(ctx, &physical, &control_entries, &control_logical, 1).unwrap();
         assert!(coverage.exact);
     });
     for limit in [cap, cap - 1] {
