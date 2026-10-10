@@ -79,8 +79,8 @@ fn e5_nurbs_transfer_actual_lanes_and_preserve_retained_refusal() {
     assert!(
         matches!(value, E5Pcurve::Nurbs { surface: 7, degree: 1, knots, control_points, range }
         if knots.iter().map(|knot| knot.get()).collect::<Vec<_>>() == [0.0, 0.0, 1.0, 1.0]
-            && control_points.iter().map(|point| point.map(|value| value.get())).collect::<Vec<_>>() == [[0.0, 0.0], [1.0, 1.0]]
-            && range.map(|value| value.get()) == [0.0, 1.0])
+            && control_points.iter().map(|point| point.map(cadmpeg_ir::scalar::FiniteReal::get)).collect::<Vec<_>>() == [[0.0, 0.0], [1.0, 1.0]]
+            && range.map(cadmpeg_ir::scalar::FiniteReal::get) == [0.0, 1.0])
     );
 }
 
@@ -112,7 +112,7 @@ fn e5_jet_transfer_actual_sites_and_preserve_retained_refusal() {
             .expect("complete jet");
     assert!(matches!(value, E5Pcurve::Jet { surface: 7, sites, range }
         if sites.iter().map(|site| (site.knot.get(), site.multiplicity)).collect::<Vec<_>>() == [(0.0, 6), (1.0, 6)]
-            && range.map(|value| value.get()) == [0.0, 1.0]));
+            && range.map(cadmpeg_ir::scalar::FiniteReal::get) == [0.0, 1.0]));
 }
 
 #[test]

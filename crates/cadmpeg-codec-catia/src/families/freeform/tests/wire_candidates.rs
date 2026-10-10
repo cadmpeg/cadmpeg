@@ -49,9 +49,9 @@ fn wire_fixture(existing_endpoints: bool) -> (CadIr, [(CurveId, [f64; 2], usize)
 
 fn assert_sticky(
     ctx: &DecodeContext<'_>,
-    error: CodecError,
+    error: &CodecError,
 ) -> cadmpeg_core::decode::ResourceLimit {
-    let CodecError::ResourceLimit(limit) = error else {
+    let CodecError::ResourceLimit(limit) = *error else {
         panic!("resource refusal required");
     };
     assert_eq!(ctx.resource_refusal(), Some(limit));
@@ -80,7 +80,7 @@ fn wire_endpoint_pair_admits_growth_for_both_points_and_vertices() {
             &mut admission,
         )
         .expect_err("the second endpoint requires admitted vector growth");
-        let limit = assert_sticky(&ctx, error);
+        let limit = assert_sticky(&ctx, &error);
         assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
         assert_eq!(limit.operation, operation);
         let item_size = if operation == "catia_family_emit_points" {
@@ -147,7 +147,7 @@ fn selected_wire_carrier_stays_temporary_through_endpoint_identity_refusal() {
                 &mut admission,
             )
             .expect_err("actual endpoint identity work is reached");
-            let limit = assert_sticky(ctx, error);
+            let limit = assert_sticky(ctx, &error);
             assert_eq!(limit.operation, "catia_freeform_wire_point_id");
             limit.used
         })
@@ -172,7 +172,7 @@ fn selected_wire_carrier_stays_temporary_through_endpoint_identity_refusal() {
         &mut admission,
     )
     .expect_err("endpoint identity work refuses before carrier promotion");
-    let limit = assert_sticky(&ctx, error);
+    let limit = assert_sticky(&ctx, &error);
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
     assert_eq!(limit.operation, "catia_freeform_wire_point_id");
     assert!(ir.model.points.is_empty());
@@ -200,7 +200,7 @@ fn selected_wire_carrier_preserves_retained_refusal_at_edge_insertion() {
         &mut admission,
     )
     .expect_err("selected actual carrier needs retained admission");
-    let limit = assert_sticky(&ctx, error);
+    let limit = assert_sticky(&ctx, &error);
     assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
     assert_eq!(limit.operation, "catia_freeform_wire_plan_carriers");
     assert_eq!(ir.model.points.len(), 2);

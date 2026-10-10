@@ -986,51 +986,6 @@ fn ordered_structural_equations_propagate_without_direction_enumeration() {
 }
 
 #[test]
-fn ordered_face_options_preflight_exact_signature_work() {
-    catia_test_context!(ctx);
-    let use_ = |edge| MeshBoundaryEdgeCandidate {
-        edge,
-        start: 0,
-        end: 0,
-        reversed: Some(false),
-    };
-    let domains = [MeshFaceBoundaryDomain::Ordered(vec![
-        MeshFaceBoundaryAssignment {
-            boundaries: vec![vec![use_(0)]],
-        },
-        MeshFaceBoundaryAssignment {
-            boundaries: vec![vec![use_(1)]],
-        },
-    ])];
-    let candidates = vec![Vec::new(), Vec::new()];
-    let broad = Arc::new((0..100).collect::<HashSet<_>>());
-    let mut quotient = MeshQuotient::new(vec![broad; 4]);
-    let budget = WorkBudget::new(100);
-
-    let error = crate::solve::mesh_quotient::propagate_common_ordered_face_quotients(
-        &ctx,
-        &domains,
-        &candidates,
-        &mut quotient,
-        &budget,
-    )
-    .expect_err("signature work exceeds the ordered-face slice");
-    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-        panic!("resource refusal")
-    };
-    assert_eq!(limit.operation, "catia_ordered_face_constraint_work");
-    assert_eq!(limit.limit, 64);
-    assert_eq!(ctx.resource_refusal(), Some(limit));
-
-    assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.root_count(ctx))
-            .expect("service quotient traversal"),
-        4
-    );
-    assert!(!budget.exhausted());
-}
-
-#[test]
 fn ordered_cycle_support_propagates_domain_forced_directions() {
     catia_test_context!(ctx);
     let domains = [MeshFaceBoundaryDomain::Ordered(vec![

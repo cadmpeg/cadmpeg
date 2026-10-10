@@ -36,7 +36,7 @@ fn rational_pcurve_promotion_owns_both_surviving_lanes() {
             assert_eq!(limit.limit, cap);
             assert_eq!(limit.used, 0);
             assert_eq!(limit.additional, retained);
-            assert_eq!(ctx.resource_refusal(), Some(limit.clone()));
+            assert_eq!(ctx.resource_refusal(), Some(limit));
             assert!(matches!(run(ctx), Err(CodecError::ResourceLimit(later)) if later == limit));
         });
     }
@@ -98,7 +98,7 @@ fn quintic_pcurve_promotion_owns_the_complete_jet() {
         assert_eq!(limit.operation, "catia_quintic_pcurve_jet");
         assert_eq!(limit.used, 0);
         assert_eq!(limit.additional, retained);
-        assert_eq!(ctx.resource_refusal(), Some(limit.clone()));
+        assert_eq!(ctx.resource_refusal(), Some(limit));
         assert!(matches!(run(ctx), Err(CodecError::ResourceLimit(later)) if later == limit));
     });
     let geometry = crate::test_support::with_retained_limit(retained, run)
