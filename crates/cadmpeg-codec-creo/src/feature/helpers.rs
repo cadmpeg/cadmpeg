@@ -13,9 +13,6 @@ pub(super) fn decode_exact_scalars(
     slot_count: usize,
     cache: &scalar::ScalarCache,
 ) -> Result<Option<Vec<f64>>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     // Each slot decodes at least one payload byte and the whole payload must be
     // consumed, so a valid slot count cannot exceed the payload length.
     if bounded_len(
@@ -137,7 +134,7 @@ mod tests {
     }
 
     #[test]
-    fn exact_scalar_values_refuse_each_storage_boundary_and_keep_original_refusal() {
+    fn exact_scalar_values_refuse_each_storage_boundary() {
         let cache = ScalarCache::from_section(&[]);
         for (dimension, materialized, retained, items, used, additional) in [
             (
@@ -175,38 +172,8 @@ mod tests {
                 assert_eq!(original.operation, "creo feature scalar values");
                 assert_eq!((original.used, original.additional), (used, additional));
                 assert_eq!(ctx.resource_refusal(), Some(original));
-                for (payload, count) in [(&[][..], 0), (&[0x0f][..], 2)] {
-                    assert!(matches!(decode_exact_scalars(ctx, payload, count, &cache),
-                        Err(CodecError::ResourceLimit(limit)) if limit == original));
-                }
             });
         }
-    }
-
-    #[test]
-    fn exact_scalar_empty_and_impossible_counts_are_free_and_preserve_refusal() {
-        let cache = ScalarCache::from_section(&[]);
-        with_limits(0, 0, 0, 0, |ctx| {
-            assert_eq!(
-                decode_exact_scalars(ctx, &[], 0, &cache).expect("empty lane"),
-                Some(Vec::new())
-            );
-            assert_eq!(
-                decode_exact_scalars(ctx, &[0x0f], 2, &cache).expect("impossible count"),
-                None
-            );
-            assert_eq!(
-                decode_exact_scalars(ctx, &[0x0f], 0, &cache).expect("unread payload"),
-                None
-            );
-            let original = ctx
-                .charge_work_limit(1, "prior exact scalar refusal")
-                .expect_err("seed refusal");
-            for (payload, count) in [(&[][..], 0), (&[0x0f][..], 2)] {
-                assert!(matches!(decode_exact_scalars(ctx, payload, count, &cache),
-                    Err(CodecError::ResourceLimit(limit)) if limit == original));
-            }
-        });
     }
 
     #[test]

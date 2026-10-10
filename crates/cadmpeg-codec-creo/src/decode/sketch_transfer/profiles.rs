@@ -38,9 +38,6 @@ pub(in super::super) fn resolved_profile_chains(
     sketch: &SketchId,
     emitted: &BTreeSet<u32>,
 ) -> Result<Vec<Vec<SketchEntityUse>>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(table) = &definition.trim_entities else {
         return resolved_segment_profile_chains(ctx, definition, sketch, emitted);
     };
@@ -89,9 +86,6 @@ fn resolved_segment_profile_chains(
     sketch: &SketchId,
     emitted: &BTreeSet<u32>,
 ) -> Result<Vec<Vec<SketchEntityUse>>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(table) = definition
         .segments
         .as_ref()
@@ -164,7 +158,8 @@ fn profile_chains(
             &remaining[cursor..],
             |present| Ok(*present),
             "creo profile components",
-        )? else {
+        )?
+        else {
             break;
         };
         let seed = cursor + offset;
@@ -183,7 +178,8 @@ fn profile_chains(
             let Some(index) = ctx.next_charged(
                 &mut std::iter::from_fn(|| frontier.pop()),
                 "creo profile frontier visits",
-            )? else {
+            )?
+            else {
                 break;
             };
             remaining[index] = false;
@@ -351,9 +347,6 @@ pub(in super::super) fn solver_only_section_entity_offset(
     definition: &crate::feature::definitions::FeatureDefinition,
     entity_id: u32,
 ) -> Result<Option<usize>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let segment_id_exists = definition
         .segments
         .as_ref()

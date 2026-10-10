@@ -198,9 +198,6 @@ pub(in crate::decode) fn intersect_incident_section_carriers<
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     carriers: &[T],
 ) -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if carriers.len() < 2 {
         return Ok(None);
     }
@@ -881,9 +878,6 @@ pub(in crate::decode) fn trimmed_section_segment_geometry_with_missing_line(
     segment: &crate::feature::definitions::FeatureSegment,
     missing_line: Option<&(usize, SketchGeometry)>,
 ) -> Result<Option<SketchGeometry>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(trim_entities) = definition.trim_entities.as_ref() else {
         return Ok(None);
     };

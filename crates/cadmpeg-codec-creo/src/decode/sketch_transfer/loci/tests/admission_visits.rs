@@ -140,10 +140,6 @@ fn point_locus_visits_only_present_opaque_rows() {
                     }
                     Err(error) => panic!("unexpected locus error: {error:?}"),
                 };
-                if let Some(original) = refusal {
-                    assert!(matches!(section_point_locus(&ctx, &definition, &sketch, 7),
-                        Err(CodecError::ResourceLimit(actual)) if actual == original));
-                }
                 finish(ctx, refusal);
                 result
             })
@@ -317,70 +313,5 @@ fn skamp_callback_break_stops_before_remaining_rows() {
                 })
             },
         );
-    }
-}
-
-#[test]
-fn missing_empty_and_incomplete_locus_routes_are_free_and_keep_original_refusal() {
-    let sketch = SketchId::mint("creo:model:sketch#1").expect("fixture identity");
-    let mut incomplete = skamp_definition(0);
-    incomplete
-        .relations
-        .as_mut()
-        .expect("relations")
-        .skamps
-        .as_mut()
-        .expect("SKAMP table")
-        .header_mut()
-        .expect("header")
-        .declared_count = 1;
-    let mut empty_segments = definition();
-    empty_segments.segments = Some(FeatureSegmentTable {
-        declared_count: 0,
-        has_elided_prototype: false,
-        entity_ref: None,
-        rows: crate::feature::segment_rows::SegmentRows::default(),
-        offset: 0,
-    });
-    let mut absent_skamps = skamp_definition(0);
-    absent_skamps.relations.as_mut().expect("relations").skamps = None;
-    for definition in [
-        definition(),
-        empty_segments,
-        absent_skamps,
-        skamp_definition(0),
-        incomplete,
-    ] {
-        for refused in [false, true] {
-            with_work(0, |ctx| {
-                let original = refused.then(|| {
-                    ctx.charge_work_limit(1, "before empty locus")
-                        .expect_err("zero work cap")
-                });
-                for _ in 0..2 {
-                    let results = [
-                        section_point_locus(&ctx, &definition, &sketch, 7)
-                            .map(|value| value.is_none()),
-                        visit_section_skamps::<()>(&ctx, &definition, true, |_| {
-                            panic!("empty SKAMP callback")
-                        })
-                        .map(|value| value == ControlFlow::Continue(())),
-                        visit_all_section_skamps::<()>(&ctx, &definition, |_| {
-                            panic!("empty SKAMP callback")
-                        })
-                        .map(|value| value == ControlFlow::Continue(())),
-                    ];
-                    for result in results {
-                        if let Some(original) = original {
-                            assert!(matches!(result,
-                                Err(CodecError::ResourceLimit(actual)) if actual == original));
-                        } else {
-                            assert!(result.expect("active recovery"));
-                        }
-                    }
-                }
-                finish(ctx, original);
-            });
-        }
     }
 }
