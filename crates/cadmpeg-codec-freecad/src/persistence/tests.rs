@@ -683,7 +683,20 @@ fn x63_object_xml_copy_is_charged_before_allocation() {
 }
 
 #[test]
-fn x63_decode_counts_object_copies_in_retained_budget() {
+fn x63_decode_keeps_object_copies_in_scoped_storage() {
+    assert_decode_copy_is_scoped("FCStd object XML");
+}
+
+#[test]
+fn x63_decode_keeps_entry_copies_in_scoped_storage() {
+    assert_decode_copy_is_scoped("retain FCStd entry");
+}
+
+fn assert_decode_copy_is_scoped(operation: &str) {
+    use cadmpeg_core::decode::refusal_probe::RefusalProbe;
+    use cadmpeg_core::decode::{ResourceDimension, View};
+    use cadmpeg_ir::codec::CodecBackend;
+
     let document = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object name="A" type="Part::Feature"/></Objects><ObjectData Count="1"><Object name="A"><Properties Count="0"/></Object></ObjectData></Document>"#;
     let bytes = archive(document);
     FcstdCodec
@@ -691,44 +704,31 @@ fn x63_decode_counts_object_copies_in_retained_budget() {
         .expect("service profile admits the object");
 
     let mut options = DecodeOptions::default();
-    options.policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(document.len());
-    let mut error = None;
-    for _ in 0..256 {
-        let refused = FcstdCodec
-            .decode(&mut Cursor::new(&bytes), &options)
-            .expect_err("object text copies consume the retained budget before entry retention");
-        let cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) =
-            &refused
-        else {
-            panic!("expected retained refusal: {refused:?}");
-        };
-        assert_eq!(
-            limit.dimension,
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes
-        );
-        if limit.operation == "retain FCStd entry" {
-            let exact = limit.used + limit.additional - 1;
-            options.policy.limits.max_retained_bytes = exact;
-            error = Some(
-                FcstdCodec
-                    .decode(&mut Cursor::new(&bytes), &options)
-                    .expect_err("one byte below entry need refuses"),
-            );
-            break;
-        }
-        let next = limit.used + limit.additional;
-        assert!(next > options.policy.limits.max_retained_bytes);
-        options.policy.limits.max_retained_bytes = next;
-    }
-    let error = error.expect("entry charge reached within fixture admissions");
+    options.policy.limits.max_retained_bytes = u64::MAX;
+    let probe = RefusalProbe::arm(ResourceDimension::RetainedBytes, operation, None);
+    let decoded = FcstdCodec
+        .decode(&mut Cursor::new(&bytes), &options)
+        .expect("typed copies use scoped storage");
+    drop(probe);
+    let namespace = decoded.ir().native.namespace("fcstd").unwrap();
+    let objects: Vec<crate::native::ObjectRecord> = namespace.arena_as("objects").unwrap();
+    assert_eq!(objects.len(), 1);
+    assert_eq!(objects[0].name(), "A");
+    assert_eq!(
+        objects[0].data.as_ref().unwrap().text(),
+        r#"<Object name="A"><Properties Count="0"/></Object>"#
+    );
+    let entries: Vec<crate::native::EntryRecord> = namespace.arena_as("entries").unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].name(), "Document.xml");
+    assert_eq!(entries[0].data(), document.as_bytes());
+    let error =
+        crate::test_support::refusal_at(ResourceDimension::WorkUnits, &bytes, operation, |ctx| {
+            FcstdCodec.decode_impl(ctx, View::over_retained(&bytes))
+        });
     assert!(
-        matches!(
-            &error,
-            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                    && limit.operation == "retain FCStd entry"
-        ),
-        "{error:?}"
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits && limit.operation == operation)
     );
 }
 

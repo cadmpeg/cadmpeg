@@ -38,7 +38,7 @@ mod writer;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     target::{Catalog, ResolvedWrite},
@@ -56,6 +56,7 @@ use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::ContainerSummary;
 
 use crate::loss::FreecadLossCode;
+use crate::native::element_map::ScopedData;
 
 /// `FCStd` document codec.
 #[derive(Debug, Default, Clone, Copy)]
@@ -249,8 +250,6 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             IDENTITIES,
         )
     })?;
-    let mut gui_provider_id_storage = None;
-    let mut gui_provider_ids: Option<HashSet<&str>> = None;
     if object_ids.len() != objects.len()
         || property_ids.len() != properties.len()
         || extension_ids.len() != extensions.len()
@@ -452,37 +451,41 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         }
     }
     let mut property_sources = gui_properties.iter();
-    while property_sources.len() != 0 {
-        let Some(property) =
-            ctx.next_charged(&mut property_sources, "FreeCAD validation GUI properties")?
-        else {
-            break;
-        };
-        let gui_provider_ids = match &mut gui_provider_ids {
-            Some(ids) => ids,
-            slot @ None => {
-                let (ids, storage) = ctx.with_scoped_storage(IDENTITIES, || {
-                    ctx.collect_hash_set(
-                        gui_providers.iter().map(|provider| provider.id.as_str()),
-                        IDENTITIES,
-                    )
-                })?;
-                gui_provider_id_storage = Some(storage);
-                slot.insert(ids)
+    let first_property = if property_sources.len() == 0 {
+        None
+    } else {
+        ctx.next_charged(&mut property_sources, "FreeCAD validation GUI properties")?
+    };
+    if let Some(mut property) = first_property {
+        let ids = ctx.with_scoped_storage(IDENTITIES, || {
+            ctx.collect_hash_set(
+                gui_providers.iter().map(|provider| provider.id.as_str()),
+                IDENTITIES,
+            )
+        })?;
+        let _id_storage = ids.1;
+        let gui_provider_ids = ids.0;
+        loop {
+            if !has(&gui_provider_ids, &property.owner)? || missing_entry(&property.side_entries)? {
+                push_finding(
+                    ctx,
+                    findings,
+                    Check::ReferentialIntegrity,
+                    format_args!("{} has a missing GUI owner or side entry", property.id),
+                    Some(&property.id),
+                )?;
             }
-        };
-        if !has(gui_provider_ids, &property.owner)? || missing_entry(&property.side_entries)? {
-            push_finding(
-                ctx,
-                findings,
-                Check::ReferentialIntegrity,
-                format_args!("{} has a missing GUI owner or side entry", property.id),
-                Some(&property.id),
-            )?;
+            if property_sources.len() == 0 {
+                break;
+            }
+            let Some(next) =
+                ctx.next_charged(&mut property_sources, "FreeCAD validation GUI properties")?
+            else {
+                break;
+            };
+            property = next;
         }
     }
-    drop(gui_provider_ids);
-    drop(gui_provider_id_storage);
     let cyclic_products = ctx.with_scoped_storage("fcstd product cycle lookup", || {
         product::product_cycle_nodes(ctx, &product_nodes)
     })?;
@@ -594,66 +597,67 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             )?;
         }
     }
-    let mut object_index_storage = None;
-    let mut object_by_id: Option<HashMap<&str, &native::ObjectRecord>> = None;
     let mut annotation_objects_storage =
         ctx.reserve_scoped(0, "FreeCAD validation annotation objects")?;
     let mut annotation_objects = HashSet::new();
     let mut annotations_unique = true;
     let mut annotation_sources = annotations.iter();
-    while annotation_sources.len() != 0 {
-        let Some(annotation) =
-            ctx.next_charged(&mut annotation_sources, "FreeCAD validation annotations")?
-        else {
-            break;
-        };
-        let object_by_id = match &mut object_by_id {
-            Some(index) => index,
-            slot @ None => {
-                let (index, storage) =
-                    ctx.with_scoped_storage("FreeCAD validation object index", || {
-                        ctx.collect_hash_map(
-                            objects.iter().map(|object| (object.id().as_str(), object)),
-                            "FreeCAD validation object index",
-                        )
-                    })?;
-                object_index_storage = Some(storage);
-                slot.insert(index)
-            }
-        };
-        let kind_matches = match ctx.get_hash_map(
-            object_by_id,
-            annotation.object.as_str(),
-            "FreeCAD validation object index",
-        )? {
-            Some(object) => object.type_name == annotation.kind.as_str(),
-            None => false,
-        };
-        if !kind_matches
-            || missing_in_groups(&annotation.references)?
-            || missing_entry(&annotation.side_entries)?
-        {
-            push_finding(
-                ctx,
-                findings,
-                Check::NativeLinks,
-                format_args!(
-                    "{} has a missing annotation object, target, or asset",
-                    annotation.id
-                ),
-                Some(&annotation.id),
-            )?;
-        }
-        annotations_unique &= annotation_objects_storage.with_storage(|| {
-            ctx.insert_hash_set(
-                &mut annotation_objects,
-                annotation.object.as_str(),
-                "FreeCAD validation annotation objects",
+    let first_annotation = if annotation_sources.len() == 0 {
+        None
+    } else {
+        ctx.next_charged(&mut annotation_sources, "FreeCAD validation annotations")?
+    };
+    if let Some(mut annotation) = first_annotation {
+        let index = ctx.with_scoped_storage("FreeCAD validation object index", || {
+            ctx.collect_hash_map(
+                objects.iter().map(|object| (object.id().as_str(), object)),
+                "FreeCAD validation object index",
             )
         })?;
+        let _index_storage = index.1;
+        let object_by_id = index.0;
+        loop {
+            let kind_matches = match ctx.get_hash_map(
+                &object_by_id,
+                annotation.object.as_str(),
+                "FreeCAD validation object index",
+            )? {
+                Some(object) => object.type_name == annotation.kind.as_str(),
+                None => false,
+            };
+            if !kind_matches
+                || missing_in_groups(&annotation.references)?
+                || missing_entry(&annotation.side_entries)?
+            {
+                push_finding(
+                    ctx,
+                    findings,
+                    Check::NativeLinks,
+                    format_args!(
+                        "{} has a missing annotation object, target, or asset",
+                        annotation.id
+                    ),
+                    Some(&annotation.id),
+                )?;
+            }
+            annotations_unique &= annotation_objects_storage.with_storage(|| {
+                ctx.insert_hash_set(
+                    &mut annotation_objects,
+                    annotation.object.as_str(),
+                    "FreeCAD validation annotation objects",
+                )
+            })?;
+            if annotation_sources.len() == 0 {
+                break;
+            }
+            let Some(next) =
+                ctx.next_charged(&mut annotation_sources, "FreeCAD validation annotations")?
+            else {
+                break;
+            };
+            annotation = next;
+        }
     }
-    drop(object_by_id);
-    drop(object_index_storage);
     // Every annotation object is annotated exactly once: the annotated
     // objects are distinct, and the annotation-typed objects are exactly them.
     let mut annotation_typed = 0_usize;
@@ -1191,12 +1195,6 @@ struct LedgerOwners<'r> {
     element_maps: &'r [native::element_map::ElementMapRecord],
 }
 
-/// A span group keeps its buffer admission live until the group is consumed.
-struct LedgerSpanGroup<'r, 'ctx> {
-    spans: Vec<&'r native::LogicalSpan>,
-    storage: ScopedReservation<'ctx>,
-}
-
 /// Every logical span names a present entry and owner, every nonempty entry
 /// has spans, and each entry's spans tile it.
 fn validate_logical_ledger(
@@ -1249,27 +1247,22 @@ fn validate_logical_ledger(
     let mut owner_ids = None;
     let mut string_table_ids = None;
     let mut group_index_storage = ctx.reserve_scoped(0, OPERATION)?;
-    let mut by_entry = BTreeMap::<&str, Option<LedgerSpanGroup<'_, '_>>>::new();
+    let mut by_entry = BTreeMap::<&str, ScopedData<'_, Vec<&native::LogicalSpan>>>::new();
     let mut span_sources = logical.iter();
     while span_sources.len() != 0 {
         let Some(span) = ctx.next_charged(&mut span_sources, OPERATION)? else {
             break;
         };
-        let group = group_index_storage
+        let group = match group_index_storage
             .with_storage(|| ctx.entry_btree_map(&mut by_entry, span.entry.as_str(), OPERATION))?
-            .or_default();
-        if group.is_none() {
-            let storage = ctx.reserve_scoped(0, OPERATION)?;
-            *group = Some(LedgerSpanGroup {
-                spans: Vec::new(),
-                storage,
-            });
-        }
-        if let Some(group) = group {
-            group
-                .storage
-                .with_storage(|| ctx.push_vec(&mut group.spans, span, OPERATION))?;
-        }
+        {
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::btree_map::Entry::Vacant(entry) => entry.insert(ScopedData {
+                data: Vec::new(),
+                _storage: ctx.reserve_scoped(0, OPERATION)?,
+            }),
+        };
+        ctx.push_scoped_vec(&mut group._storage, &mut group.data, span, OPERATION)?;
         let owner_valid = match &span.classification {
             native::LogicalClassification::Structural => true,
             native::LogicalClassification::Typed { owner }
@@ -1395,21 +1388,22 @@ fn validate_logical_ledger(
             )?;
         }
     }
-    let mut name_sources = by_entry.iter_mut();
+    let mut name_sources = by_entry.into_iter();
     while name_sources.len() != 0 {
         let Some((name, group)) = ctx.next_charged(&mut name_sources, OPERATION)? else {
             break;
         };
-        let Some(LedgerSpanGroup { storage, mut spans }) = group.take() else {
-            continue;
-        };
+        let ScopedData {
+            _storage: storage,
+            data: mut spans,
+        } = group;
         ctx.stable_sort_by_key(
             &mut spans,
             |value| value.span.start(),
             Ord::cmp,
             "fcstd logical spans sort",
         )?;
-        let exact = match ctx.get_hash_map(&entry_lengths, *name, OPERATION)? {
+        let exact = match ctx.get_hash_map(&entry_lengths, name, OPERATION)? {
             Some(&end) => {
                 container::chain_is_exact(ctx, spans.iter().map(|span| &span.span), end, OPERATION)?
             }
@@ -1427,7 +1421,7 @@ fn validate_logical_ledger(
         drop(spans);
         drop(storage);
     }
-    drop(by_entry);
+    drop(name_sources);
     drop(group_index_storage);
     Ok(())
 }
@@ -1514,7 +1508,14 @@ impl CodecBackend for FcstdCodec {
         }
         if container::has_document_markers(ctx, prefix)? {
             Ok(Confidence::High)
-        } else if ctx.contains_bytes(prefix, b"Document.xml", "detect FreeCAD document marker")? {
+        } else if ctx
+            .position_by(
+                prefix.windows(b"Document.xml".len()),
+                |window| Ok(window == b"Document.xml"),
+                "detect FreeCAD document marker",
+            )?
+            .is_some()
+        {
             Ok(Confidence::Medium)
         } else {
             Ok(Confidence::Low)
@@ -1531,7 +1532,8 @@ impl CodecBackend for FcstdCodec {
     }
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
-        let mut scan = container::scan(ctx, root)?;
+        let mut scan_storage = ctx.reserve_scoped(0, "FCStd decode scan")?;
+        let mut scan = scan_storage.with_storage(|| container::scan(ctx, root))?;
         let mut admitted_entities = 0_u64;
         let mut attributes = container::source_attributes(ctx, &scan)?;
         let mut thumbnail = None;
@@ -1590,12 +1592,15 @@ impl CodecBackend for FcstdCodec {
             let document_xml = scan.document_xml.take().ok_or_else(|| {
                 CodecError::Malformed("Document.xml disappeared after scan".into())
             })?;
-            let graph = persistence::parse_document(
-                document_xml.text,
-                document_xml.xml.document(),
-                dialect::FcstdDialect::from_schema_version(&scan.schema_version),
-                ctx,
-            )?;
+            let mut graph_storage = ctx.reserve_scoped(0, "FCStd persistence graph")?;
+            let graph = graph_storage.with_storage(|| {
+                persistence::parse_document(
+                    document_xml.text,
+                    document_xml.xml.document(),
+                    dialect::FcstdDialect::from_schema_version(&scan.schema_version),
+                    ctx,
+                )
+            })?;
             let mut property_sources = graph.properties.iter();
             while property_sources.len() != 0 {
                 let Some(property) =
@@ -1625,35 +1630,53 @@ impl CodecBackend for FcstdCodec {
                     }
                 }
             }
-            let mut entry_records = container::entry_records(ctx, &scan, &graph.properties)?;
-            let (string_tables, mut element_maps) = element_map::parse(
-                ctx,
-                document_xml.xml.document(),
-                scan.document.file_version.value(),
-                &graph.properties,
-                &entry_records,
-            )?;
+            let mut entry_storage = ctx.reserve_scoped(0, "FCStd decode entry records")?;
+            let mut entry_records = entry_storage
+                .with_storage(|| container::entry_records(ctx, &scan, &graph.properties))?;
+            let mut element_storage = ctx.reserve_scoped(0, "FCStd decode element records")?;
+            let (string_tables, mut element_maps) = element_storage.with_storage(|| {
+                element_map::parse(
+                    ctx,
+                    document_xml.xml.document(),
+                    scan.document.file_version.value(),
+                    &graph.properties,
+                    &entry_records,
+                )
+            })?;
             drop(document_xml);
-            let shape_payloads = brep::parse_payloads(ctx, &graph.properties, &entry_records)?;
+            let mut shape_storage = ctx.reserve_scoped(0, "FCStd decode shape payloads")?;
+            let shape_payloads = shape_storage
+                .with_storage(|| brep::parse_payloads(ctx, &graph.properties, &entry_records))?;
             namespace.set_arena(ctx, "objects", &graph.objects)?;
             namespace.set_arena(ctx, "extensions", &graph.extensions)?;
             namespace.set_arena(ctx, "properties", &graph.properties)?;
             namespace.set_arena(ctx, "shape_payloads", &shape_payloads)?;
-            namespace.set_arena(
-                ctx,
-                "carrier_census",
-                &brep::carrier_census(ctx, &shape_payloads)?,
-            )?;
+            {
+                let census = ctx.with_scoped_storage("FCStd decode carrier census", || {
+                    brep::carrier_census(ctx, &shape_payloads)
+                })?;
+                let _census_storage = census.1;
+                let census = census.0;
+                namespace.set_arena(ctx, "carrier_census", &census)?;
+            }
             namespace.set_arena(ctx, "string_tables", string_tables.as_slice())?;
-            let product_nodes =
-                product::transfer(ctx, &graph.objects, &graph.properties, &scan.data)?;
+            let mut product_storage = ctx.reserve_scoped(0, "FCStd decode product nodes")?;
+            let product_nodes = product_storage.with_storage(|| {
+                product::transfer(ctx, &graph.objects, &graph.properties, &scan.data)
+            })?;
             namespace.set_arena(ctx, "product_nodes", &product_nodes)?;
-            let joint_records = joint::transfer(ctx, &graph.objects, &graph.properties)?;
+            let mut joint_storage = ctx.reserve_scoped(0, "FCStd decode joints")?;
+            let joint_records = joint_storage
+                .with_storage(|| joint::transfer(ctx, &graph.objects, &graph.properties))?;
             namespace.set_arena(ctx, "joints", &joint_records)?;
-            let drawings = drawing::transfer(ctx, &graph.objects, &graph.properties)?;
+            let mut drawing_storage = ctx.reserve_scoped(0, "FCStd decode drawings")?;
+            let drawings = drawing_storage
+                .with_storage(|| drawing::transfer(ctx, &graph.objects, &graph.properties))?;
             drawing::transfer_neutral(ctx, &mut ir.model, &drawings, &graph.properties)?;
             namespace.set_arena(ctx, "drawings", &drawings)?;
-            let annotations = annotation::transfer(ctx, &graph.objects, &graph.properties)?;
+            let mut annotation_storage = ctx.reserve_scoped(0, "FCStd decode annotations")?;
+            let annotations = annotation_storage
+                .with_storage(|| annotation::transfer(ctx, &graph.objects, &graph.properties))?;
             annotation::transfer_neutral(
                 ctx,
                 &mut ir.model,
@@ -1662,6 +1685,7 @@ impl CodecBackend for FcstdCodec {
                 &drawings,
             )?;
             namespace.set_arena(ctx, "annotations", &annotations)?;
+            drop((annotations, annotation_storage, drawings, drawing_storage));
             application::install(
                 ctx,
                 namespace,
@@ -1669,8 +1693,14 @@ impl CodecBackend for FcstdCodec {
                 &graph.properties,
                 &entry_records,
             )?;
-            let attachments = attachment::transfer(ctx, &graph.objects, &graph.properties)?;
-            namespace.set_arena(ctx, "attachments", &attachments)?;
+            {
+                let attachments = ctx.with_scoped_storage("FCStd decode attachments", || {
+                    attachment::transfer(ctx, &graph.objects, &graph.properties)
+                })?;
+                let _attachment_storage = attachments.1;
+                let attachments = attachments.0;
+                namespace.set_arena(ctx, "attachments", &attachments)?;
+            }
             let (curve_transfer, surface_transfer) =
                 brep::transfer_text_geometry(ctx, &shape_payloads, &graph.properties)?;
             geometry_transferred =
@@ -1750,16 +1780,25 @@ impl CodecBackend for FcstdCodec {
             ir.model.occurrences = occurrences;
             ir.model.assembly_joints =
                 joint::transfer_neutral(ctx, &joint_records, &ir.model.occurrences)?;
+            drop((joint_records, joint_storage, product_nodes, product_storage));
             ctx.admit_entities(
                 cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
                 &mut admitted_entities,
                 "admit FCStd entities",
             )?;
-            let design_census = design::census(ctx, &graph.objects, &ir.model.features)?;
-            ir.native
-                .namespace_mut("fcstd")
-                .set_arena(ctx, "design_census", &design_census)?;
-            element_map::bind_topology(ctx, &mut element_maps, &topology_occurrences.records)?;
+            {
+                let census = ctx.with_scoped_storage("FCStd decode design census", || {
+                    design::census(ctx, &graph.objects, &ir.model.features)
+                })?;
+                let _census_storage = census.1;
+                let census = census.0;
+                ir.native
+                    .namespace_mut("fcstd")
+                    .set_arena(ctx, "design_census", &census)?;
+            }
+            element_storage.with_storage(|| {
+                element_map::bind_topology(ctx, &mut element_maps, &topology_occurrences.records)
+            })?;
             drop(topology_occurrences);
             let mut gui_graph = if let Some(gui_view) =
                 ctx.get_btree_map(&scan.data, "GuiDocument.xml", "FCStd GUI entry lookup")?
@@ -1788,7 +1827,8 @@ impl CodecBackend for FcstdCodec {
                 &mut admitted_entities,
                 "admit FCStd entities",
             )?;
-            bind_gui_entry_references(ctx, &mut entry_records, &gui_graph)?;
+            entry_storage
+                .with_storage(|| bind_gui_entry_references(ctx, &mut entry_records, &gui_graph))?;
             ir.native
                 .namespace_mut("fcstd")
                 .set_arena(ctx, "entries", &entry_records)?;
@@ -1807,26 +1847,34 @@ impl CodecBackend for FcstdCodec {
                 "gui_properties",
                 &gui_graph.properties,
             )?;
-            let logical_ledger = container::logical_ledger(
-                ctx,
-                &entry_records,
-                &graph.properties,
-                &gui_graph,
-                &shape_payloads,
-                string_tables.as_slice(),
-                &element_maps,
-            )?;
+            let mut logical_storage = ctx.reserve_scoped(0, "FCStd decode logical ledger")?;
+            let logical_ledger = logical_storage.with_storage(|| {
+                container::logical_ledger(
+                    ctx,
+                    &entry_records,
+                    &graph.properties,
+                    &gui_graph,
+                    &shape_payloads,
+                    string_tables.as_slice(),
+                    &element_maps,
+                )
+            })?;
             ir.native
                 .namespace_mut("fcstd")
                 .set_arena(ctx, "logical_ledger", &logical_ledger)?;
             let physical_byte_len = scan.ledger.last().map_or(0, |span| span.span.end());
-            let coverage = container::byte_coverage(
-                ctx,
-                &scan.ledger,
-                &entry_records,
-                &logical_ledger,
-                physical_byte_len,
-            )?;
+            let coverage = ctx.with_scoped_storage("FCStd decode byte coverage", || {
+                container::byte_coverage(
+                    ctx,
+                    &scan.ledger,
+                    &entry_records,
+                    &logical_ledger,
+                    physical_byte_len,
+                )
+            })?;
+            let _coverage_storage = coverage.1;
+            let coverage = coverage.0;
+            drop((logical_ledger, logical_storage));
             ir.native.namespace_mut("fcstd").set_arena(
                 ctx,
                 "byte_coverage",
@@ -1837,8 +1885,11 @@ impl CodecBackend for FcstdCodec {
                 .set_arena(ctx, "element_maps", &element_maps)?;
         } else {
             let physical_byte_len = scan.ledger.last().map_or(0, |span| span.span.end());
-            let coverage =
-                container::byte_coverage(ctx, &scan.ledger, &[], &[], physical_byte_len)?;
+            let coverage = ctx.with_scoped_storage("FCStd decode byte coverage", || {
+                container::byte_coverage(ctx, &scan.ledger, &[], &[], physical_byte_len)
+            })?;
+            let _coverage_storage = coverage.1;
+            let coverage = coverage.0;
             ir.native.namespace_mut("fcstd").set_arena(
                 ctx,
                 "byte_coverage",
@@ -1869,6 +1920,7 @@ impl CodecBackend for FcstdCodec {
             "admit FCStd entities",
         )?;
         let summary_notes = container::summary_notes(ctx, &scan)?;
+        drop((scan, scan_storage));
         Ok(Decoded {
             ir,
             body: DecodeBody {
