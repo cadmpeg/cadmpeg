@@ -10,16 +10,24 @@ use cadmpeg_ir::math::Point3;
 fn failed_point_transform_is_malformed_before_row_publication() {
     let mut property = resource_test_property();
     property.xml = RetainedXml::from_text(
-        "<Property><Points mtrx=\"1e300 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1\"/></Property>".into(), 0,
-    ).expect("XML");
+        "<Property><Points mtrx=\"1e300 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1\"/></Property>".into(),
+        0,
+    )
+    .expect("XML");
     for count in [1_u32, 2] {
         let mut bytes = count.to_le_bytes().to_vec();
-        for _ in 0..count { for value in [1e30_f32, 0.0, 0.0] { bytes.extend_from_slice(&value.to_le_bytes()); } }
+        for _ in 0..count {
+            for value in [1e30_f32, 0.0, 0.0] {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+        }
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
         let mut points = Vec::new();
         let mut admitted = 0;
-        let error = parse_points(&ctx, &property, &bytes, 0, &mut admitted, None, &mut points).expect_err("transformed coordinate overflow");
+        let error = parse_points(&ctx, &property, &bytes, 0, &mut admitted, None, &mut points)
+            .expect_err("transformed coordinate overflow");
         assert!(matches!(error, CodecError::Malformed(message)
             if message == "transformed point-cloud point contains a non-finite coordinate"));
         assert!(points.is_empty());
@@ -34,10 +42,14 @@ fn invalid_point_source_is_malformed_before_row_publication() {
     property.owner = " ".into();
     let bytes = [1_u32.to_le_bytes().as_slice(), &[0; 12]].concat();
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
     let mut points = Vec::new();
-    let error = parse_points(&ctx, &property, &bytes, 0, &mut 0, None, &mut points).expect_err("blank source object");
-    assert!(matches!(error, CodecError::Malformed(message) if message == "source object_id must not be empty"));
+    let error = parse_points(&ctx, &property, &bytes, 0, &mut 0, None, &mut points)
+        .expect_err("blank source object");
+    assert!(
+        matches!(error, CodecError::Malformed(message) if message == "source object_id must not be empty")
+    );
     assert!(points.is_empty());
     assert_eq!(ctx.resource_refusal(), None);
 }
@@ -73,7 +85,6 @@ fn accepted_point_rows_keep_identities_positions_and_source() {
         assert_eq!(source.object_id.as_str(), property.owner);
         assert_eq!(source.name.as_deref(), Some("Geometry"));
     }
-
 }
 
 #[test]
@@ -81,7 +92,9 @@ fn point_source_refusal_keeps_original_limit() {
     let property = resource_test_property();
     let bytes = [1_u32.to_le_bytes().as_slice(), &[0; 12]].concat();
     let error = crate::test_support::refusal_at(
-        ResourceDimension::RetainedBytes, &bytes, "FreeCAD geometry object identity",
+        ResourceDimension::RetainedBytes,
+        &bytes,
+        "FreeCAD geometry object identity",
         |ctx| {
             let mut points = Vec::new();
             let result = parse_points(ctx, &property, &bytes, 0, &mut 0, None, &mut points);
@@ -117,7 +130,6 @@ fn point_trailing_payload_keeps_completed_row_and_retained_diagnostic() {
     assert_eq!(points[0].id.as_str(), "fcstd:model:point#Geometry:0");
     assert_eq!(points[0].position().get(), Point3::new(0.0, 0.0, 0.0));
     assert_eq!(ctx.resource_refusal(), None);
-
 }
 
 #[test]
@@ -157,8 +169,21 @@ fn point_population_retained_limit_refuses_large_population() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 1024;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-        let result = parse_points(&ctx, &resource_test_property(), &bytes, 0, &mut 0, None, &mut Vec::new());
-        if count == 1 { assert!(result.is_ok()); }
-        else { assert!(matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes)); }
+        let result = parse_points(
+            &ctx,
+            &resource_test_property(),
+            &bytes,
+            0,
+            &mut 0,
+            None,
+            &mut Vec::new(),
+        );
+        if count == 1 {
+            assert!(result.is_ok());
+        } else {
+            assert!(
+                matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes)
+            );
+        }
     }
 }

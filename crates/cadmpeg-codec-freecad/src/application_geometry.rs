@@ -247,8 +247,7 @@ fn parse_mesh(
     let mut vertices = ctx.collection_vec(point_count, "FreeCAD mesh vertices")?;
     let mut vertex_sources = 0..point_count;
     while vertex_sources.len() != 0 {
-        let Some(_) = ctx.next_charged(&mut vertex_sources, "FreeCAD mesh vertex visits")?
-        else {
+        let Some(_) = ctx.next_charged(&mut vertex_sources, "FreeCAD mesh vertex visits")? else {
             break;
         };
         vertices.push(reader.point3(byte_order, "mesh point")?);
@@ -289,18 +288,25 @@ fn parse_mesh(
         }
     }
     reader.finish(ctx, "mesh payload")?;
-    let id = cadmpeg_ir::tessellation::TessellationId::mint(
-        ctx.retained_suffix(&property.id, ":mesh", "FreeCAD mesh identity")?,
-    ).map_err(|error| crate::resource::malformed_charged(
-        ctx, format_args!("{error}"), "FreeCAD mesh diagnostic",
-    ))?;
+    let id = cadmpeg_ir::tessellation::TessellationId::mint(ctx.retained_suffix(
+        &property.id,
+        ":mesh",
+        "FreeCAD mesh identity",
+    )?)
+    .map_err(|error| {
+        crate::resource::malformed_charged(ctx, format_args!("{error}"), "FreeCAD mesh diagnostic")
+    })?;
     let tessellation = Tessellation::from_parts(
         id,
-        cadmpeg_ir::tessellation::TessellationMesh::List { vertices, triangles },
+        cadmpeg_ir::tessellation::TessellationMesh::List {
+            vertices,
+            triangles,
+        },
         Vec::new(),
-    ).map_err(|error| crate::resource::malformed_charged(
-        ctx, format_args!("{error}"), "FreeCAD mesh diagnostic",
-    ))?;
+    )
+    .map_err(|error| {
+        crate::resource::malformed_charged(ctx, format_args!("{error}"), "FreeCAD mesh diagnostic")
+    })?;
     Ok(tessellation.with_source_object(Some(association(ctx, property)?)))
 }
 
@@ -343,8 +349,13 @@ fn parse_points(
         let ordinal = ordinal.0;
         let position = reader.point3(ByteOrder::Little, "point-cloud point")?;
         points.push(Point::new(
-            PointId::mint(crate::native::model_id_charged(ctx, "point", &property.id, &ordinal)?)
-                .map_err(CodecError::malformed)?,
+            PointId::mint(crate::native::model_id_charged(
+                ctx,
+                "point",
+                &property.id,
+                &ordinal,
+            )?)
+            .map_err(CodecError::malformed)?,
             transform_point(transform, position)?,
             Some(association(ctx, property)?),
         ));
