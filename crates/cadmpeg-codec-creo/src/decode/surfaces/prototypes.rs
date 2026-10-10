@@ -13,7 +13,6 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 use crate::container::ContainerScan;
 use crate::lane_refusal::JoinedLaneRecords;
 use crate::legacy_geometry::LegacySurfaceNamespace;
-use crate::surface::SurfaceParameterRecord;
 
 use super::super::native::annotate;
 use super::super::sweep::nurbs::interpolation_spline_surface;
@@ -40,7 +39,7 @@ pub(super) fn prototype_field<'a>(
 ) -> Result<Option<&'a crate::surface::SurfaceNamedParameter>, cadmpeg_core::CodecError> {
     crate::decode::uniqueness::exactly_one_by(
         ctx,
-        &record.parameters,
+        record.parameters(),
         |field| {
             ctx.equal(
                 field.name.as_str(),
@@ -729,12 +728,17 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                     (Some(radius1), Some(radius2)) => Some([radius1, radius2]),
                     _ => None,
                 };
-                let radii =
-                    crate::surface::unique_surface_parameter(&scan.surfaces.parameters, row.id)
-                        .filter(|parameter| parameter.offset == row.offset)
-                        .and_then(SurfaceParameterRecord::torus_radius_overrides)
-                        .map(|overrides| [overrides.radius1, overrides.radius2])
-                        .or(prototype_radii);
+                let overrides = match crate::surface::unique_surface_parameter(
+                    &scan.surfaces.parameters,
+                    row.id,
+                ).filter(|parameter| parameter.offset == row.offset)
+                {
+                    Some(parameter) => parameter.torus_radius_overrides_checked(ctx)?,
+                    None => None,
+                };
+                let radii = overrides
+                    .map(|overrides| [overrides.radius1, overrides.radius2])
+                    .or(prototype_radii);
                 let Some([radius1, radius2]) = radii else {
                     continue;
                 };

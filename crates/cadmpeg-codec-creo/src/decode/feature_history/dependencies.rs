@@ -536,7 +536,7 @@ pub(in super::super) fn surface_prototype_feature_dependencies(
         let prototype = prototype.record();
         let Some(field) = crate::decode::uniqueness::exactly_one_by(
             ctx,
-            &prototype.parameters,
+            prototype.parameters(),
             |field| Ok(field.name.as_str() == "parent_feats"),
             "creo prototype parent fields",
         )?

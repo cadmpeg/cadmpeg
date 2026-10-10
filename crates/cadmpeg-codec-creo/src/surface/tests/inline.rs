@@ -382,7 +382,7 @@ fn selector_envelope_places_a_compact_y_cylinder() {
                 &scalar::ScalarCache::default(),
             )
         })
-        .expect("admitted selector envelope")
+        .expect("selector fixture admission")
         .is_none());
     }
     assert_eq!(frame.frame().origin(), [0.0, 0.0, 0.0]);

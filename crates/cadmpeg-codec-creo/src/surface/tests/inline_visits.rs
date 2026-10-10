@@ -1,42 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::{u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 
 use crate::scalar::ScalarCache;
-use crate::surface::{inline_local_starts, inline_surface_body, inline_surface_suffix_body,
-    SurfaceBodyBoundary, SurfaceKind, SurfaceParameterCarrier, SurfaceParameterRecord};
+use crate::surface::{
+    inline_local_starts, inline_surface_body, inline_surface_suffix_body, SurfaceBodyBoundary,
+    SurfaceKind, SurfaceParameterCarrier, SurfaceParameterRecord,
+};
 
 fn check_work<T: PartialEq + std::fmt::Debug>(
-    work: u64,
-    expected: T,
+    expected: &T,
     run: impl Fn(&DecodeContext<'_>) -> Result<T, CodecError>,
 ) {
-    for cap in 0..=work + 1 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        policy.limits.max_retained_bytes = 0;
-        policy.limits.max_materialized_bytes = 0;
-        policy.limits.max_collection_items = 0;
-        policy.limits.max_entities = 0;
-        policy.limits.max_recursion_depth = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let original = if cap < work {
-            let CodecError::ResourceLimit(refusal) = run(&ctx).expect_err("next executed body byte") else { panic!("resource refusal"); };
-            assert_eq!((refusal.used, refusal.additional), (cap, 1));
-            refusal
-        } else {
-            assert_eq!(run(&ctx).expect("exact visits, no backing"), expected);
-            let refusal = ctx.charge_work_limit(cap - work + 1, "after inline traversal")
-                .expect_err("exact remaining Work");
-            assert_eq!((refusal.used, refusal.additional), (work, cap - work + 1));
-            refusal
-        };
-        assert_eq!(original.dimension, ResourceDimension::WorkUnits);
-        assert!(matches!(run(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == original));
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original));
-    }
+    assert_eq!(&super::work_output(run), expected);
 }
 
 fn record(kind: SurfaceKind, body: Vec<u8>) -> SurfaceParameterRecord {
@@ -59,31 +36,39 @@ fn inline_local_start_iterator_owns_only_visited_boundaries_and_no_eof() {
         for byte in [0xff, 0xe3] {
             let body = vec![byte; count];
             let mut expected = vec![0];
-            if byte == 0xe3 { expected.extend(1..=count); }
-            check_work(u64_from_index(count), expected,
-                |ctx| inline_local_starts(ctx, &body).collect::<Result<Vec<_>, _>>());
+            if byte == 0xe3 {
+                expected.extend(1..=count);
+            }
+            check_work(&expected, |ctx| {
+                inline_local_starts(ctx, &body).collect::<Result<Vec<_>, _>>()
+            });
         }
     }
 }
 
 #[test]
 fn inline_suffix_routes_admit_each_actual_body_byte_before_framing() {
-    for kind in [SurfaceKind::Cylinder, SurfaceKind::Cone, SurfaceKind::TorusOrSphere] {
+    for kind in [
+        SurfaceKind::Cylinder,
+        SurfaceKind::Cone,
+        SurfaceKind::TorusOrSphere,
+    ] {
         for count in [0_usize, 1, 7, 17, 257] {
             for byte in [0xff, 0xe3] {
                 let body = vec![byte; count];
                 let cache = ScalarCache::default();
-                check_work(u64_from_index(count), None, |ctx| {
+                check_work(&None, |ctx| {
                     inline_surface_suffix_body(ctx, kind, &body, &cache)
                         .map(|value| value.map(|value| (value.terminal_close, value.carrier)))
                 });
-                check_work(u64_from_index(count), None, |ctx| {
+                check_work(&None, |ctx| {
                     inline_surface_body(ctx, kind, &body, &cache)
                         .map(|value| value.map(|value| (value.terminal_close, value.carrier)))
                 });
                 let record = record(kind, body);
-                check_work(u64_from_index(count), false,
-                    |ctx| record.has_inline_non_plane_local_system_suffix(ctx));
+                check_work(&false, |ctx| {
+                    record.has_inline_non_plane_local_system_suffix(ctx)
+                });
             }
         }
     }
@@ -93,13 +78,15 @@ fn inline_suffix_routes_admit_each_actual_body_byte_before_framing() {
 fn inline_envelope_terminal_scan_admits_its_tail_and_executed_fallback() {
     // Nine scalar slots with a separator after the first two, followed by
     // the envelope close. No following byte can start a local frame.
-    let envelope = [0x0f, 0xe4, 0x12, 0x2f, 0, 0, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0xe3];
+    let envelope = [
+        0x0f, 0xe4, 0x12, 0x2f, 0, 0, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0xe3,
+    ];
     for count in [0_usize, 1, 7, 17, 257] {
         let mut body = envelope.to_vec();
         body.extend(std::iter::repeat_n(0xff, count));
         // The terminal-candidate walk visits only the tail. With no layout,
         // the local-start fallback then visits the complete body once.
-        check_work(u64_from_index(count + body.len()), None, |ctx| {
+        check_work(&None, |ctx| {
             inline_surface_body(ctx, SurfaceKind::Cylinder, &body, &ScalarCache::default())
                 .map(|value| value.map(|value| (value.terminal_close, value.carrier)))
         });
@@ -109,17 +96,21 @@ fn inline_envelope_terminal_scan_admits_its_tail_and_executed_fallback() {
 #[test]
 fn inline_suffix_success_leaves_unvisited_frame_bytes_free() {
     // Compact Y frame, three origin scalars (2, 3, 4), unit radius.
-    let local = [0x18, 0x10, 0x18, 0xe5, 0x10, 0x0f, 0x18, 0xe4,
-        0x2f, 0, 0, 0x2e, 8, 0, 0x2f, 0x10, 0, 0x0f];
+    let local = [
+        0x18, 0x10, 0x18, 0xe5, 0x10, 0x0f, 0x18, 0xe4, 0x2f, 0, 0, 0x2e, 8, 0, 0x2f, 0x10, 0, 0x0f,
+    ];
     let initial = record(SurfaceKind::Cylinder, local.to_vec());
-    check_work(0, true, |ctx| initial.has_inline_non_plane_local_system_suffix(ctx));
+    check_work(&true, |ctx| {
+        initial.has_inline_non_plane_local_system_suffix(ctx)
+    });
     for count in [0_usize, 1, 7, 17, 257] {
         let mut body = vec![0xff; count];
         body.push(0xe3);
         body.extend_from_slice(&local);
         let record = record(SurfaceKind::Cylinder, body);
-        check_work(u64_from_index(count + 1), true,
-            |ctx| record.has_inline_non_plane_local_system_suffix(ctx));
+        check_work(&true, |ctx| {
+            record.has_inline_non_plane_local_system_suffix(ctx)
+        });
     }
 }
 
@@ -127,7 +118,9 @@ fn inline_suffix_success_leaves_unvisited_frame_bytes_free() {
 fn inline_empty_and_other_family_routes_preserve_original_refusal() {
     for kind in [SurfaceKind::Plane, SurfaceKind::Spline, SurfaceKind::Fillet] {
         let record = record(kind, Vec::new());
-        check_work(0, false, |ctx| record.has_inline_non_plane_local_system_suffix(ctx));
+        check_work(&false, |ctx| {
+            record.has_inline_non_plane_local_system_suffix(ctx)
+        });
     }
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -135,8 +128,12 @@ fn inline_empty_and_other_family_routes_preserve_original_refusal() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let original = ctx.charge_work_limit(1, "original").expect_err("fuse");
     let mut starts = inline_local_starts(&ctx, &[]);
-    assert!(matches!(starts.next(), Some(Err(CodecError::ResourceLimit(actual))) if actual == original));
+    assert!(
+        matches!(starts.next(), Some(Err(CodecError::ResourceLimit(actual))) if actual == original)
+    );
     assert!(starts.next().is_none());
     drop(starts);
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original)
+    );
 }
