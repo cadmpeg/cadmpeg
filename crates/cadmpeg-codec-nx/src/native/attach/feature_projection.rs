@@ -2977,11 +2977,11 @@ pub(super) fn hole_package_projection(
                 "NX hole package chamfer map",
             )?;
         }
-        let (placements, placement_storage) = ctx
+        let (placement_storage, placements) = ctx
             .with_scoped_storage("NX hole package placement candidate", || {
                 hole_axis_placements_for_body(ctx, ir, body)
-            })?;
-        let placements = placements;
+            })
+            .map(|(value, storage)| (storage, value))?;
         if placements.len() == group.members.len() {
             let placements = placement_storage.commit_value(placements)?;
             ctx.insert_btree_map(

@@ -441,10 +441,7 @@ mod tests {
         assert!(CachedRange::new(&source, usize::MAX, 1).is_none());
     }
 
-    fn indexed_section_with_late_invalid_range<'a>(
-        bytes: &'a [u8],
-        fixed: bool,
-    ) -> IndexedSection<'a> {
+    fn indexed_section_with_late_invalid_range(bytes: &[u8], fixed: bool) -> IndexedSection<'_> {
         let records = [
             EntityRecord {
                 offset: 0,
@@ -490,7 +487,7 @@ mod tests {
         }
     }
 
-    fn indexed_section_with_invalid_second_fixed_record<'a>(bytes: &'a [u8]) -> IndexedSection<'a> {
+    fn indexed_section_with_invalid_second_fixed_record(bytes: &[u8]) -> IndexedSection<'_> {
         IndexedSection {
             base: 0,
             entity_index_offset: 0,
@@ -519,9 +516,7 @@ mod tests {
         }
     }
 
-    fn indexed_section_with_invalid_second_offset_record<'a>(
-        bytes: &'a [u8],
-    ) -> IndexedSection<'a> {
+    fn indexed_section_with_invalid_second_offset_record(bytes: &[u8]) -> IndexedSection<'_> {
         let records = [
             EntityRecord {
                 offset: 0,

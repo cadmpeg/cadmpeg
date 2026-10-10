@@ -59,7 +59,7 @@ fn topology_body_census_stops_after_the_first_face_without_loops() {
                 + 1
                 + 2 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>())
                 + 1
-                + lookup_work
+                + lookup_work;
         },
         |ctx| {
             assert_eq!(graph.body_topology_census(ctx).unwrap(), (false, 2));

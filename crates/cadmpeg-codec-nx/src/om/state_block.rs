@@ -606,7 +606,7 @@ mod tests {
                 policy.limits.max_work_units = first_visit
                     .used
                     .checked_add(2)
-                    .expect("exact message visit cap fits")
+                    .expect("exact message visit cap fits");
             },
             |ctx| {
                 let messages =

@@ -123,10 +123,10 @@ pub(crate) fn external_reference_stream() -> Vec<u8> {
 
 /// Raw `EXTREFSTREAM` bytes with multiple valid handle-set records.
 pub(crate) fn external_reference_handle_sets(record_count: usize) -> Vec<u8> {
-    assert!(record_count != 0);
     const HEADER_LEN: usize = 25;
     const DIRECTORY_ROW_LEN: usize = 8;
     const HANDLE_RECORD_LEN: usize = 31;
+    assert!(record_count != 0);
 
     let directory_len = DIRECTORY_ROW_LEN
         .checked_mul(record_count)

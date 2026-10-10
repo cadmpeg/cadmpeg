@@ -73,7 +73,7 @@ pub fn om(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
         };
         at += token.raw().len();
     }
-    let (_, indexed_sections_storage) =
+    let ((), indexed_sections_storage) =
         ctx.with_scoped_storage("NX fuzz indexed section output", || {
             let sections = crate::om::indexed_sections(&ctx, data)?;
             let mut remaining_sections = sections.iter();
@@ -90,23 +90,24 @@ pub fn om(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
             Ok::<_, cadmpeg_core::CodecError>(())
         })?;
     drop(indexed_sections_storage);
-    let (_, sections_storage) = ctx.with_scoped_storage("NX fuzz framed section output", || {
-        let sections = crate::om::sections(&ctx, data)?;
-        let mut remaining_sections = sections.iter();
-        while !remaining_sections.as_slice().is_empty() {
-            let Some(section) =
-                ctx.next_charged(&mut remaining_sections, "NX fuzz framed sections")?
-            else {
-                break;
-            };
-            drop(
-                ctx.with_scoped_storage("NX fuzz operation body references", || {
-                    section.operation_body_references(&ctx)
-                })?,
-            );
-        }
-        Ok::<_, cadmpeg_core::CodecError>(())
-    })?;
+    let ((), sections_storage) =
+        ctx.with_scoped_storage("NX fuzz framed section output", || {
+            let sections = crate::om::sections(&ctx, data)?;
+            let mut remaining_sections = sections.iter();
+            while !remaining_sections.as_slice().is_empty() {
+                let Some(section) =
+                    ctx.next_charged(&mut remaining_sections, "NX fuzz framed sections")?
+                else {
+                    break;
+                };
+                drop(
+                    ctx.with_scoped_storage("NX fuzz operation body references", || {
+                        section.operation_body_references(&ctx)
+                    })?,
+                );
+            }
+            Ok::<_, cadmpeg_core::CodecError>(())
+        })?;
     drop(sections_storage);
     Ok(())
 }
@@ -152,7 +153,7 @@ pub fn intersection(data: &[u8]) {
     let Ok((ctx, _)) = DecodeContext::from_root_bytes(data, &arena, &policy) else {
         return;
     };
-    let _ = ctx.with_scoped_storage("NX fuzz intersection scan", || {
+    drop(ctx.with_scoped_storage("NX fuzz intersection scan", || {
         if let Ok(scan) =
             crate::intersection::scan(&ctx, data, crate::intersection::ChartPointLayout::Xyz3)
         {
@@ -165,7 +166,7 @@ pub fn intersection(data: &[u8]) {
             }
         }
         Ok::<_, cadmpeg_core::CodecError>(())
-    });
+    }));
 }
 
 /// Exercise NX NURBS curve extraction.
@@ -173,10 +174,10 @@ pub fn nurbs_curves(data: &[u8]) {
     let arena = DecodeArena::new();
     let policy = fuzz_policy();
     if let Ok((ctx, _)) = DecodeContext::from_root_bytes(data, &arena, &policy) {
-        let _ = ctx.with_scoped_storage("NX fuzz NURBS curves", || {
+        drop(ctx.with_scoped_storage("NX fuzz NURBS curves", || {
             drop(crate::nurbs::curves(&ctx, data));
             Ok::<_, cadmpeg_core::CodecError>(())
-        });
+        }));
     }
 }
 
@@ -185,10 +186,10 @@ pub fn nurbs_surfaces(data: &[u8]) {
     let arena = DecodeArena::new();
     let policy = fuzz_policy();
     if let Ok((ctx, _)) = DecodeContext::from_root_bytes(data, &arena, &policy) {
-        let _ = ctx.with_scoped_storage("NX fuzz NURBS surfaces", || {
+        drop(ctx.with_scoped_storage("NX fuzz NURBS surfaces", || {
             drop(crate::nurbs::surfaces(&ctx, data));
             Ok::<_, cadmpeg_core::CodecError>(())
-        });
+        }));
     }
 }
 
@@ -281,10 +282,10 @@ pub fn topology(data: &[u8]) {
     if resource_refused {
         return;
     }
-    let _ = ctx.with_scoped_storage("NX fuzz trimmed curves", || {
+    drop(ctx.with_scoped_storage("NX fuzz trimmed curves", || {
         drop(crate::topology::trimmed_curves(&ctx, data));
         Ok::<_, cadmpeg_core::CodecError>(())
-    });
+    }));
 }
 
 /// Exercise NX Parasolid stream extraction.
@@ -293,20 +294,22 @@ pub fn parasolid(data: &[u8]) {
     let Ok((ctx, root)) = DecodeContext::from_root_bytes(data, &arena, &fuzz_policy()) else {
         return;
     };
-    let _ = ctx.with_scoped_storage("NX fuzz Parasolid stream output", || {
-        let Ok(container) = crate::container::scan_bytes(&ctx, data) else {
-            return Ok(());
-        };
-        if let Ok(streams) = crate::parasolid::extract_streams(&ctx, root, &container) {
-            let Ok(streams) = ctx.admit_iter(streams, "NX fuzz stream fields") else {
+    drop(
+        ctx.with_scoped_storage("NX fuzz Parasolid stream output", || {
+            let Ok(container) = crate::container::scan_bytes(&ctx, data) else {
                 return Ok(());
             };
-            for stream in streams {
-                let _ = stream.consumed;
+            if let Ok(streams) = crate::parasolid::extract_streams(&ctx, root, &container) {
+                let Ok(streams) = ctx.admit_iter(streams, "NX fuzz stream fields") else {
+                    return Ok(());
+                };
+                for stream in streams {
+                    let _ = stream.consumed;
+                }
             }
-        }
-        Ok::<_, cadmpeg_core::CodecError>(())
-    });
+            Ok::<_, cadmpeg_core::CodecError>(())
+        }),
+    );
 }
 
 #[cfg(test)]

@@ -6825,8 +6825,8 @@ fn operation_body_write_result_group_members(
             image_use = Some(use_);
         }
     }
-    let (image_members, image_storage) =
-        ctx.with_scoped_storage("NX image result group candidate", || {
+    let (image_storage, image_members) = ctx
+        .with_scoped_storage("NX image result group candidate", || {
             image_use
                 .map(|use_| {
                     feature_result_group_members(
@@ -6837,8 +6837,8 @@ fn operation_body_write_result_group_members(
                     )
                 })
                 .transpose()
-        })?;
-    let image_members = image_members;
+        })
+        .map(|(value, storage)| (storage, value))?;
     let mut group_use = None;
     let mut records_iter = group_partition_uses.iter();
     while let Some(use_) =
@@ -6855,8 +6855,8 @@ fn operation_body_write_result_group_members(
             group_use = Some(use_);
         }
     }
-    let (group_members, group_storage) =
-        ctx.with_scoped_storage("NX group result group candidate", || {
+    let (group_storage, group_members) = ctx
+        .with_scoped_storage("NX group result group candidate", || {
             group_use
                 .map(|use_| {
                     feature_result_group_members(
@@ -6867,8 +6867,8 @@ fn operation_body_write_result_group_members(
                     )
                 })
                 .transpose()
-        })?;
-    let group_members = group_members;
+        })
+        .map(|(value, storage)| (storage, value))?;
     Ok(match (image_members, group_members) {
         (Some(image), Some(group))
             if image.faces.len() == group.faces.len()

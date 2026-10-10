@@ -1337,7 +1337,7 @@ fn apply_complete_body_combine<'ir>(
             feature,
             UnsupportedBodyCensusReason::InvalidOutputLineage,
         ));
-    };
+    }
     let Some(target) = targets.iter().next() else {
         return Err(CensusError::Unsupported(
             feature,

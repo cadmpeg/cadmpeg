@@ -180,7 +180,7 @@ fn decode_surfaces(
                         ctx.collection_vec(descriptor.u_count, "NX NURBS rational grid rows")
                     );
                     let mut remaining_rows = 0..descriptor.u_count;
-                    while remaining_rows.len() != 0 {
+                    while !remaining_rows.is_empty() {
                         let row = propagate_resource!(ctx.next_charged(
                             &mut remaining_rows,
                             "NX decode surfaces range traversal"
@@ -189,7 +189,7 @@ fn decode_surfaces(
                             ctx.collection_vec(descriptor.v_count, "NX NURBS rational poles")
                         );
                         let mut remaining_columns = 0..descriptor.v_count;
-                        while remaining_columns.len() != 0 {
+                        while !remaining_columns.is_empty() {
                             let column = propagate_resource!(ctx.next_charged(
                                 &mut remaining_columns,
                                 "NX decode surfaces range traversal"
@@ -207,7 +207,7 @@ fn decode_surfaces(
                         ctx.collection_vec(descriptor.u_count, "NX NURBS polynomial grid rows")
                     );
                     let mut remaining_rows = 0..descriptor.u_count;
-                    while remaining_rows.len() != 0 {
+                    while !remaining_rows.is_empty() {
                         let row = propagate_resource!(ctx.next_charged(
                             &mut remaining_rows,
                             "NX decode surfaces range traversal"
@@ -216,7 +216,7 @@ fn decode_surfaces(
                             ctx.collection_vec(descriptor.v_count, "NX NURBS polynomial poles")
                         );
                         let mut remaining_columns = 0..descriptor.v_count;
-                        while remaining_columns.len() != 0 {
+                        while !remaining_columns.is_empty() {
                             let column = propagate_resource!(ctx.next_charged(
                                 &mut remaining_columns,
                                 "NX decode surfaces range traversal"
@@ -374,7 +374,7 @@ fn decode_pcurves(
                         ctx.collection_vec(descriptor.basis.poles, "NX NURBS rational poles")
                     );
                     let mut remaining_poles = 0..descriptor.basis.poles;
-                    while remaining_poles.len() != 0 {
+                    while !remaining_poles.is_empty() {
                         let index = propagate_resource!(ctx.next_charged(
                             &mut remaining_poles,
                             "NX decode pcurves range traversal"
@@ -388,7 +388,7 @@ fn decode_pcurves(
                         ctx.collection_vec(descriptor.basis.poles, "NX NURBS polynomial poles")
                     );
                     let mut remaining_poles = 0..descriptor.basis.poles;
-                    while remaining_poles.len() != 0 {
+                    while !remaining_poles.is_empty() {
                         let index = propagate_resource!(ctx.next_charged(
                             &mut remaining_poles,
                             "NX decode pcurves range traversal"
@@ -538,7 +538,7 @@ fn decode_curves(
                         ctx.collection_vec(descriptor.basis.poles, "NX NURBS rational poles")
                     );
                     let mut remaining_poles = 0..descriptor.basis.poles;
-                    while remaining_poles.len() != 0 {
+                    while !remaining_poles.is_empty() {
                         let index = propagate_resource!(ctx.next_charged(
                             &mut remaining_poles,
                             "NX decode curves range traversal"
@@ -552,7 +552,7 @@ fn decode_curves(
                         ctx.collection_vec(descriptor.basis.poles, "NX NURBS polynomial poles")
                     );
                     let mut remaining_poles = 0..descriptor.basis.poles;
-                    while remaining_poles.len() != 0 {
+                    while !remaining_poles.is_empty() {
                         let index = propagate_resource!(ctx.next_charged(
                             &mut remaining_poles,
                             "NX decode curves range traversal"
@@ -785,7 +785,7 @@ fn arrays<'bytes, 'ctx>(
     };
     if let Some(range_end) = bytes.len().checked_sub(7) {
         let mut positions = 0..range_end;
-        while positions.len() != 0 {
+        while !positions.is_empty() {
             let Some(pos) = ctx.next_charged(&mut positions, "scan NX NURBS arrays")? else {
                 break;
             };
@@ -871,7 +871,7 @@ fn surface_payloads<'bytes, 'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     bytes: &'bytes [u8],
 ) -> Result<RecordIndex<'ctx, Payload<'bytes>>, CodecError> {
-    let records = (0..bytes.len().checked_sub(96).unwrap_or(0)).map(|pos| {
+    let records = (0..bytes.len().saturating_sub(96)).map(|pos| {
         surface_payload_at(ctx, bytes, pos)
             .map(|candidate| candidate.map(|(xmt, payload, _)| (xmt, payload)))
     });
@@ -953,7 +953,7 @@ fn curve_payloads<'bytes, 'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     bytes: &'bytes [u8],
 ) -> Result<RecordIndex<'ctx, Payload<'bytes>>, CodecError> {
-    let records = (0..bytes.len().checked_sub(14).unwrap_or(0)).map(|pos| {
+    let records = (0..bytes.len().saturating_sub(14)).map(|pos| {
         curve_payload_at(ctx, bytes, pos)
             .map(|candidate| candidate.map(|(xmt, payload, _)| (xmt, payload)))
     });
@@ -1004,7 +1004,7 @@ fn finite_f64_bytes(ctx: &DecodeContext<'_>, raw: &[u8]) -> Result<Option<()>, C
         return Ok(None);
     }
     let mut indices = 0..raw.len() / 8;
-    while indices.len() != 0 {
+    while !indices.is_empty() {
         let Some(index) =
             ctx.next_charged(&mut indices, "validate NX NURBS floating-point lane")?
         else {
@@ -1046,7 +1046,7 @@ fn surface_descriptors<'ctx>(
     };
     if let Some(range_end) = bytes.len().checked_sub(47) {
         let mut positions = 0..range_end;
-        while positions.len() != 0 {
+        while !positions.is_empty() {
             let Some(pos) = ctx.next_charged(&mut positions, "scan NX NURBS descriptors")? else {
                 break;
             };
@@ -1228,7 +1228,7 @@ fn curve_descriptors<'ctx>(
     };
     if let Some(range_end) = bytes.len().checked_sub(26) {
         let mut positions = 0..range_end;
-        while positions.len() != 0 {
+        while !positions.is_empty() {
             let Some(pos) = ctx.next_charged(&mut positions, "scan NX NURBS descriptors")? else {
                 break;
             };
@@ -1503,7 +1503,7 @@ fn expand_knots(
             break;
         };
         let mut copies = 0..usize::from(count);
-        while copies.len() != 0 {
+        while !copies.is_empty() {
             let Some(_) = ctx.next_charged(&mut copies, "expand NX NURBS knots")? else {
                 break;
             };

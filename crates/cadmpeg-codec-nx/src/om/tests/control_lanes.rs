@@ -6,12 +6,12 @@ use crate::om::OffsetStoreControlForm;
 fn offset_store_control_form_matches(
     control: &[u8],
     first_record: Option<&[u8]>,
-    expected: Option<OffsetStoreControlForm>,
+    expected: Option<&OffsetStoreControlForm>,
 ) -> bool {
     crate::test_support::with_decode_context(|ctx| -> Result<bool, cadmpeg_core::CodecError> {
         match crate::om::offset_store_control_form(ctx, control, first_record)? {
             Some((form, storage)) => {
-                let matches = expected.as_ref() == Some(&form);
+                let matches = expected == Some(&form);
                 drop(form);
                 drop(storage);
                 Ok(matches)
@@ -32,7 +32,7 @@ fn product_anchored_control_lane_crosses_the_first_column_boundary() {
     assert!(offset_store_control_form_matches(
         &control,
         Some(&first_record),
-        Some(OffsetStoreControlForm::ProductAnchored {
+        Some(&OffsetStoreControlForm::ProductAnchored {
             leading_value: Some(
                 crate::om::control_leading_value::ControlLeadingValue::from_wire(3, 0x111).unwrap()
             ),
@@ -63,7 +63,7 @@ fn product_anchored_control_lane_crosses_the_first_column_boundary() {
     assert!(offset_store_control_form_matches(
         &zero_prefixed_control,
         Some(&continued_record),
-        Some(OffsetStoreControlForm::ProductAnchored {
+        Some(&OffsetStoreControlForm::ProductAnchored {
             leading_value: Some(
                 crate::om::control_leading_value::ControlLeadingValue::from_wire(1, 0).unwrap()
             ),
