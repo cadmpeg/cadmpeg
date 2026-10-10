@@ -2906,7 +2906,7 @@ impl<'lane, 'ctx> HoleMarkers<'lane, 'ctx> {
             by_feature,
             paired: HashMap::new(),
             pairs_indexed: false,
-            storage: storage,
+            storage,
         })
     }
 
