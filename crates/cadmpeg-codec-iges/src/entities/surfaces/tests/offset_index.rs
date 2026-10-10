@@ -172,3 +172,137 @@ fn offset_unowned_procedural_index_does_not_create_an_owner_or_output_backing() 
         ctx.finish_session().unwrap();
     }
 }
+
+fn owned_procedural_surfaces(count: usize) -> CadIr {
+    let mut ir = unowned_procedural_surfaces(count);
+    let mut surface = duplicate_surfaces(1).model.surfaces.remove(0);
+    surface.geometry = SurfaceGeometry::Procedural {
+        construction: ProceduralSurfaceId::mint(PROCEDURAL_ID).unwrap(),
+        cache: None,
+    };
+    ir.model.surfaces.push(surface);
+    ir
+}
+
+fn owner_storage_bytes() -> (u64, u64, u64) {
+    use std::mem::{align_of, size_of};
+    let owner = u64::try_from(4 * size_of::<(&str, Option<&SurfaceId>)>()
+        + align_of::<(&str, Option<&SurfaceId>)>().max(16) - 1 + 4 + 16).unwrap();
+    let procedural = u64::try_from(11 * (size_of::<SurfaceId>() + size_of::<usize>())
+        + 16 * size_of::<usize>()
+        + 2 * align_of::<SurfaceId>().max(align_of::<usize>())).unwrap();
+    let key = u64::try_from(SURFACE_ID.len()).unwrap();
+    (owner, procedural, 2 * key + surface_node_bytes() + procedural)
+}
+
+#[test]
+fn offset_owned_procedural_index_keeps_maps_and_releases_owner_table() {
+    let (owner, _, live) = owner_storage_bytes();
+    for count in [1, 64] {
+        let ir = owned_procedural_surfaces(count);
+        let original = ir.model.clone();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = live + owner;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 3;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut storage = ctx.reserve_scoped(0, "test owned offset lookup maps").unwrap();
+        let lookups = storage.with_storage(|| OffsetLookups::from_ir(&ir, &ctx)).unwrap();
+        assert_eq!(lookups.surfaces.len(), 1);
+        assert_eq!(lookups.procedural.len(), 1);
+        let id = &ir.model.surfaces[0].id;
+        assert_eq!(lookups.surfaces.get(id), Some(&(0, 0)));
+        assert_eq!(lookups.procedural.get(id), Some(&0));
+        assert_eq!(ir.model, original);
+        // The temporary owner table is gone; both returned map backings remain live.
+        let released_owner = ctx.reserve_scoped(owner, "test released offset owners").unwrap();
+        drop(released_owner);
+        drop(lookups);
+        drop(storage);
+        let released_maps = ctx.reserve_scoped(live + owner, "test released owned offset maps").unwrap();
+        drop(released_maps);
+        ctx.finish_session().unwrap();
+    }
+}
+
+#[test]
+fn offset_owned_procedural_maps_remain_charged_after_owner_release() {
+    let ir = owned_procedural_surfaces(64);
+    let (owner, _, live) = owner_storage_bytes();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = live + owner;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut storage = ctx.reserve_scoped(0, "test live owned offset maps").unwrap();
+    let lookups = storage.with_storage(|| OffsetLookups::from_ir(&ir, &ctx)).unwrap();
+    let first = match ctx.reserve_scoped(owner + 1, "test owned offset maps remain live") {
+        Err(CodecError::ResourceLimit(first)) => first,
+        _ => panic!("returned maps remain funded after temporary owners release"),
+    };
+    assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
+    assert_eq!((first.limit, first.used, first.additional), (live + owner, live, owner + 1));
+    drop(lookups);
+    drop(storage);
+    assert!(matches!(OffsetLookups::from_ir(&CadIr::empty(), &ctx),
+        Err(CodecError::ResourceLimit(last)) if last == first));
+    assert!(matches!(ctx.finish_session(),
+        Err(CodecError::ResourceLimit(last)) if last == first));
+}
+
+#[test]
+fn offset_owned_procedural_node_refuses_one_short_and_fuses() {
+    let (owner, procedural, live) = owner_storage_bytes();
+    for count in [1, 64] {
+        let ir = owned_procedural_surfaces(count);
+        let original = ir.model.clone();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        let cap = live + owner - 1;
+        policy.limits.max_materialized_bytes = cap;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut storage = ctx.reserve_scoped(0, "test owned offset lookup maps").unwrap();
+        let first = match storage.with_storage(|| OffsetLookups::from_ir(&ir, &ctx)) {
+            Err(CodecError::ResourceLimit(first)) => first,
+            _ => panic!("procedural ordered node refuses at one byte short"),
+        };
+        assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
+        assert_eq!(first.operation, "iges offset procedural index nodes");
+        assert_eq!((first.limit, first.used, first.additional),
+            (cap, live + owner - procedural, procedural));
+        for _ in 0..64 {
+            for replay in [&ir, &CadIr::empty()] {
+                assert!(matches!(storage.with_storage(|| OffsetLookups::from_ir(replay, &ctx)),
+                    Err(CodecError::ResourceLimit(last)) if last == first));
+            }
+            assert_eq!(ir.model, original);
+        }
+        drop(storage);
+        assert!(matches!(ctx.finish_session(),
+            Err(CodecError::ResourceLimit(last)) if last == first));
+    }
+}
+
+#[test]
+fn offset_repeated_construction_owners_exclude_procedural_lookup() {
+    let mut ir = owned_procedural_surfaces(64);
+    let mut second = ir.model.surfaces[0].clone();
+    second.id = SurfaceId::mint("test:model:surface#two").unwrap();
+    ir.model.surfaces.push(second);
+    let original = ir.model.clone();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_collection_items = 3;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut storage = ctx.reserve_scoped(0, "test ambiguous offset owners").unwrap();
+    let lookups = storage.with_storage(|| OffsetLookups::from_ir(&ir, &ctx)).unwrap();
+    assert_eq!(lookups.surfaces.len(), 2);
+    assert!(lookups.procedural.is_empty());
+    assert_eq!(ir.model, original);
+    drop(lookups);
+    drop(storage);
+    ctx.finish_session().unwrap();
+}
