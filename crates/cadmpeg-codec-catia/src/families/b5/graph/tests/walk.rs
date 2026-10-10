@@ -125,7 +125,7 @@ fn retained_object_frames_refuse_the_caller_collection_limit() {
         crate::test_support::with_service_context(|ctx| collect_object_stream_frames(ctx, &bytes))
             .expect("service collection budget");
     let scanned = crate::test_support::with_service_context(|ctx| {
-        ctx.try_collect_vec(object_stream_frames(ctx, &bytes)?, "catia_b5_object_frames")
+        ctx.try_collect_vec(object_stream_frames(ctx, &bytes), "catia_b5_object_frames")
     })
     .expect("service frame scan budget");
     assert_eq!(admitted.len(), scanned.len());
@@ -150,7 +150,7 @@ fn retained_object_frames_refuse_the_caller_collection_limit() {
 fn streaming_object_frame_scan_refuses_work_before_the_first_visit() {
     let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
     crate::test_support::with_work_limit(0, |ctx| {
-        let mut frames = object_stream_frames(ctx, &bytes).expect("lazy frame source");
+        let mut frames = object_stream_frames(ctx, &bytes);
         let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) =
             frames.next().expect("first visit refuses")
         else {

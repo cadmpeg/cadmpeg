@@ -2684,7 +2684,7 @@ fn object_stream_vertex_row_ranges_from_records(
             ctx.admit_iter(records, "catia_consolidated_frame_record_ranges")?
                 .filter_map(crate::wire::records::ConsolidatedRecord::range)
                 .map(Ok)
-                .chain(crate::families::b5::graph::framed_ranges(ctx, data)?),
+                .chain(crate::families::b5::graph::framed_ranges(ctx, data)),
             "catia_object_stream_frame_ranges",
         )
     })?;
