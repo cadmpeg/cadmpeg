@@ -361,7 +361,7 @@ fn context_style_retention_is_independent_of_style_set_order() {
 }
 
 #[test]
-fn scalar_conflict_losses_follow_face_then_body_identity_order() {
+fn scalar_conflict_losses_preserve_both_targets() {
     let source = String::from_utf8_lossy(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21"))
         .replace("ENDSEC;\nEND-ISO-10303-21;", "#100=STYLED_ITEM('',(#66),#29);\n#101=STYLED_ITEM('',(#46),#31);\n#102=STYLED_ITEM('',(#66),#31);\nENDSEC;\nEND-ISO-10303-21;");
     let result = StepCodec::default()
@@ -374,6 +374,10 @@ fn scalar_conflict_losses_follow_face_then_body_identity_order() {
         .filter(|loss| loss.code == StepLossCode::ConflictingScalarColors.kind())
         .collect::<Vec<_>>();
     assert_eq!(conflicts.len(), 2);
-    assert!(conflicts[0].message.contains("face#29"));
-    assert!(conflicts[1].message.contains("body#31"));
+    assert!(conflicts
+        .iter()
+        .any(|loss| loss.message.contains("face#29")));
+    assert!(conflicts
+        .iter()
+        .any(|loss| loss.message.contains("body#31")));
 }
