@@ -3274,7 +3274,7 @@ pub(crate) fn b2_resolved_revolutions_from_records(
             let interval = interval_bits(revolution.profile_range);
             let identity_profiles = ctx
                 .get_btree_map(
-                    &by_identity,
+                    by_identity,
                     &u32::from(revolution.profile_allocation_id),
                     "catia_b2_revolution_identity_lookup",
                 )?
@@ -3286,7 +3286,7 @@ pub(crate) fn b2_resolved_revolutions_from_records(
                 [] => {
                     let Some(&[index]) = ctx
                         .get_btree_map(
-                            &by_interval,
+                            by_interval,
                             &interval,
                             "catia_b2_revolution_interval_lookup",
                         )?
@@ -4027,11 +4027,11 @@ pub(in crate::families) fn offset_support_carriers(
             while let Some((index, carrier)) =
                 ctx.next_charged(&mut candidates, "catia_b2_offset_carrier_scan")?
             {
-                if offset_matches_carrier(ctx, offset, carrier.borrow())? {
-                    if selected.replace(index).is_some() {
-                        selected = None;
-                        break;
-                    }
+                if offset_matches_carrier(ctx, offset, carrier.borrow())?
+                    && selected.replace(index).is_some()
+                {
+                    selected = None;
+                    break;
                 }
             }
             ctx.push_vec(&mut bindings, selected, "catia_b2_offset_bindings")?;
@@ -4214,11 +4214,10 @@ pub(in crate::families) fn offset_support_carriers(
                                         ctx,
                                         &offsets[offset],
                                         carriers[index].borrow(),
-                                    )? {
-                                        if selected.replace(index).is_some() {
-                                            selected = None;
-                                            break;
-                                        }
+                                    )? && selected.replace(index).is_some()
+                                    {
+                                        selected = None;
+                                        break;
                                     }
                                 }
                                 bindings[offset] = selected;
