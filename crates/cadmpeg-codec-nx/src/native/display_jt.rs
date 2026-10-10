@@ -6866,10 +6866,7 @@ fn display_jt_tessellation_rows(
                                 texture_arrays.len(),
                                 "nx JT texture component counts",
                             )?;
-                        let mut visits = texture_arrays.iter();
-                        while let Some(array) =
-                            ctx.next_charged(&mut visits, "nx JT texture component counts")?
-                        {
+                        for array in &texture_arrays {
                             let count = required!(array.values.first()).len();
                             if !(1..=4).contains(&count)
                                 || !ctx.all_by(
@@ -6893,10 +6890,7 @@ fn display_jt_tessellation_rows(
                                 texture_component_counts.len(),
                                 "nx JT tessellation texture buffers",
                             )?;
-                        let mut visits = texture_component_counts.iter();
-                        while let Some(&component_count) =
-                            ctx.next_charged(&mut visits, "nx JT tessellation texture bytes")?
-                        {
+                        for &component_count in &texture_component_counts {
                             let byte_count = required!(triangle_vertex_count
                                 .checked_mul(component_count)
                                 .and_then(|count| count.checked_mul(4)));
@@ -6945,36 +6939,34 @@ fn display_jt_tessellation_rows(
                                 }
                                 if let Some(color_array) = color_array {
                                     for component in required!(color_array.colors.get(attribute)) {
-                                        ctx.extend_from_slice(
+                                        ctx.reserve_vec(
                                             &mut color_data,
-                                            &component.get().to_le_bytes(),
+                                            4,
                                             "nx JT tessellation colors",
                                         )?;
+                                        color_data
+                                            .extend_from_slice(&component.get().to_le_bytes());
                                     }
                                 }
-                                let mut visits = texture_arrays.iter().enumerate();
-                                while let Some((index, array)) = ctx
-                                    .next_charged(&mut visits, "nx JT tessellation texture bytes")?
-                                {
+                                for (index, array) in texture_arrays.iter().enumerate() {
                                     let data = required!(texture_data.get_mut(index));
-                                    let mut visits = required!(array.values.get(attribute)).iter();
-                                    while let Some(component) = ctx.next_charged(
-                                        &mut visits,
-                                        "nx JT tessellation texture bytes",
-                                    )? {
-                                        ctx.extend_from_slice(
+                                    for component in required!(array.values.get(attribute)) {
+                                        ctx.reserve_vec(
                                             data,
-                                            &component.get().to_le_bytes(),
+                                            4,
                                             "nx JT tessellation texture bytes",
                                         )?;
+                                        data.extend_from_slice(&component.get().to_le_bytes());
                                     }
                                 }
                                 if let Some(array) = vertex_flag_array {
-                                    ctx.extend_from_slice(
+                                    let value = required!(array.values.get(attribute));
+                                    ctx.reserve_vec(
                                         &mut vertex_flag_data,
-                                        &required!(array.values.get(attribute)).to_le_bytes(),
+                                        4,
                                         "nx JT tessellation flag bytes",
                                     )?;
+                                    vertex_flag_data.extend_from_slice(&value.to_le_bytes());
                                 }
                             }
                             ctx.reserve_vec(&mut triangles, 1, "nx JT tessellation triangles")?;
@@ -7010,10 +7002,7 @@ fn display_jt_tessellation_rows(
                         }
                         let mut component_counts = texture_component_counts.into_iter();
                         let mut data_buffers = texture_data.into_iter();
-                        let mut visits = texture_arrays.iter().zip(0_u32..);
-                        while let Some((array, ordinal)) =
-                            ctx.next_charged(&mut visits, "nx JT tessellation channels")?
-                        {
+                        for (array, ordinal) in texture_arrays.iter().zip(0_u32..) {
                             let (Some(component_count), Some(data)) =
                                 (component_counts.next(), data_buffers.next())
                             else {
