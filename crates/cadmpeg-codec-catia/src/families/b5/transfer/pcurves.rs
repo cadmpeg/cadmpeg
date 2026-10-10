@@ -350,7 +350,6 @@ pub(super) fn isocurve_endpoint_parameters(
     pcurve: &B5Pcurve,
     endpoint_parameters: [f64; 2],
 ) -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
-    ctx.charge_work(0, "catia_b5_isocurve_parameter_scan")?;
     let varying_dimension = if constant_coordinate(ctx, &pcurve.control_points, 0)?.is_some() {
         1
     } else if constant_coordinate(ctx, &pcurve.control_points, 1)?.is_some() {

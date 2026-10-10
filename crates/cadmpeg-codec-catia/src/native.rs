@@ -4517,7 +4517,6 @@ impl CatiaDesignParallelReferenceTable {
         rows: Vec<CatiaDesignReferenceRow>,
     ) -> Result<Option<Self>, CodecError> {
         const OPERATION: &str = "catia_design_reference_table_row_visits";
-        ctx.charge_work(0, OPERATION)?;
         let rows_match =
             ctx.all_by_limit(&rows, |row| Ok(row.cells.len() == columns.len()), OPERATION)?;
         Ok(rows_match.then_some(Self { columns, rows }))

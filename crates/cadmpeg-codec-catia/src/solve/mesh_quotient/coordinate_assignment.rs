@@ -1479,7 +1479,6 @@ impl<'storage> MeshQuotient<'storage> {
                     let [left, right] = edges[edge];
                     let before = candidates.len();
                     if budget.is_some_and(|budget| !budget.charge_by(before)) {
-                        ctx.charge_work(0, "catia quotient domain preparation")?;
                         return Err(ctx.refuse_codec_limit(
                             "catia quotient domain preparation",
                             0,

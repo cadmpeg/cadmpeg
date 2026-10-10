@@ -174,16 +174,13 @@ fn zero_entity_oriented_occurrences(
     Ok(occurrences)
 }
 
-/// Refuse a local search ceiling without replacing a session refusal.
+/// Refuse a local endpoint search ceiling.
 fn charge_endpoint_work(
     ctx: &DecodeContext<'_>,
     budget: &WorkBudget<'_>,
 ) -> Result<(), CodecError> {
     if budget.charge() {
         return Ok(());
-    }
-    if let Some(limit) = ctx.resource_refusal() {
-        return Err(limit.into());
     }
     let limit = cadmpeg_core::decode::u64_from_index(budget.consumed());
     let requested = limit.checked_add(1).ok_or_else(|| {

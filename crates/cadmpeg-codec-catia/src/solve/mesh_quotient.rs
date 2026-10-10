@@ -178,13 +178,12 @@ impl<T, F> MeshSolve<T, F> {
 }
 
 impl<T> MeshSolve<T> {
-    /// Preserve session refusal and refuse a search whose local slice ended.
+    /// Refuse a search whose local work slice ended.
     pub(crate) fn require_work(
         self,
         ctx: &DecodeContext<'_>,
         budget: &WorkBudget<'_>,
     ) -> Result<Self, CodecError> {
-        ctx.charge_work(0, "catia_mesh_topology_work")?;
         if budget.exhausted() || matches!(self, Self::Failed(MeshCandidateFailure::Exhausted(_))) {
             let limit = u64_from_index(budget.consumed());
             let requested = limit.checked_add(1).ok_or_else(|| {
@@ -3106,13 +3105,12 @@ pub(super) fn propagate_common_ordered_face_quotients<'storage>(
                                 }
                             };
                             let face_budget = ctx.work_budget(u64_from_index(face_limit));
-                            let refuse_face = || match ctx.resource_refusal() {
-                                Some(limit) => CodecError::ResourceLimit(limit),
-                                None => ctx.refuse_codec_limit(
+                            let refuse_face = || {
+                                ctx.refuse_codec_limit(
                                     "catia_ordered_face_constraint_work",
                                     u64_from_index(face_limit),
                                     u64_from_index(face_limit + 1),
-                                ),
+                                )
                             };
                             if let MeshFaceBoundaryDomain::DeferredValidation(domain) = domain {
                                 let mut merged_nodes = Vec::new();
@@ -3801,7 +3799,6 @@ fn advance_boundary_component_states<'storage>(
             Ok((!next.is_empty()).then_some(next))
         },
     )?;
-    ctx.charge_work(0, "catia_boundary_component_work")?;
     if budget.exhausted() {
         let limit = u64_from_index(budget.consumed());
         let requested = limit.checked_add(1).ok_or_else(|| {
@@ -13022,26 +13019,6 @@ fn face_domain_local_work_exhaustion_propagates_resource_refusal() {
         };
         assert_eq!(limit.operation, "catia_mesh_topology_work");
         assert_eq!(ctx.resource_refusal(), Some(limit));
-    });
-}
-
-#[cfg(test)]
-#[test]
-fn mesh_work_guard_preserves_the_existing_session_refusal() {
-    crate::test_support::with_work_limit(0, |ctx| {
-        let CodecError::ResourceLimit(original) = ctx
-            .charge_work(1, "catia_mesh_test_refusal")
-            .expect_err("work refusal")
-        else {
-            panic!("resource refusal")
-        };
-        let budget = ctx.work_budget(0);
-        let result = MeshSolve::<()>::Failed(MeshCandidateFailure::Exhausted(
-            MeshCandidateExhaustion::EndpointResolution,
-        ))
-        .require_work(ctx, &budget);
-        assert!(matches!(result, Err(CodecError::ResourceLimit(limit)) if limit == original));
-        assert_eq!(ctx.resource_refusal(), Some(original));
     });
 }
 
