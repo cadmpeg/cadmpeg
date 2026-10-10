@@ -8334,14 +8334,25 @@ fn pcurve_uv_unsettled(
         }
         PcurveGeometry::PolarNurbs { nurbs } => {
             let poles = nurbs.pole_rows();
-            let radial = pcurve_nurbs::differential(
-                scratch, nurbs.degree(), nurbs.knots(),
-                pcurve_nurbs::DifferentialPoles::PolarRadial(poles), parameter,
-            );
-            let axial = pcurve_nurbs::differential(
-                scratch, nurbs.degree(), nurbs.knots(),
-                pcurve_nurbs::DifferentialPoles::PolarAxial(poles), parameter,
-            );
+            // Through degree four, every captured preceding row has at
+            // most two values and uses the actual fixed inline backing.
+            // Keep both old lower operations ahead of any higher formation.
+            let pending_order = requested.as_ref().map(|(order, _)| *order)
+                .filter(|order| *order >= 3 && nurbs.degree() <= 4);
+            let lower = |poles| {
+                if let Some(order) = pending_order {
+                    match pcurve_nurbs::differential_pending(scratch, nurbs.degree(),
+                        nurbs.knots(), poles, parameter, order) {
+                        Ok(pending) => (Ok(pending.lower()), Some(pending)),
+                        Err(failure) => (Err(failure), None),
+                    }
+                } else {
+                    (pcurve_nurbs::differential(scratch, nurbs.degree(), nurbs.knots(),
+                        poles, parameter), None)
+                }
+            };
+            let (radial, radial_pending) = lower(pcurve_nurbs::DifferentialPoles::PolarRadial(poles));
+            let (axial, axial_pending) = lower(pcurve_nurbs::DifferentialPoles::PolarAxial(poles));
             if let Err(EvaluationFailure::ResourceLimit(limit)) = &radial {
                 return Some(PcurveEvaluation::resource(*limit));
             }
@@ -8403,7 +8414,7 @@ fn pcurve_uv_unsettled(
                     }
                 }),
             };
-            return Some(PcurveEvaluation {
+            let evaluated = PcurveEvaluation {
                 point: Ok(FinitePoint2::from_coordinates(
                     angle,
                     axial.point.coordinates()[0],
@@ -8413,7 +8424,28 @@ fn pcurve_uv_unsettled(
                     FinitePoint2::from_coordinates(second, axial.coordinates()[0])
                 }).into(),
                 resource: None,
-            });
+            };
+            if let (Some((max_order, higher)), Some(radial_pending), Some(axial_pending)) =
+                (requested, radial_pending, axial_pending) {
+                let completed = [radial_pending.complete(), axial_pending.complete()];
+                for result in &completed {
+                    if let Err(EvaluationFailure::ResourceLimit(limit)) = result {
+                        return Some(PcurveEvaluation::resource(*limit));
+                    }
+                }
+                let [radial_higher, axial_higher] = completed.map(|result| {
+                    result.map(|actual| actual.higher).map_err(|failure| failure.map(|_| ()))
+                });
+                let angular = radial_higher.map(|higher| polar_higher::angular(
+                    [Ok(radial.point), radial.tangent.map_err(|failure| failure.map(|_| ())),
+                        radial.acceleration.ok_or(EvaluationFailure::NonFinite(())),
+                        higher[0], higher[1], higher[2]], max_order));
+                *higher = std::array::from_fn(|at| {
+                    if at + 3 > max_order { return Err(EvaluationFailure::NoValue); }
+                    Ok(FinitePoint2::from_coordinates(angular?[at]?, axial_higher?[at]?.coordinates()[0]))
+                });
+            }
+            return Some(evaluated);
         }
         PcurveGeometry::SphericalGreatCircle(spherical_great_circle_pcurve) => {
             let azimuth_origin = spherical_great_circle_pcurve.azimuth_origin().get();
