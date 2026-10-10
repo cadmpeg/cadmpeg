@@ -1328,13 +1328,14 @@ fn parse_scope_frame(
     };
     let edge_flange_operation = if matches!(kind, scope::DesignFeatureKind::EdgeFlange) {
         exact_edge_flange_operation(
+            ctx,
             bytes,
             start,
             paired_at,
             class_tag_text,
             paired_class_tag,
             reference_members,
-        )
+        )?
     } else {
         None
     };
