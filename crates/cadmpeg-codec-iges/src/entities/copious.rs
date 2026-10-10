@@ -212,7 +212,7 @@ fn has_form_63_self_intersection(
             Ok([point.x, point.y])
         })
     })?;
-    super::geometry::planar_polyline_has_self_intersection(&planar_points, ctx)
+    super::geometry::planar_polyline_has_self_intersection(&planar_points, None, ctx)
 }
 
 pub(super) fn project<'ctx>(
