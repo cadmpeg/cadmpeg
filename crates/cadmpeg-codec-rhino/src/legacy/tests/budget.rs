@@ -243,16 +243,25 @@ fn rejected_direct_records_release_partial_text_before_the_next_record() {
     let decoded = super::super::decode_v1(&ctx, &data)
         .expect("discarded partial texts do not accumulate between records");
     assert_eq!(decoded.ir.model.entity_count(), 0);
-    assert_eq!(decoded.source_fidelity.retained_records().len(), RECORD_COUNT);
+    assert_eq!(
+        decoded.source_fidelity.retained_records().len(),
+        RECORD_COUNT
+    );
     for retained in decoded.source_fidelity.retained_records().values() {
         assert_eq!(retained.data(), Some(record.as_slice()));
     }
     assert_eq!(
-        decoded.body.notes.iter().filter(|note| note.starts_with("V1 direct record at offset ")).count(),
+        decoded
+            .body
+            .notes
+            .iter()
+            .filter(|note| note.starts_with("V1 direct record at offset "))
+            .count(),
         RECORD_COUNT
     );
     {
-        let _reclaimed = ctx.reserve_scoped(SCRATCH_BYTES, "reclaimed V1 parser scratch")
+        let _reclaimed = ctx
+            .reserve_scoped(SCRATCH_BYTES, "reclaimed V1 parser scratch")
             .expect("all source parsing storage is released when decoding returns");
     }
     ctx.finish_session().unwrap();
@@ -277,7 +286,9 @@ fn direct_record_partial_text_preserves_original_scratch_refusal() {
             let result = super::super::decode_v1(&ctx, &data);
             if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result {
                 assert_eq!(ctx.resource_refusal(), Some(*refusal));
-                assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == *refusal));
+                assert!(
+                    matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == *refusal)
+                );
             }
             result
         },
@@ -288,10 +299,19 @@ fn direct_record_partial_text_preserves_original_scratch_refusal() {
 fn v1_curve_evaluation_refuses_first_blends_before_unused_degree_levels() {
     let parse_ctx = cadmpeg_test_support::service_decode_context();
     let curve = NurbsCurve::from_checked_lanes(
-        &parse_ctx, 2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
-        None, false,
-    ).unwrap().unwrap();
+        &parse_ctx,
+        2,
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+        ],
+        None,
+        false,
+    )
+    .unwrap()
+    .unwrap();
     // Three pole initializations and one executed degree level precede
     // admission of its two infallible blends. The later level is unvisited.
     let arena = DecodeArena::new();
@@ -299,14 +319,17 @@ fn v1_curve_evaluation_refuses_first_blends_before_unused_degree_levels() {
     policy.limits.max_work_units = 4;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = super::super::evaluate_nurbs(&ctx, &curve, 1.0).unwrap_err();
-    let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else { panic!("first blend refusal"); };
+    let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else {
+        panic!("first blend refusal");
+    };
     assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
     assert_eq!(refusal.operation, "Rhino V1 curve evaluation");
     assert_eq!((refusal.used, refusal.additional), (4, 2));
     assert_eq!(ctx.resource_refusal(), Some(refusal));
-    assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == refusal));
+    assert!(
+        matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == refusal)
+    );
 }
-
 
 #[test]
 fn standalone_v1_curve_promotes_its_owned_lanes() {
@@ -318,16 +341,25 @@ fn standalone_v1_curve_promotes_its_owned_lanes() {
     let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy).unwrap();
     let mut workspace = ctx.reserve_scoped(0, "curve fixture backing").unwrap();
     let mut segments = super::super::legacy_curve_segments(
-        &ctx, &mut workspace, &data, chunk.body(), super::super::MillimeterScale::IDENTITY,
-    ).expect("valid curve lanes are scoped during parsing");
+        &ctx,
+        &mut workspace,
+        &data,
+        chunk.body(),
+        super::super::MillimeterScale::IDENTITY,
+    )
+    .expect("valid curve lanes are scoped during parsing");
     assert_eq!(segments.len(), 1);
     let (curve, storage) = segments.pop().unwrap();
     assert_eq!(curve.pole_count(), 2);
     assert_eq!(curve.knots().as_slice(), &[0.0, 0.0, 1.0, 1.0]);
-    let error = storage.commit_value(curve).expect_err("surviving lanes need retained admission");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    let error = storage
+        .commit_value(curve)
+        .expect_err("surviving lanes need retained admission");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "Rhino V1 curve segment" && limit.additional > 0));
+            && limit.operation == "Rhino V1 curve segment" && limit.additional > 0)
+    );
 }
 
 #[test]
@@ -336,14 +368,26 @@ fn rejected_v1_meshes_release_partial_vertices_before_the_next_record() {
     const RECORDS: usize = 16;
     const SCRATCH_BYTES: u64 = 32 * 1024;
     let mut body = Vec::new();
-    for value in [POINTS, 1, 0, 0] { body.extend(value.to_le_bytes()); }
-    for value in [0.0_f64, 0.0, 0.0, 1.0, 1.0, 1.0] { body.extend(value.to_le_bytes()); }
-    for _ in 0..POINTS { body.extend([0; 6]); }
-    for value in [256_u16, 0, 0, 0] { body.extend(value.to_le_bytes()); }
-    let record = super::legacy_chunk(super::super::TCODE_MESH_OBJECT,
-        &super::legacy_chunk(super::super::TCODE_COMPRESSED_MESH_GEOMETRY, &body));
+    for value in [POINTS, 1, 0, 0] {
+        body.extend(value.to_le_bytes());
+    }
+    for value in [0.0_f64, 0.0, 0.0, 1.0, 1.0, 1.0] {
+        body.extend(value.to_le_bytes());
+    }
+    for _ in 0..POINTS {
+        body.extend([0; 6]);
+    }
+    for value in [256_u16, 0, 0, 0] {
+        body.extend(value.to_le_bytes());
+    }
+    let record = super::legacy_chunk(
+        super::super::TCODE_MESH_OBJECT,
+        &super::legacy_chunk(super::super::TCODE_COMPRESSED_MESH_GEOMETRY, &body),
+    );
     let mut data = super::archive(&[]);
-    for _ in 0..RECORDS { data.extend(&record); }
+    for _ in 0..RECORDS {
+        data.extend(&record);
+    }
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = SCRATCH_BYTES;
@@ -353,8 +397,17 @@ fn rejected_v1_meshes_release_partial_vertices_before_the_next_record() {
         .expect("failed mesh candidates release their partial vertex lanes");
     assert!(decoded.ir.model.tessellations.is_empty());
     assert_eq!(decoded.source_fidelity.retained_records().len(), RECORDS);
-    assert_eq!(decoded.body.notes.iter().filter(|note| note.starts_with("V1 mesh at offset ")).count(), RECORDS);
-    let reclaimed = ctx.reserve_scoped(SCRATCH_BYTES, "reclaimed mesh scratch")
+    assert_eq!(
+        decoded
+            .body
+            .notes
+            .iter()
+            .filter(|note| note.starts_with("V1 mesh at offset "))
+            .count(),
+        RECORDS
+    );
+    let reclaimed = ctx
+        .reserve_scoped(SCRATCH_BYTES, "reclaimed mesh scratch")
         .expect("mesh parsing storage is released after decode");
     drop(reclaimed);
     ctx.finish_session().unwrap();
@@ -366,7 +419,8 @@ fn v1_brep_session_keeps_consecutive_commits_and_direct_model_mutations() {
     let ctx = cadmpeg_test_support::service_decode_context();
     let mut session = cadmpeg_ir::draft::CommitSession::new(CadIr::empty(), &ctx, None).unwrap();
     for suffix in ["first", "second"] {
-        super::super::append_legacy_brep_in_session(&ctx, &mut session, parsed_brep(&data), suffix).unwrap();
+        super::super::append_legacy_brep_in_session(&ctx, &mut session, parsed_brep(&data), suffix)
+            .unwrap();
     }
     assert_eq!(session.document().model.bodies.len(), 2);
     let mut existing = session.document().model.bodies[0].clone();
@@ -376,23 +430,71 @@ fn v1_brep_session_keeps_consecutive_commits_and_direct_model_mutations() {
     );
     session.document_mut().unwrap().model.bodies.push(existing);
     let error = super::super::append_legacy_brep_in_session(
-        &ctx, &mut session, parsed_brep(&data), "third",
-    ).expect_err("direct mutation invalidates the cached identity index");
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(message) if message.contains("collision")));
+        &ctx,
+        &mut session,
+        parsed_brep(&data),
+        "third",
+    )
+    .expect_err("direct mutation invalidates the cached identity index");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::Malformed(message) if message.contains("collision"))
+    );
     assert_eq!(session.document().model.bodies.len(), 3);
 }
-
 
 #[test]
 fn standalone_v1_curve_decode_requires_retained_admission() {
     let mut data = super::archive(&[]);
     data.extend(super::legacy_line([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], 3));
-    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::RetainedBytes,
-        "Rhino V1 curve segment", |cap| {
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "Rhino V1 curve segment",
+        |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy)?;
             super::super::decode_v1(&ctx, &data)
-        });
+        },
+    );
+}
+
+
+fn work_with_rejected_records_between_breps(count: usize, typecode: u32, diagnostic: &str) -> u64 {
+    let fixture = legacy_face_archive();
+    let comment = chunk_at(&fixture, 32, fixture.len(), ArchiveVersion::V1, false).unwrap();
+    let brep = &fixture[comment.next_offset()..];
+    let rejected = super::legacy_chunk(typecode, &[]);
+    let mut data = super::archive(&[]);
+    for _ in 0..count {
+        data.extend(brep);
+        data.extend(&rejected);
+    }
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy).unwrap();
+    let decoded = super::super::decode_v1(&ctx, &data).unwrap();
+    assert_eq!(decoded.ir.model.bodies.len(), count);
+    assert_eq!(decoded.source_fidelity.retained_records().len(), count * 2);
+    assert_eq!(decoded.body.notes.iter().filter(|note| note.starts_with(diagnostic)).count(), count);
+    // A final refusal exposes completed work without pinning individual charges.
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = ctx.charge_work(u64::MAX, "completed V1 work").unwrap_err() else {
+        panic!("work counter probe refuses");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    limit.used
+}
+
+#[test]
+fn rejected_v1_meshes_do_not_restore_quadratic_brep_index_work() {
+    let small = work_with_rejected_records_between_breps(64, super::super::TCODE_MESH_OBJECT, "V1 mesh at offset ");
+    let large = work_with_rejected_records_between_breps(128, super::super::TCODE_MESH_OBJECT, "V1 mesh at offset ");
+    assert!(large < 3 * small, "doubling records must remain below quadratic growth: {small} -> {large}");
+}
+
+#[test]
+fn rejected_v1_curves_do_not_restore_quadratic_brep_index_work() {
+    let small = work_with_rejected_records_between_breps(64, super::super::TCODE_LEGACY_CRV, "V1 curve at offset ");
+    let large = work_with_rejected_records_between_breps(128, super::super::TCODE_LEGACY_CRV, "V1 curve at offset ");
+    assert!(large < 3 * small, "doubling records must remain below quadratic growth: {small} -> {large}");
 }
