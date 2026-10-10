@@ -77,13 +77,10 @@ fn property_name_set_retires_before_the_original_count_diagnostic() {
                     parse_properties(text, xml.root_element(), &owner, &mut output, &ctx)
                         .unwrap_err(),
                 )
-            })
-            .unwrap();
-        let diagnostic_storage = result.1;
-        let error = result.0;
+            });
         assert!(output.is_empty());
         if below {
-            let CodecError::ResourceLimit(original) = error else {
+            let CodecError::ResourceLimit(original) = result.unwrap_err() else {
                 panic!("diagnostic needs its bytes")
             };
             assert_eq!(original.dimension, ResourceDimension::MaterializedBytes);
@@ -96,10 +93,11 @@ fn property_name_set_retires_before_the_original_count_diagnostic() {
                 Err(CodecError::ResourceLimit(actual)) if actual == original)
             );
         } else {
+            let (error, diagnostic_storage) = result.unwrap();
             assert!(matches!(error, CodecError::Malformed(message) if message == expected));
             assert_eq!(ctx.resource_refusal(), None);
+            drop(diagnostic_storage);
         }
-        drop(diagnostic_storage);
     }
 }
 
