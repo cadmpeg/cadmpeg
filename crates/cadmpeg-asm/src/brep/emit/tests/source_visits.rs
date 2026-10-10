@@ -592,3 +592,85 @@ fn rich_vertex_boundaries_keep_original_refusal_before_output_mutation() {
         }
     });
 }
+
+fn vertex_prefix_copy_bound(kind: u8, refuses: Option<ResourceDimension>) {
+    use cadmpeg_ir::geometry::{Curve, Surface, VertexBlendBoundary};
+    let expected = match kind {
+        0 => "sat:brep:procedural_surface#7:vertex_boundary1:curve",
+        1 => "sat:brep:procedural_surface#7:vertex_boundary1:surface",
+        _ => unreachable!("two formerly copied prefix branches"),
+    };
+    let copy = u64::try_from(expected.len()).unwrap();
+    let element = if kind == 1 { std::mem::size_of::<Surface>() }
+        else { std::mem::size_of::<Curve>() };
+    let slots = if element <= 1024 { 4 } else { 1 };
+    let backing = u64::try_from(2 * std::mem::size_of::<VertexBlendBoundary>()
+        + slots * element).unwrap();
+    let input = rich_vertex_boundary(kind);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // Only ASM source visits, output backing and the emitted ID copy are
+    // covered. Raw key creation and IR constructor admission are separate.
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_collection_items = 3;
+    policy.limits.max_work_units = 2 + copy
+        - u64::from(refuses == Some(ResourceDimension::WorkUnits));
+    policy.limits.max_retained_bytes = backing + copy
+        - u64::from(refuses == Some(ResourceDimension::RetainedBytes));
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut out = AsmBrep::default();
+    let result = emit_vertex_blend_surface(&ctx, &mut out, 7, input, crate::asm_format!("sat"));
+    let Some(dimension) = refuses else {
+        let ProceduralSurfaceDefinition::VertexBlend(payload) = result.unwrap() else {
+            panic!("original vertex blend payload");
+        };
+        assert_eq!(payload.construction().boundaries.len(), 2);
+        assert_eq!(out.surfaces.len(), usize::from(kind == 1));
+        assert_eq!(out.curves.len(), usize::from(kind == 0));
+        let id = if kind == 1 { out.surfaces[0].id.as_str() }
+            else { out.curves[0].id.as_str() };
+        assert_eq!(id, expected);
+        ctx.finish_session().unwrap();
+        return;
+    };
+    let Err(CodecError::ResourceLimit(first)) = result else {
+        panic!("one byte below the emitted copy must refuse");
+    };
+    assert_eq!(first.dimension, dimension);
+    assert_eq!(first.operation, "ASM emitted identity copy");
+    let (limit, used) = if dimension == ResourceDimension::WorkUnits {
+        (2 + copy - 1, 2)
+    } else { (backing + copy - 1, backing) };
+    assert_eq!((first.limit, first.used, first.additional), (limit, used, copy));
+    assert!(out.surfaces.is_empty() && out.curves.is_empty());
+    for _ in 0..64 {
+        for kind in 0..3 {
+            assert!(matches!(emit_vertex_blend_surface(&ctx, &mut out, 7,
+                rich_vertex_boundary(kind), crate::asm_format!("sat")),
+                Err(CodecError::ResourceLimit(last)) if last == first));
+        }
+        assert!(matches!(emit_vertex_blend_surface(&ctx, &mut out, 7,
+            vertex_blend(0), crate::asm_format!("sat")),
+            Err(CodecError::ResourceLimit(last)) if last == first));
+        assert!(out.surfaces.is_empty() && out.curves.is_empty());
+    }
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+}
+
+#[test]
+fn vertex_circle_moves_prefix_under_exact_copy_limits() { vertex_prefix_copy_bound(0, None); }
+
+#[test]
+fn vertex_pcurve_moves_prefix_under_exact_copy_limits() { vertex_prefix_copy_bound(1, None); }
+
+#[test]
+fn vertex_circle_prefix_move_preserves_copy_refusal() {
+    vertex_prefix_copy_bound(0, Some(ResourceDimension::WorkUnits));
+    vertex_prefix_copy_bound(0, Some(ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn vertex_pcurve_prefix_move_preserves_copy_refusal() {
+    vertex_prefix_copy_bound(1, Some(ResourceDimension::WorkUnits));
+    vertex_prefix_copy_bound(1, Some(ResourceDimension::RetainedBytes));
+}
