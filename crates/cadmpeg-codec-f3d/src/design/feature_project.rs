@@ -2839,7 +2839,7 @@ fn project_thread_face_selection(
 
     let mut scratch_storage = ctx.reserve_scoped(0, "F3D feature projection scratch")?;
 
-    let Some(stream) = native_stream(&scope.id) else {
+    let Some(stream) = ids::native_stream_charged(ctx, &scope.id, "resolve F3D Thread face query scope stream")? else {
         return Ok(FaceSelection::Unresolved);
     };
     if face_group_record_indices.is_empty() {
@@ -2847,18 +2847,19 @@ fn project_thread_face_selection(
     }
     let mut ordered_groups = Vec::new();
     for record_index in face_group_record_indices {
-        let mut matching = groups.iter().filter(|group| {
-            native_stream(&group.id) == Some(stream)
-                && group.scope_record_index == scope.record_index
-                && group.record_index == *record_index
-                && group.role() == DesignOperandRole::ROLE_0X10
-        });
-        let Some(group) = matching.next() else {
+        let Some(group) = unique_feature_match_for_decode(
+            ctx,
+            groups,
+            |group| {
+                Ok(feature_stream_matches(ctx, &group.id, Some(stream), "match F3D Thread face group stream")?
+                    && group.scope_record_index == scope.record_index
+                    && group.record_index == *record_index
+                    && group.role() == DesignOperandRole::ROLE_0X10)
+            },
+            "visit F3D Thread face group source",
+        )? else {
             return Ok(FaceSelection::Unresolved);
         };
-        if matching.next().is_some() {
-            return Ok(FaceSelection::Unresolved);
-        }
         scratch_storage
             .with_storage(|| ctx.push_vec(&mut ordered_groups, group, "f3d Thread face group"))?;
     }
@@ -2925,7 +2926,7 @@ fn project_full_round_fillet(
     fillet_radius_groups: &[DesignFilletRadiusGroup],
     histories: &[crate::history_records::AsmHistory],
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
-    let stream = or_none!(native_stream(&scope.id));
+    let stream = or_none!(ids::native_stream_charged(ctx, &scope.id, "resolve F3D full-round query scope stream")?);
     if owners.iter().any(|owner| {
         native_stream(owner.id()) == Some(stream)
             && owner.scope_record_index() == scope.record_index
@@ -2935,12 +2936,15 @@ fn project_full_round_fillet(
     }) {
         return Ok(None);
     }
-    let mut groups = construction_groups.iter().filter(|group| {
-        native_stream(&group.id) == Some(stream) && group.scope_record_index == scope.record_index
-    });
-    let group = or_none!(groups.next());
-    if groups.next().is_some()
-        || group.role() != DesignOperandRole::BODIES_A
+    let group = or_none!(unique_feature_match_for_decode(
+        ctx,
+        construction_groups,
+        |group| {
+            Ok(feature_stream_matches(ctx, &group.id, Some(stream), "match F3D full-round group stream")? && group.scope_record_index == scope.record_index)
+        },
+        "visit F3D full-round group source",
+    )?);
+    if group.role() != DesignOperandRole::BODIES_A
         || group.members().len() != 1
         || group.frame.trailing_records().len() != 1
         || group.frame.trailing_flags().len() != 1
@@ -2953,17 +2957,18 @@ fn project_full_round_fillet(
     let [crate::records::identity::Located { value: member, .. }] = group.members() else {
         return Ok(None);
     };
-    let mut operands = face_operands.iter().filter(|operand| {
-        native_stream(&operand.id) == Some(stream)
-            && operand.scope_record_index == scope.record_index
-            && operand.group_record_index() == Some(group.record_index)
-            && operand.group_member_ordinal() == Some(0)
-            && operand.record_index() == *member
-    });
-    let operand = or_none!(operands.next());
-    if operands.next().is_some() {
-        return Ok(None);
-    }
+    let operand = or_none!(unique_feature_match_for_decode(
+        ctx,
+        face_operands,
+        |operand| {
+            Ok(feature_stream_matches(ctx, &operand.id, Some(stream), "match F3D full-round face operand stream")?
+                && operand.scope_record_index == scope.record_index
+                && operand.group_record_index() == Some(group.record_index)
+                && operand.group_member_ordinal() == Some(0)
+                && operand.record_index() == *member)
+        },
+        "visit F3D full-round face operand source",
+    )?);
     if operand.recipe_kind != ConstructionRecipeKind::BoundedFace {
         return Ok(None);
     }
@@ -3106,17 +3111,18 @@ pub(crate) fn bind_sketch_feature_geometry(
                 else {
                     return Ok(());
                 };
-                let stream = native_stream(&scope.id);
-                let mut matching = placements.iter().filter(|placement| {
-                    native_stream(&placement.id) == stream
-                        && placement.scope_record_index == Some(scope.record_index)
-                });
-                let Some(placement) = matching.next() else {
+                let stream = ids::native_stream_charged(ctx, &scope.id, "resolve F3D sketch binding query scope stream")?;
+                let Some(placement) = unique_feature_match_for_decode(
+                    ctx,
+                    placements,
+                    |placement| {
+                        Ok(feature_stream_matches(ctx, &placement.id, stream, "match F3D sketch binding placement stream")?
+                            && placement.scope_record_index == Some(scope.record_index))
+                    },
+                    "visit F3D sketch binding placement source",
+                )? else {
                     return Ok(());
                 };
-                if matching.next().is_some() {
-                    return Ok(());
-                }
                 let planar = crate::design::identity::neutral_sketch_id(ctx, placement)?;
                 let spatial = crate::design::identity::neutral_spatial_sketch_id(ctx, placement)?;
                 let has_planar = sketches.iter().any(|sketch| sketch.id == planar);
@@ -3504,7 +3510,7 @@ fn project_surface_offset(
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
 
-    let Some(stream) = native_stream(&scope.id) else {
+    let Some(stream) = ids::native_stream_charged(ctx, &scope.id, "resolve F3D surface offset query scope stream")? else {
         return Ok(None);
     };
     let Some(distance) = cadmpeg_ir::scalar::Length::new(operation.distance.get() * 10.0) else {
@@ -3538,19 +3544,20 @@ fn project_surface_offset(
     };
     let mut faces = Vec::new();
     for group_record_index in group_record_indices {
-        let mut matching_groups = groups.iter().filter(|group| {
-            native_stream(&group.id) == Some(stream)
-                && group.scope_record_index == scope.record_index
-                && group.record_index == *group_record_index
-                && group.role() == DesignOperandRole::PROFILE
-                && !group.members().is_empty()
-        });
-        let Some(group) = matching_groups.next() else {
+        let Some(group) = unique_feature_match_for_decode(
+            ctx,
+            groups,
+            |group| {
+                Ok(feature_stream_matches(ctx, &group.id, Some(stream), "match F3D surface offset group stream")?
+                    && group.scope_record_index == scope.record_index
+                    && group.record_index == *group_record_index
+                    && group.role() == DesignOperandRole::PROFILE
+                    && !group.members().is_empty())
+            },
+            "visit F3D surface offset group source",
+        )? else {
             return Ok(None);
         };
-        if matching_groups.next().is_some() {
-            return Ok(None);
-        }
         let Some(FaceSelection::Resolved {
             faces: group_faces, ..
         }) = resolved_face_group(ctx, group, face_operands)?
@@ -3786,21 +3793,25 @@ fn selected_historical_face_selection(
     let previous_state_id = or_none!(crate::history::effective_scope_previous_history_state_id(
         ctx, scope, histories
     )?);
-    let stream = or_none!(native_stream(&scope.id));
+    let stream = or_none!(ids::native_stream_charged(ctx, &scope.id, "resolve F3D Draft historical query scope stream")?);
     let [crate::records::identity::Located { value: member, .. }] = group.members() else {
         return Ok(None);
     };
-    let mut selections = entity_selection_operands.iter().filter(|operand| {
-        native_stream(&operand.id) == Some(stream)
-            && operand.scope_record_index == scope.record_index
-            && operand.group_record_index == group.record_index
-            && operand.group_member_ordinal == 0
-            && operand.record_index() == *member
-    });
-    let Some(selection) = selections.next() else {
+    let Some(selection) = unique_feature_match_for_decode(
+        ctx,
+        entity_selection_operands,
+        |operand| {
+            Ok(feature_stream_matches(ctx, &operand.id, Some(stream), "match F3D Draft historical operand stream")?
+                && operand.scope_record_index == scope.record_index
+                && operand.group_record_index == group.record_index
+                && operand.group_member_ordinal == 0
+                && operand.record_index() == *member)
+        },
+        "visit F3D Draft historical operand source",
+    )? else {
         return Ok(None);
     };
-    if selections.next().is_some() || selection.secondary().is_some() {
+    if selection.secondary().is_some() {
         return Ok(None);
     }
     let mut face_slots = selection
@@ -4052,7 +4063,7 @@ fn resolved_split_face_path(
     let previous_state_id = or_none!(crate::history::effective_scope_previous_history_state_id(
         ctx, scope, histories
     )?);
-    let stream = or_none!(native_stream(&scope.id));
+    let stream = or_none!(ids::native_stream_charged(ctx, &scope.id, "resolve F3D SplitFace path query scope stream")?);
     let feature = crate::design::identity::neutral_feature_id(ctx, scope)?;
     let feature_key = crate::design::identity::identity_key(ctx, feature.as_str())?;
     let prefix =
@@ -4065,15 +4076,19 @@ fn resolved_split_face_path(
         .enumerate()
     {
         let ordinal = or_none!(u32::try_from(ordinal).ok());
-        let mut selections = entity_selection_operands.iter().filter(|selection| {
-            native_stream(&selection.id) == Some(stream)
-                && selection.scope_record_index == scope.record_index
-                && selection.group_record_index == group.record_index
-                && selection.group_member_ordinal == ordinal
-                && selection.record_index() == *member
-        });
-        let selection = or_none!(selections.next());
-        if selections.next().is_some() || selection.secondary().is_some() {
+        let selection = or_none!(unique_feature_match_for_decode(
+            ctx,
+            entity_selection_operands,
+            |selection| {
+                Ok(feature_stream_matches(ctx, &selection.id, Some(stream), "match F3D SplitFace path operand stream")?
+                    && selection.scope_record_index == scope.record_index
+                    && selection.group_record_index == group.record_index
+                    && selection.group_member_ordinal == ordinal
+                    && selection.record_index() == *member)
+            },
+            "visit F3D SplitFace path operand source",
+        )?);
+        if selection.secondary().is_some() {
             return Ok(None);
         }
         let edge_slot = or_none!(selection.resolved_edge_slot);
@@ -4207,19 +4222,21 @@ pub(super) fn project_thicken(
     let faces = if let Some(faces) = direct_face_selection(ctx, scope, operands)? {
         faces
     } else {
-        let mut candidates = groups.iter().filter(|group| {
-            native_stream(&group.id) == native_stream(&scope.id)
-                && group.scope_record_index == scope.record_index
-                && matches!(
-                    group.role(),
-                    DesignOperandRole::ROLE_0X5 | DesignOperandRole::ROLE_0X12
-                )
-                && !group.members().is_empty()
-        });
-        let group = or_none!(candidates.next());
-        if candidates.next().is_some() {
-            return Ok(None);
-        }
+        let stream = ids::native_stream_charged(ctx, &scope.id, "resolve F3D Thicken query scope stream")?;
+        let group = or_none!(unique_feature_match_for_decode(
+            ctx,
+            groups,
+            |group| {
+                Ok(feature_stream_matches(ctx, &group.id, stream, "match F3D Thicken group stream")?
+                    && group.scope_record_index == scope.record_index
+                    && matches!(
+                        group.role(),
+                        DesignOperandRole::ROLE_0X5 | DesignOperandRole::ROLE_0X12
+                    )
+                    && !group.members().is_empty())
+            },
+            "visit F3D Thicken group source",
+        )?);
         FaceSelection::Native(ctx.copy_retained_text(&group.id, "f3d Thicken native group id")?)
     };
     Ok(Some(FeatureDefinition::Operation(
@@ -4355,16 +4372,18 @@ fn project_base_flange(
     };
 
     let operation = or_none!(scope.base_flange_operation());
-    let mut matching = groups.iter().filter(|group| {
-        native_stream(&group.id) == native_stream(&scope.id)
-            && group.scope_record_index == scope.record_index
-    });
-    let Some(profile_group) = matching.next() else {
+    let stream = ids::native_stream_charged(ctx, &scope.id, "resolve F3D base flange query scope stream")?;
+    let Some(profile_group) = unique_feature_match_for_decode(
+        ctx,
+        groups,
+        |group| {
+            Ok(feature_stream_matches(ctx, &group.id, stream, "match F3D base flange group stream")?
+                && group.scope_record_index == scope.record_index)
+        },
+        "visit F3D base flange group source",
+    )? else {
         return Ok(None);
     };
-    if matching.next().is_some() {
-        return Ok(None);
-    }
     if profile_group.scope_reference_ordinal != 0
         || profile_group.record_index != operation.profile_group_record_index
         || profile_group.role() != DesignOperandRole::PROFILE
@@ -4434,7 +4453,7 @@ fn project_edge_flange(
     let Some((operation, stream, height, angle, width, height_datum, bend_position)) =
         (|| -> Result<Option<_>, CodecError> {
             let operation = or_none!(scope.edge_flange_operation());
-            let stream = or_none!(native_stream(&scope.id));
+            let stream = or_none!(ids::native_stream_charged(ctx, &scope.id, "resolve F3D EdgeFlange query scope stream")?);
             let parameter = |owner_record_index, source_kind: &str| {
                 let mut matching = owners.iter().filter(|owner| {
                     native_stream(owner.id()) == Some(stream)
@@ -4464,33 +4483,34 @@ fn project_edge_flange(
                     offset_owner_record_index,
                     ..
                 } => {
-                    let mut target_groups = groups.iter().filter(|group| {
-                        native_stream(&group.id) == Some(stream)
-                            && group.scope_record_index == scope.record_index
-                            && group.record_index == *target_group_record_index
-                            && group.role() == DesignOperandRole::ROLE_0X21
-                            && group
-                                .members()
-                                .iter()
-                                .map(|member| member.value)
-                                .eq([*target_operand_record_index])
-                    });
-                    let target_group = or_none!(target_groups.next());
-                    if target_groups.next().is_some() {
-                        return Ok(None);
-                    }
-                    let mut target_selections =
-                        entity_selection_operands.iter().filter(|operand| {
-                            native_stream(&operand.id) == Some(stream)
+                    let target_group = or_none!(unique_feature_match_for_decode(
+                        ctx,
+                        groups,
+                        |group| {
+                            Ok(feature_stream_matches(ctx, &group.id, Some(stream), "match F3D EdgeFlange target group stream")?
+                                && group.scope_record_index == scope.record_index
+                                && group.record_index == *target_group_record_index
+                                && group.role() == DesignOperandRole::ROLE_0X21
+                                && group
+                                    .members()
+                                    .iter()
+                                    .map(|member| member.value)
+                                    .eq([*target_operand_record_index]))
+                        },
+                        "visit F3D EdgeFlange target group source",
+                    )?);
+                    let target_selection = or_none!(unique_feature_match_for_decode(
+                        ctx,
+                        entity_selection_operands,
+                        |operand| {
+                            Ok(feature_stream_matches(ctx, &operand.id, Some(stream), "match F3D EdgeFlange target operand stream")?
                                 && operand.scope_record_index == scope.record_index
                                 && operand.group_record_index == target_group.record_index
                                 && operand.group_member_ordinal == 0
-                                && operand.record_index() == *target_operand_record_index
-                        });
-                    let target_selection = or_none!(target_selections.next());
-                    if target_selections.next().is_some() {
-                        return Ok(None);
-                    }
+                                && operand.record_index() == *target_operand_record_index)
+                        },
+                        "visit F3D EdgeFlange target operand source",
+                    )?);
                     let target_record_index =
                         or_none!(u32::try_from(target_selection.primary_identity)
                             .ok()
@@ -4635,16 +4655,19 @@ fn project_edge_flange(
     }
     let mut selections = Vec::new();
     for edge in operation.selection.shape().edges() {
-        let mut matching = groups.iter().filter(|group| {
-            native_stream(&group.id) == Some(stream)
-                && group.scope_record_index == scope.record_index
-                && group.record_index == edge.group_record_index.get()
-        });
-        let Some(edge_group) = matching.next() else {
+        let Some(edge_group) = unique_feature_match_for_decode(
+            ctx,
+            groups,
+            |group| {
+                Ok(feature_stream_matches(ctx, &group.id, Some(stream), "match F3D EdgeFlange edge group stream")?
+                    && group.scope_record_index == scope.record_index
+                    && group.record_index == edge.group_record_index.get())
+            },
+            "visit F3D EdgeFlange edge group source",
+        )? else {
             return Ok(None);
         };
-        if matching.next().is_some()
-            || edge_group.role() != DesignOperandRole::BODIES_B
+        if edge_group.role() != DesignOperandRole::BODIES_B
             || edge_group.members().len() != 1
         {
             return Ok(None);
@@ -4959,7 +4982,7 @@ fn project_ruled_surface(
     let mut scratch_storage = ctx.reserve_scoped(0, "F3D feature projection scratch")?;
 
     let operation = or_none!(scope.ruled_surface_operation());
-    let stream = or_none!(native_stream(&scope.id));
+    let stream = or_none!(ids::native_stream_charged(ctx, &scope.id, "resolve F3D ruled surface query scope stream")?);
     let parameter = |owner_record_index, source_kind: &str| {
         let mut matching = owners.iter().filter(|owner| {
             native_stream(owner.id()) == Some(stream)
@@ -4991,14 +5014,17 @@ fn project_ruled_surface(
     };
     let mut ordered_groups = Vec::new();
     for record_index in &operation.edge_group_record_indices {
-        let mut matching = groups.iter().filter(|group| {
-            native_stream(&group.id) == Some(stream)
-                && group.scope_record_index == scope.record_index
-                && group.record_index == *record_index
-        });
-        let group = or_none!(matching.next());
-        if matching.next().is_some()
-            || group.role() != DesignOperandRole::BODIES_B
+        let group = or_none!(unique_feature_match_for_decode(
+            ctx,
+            groups,
+            |group| {
+                Ok(feature_stream_matches(ctx, &group.id, Some(stream), "match F3D ruled surface edge group stream")?
+                    && group.scope_record_index == scope.record_index
+                    && group.record_index == *record_index)
+            },
+            "visit F3D ruled surface edge group source",
+        )?);
+        if group.role() != DesignOperandRole::BODIES_B
             || group.members().len() != 1
         {
             return Ok(None);
@@ -5682,16 +5708,17 @@ fn project_variable_fillet(
     let edge_identity_operands = inputs.edge_identity_operands;
     let edge_treatment_vertex_operands = inputs.edge_treatment_vertex_operands;
     let histories = inputs.histories;
-    let stream = or_none!(native_stream(&scope.id));
-    let mut groups = construction_groups.iter().filter(|group| {
-        native_stream(&group.id) == Some(stream) && group.scope_record_index == scope.record_index
-    });
-    let Some(group) = groups.next() else {
+    let stream = or_none!(ids::native_stream_charged(ctx, &scope.id, "resolve F3D variable Fillet query scope stream")?);
+    let Some(group) = unique_feature_match_for_decode(
+        ctx,
+        construction_groups,
+        |group| {
+            Ok(feature_stream_matches(ctx, &group.id, Some(stream), "match F3D variable Fillet group stream")? && group.scope_record_index == scope.record_index)
+        },
+        "visit F3D variable Fillet group source",
+    )? else {
         return Ok(None);
     };
-    if groups.next().is_some() {
-        return Ok(None);
-    }
     let (points, tangency_weight) = or_none!(variable_fillet_law(ctx, parameters)?);
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Fillet {
@@ -6619,13 +6646,14 @@ pub(super) fn project_fixed_loft(
             {
                 return Ok(None);
             }
-            let mut body_groups = groups.iter().filter(|group| {
-                group.role() == DesignOperandRole::BODIES_B && group.scope_reference_ordinal == 1
-            });
-            let body_group = or_none!(body_groups.next());
-            if body_groups.next().is_some() {
-                return Ok(None);
-            }
+            let body_group = or_none!(unique_feature_match_for_decode(
+                ctx,
+                &groups,
+                |group| {
+                    Ok(group.role() == DesignOperandRole::BODIES_B && group.scope_reference_ordinal == 1)
+                },
+                "visit F3D legacy Loft body group source",
+            )?);
             Some((body_group.record_index, body_group.scope_reference_ordinal))
         }
         _ => return Ok(None),

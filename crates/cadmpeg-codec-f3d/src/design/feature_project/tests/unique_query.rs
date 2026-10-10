@@ -250,3 +250,5 @@ mod callback_refusal;
 mod entity_membership;
 
 mod draft_scope;
+
+mod direct_family;
