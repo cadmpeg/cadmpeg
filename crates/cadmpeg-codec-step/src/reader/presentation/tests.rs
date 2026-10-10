@@ -5,11 +5,11 @@ use super::{find_color, style_application_order, ColorResolution, StyleDomain};
 use std::collections::{BTreeMap, BTreeSet};
 
 mod collection_limits;
+mod stage_caches;
 mod string_limits;
 mod style_indices;
 mod surface_styles;
 mod target_expansion;
-mod stage_caches;
 
 /// A style whose override walk does not terminate states no depth. Its
 /// position is stated as absence and sorts after every stated depth; the
@@ -74,7 +74,8 @@ ENDSEC;END-ISO-10303-21;",
                         .expect("scope"),
                 ),
                 active: &mut BTreeSet::new(),
-                cache: &mut BTreeMap::new(),
+                cache: &mut super::ColorCache::default(),
+                completed: None,
                 losses: (
                     &mut Vec::new(),
                     &std::cell::RefCell::new(
@@ -84,6 +85,7 @@ ENDSEC;END-ISO-10303-21;",
                 invalid_surface_sides: &mut BTreeSet::new(),
             },
             0,
+            None,
             ctx,
         )
         .expect("colour search fits local resources")

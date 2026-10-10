@@ -10,6 +10,7 @@ fn style_target_expansion_keeps_order_duplicates_cycles_and_depth_bound() {
             .expect("exchange");
     crate::test_support::with_service_context(source, |_, ctx| {
         for (graph_limit, expected) in [(64, vec![4, 4, 5]), (2, vec![5])] {
+            let mut active_storage = ctx.reserve_scoped(0, "test active targets").expect("scope");
             let mut claim_storage = ctx.reserve_scoped(0, "claim fixture").expect("scope");
             let mut typed = BTreeSet::new();
             let mut active = BTreeSet::new();
@@ -18,7 +19,7 @@ fn style_target_expansion_keeps_order_duplicates_cycles_and_depth_bound() {
                 1,
                 &exchange,
                 (&mut typed, &mut claim_storage),
-                &mut active,
+                (&mut active, &mut active_storage),
                 (0, graph_limit),
                 &mut |id| ctx.push_vec(&mut targets, id, "target fixture"),
                 ctx,
@@ -28,6 +29,7 @@ fn style_target_expansion_keeps_order_duplicates_cycles_and_depth_bound() {
             assert_eq!(typed, BTreeSet::from([1, 2, 3]));
             assert!(active.is_empty());
         }
+        let mut active_storage = ctx.reserve_scoped(0, "test active targets").expect("scope");
         let mut claim_storage = ctx
             .reserve_scoped(0, "missing claim fixture")
             .expect("scope");
@@ -38,7 +40,7 @@ fn style_target_expansion_keeps_order_duplicates_cycles_and_depth_bound() {
             99,
             &exchange,
             (&mut typed, &mut claim_storage),
-            &mut active,
+            (&mut active, &mut active_storage),
             (0, 64),
             &mut |id| ctx.push_vec(&mut targets, id, "missing target fixture"),
             ctx,

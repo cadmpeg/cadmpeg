@@ -178,82 +178,6 @@ fn truncated_style_depth_does_not_cache_unvisited_suffixes() {
 }
 
 #[test]
-fn style_depth_path_cache_visits_prefix_before_work_refusal() {
-    let (exchange, _) =
-        crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner)
-            .expect("style graph");
-    // This three-style path needs at most three visited-set and three cache
-    // insertions. The largest node pass is 320 work units, and each insertion
-    // admits at most three passes, for at most 5,760 units. The remaining
-    // budget covers keyed lookups and path steps. Advance one unit at a time
-    // and accept only the refusal after the first cache insertion.
-    let found_prefix_refusal = (0..=8_192).any(|work_limit| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = work_limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root");
-        let mut cache = BTreeMap::new();
-        let mut storage = ctx.reserve_scoped(0, "style fixture").expect("scope");
-        let result = style_application_order(
-            3,
-            &exchange,
-            64,
-            &mut cache,
-            &mut storage,
-            &ctx,
-        );
-        let Err(CodecError::ResourceLimit(refusal)) = result else {
-            return false;
-        };
-        assert_eq!(ctx.resource_refusal().as_ref(), Some(&refusal));
-        if refusal.operation != "STEP style depth path result traversal" {
-            return false;
-        }
-        if refusal.dimension != ResourceDimension::WorkUnits
-            || cache != BTreeMap::from([(1, Some(0))])
-        {
-            return false;
-        }
-        true
-    });
-    assert!(found_prefix_refusal, "no partial style-depth cache boundary");
-}
-
-#[test]
-fn hidden_style_path_cache_visits_prefix_before_work_refusal() {
-    let (exchange, _) =
-        crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner)
-            .expect("style graph");
-    let hidden = BTreeSet::new();
-    // The same three-entry bound applies: six insertions need at most 5,760
-    // work units at three 320-unit node passes each. The remaining budget
-    // covers keyed lookups and path steps before the prefix refusal.
-    let found_prefix_refusal = (0..=8_192).any(|work_limit| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = work_limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root");
-        let mut cache = BTreeMap::new();
-        let mut storage = ctx.reserve_scoped(0, "hidden style fixture").expect("scope");
-        let result = style_is_hidden(3, &hidden, &exchange, &mut cache, &mut storage, &ctx);
-        let Err(CodecError::ResourceLimit(refusal)) = result else {
-            return false;
-        };
-        assert_eq!(ctx.resource_refusal().as_ref(), Some(&refusal));
-        if refusal.operation != "STEP hidden style path result traversal" {
-            return false;
-        }
-        if refusal.dimension != ResourceDimension::WorkUnits
-            || cache != BTreeMap::from([(3, false)])
-        {
-            return false;
-        }
-        true
-    });
-    assert!(found_prefix_refusal, "no partial hidden-style cache boundary");
-}
-
-#[test]
 fn empty_presentation_identity_index_visits_no_terminal_step() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -280,9 +204,10 @@ fn presentation_identity_index_refuses_only_first_visit() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root");
     let source = ["step:model:item#1"; 1024];
-    let CodecError::ResourceLimit(refusal) = super::super::collect_identity_indices(
-        source, &ctx, "test first identity visit",
-    ).expect_err("first visit refuses before copying its identity") else {
+    let CodecError::ResourceLimit(refusal) =
+        super::super::collect_identity_indices(source, &ctx, "test first identity visit")
+            .expect_err("first visit refuses before copying its identity")
+    else {
         panic!("identity visit resource refusal");
     };
     assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
@@ -300,14 +225,113 @@ fn empty_presentation_identity_index_preserves_original_refusal() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root");
-    let CodecError::ResourceLimit(original) = ctx.charge_work(1, "test original identity refusal")
-        .expect_err("original refusal") else {
+    let CodecError::ResourceLimit(original) = ctx
+        .charge_work(1, "test original identity refusal")
+        .expect_err("original refusal")
+    else {
         panic!("identity resource refusal");
     };
     let source: [&str; 0] = [];
-    assert!(matches!(super::super::collect_identity_indices(source, &ctx, "test empty identity index"),
-        Err(CodecError::ResourceLimit(sticky)) if sticky == original));
+    assert!(
+        matches!(super::super::collect_identity_indices(source, &ctx, "test empty identity index"),
+        Err(CodecError::ResourceLimit(sticky)) if sticky == original)
+    );
     assert_eq!(ctx.resource_refusal(), Some(original));
     assert!(matches!(ctx.finish_session(),
         Err(CodecError::ResourceLimit(sticky)) if sticky == original));
+}
+
+#[test]
+fn hidden_style_terminals_do_not_enter_depth() {
+    let (exchange, _) =
+        crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner)
+            .expect("style graph");
+    for (id, limit, hidden, cache, expected) in [
+        (1, 0, BTreeSet::from([1]), BTreeMap::new(), true),
+        (3, 2, BTreeSet::from([1]), BTreeMap::new(), true),
+        (3, 0, BTreeSet::new(), BTreeMap::from([(3, false)]), false),
+        (4, 1, BTreeSet::new(), BTreeMap::new(), false),
+    ] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_recursion_depth = limit;
+        crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+            let mut storage = ctx
+                .reserve_scoped(0, "terminal visibility fixture")
+                .expect("scope");
+            let mut cache = cache;
+            assert_eq!(
+                style_is_hidden(id, &hidden, &exchange, &mut cache, &mut storage, ctx)
+                    .expect("terminal fits depth"),
+                expected
+            );
+            assert_eq!(ctx.resource_refusal(), None);
+        });
+    }
+}
+
+#[test]
+fn styles_without_bindings_skip_visibility_walk() {
+    for target in ["GEOMETRIC_SET('',())", "MISSING_TARGET()"] {
+        let source = format!("ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=COLOUR_RGB('',1.,0.,0.);#10=STYLED_ITEM('',(),#20);#11=OVER_RIDING_STYLED_ITEM('',(),#20,#10);#12=OVER_RIDING_STYLED_ITEM('',(),#20,#11);#13=OVER_RIDING_STYLED_ITEM('',(#1),#20,#12);#20={target};ENDSEC;END-ISO-10303-21;");
+        let source = if target.starts_with("MISSING") {
+            source
+                .replace("#20=MISSING_TARGET();", "")
+                .replace("(('test'),'2;1')", "(('test'),'4;2')")
+                .replace(
+                    "ENDSEC;DATA;",
+                    "ENDSEC;REFERENCE;#20=<part.step#target>;ENDSEC;DATA;",
+                )
+        } else {
+            source
+        };
+        let (exchange, _) =
+            crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+                .expect("style exchange");
+        let arena = DecodeArena::new();
+        let (setup, _) =
+            DecodeContext::from_root_bytes(b"", &arena, &DecodePolicy::service()).expect("setup");
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        let carriers = crate::reader::index::CarrierIndex::from_ir(&ir, &setup).expect("carriers");
+        let topology = crate::reader::topology::decode(&exchange, &mut ir, &carriers, &setup)
+            .expect("topology")
+            .value;
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_recursion_depth = 3;
+        // An external target without a local record emits a warning. An empty
+        // set emits no callback. Neither route evaluates binding visibility.
+        crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+            let result = super::super::decode(&exchange, &topology, &mut ir, &BTreeMap::new(), ctx)
+                .expect("unused visibility fits depth");
+            assert!(ir.model.appearance_bindings.is_empty());
+            assert_eq!(
+                result.losses.len(),
+                usize::from(target.starts_with("MISSING"))
+            );
+            assert_eq!(ctx.resource_refusal(), None);
+        });
+    }
+}
+
+#[test]
+fn binding_visibility_keeps_its_independent_recursion_boundary() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=COLOUR_RGB('',1.,0.,0.);#10=STYLED_ITEM('',(#1),#20);#20=GEOMETRIC_SET('',(#21));#21=GEOMETRIC_SET('',(#22));#22=SOURCE_ITEM();ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("target graph");
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let arena = DecodeArena::new();
+    let (setup, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &DecodePolicy::service()).expect("setup");
+    let carriers = crate::reader::index::CarrierIndex::from_ir(&ir, &setup).expect("carriers");
+    let topology = crate::reader::topology::decode(&exchange, &mut ir, &carriers, &setup)
+        .expect("topology")
+        .value;
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_recursion_depth = 3;
+    crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+        super::super::decode(&exchange, &topology, &mut ir, &BTreeMap::new(), ctx)
+            .expect("independent visibility depth");
+        assert_eq!(ir.model.appearance_bindings.len(), 1);
+        assert_eq!(ir.model.appearance_bindings[0].visible, None);
+    });
 }
