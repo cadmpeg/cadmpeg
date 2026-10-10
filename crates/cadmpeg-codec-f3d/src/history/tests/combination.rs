@@ -109,3 +109,5 @@ fn rejected_combine_row_skips_native_identity_tail() {
     .unwrap();
     assert_eq!(rows, None);
 }
+
+mod error_selection;

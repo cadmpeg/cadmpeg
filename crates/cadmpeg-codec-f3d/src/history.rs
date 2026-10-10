@@ -1529,8 +1529,8 @@ pub(crate) fn bind_feature_body_selections(
                         *tools = selection;
                     }
                 });
-                if let Err(error) = edit {
-                    edit_result = Err(cadmpeg_core::CodecError::malformed(error));
+                if edit_result.is_ok() {
+                    edit_result = edit.map_err(cadmpeg_core::CodecError::malformed);
                 }
                 break 'feature_edit;
             }
