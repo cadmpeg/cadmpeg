@@ -13,7 +13,7 @@
 //! leaves only the per-instance message to the caller.
 //!
 use cadmpeg_ir::report::{
-    loss::{LossKind, LossNamespace, LossNote, LossTaxonomy, NamespacedLossKind},
+    loss::{LossKind, LossNamespace, LossNote, LossTaxonomy},
     Severity,
 };
 
@@ -81,27 +81,18 @@ impl SatLossCode {
     }
 
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
-    pub(crate) fn kind(
-        self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<LossKind, cadmpeg_core::CodecError> {
-        let namespace = ctx.copy_retained_text(NAMESPACE.as_str(), "SAT loss namespace")?;
-        let code = ctx.copy_retained_text(self.code(), "SAT loss code")?;
-        NamespacedLossKind::new_owned(namespace, code, self.shared_taxonomy())
-            .map(LossKind::Namespaced)
-            .map_err(cadmpeg_core::CodecError::malformed)
+    pub(crate) fn kind(self) -> LossKind {
+        LossKind::namespaced(NAMESPACE, self.code(), self.shared_taxonomy())
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
     ///
     /// The structured code is `sat/<local>`. Severity comes from the local
-    /// code; the strict floor comes from the taxonomy.
-    pub(crate) fn note(
-        self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        message: String,
-    ) -> Result<LossNote, cadmpeg_core::CodecError> {
-        Ok(LossNote::new(self.kind(ctx)?, message).with_severity(self.severity()))
+    /// code; the strict floor comes from the taxonomy. The namespace and code
+    /// are fixed strings, so the note's only input-sized part is the message
+    /// the caller admitted.
+    pub(crate) fn note(self, message: String) -> LossNote {
+        LossNote::new(self.kind(), message).with_severity(self.severity())
     }
 }
 
@@ -146,9 +137,7 @@ mod tests {
     #[test]
     fn note_takes_severity_from_the_code() {
         for code in SatLossCode::ALL {
-            let note = code
-                .note(&cadmpeg_test_support::service_decode_context(), "x".into())
-                .expect("service loss");
+            let note = code.note("x".into());
             assert_eq!(note.severity, code.severity());
             assert_eq!(note.message, "x");
             assert!(note.provenance.is_none());
