@@ -3646,6 +3646,7 @@ pub(super) fn project<'ctx>(
         }
     }
 
+    drop(sheet_identities);
     let mut directory_entries = directory.iter();
     while !directory_entries.as_slice().is_empty() {
         let Some(entry) =
