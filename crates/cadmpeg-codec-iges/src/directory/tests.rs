@@ -205,35 +205,25 @@ fn directory_entity_refuses_entity_limit_before_storage() {
 }
 
 #[test]
-fn directory_integer_parse_refusal_escapes_record_quarantine() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
+fn directory_fixed_fields_need_only_the_record_step() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let bytes = owned_test_file(&[OwnedTestEntity {
-        entity_type: 116,
-        form: 0,
-        label: "POINT".into(),
-        status: "00000000",
+        entity_type: 116, form: 0, label: "POINT".into(), status: "00000000",
         parameters: "116,1,2,3,0;".into(),
     }]);
     let scan = crate::test_support::scan(&bytes).unwrap();
-    // The first entity-type field has three bytes.
-    let result = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::WorkUnits,
-        "iges directory integer value",
-        |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-            super::parse(&scan, GlobalTable::V5Later, &ctx).map(|_| ())
-        },
-    );
-    assert!(matches!(
-        result,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::WorkUnits
-                && limit.additional == 3
-    ));
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let (entries, quarantined) = super::parse(&scan, GlobalTable::V5Later, &ctx).unwrap();
+    assert!(quarantined.is_empty());
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].entity_type, 116);
+    assert_eq!(entries[0].parameter_start, 1);
+    assert_eq!(entries[0].parameter_line_count, 1);
+    assert_eq!(entries[0].form, 0);
+    ctx.finish_session().unwrap();
 }
 
 #[test]

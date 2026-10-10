@@ -2951,11 +2951,13 @@ pub(crate) fn store<'ctx>(
                             format_args!("iges:entity:directory#{}", entry.sequence),
                             "iges native direction source",
                         )?,
-                        components: ctx.collect_indexed_vec(
-                            3,
-                            "iges native direction components",
-                            |index| Ok(parameters.and_then(|record| record.number(index + 1))),
-                        )?,
+                        components: {
+                            let mut values = ctx.collection_vec(3, "iges native direction components")?;
+                            for index in 1..=3 {
+                                values.push(parameters.and_then(|record| record.number(index)));
+                            }
+                            values
+                        },
                         physically_dependent: entry.status.is_physically_dependent(),
                         has_transform: entry.transform != 0,
                     }
@@ -3040,11 +3042,13 @@ pub(crate) fn store<'ctx>(
                             "iges native transformation source",
                         )?,
                         form: entry.form,
-                        coefficients: ctx.collect_indexed_vec(
-                            12,
-                            "iges native transformation coefficients",
-                            |index| Ok(parameters.and_then(|record| record.number(index + 1))),
-                        )?,
+                        coefficients: {
+                            let mut values = ctx.collection_vec(12, "iges native transformation coefficients")?;
+                            for index in 1..=12 {
+                                values.push(parameters.and_then(|record| record.number(index)));
+                            }
+                            values
+                        },
                         parent: (entry.transform > 0)
                             .then(|| {
                                 ctx.format_retained(
