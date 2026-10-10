@@ -803,8 +803,10 @@ pub(in super::super) fn generated_surface_face_refs(
     result_surface_ids: &BTreeMap<u32, Vec<u32>>,
     available_features: &BTreeSet<IrFeatureId>,
 ) -> Result<Option<Vec<GeneratedFaceRef>>, CodecError> {
-    let mut candidate_storage = ctx.reserve_scoped(0, "creo generated surface candidates")?;
-    let mut candidates = Vec::new();
+    let mut feature_storage = ctx.reserve_scoped(0, "creo generated surface feature IDs")?;
+    let mut local_id_storage = ctx.reserve_scoped(0, "creo generated surface local IDs")?;
+    let mut output_storage = ctx.reserve_scoped(0, "creo generated surface face references")?;
+    let mut generated = Vec::new();
     let mut surface_id_iter = source_ids.iter();
     while surface_id_iter.len() != 0 {
         let Some(surface_id) = ctx.next_charged(&mut surface_id_iter, "creo generated surface IDs")? else {
@@ -813,10 +815,10 @@ pub(in super::super) fn generated_surface_face_refs(
         let Some(row) = crate::surface::unique_surface_row(rows, *surface_id) else {
             return Ok(None);
         };
-        let (feature_text, feature_storage) = ctx.format_scoped(
+        let feature_text = feature_storage.with_storage(|| ctx.format_retained(
             format_args!("creo:model:feature#{}", row.feature_id),
             "creo generated surface feature IDs",
-        )?;
+        ))?;
         let feature = IrFeatureId::mint(feature_text)
             .map_err(|_| CodecError::Malformed("constructed Creo feature ID is invalid".into()))?;
         if !ctx.contains_btree_set(
@@ -837,26 +839,20 @@ pub(in super::super) fn generated_surface_face_refs(
         if !ctx.contains(ids, surface_id, "creo generated surface result ID lookup")? {
             return Ok(None);
         }
-        candidate_storage.with_storage(|| ctx.push_vec(
-            &mut candidates,
-            (surface_id, feature, feature_storage),
-            "creo generated surface candidate rows",
-        ))?;
-    }
-    let mut generated = Vec::new();
-    for (surface_id, feature, feature_storage) in ctx.admit_iter(candidates, "creo generated surface candidate moves")? {
-        let feature = feature_storage.commit_value(feature)?;
-        let local_id = ctx.format_retained(
+        let local_id = local_id_storage.with_storage(|| ctx.format_retained(
             format_args!("surface#{surface_id}"),
             "creo generated surface local IDs",
-        )?;
-        let Some(face) = GeneratedFaceRef::new(feature, local_id, ctx)?.ok() else {
+        ))?;
+        let Ok(local_id) = local_id.try_into() else {
             return Ok(None);
         };
-        ctx.reserve_vec(&mut generated, 1, "creo generated surface face references")?;
+        let face = GeneratedFaceRef { feature, local_id };
+        output_storage.with_storage(|| ctx.reserve_vec(&mut generated, 1, "creo generated surface face references"))?;
         generated.push(face);
     }
-    Ok(Some(generated))
+    let generated = feature_storage.commit_value(generated)?;
+    let generated = local_id_storage.commit_value(generated)?;
+    Ok(Some(output_storage.commit_value(generated)?))
 }
 
 pub(in super::super) fn emit_feature_result_topologies(

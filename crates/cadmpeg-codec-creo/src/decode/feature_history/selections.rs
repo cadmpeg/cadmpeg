@@ -164,14 +164,13 @@ pub(in super::super) fn feature_edge_selection(
             &available_features,
             &result_edge_ids,
         )? {
-            Ok(Some(
-                EdgeSelection::generated(
-                    edges,
-                    ctx.copy_retained_text(&native, "creo generated edge selection native")?,
-                    ctx,
-                )?
-                .unwrap_or(EdgeSelection::Native(native)),
-            ))
+            let Ok(edges) = edges.try_into() else {
+                return Ok(Some(EdgeSelection::Native(native)));
+            };
+            let native = native.try_into().map_err(|_| {
+                CodecError::Malformed("constructed Creo edge selection is blank".into())
+            })?;
+            Ok(Some(EdgeSelection::Generated { edges, native }))
         } else {
             Ok(Some(EdgeSelection::Native(native)))
         }
@@ -227,8 +226,10 @@ pub(in super::super) fn generated_curve_edge_refs(
             }
         }
     }
-    let mut candidate_storage = ctx.reserve_scoped(0, "creo generated curve candidates")?;
-    let mut candidates = Vec::new();
+    let mut feature_storage = ctx.reserve_scoped(0, "creo generated curve feature IDs")?;
+    let mut local_id_storage = ctx.reserve_scoped(0, "creo generated curve local IDs")?;
+    let mut output_storage = ctx.reserve_scoped(0, "creo generated curve edge references")?;
+    let mut generated = Vec::new();
     let mut curve_id_iter = curve_ids.iter();
     while curve_id_iter.len() != 0 {
         let Some(&curve_id) = ctx.next_charged(&mut curve_id_iter, "creo selected curve IDs")? else {
@@ -237,10 +238,10 @@ pub(in super::super) fn generated_curve_edge_refs(
         let Some(row) = unique_rows.get(&curve_id).copied().flatten() else {
             return Ok(None);
         };
-        let (feature_text, feature_storage) = ctx.format_scoped(
+        let feature_text = feature_storage.with_storage(|| ctx.format_retained(
             format_args!("creo:model:feature#{}", row.feature_id),
             "creo generated curve feature IDs",
-        )?;
+        ))?;
         let feature = IrFeatureId::mint(feature_text)
             .map_err(|_| CodecError::Malformed("constructed Creo feature ID is invalid".into()))?;
         if !ctx.contains_btree_set(
@@ -261,26 +262,20 @@ pub(in super::super) fn generated_curve_edge_refs(
         if !ctx.contains(ids, &curve_id, "creo generated curve result ID lookup")? {
             return Ok(None);
         }
-        candidate_storage.with_storage(|| ctx.push_vec(
-            &mut candidates,
-            (curve_id, feature, feature_storage),
-            "creo generated curve candidate rows",
-        ))?;
-    }
-    let mut generated = Vec::new();
-    for (curve_id, feature, feature_storage) in ctx.admit_iter(candidates, "creo generated curve candidate moves")? {
-        let feature = feature_storage.commit_value(feature)?;
-        let local_id = ctx.format_retained(
+        let local_id = local_id_storage.with_storage(|| ctx.format_retained(
             format_args!("curve#{curve_id}"),
             "creo generated curve local IDs",
-        )?;
-        let Some(edge) = GeneratedEdgeRef::new(feature, local_id, ctx)?.ok() else {
+        ))?;
+        let Ok(local_id) = local_id.try_into() else {
             return Ok(None);
         };
-        ctx.reserve_vec(&mut generated, 1, "creo generated curve edge references")?;
+        let edge = GeneratedEdgeRef { feature, local_id };
+        output_storage.with_storage(|| ctx.reserve_vec(&mut generated, 1, "creo generated curve edge references"))?;
         generated.push(edge);
     }
-    Ok(Some(generated))
+    let generated = feature_storage.commit_value(generated)?;
+    let generated = local_id_storage.commit_value(generated)?;
+    Ok(Some(output_storage.commit_value(generated)?))
 }
 
 /// Return the complete feature-local edge roster proven by unique topology rows.
@@ -520,18 +515,18 @@ mod tests {
     }
 
     #[test]
-    fn generated_edge_selection_native_copy_refuses_retained_limit() {
+    fn generated_edge_selection_native_output_refuses_retained_limit() {
         let scan = one_generated_edge();
         let error = crate::test_support::last_refusal_at(
             &[],
             ResourceDimension::RetainedBytes,
-            "creo generated edge selection native",
+            "creo feature edge selection native",
             |ctx| feature_edge_selection(ctx, &scan, &cadmpeg_ir::document::CadIr::empty(), 10),
         );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo generated edge selection native"),
+                && resource.operation == "creo feature edge selection native"),
             "{error:?}"
         );
     }
