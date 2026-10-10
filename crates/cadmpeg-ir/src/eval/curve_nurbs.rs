@@ -252,11 +252,13 @@ pub(super) fn linear_higher(
     scratch: &decode::Scratch<'_, '_>,
     curve: &crate::geometry::nurbs::NurbsCurve,
     parameter: FiniteReal,
-    fourth: bool,
+    request: super::ModelCurveRequest,
 ) -> Result<super::curve_higher::CurveHigher, EvaluationFailure<()>> {
     use crate::math::sum::{scaled_finite, ScaledValue};
     use super::curve_higher::CurveHigher;
     scratch.unless_refused()?;
+    let fourth = matches!(request, super::ModelCurveRequest::Fourth | super::ModelCurveRequest::Fifth);
+    let fifth = request == super::ModelCurveRequest::Fifth;
     if curve.degree() != 1 {
         return Err(EvaluationFailure::NoValue);
     }
@@ -288,7 +290,7 @@ pub(super) fn linear_higher(
         difference.add_factors([weight1]);
         difference.add_factors([-weight0]);
         let Some(difference) = difference.finish() else {
-            return Ok(CurveHigher {
+            return Ok(CurveHigher { fifth: if fifth { Ok(FiniteVector3::ZERO) } else { Err(EvaluationFailure::NoValue) },
                 third: Ok(FiniteVector3::ZERO),
                 fourth: if fourth { Ok(FiniteVector3::ZERO) } else { Err(EvaluationFailure::NoValue) },
             });
@@ -297,6 +299,7 @@ pub(super) fn linear_higher(
         let fourth_factor = if fourth {
             scaled_finite(-24.0).ok_or(EvaluationFailure::NoValue)?
         } else { six };
+        let fifth_factor = if fifth { scaled_finite(120.0) } else { None };
         let coordinate = |left, right| {
             let mut coefficient = ExactSignedSum::default();
             coefficient.add_factors([weight0, weight1, right]);
@@ -312,12 +315,22 @@ pub(super) fn linear_higher(
                         [width, width, width, width, weight, weight, weight, weight, weight])
                 })
             } else { Ok(FiniteReal::ZERO) };
-            (third, fourth)
+            let fifth = if fifth {
+                crate::math::sum::quotient_fifth::product_fifth(
+                    [fifth_factor, coefficient, Some(difference), Some(difference), Some(difference), Some(difference)],
+                    weight, width,
+                )
+            } else { None };
+            (third, fourth, fifth)
         };
         let lanes = [coordinate(first.x, last.x), coordinate(first.y, last.y), coordinate(first.z, last.z)];
         let vector = |lanes| finite_lanes(lanes).map(|[x, y, z]| FiniteVector3::from_components(x, y, z))
             .map_err(|_| EvaluationFailure::NonFinite(()));
         Ok(CurveHigher {
+            fifth: match lanes.map(|lane| lane.2) {
+                [Some(x), Some(y), Some(z)] => vector([x, y, z]),
+                _ => Err(EvaluationFailure::NoValue),
+            },
             third: vector(lanes.map(|lane| lane.0)),
             fourth: if fourth { vector(lanes.map(|lane| lane.1)) } else { Err(EvaluationFailure::NoValue) },
         })
@@ -333,11 +346,13 @@ pub(super) fn polynomial_higher(
     scratch: &decode::Scratch<'_, '_>,
     curve: &crate::geometry::nurbs::NurbsCurve,
     parameter: FiniteReal,
-    fourth: bool,
+    request: super::ModelCurveRequest,
 ) -> Result<super::curve_higher::CurveHigher, EvaluationFailure<()>> {
     use crate::math::sum::{scaled_finite, ScaledValue};
     use super::curve_higher::CurveHigher;
     scratch.unless_refused()?;
+    let fourth = matches!(request, super::ModelCurveRequest::Fourth | super::ModelCurveRequest::Fifth);
+    let fifth = request == super::ModelCurveRequest::Fifth;
     let result = (|| {
         let NurbsPoles3::Polynomial { points } = curve.pole_rows() else {
             return Err(EvaluationFailure::NoValue);
@@ -351,13 +366,13 @@ pub(super) fn polynomial_higher(
         if width == 0.0 { return Err(EvaluationFailure::NoValue); }
         if fourth && degree >= 4 {
             return polynomial_selected_higher(scratch, curve.knots(), points,
-                degree, span, parameter, PositiveReal::new(width));
+                degree, span, parameter, PositiveReal::new(width), fifth);
         }
         // Each actual polynomial span below degree4 has identically zero
         // Fourth, even when the independent Third is unavailable or overflows.
         let fourth = if fourth && degree < 4 { Ok(FiniteVector3::ZERO) }
             else { Err(EvaluationFailure::NoValue) };
-        if degree < 3 { return Ok(CurveHigher { third: Ok(FiniteVector3::ZERO), fourth }); }
+        if degree < 3 { return Ok(CurveHigher { fifth: if fifth { Ok(FiniteVector3::ZERO) } else { Err(EvaluationFailure::NoValue) }, third: Ok(FiniteVector3::ZERO), fourth }); }
         let third = (|| {
         let finite_width = PositiveReal::new(width);
         let values = if let Some(scale) = finite_width {
@@ -399,12 +414,12 @@ pub(super) fn polynomial_higher(
         let [x, y, z] = sums;
         Ok(FiniteVector3::from_components(lane(x)?, lane(y)?, lane(z)?))
         })();
-        Ok(CurveHigher { third, fourth })
+        Ok(CurveHigher { third, fourth, fifth: if fifth { Ok(FiniteVector3::ZERO) } else { Err(EvaluationFailure::NoValue) } })
     })();
     scratch.settle(result)
 }
 
-/// One actual selected polynomial support supplies both independent orders.
+/// One actual selected polynomial support supplies each requested order.
 fn polynomial_selected_higher(
     scratch: &decode::Scratch<'_, '_>,
     knots: &[f64],
@@ -413,22 +428,27 @@ fn polynomial_selected_higher(
     span: usize,
     parameter: FiniteReal,
     scale: Option<PositiveReal>,
+    fifth_requested: bool,
 ) -> Result<super::curve_higher::CurveHigher, EvaluationFailure<()>> {
     use super::curve_higher::CurveHigher;
-    let rows = basis::polynomial_higher::rows(scratch, knots, degree, span, parameter.get(), scale)?;
+    let rows = basis::polynomial_higher::rows(scratch, knots, degree, span, parameter.get(), scale, fifth_requested)?;
     let mut third = rows.third;
     let mut fourth = rows.fourth;
+    let mut fifth = rows.fifth;
     let mut third_sums = [ExactSignedSum::default(); 3];
     let mut fourth_sums = [ExactSignedSum::default(); 3];
+    let mut fifth_sums = [ExactSignedSum::default(); 3];
     for local in 0..degree.checked_add(1).ok_or(EvaluationFailure::NoValue)? {
-        if third.is_err() && fourth.is_err() { break; }
+        if third.is_err() && fourth.is_err() && fifth.is_err() { break; }
         if scratch.admission.independent_cost::<()>(Some(1)).is_err() {
             if third.is_ok() { third = Err(EvaluationFailure::NoValue); }
             if fourth.is_ok() { fourth = Err(EvaluationFailure::NoValue); }
+            if fifth.is_ok() { fifth = Err(EvaluationFailure::NoValue); }
             break;
         }
         scratch.work(1, if third.is_ok() { "IR polynomial curve third support" }
-            else { "IR polynomial curve fourth support" })
+            else if fourth.is_ok() { "IR polynomial curve fourth support" }
+            else { "IR polynomial curve fifth support" })
             .ok_or_else(|| scratch.failure(EvaluationFailure::NoValue))?;
         let coefficient = |values: &Result<Cow<'static, [f64]>, EvaluationFailure<()>>| {
             values.as_ref().map_err(|failure| *failure).and_then(|values| {
@@ -438,15 +458,19 @@ fn polynomial_selected_higher(
         };
         let third_coefficient = coefficient(&third);
         let fourth_coefficient = coefficient(&fourth);
+        let fifth_coefficient = coefficient(&fifth);
         if let Err(failure) = third_coefficient { third = Err(failure); }
         if let Err(failure) = fourth_coefficient { fourth = Err(failure); }
-        if third.is_err() && fourth.is_err() { break; }
+        if let Err(failure) = fifth_coefficient { fifth = Err(failure); }
+        if third.is_err() && fourth.is_err() && fifth.is_err() { break; }
         let Some(point) = points.get(span - degree + local) else {
             if third.is_ok() { third = Err(EvaluationFailure::NoValue); }
             if fourth.is_ok() { fourth = Err(EvaluationFailure::NoValue); }
+            if fifth.is_ok() { fifth = Err(EvaluationFailure::NoValue); }
             break;
         };
-        for (coefficient, sums) in [(third_coefficient, &mut third_sums), (fourth_coefficient, &mut fourth_sums)] {
+        for (coefficient, sums) in [(third_coefficient, &mut third_sums), (fourth_coefficient, &mut fourth_sums),
+            (fifth_coefficient, &mut fifth_sums)] {
             if let Ok(coefficient) = coefficient {
                 for (sum, coordinate) in sums.iter_mut().zip([point.x, point.y, point.z]) {
                     sum.add_product(coefficient.get(), coordinate);
@@ -462,8 +486,10 @@ fn polynomial_selected_higher(
                 let scale = crate::math::sum::scaled_finite(scale.get()).ok_or(EvaluationFailure::NoValue)?;
                 let result = if order == 3 {
                     crate::math::sum::ScaledValue::product_quotient([value], [scale, scale, scale])
-                } else {
+                } else if order == 4 {
                     crate::math::sum::ScaledValue::product_quotient([value], [scale, scale, scale, scale])
+                } else {
+                    crate::math::sum::ScaledValue::product_quotient([value], [scale, scale, scale, scale, scale])
                 };
                 result.map_err(|_| EvaluationFailure::NonFinite(()))
             } else { value.finite().map_err(|_| EvaluationFailure::NonFinite(())) }
@@ -472,7 +498,9 @@ fn polynomial_selected_higher(
         Ok(FiniteVector3::from_components(lane(x)?, lane(y)?, lane(z)?))
     };
     scratch.settle(Ok(CurveHigher { third: complete(third, third_sums, 3),
-        fourth: complete(fourth, fourth_sums, 4) }))
+        fourth: complete(fourth, fourth_sums, 4),
+        fifth: if fifth_requested && degree < 5 { Ok(FiniteVector3::ZERO) }
+            else { complete(fifth, fifth_sums, 5) } }))
 }
 
 /// Requested rational higher orders. Fixed linear and clamped quadratic
@@ -481,19 +509,21 @@ pub(super) fn rational_higher(
     scratch: &decode::Scratch<'_, '_>,
     curve: &crate::geometry::nurbs::NurbsCurve,
     parameter: FiniteReal,
-    fourth: bool,
+    request: super::ModelCurveRequest,
 ) -> Result<super::curve_higher::CurveHigher, EvaluationFailure<()>> {
     use super::rational::Homogeneous;
     use super::curve_higher::CurveHigher;
     scratch.unless_refused()?;
-    if curve.degree() == 1 { return linear_higher(scratch, curve, parameter, fourth); }
+    let fourth = matches!(request, super::ModelCurveRequest::Fourth | super::ModelCurveRequest::Fifth);
+    let fifth = request == super::ModelCurveRequest::Fifth;
+    if curve.degree() == 1 { return linear_higher(scratch, curve, parameter, request); }
     let vector = |lanes: Option<[Result<FiniteReal, f64>; 3]>| {
         finite_lanes(lanes.ok_or(EvaluationFailure::NoValue)?)
             .map(|[x, y, z]| FiniteVector3::from_components(x, y, z))
             .map_err(|_| EvaluationFailure::NonFinite(()))
     };
     let higher = |lanes: super::rational::HigherLanes| CurveHigher {
-        third: vector(lanes.third), fourth: vector(lanes.fourth),
+        third: vector(lanes.third), fourth: vector(lanes.fourth), fifth: vector(lanes.fifth),
     };
     let result = (|| {
         let no_value = EvaluationFailure::NoValue;
@@ -506,7 +536,7 @@ pub(super) fn rational_higher(
                 if a == a1 && a == a2 && b == b1 && b == b2 && a < b {
                     // Equal actual weights make this exact carrier polynomial.
                     if poles[0].weight == poles[1].weight && poles[0].weight == poles[2].weight {
-                        return Ok(CurveHigher { third: Ok(FiniteVector3::ZERO),
+                        return Ok(CurveHigher { fifth: if fifth { Ok(FiniteVector3::ZERO) } else { Err(EvaluationFailure::NoValue) }, third: Ok(FiniteVector3::ZERO),
                             fourth: if fourth { Ok(FiniteVector3::ZERO) } else { Err(no_value) } });
                     }
                     let [a, b] = FiniteReal::array([*a, *b]).ok_or(no_value)?;
@@ -516,7 +546,7 @@ pub(super) fn rational_higher(
                     width.add_factors([b.get()]);
                     width.add_factors([-a.get()]);
                     let width = width.finish().ok_or(no_value)?;
-                    return Ok(higher(Homogeneous::quadratic_higher(poles, local, width, fourth)
+                    return Ok(higher(Homogeneous::quadratic_higher(poles, local, width, fourth, fifth)
                         .ok_or(no_value)?));
                 }
             }
@@ -528,16 +558,23 @@ pub(super) fn rational_higher(
         width.add_factors([curve.knots()[span + 1]]);
         width.add_factors([-curve.knots()[span]]);
         let width = width.finish().ok_or(no_value)?;
-        let lanes = if fourth {
+        let lanes = if fifth {
+            let rows = basis::requested_third::rows::<6>(scratch, curve.knots(), degree, span, parameter, width)
+                .ok_or_else(|| scratch.failure(no_value))?;
+            let available = (degree < 4 || rows.fourth_available())
+                && (degree < 5 || rows.fifth_available());
+            Homogeneous::curve_higher(scratch, curve.pole_rows(), span - degree,
+                rows.as_slice(), width, rows.fourth_available(), available)?
+        } else if fourth {
             let rows = basis::requested_third::rows::<5>(scratch, curve.knots(), degree, span, parameter, width)
                 .ok_or_else(|| scratch.failure(no_value))?;
             Homogeneous::curve_higher(scratch, curve.pole_rows(), span - degree,
-                rows.as_slice(), width, rows.fourth_available())?
+                rows.as_slice(), width, rows.fourth_available(), false)?
         } else {
             let rows = basis::requested_third::rows::<4>(scratch, curve.knots(), degree, span, parameter, width)
                 .ok_or_else(|| scratch.failure(no_value))?;
             Homogeneous::curve_higher(scratch, curve.pole_rows(), span - degree,
-                rows.as_slice(), width, false)?
+                rows.as_slice(), width, false, false)?
         };
         Ok(higher(lanes.ok_or(no_value)?))
     })();

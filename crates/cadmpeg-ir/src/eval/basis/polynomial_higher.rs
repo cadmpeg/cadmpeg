@@ -71,6 +71,7 @@ impl<'ctx> PreviousBasis<'ctx> {
 pub(in crate::eval) struct PolynomialHigherBasis {
     pub(in crate::eval) third: Result<Cow<'static, [f64]>, EvaluationFailure<()>>,
     pub(in crate::eval) fourth: Result<Cow<'static, [f64]>, EvaluationFailure<()>>,
+    pub(in crate::eval) fifth: Result<Cow<'static, [f64]>, EvaluationFailure<()>>,
 }
 
 /// Preserve the old Third row arithmetic. Fourth starts in the penultimate
@@ -82,6 +83,7 @@ pub(in crate::eval) fn rows(
     span: usize,
     t: f64,
     scale: Option<PositiveReal>,
+    fifth_requested: bool,
 ) -> Result<PolynomialHigherBasis, EvaluationFailure<()>> {
     scratch.unless_refused()?;
     let no_value = EvaluationFailure::NoValue;
@@ -102,36 +104,48 @@ pub(in crate::eval) fn rows(
     };
     let mut previous = PreviousBasis::new(scratch, base_degree)
         .ok_or_else(|| scratch.failure(no_value))?;
+    let mut second_previous = if fifth_requested && degree >= 5 {
+        Some(PreviousBasis::new(scratch, base_degree - 1)
+            .ok_or_else(|| scratch.failure(no_value))?)
+    } else { None };
     let filled = scratch.admit(super::fill_bspline_basis_rows(scratch.admission, knots,
-        base_degree, span, t, &mut base, Some(&mut previous)));
-    let derivative_rows = |base: &[f64], first_degree: usize, fourth: bool| {
+        base_degree, span, t, &mut base, Some(&mut previous), second_previous.as_mut()));
+    let derivative_rows = |base: &[f64], first_degree: usize, order| {
         let mut lower: Cow<'_, [f64]> = Cow::Borrowed(base);
-        if scale.is_none() && !fourth {
+        if scale.is_none() && order == 3 {
             scratch.admission.independent_cost(degree.checked_mul(3))?;
         }
         for row_degree in first_degree..=degree {
             let values = if let Some(scale) = scale {
                 super::bspline_basis_scaled_derivative_level(scratch, knots, row_degree, span,
-                    if fourth { super::ScaledDerivativeOrder::Fourth(scale) }
-                    else { super::ScaledDerivativeOrder::Third(scale) }, &lower)
+                    match order {
+                        3 => super::ScaledDerivativeOrder::Third(scale),
+                        4 => super::ScaledDerivativeOrder::Fourth(scale),
+                        _ => super::ScaledDerivativeOrder::Fifth(scale),
+                    }, &lower)
             } else {
                 super::higher_basis_derivative_level(scratch, knots, row_degree, span, &lower,
-                    if fourth { super::HigherBasisOrder::RequestedFourth }
-                    else { super::HigherBasisOrder::Third })
+                    match order {
+                        3 => super::HigherBasisOrder::Third,
+                        4 => super::HigherBasisOrder::RequestedFourth,
+                        _ => super::HigherBasisOrder::RequestedFifth,
+                    })
             };
             lower = Cow::Owned(values.ok_or_else(|| scratch.failure(
-                if fourth || scale.is_some() || scratch.admission.work_slice().is_some_and(|work| work.exhausted()) {
+                if order >= 4 || scale.is_some() || scratch.admission.work_slice().is_some_and(|work| work.exhausted()) {
                     no_value
                 } else { EvaluationFailure::NonFinite(()) }))?);
         }
         Ok(Cow::Owned(lower.into_owned()))
     };
     let third = if matches!(filled, Some(Some(()))) {
-        derivative_rows(&base, base_degree + 1, false)
+        derivative_rows(&base, base_degree + 1, 3)
     } else { Err(scratch.failure(if scale.is_some() { no_value } else { EvaluationFailure::NonFinite(()) })) };
     let fourth = previous.as_slice().ok_or(no_value)
-        .and_then(|previous| derivative_rows(previous, base_degree, true));
-    scratch.settle(Ok(PolynomialHigherBasis { third, fourth }))
+        .and_then(|previous| derivative_rows(previous, base_degree, 4));
+    let fifth = second_previous.as_ref().and_then(PreviousBasis::as_slice).ok_or(no_value)
+        .and_then(|previous| derivative_rows(previous, base_degree - 1, 5));
+    scratch.settle(Ok(PolynomialHigherBasis { third, fourth, fifth }))
 }
 
 #[cfg(test)]

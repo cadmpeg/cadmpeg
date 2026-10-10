@@ -42,6 +42,7 @@ pub(super) struct Homogeneous {
 pub(super) struct HigherLanes {
     pub(super) third: Option<[Result<FiniteReal, f64>; 3]>,
     pub(super) fourth: Option<[Result<FiniteReal, f64>; 3]>,
+    pub(super) fifth: Option<[Result<FiniteReal, f64>; 3]>,
 }
 
 impl HigherLanes {
@@ -50,8 +51,9 @@ impl HigherLanes {
         constant: [Option<FiniteReal>; 3],
         width: ScaledValue,
         fourth_available: bool,
+        fifth_available: bool,
     ) -> Option<Self> {
-        const { assert!(N == 4 || N == 5) };
+        const { assert!(N == 4 || N == 5 || N == 6) };
         orders[0][3]?;
         let third = (|| {
             let w = std::array::from_fn(|order| orders[order][3]);
@@ -63,7 +65,7 @@ impl HigherLanes {
             }
             Some(lanes)
         })();
-        let fourth = if N == 5 {
+        let fourth = if N >= 5 {
             (|| {
                 let w = std::array::from_fn(|order| orders[order][3]);
                 let mut lanes = [Ok(FiniteReal::ZERO); 3];
@@ -76,7 +78,20 @@ impl HigherLanes {
                 Some(lanes)
             })()
         } else { None };
-        Some(Self { third, fourth })
+        let fifth = if N == 6 {
+            (|| {
+                let w = std::array::from_fn(|order| orders[order][3]);
+                let mut lanes = [Ok(FiniteReal::ZERO); 3];
+                for (axis, lane) in lanes.iter_mut().enumerate() {
+                    if constant[axis].is_some() { continue; }
+                    if !fifth_available { return None; }
+                    *lane = crate::math::sum::quotient_fifth::quotient_fifth(
+                        std::array::from_fn(|order| orders[order][axis]), w, width)?;
+                }
+                Some(lanes)
+            })()
+        } else { None };
+        Some(Self { third, fourth, fifth })
     }
 }
 
@@ -132,15 +147,19 @@ impl Homogeneous {
         parameter: FiniteReal,
         width: ScaledValue,
         fourth: bool,
+        fifth: bool,
     ) -> Option<HigherLanes> {
         let [base, first, second] = Self::quadratic_orders(poles, parameter)?;
         let zero = [None; 4];
-        if fourth {
+        if fifth {
+            HigherLanes::from_orders([base.values, first.values, second.values, zero, zero, zero],
+                base.constant, width, true, true)
+        } else if fourth {
             HigherLanes::from_orders([base.values, first.values, second.values, zero, zero],
-                base.constant, width, true)
+                base.constant, width, true, false)
         } else {
             HigherLanes::from_orders([base.values, first.values, second.values, zero],
-                base.constant, width, false)
+                base.constant, width, false, false)
         }
     }
 
@@ -153,6 +172,7 @@ impl Homogeneous {
         rows: &[[f64; N]],
         width: ScaledValue,
         fourth_available: bool,
+        fifth_available: bool,
     ) -> Result<Option<HigherLanes>, super::EvaluationFailure<()>> {
         scratch.unless_refused()?;
         let mut sums: [[ExactSignedSum; 4]; N] =
@@ -172,13 +192,14 @@ impl Homogeneous {
             }
             for (order, (lanes, coefficient)) in sums.iter_mut().zip(orders).enumerate() {
                 if order == 4 && !fourth_available { continue; }
+                if order == 5 && !fifth_available { continue; }
                 for (sum, coordinate) in lanes.iter_mut().zip([point.x, point.y, point.z, 1.0]) {
                     sum.add_factors([*coefficient, weight, coordinate]);
                 }
             }
         }
         let orders = sums.map(|lanes| lanes.map(ExactSignedSum::finish));
-        Ok(HigherLanes::from_orders(orders, constant, width, fourth_available))
+        Ok(HigherLanes::from_orders(orders, constant, width, fourth_available, fifth_available))
     }
 
     /// The identically zero homogeneous derivative of a polynomial whose

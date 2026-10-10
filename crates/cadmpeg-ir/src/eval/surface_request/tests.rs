@@ -15,6 +15,7 @@ mod nurbs;
 mod analytic;
 mod procedural_third;
 mod procedural_fourth;
+mod procedural_fifth;
 mod orientation;
 mod fourth;
 mod fifth;

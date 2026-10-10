@@ -101,6 +101,40 @@ impl Numerator {
 
 mod terms;
 
+/// The univariate fifth reads only the nineteen pure numerator terms.
+/// None is exact zero; all six source orders must be available.
+pub(crate) fn quotient_fifth(
+    h: [Option<ScaledValue>; 6],
+    w: [Option<ScaledValue>; 6],
+    width: ScaledValue,
+) -> Option<Result<FiniteReal, f64>> {
+    let order = |index| [0, 1, 3, 6, 10, 15].iter().position(|candidate| *candidate == index);
+    let mut numerator = Numerator::new();
+    for &(coordinate, weights, negative, copies) in &terms::PURE {
+        let mut factors = [w[0]; 6];
+        factors[0] = h[order(coordinate)?];
+        for (destination, source) in factors[1..].iter_mut().zip(weights) {
+            *destination = w[order(source)?];
+        }
+        numerator.add_product(factors, negative, copies)?;
+    }
+    numerator.divide(w[0]?, [width; 5])
+}
+
+/// One actual six-factor numerator divided by W^6 and h^5.
+/// This includes the fixed linear fifth and five-factor chain rule; the
+/// latter supplies the actual unit denominators. No intermediate product
+/// is converted to binary64 or to an out-of-domain ScaledValue.
+pub(crate) fn product_fifth(
+    factors: [Option<ScaledValue>; 6],
+    weight: ScaledValue,
+    width: ScaledValue,
+) -> Option<Result<FiniteReal, f64>> {
+    let mut numerator = Numerator::new();
+    numerator.add_product(factors, false, 1)?;
+    numerator.divide(weight, [width; 5])
+}
+
 /// Complete normalized H/W triangle ordered by degree, then increasing v order.
 /// None is an exact zero; the caller must establish every order's availability.
 /// Signed numerator cancellation precedes division by W0^6 and five span factors.

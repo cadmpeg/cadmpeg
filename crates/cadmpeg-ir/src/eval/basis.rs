@@ -122,7 +122,7 @@ pub(super) fn fill_bspline_basis<'ctx, 'arena: 'ctx>(
     t: f64,
     values: &mut [f64],
 ) -> Result<Option<()>, ResourceLimit> {
-    fill_bspline_basis_rows(admission.into(), knots, degree, span, t, values, None)
+    fill_bspline_basis_rows(admission.into(), knots, degree, span, t, values, None, None)
 }
 
 fn fill_bspline_basis_rows(
@@ -133,6 +133,7 @@ fn fill_bspline_basis_rows(
     t: f64,
     values: &mut [f64],
     mut previous: Option<&mut polynomial_higher::PreviousBasis<'_>>,
+    mut second_previous: Option<&mut polynomial_higher::PreviousBasis<'_>>,
 ) -> Result<Option<()>, ResourceLimit> {
     admission.work(0, "IR B-spline basis work")?;
     if Some(values.len()) != degree.checked_add(1) {
@@ -144,6 +145,11 @@ fn fill_bspline_basis_rows(
     }
     values[0] = 1.0;
     for j in 1..=degree {
+        if j + 1 == degree {
+            if let Some(previous) = second_previous.as_mut() {
+                previous.capture(admission, &values[..degree - 1])?;
+            }
+        }
         if j == degree {
             if let Some(previous) = previous.as_mut() {
                 previous.capture(admission, &values[..degree])?;
@@ -171,9 +177,14 @@ fn fill_bspline_basis_rows(
                 let Some(terms) = scaled_ratio_products(value, denominator, [right, left]) else {
                     return Ok(None);
                 };
-                if previous.is_some() && j < degree && value.get() != 0.0 && ((right.get() != 0.0 && terms[0].get() == 0.0)
+                if value.get() != 0.0 && ((right.get() != 0.0 && terms[0].get() == 0.0)
                     || (left.get() != 0.0 && terms[1].get() == 0.0)) {
-                    if let Some(previous) = previous.as_mut() { previous.lose_coefficients(); }
+                    if j < degree {
+                        if let Some(previous) = previous.as_mut() { previous.lose_coefficients(); }
+                    }
+                    if j + 1 < degree {
+                        if let Some(previous) = second_previous.as_mut() { previous.lose_coefficients(); }
+                    }
                 }
                 terms.map(FiniteReal::get)
             } else {
@@ -196,9 +207,14 @@ fn fill_bspline_basis_rows(
                     return Ok(None);
                 };
                 let terms = [value * right_quotient.get(), value * left_quotient.get()];
-                if previous.is_some() && j < degree && value != 0.0 && ((right_knot != t && terms[0] == 0.0)
+                if value != 0.0 && ((right_knot != t && terms[0] == 0.0)
                     || (t != left_knot && terms[1] == 0.0)) {
-                    if let Some(previous) = previous.as_mut() { previous.lose_coefficients(); }
+                    if j < degree {
+                        if let Some(previous) = previous.as_mut() { previous.lose_coefficients(); }
+                    }
+                    if j + 1 < degree {
+                        if let Some(previous) = second_previous.as_mut() { previous.lose_coefficients(); }
+                    }
                 }
                 terms
             };
@@ -399,7 +415,7 @@ pub(super) fn bspline_basis_fourth_derivative(
 }
 
 #[derive(Clone, Copy)]
-enum HigherBasisOrder { Third, Fourth, RequestedFourth }
+enum HigherBasisOrder { Third, Fourth, RequestedFourth, RequestedFifth }
 
 fn higher_basis_derivative(
     scratch: &decode::Scratch<'_, '_>,
@@ -412,13 +428,15 @@ fn higher_basis_derivative(
     let (level, work_operation) = match order {
         HigherBasisOrder::Third => (3, "IR B-spline third derivative work"),
         HigherBasisOrder::Fourth | HigherBasisOrder::RequestedFourth => (4, "IR B-spline fourth derivative work"),
+        HigherBasisOrder::RequestedFifth => (5, "IR B-spline fifth derivative work"),
     };
     scratch.work(0, work_operation)?;
     match degree {
         0 => return Some(Cow::Borrowed(&[0.0])),
         1 => return Some(Cow::Borrowed(&[0.0, 0.0])),
         2 => return Some(Cow::Borrowed(&[0.0, 0.0, 0.0])),
-        3 if matches!(order, HigherBasisOrder::Fourth | HigherBasisOrder::RequestedFourth) => return Some(Cow::Borrowed(&[0.0; 4])),
+        3 if !matches!(order, HigherBasisOrder::Third) => return Some(Cow::Borrowed(&[0.0; 4])),
+        4 if matches!(order, HigherBasisOrder::RequestedFifth) => return Some(Cow::Borrowed(&[0.0; 5])),
         _ => {}
     }
     let base_degree = degree - level;
@@ -443,6 +461,7 @@ fn higher_basis_derivative_level(
     let (operation, work_operation) = match order {
         HigherBasisOrder::Third => ("IR B-spline third derivative basis", "IR B-spline third derivative work"),
         HigherBasisOrder::Fourth | HigherBasisOrder::RequestedFourth => ("IR B-spline fourth derivative basis", "IR B-spline fourth derivative work"),
+        HigherBasisOrder::RequestedFifth => ("IR B-spline fifth derivative basis", "IR B-spline fifth derivative work"),
     };
         let degree_real = f64_from_index(row_degree)?;
         let lower_start = span - (row_degree - 1);
@@ -460,7 +479,7 @@ fn higher_basis_derivative_level(
                 let left = if left_active { lower_at(index) } else { 0.0 };
                 let right = if right_active { lower_at(index + 1) } else { 0.0 };
                 if FiniteReal::array([left, right, left_end, left_start, right_end, right_start]).is_none() {
-                    return if matches!(order, HigherBasisOrder::RequestedFourth) { None } else { Some(f64::NAN) };
+                    return if matches!(order, HigherBasisOrder::RequestedFourth | HigherBasisOrder::RequestedFifth) { None } else { Some(f64::NAN) };
                 }
                 let mut numerator = ExactSignedSum::default();
                 let mut denominator = ExactSignedSum::default();
@@ -489,10 +508,10 @@ fn higher_basis_derivative_level(
                     (None, Some(_)) => 0.0,
                     (Some(numerator), Some(denominator)) => {
                         let value = numerator.quotient(denominator).map_or_else(|overflow| overflow, FiniteReal::get);
-                        if matches!(order, HigherBasisOrder::RequestedFourth) && !value.is_normal() { return None; }
+                        if matches!(order, HigherBasisOrder::RequestedFourth | HigherBasisOrder::RequestedFifth) && !value.is_normal() { return None; }
                         value
                     }
-                    _ if matches!(order, HigherBasisOrder::RequestedFourth) => return None,
+                    _ if matches!(order, HigherBasisOrder::RequestedFourth | HigherBasisOrder::RequestedFifth) => return None,
                     _ => f64::NAN,
                 })
         };
@@ -500,13 +519,13 @@ fn higher_basis_derivative_level(
             HigherBasisOrder::Third => scratch.collect(
                 (0..=row_degree).map(coefficient), operation, work_operation,
             )?,
-            HigherBasisOrder::Fourth | HigherBasisOrder::RequestedFourth => {
+            HigherBasisOrder::Fourth | HigherBasisOrder::RequestedFourth | HigherBasisOrder::RequestedFifth => {
                 // This row's exact size is known. Reserve its empty backing
                 // once, so constructing it cannot relocate a partial row.
                 let mut values = Vec::new();
                 scratch.reserve(&mut values, row_degree.checked_add(1)?, operation)?;
                 for local in 0..=row_degree {
-                    if matches!(order, HigherBasisOrder::RequestedFourth) {
+                    if matches!(order, HigherBasisOrder::RequestedFourth | HigherBasisOrder::RequestedFifth) {
                         scratch.admission.independent_cost::<()>(Some(1)).ok()?;
                     }
                     scratch.work(1, work_operation)?;
@@ -613,6 +632,7 @@ enum ScaledDerivativeOrder {
     Lower(PositiveReal),
     Third(PositiveReal),
     Fourth(PositiveReal),
+    Fifth(PositiveReal),
 }
 
 fn bspline_basis_scaled_derivative_level(
@@ -630,6 +650,8 @@ fn bspline_basis_scaled_derivative_level(
             "IR scaled B-spline derivative basis", "IR scaled B-spline derivative work"),
         ScaledDerivativeOrder::Fourth(scale) => (scale, true,
             "IR scaled polynomial fourth basis", "IR scaled polynomial fourth work"),
+        ScaledDerivativeOrder::Fifth(scale) => (scale, true,
+            "IR scaled polynomial fifth basis", "IR scaled polynomial fifth work"),
     };
     let degree_real = f64_from_index(degree)?;
     let lower_start = span - (degree - 1);
@@ -675,7 +697,7 @@ fn bspline_basis_scaled_derivative_level(
             let derivative = degree_real * (left_term - right_term);
             derivative.is_finite().then_some(derivative)
     };
-    if matches!(order, ScaledDerivativeOrder::Fourth(_)) {
+    if matches!(order, ScaledDerivativeOrder::Fourth(_) | ScaledDerivativeOrder::Fifth(_)) {
         let mut values = Vec::new();
         scratch.reserve(&mut values, degree.checked_add(1)?, operation)?;
         for local in 0..=degree {
