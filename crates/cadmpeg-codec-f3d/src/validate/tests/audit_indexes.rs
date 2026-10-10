@@ -429,3 +429,115 @@ fn governing_companion_index_reuses_its_live_storage() {
         );
     });
 }
+
+#[test]
+fn source_only_records_skip_conditional_validation_indexes() {
+    use crate::records::{
+        decal::DesignRecordHeader,
+        feature::assembly_features::{
+            DesignComponentOccurrence, DesignComponentOccurrenceDraft,
+            DesignComponentOccurrencePlacement,
+        },
+        parameters::{DesignParameterOwner, DesignParameterOwnerWire},
+        recipes::{ConstructionRecipe, ConstructionRecipeKind},
+        sketch_geometry::{
+            SketchPoint, SketchPointCompanion, SketchPointDraft, SketchPointRecordForm,
+        },
+    };
+    let mut native = crate::native::F3dNative::default();
+    native.design_record_headers.push(DesignRecordHeader {
+        id: "f3d:test:record#1".into(),
+        record_index: 1,
+        byte_offset: 0,
+        class_tag: "258".to_owned().try_into().unwrap(),
+    });
+    native.construction_recipes.push(ConstructionRecipe {
+        id: "f3d:test:recipe#1".into(),
+        byte_offset: 0,
+        kind: ConstructionRecipeKind::Body,
+        design: None,
+        recipe_index: 0,
+        record_index: None,
+    });
+    native.design_parameter_owners.push(
+        DesignParameterOwner::try_from(DesignParameterOwnerWire {
+            id: "f3d:test:owner#6".into(),
+            byte_offset: 0,
+            frame_length: 99,
+            class_tag: "268".to_owned().try_into().unwrap(),
+            record_index: 6,
+            scope_record_index: 4,
+            local_ordinal: 0,
+            evaluated_value: 1.0,
+            evaluated_value_offset: 40,
+            parameter_record_index: 7,
+            owned_ordinal: 0,
+            variant: None,
+            companion_record_index: 8,
+        })
+        .unwrap(),
+    );
+    native.design_component_occurrences.push(
+        DesignComponentOccurrence::try_new(DesignComponentOccurrenceDraft {
+            id: "f3d:test:occurrence#1".into(),
+            class_tag: "256".to_owned().try_into().unwrap(),
+            record_index: 1,
+            byte_offset: 0,
+            component_record_index: 2,
+            component_guid: "11111111-2222-4333-8444-555555555555"
+                .to_owned()
+                .try_into()
+                .unwrap(),
+            occurrence_guid: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+                .to_owned()
+                .try_into()
+                .unwrap(),
+            placement: DesignComponentOccurrencePlacement::Base,
+        })
+        .unwrap(),
+    );
+    native.sketch_points.push(
+        SketchPoint::try_from(SketchPointDraft {
+            id: "f3d:test:point#20".into(),
+            record_index: 20,
+            owner_reference: Some(7),
+            class_tag: "256".to_owned().try_into().unwrap(),
+            byte_offset: 0,
+            coordinate_offset: 11,
+            record_form: SketchPointRecordForm::Version8 {
+                persistent_id: std::num::NonZeroU64::new(42).unwrap(),
+                flags: [false; 7],
+                depth: 0.0,
+            },
+            companion: SketchPointCompanion {
+                incident_curves: Vec::new(),
+            },
+            paired_reference: 21,
+            coordinates: cadmpeg_ir::math::Point2::new(0.0, 0.0),
+        })
+        .unwrap(),
+    );
+    let mut policy = unlimited_work();
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    crate::test_support::with_decode_policy(&policy, |decode| {
+        let ir = cadmpeg_ir::CadIr::empty();
+        let ctx = super::super::Ctx::new(&ir, &native, decode).unwrap();
+        // Empty consumers must not construct their source-only lookup tables.
+        let mut findings = Vec::new();
+        super::super::validate_face_operands(&ctx, &mut findings, &[]).unwrap();
+        super::super::dimensions::validate_dimension_locus_pairs(&ctx, &mut findings).unwrap();
+        super::super::dimensions::validate_dimension_null_locus_pairs(
+            &ctx,
+            &mut findings,
+            &std::collections::HashSet::new(),
+            &std::collections::HashSet::new(),
+        )
+        .unwrap();
+        super::super::dimensions::validate_dimension_presentation_frames(&ctx, &mut findings)
+            .unwrap();
+        assert!(findings.is_empty());
+        assert_eq!(decode.resource_refusal(), None);
+    });
+}

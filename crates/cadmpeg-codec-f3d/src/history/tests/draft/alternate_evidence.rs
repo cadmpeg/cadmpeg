@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Repeated carrier evidence invalidates the complete alternate lane.
+//! Binding ambiguity excludes one candidate; geometry keeps the first row.
 
-use crate::history::{
-    draft_surface_geometry, resolve_draft_face_by_surface_transition, DraftSurfaceEvidence,
-};
+use crate::history::{draft_surface_geometry, resolve_draft_face_by_surface_transition};
 use crate::history_records::{
     AsmHistoricalCarrierBinding, AsmHistoricalCylinder, AsmHistoricalPlane,
     AsmHistoricalSurfaceAxis, AsmHistoricalSurfaceRadius, AsmHistoricalTopology,
@@ -188,7 +186,7 @@ fn conflicting(topology: &mut AsmHistoricalTopology, face: i64, kind: Carrier, d
     }
 }
 
-fn rejects_complete_lane(kind: Carrier) {
+fn duplicate_selection(kind: Carrier) {
     let operand = operand();
     for duplicate_before in [true, false] {
         for face in [10, 11] {
@@ -198,14 +196,12 @@ fn rejects_complete_lane(kind: Carrier) {
             conflicting(&mut after, face, kind, !duplicate_before);
             crate::test_support::with_decode_context(|ctx| {
                 let repeated = if duplicate_before { &before } else { &after };
-                assert!(matches!(
-                    draft_surface_geometry(ctx, repeated, face).expect("repeated carrier"),
-                    DraftSurfaceEvidence::Repeated
-                ));
+                let geometry = draft_surface_geometry(ctx, repeated, face).expect("carrier");
+                assert_eq!(geometry.is_none(), matches!(kind, Carrier::Binding));
                 assert_eq!(
                     resolve_draft_face_by_surface_transition(ctx, &operand, &before, &after)
                         .expect("alternate proof"),
-                    None
+                    Some(if face == 10 { 11 } else { 10 })
                 );
                 assert_eq!(ctx.resource_refusal(), None);
             });
@@ -214,24 +210,24 @@ fn rejects_complete_lane(kind: Carrier) {
 }
 
 #[test]
-fn draft_alternate_duplicate_binding_rejects_other_changed_candidate() {
-    rejects_complete_lane(Carrier::Binding);
+fn draft_alternate_duplicate_binding_allows_other_changed_candidate() {
+    duplicate_selection(Carrier::Binding);
 }
 #[test]
-fn draft_alternate_duplicate_plane_rejects_other_changed_candidate() {
-    rejects_complete_lane(Carrier::Plane);
+fn draft_alternate_duplicate_plane_keeps_first_geometry() {
+    duplicate_selection(Carrier::Plane);
 }
 #[test]
-fn draft_alternate_duplicate_cylinder_rejects_other_changed_candidate() {
-    rejects_complete_lane(Carrier::Cylinder);
+fn draft_alternate_duplicate_cylinder_keeps_first_geometry() {
+    duplicate_selection(Carrier::Cylinder);
 }
 #[test]
-fn draft_alternate_duplicate_axis_rejects_other_changed_candidate() {
-    rejects_complete_lane(Carrier::Axis);
+fn draft_alternate_duplicate_axis_keeps_first_geometry() {
+    duplicate_selection(Carrier::Axis);
 }
 #[test]
-fn draft_alternate_duplicate_radius_rejects_other_changed_candidate() {
-    rejects_complete_lane(Carrier::Radius);
+fn draft_alternate_duplicate_radius_keeps_first_geometry() {
+    duplicate_selection(Carrier::Radius);
 }
 
 #[test]
@@ -278,10 +274,9 @@ fn draft_alternate_missing_geometry_allows_other_changed_candidate() {
                 .retain(|plane| plane.surface != face + 90);
             let absent = if missing_before { &before } else { &after };
             crate::test_support::with_decode_context(|ctx| {
-                assert!(matches!(
-                    draft_surface_geometry(ctx, absent, face).expect("absent geometry"),
-                    DraftSurfaceEvidence::Absent
-                ));
+                assert!(draft_surface_geometry(ctx, absent, face)
+                    .expect("absent geometry")
+                    .is_none());
                 assert_eq!(
                     resolve_draft_face_by_surface_transition(ctx, &operand, &before, &after)
                         .expect("alternate proof"),
@@ -338,32 +333,29 @@ fn draft_duplicate_binding_stops_before_unread_carriers() {
             entity,
             carrier: entity + 100,
         }));
-    let mut policy = DecodePolicy::service();
-    // Two matching raw binding records; neither the suffix nor any geometry is read.
-    policy.limits.max_work_units = 2;
-    policy.limits.max_collection_items = 0;
-    policy.limits.max_materialized_bytes = 0;
-    policy.limits.max_retained_bytes = 0;
-    crate::test_support::with_decode_policy(&policy, |ctx| {
-        assert!(matches!(
-            draft_surface_geometry(ctx, &topology, 10).expect("binding proof"),
-            DraftSurfaceEvidence::Repeated
-        ));
-        assert_eq!(ctx.resource_refusal(), None);
-        let Err(CodecError::ResourceLimit(original)) = ctx.charge_work(1, "after repeated binding")
-        else {
-            panic!("exact two-record work boundary")
-        };
-        assert_eq!(original.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(original.used, 2);
-        assert_eq!(original.additional, 1);
-        let Err(CodecError::ResourceLimit(sticky)) =
-            draft_surface_geometry(ctx, &AsmHistoricalTopology::default(), 10)
-        else {
-            panic!("original binding refusal")
-        };
-        assert_eq!(sticky, original);
-    });
+    let work = |topology: &AsmHistoricalTopology| {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        crate::test_support::with_decode_policy(&policy, |ctx| {
+            assert!(draft_surface_geometry(ctx, topology, 10)
+                .expect("binding proof")
+                .is_none());
+            assert_eq!(ctx.resource_refusal(), None);
+            let CodecError::ResourceLimit(limit) = ctx
+                .charge_work(u64::MAX, "measure repeated binding work")
+                .unwrap_err()
+            else {
+                panic!("work measurement");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            limit.used
+        })
+    };
+    let mut short = topology.clone();
+    short.face_surfaces.truncate(2);
+    assert_eq!(work(&short), work(&topology));
 }
 
 #[test]
@@ -394,7 +386,7 @@ fn draft_alternate_each_reached_phase_keeps_original_refusal() {
             assert_eq!(original.operation, operation);
             assert_eq!(original.dimension, ResourceDimension::WorkUnits);
             assert_eq!(original.additional, additional);
-            assert_eq!(ctx.resource_refusal(), Some(original.clone()));
+            assert_eq!(ctx.resource_refusal(), Some(original));
             let Err(CodecError::ResourceLimit(sticky)) =
                 resolve_draft_face_by_surface_transition(ctx, &operand, &before, &after)
             else {

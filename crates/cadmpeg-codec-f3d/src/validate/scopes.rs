@@ -164,7 +164,7 @@ fn valid_class_307_joint_origin_qualifier(
             == Some(*paired_byte_offset)
         && design_header_matches(
             decode,
-            &ctx.records_by_index,
+            &ctx.headers()?.0,
             stream,
             *scope_record_index,
             class_tag.as_str(),
@@ -437,7 +437,6 @@ fn valid_axial_assembly_targets(
     targets: &[&records::feature::assembly::DesignAssemblyAxialOperandTarget; 2],
 ) -> Result<bool, CodecError> {
     let decode = ctx.decode;
-    let records_by_index = &ctx.records_by_index;
     targets
         .iter()
         .copied().zip(frames).try_fold(true, |valid, (target, frame)| {
@@ -485,7 +484,7 @@ fn valid_axial_assembly_targets(
                     && construction_byte_offset.checked_add(380)
                         == Some(*construction_paired_byte_offset)
                     && design_header_matches(decode,
-                        records_by_index,
+                        &ctx.headers()?.0,
                         stream,
                         *construction_record_index,
                         construction_class_tag.as_str(),
@@ -493,14 +492,14 @@ fn valid_axial_assembly_targets(
                     )?
                     && selectors_ordered
                     && valid_axial_selector_identity(decode,
-                        records_by_index,
+                        &ctx.headers()?.0,
                         stream,
                         scope,
                         &selectors[0],
                         selectors[1].axis_byte_offset,
                     )?
                     && valid_axial_selector_identity(decode,
-                        records_by_index,
+                        &ctx.headers()?.0,
                         stream,
                         scope,
                         &selectors[1],
@@ -635,7 +634,6 @@ pub(super) fn validate_parameter_scopes(
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let native = ctx.native;
-    let records_by_index = &ctx.records_by_index;
     let entities_by_suffix = &ctx.entities_by_suffix;
     let placements_by_scope = &ctx.placements_by_scope;
     let mut storage = ctx
@@ -682,7 +680,7 @@ pub(super) fn validate_parameter_scopes(
             .transpose()?;
         let valid_sketch_profile =
             |profile: &records::topology::sketch_profile::DesignSketchProfileOperand| -> Result<bool, CodecError> {
-                let header = ctx.decode.get_hash_map(records_by_index, &(native_stream, profile.record_index), "find F3D profile record header")?;
+                let header = ctx.decode.get_hash_map(&ctx.headers()?.0, &(native_stream, profile.record_index), "find F3D profile record header")?;
                 let entity = ctx.decode.get_hash_map(entities_by_suffix, &(native_stream, profile.entity_id.suffix()), "find F3D profile entity")?;
                 let reference_member = usize::try_from(profile.scope_reference_ordinal)
                     .ok()
@@ -956,12 +954,12 @@ pub(super) fn validate_parameter_scopes(
             }
             Some(operation) => {
                 let group_header = ctx.decode.get_hash_map(
-                    records_by_index,
+                    &ctx.headers()?.0,
                     &(native_stream, operation.body_group_record_index),
                     "find F3D validation linked record",
                 )?;
                 let relation_header = ctx.decode.get_hash_map(
-                    records_by_index,
+                    &ctx.headers()?.0,
                     &(native_stream, operation.relation_record_index),
                     "find F3D validation linked record",
                 )?;
@@ -1113,7 +1111,7 @@ pub(super) fn validate_parameter_scopes(
                         (0..3).all(|axis| (transform[axis][3] - first[axis][3] - delta[axis] * fraction).abs() <= EPS_PATTERN_DISTANCE)
                     };
                     let frame_follows_header = |frame: &records::feature::patterns::DesignPatternInstance| -> Result<bool, CodecError> {
-                        Ok(ctx.decode.get_hash_map(records_by_index, &(native_stream, frame.record_index), "find F3D rectangular pattern frame header")?
+                        Ok(ctx.decode.get_hash_map(&ctx.headers()?.0, &(native_stream, frame.record_index), "find F3D rectangular pattern frame header")?
                             .is_some_and(|header| frame.transform.offset > header.byte_offset))
                     };
                     let component_link =
@@ -1165,7 +1163,7 @@ pub(super) fn validate_parameter_scopes(
                                 |row| Ok(row.value == *record_index),
                                 "find F3D located rectangular pattern owner reference",
                             )?) && ctx.decode.contains_key_hash_map(
-                                records_by_index,
+                                &ctx.headers()?.0,
                                 &(native_stream, *record_index),
                                 "find F3D rectangular pattern owner header",
                             )?)
@@ -1297,7 +1295,7 @@ pub(super) fn validate_parameter_scopes(
                                     && located.get(reference_ordinal).map(|row| row.offset)
                                         == Some(reference.offset)
                                     && ctx.decode.contains_key_hash_map(
-                                        records_by_index,
+                                        &ctx.headers()?.0,
                                         &(native_stream, reference.value),
                                         "find F3D legacy assembly reference header",
                                     )?,
@@ -1344,7 +1342,7 @@ pub(super) fn validate_parameter_scopes(
                                                 frame.reference_record_index != 0
                                             } else {
                                                 ctx.decode.contains_key_hash_map(
-                                                    records_by_index,
+                                                    &ctx.headers()?.0,
                                                     &(native_stream, frame.reference_record_index),
                                                     "find F3D assembly operand frame header",
                                                 )?
@@ -1364,7 +1362,7 @@ pub(super) fn validate_parameter_scopes(
                             return Ok(false);
                         };
                         let Some(header) = ctx.decode.get_hash_map(
-                            records_by_index,
+                            &ctx.headers()?.0,
                             &(native_stream, frame.reference_record_index),
                             "find F3D solved assembly frame header",
                         )?
@@ -1736,7 +1734,7 @@ pub(super) fn validate_parameter_scopes(
             }
             Some(construction) => {
                 let relation = ctx.decode.get_hash_map(
-                    records_by_index,
+                    &ctx.headers()?.0,
                     &(native_stream, construction.relation_record_index),
                     "find F3D validation linked record",
                 )?;
@@ -1932,12 +1930,12 @@ pub(super) fn validate_parameter_scopes(
                     && operation.angle_offset > scope.paired_byte_offset()
                     && operation.opposite_angle_offset > operation.angle_offset
                     && ctx.decode.contains_key_hash_map(
-                        records_by_index,
+                        &ctx.headers()?.0,
                         &(native_stream, operation.angle_record_index),
                         "find F3D Draft parameter header",
                     )?
                     && ctx.decode.contains_key_hash_map(
-                        records_by_index,
+                        &ctx.headers()?.0,
                         &(native_stream, operation.opposite_angle_record_index),
                         "find F3D Draft parameter header",
                     )?
@@ -1993,7 +1991,7 @@ pub(super) fn validate_parameter_scopes(
                             return Ok(true);
                         };
                         let Some(header) = ctx.decode.get_hash_map(
-                            records_by_index,
+                            &ctx.headers()?.0,
                             &(native_stream, selection.record_index),
                             "find F3D Combine selection header",
                         )? else {
@@ -2134,7 +2132,7 @@ pub(super) fn validate_parameter_scopes(
                             reference.offset > construction.designation_offset
                                 && reference.offset < scope.paired_byte_offset()
                                 && ctx.decode.contains_key_hash_map(
-                                    records_by_index,
+                                    &ctx.headers()?.0,
                                     &(native_stream, reference.value.get()),
                                     "find F3D compact thread reference header",
                                 )?
@@ -2235,7 +2233,7 @@ pub(super) fn validate_parameter_scopes(
                     _ => false,
                 };
                 if inline {
-                    return Ok(true);
+                    Ok(true)
                 } else if origin.reference.is_none() {
                     let assemblies_by_frame = match &mut assemblies_by_frame {
                         Some(groups) => groups,
@@ -3259,7 +3257,7 @@ pub(super) fn validate_parameter_scopes(
                 plain,
                 |record_index| {
                     ctx.decode.contains_key_hash_map(
-                        records_by_index,
+                        &ctx.headers()?.0,
                         &(native_stream, *record_index),
                         "find F3D scope reference header",
                     )
@@ -3269,7 +3267,7 @@ pub(super) fn validate_parameter_scopes(
                 located,
                 |row| {
                     ctx.decode.contains_key_hash_map(
-                        records_by_index,
+                        &ctx.headers()?.0,
                         &(native_stream, row.value),
                         "find F3D scope reference header",
                     )
@@ -3277,7 +3275,7 @@ pub(super) fn validate_parameter_scopes(
                 "validate F3D located scope reference headers",
             )?
         } && ctx.decode.contains_key_hash_map(
-            records_by_index,
+            &ctx.headers()?.0,
             &(native_stream, scope.record_index),
             "find F3D parameter scope header",
         )? && entity_link
@@ -3345,7 +3343,7 @@ fn valid_work_point_construction(
         || ctx
             .decode
             .get_hash_map(
-                &ctx.records_by_index,
+                &ctx.headers()?.0,
                 &(native_stream, construction.point_record_index),
                 "find F3D work-point record",
             )?
@@ -3358,7 +3356,7 @@ fn valid_work_point_construction(
         construction.rule.inputs(),
         |input| {
             let header = ctx.decode.get_hash_map(
-                &ctx.records_by_index,
+                &ctx.headers()?.0,
                 &(native_stream, input.record_index()),
                 "find F3D work-point input record",
             )?;
@@ -3488,7 +3486,7 @@ fn valid_work_plane_construction(
         return Ok(false);
     };
     let Some(placement_header) = ctx.decode.get_hash_map(
-        &ctx.records_by_index,
+        &ctx.headers()?.0,
         &(native_stream, *placement_record_index),
         "find F3D work-plane placement record",
     )?

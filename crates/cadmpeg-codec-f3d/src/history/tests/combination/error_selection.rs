@@ -138,10 +138,15 @@ fn combine_callback_refusal_wins_over_post_edit_overlap_rejection() {
         assert_eq!(original.dimension, ResourceDimension::WorkUnits);
         assert_eq!(original.operation, operation);
         assert!(original.additional > 0);
-        assert_eq!(ctx.resource_refusal(), Some(original.clone()));
+        assert_eq!(ctx.resource_refusal(), Some(original));
         assert_eq!(feature, original_feature);
-        let Err(CodecError::ResourceLimit(sticky)) = bind(ctx, &mut [], &[], &[]) else {
-            panic!("original refusal before the next empty pass")
+        let Err(CodecError::ResourceLimit(sticky)) = bind(
+            ctx,
+            std::slice::from_mut(&mut feature),
+            std::slice::from_ref(&scope),
+            std::slice::from_ref(&history),
+        ) else {
+            panic!("original refusal at the next binding pass")
         };
         assert_eq!(sticky, original);
         assert_eq!(feature, original_feature);

@@ -51,8 +51,18 @@ fn companion_findings(
         let mut ctx = super::super::Ctx::new(&ir, &native, decode).unwrap();
         let stream =
             crate::ids::design_stream(decode, native.design_parameter_companions[0].id()).unwrap();
-        ctx.owner_groups.insert((stream, 6), vec![&owner]);
-        ctx.records_by_index.insert((stream, 8), &header);
+        ctx.owners().unwrap();
+        ctx.owner_indexes
+            .get_mut()
+            .unwrap()
+            .0
+            .insert((stream, 6), vec![&owner]);
+        ctx.headers().unwrap();
+        ctx.header_indexes
+            .get_mut()
+            .unwrap()
+            .0
+            .insert((stream, 8), &header);
         let mut findings = Vec::new();
         super::super::validate_parameter_companions(&ctx, &mut findings).unwrap();
         findings

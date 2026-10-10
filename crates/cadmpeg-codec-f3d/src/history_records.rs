@@ -999,8 +999,7 @@ impl DecodeCost for AsmHistoricalTopologyDelta {
     }
 }
 
-#[derive(Debug, PartialEq, Deserialize)]
-#[cfg_attr(not(test), derive(Clone))]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(try_from = "AsmHistoryRecordWire")]
 pub(crate) struct AsmHistoryRecord {
     pub(crate) id: String,
@@ -1029,26 +1028,6 @@ impl DecodeCost for AsmHistoryRecord {
             ctx,
             operation,
         )
-    }
-}
-
-#[cfg(test)]
-std::thread_local! {
-    static HISTORY_RECORD_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-}
-
-#[cfg(test)]
-impl Clone for AsmHistoryRecord {
-    fn clone(&self) -> Self {
-        HISTORY_RECORD_CLONE_COUNT.with(|count| count.set(count.get() + 1));
-        Self {
-            id: self.id.clone(),
-            parent: self.parent.clone(),
-            revision_id: self.revision_id,
-            byte_offset: self.byte_offset,
-            framing: self.framing.clone(),
-            raw_bytes: self.raw_bytes.clone(),
-        }
     }
 }
 
@@ -1271,8 +1250,7 @@ impl DecodeCost for AsmBulletinBoard {
     }
 }
 
-#[derive(Debug, PartialEq, Deserialize)]
-#[cfg_attr(not(test), derive(Clone))]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(try_from = "AsmEntityChangeSerde")]
 pub(crate) struct AsmEntityChange {
     pub(crate) id: String,
@@ -1292,24 +1270,6 @@ impl DecodeCost for AsmEntityChange {
             ctx,
             operation,
         )
-    }
-}
-
-#[cfg(test)]
-std::thread_local! {
-    static ENTITY_CHANGE_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-}
-
-#[cfg(test)]
-impl Clone for AsmEntityChange {
-    fn clone(&self) -> Self {
-        ENTITY_CHANGE_CLONE_COUNT.with(|count| count.set(count.get() + 1));
-        Self {
-            id: self.id.clone(),
-            parent: self.parent.clone(),
-            byte_offset: self.byte_offset,
-            kind: self.kind,
-        }
     }
 }
 
@@ -1621,23 +1581,20 @@ mod tests {
             },
             raw_bytes: vec![0xab; 4096],
         };
-        let needed = serde_json::to_vec(&record).unwrap().len();
         let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
-        let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
-        super::HISTORY_RECORD_CLONE_COUNT.with(|count| count.set(0));
-        let error = namespace
-            .set_arena(
-                &limited,
-                "asm_history_records",
-                std::slice::from_ref(&record),
-            )
-            .unwrap_err();
-        super::HISTORY_RECORD_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::RetainedBytes,
+            "serialize native record",
+            0,
+            |decode| {
+                cadmpeg_ir::NativeNamespace::default()
+                    .set_arena(decode, "asm_history_records", std::slice::from_ref(&record))
+                    .map_err(cadmpeg_core::CodecError::from)
+            },
+        );
         assert!(matches!(
-            cadmpeg_core::CodecError::from(error),
+            error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::RetainedBytes
                     && limit.operation == "serialize native record"
@@ -1692,25 +1649,20 @@ mod tests {
             byte_offset: 12,
             kind: super::AsmEntityChangeKind::Update { old: 8, new: 7 },
         };
-        let needed = "asm_entity_changes".len()
-            + 4 * std::mem::size_of::<cadmpeg_ir::NativeRecord>()
-            + "id".len();
         let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
-        let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
-        super::ENTITY_CHANGE_CLONE_COUNT.with(|count| count.set(0));
-        let error = namespace
-            .set_arena(
-                &limited,
-                "asm_entity_changes",
-                std::slice::from_ref(&change),
-            )
-            .unwrap_err();
-        super::ENTITY_CHANGE_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::RetainedBytes,
+            "serialize native record",
+            0,
+            |decode| {
+                cadmpeg_ir::NativeNamespace::default()
+                    .set_arena(decode, "asm_entity_changes", std::slice::from_ref(&change))
+                    .map_err(cadmpeg_core::CodecError::from)
+            },
+        );
         assert!(matches!(
-            cadmpeg_core::CodecError::from(error),
+            error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::RetainedBytes
                     && limit.operation == "serialize native record"

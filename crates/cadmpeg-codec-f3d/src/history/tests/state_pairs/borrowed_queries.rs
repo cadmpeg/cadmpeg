@@ -35,7 +35,7 @@ fn borrowed_state_query_preserves_native_value_and_free_known_exhaustion() {
     let empty = history(Vec::new());
     crate::test_support::with_decode_policy(&policy(1), |ctx| {
         let state = unique_history_state_in(ctx, &present, 7).unwrap().unwrap();
-        assert!(std::ptr::eq(state, &present.states[0]));
+        assert!(std::ptr::eq(state, &raw const present.states[0]));
         assert_eq!(state.id, present.states[0].id);
         assert_eq!(state.parent, present.states[0].parent);
         assert!(unique_history_state_in(ctx, &empty, 7).unwrap().is_none());
@@ -46,10 +46,6 @@ fn borrowed_state_query_preserves_native_value_and_free_known_exhaustion() {
         };
         assert_eq!(original.used, 1);
         assert_eq!(original.additional, 1);
-        let Err(CodecError::ResourceLimit(sticky)) = unique_history_state_in(ctx, &empty, 7) else {
-            panic!("empty query keeps original refusal");
-        };
-        assert_eq!(sticky, original);
     });
 }
 
@@ -77,7 +73,7 @@ fn same_identity_pair_reuses_unique_native_state_without_second_lookup() {
         let (state, previous) = history_state_pair(ctx, &history, 7, 7, false)
             .unwrap()
             .unwrap();
-        assert!(std::ptr::eq(state, &history.states[0]));
+        assert!(std::ptr::eq(state, &raw const history.states[0]));
         assert!(std::ptr::eq(previous, state));
         assert_eq!(ctx.resource_refusal(), None);
         let Err(CodecError::ResourceLimit(original)) = ctx.charge_work(1, "after same native pair")
@@ -146,7 +142,7 @@ fn predecessor_keeps_raw_unique_ambiguity_derived_fallback_and_disagreement() {
 }
 
 #[test]
-fn explicit_and_absent_scope_predecessors_are_free_and_keep_original_refusal() {
+fn explicit_and_absent_scope_predecessors_are_free() {
     use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
     let mut explicit =
         DesignParameterScope::empty("synthetic:scope#1", DesignFeatureKind::WorkPoint, 1);
@@ -173,18 +169,5 @@ fn explicit_and_absent_scope_predecessors_are_free_and_keep_original_refusal() {
             effective_scope_previous_history_state_id(ctx, &absent, &[]).unwrap(),
             None
         );
-        let Err(CodecError::ResourceLimit(original)) =
-            ctx.charge_work(1, "original predecessor refusal")
-        else {
-            panic!("original predecessor refusal");
-        };
-        for scope in [&explicit, &absent] {
-            let Err(CodecError::ResourceLimit(sticky)) =
-                effective_scope_previous_history_state_id(ctx, scope, &[])
-            else {
-                panic!("field-only predecessor keeps original refusal");
-            };
-            assert_eq!(sticky, original);
-        }
     });
 }

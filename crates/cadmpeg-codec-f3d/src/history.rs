@@ -452,9 +452,9 @@ pub(crate) fn bind_feature_outputs(
     if features.is_empty() {
         return Ok(());
     }
-    // Each index is built once, when a feature first needs its lookup.
+    // State IDs precede state admission; node tables follow transition admission.
     let mut state_index_storage = ctx.reserve_scoped(0, "index F3D feature output states")?;
-    let mut history_nodes = Vec::new();
+    let mut history_nodes = HashMap::new();
     let mut states_by_id = HashMap::<i64, Option<(usize, &AsmDeltaState)>>::new();
     let mut states_indexed = false;
     let mut active_storage = ctx.reserve_scoped(0, "index F3D active feature output bodies")?;
@@ -497,20 +497,6 @@ pub(crate) fn bind_feature_outputs(
                 .admit_iter(histories, "scan F3D feature output histories")?
                 .enumerate()
             {
-                let nodes = state_index_storage.with_storage(|| {
-                    ctx.collect_hash_map(
-                        history.states.iter().map(|state| (state.node_index, state)),
-                        "index F3D feature output history nodes",
-                    )
-                })?;
-                let nodes = (nodes.len() == history.states.len()).then_some(nodes);
-                state_index_storage.with_storage(|| {
-                    ctx.push_vec(
-                        &mut history_nodes,
-                        nodes,
-                        "index F3D feature output history nodes",
-                    )
-                })?;
                 for state in ctx.admit_iter(&history.states, "scan F3D history states")? {
                     if let Some(indexed) = ctx.get_mut_hash_map(
                         &mut states_by_id,
@@ -551,9 +537,47 @@ pub(crate) fn bind_feature_outputs(
             &state_id,
             "find F3D history state outputs",
         )? {
-            let outputs = outputs_storage.with_storage(|| {
-                state_output_bodies(ctx, history_nodes.get(history_index), state)
-            })?;
+            if !ctx.contains_key_hash_map(
+                &history_nodes,
+                &history_index,
+                "find F3D feature output history nodes",
+            )? {
+                let (nodes, storage) =
+                    ctx.with_scoped_storage("index F3D feature output history nodes", || {
+                        ctx.collect_hash_map(
+                            histories[history_index]
+                                .states
+                                .iter()
+                                .map(|state| (state.node_index, state)),
+                            "index F3D feature output history nodes",
+                        )
+                    })?;
+                let nodes = if nodes.len() == histories[history_index].states.len() {
+                    Some((nodes, storage))
+                } else {
+                    drop((nodes, storage));
+                    None
+                };
+                state_index_storage.with_storage(|| {
+                    ctx.insert_hash_map(
+                        &mut history_nodes,
+                        history_index,
+                        nodes,
+                        "index F3D feature output history nodes",
+                    )
+                    .map(|_| ())
+                })?;
+            }
+            let nodes = ctx
+                .get_hash_map(
+                    &history_nodes,
+                    &history_index,
+                    "find F3D feature output history nodes",
+                )?
+                .and_then(Option::as_ref)
+                .map(|(nodes, _)| nodes);
+            let outputs =
+                outputs_storage.with_storage(|| state_output_bodies(ctx, nodes, state))?;
             outputs_storage.with_storage(|| {
                 ctx.insert_hash_map(
                     &mut state_outputs,
@@ -609,10 +633,10 @@ pub(crate) fn bind_feature_outputs(
 /// history, when that history links its states by unique node indices.
 fn state_output_bodies(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    nodes: Option<&Option<HashMap<i64, &AsmDeltaState>>>,
+    nodes: Option<&HashMap<i64, &AsmDeltaState>>,
     state: &AsmDeltaState,
 ) -> Result<Option<Vec<i64>>, cadmpeg_core::CodecError> {
-    let Some(Some(nodes)) = nodes else {
+    let Some(nodes) = nodes else {
         return Ok(None);
     };
     let previous = match state.next_ref {
@@ -790,39 +814,23 @@ pub(crate) struct FeatureBodySelectionInputs<'a> {
 fn unique_by<'v, T>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     values: &'v [T],
-    matches: impl FnMut(&T) -> Result<bool, cadmpeg_core::CodecError>,
-    operation: &'static str,
-) -> Result<Option<&'v T>, cadmpeg_core::CodecError> {
-    Ok(match unique_entry_by(ctx, values, matches, operation)? {
-        UniqueLookup::Value(value) => Some(value),
-        UniqueLookup::Absent | UniqueLookup::Repeated => None,
-    })
-}
-
-/// Distinguish an absent match from a second reached matching value.
-fn unique_entry_by<'v, T>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    values: &'v [T],
     mut matches: impl FnMut(&T) -> Result<bool, cadmpeg_core::CodecError>,
     operation: &'static str,
-) -> Result<UniqueLookup<'v, T>, cadmpeg_core::CodecError> {
-    ctx.charge_work(0, operation)?;
+) -> Result<Option<&'v T>, cadmpeg_core::CodecError> {
     let mut found = None;
     let mut source = values.iter();
     while !source.as_slice().is_empty() {
         let Some(value) = ctx.next_charged(&mut source, operation)? else {
             break;
         };
-        let matched = matches(value);
-        ctx.charge_work(0, operation)?;
-        if matched? {
+        if matches(value)? {
             if found.is_some() {
-                return Ok(UniqueLookup::Repeated);
+                return Ok(None);
             }
             found = Some(value);
         }
     }
-    Ok(found.map_or(UniqueLookup::Absent, UniqueLookup::Value))
+    Ok(found)
 }
 
 type IndexKey<'a, K, T> = fn(
@@ -916,18 +924,11 @@ where
         cadmpeg_core::CodecError,
     > {
         let mut projection_error = None;
-        let operation = self.operation;
         let entries = self
             .values
             .iter()
             .scan(&mut projection_error, |error, value| {
                 let key = (self.key)(ctx, value);
-                // Observe the original context after the callback so a
-                // refusal the callback hid is not replaced by its result.
-                if let Err(refusal) = ctx.charge_work(0, operation) {
-                    **error = Some(refusal);
-                    return None;
-                }
                 match key {
                     Ok(key) => Some(key.map(|key| (key, value))),
                     Err(failure) => {
@@ -1044,7 +1045,6 @@ fn member_operand_key<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     operand: &'a BodyRecipeOperand,
 ) -> Result<Option<MemberOperandKey<'a>>, cadmpeg_core::CodecError> {
-    ctx.charge_work(0, "split F3D native stream")?;
     let Some((group_record_index, ordinal)) = operand.owner.group() else {
         return Ok(None);
     };
@@ -1060,7 +1060,6 @@ fn scope_operand_key<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     operand: &'a BodyRecipeOperand,
 ) -> Result<Option<ScopeOperandKey<'a>>, cadmpeg_core::CodecError> {
-    ctx.charge_work(0, "split F3D native stream")?;
     if !matches!(
         operand.owner,
         crate::records::topology::body_recipe::DesignOperandOwner::ScopeReference { .. }
@@ -1118,11 +1117,36 @@ struct ExternalBodies<'a, 'ctx> {
         FaceBodyOwners<'a>,
         cadmpeg_core::decode::ScopedReservation<'ctx>,
     )>,
-    bodies: HashMap<&'a cadmpeg_ir::ids::BodyId, &'a cadmpeg_ir::topology::Body>,
-    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+    source_bodies: &'a [cadmpeg_ir::topology::Body],
+    bodies: std::cell::OnceCell<(
+        HashMap<&'a cadmpeg_ir::ids::BodyId, &'a cadmpeg_ir::topology::Body>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    )>,
 }
 
 impl<'a, 'ctx> ExternalBodies<'a, 'ctx> {
+    fn metadata(
+        &self,
+        ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<
+        &HashMap<&'a cadmpeg_ir::ids::BodyId, &'a cadmpeg_ir::topology::Body>,
+        cadmpeg_core::CodecError,
+    > {
+        let (bodies, _) = match self.bodies.get() {
+            Some(bodies) => bodies,
+            None => {
+                let built = ctx.with_scoped_storage("index F3D external bodies", || {
+                    ctx.collect_hash_map(
+                        self.source_bodies.iter().map(|body| (&body.id, body)),
+                        "index F3D external body metadata",
+                    )
+                })?;
+                self.bodies.get_or_init(|| built)
+            }
+        };
+        Ok(bodies)
+    }
+
     fn face_owners(
         &self,
         ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
@@ -1171,24 +1195,17 @@ impl<'a, 'ctx> ExternalBodies<'a, 'ctx> {
 }
 
 fn external_bodies<'a, 'ctx>(
-    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     bodies: &'a [cadmpeg_ir::topology::Body],
     regions: &'a [cadmpeg_ir::topology::Region],
     shells: &'a [cadmpeg_ir::topology::Shell],
-) -> Result<ExternalBodies<'a, 'ctx>, cadmpeg_core::CodecError> {
-    let (bodies, storage) = ctx.with_scoped_storage("index F3D external bodies", || {
-        ctx.collect_hash_map(
-            bodies.iter().map(|body| (&body.id, body)),
-            "index F3D external body metadata",
-        )
-    })?;
-    Ok(ExternalBodies {
+) -> ExternalBodies<'a, 'ctx> {
+    ExternalBodies {
         regions,
         shells,
         body_by_face: std::cell::OnceCell::new(),
-        bodies,
-        _storage: storage,
-    })
+        source_bodies: bodies,
+        bodies: std::cell::OnceCell::new(),
+    }
 }
 
 /// Persistent design links by design identifier and reference, and whether
@@ -1281,7 +1298,7 @@ pub(crate) struct BodySelectionIndex<'a, 'ctx> {
     member_operands: UniqueIndex<'a, 'ctx, MemberOperandKey<'a>, BodyRecipeOperand>,
     scope_operands: ScopeOperandIndex<'a, 'ctx>,
     recipes: BodyRecipeIndex<'a, 'ctx>,
-    external: std::cell::OnceCell<ExternalBodies<'a, 'ctx>>,
+    external: ExternalBodies<'a, 'ctx>,
     links: std::cell::OnceCell<PersistentBodyLinks<'a, 'ctx>>,
 }
 
@@ -1298,33 +1315,15 @@ impl<'a, 'ctx> BodySelectionIndex<'a, 'ctx> {
             ),
             scope_operands: scope_operand_index(inputs.body_recipe_operands),
             recipes: body_recipe_index(inputs.construction_recipes),
-            external: std::cell::OnceCell::new(),
+            external: external_bodies(inputs.bodies, inputs.regions, inputs.shells),
             links: std::cell::OnceCell::new(),
         }
-    }
-
-    fn external(
-        &self,
-        ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<&ExternalBodies<'a, 'ctx>, cadmpeg_core::CodecError> {
-        ctx.charge_work(0, "index F3D external bodies")?;
-        if let Some(external) = self.external.get() {
-            return Ok(external);
-        }
-        let built = external_bodies(
-            ctx,
-            self.inputs.bodies,
-            self.inputs.regions,
-            self.inputs.shells,
-        )?;
-        Ok(self.external.get_or_init(|| built))
     }
 
     fn links(
         &self,
         ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<&PersistentBodyLinks<'a, 'ctx>, cadmpeg_core::CodecError> {
-        ctx.charge_work(0, "index F3D persistent body links")?;
         if let Some(links) = self.links.get() {
             return Ok(links);
         }
@@ -1891,8 +1890,7 @@ fn combine_history_tools<'a, 'ctx>(
                     source
                 }
             };
-            let Some(body) =
-                unique_external_body_candidate(ctx, operand, source, index.external(ctx)?)?
+            let Some(body) = unique_external_body_candidate(ctx, operand, source, &index.external)?
             else {
                 complete = false;
                 break;
@@ -2582,10 +2580,10 @@ fn unique_external_body_candidate<'a, 'ctx>(
                 "collect F3D external body candidates",
             )?;
         }
+        if reference_candidates.is_empty() {
+            return Ok(None);
+        }
         if let Some(candidates) = &mut candidates {
-            if reference_candidates.is_empty() {
-                return Ok(None);
-            }
             ctx.retain_btree_set(
                 candidates,
                 |body| {
@@ -2597,6 +2595,9 @@ fn unique_external_body_candidate<'a, 'ctx>(
                 },
                 "intersect F3D external body candidates",
             )?;
+            if candidates.is_empty() {
+                return Ok(None);
+            }
         } else {
             candidates = Some(
                 candidates_storage
@@ -2610,8 +2611,11 @@ fn unique_external_body_candidate<'a, 'ctx>(
     let mut displayed = None;
     let mut displayed_count = 0_usize;
     for &body in ctx.admit_iter(&candidates, "scan F3D displayed external body candidates")? {
-        let Some(metadata) =
-            ctx.get_hash_map(&external.bodies, body, "find F3D external body metadata")?
+        let Some(metadata) = ctx.get_hash_map(
+            external.metadata(ctx)?,
+            body,
+            "find F3D external body metadata",
+        )?
         else {
             continue;
         };
@@ -2906,13 +2910,13 @@ fn direct_body_recipe_candidate<'a, 'ctx>(
 ) -> Result<Option<&'a cadmpeg_ir::ids::BodyId>, cadmpeg_core::CodecError> {
     if let Some(body) = body_recipe_link_candidate(ctx, operand, index)? {
         let (any_candidate, contains_body) =
-            body_recipe_face_body_candidates(ctx, operand, body, index.external(ctx)?)?;
+            body_recipe_face_body_candidates(ctx, operand, body, &index.external)?;
         if !any_candidate || contains_body {
             return Ok(Some(body));
         }
         return Ok(None);
     }
-    unique_external_body_candidate(ctx, operand, None, index.external(ctx)?)
+    unique_external_body_candidate(ctx, operand, None, &index.external)
 }
 
 /// The active body that the operand's body recipe names through its latest
@@ -2966,7 +2970,7 @@ fn body_recipe_link_candidate<'a, 'ctx>(
             continue;
         };
         if !ctx.contains_key_hash_map(
-            &index.external(ctx)?.bodies,
+            index.external.metadata(ctx)?,
             body,
             "find F3D persistent body candidate",
         )? {
@@ -2991,7 +2995,7 @@ fn body_recipe_face_body_candidates<'ctx>(
     external: &ExternalBodies<'_, 'ctx>,
 ) -> Result<(bool, bool), cadmpeg_core::CodecError> {
     let operation = "scan F3D body recipe references";
-    ctx.charge_work(0, operation)?;
+
     let mut any_candidate = false;
     let mut references = operand.references().iter();
     while !references.as_slice().is_empty() {
@@ -3014,7 +3018,7 @@ fn body_recipe_face_body_candidates<'ctx>(
                 continue;
             };
             if ctx.contains_key_hash_map(
-                &external.bodies,
+                external.metadata(ctx)?,
                 body,
                 "resolve F3D body recipe face carrier",
             )? {
@@ -4677,8 +4681,7 @@ pub(crate) fn bind_edge_treatment_vertex_history(
         let Some(topology) = previous.topology() else {
             continue;
         };
-        let index =
-            recipe_index.of(decode, topology, || recipe_topology_index(decode, topology))?;
+        let index = recipe_index.of(topology, || recipe_topology_index(decode, topology))?;
         for reference in decode.admit_iter(
             &mut operand.recipe.recipe_references,
             "scan F3D edge treatment vertex recipe references",
@@ -4934,27 +4937,22 @@ fn unique_history_state<'a>(
     state_id: i64,
 ) -> Result<Option<(&'a AsmHistory, &'a AsmDeltaState)>, cadmpeg_core::CodecError> {
     let operation = "find F3D history state";
-    decode.charge_work(0, operation)?;
-    let mut found = None;
-    let mut history_source = histories.iter();
-    while !history_source.as_slice().is_empty() {
-        let Some(history) = decode.next_charged(&mut history_source, operation)? else {
-            break;
-        };
-        let mut state_source = history.states.iter();
-        while !state_source.as_slice().is_empty() {
-            let Some(state) =
-                decode.next_charged(&mut state_source, "find F3D ASM history state")?
-            else {
-                break;
-            };
-            if state.state_id == state_id {
-                if found.is_some() {
-                    return Ok(None);
-                }
-                found = Some((history, state));
-            }
-        }
+    let mut histories = histories.iter();
+    let found = decode.find_map(
+        &mut histories,
+        |history| {
+            Ok(unique_history_state_in(decode, history, state_id)?.map(|state| (history, state)))
+        },
+        operation,
+    )?;
+    if found.is_some()
+        && decode.any_by(
+            histories,
+            |history| Ok(unique_history_state_in(decode, history, state_id)?.is_some()),
+            operation,
+        )?
+    {
+        return Ok(None);
     }
     Ok(found)
 }
@@ -4980,7 +4978,6 @@ pub(crate) fn effective_scope_previous_history_state_id(
     scope: &crate::records::feature::scope::DesignParameterScope,
     histories: &[AsmHistory],
 ) -> Result<Option<i64>, cadmpeg_core::CodecError> {
-    decode.charge_work(0, "find F3D history state")?;
     if let Some(previous_state_id) = scope.previous_history_state_id() {
         return Ok(Some(previous_state_id));
     }
@@ -5042,7 +5039,6 @@ pub(crate) fn hem_geometry_semantics(
     edge_slot: i64,
     histories: &[AsmHistory],
 ) -> Result<HemGeometrySemantics, cadmpeg_core::CodecError> {
-    decode.charge_work(0, "resolve F3D Hem geometry semantics")?;
     let unresolved = HemGeometrySemantics {
         direction: None,
         gap_length_form: None,
@@ -5138,7 +5134,6 @@ fn hem_gap_length_form(
     inserted_surfaces: &[i64],
     edge_direction: Option<cadmpeg_ir::math::Vector3>,
 ) -> Result<Option<HemGapLengthForm>, cadmpeg_core::CodecError> {
-    decode.charge_work(0, "resolve F3D Hem gap-length form")?;
     let mut first = None;
     let mut second = None;
     let mut history_source = cylinders.iter();
@@ -5199,8 +5194,9 @@ fn hem_direction_from_transition(
     previous: &AsmHistoricalTopology,
     transition: &AsmHistoricalTransition,
 ) -> Result<Option<cadmpeg_ir::features::SheetMetalHemDirection>, cadmpeg_core::CodecError> {
-    decode.charge_work(0, "resolve F3D Hem direction")?;
-    let (edge_context, _edge_context_storage) = decode
+    let _edge_context_storage;
+    let edge_context;
+    (edge_context, _edge_context_storage) = decode
         .with_scoped_storage("collect F3D Hem edge context", || {
             selection::historical_edge_context(decode, edge_slot, previous)
         })?;
@@ -5388,7 +5384,7 @@ fn unique_history_state_pair_for_link<'a>(
     require_direct: bool,
 ) -> Result<StatePairSearch<'a>, cadmpeg_core::CodecError> {
     let operation = "find F3D history state pair";
-    decode.charge_work(0, operation)?;
+
     let mut found = None;
     let mut source = histories.iter();
     while !source.as_slice().is_empty() {
@@ -5957,7 +5953,7 @@ fn linked_previous_state_id(
     state: &AsmDeltaState,
 ) -> Result<Option<i64>, cadmpeg_core::CodecError> {
     let operation = "find F3D ASM predecessor node";
-    decode.charge_work(0, operation)?;
+
     let linked = if let Some(node_index) = state.next_ref {
         unique_by(
             decode,
@@ -6268,20 +6264,16 @@ impl<T> Default for RecentTopologyValue<T> {
 impl<T> RecentTopologyValue<T> {
     fn of(
         &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         topology: &AsmHistoricalTopology,
         build: impl FnOnce() -> Result<T, cadmpeg_core::CodecError>,
     ) -> Result<&T, cadmpeg_core::CodecError> {
-        let operation = "query F3D recent topology value";
-        ctx.charge_work(0, operation)?;
         let address = std::ptr::from_ref(topology).addr();
         let value = match self.value.take() {
             Some(value) if self.topology == address => value,
             old => {
                 drop(old);
-                ctx.charge_work(0, operation)?;
                 let built = build();
-                ctx.charge_work(0, operation)?;
+
                 let value = built?;
                 self.topology = address;
                 value
@@ -6584,8 +6576,7 @@ pub(crate) fn bind_face_operand_history_candidates(
         let Some(topology) = previous.topology() else {
             continue;
         };
-        let recipe_tags =
-            recipe_index.of(decode, topology, || recipe_topology_index(decode, topology))?;
+        let recipe_tags = recipe_index.of(topology, || recipe_topology_index(decode, topology))?;
         for reference in decode.admit_iter(
             &mut operand.recipe_references,
             "scan F3D face operand recipe references",
@@ -6701,7 +6692,6 @@ pub(crate) fn bind_face_operand_history_candidates(
         ) = decode.with_scoped_storage("collect F3D grouped reference face candidates", || {
             (direct_face_candidates.is_none()
                 && thread_face_candidates.is_none()
-                && nested_split_face_candidates.is_none()
                 && !matches!(
                     feature_family,
                     Some(
@@ -7073,8 +7063,9 @@ pub(crate) fn bind_face_operand_history_candidates(
 /// Draft changes the selected face's actual surface geometry. The same
 /// transition may update tangent or context faces, so the transition is
 /// admissible through an alternate lane only when exactly one face changes
-/// surface geometry. Conflicting duplicate carrier evidence rejects the
-/// alternate lane. A missing or unchanged surface does not prove that lane.
+/// surface geometry. A repeated binding excludes that face. Geometry uses the
+/// first matching carrier row. A missing or unchanged surface does not prove
+/// that lane.
 /// Without an alternate lane, one exact candidate present in both
 /// topologies is selected without a geometry comparison.
 /// Carrier record identities are not compared: a history update may
@@ -7097,85 +7088,59 @@ enum DraftSurfaceGeometry {
     },
 }
 
-enum DraftSurfaceEvidence {
-    Absent,
-    Repeated,
-    Geometry(DraftSurfaceGeometry),
-}
-
 fn draft_surface_geometry(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     topology: &crate::history_records::AsmHistoricalTopology,
     face: i64,
-) -> Result<DraftSurfaceEvidence, cadmpeg_core::CodecError> {
+) -> Result<Option<DraftSurfaceGeometry>, cadmpeg_core::CodecError> {
     let operation = "find F3D draft surface geometry";
-    let binding = match unique_entry_by(
+    let Some(binding) = unique_by(
         ctx,
         &topology.face_surfaces,
         |binding| Ok(binding.entity == face),
         operation,
-    )? {
-        UniqueLookup::Absent => return Ok(DraftSurfaceEvidence::Absent),
-        UniqueLookup::Repeated => return Ok(DraftSurfaceEvidence::Repeated),
-        UniqueLookup::Value(binding) => binding,
+    )?
+    else {
+        return Ok(None);
     };
     let carrier = binding.carrier;
-    match unique_entry_by(
-        ctx,
+    if let Some(plane) = ctx.find_by(
         &topology.surface_planes,
         |surface| Ok(surface.surface == carrier),
         operation,
     )? {
-        UniqueLookup::Repeated => return Ok(DraftSurfaceEvidence::Repeated),
-        UniqueLookup::Value(plane) => {
-            return Ok(DraftSurfaceEvidence::Geometry(
-                DraftSurfaceGeometry::Plane {
-                    origin: plane.origin,
-                    normal: plane.normal,
-                },
-            ))
-        }
-        UniqueLookup::Absent => {}
+        return Ok(Some(DraftSurfaceGeometry::Plane {
+            origin: plane.origin,
+            normal: plane.normal,
+        }));
     }
-    match unique_entry_by(
-        ctx,
+    if let Some(cylinder) = ctx.find_by(
         &topology.surface_cylinders,
         |surface| Ok(surface.surface == carrier),
         operation,
     )? {
-        UniqueLookup::Repeated => return Ok(DraftSurfaceEvidence::Repeated),
-        UniqueLookup::Value(cylinder) => {
-            return Ok(DraftSurfaceEvidence::Geometry(
-                DraftSurfaceGeometry::Cylinder {
-                    origin: cylinder.origin,
-                    axis: cylinder.axis,
-                    radius: cylinder.radius,
-                },
-            ))
-        }
-        UniqueLookup::Absent => {}
+        return Ok(Some(DraftSurfaceGeometry::Cylinder {
+            origin: cylinder.origin,
+            axis: cylinder.axis,
+            radius: cylinder.radius,
+        }));
     }
-    let axis = match unique_entry_by(
-        ctx,
+    let Some(axis) = ctx.find_by(
         &topology.surface_axes,
         |surface| Ok(surface.surface == carrier),
         operation,
-    )? {
-        UniqueLookup::Absent => return Ok(DraftSurfaceEvidence::Absent),
-        UniqueLookup::Repeated => return Ok(DraftSurfaceEvidence::Repeated),
-        UniqueLookup::Value(axis) => axis,
+    )?
+    else {
+        return Ok(None);
     };
-    let radius = match unique_entry_by(
-        ctx,
-        &topology.surface_radii,
-        |radius| Ok(radius.surface == carrier),
-        operation,
-    )? {
-        UniqueLookup::Repeated => return Ok(DraftSurfaceEvidence::Repeated),
-        UniqueLookup::Value(radius) => Some(radius.radius),
-        UniqueLookup::Absent => None,
-    };
-    Ok(DraftSurfaceEvidence::Geometry(DraftSurfaceGeometry::Axis {
+    let radius = ctx
+        .find_by(
+            &topology.surface_radii,
+            |radius| Ok(radius.surface == carrier),
+            operation,
+        )?
+        .map(|radius| radius.radius);
+    Ok(Some(DraftSurfaceGeometry::Axis {
         origin: axis.origin,
         direction: axis.direction,
         radius,
@@ -7273,17 +7238,10 @@ fn resolve_draft_face_by_surface_transition(
         {
             continue;
         }
-        let before = draft_surface_geometry(decode, preceding, face)?;
-        if matches!(before, DraftSurfaceEvidence::Repeated) {
-            return Ok(None);
-        }
-        let after = draft_surface_geometry(decode, result, face)?;
-        if matches!(after, DraftSurfaceEvidence::Repeated) {
-            return Ok(None);
-        }
-        let (DraftSurfaceEvidence::Geometry(before), DraftSurfaceEvidence::Geometry(after)) =
-            (before, after)
-        else {
+        let Some(before) = draft_surface_geometry(decode, preceding, face)? else {
+            continue;
+        };
+        let Some(after) = draft_surface_geometry(decode, result, face)? else {
             continue;
         };
         if before != after && changed.replace(face).is_some() {
@@ -7965,7 +7923,7 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
                     let Some(face_slot) = stable_ref(decode, face.as_str())? else {
                         continue;
                     };
-                    let (faces, _) = topology_faces.of(decode, topology, || {
+                    let (faces, _) = topology_faces.of(topology, || {
                         decode.with_scoped_storage("index F3D topology faces", || {
                             decode.collect_hash_set(
                                 topology.faces.iter().copied(),
@@ -7994,9 +7952,8 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
                 if face_slots.is_empty() {
                     continue;
                 }
-                let closures = closures.of(decode, topology, || {
-                    topology::body_closures(decode, topology)
-                })?;
+                let closures =
+                    closures.of(topology, || topology::body_closures(decode, topology))?;
                 let Some(body_slots) = face_slots_storage.with_storage(|| {
                     topology::closures_intersecting(decode, closures, &face_slots)
                 })?
@@ -8159,9 +8116,7 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
         let Some(topology) = previous.topology() else {
             continue;
         };
-        let index = body_faces.of(decode, topology, || {
-            topology::body_face_index(decode, topology)
-        })?;
+        let index = body_faces.of(topology, || topology::body_face_index(decode, topology))?;
         let Some(faces) = topology::complete_body_face_slots(decode, index, body_slot)? else {
             continue;
         };
@@ -8499,10 +8454,10 @@ fn resolve_direct_face_recipe_clauses(
             Ok(resolved)
         },
     )?;
-    if !resolved.is_empty() {
-        storage.commit_value(resolved)
-    } else {
+    if resolved.is_empty() {
         Ok(resolved)
+    } else {
+        storage.commit_value(resolved)
     }
 }
 
@@ -9142,8 +9097,7 @@ pub(crate) fn bind_edge_operand_history_candidates(
         else {
             continue;
         };
-        let recipe_tags =
-            recipe_index.of(decode, topology, || recipe_topology_index(decode, topology))?;
+        let recipe_tags = recipe_index.of(topology, || recipe_topology_index(decode, topology))?;
         for reference in decode.admit_iter(
             &mut operand.recipe_references,
             "scan F3D edge operand recipe references",
