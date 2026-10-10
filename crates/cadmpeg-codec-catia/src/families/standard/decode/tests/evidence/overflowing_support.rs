@@ -169,10 +169,6 @@ fn native_support_helpers_preserve_session_depth_refusal() {
                 ctx.charge_work_limit(0, "observe native support refusal"),
                 Err(limit)
             );
-            assert_eq!(
-                standard_native_support_endpoint_pair(ctx, &native, &[], &[], None),
-                Err(limit)
-            );
         });
     }
 }

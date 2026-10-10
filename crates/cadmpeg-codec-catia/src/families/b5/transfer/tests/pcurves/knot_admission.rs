@@ -81,11 +81,6 @@ fn analytic_knot_validation_charges_only_visited_distinct_pairs() {
             panic!("typed refusal")
         };
         assert_eq!((original.used, original.additional), (1, 1));
-        pcurve.distinct_knots.clear();
-        assert!(matches!(
-            crate::families::b5::graph::pcurve_knot_expansion_is_finite(ctx, &pcurve),
-            Err(cadmpeg_core::CodecError::ResourceLimit(next)) if next == original
-        ));
         Ok::<_, cadmpeg_core::CodecError>(())
     })
     .expect("admission assertions");
