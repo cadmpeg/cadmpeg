@@ -58,9 +58,14 @@ pub(super) fn source_surface_geometries<'a>(
         if !crate::identity::matches_numbered_identity(surface.id.as_str(), PREFIX, id) {
             continue;
         }
-        ctx.entry_hash_map(&mut geometries, id, "creo source surface index")?
-            .and_modify(|geometry| *geometry = None)
-            .or_insert(Some(source_carriers.surface_geometry(surface)?));
+        match ctx.entry_hash_map(&mut geometries, id, "creo source surface index")? {
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                *entry.get_mut() = None;
+            }
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(Some(source_carriers.surface_geometry(surface)?));
+            }
+        }
     }
     Ok(geometries)
 }
