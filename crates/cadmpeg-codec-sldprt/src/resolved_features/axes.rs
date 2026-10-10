@@ -242,7 +242,7 @@ pub(super) fn typed_linear_pattern_dimensions(
         let declared = |class: &&crate::records::FeatureInputClass| {
             Ok(
                 (u64_from_index(object_start)..u64_from_index(object_end)).contains(&class.offset)
-                    && ctx.equal(class.name.as_str(), class_name, OPERATION)?,
+                    && class.name == class_name,
             )
         };
         let mut classes = lane.classes.iter();
@@ -2530,3 +2530,6 @@ mod axes_tests;
 
 #[cfg(test)]
 mod profile_endpoint_cache_tests;
+
+#[cfg(test)]
+mod pattern_class_tests;
