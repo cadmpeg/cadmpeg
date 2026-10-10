@@ -446,3 +446,84 @@ fn pcurve_split_last_level_refuses_after_completed_interpolation_populations() {
 fn pcurve_split_last_interpolation_refuses_after_exact_last_level_visit() {
     for count in [4, 64] { split_level_boundary(count, count - 2, true); }
 }
+
+fn knot_interpolation_boundary(degree: usize, last: bool, exact: bool) {
+    let mut knots = Vec::with_capacity(2 * degree + 4);
+    knots.extend((0..=2 * degree + 2).map(|index| {
+        if index <= degree {
+            if !last || index <= 2 { -f64::MAX } else { 0.0 }
+        } else if index == degree + 1 { f64::MAX / 2.0 } else { f64::MAX }
+    }));
+    let before_knots = knots.clone();
+    let mut controls = Vec::with_capacity(degree + 3);
+    controls.extend((0..degree + 2).map(|index|
+        [1.0, f64::from(u32::try_from(index).unwrap()), 0.0, 0.0]));
+    let completed = if last { degree - 2 } else { 0 };
+    // Insertion shifts one existing inline row: one slot plus its bytes.
+    // The bad denominator is visited after the completed descending indices.
+    let shift = 1 + std::mem::size_of::<[f64; 4]>();
+    let work = u64::try_from(shift + completed + usize::from(exact)).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = work;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_collection_items = 1;
+    policy.limits.max_entities = 0;
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = super::super::super::insert_homogeneous_pcurve_knot(
+        degree, &mut knots, &mut controls, (f64::MAX / 2.0, degree + 1, 1), &ctx);
+    let first = if exact {
+        assert!(result.unwrap().is_none());
+        assert!(ctx.resource_refusal().is_none());
+        None
+    } else {
+        let Err(CodecError::ResourceLimit(first)) = result else {
+            panic!("expected the next knot interpolation visit to refuse");
+        };
+        assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(first.operation, "iges pcurve knot interpolation");
+        assert_eq!((first.limit, first.used, first.additional), (work, work, 1));
+        Some(first)
+    };
+    assert_eq!(knots, before_knots);
+    assert_eq!(controls.len(), degree + 3);
+    for (index, control) in controls.iter().enumerate() {
+        let coordinate = if index > degree { index - 1 } else { index };
+        let expected = f64::from(u32::try_from(coordinate).unwrap())
+            - if degree - completed < index && index <= degree { 0.5 } else { 0.0 };
+        assert_eq!(*control, [1.0, expected, 0.0, 0.0]);
+    }
+    if let Some(first) = first {
+        for _ in 0..64 {
+            assert!(matches!(super::super::super::insert_homogeneous_pcurve_knot(
+                degree, &mut knots, &mut controls, (0.5, degree + 1, 1), &ctx),
+                Err(CodecError::ResourceLimit(last)) if last == first));
+            assert!(matches!(super::super::super::insert_homogeneous_pcurve_knot(
+                degree, &mut Vec::new(), &mut Vec::new(), (0.5, 0, 0), &ctx),
+                Err(CodecError::ResourceLimit(last)) if last == first));
+        }
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+    } else { ctx.finish_session().unwrap(); }
+}
+
+#[test]
+fn pcurve_knot_first_overflow_visit_refuses_before_recovery() {
+    for degree in [4, 64] { knot_interpolation_boundary(degree, false, false); }
+}
+
+#[test]
+fn pcurve_knot_last_overflow_visit_refuses_after_completed_interpolation() {
+    for degree in [4, 64] { knot_interpolation_boundary(degree, true, false); }
+}
+
+#[test]
+fn pcurve_knot_first_overflow_recovers_with_exact_visit_admission() {
+    for degree in [4, 64] { knot_interpolation_boundary(degree, false, true); }
+}
+
+#[test]
+fn pcurve_knot_last_overflow_recovers_with_exact_visit_admission() {
+    for degree in [4, 64] { knot_interpolation_boundary(degree, true, true); }
+}
