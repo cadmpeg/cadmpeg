@@ -189,7 +189,7 @@ fn named_prototype_scan_refuses_each_vector_boundary() {
         (3, "creo named prototype frames"),
     ] {
         let error = surface_limit_result(payload, limit, |ctx, input| {
-            crate::surface::named_prototype_frames(ctx, input).map(|frames| frames.len())
+            super::frames_with_checked_cache(ctx, input).map(|frames| frames.len())
         })
         .expect_err("named prototype scan needs another collection item");
         assert!(
@@ -200,7 +200,7 @@ fn named_prototype_scan_refuses_each_vector_boundary() {
     }
     assert_eq!(
         surface_limit_result(payload, 4, |ctx, input| {
-            crate::surface::named_prototype_frames(ctx, input).map(|frames| frames.len())
+            super::frames_with_checked_cache(ctx, input).map(|frames| frames.len())
         })
         .expect("named prototype scan admitted"),
         1
@@ -232,7 +232,7 @@ fn unknown_prototype_family_refuses_before_name_copy() {
     policy.limits.max_retained_bytes = 5;
     let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
         .expect("prototype fixture fits the root-byte limit");
-    let error = crate::surface::named_prototype_frames(&ctx, payload)
+    let error = super::frames_with_checked_cache(&ctx, payload)
         .expect_err("six-byte family name needs a retained copy");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -240,7 +240,7 @@ fn unknown_prototype_family_refuses_before_name_copy() {
             && limit.operation == "creo prototype family name")
     );
     let frames = crate::decode::with_test_decode_ctx(|ctx| {
-        crate::surface::named_prototype_frames(ctx, payload)
+        super::frames_with_checked_cache(ctx, payload)
     })
     .expect("unknown family admitted under service policy");
     assert_eq!(frames.len(), 1);

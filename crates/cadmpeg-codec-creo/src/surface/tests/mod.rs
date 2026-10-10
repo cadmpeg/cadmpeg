@@ -14,6 +14,14 @@ mod scan;
 
 const EPS_FRAME_COMPONENT: f64 = 1.0e-12;
 
+fn frames_with_checked_cache<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    payload: &'a [u8],
+) -> Result<Vec<super::NamedPrototypeFrame<'a>>, cadmpeg_core::CodecError> {
+    let cache = crate::scalar::ScalarCache::from_section_checked(ctx, payload)?;
+    super::named_prototype_frames(ctx, payload, &cache)
+}
+
 fn with_decode_ctx<T>(
     bytes: &[u8],
     run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
