@@ -112,7 +112,10 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
         else {
             continue;
         };
-        let Some(sketch_id) = model_sketch_id(ctx, scan, definition)? else {
+        let (sketch_id, _sketch_identity_storage) = ctx.with_scoped_storage(
+            "creo sweep sketch identity scratch", || model_sketch_id(ctx, scan, definition),
+        )?;
+        let Some(sketch_id) = sketch_id else {
             continue;
         };
         let Some((section_center, radius)) = resolved_circular_extrusion_profile(
@@ -132,7 +135,10 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
         else {
             continue;
         };
-        let body_id: BodyId = circular_identity(ctx, feature_id, "body")?;
+        let (body_id, body_id_storage) = ctx.with_scoped_storage(
+            "creo circular body identity candidate",
+            || circular_identity::<BodyId>(ctx, feature_id, "body"),
+        )?;
         // The unique first material feature reaches this lookup at most once.
         if ctx.any_by(
             &ir.model.bodies,
@@ -147,8 +153,6 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
         )? {
             continue;
         }
-        let region_id: RegionId = circular_identity(ctx, feature_id, "region")?;
-        let shell_id: ShellId = circular_identity(ctx, feature_id, "shell")?;
         // Both caps state the same full-turn circle in section parameters, so
         // the cap pcurve is stated once and before the first record of this
         // body reaches the model. A refused lane here leaves no partial body
@@ -206,6 +210,8 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             )
             .map_err(cadmpeg_core::CodecError::malformed)?,
         ));
+        let region_id: RegionId = circular_identity(ctx, feature_id, "region")?;
+        let shell_id: ShellId = circular_identity(ctx, feature_id, "shell")?;
         let side_surface: SurfaceId = circular_identity(ctx, feature_id, "surface:side")?;
         let sides = [("bottom", span.lower()), ("top", span.upper())];
         let mut face_ids = Vec::new();
@@ -553,7 +559,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             ctx,
             ir,
             Body {
-                id: body_id,
+                id: body_id_storage.commit_value(body_id)?,
                 kind: BodyKind::Solid,
                 regions: circular_item(ctx, region_id, "creo circular body regions")?,
                 transform: None,

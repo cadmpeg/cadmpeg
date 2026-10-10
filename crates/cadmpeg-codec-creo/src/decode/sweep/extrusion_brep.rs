@@ -286,7 +286,10 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         else {
             continue;
         };
-        let Some(sketch_id) = model_sketch_id(ctx, scan, definition)? else {
+        let (sketch_id, _sketch_identity_storage) = ctx.with_scoped_storage(
+            "creo sweep sketch identity scratch", || model_sketch_id(ctx, scan, definition),
+        )?;
+        let Some(sketch_id) = sketch_id else {
             continue;
         };
         let Some(span) =
@@ -340,7 +343,10 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         else {
             continue;
         };
-        let body_id = extrusion_id!(BodyId, "body");
+        let (body_id, body_id_storage) = ctx.with_scoped_storage(
+            "creo extrusion body identity candidate",
+            || Ok::<_, cadmpeg_core::CodecError>(extrusion_id!(BodyId, "body")),
+        )?;
         // The unique first material feature reaches this lookup at most once.
         if ctx.any_by(
             &ir.model.bodies,
@@ -356,7 +362,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             continue;
         }
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
-        let mut probe_storage = ctx.reserve_scoped(0, "creo extrusion side probe surface")?;
+        let mut failed_probe_storage = None;
         let mut unprojectable = false;
         let mut entity_index = 0;
         let mut profile_rows = profiles.iter();
@@ -377,7 +383,8 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     unprojectable = true;
                     break 'probe;
                 };
-                let surface = probe_storage.with_storage(|| {
+                let (surface, surface_storage) = ctx.with_scoped_storage(
+                    "creo extrusion side probe surface", || {
                     extrusion_brep_side_surface(
                         ctx,
                         transform,
@@ -394,9 +401,12 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     )
                 })?;
                 if surface.is_none() {
+                    failed_probe_storage = Some(surface_storage);
                     unprojectable = true;
                     break 'probe;
                 }
+                drop(surface);
+                drop(surface_storage);
                 entity_index += 1;
             }
         }
@@ -408,7 +418,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             push_rejected_extrusion(
                 ctx,
                 diagnostics,
-                copy_id!(body_id),
+                body_id_storage.commit_value(body_id)?,
                 format_args!(
                     "refused extrusion side lanes: {}",
                     JoinedLaneRecords(&records)
@@ -419,6 +429,8 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         if unprojectable {
             continue;
         }
+        drop(records);
+        drop(failed_probe_storage);
         let forward_caps = profiles[0].area() > 0.0;
 
         let region_id = extrusion_id!(RegionId, "region");
@@ -456,7 +468,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         ) {
             Ok(shell) => shell,
             Err(error) => {
-                push_rejected_extrusion(ctx, diagnostics, body_id, error)?;
+                push_rejected_extrusion(ctx, diagnostics, body_id_storage.commit_value(body_id)?, error)?;
                 continue;
             }
         };
@@ -1330,7 +1342,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             ctx,
             ir,
             Body {
-                id: body_id,
+                id: body_id_storage.commit_value(body_id)?,
                 kind: BodyKind::Solid,
                 regions: {
                     let mut ids = ctx.collection_vec(1, "creo extrusion body region IDs")?;

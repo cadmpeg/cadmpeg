@@ -5,7 +5,7 @@ use super::super::{
     saved_spline_nurbs, saved_spline_off_plane_input, saved_spline_sketch_geometry,
     sketch_nurbs_curve, solve_vector_system, ExtrusionSpan, OffPlaneInput,
 };
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 
 fn work_policy(work: u64) -> DecodePolicy {
@@ -97,44 +97,17 @@ fn dense_solver_admits_only_present_rows_columns_and_elimination() {
     let normalization = "creo interpolation normalization work";
     let row = "creo interpolation elimination row scan";
     let elimination = "creo interpolation elimination work";
-    let triangular = [(shape, 1), (shape, 1), (column, 1), (pivot, 2),
-        (normalization, 2), (row, 1), (elimination, 2), (column, 1),
-        (pivot, 1), (normalization, 1), (row, 1), (elimination, 1)];
-    let unique_pivot = [(shape, 1), (shape, 1), (column, 1), (pivot, 2),
-        (normalization, 2), (row, 1), (elimination, 2), (column, 1),
-        (pivot, 1), (normalization, 1), (row, 1)];
-    let diagonal = [(shape, 1), (shape, 1), (column, 1), (pivot, 2),
-        (normalization, 2), (row, 1), (column, 1), (pivot, 1),
-        (normalization, 1), (row, 1)];
-    let singular = [(shape, 1), (shape, 1), (column, 1), (pivot, 2)];
-    for (matrix, values, expected, charges) in [
+    for (matrix, values, expected, operations) in [
         (Vec::new(), Vec::new(), Some(Vec::new()), &[][..]),
-        (vec![vec![1.0, 0.0], vec![1.0, 1.0]], vec![[1.0; 3], [2.0; 3]], Some(vec![[1.0; 3]; 2]), triangular.as_slice()),
-        (vec![vec![2.0, 0.0], vec![1.0, 1.0]], vec![[2.0; 3], [2.0; 3]], Some(vec![[1.0; 3]; 2]), unique_pivot.as_slice()),
-        (vec![vec![1.0, 0.0], vec![0.0, 1.0]], vec![[1.0; 3], [2.0; 3]], Some(vec![[1.0; 3], [2.0; 3]]), diagonal.as_slice()),
-        (vec![vec![0.0, 0.0], vec![0.0, 1.0]], vec![[1.0; 3], [2.0; 3]], None, singular.as_slice()),
+        (vec![vec![1.0, 0.0], vec![1.0, 1.0]], vec![[1.0; 3], [2.0; 3]], Some(vec![[1.0; 3]; 2]), &[shape, column, pivot, normalization, row, elimination][..]),
+        (vec![vec![2.0, 0.0], vec![1.0, 1.0]], vec![[2.0; 3], [2.0; 3]], Some(vec![[1.0; 3]; 2]), &[shape, column, pivot, normalization, row, elimination][..]),
+        (vec![vec![1.0, 0.0], vec![0.0, 1.0]], vec![[1.0; 3], [2.0; 3]], Some(vec![[1.0; 3], [2.0; 3]]), &[shape, column, pivot, normalization, row][..]),
+        (vec![vec![0.0, 0.0], vec![0.0, 1.0]], vec![[1.0; 3], [2.0; 3]], None, &[shape, column, pivot][..]),
     ] {
-        let total = charges.iter().map(|(_, n)| n).sum::<u64>();
-        for cap in 0..=total {
-            let arena = DecodeArena::new();
-            let policy = work_policy(cap);
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let result = solve_vector_system(&ctx, matrix.clone(), values.clone());
-            if cap == total {
-                assert_eq!(result.expect("source work admitted"), expected);
-                assert_eq!(ctx.resource_refusal(), None);
-            } else {
-                let mut used = 0;
-                let (operation, additional) = charges.iter().copied().find(|(_, n)| {
-                    if used + n > cap { true } else { used += n; false }
-                }).expect("source-derived next admission");
-                let Err(CodecError::ResourceLimit(original)) = result else { panic!("work refusal"); };
-                assert_eq!(original.dimension, ResourceDimension::WorkUnits);
-                assert_eq!((original.used, original.additional, original.operation), (used, additional, operation));
-                assert!(matches!(solve_vector_system(&ctx, matrix.clone(), values.clone()), Err(CodecError::ResourceLimit(actual)) if actual == original));
-                assert_eq!(ctx.resource_refusal(), Some(original));
-            }
-        }
+        let result = crate::test_support::assert_work_boundaries(operations, |ctx| {
+            solve_vector_system(ctx, matrix.clone(), values.clone())
+        });
+        assert_eq!(result, expected);
     }
     let mut matrix = vec![vec![0.0]];
     matrix.extend(std::iter::repeat_n(vec![0.0; 129], 128));
@@ -154,20 +127,15 @@ fn spline_order_and_off_plane_queries_stop_before_unrelated_tail() {
         (Vec::new(), 0), (vec![0.0], 0), (duplicate_parameters, 1),
         (vec![0.0, 1.0, f64::INFINITY], 2),
     ] {
-        for cap in 0..=visits {
-            let arena = DecodeArena::new();
-            let policy = work_policy(cap);
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let result = interpolation_knots(&ctx, &parameters);
-            if cap == visits {
-                assert!(result.expect("parameter visits admitted").is_none());
-                assert_eq!(ctx.resource_refusal(), None);
-            } else {
-                let Err(CodecError::ResourceLimit(original)) = result else { panic!("parameter visit refusal"); };
-                assert_eq!((original.dimension, original.used, original.additional), (ResourceDimension::WorkUnits, cap, 1));
-                assert!(matches!(interpolation_knots(&ctx, &parameters), Err(CodecError::ResourceLimit(actual)) if actual == original));
-            }
-        }
+        crate::test_support::assert_work_boundaries(
+            if visits == 0 { &[] } else { &["creo interpolation parameter order"] },
+            |ctx| interpolation_knots(ctx, &parameters),
+        );
+        let arena = DecodeArena::new();
+        let policy = work_policy(visits);
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        assert!(interpolation_knots(&ctx, &parameters).expect("parameter visits admitted").is_none());
+        assert_eq!(ctx.resource_refusal(), None);
     }
     for (points, visits, index) in [
         (Vec::new(), 0, None), (vec![[0.0; 3]; 3], 3, None),
@@ -176,23 +144,31 @@ fn spline_order_and_off_plane_queries_stop_before_unrelated_tail() {
     ] {
         let mut spline = super::planar_or_offset_spline(0.0);
         spline.interpolation_points = points;
-        for cap in 0..=visits {
-            let arena = DecodeArena::new();
-            let policy = work_policy(cap);
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let result = saved_spline_off_plane_input(&ctx, &spline);
-            if cap == visits {
-                let result = result.expect("point visits admitted").map(|(input, z)| {
-                    let OffPlaneInput::Point(index) = input else { panic!("point identity"); };
-                    (index, z)
-                });
-                assert_eq!(result, index.map(|index| (index, 2.0)));
-                assert_eq!(ctx.resource_refusal(), None);
-            } else {
-                let Err(CodecError::ResourceLimit(original)) = result else { panic!("point visit refusal"); };
-                assert_eq!((original.dimension, original.used, original.additional), (ResourceDimension::WorkUnits, cap, 1));
-                assert!(matches!(saved_spline_off_plane_input(&ctx, &spline), Err(CodecError::ResourceLimit(actual)) if actual == original));
-            }
-        }
+        crate::test_support::assert_work_boundaries(
+            if visits == 0 { &[] } else { &["creo saved spline off-plane input scan"] },
+            |ctx| saved_spline_off_plane_input(ctx, &spline),
+        );
+        let arena = DecodeArena::new();
+        let policy = work_policy(visits);
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let result = saved_spline_off_plane_input(&ctx, &spline)
+            .expect("point visits admitted").map(|(input, z)| {
+                let OffPlaneInput::Point(index) = input else { panic!("point identity"); };
+                (index, z)
+            });
+        assert_eq!(result, index.map(|index| (index, 2.0)));
+        assert_eq!(ctx.resource_refusal(), None);
     }
+}
+
+#[test]
+fn fixed_interpolation_knot_endpoints_do_not_consume_work() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // Two parameters have exactly one ordering comparison and no interior knots.
+    policy.limits.max_work_units = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    assert_eq!(interpolation_knots(&ctx, &[0.0, 1.0]).expect("only parameter order"),
+        Some(vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0]));
+    assert_eq!(ctx.resource_refusal(), None);
 }
