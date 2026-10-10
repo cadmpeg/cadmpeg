@@ -39,7 +39,7 @@ pub(crate) struct ProteinInstanceRecords {
 
 pub(crate) fn parse<'a, 'ctx>(
     ctx: &'ctx DecodeContext<'a>,
-    snapshot: &CompoundSnapshot<'a>,
+    snapshot: &CompoundSnapshot<'a, '_>,
 ) -> Result<ProteinState<'a, 'ctx>, CodecError> {
     let Some(stream) = snapshot.stream(ctx, "Protein")? else {
         return Ok(ProteinState::Absent);
