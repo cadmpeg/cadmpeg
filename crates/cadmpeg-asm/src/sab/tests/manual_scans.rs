@@ -57,8 +57,8 @@ fn manual_sab_framing_keeps_strict_and_history_eof_semantics() {
         ctx.finish_session().unwrap();
         let arena = DecodeArena::new();
         // The retained name join adds two one-part traversals and n copied
-        // bytes. Initial vector reserves move no live slots.
-        policy.limits.max_work_units = 4 + 2 * n;
+        // bytes and n name-index bytes. Initial vector reserves move no live slots.
+        policy.limits.max_work_units = 4 + 3 * n;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let records = frame_history(&ctx, &bytes, 0, bytes.len(), RefWidth::Four, None).unwrap();
         assert_eq!(records.len(), 1);
@@ -71,7 +71,13 @@ fn manual_sab_framing_keeps_strict_and_history_eof_semantics() {
 
 #[test]
 fn manual_sab_empty_and_invalid_routes_preserve_original_refusal() {
-    let empty = Record { index: 0, name: String::new(), tokens: Vec::new().into(), offset: 0, len: 0 };
+    let empty = crate::test_support::sab::record(
+0,
+String::new(),
+Vec::new().into(),
+0,
+0
+);
     let invalid = Record { offset: usize::MAX, len: 1, ..empty.clone() };
     for fused in [false, true] {
         let arena = DecodeArena::new();

@@ -940,14 +940,13 @@ pub fn test_table(
     bytes: &[u8],
     ref_width: RefWidth,
 ) -> Result<SubtypeTable, crate::stream_error::StreamError> {
-    let record = crate::sab::Record {
-        index: 0,
-        name: String::new(),
-
-        tokens: lex_test_span(bytes, ref_width)?,
-        offset: 0,
-        len: 0,
-    };
+    let record = crate::test_support::sab::record(
+0,
+String::new(),
+lex_test_span(bytes, ref_width)?,
+0,
+0
+);
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
@@ -1063,18 +1062,18 @@ mod tests {
     #[test]
     fn subtype_table_vector_refuses_collection_limit() {
         use cadmpeg_core::decode::ResourceDimension;
-        let record = crate::sab::Record {
-            index: 0,
-            name: "spline".into(),
-            tokens: vec![
+        let record = crate::test_support::sab::record(
+0,
+"spline".into(),
+vec![
                 Token::SubtypeOpen,
                 Token::Ident("exactcur".into()),
                 Token::SubtypeClose,
             ]
             .into(),
-            offset: 0,
-            len: 0,
-        };
+0,
+0
+);
         let limit = crate::test_support::resource_limit_at(
             &[],
             ResourceDimension::CollectionItems,
@@ -1102,13 +1101,13 @@ mod tests {
                     ]);
                 }
                 tokens.push(Token::SubtypeClose);
-                crate::sab::Record {
-                    index: usize::try_from(index).expect("test value fits"),
-                    name: "node".into(),
-                    tokens: tokens.into(),
-                    offset: 0,
-                    len: 0,
-                }
+                crate::test_support::sab::record(
+usize::try_from(index).expect("test value fits"),
+"node".into(),
+tokens.into(),
+0,
+0
+)
             })
             .collect();
         let table = with_ctx(|ctx| super::SubtypeTable::from_records(ctx, &records).unwrap());
@@ -1145,13 +1144,13 @@ mod tests {
             Token::SubtypeClose,
         ]
         .into();
-        let record = crate::sab::Record {
-            index: 0,
-            name: "node".into(),
-            tokens,
-            offset: 0,
-            len: 0,
-        };
+        let record = crate::test_support::sab::record(
+0,
+"node".into(),
+tokens,
+0,
+0
+);
         let records = [record];
         let table = with_ctx(|ctx| super::SubtypeTable::from_records(ctx, &records).unwrap());
         let limit = crate::test_support::resource_limit_at(
@@ -1178,26 +1177,26 @@ mod tests {
             Token::Long(1),
             Token::SubtypeClose,
         ];
-        let records = [crate::sab::Record {
-            index: 0,
-            name: "spline".into(),
-            tokens: tokens.clone().into(),
-            offset: 0,
-            len: 0,
-        }];
+        let records = [crate::test_support::sab::record(
+0,
+"spline".into(),
+tokens.clone().into(),
+0,
+0
+)];
         let table = with_ctx(|ctx| super::SubtypeTable::from_records(ctx, &records).unwrap());
         assert!(table.span(0).is_none());
         assert_eq!(table.span(1).unwrap().tokens(), &tokens[3..6]);
         assert!(table.span(2).is_none());
         let mut complete = tokens;
         complete.push(Token::SubtypeClose);
-        let records = [crate::sab::Record {
-            index: 0,
-            name: "spline".into(),
-            tokens: complete.clone().into(),
-            offset: 0,
-            len: 0,
-        }];
+        let records = [crate::test_support::sab::record(
+0,
+"spline".into(),
+complete.clone().into(),
+0,
+0
+)];
         let table = with_ctx(|ctx| super::SubtypeTable::from_records(ctx, &records).unwrap());
         assert_eq!(table.span(0).unwrap().tokens(), &complete[1..]);
         assert_eq!(table.span(1).unwrap().interior(), &[ident("child")]);
@@ -1562,13 +1561,13 @@ mod tests {
             Token::SubtypeClose,
         ];
         tokens.extend((0..256).map(|_| Token::Double(0.0)));
-        let record = crate::sab::Record {
-            index: 0,
-            name: "pcurve".into(),
-            tokens: tokens.into(),
-            offset: 0,
-            len: 0,
-        };
+        let record = crate::test_support::sab::record(
+0,
+"pcurve".into(),
+tokens.into(),
+0,
+0
+);
 
         // Lookup scans the 7-token payload prefix, reads the matching name,
         // then validates the 4-token scope from its original base.
@@ -1617,13 +1616,13 @@ mod tests {
     fn payload_subtype_lookup_preserves_a_fused_refusal_when_no_chunk_exists() {
         use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 
-        let record = crate::sab::Record {
-            index: 0,
-            name: "pcurve".into(),
-            tokens: Vec::new().into(),
-            offset: 0,
-            len: 0,
-        };
+        let record = crate::test_support::sab::record(
+0,
+"pcurve".into(),
+Vec::new().into(),
+0,
+0
+);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 0;

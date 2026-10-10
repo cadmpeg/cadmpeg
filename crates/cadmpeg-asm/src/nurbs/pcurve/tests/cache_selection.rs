@@ -720,20 +720,20 @@ fn an_unresolvable_subtype_reference_refuses_the_search_behind_it() {
         let reference_tokens =
             lex_test_span(&references, int_width).expect("valid single-record byte fixture");
         let records = [
-            crate::sab::Record {
-                index: 0,
-                name: String::new(),
-                tokens: definition_tokens,
-                offset: 0,
-                len: 0,
-            },
-            crate::sab::Record {
-                index: 1,
-                name: String::new(),
-                tokens: reference_tokens.clone(),
-                offset: 0,
-                len: 0,
-            },
+            crate::test_support::sab::record(
+0,
+String::new(),
+definition_tokens,
+0,
+0
+),
+            crate::test_support::sab::record(
+1,
+String::new(),
+reference_tokens.clone(),
+0,
+0
+),
         ];
         let table =
             crate::nurbs::toks::SubtypeTable::from_records(&resource_ctx, &records).unwrap();

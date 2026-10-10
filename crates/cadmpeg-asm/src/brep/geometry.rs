@@ -1469,14 +1469,13 @@ mod analytic_surface_tests {
     }
 
     fn surface_record(head: &str, tokens: Vec<Token>) -> Record {
-        Record {
-            index: 1,
-            name: format!("{head}-surface"),
-
-            tokens: Arc::from(tokens),
-            offset: 0,
-            len: 0,
-        }
+        crate::test_support::sab::record(
+1,
+format!("{head}-surface"),
+Arc::from(tokens),
+0,
+0
+)
     }
 
     #[test]
@@ -1533,7 +1532,7 @@ mod analytic_surface_tests {
 #[cfg(test)]
 mod sense_tests {
     use super::record_reversed;
-    use crate::sab::{Record, Token};
+    use crate::sab::Token;
 
     #[test]
     fn intcurve_sense_falls_back_only_when_the_scope_has_no_boolean() {
@@ -1543,10 +1542,10 @@ mod sense_tests {
             (Token::True, Token::False, false),
             (Token::False, Token::True, true),
         ] {
-            let record = Record {
-                index: 0,
-                name: "intcurve".into(),
-                tokens: vec![
+            let record = crate::test_support::sab::record(
+0,
+"intcurve".into(),
+vec![
                     Token::Ref(-1),
                     Token::Long(-1),
                     Token::Ref(-1),
@@ -1556,9 +1555,9 @@ mod sense_tests {
                     Token::SubtypeClose,
                 ]
                 .into(),
-                offset: 0,
-                len: 0,
-            };
+0,
+0
+);
             assert_eq!(
                 record_reversed(&cadmpeg_test_support::service_decode_context(), &record).unwrap(),
                 expected

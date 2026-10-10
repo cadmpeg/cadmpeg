@@ -121,3 +121,16 @@ pub fn payload_token_offsets(
     }
     Ok(offsets)
 }
+
+/// Build an indexed record fixture with the service decode policy.
+///
+/// # Panics
+///
+/// Panics when the fixture exceeds the service policy.
+pub fn record(index: usize, name: String, tokens: std::sync::Arc<[crate::sab::Token]>,
+    offset: usize, len: usize) -> Record {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("record fixture context");
+    Record::new(&ctx, index, name, tokens, offset, len).expect("indexed record fixture")
+}

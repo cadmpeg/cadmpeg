@@ -25,13 +25,13 @@ fn body_source_stream_copy_refuses_retained_limit() {
     use cadmpeg_core::CodecError;
     use std::collections::HashMap;
 
-    let records = [Record {
-        index: 1,
-        name: "body".into(),
-        tokens: vec![Token::Long(0), Token::Long(7)].into(),
-        offset: 0,
-        len: 0,
-    }];
+    let records = [crate::test_support::sab::record(
+1,
+"body".into(),
+vec![Token::Long(0), Token::Long(7)].into(),
+0,
+0
+)];
     let by_index = HashMap::from([(1, &records[0])]);
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::RetainedBytes,
@@ -73,13 +73,13 @@ fn edge_continuity_copy_refuses_retained_limit() {
     tokens[3] = Token::Ref(1);
     tokens[5] = Token::Ref(2);
     tokens[10] = Token::Str("G1".into());
-    let records = [Record {
-        index: 4,
-        name: "edge".into(),
-        tokens: tokens.into(),
-        offset: 0,
-        len: 0,
-    }];
+    let records = [crate::test_support::sab::record(
+4,
+"edge".into(),
+tokens.into(),
+0,
+0
+)];
     let by_index = HashMap::from([(4, &records[0])]);
     let reach = Reachable {
         edges: HashSet::from([4]),
@@ -121,13 +121,13 @@ fn loop_ring_members_refuse_collection_limit() {
     use cadmpeg_core::CodecError;
     use std::collections::HashMap;
 
-    let record = |index, name: &str, refs: &[i64]| Record {
-        index,
-        name: name.into(),
-        tokens: refs.iter().copied().map(Token::Ref).collect(),
-        offset: 0,
-        len: 0,
-    };
+    let record = |index, name: &str, refs: &[i64]| crate::test_support::sab::record(
+index,
+name.into(),
+refs.iter().copied().map(Token::Ref).collect(),
+0,
+0
+);
     let records = [
         record(0, "loop", &[-1, -1, -1, -1, 1, 3]),
         record(1, "coedge", &[-1, -1, -1, 2]),
@@ -404,13 +404,13 @@ fn unknown_carrier_source_copy_refuses_retained_limit_before_emission() {
     use cadmpeg_core::CodecError;
 
     let bytes = b"opaque";
-    let records = [Record {
-        index: 0,
-        name: "unknown".into(),
-        tokens: Vec::<Token>::new().into(),
-        offset: 0,
-        len: bytes.len(),
-    }];
+    let records = [crate::test_support::sab::record(
+0,
+"unknown".into(),
+Vec::<Token>::new().into(),
+0,
+bytes.len()
+)];
     let reach = Reachable {
         undecoded_carriers: HashSet::from([0]),
         ..Reachable::default()
@@ -463,13 +463,13 @@ fn unknown_passthrough_output_refuses_collection_limit() {
     use cadmpeg_core::CodecError;
 
     let bytes = b"opaque";
-    let records = [Record {
-        index: 0,
-        name: "unknown".into(),
-        tokens: Vec::<Token>::new().into(),
-        offset: 0,
-        len: bytes.len(),
-    }];
+    let records = [crate::test_support::sab::record(
+0,
+"unknown".into(),
+Vec::<Token>::new().into(),
+0,
+bytes.len()
+)];
     let reach = Reachable {
         undecoded_carriers: HashSet::from([0]),
         ..Reachable::default()
@@ -500,10 +500,10 @@ fn emitted_vertices_refuse_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
-    let records = [Record {
-        index: 0,
-        name: "vertex".into(),
-        tokens: vec![
+    let records = [crate::test_support::sab::record(
+0,
+"vertex".into(),
+vec![
             Token::Ref(-1),
             Token::Long(-1),
             Token::Ref(-1),
@@ -512,9 +512,9 @@ fn emitted_vertices_refuse_collection_limit() {
             Token::Ref(1),
         ]
         .into(),
-        offset: 0,
-        len: 0,
-    }];
+0,
+0
+)];
     let by_index = [(0, &records[0])].into_iter().collect();
     let reach = Reachable {
         vertices: HashSet::from([0]),
@@ -550,13 +550,13 @@ fn face_sidedness_retains_the_decode_time_carrier_flip() {
         (1.0, Sense::Reversed, Sense::Reversed),
         (-1.0, Sense::Reversed, Sense::Forward),
     ] {
-        let record = |index, name: &str, tokens: Vec<Token>| Record {
-            index,
-            name: name.into(),
-            tokens: tokens.into(),
-            offset: 0,
-            len: 0,
-        };
+        let record = |index, name: &str, tokens: Vec<Token>| crate::test_support::sab::record(
+index,
+name.into(),
+tokens.into(),
+0,
+0
+);
         let records = [
             record(
                 0,
@@ -687,13 +687,13 @@ fn tolerant_coedge_extension_retains_the_release_band() {
             Token::Double(1.0),
         ];
         tokens.extend(suffix);
-        let records = [Record {
-            index: 0,
-            name: "tcoedge".into(),
-            tokens: tokens.into(),
-            offset: 0,
-            len: 0,
-        }];
+        let records = [crate::test_support::sab::record(
+0,
+"tcoedge".into(),
+tokens.into(),
+0,
+0
+)];
         let table = subtype_table(&records);
         let reach = Reachable {
             coedges: HashSet::from([0]),
@@ -729,10 +729,10 @@ fn tolerant_coedge_extension_retains_the_release_band() {
 
 #[test]
 fn tolerant_coedge_source_refuses_nonfinite_interval() {
-    let records = [Record {
-        index: 0,
-        name: "tcoedge".into(),
-        tokens: vec![
+    let records = [crate::test_support::sab::record(
+0,
+"tcoedge".into(),
+vec![
             Token::Ref(-1),
             Token::Long(-1),
             Token::Ref(-1),
@@ -748,9 +748,9 @@ fn tolerant_coedge_source_refuses_nonfinite_interval() {
             Token::Double(1.0),
         ]
         .into(),
-        offset: 0,
-        len: 0,
-    }];
+0,
+0
+)];
     let table = subtype_table(&records);
     let reach = Reachable {
         coedges: HashSet::from([0]),
@@ -935,13 +935,13 @@ fn reversed_intcurve_context_uses_the_parsed_cache_domain() {
     )
     .expect("test decode context");
 
-    let record = |index, name: &str, tokens: Vec<Token>| Record {
-        index,
-        name: name.into(),
-        tokens: tokens.into(),
-        offset: 0,
-        len: 0,
-    };
+    let record = |index, name: &str, tokens: Vec<Token>| crate::test_support::sab::record(
+index,
+name.into(),
+tokens.into(),
+0,
+0
+);
     for reversed in [false, true] {
         let mut curve_tokens = vec![
             Token::Ref(-1),
@@ -1075,13 +1075,13 @@ fn evaluated_and_absent_vertex_slots_have_distinct_native_tail_wires() {
             Token::Double(0.07),
         ];
         tokens.extend(slot.map(Token::Double));
-        let records = [Record {
-            index: 0,
-            name: "tvertex".into(),
-            tokens: tokens.into(),
-            offset: 0,
-            len: 0,
-        }];
+        let records = [crate::test_support::sab::record(
+0,
+"tvertex".into(),
+tokens.into(),
+0,
+0
+)];
         let by_index = records
             .iter()
             .map(|record| {
@@ -1131,13 +1131,13 @@ fn evaluated_and_absent_vertex_slots_have_distinct_native_tail_wires() {
 
 #[test]
 fn invalid_cache_first_context_keeps_the_decoded_curve() {
-    let record = |index, name: &str, tokens: Vec<Token>| Record {
-        index,
-        name: name.into(),
-        tokens: tokens.into(),
-        offset: 0,
-        len: 0,
-    };
+    let record = |index, name: &str, tokens: Vec<Token>| crate::test_support::sab::record(
+index,
+name.into(),
+tokens.into(),
+0,
+0
+);
     let mut curve_tokens = vec![
         Token::Ref(-1),
         Token::Long(-1),

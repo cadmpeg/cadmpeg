@@ -6,13 +6,13 @@ use crate::sab::{Record, Token};
 use super::super::SubtypeTable;
 
 fn records() -> [Record; 3] {
-    std::array::from_fn(|index| Record {
-        index,
-        name: "spline".into(),
-        tokens: vec![Token::SubtypeOpen, Token::Ident("exactcur".into()), Token::SubtypeClose].into(),
-        offset: 0,
-        len: 0,
-    })
+    std::array::from_fn(|index| crate::test_support::sab::record(
+index,
+"spline".into(),
+vec![Token::SubtypeOpen, Token::Ident("exactcur".into()), Token::SubtypeClose].into(),
+0,
+0
+))
 }
 
 fn source_boundary(cap: u64, operation: &'static str, dimension: ResourceDimension) {
@@ -73,7 +73,13 @@ fn empty_subtype_table_executes_no_source_steps() {
 fn manual_subtype_reference_walk_does_not_scan_exhausted_stack_frames() {
     let table = SubtypeTable::from_records(&cadmpeg_test_support::service_decode_context(), &[]).unwrap();
     for count in [0_usize, 1, 64] {
-        let record = Record { index: 0, name: "x".into(), tokens: vec![Token::False; count].into(), offset: 0, len: 0 };
+        let record = crate::test_support::sab::record(
+0,
+"x".into(),
+vec![Token::False; count].into(),
+0,
+0
+);
         let required = u64::try_from(1 + count).unwrap();
         for cap in [1, required - 1, required] {
             let arena = DecodeArena::new();

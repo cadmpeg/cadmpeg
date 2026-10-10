@@ -25,7 +25,13 @@ fn carrier(name: &str) -> Record {
         ]);
     }
     tokens.push(Token::SubtypeClose);
-    Record { index: 0, name: "spline".into(), tokens: tokens.into(), offset: 0, len: 0 }
+    crate::test_support::sab::record(
+0,
+"spline".into(),
+tokens.into(),
+0,
+0
+)
 }
 
 #[test]

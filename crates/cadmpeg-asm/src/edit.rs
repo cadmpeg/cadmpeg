@@ -2299,13 +2299,13 @@ mod tests {
             bytes.extend_from_slice(b"\x07\x05surf1");
         }
         bytes.push(0x10);
-        let record = crate::sab::Record {
-            index: 0,
-            name: "intcurve".into(),
-            tokens: Vec::new().into(),
-            offset: 0,
-            len: bytes.len(),
-        };
+        let record = crate::test_support::sab::record(
+0,
+"intcurve".into(),
+Vec::new().into(),
+0,
+bytes.len()
+);
         (bytes, record)
     }
 

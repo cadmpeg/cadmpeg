@@ -7,7 +7,13 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 use cadmpeg_core::CodecError;
 
 fn record(tokens: Vec<Token>) -> Record {
-    Record { index: 1, name: "carrier".into(), tokens: tokens.into(), offset: 0, len: 0 }
+    crate::test_support::sab::record(
+1,
+"carrier".into(),
+tokens.into(),
+0,
+0
+)
 }
 
 #[test]
