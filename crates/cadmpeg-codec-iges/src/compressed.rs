@@ -210,16 +210,19 @@ fn logical_global_stream<'ctx>(
                 let count = ctx
                     .parse_text::<usize>(count_text, "iges compressed Global Hollerith number")?
                     .map_err(|_| malformed("Global Hollerith count is out of range"))?;
+                ctx.charge_work(u64_from_index(pending_digits.len()), "iges compressed Global digit copy")?;
                 stream.extend_from_slice(&pending_digits);
                 stream.push(byte);
                 pending_digits.clear();
                 hollerith_remaining = count;
                 continue;
             }
+            ctx.charge_work(u64_from_index(pending_digits.len()), "iges compressed Global digit copy")?;
             stream.append(&mut pending_digits);
             stream.push(byte);
         }
     }
+    ctx.charge_work(u64_from_index(pending_digits.len()), "iges compressed Global digit copy")?;
     stream.append(&mut pending_digits);
     if hollerith_remaining != 0 {
         return Err(malformed("Global Hollerith payload is truncated"));
@@ -1016,7 +1019,6 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
         .and_then(|count| count.checked_add(parameter_count))
         .and_then(|count| count.checked_add(1))
         .and_then(|count| count.checked_mul(CARD_WIDTH + 1))
-        .and_then(|size| size.checked_add(source.len()))
         .ok_or_else(|| {
             CodecError::NotImplemented(
                 "IGES Compressed ASCII normalized output exceeds usize".into(),
@@ -1109,6 +1111,8 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
         lines.get(terminate_index + 1..).unwrap_or_default(),
         "iges compressed trailing records",
     )? {
+        ctx.charge_work(u64_from_index(line.len()), "iges compressed trailing record copy")?;
+        ctx.reserve_capacity(&mut output, line.len().saturating_add(1), "iges_compressed_normalized_output")?;
         output.extend_from_slice(line);
         output.push(b'\n');
     }
