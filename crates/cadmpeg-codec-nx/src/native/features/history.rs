@@ -50,7 +50,7 @@ impl<'c, 'a, 's> FeatureHistory<'c, 'a, 's> {
         let links = storage.with_storage(|| {
             super::canonical_feature_history_links(ctx, segment_om_links(ctx, container)?)
         })?;
-        let framed = container.om_sections(ctx)?;
+        let (framed, _framed_storage) = container.om_sections(ctx)?;
         let mut index_storage = ctx.reserve_scoped(0, "NX feature history section index")?;
         let mut starts = Vec::new();
         let mut slots = Vec::new();

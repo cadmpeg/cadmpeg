@@ -70,24 +70,31 @@ impl GroupMemberTarget {
         })
     }
 
-    pub(super) fn resolve(self, graph: &Graph, member_xmt: u32) -> Self {
-        match self {
+    pub(super) fn resolve(
+        self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        graph: &Graph,
+        member_xmt: u32,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        Ok(match self {
             Self::Fin => Self::Fin,
             Self::Node {
                 family, node_id, ..
             } => {
-                let current_xmt = graph
-                    .get(family.kind(), member_xmt)
+                let current_xmt = match graph
+                    .get(ctx, family.kind(), member_xmt)?
                     .filter(|node| node.node_id() == Some(node_id))
-                    .map(crate::topology::Node::xmt)
-                    .or_else(|| graph.unique_xmt_by_node_id(family.kind(), node_id));
+                {
+                    Some(node) => Some(node.xmt()),
+                    None => graph.unique_xmt_by_node_id(ctx, family.kind(), node_id)?,
+                };
                 Self::Node {
                     family,
                     node_id,
                     current_xmt,
                 }
             }
-        }
+        })
     }
 }
 

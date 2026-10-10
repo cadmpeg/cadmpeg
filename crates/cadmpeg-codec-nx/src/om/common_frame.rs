@@ -102,7 +102,9 @@ impl CommonFrameSuffix {
     pub(super) fn read(bytes: &[u8]) -> Option<Self> {
         let local_ordinal = CanonicalFeatureReferenceToken::read(bytes)?;
         let width = local_ordinal.raw().len();
-        (bytes.get(width..2 * width) == Some(local_ordinal.raw())).then_some(())?;
+        if bytes.get(width..2 * width) != Some(local_ordinal.raw()) {
+            return None;
+        }
         let object_bytes = bytes.get(2 * width..)?;
         let object = if *object_bytes.first()? == 0xff {
             None
@@ -291,6 +293,12 @@ impl<T> TerminalFrame<u64, T> {
 #[cfg(test)]
 mod tests {
     use super::{CommonFrame, CommonFramePrefix, CommonFrameSuffix, TerminalFrame};
+
+    #[test]
+    fn repeated_ordinal_comparison_is_fixed_work() {
+        assert!(CommonFrameSuffix::read(&[1, 1, 0xff, 0]).is_some());
+        assert!(CommonFrameSuffix::read(&[1, 2, 0xff, 0]).is_none());
+    }
 
     #[test]
     fn suffix_requires_exact_repetition_canonical_indices_and_terminator() {

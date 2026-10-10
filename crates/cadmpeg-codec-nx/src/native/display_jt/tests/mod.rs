@@ -398,6 +398,8 @@ fn display_jt_index_requires_every_declared_header() {
                 },
             }],
             fastload_table: None,
+            segment_index: None,
+            segment_wrappers: Vec::new(),
             indexed_section_layouts: std::sync::OnceLock::new(),
             om_section_cache: std::sync::OnceLock::new(),
         };
@@ -542,6 +544,8 @@ fn display_jt_shape_lod_requires_canonical_end_marker_and_tail() {
             },
         }],
         fastload_table: None,
+        segment_index: None,
+        segment_wrappers: Vec::new(),
         indexed_section_layouts: std::sync::OnceLock::new(),
         om_section_cache: std::sync::OnceLock::new(),
     };
@@ -664,6 +668,8 @@ fn display_jt_shape_lod_binding_resolves_property_table_segment_reference() {
             },
         }],
         fastload_table: None,
+        segment_index: None,
+        segment_wrappers: Vec::new(),
         indexed_section_layouts: std::sync::OnceLock::new(),
         om_section_cache: std::sync::OnceLock::new(),
     };
@@ -1866,6 +1872,8 @@ fn jt9_topology_packets_retain_decoded_primal_values() {
             },
         }],
         fastload_table: None,
+        segment_index: None,
+        segment_wrappers: Vec::new(),
         indexed_section_layouts: std::sync::OnceLock::new(),
         om_section_cache: std::sync::OnceLock::new(),
     };
