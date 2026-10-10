@@ -313,7 +313,7 @@ mod tests {
                 let [lane] = <[_; 1]>::try_from(lanes).unwrap();
                 assert_eq!(lane.indices().count(), 3);
                 drop(lanes_storage);
-                indices_storage.commit().unwrap();
+                let _lane = indices_storage.commit_value(lane).unwrap();
                 assert_eq!(ctx.resource_refusal(), None);
             },
         );

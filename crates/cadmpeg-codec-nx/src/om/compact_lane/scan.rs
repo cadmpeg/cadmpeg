@@ -98,8 +98,7 @@ pub(crate) fn counted_lanes(
         else {
             return Ok(None);
         };
-        storage.commit()?;
-        Ok(Some((lane, end)))
+        Ok(Some((storage.commit_value(lane)?, end)))
     };
     let mut lanes = Vec::new();
     let mut start = 0;

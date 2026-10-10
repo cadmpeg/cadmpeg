@@ -677,7 +677,7 @@ fn reference_type_maps<'ctx>(
             Ok::<_, CodecError>(map)
         })?;
         if let Some(map) = map {
-            map_storage.commit()?;
+            let map = map_storage.commit_value(map)?;
             ctx.push_scoped_vec(
                 &mut result_storage,
                 &mut maps,
@@ -1036,9 +1036,7 @@ fn schema_reference_preamble(
                 },
             )?
             .ok();
-            if state.is_some() {
-                entry_storage.commit()?;
-            }
+            let state = state.map(|state| entry_storage.commit_value(state)).transpose()?;
             return Ok(state.map(|state| SchemaReferencePreamble { state, offset, end }));
         }
         entry_storage.with_storage(|| {
@@ -2320,10 +2318,10 @@ fn merge_records(
     };
     if graph.has_body_shape_shell(ctx)? {
         let (merged, reservation) = build(false)?;
-        reservation.commit()?;
-        return Ok(merged);
+        return reservation.commit_value(merged);
     }
-    let (merged, merged_reservation) = build(true)?;
+    let (merged_candidate, merged_reservation) = build(true)?;
+    let merged = merged_candidate;
     let mut merged_graph_storage = ctx.reserve_scoped(0, "NX merged graph storage")?;
     let merged_graph =
         merged_graph_storage.with_storage(|| crate::topology::Graph::parse(ctx, &merged))?;
@@ -2344,13 +2342,15 @@ fn merge_records(
         .ok_or_else(|| CodecError::Malformed("NX accounted face count overflow".into()))?;
     let unaccounted_face_loss =
         !deletes_owner && accounted_faces < graph.body_shape_face_count(ctx)?;
+    drop(merged_graph);
+    drop(merged_graph_storage);
     if base_complete && (!merged_complete || unaccounted_face_loss) {
+        drop(merged);
+        drop(merged_reservation);
         let (selected, reservation) = build(false)?;
-        reservation.commit()?;
-        Ok(selected)
+        reservation.commit_value(selected)
     } else {
-        merged_reservation.commit()?;
-        Ok(merged)
+        merged_reservation.commit_value(merged)
     }
 }
 
@@ -2588,8 +2588,7 @@ fn current_revision_scopes(
             });
         }
     }
-    scopes_reservation.commit()?;
-    Ok(scopes)
+    scopes_reservation.commit_value(scopes)
 }
 
 fn revision_direction(

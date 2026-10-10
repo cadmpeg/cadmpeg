@@ -428,6 +428,50 @@ fn rm_source_color_bindings_require_one_palette_per_source_identity() {
             },
         ]
     );
+    for (color, compared, conflicting) in [
+        ("color-a", 7_u64, false),
+        ("Xolor-a", 1, true),
+        ("color-b", 7, true),
+        ("color-aa", 0, true),
+    ] {
+        let candidate = assignment("candidate", Some("source-a"), color, 5);
+        for cap in [compared.saturating_sub(1), compared] {
+            crate::test_support::with_decode_context_over(
+                &[],
+                |policy| policy.limits.max_work_units = cap,
+                |ctx| {
+                    let mut choice = crate::native::attach::RmColorChoice::new(&assignments[0]);
+                    let result = choice.observe(ctx, &candidate);
+                    if cap < compared {
+                        let Err(cadmpeg_core::CodecError::ResourceLimit(first)) = result else {
+                            panic!("the next palette byte must refuse");
+                        };
+                        assert_eq!(first.operation, "NX observe equality");
+                        assert_eq!(first.used, cap);
+                        assert_eq!(first.additional, 1);
+                        assert_eq!(ctx.resource_refusal(), Some(first));
+                        assert!(matches!(ctx.charge_work(0, "palette refusal stays fused"),
+                            Err(cadmpeg_core::CodecError::ResourceLimit(later)) if later == first));
+                    } else {
+                        result.unwrap();
+                        assert_eq!(matches!(choice, crate::native::attach::RmColorChoice::Conflicting), conflicting);
+                        if !conflicting {
+                            assert!(matches!(choice, crate::native::attach::RmColorChoice::Unique {
+                                definition: "color-a", source_offset: 5,
+                            }));
+                        }
+                        assert_eq!(ctx.resource_refusal(), None);
+                        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) =
+                            ctx.charge_work(1, "palette compared prefix boundary") else {
+                            panic!("the compared prefix exhausted the work cap");
+                        };
+                        assert_eq!(limit.used, compared);
+                        assert_eq!(limit.additional, 1);
+                    }
+                },
+            );
+        }
+    }
     let error = crate::test_support::resource_refusal_at(
         &[],
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
@@ -435,7 +479,9 @@ fn rm_source_color_bindings_require_one_palette_per_source_identity() {
         |ctx| resolve_rm_source_color_bindings(ctx, &assignments),
     );
     assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.additional == 7)
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "NX observe equality" && limit.additional == 1)
     );
 }
 

@@ -241,11 +241,13 @@ fn decode_surfaces(
                 continue;
             }
         };
-        ctx.push_vec(&mut records, Surface {
+        let record = Surface {
             pos: node.pos(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
-        }, "NX NURBS geometry records")?;
-        candidate_storage.commit()?;
+        };
+        ctx.reserve_vec(&mut records, 1, "NX NURBS geometry records")?;
+        let record = candidate_storage.commit_value(record)?;
+        records.push(record);
     }
     Ok(records)
 }
@@ -379,11 +381,13 @@ fn decode_pcurves(
                 continue;
             }
         };
-        ctx.push_vec(&mut records, Pcurve {
+        let record = Pcurve {
             pos: node.pos(),
             geometry: PcurveGeometry::Nurbs { nurbs },
-        }, "NX NURBS geometry records")?;
-        candidate_storage.commit()?;
+        };
+        ctx.reserve_vec(&mut records, 1, "NX NURBS geometry records")?;
+        let record = candidate_storage.commit_value(record)?;
+        records.push(record);
     }
     Ok(records)
 }
@@ -522,11 +526,13 @@ fn decode_curves(
                 continue;
             }
         };
-        ctx.push_vec(&mut records, Curve {
+        let record = Curve {
             pos: node.pos(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
-        }, "NX NURBS geometry records")?;
-        candidate_storage.commit()?;
+        };
+        ctx.reserve_vec(&mut records, 1, "NX NURBS geometry records")?;
+        let record = candidate_storage.commit_value(record)?;
+        records.push(record);
     }
     Ok(records)
 }

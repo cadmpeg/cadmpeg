@@ -3425,7 +3425,7 @@ pub(super) fn parasolid_attribute_definitions(
             slots: _scan_slots,
             payloads,
         } = crate::parasolid::attribute_definitions(ctx, &stream.inflated)?;
-        payloads.commit()?;
+        let scanned = payloads.commit_value(scanned)?;
         for definition in ctx.admit_iter(scanned, "NX attribute definitions")? {
             ctx.reserve_vec(&mut records, 1, "NX attribute definitions")?;
             let name = definition
@@ -3479,7 +3479,7 @@ pub(super) fn parasolid_field_names_records(
             slots: _scan_slots,
             payloads,
         } = crate::parasolid::field_names_records(ctx, &stream.inflated)?;
-        payloads.commit()?;
+        let scanned = payloads.commit_value(scanned)?;
         for record in ctx.admit_iter(scanned, "NX field names records")? {
             ctx.reserve_vec(&mut records, 1, "NX field names records")?;
             let id = parasolid_offset_record_id(
@@ -3789,7 +3789,7 @@ pub(super) fn parasolid_entity_51_records(
             slots: _scan_slots,
             payloads,
         } = crate::parasolid::entity_51_records(ctx, &stream.inflated)?;
-        payloads.commit()?;
+        let scanned = payloads.commit_value(scanned)?;
         for record in ctx.admit_iter(scanned, "NX entity 51 records")? {
             ctx.reserve_vec(&mut records, 1, "NX entity 51 records")?;
             let id = parasolid_offset_record_id(

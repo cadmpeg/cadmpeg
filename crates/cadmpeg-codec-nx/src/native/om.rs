@@ -645,7 +645,7 @@ pub(super) fn operation_state_slot_lanes(
                 continue;
             };
             ctx.reserve_vec(&mut output, 1, "NX operation state slot lanes")?;
-            output.push(OmOperationStateSlotLane {
+            let record = OmOperationStateSlotLane {
                 id: retained_om_padded_state_id(
                     ctx,
                     "nx:feature-history:operation-state-slot-lane#",
@@ -657,8 +657,9 @@ pub(super) fn operation_state_slot_lanes(
                 ordinal: lane_ordinal,
                 frame,
                 source_entry: ctx.copy_retained_text(&entry.name, "NX state slot source entry")?,
-            });
-            slot_storage.commit()?;
+            };
+            let record = slot_storage.commit_value(record)?;
+            output.push(record);
         }
         drop(table_entries);
         drop(entry_storage);
@@ -3307,8 +3308,7 @@ pub(super) fn external_reference_records(
     drop(parsed_storage);
     match projection {
         Ok(output) => {
-            handles_storage.commit()?;
-            Ok(output)
+            handles_storage.commit_value(output)
         }
         Err(error) => {
             drop(handles_storage);

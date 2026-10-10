@@ -85,8 +85,7 @@ fn retain_jt_tessellation_id<'ctx>(
     })?;
     match cadmpeg_ir::tessellation::TessellationId::mint(id) {
         Ok(id) => {
-            id_storage.commit()?;
-            Ok(Ok(id))
+            Ok(Ok(id_storage.commit_value(id)?))
         }
         Err(error) => Ok(Err(JtTessellationIdentityRefusal { error, _storage: id_storage })),
     }
@@ -2803,10 +2802,7 @@ fn parse_jt9_partition_node_body(
     })();
     parsed.transpose()
     })?;
-    if parsed.is_some() {
-        storage.commit()?;
-    }
-    Ok(parsed)
+    parsed.map(|parsed| storage.commit_value(parsed)).transpose()
 }
 
 struct ParsedJtRangeLodNode {
@@ -2848,10 +2844,7 @@ fn parse_jt_f32_vector(
     })()
     .transpose()
     })?;
-    if parsed.is_some() {
-        storage.commit()?;
-    }
-    Ok(parsed)
+    parsed.map(|parsed| storage.commit_value(parsed)).transpose()
 }
 
 fn parse_jt9_range_lod_node_body(
@@ -2906,10 +2899,7 @@ fn parse_jt9_range_lod_node_body(
     })()
     .transpose()
     })?;
-    if parsed.is_some() {
-        storage.commit()?;
-    }
-    Ok(parsed)
+    parsed.map(|parsed| storage.commit_value(parsed)).transpose()
 }
 
 fn parse_jt9_geometric_transform_body(body: &[u8]) -> Option<(u8, u32, u16, JtTransformMatrix)> {
@@ -3142,8 +3132,8 @@ pub(super) fn display_jt_indices(
         })?;
         if let Some(index) = parsed {
             ctx.reserve_vec(&mut indices, 1, "admit DisplayJT index")?;
+            let index = storage.commit_value(index)?;
             indices.push(index);
-            storage.commit()?;
         }
     }
     Ok(indices)
@@ -3317,9 +3307,10 @@ pub(super) fn display_jt_documents(
     Ok::<_, CodecError>(documents)
     })?;
     if !documents.is_empty() {
-        storage.commit()?;
+        storage.commit_value(documents)
+    } else {
+        Ok(documents)
     }
-    Ok(documents)
 }
 
 /// Decode every segment declared by complete embedded JT documents.
@@ -3463,9 +3454,10 @@ pub(super) fn display_jt_segments(
     Ok::<_, CodecError>(segments)
     })?;
     if !segments.is_empty() {
-        storage.commit()?;
+        storage.commit_value(segments)
+    } else {
+        Ok(segments)
     }
-    Ok(segments)
 }
 
 /// Decode complete object-element sequences from type-7 shape-LOD segments.
@@ -3554,9 +3546,10 @@ pub(super) fn display_jt_shape_lod_elements(
     Ok::<_, CodecError>(elements)
     })?;
     if !elements.is_empty() {
-        storage.commit()?;
+        storage.commit_value(elements)
+    } else {
+        Ok(elements)
     }
-    Ok(elements)
 }
 
 /// Decode fixed headers from JT 9 tri-strip shape-LOD elements.
@@ -3634,8 +3627,11 @@ pub(super) fn display_jt_tri_strip_lod_headers(
     }
     Ok::<_, CodecError>(headers)
     })?;
-    if !headers.is_empty() { storage.commit()?; }
-    Ok(headers)
+    if !headers.is_empty() {
+        storage.commit_value(headers)
+    } else {
+        Ok(headers)
+    }
 }
 
 /// Decode the initial face-degree packet from each JT 9 topological mesh.
@@ -3720,9 +3716,10 @@ pub(super) fn display_jt_initial_face_degree_symbols(
         return Ok(Vec::new());
     };
     if !vectors.is_empty() {
-        candidate_storage.commit()?;
+        candidate_storage.commit_value(vectors)
+    } else {
+        Ok(vectors)
     }
-    Ok(vectors)
 }
 
 /// Bound every JT 9 topology vector and decode the following vertex-record header.
@@ -3839,8 +3836,7 @@ pub(super) fn display_jt_topology_packet_sequences(
                         _ => crate::jt::Predictor::Null,
                     };
                     if predictor == crate::jt::Predictor::Null {
-                        storage.commit()?;
-                        Some(residuals)
+                        Some(storage.commit_value(residuals)?)
                     } else {
                         let values = crate::jt::unpack_predictor_residuals(
                             ctx, &residuals, predictor,
@@ -4040,11 +4036,11 @@ pub(super) fn display_jt_topology_packet_sequences(
     };
     if !arrays.sequences.is_empty()
         || !arrays.vertex_headers.is_empty()
-        || !arrays.coordinate_headers.is_empty()
-    {
-        candidate_storage.commit()?;
+        || !arrays.coordinate_headers.is_empty() {
+        candidate_storage.commit_value(arrays)
+    } else {
+        Ok(arrays)
     }
-    Ok(arrays)
 }
 
 /// Decode every complete JT 9 coordinate array.
@@ -4124,9 +4120,10 @@ pub(super) fn display_jt_vertex_coordinates(
         return Ok(Vec::new());
     };
     if !arrays.is_empty() {
-        candidate_storage.commit()?;
+        candidate_storage.commit_value(arrays)
+    } else {
+        Ok(arrays)
     }
-    Ok(arrays)
 }
 
 /// Reconstruct every complete JT 9 polygon mesh from its dual-mesh lanes.
@@ -4302,9 +4299,10 @@ pub(super) fn display_jt_polygon_meshes(
         return Ok(Vec::new());
     };
     if !meshes.is_empty() {
-        candidate_storage.commit()?;
+        candidate_storage.commit_value(meshes)
+    } else {
+        Ok(meshes)
     }
-    Ok(meshes)
 }
 
 /// Lookup tables over the decoded vertex arrays that precede one vertex array.
@@ -4562,9 +4560,10 @@ pub(super) fn display_jt_vertex_normals(
         return Ok(Vec::new());
     };
     if !arrays.is_empty() {
-        candidate_storage.commit()?;
+        candidate_storage.commit_value(arrays)
+    } else {
+        Ok(arrays)
     }
-    Ok(arrays)
 }
 
 /// Decode every complete JT 9 color array after coordinates and optional normals.
@@ -4649,9 +4648,10 @@ pub(super) fn display_jt_vertex_colors(
         return Ok(Vec::new());
     };
     if !arrays.is_empty() {
-        candidate_storage.commit()?;
+        candidate_storage.commit_value(arrays)
+    } else {
+        Ok(arrays)
     }
-    Ok(arrays)
 }
 
 /// Whether a vertex-binding mask binds one of the eight texture-coordinate channels.
@@ -4756,9 +4756,10 @@ pub(super) fn display_jt_vertex_texture_coordinates(
         return Ok(Vec::new());
     };
     if !arrays.is_empty() {
-        candidate_storage.commit()?;
+        candidate_storage.commit_value(arrays)
+    } else {
+        Ok(arrays)
     }
-    Ok(arrays)
 }
 
 /// Decode every complete JT 9 vertex-flag array after all preceding vertex arrays.
@@ -4863,9 +4864,10 @@ pub(super) fn display_jt_vertex_flags(
         return Ok(Vec::new());
     };
     if !arrays.is_empty() {
-        candidate_storage.commit()?;
+        candidate_storage.commit_value(arrays)
+    } else {
+        Ok(arrays)
     }
-    Ok(arrays)
 }
 
 /// Inflates the compressed payload of one segment under a scoped reservation.
@@ -5065,9 +5067,10 @@ pub(super) fn display_jt_compressed_element_sequences(
     match candidate {
         Ok(Some(output)) => {
             if !output.0.is_empty() || !output.1.is_empty() {
-                candidate_storage.commit()?;
+                candidate_storage.commit_value(output)
+            } else {
+                Ok(output)
             }
-            Ok(output)
         }
         Ok(None) => Ok((Vec::new(), Vec::new())),
         Err(DisplayJtCandidateFailure::Codec(error)) => Err(error),
@@ -5176,9 +5179,10 @@ pub(super) fn display_jt_string_property_atoms(
         return Ok(Vec::new());
     };
     if !atoms.is_empty() {
-        candidate_storage.commit()?;
+        candidate_storage.commit_value(atoms)
+    } else {
+        Ok(atoms)
     }
-    Ok(atoms)
 }
 
 /// Fields of one late-loaded property atom in a scene property table.
@@ -5429,9 +5433,10 @@ pub(super) fn display_jt_shape_lod_bindings(
         return Ok(Vec::new());
     };
     if !bindings.is_empty() {
-        candidate_storage.commit()?;
+        candidate_storage.commit_value(bindings)
+    } else {
+        Ok(bindings)
     }
-    Ok(bindings)
 }
 
 /// Scene-graph node and attribute records of the logical scene-graph segments.
@@ -5484,9 +5489,10 @@ impl<'ctx, T> JtSceneFamily<'ctx, T> {
         };
         let records = candidate_records;
         if !records.is_empty() {
-            storage.commit()?;
+            storage.commit_value(records)
+        } else {
+            Ok(records)
         }
-        Ok(records)
     }
 }
 
@@ -5664,11 +5670,11 @@ pub(super) fn display_jt_scene_nodes(
         || !output.materials.is_empty()
         || !output.partition_nodes.is_empty()
         || !output.range_lod_nodes.is_empty()
-        || !output.tri_strip_shape_nodes.is_empty()
-    {
-        output_storage.commit()?;
+        || !output.tri_strip_shape_nodes.is_empty() {
+        output_storage.commit_value(output)
+    } else {
+        Ok(output)
     }
-    Ok(output)
 }
 
 /// One framed element of a scene segment at its serialized ordinal.
@@ -7353,7 +7359,7 @@ fn display_jt_tessellation_rows<'ctx>(
             };
             let tessellation = Tessellation::from_parts(tessellation_id, mesh, channels)
                 .map_err(DisplayJtTessellationCandidateFailure::Validation)?;
-            instance_storage.commit()?;
+            let instance_path = instance_storage.commit_value(instance_path)?;
             ctx.push_vec(
                 &mut tessellations,
                 (
@@ -7385,9 +7391,10 @@ fn display_jt_tessellation_rows<'ctx>(
     match candidate_result {
         Ok(Some(rows)) => {
             if !rows.is_empty() {
-                candidate_storage.commit()?;
+                Ok(Some(candidate_storage.commit_value(rows)?))
+            } else {
+                Ok(Some(rows))
             }
-            Ok(Some(rows))
         }
         Ok(None) => Ok(None),
         Err(DisplayJtTessellationCandidateFailure::Identity(refusal)) => {

@@ -6362,11 +6362,13 @@ pub(super) fn feature_datum_plane_payloads(
             crate::om::datum_index::scan(ctx, joined.bytes())?;
         let lane = <[_; 1]>::try_from(lanes).ok().map(|[lane]| lane);
         drop(lanes_storage);
-        if lane.is_some() {
-            indices_storage.commit()?;
-        } else {
-            drop(indices_storage);
-        }
+        let lane = match lane {
+            Some(lane) => Some(indices_storage.commit_value(lane)?),
+            None => {
+                drop(indices_storage);
+                None
+            }
+        };
         let key = identity_key(ctx, &header.id, "NX datum plane payload identity")?;
         let id = ctx.format_retained(
             format_args!("nx:feature-history:datum-plane-payload#{key}"),

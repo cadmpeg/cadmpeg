@@ -6838,6 +6838,7 @@ fn operation_body_write_result_group_members(
                 })
                 .transpose()
         })?;
+    let image_members = image_members;
     let mut group_use = None;
     let mut records_iter = group_partition_uses.iter();
     while let Some(use_) =
@@ -6867,6 +6868,7 @@ fn operation_body_write_result_group_members(
                 })
                 .transpose()
         })?;
+    let group_members = group_members;
     Ok(match (image_members, group_members) {
         (Some(image), Some(group))
             if image.faces.len() == group.faces.len()
@@ -6889,17 +6891,18 @@ fn operation_body_write_result_group_members(
                     "NX result group member equality",
                 )? =>
         {
-            image_storage.commit()?;
-            image
+            drop(group);
+            drop(group_storage);
+            image_storage.commit_value(image)?
         }
         (Some(_), Some(_)) => FeatureResultGroupMembers::default(),
         (Some(image), None) => {
-            image_storage.commit()?;
-            image
+            drop(group_storage);
+            image_storage.commit_value(image)?
         }
         (None, Some(group)) => {
-            group_storage.commit()?;
-            group
+            drop(image_storage);
+            group_storage.commit_value(group)?
         }
         (None, None) => FeatureResultGroupMembers::default(),
     })
@@ -7281,7 +7284,7 @@ fn attach_sketch_graph(
             Some("SKETCH"),
         )?;
         annotations.exactness(ctx, sketch_id.as_str(), Exactness::Derived)?;
-        text_storage.commit()?;
+        let (sketch_id, entities) = text_storage.commit_value((sketch_id, entities))?;
         emit_sketch(ctx, ir, label, &sketch_id, entities)?;
         return Ok(Some(sketch_id));
     }
@@ -7485,7 +7488,7 @@ fn attach_sketch_graph(
         Some("SKETCH"),
     )?;
     annotations.exactness(ctx, sketch_id.as_str(), Exactness::Derived)?;
-    text_storage.commit()?;
+    let (sketch_id, entities) = text_storage.commit_value((sketch_id, entities))?;
     emit_sketch(ctx, ir, label, &sketch_id, entities)?;
     Ok(Some(sketch_id))
 }

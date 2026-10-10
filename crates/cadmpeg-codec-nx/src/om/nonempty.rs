@@ -103,8 +103,7 @@ impl<T> NonEmpty<T> {
             return Ok(None);
         };
         ctx.charge_collection_items(1, "NX nonempty mapped entries")?;
-        storage.commit()?;
-        Ok(Some(NonEmpty { initial, last }))
+        Ok(Some(storage.commit_value(NonEmpty { initial, last })?))
     }
 }
 
