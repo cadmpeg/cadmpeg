@@ -62,3 +62,15 @@ fn native_control_index_value_projection_visits_are_charged() {
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.operation == "project NX control index values" && limit.additional == 1));
 }
+
+#[test]
+fn om_text_projection_copies_the_checked_value() {
+    let file = crate::test_support::test_prt::prt_with_indexed_om_section();
+    let container = crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, file)).unwrap();
+    let rows = crate::test_support::with_decode_context(|ctx| super::super::string_values(ctx, &container)).unwrap();
+    assert!(!rows.is_empty());
+    let expected = rows[0].value.as_str().len();
+    let error = crate::test_support::resource_refusal_at(&[], ResourceDimension::WorkUnits,
+        "NX string value text", |ctx| super::super::string_values(ctx, &container));
+    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.additional == cadmpeg_core::decode::u64_from_index(expected)));
+}
