@@ -2568,12 +2568,17 @@ fn direct_shape_entry<'ctx>(
     };
     ctx.xml_attribute(part, "file", "FreeCAD shape property carriers")?
         .filter(|file| !file.is_empty())
-        .map(|file| {
-            ctx.with_scoped_storage("FreeCAD shape entry name", || {
-                ctx.copy_retained_text(file, "FreeCAD shape entry name")
-            })
-        })
+        .map(|file| shape_entry_name(ctx, file))
         .transpose()
+}
+
+fn shape_entry_name<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    file: &str,
+) -> Result<(String, ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("FreeCAD shape entry name", || {
+        ctx.copy_retained_text(file, "FreeCAD shape entry name")
+    })
 }
 
 /// Derive an exhaustive family census from successfully parsed exact-shape payloads.

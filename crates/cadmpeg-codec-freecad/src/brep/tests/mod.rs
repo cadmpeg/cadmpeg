@@ -316,7 +316,7 @@ fn shape_entry_index_refuses_on_collection_limit() {
 }
 
 #[test]
-fn shape_entry_lookup_refuses_on_materialized_limit() {
+fn shape_entry_xml_refuses_on_materialized_limit() {
     let property = PropertyRecord {
         id: crate::native::native_id("property", "Shape"),
         owner: crate::native::native_id("object", "Shape"),
