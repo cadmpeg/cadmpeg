@@ -30,8 +30,8 @@ fn assert_projection(record: &SurfacePrototypeRecord, expected: Option<[[f64; 3]
     // fixed size and no allocation, collection, entity or nesting admission.
     let events: Vec<_> = record.parameters.iter().flat_map(|_| [
         (1, "creo prototype field search"),
-        (FIELD.len() as u64, "creo prototype field name comparison"),
-        (FIELD.len() as u64, "creo prototype field name comparison"),
+        (u64::try_from(FIELD.len()).expect("fixture name fits u64"), "creo prototype field name comparison"),
+        (u64::try_from(FIELD.len()).expect("fixture name fits u64"), "creo prototype field name comparison"),
     ]).collect();
     let work: u64 = events.iter().map(|(units, _)| units).sum();
     for cap in 0..=work + 1 {
@@ -79,7 +79,7 @@ fn mixed_derivatives_project_four_triples_without_temporary_storage() {
 #[test]
 fn mixed_derivatives_preserve_absent_partial_shape_and_ambiguity_routes() {
     for dimensions in [0, 1, 3, 5] {
-        assert_projection(&record(array(dimensions, 3, vec![Some(1.0); dimensions as usize * 3])), None);
+        assert_projection(&record(array(dimensions, 3, vec![Some(1.0); usize::try_from(dimensions).expect("fixture dimension fits usize") * 3])), None);
     }
     assert_projection(&record(array(6, 2, vec![Some(1.0); 12])), None);
     for absent in [0, 11] {

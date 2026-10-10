@@ -67,11 +67,7 @@ impl InterpolationGrid {
                 &v_derivatives,
                 "creo interpolation grid vector validation",
             )?
-            && finite_vectors(
-                ctx,
-                &mixed_derivatives,
-                "creo interpolation grid vector validation",
-            )?
+            && mixed_derivatives.iter().flatten().all(|value| value.is_finite())
             && Some(points.len()) == u_count.checked_mul(v_count)
             && Some(u_derivatives.len()) == v_count.checked_mul(2)
             && Some(v_derivatives.len()) == u_count.checked_mul(2))
@@ -223,6 +219,8 @@ impl InterpolationGrid {
 
 #[cfg(test)]
 mod tests {
+    mod admission_visits;
+
     use super::InterpolationGrid;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
