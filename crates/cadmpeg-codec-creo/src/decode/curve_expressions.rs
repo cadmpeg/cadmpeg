@@ -622,11 +622,16 @@ fn joined_dependency_names(
 
 fn insert_curve_expression_property(
     ctx: &DecodeContext<'_>,
-    properties: &mut BTreeMap<String, String>,
+    properties: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
     name: &'static str,
     value: String,
 ) -> Result<(), CodecError> {
-    let key = ctx.copy_retained_text(name, "creo curve-expression property key")?;
+    let key = cadmpeg_core::text::NonBlankString::for_decode(
+        ctx,
+        ctx.copy_retained_text(name, "creo curve-expression property key")?,
+        "validate nonblank text",
+    )?
+    .ok_or_else(|| CodecError::malformed("curve expression property key is blank"))?;
     ctx.insert_btree_map(
         properties,
         key,
@@ -662,14 +667,12 @@ fn curve_expression_properties(
     ctx: &DecodeContext<'_>,
     assignment: &crate::curve::CurveExpressionAssignment,
     assignment_ordinal: usize,
-    parameter: (&str, &ParameterId),
+    parameter_name: &str,
     indices: (&BTreeMap<String, Option<usize>>, &BTreeMap<String, usize>),
     dimension_parameters: &BTreeMap<String, ParameterId>,
     cyclic_edges: &HashSet<(usize, usize)>,
 ) -> Result<BTreeMap<cadmpeg_core::text::NonBlankString, String>, CodecError> {
     let (assignment_indices_by_name, unique_assignment_indices) = indices;
-
-    let (parameter_name, parameter_id) = parameter;
 
     let Some((assignment_name, declared_unit)) = assignment.parameter_target() else {
         return Err(CodecError::malformed(
@@ -842,8 +845,7 @@ fn curve_expression_properties(
         let value = join_cyclic_dependency_names(ctx, &cyclic_dependencies)?;
         insert_curve_expression_property(ctx, &mut properties, "cyclic_dependencies", value)?;
     }
-    cadmpeg_core::text::named_entries_for_decode(ctx, parameter_id.as_str(), properties)
-        .map_err(Into::into)
+    Ok(properties)
 }
 
 fn native_curve_expression_definition(
@@ -1151,7 +1153,7 @@ pub(super) fn transfer_curve_expression_features(
                     "creo curve-expression missing name error",
                 )?));
             };
-            let parameter_id = crate::identity::compose_checked::<ParameterId>(
+            let (parameter_id, _parameter_storage) = crate::identity::compose_scoped::<ParameterId>(
                 ctx,
                 &crate::identity::DEPDB_CURVE_EXPRESSION_PARAMETER,
                 format_args!(
@@ -1274,7 +1276,7 @@ pub(super) fn transfer_curve_expression_features(
                 ctx,
                 assignment,
                 assignment_ordinal,
-                (&parameter.name, &parameter.id),
+                &parameter.name,
                 (&assignment_indices_by_name, &unique_assignment_indices),
                 dimension_parameters,
                 &cyclic_edges,
@@ -1293,7 +1295,7 @@ pub(super) fn transfer_curve_expression_features(
                     curve_expression_helix_feature_definition(helix, procedural)
                 });
         if let Some(procedural_definition) = placed_helix {
-            let curve_id = crate::identity::compose_checked::<CurveId>(
+            let (curve_id, _curve_storage) = crate::identity::compose_scoped::<CurveId>(
                 ctx,
                 &crate::identity::DEPDB_CURVE_EXPRESSION_CURVE,
                 format_args!("{}-{}", record.entity_id, record.offset),
