@@ -1343,7 +1343,7 @@ pub(in crate::decode) fn section_linear_distance_coordinate(
     let first_match = ctx.position_by(segments, matching, "creo dimension segment search")?;
     let unique_segment = first_match.map(|index| segments[index]);
     let duplicate_segment = if let Some(index) = first_match {
-        ctx.any_by(
+        index + 1 < segments.len() && ctx.any_by(
             &segments[index + 1..],
             matching,
             "creo dimension segment uniqueness",
@@ -1517,6 +1517,7 @@ pub(in crate::decode) fn resolved_section_points(
 
 #[cfg(test)]
 mod tests {
+    mod admission_visits;
     mod auxiliary_work;
     mod index_custody;
 
