@@ -515,6 +515,7 @@ fn circular_variable_blend_skips_non_finite_residual_before_valid_candidate() {
         payload.construction(),
         0.5,
         [track, track],
+        crate::eval::ContactRequest::NormalDerivative,
     )
     .expect("later finite candidate");
     assert_eq!(section.center, Point3::new(0.0, 0.0, 0.0));
@@ -1433,3 +1434,5 @@ fn a_cacheless_blend_has_the_same_partials_within_a_work_budget() {
         Ok(partials)
     );
 }
+
+mod requested;
