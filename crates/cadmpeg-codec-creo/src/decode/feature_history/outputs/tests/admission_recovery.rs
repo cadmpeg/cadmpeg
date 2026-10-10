@@ -41,7 +41,7 @@ fn new_sheet_table_recovery_admits_only_present_rows_and_stops_at_duplicate_owne
     for (tables, total) in [(Vec::new(), 0), (vec![table(99, 67)], 1), (duplicate, 2)] {
         // An absent source visits zero rows; the unrelated table visits one.
         // The second owner table proves ambiguity before the unrelated tail.
-        for cap in 0..=total {
+        crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, &if total == 0 { Vec::new() } else { vec!["creo new sheet entity tables"] }, |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
@@ -67,7 +67,13 @@ fn new_sheet_table_recovery_admits_only_present_rows_and_stops_at_duplicate_owne
             assert!(matches!(new_sheet_output_surface_id(&ctx, 40, &[], &[]),
                 Err(CodecError::ResourceLimit(actual)) if actual == original));
             assert_eq!(ctx.resource_refusal(), Some(original));
-        }
+
+            if cap < total {
+                Err(ctx.resource_refusal().expect("present visit refusal").into())
+            } else {
+                Ok::<_, CodecError>(())
+            }
+});
     }
 }
 

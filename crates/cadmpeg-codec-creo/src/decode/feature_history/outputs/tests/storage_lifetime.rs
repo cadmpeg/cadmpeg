@@ -87,7 +87,10 @@ fn returned_feature_parameter_text_transfers_only_surviving_duplicate_keys() {
     let second_key = "choice.C.value#2";
     let text_bytes = u64::try_from(first_key.len() + second_key.len() + 2)
         .expect("two surviving keys and one digit per value");
-    for cap in 0..=text_bytes {
+    crate::test_support::assert_refusal_order(
+        ResourceDimension::RetainedBytes,
+        &["creo feature parameter text"],
+        |cap| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = cap;
@@ -121,5 +124,11 @@ fn returned_feature_parameter_text_transfers_only_surviving_duplicate_keys() {
             assert!(matches!(super::super::feature_parameters(&ctx, &scan, 40),
                 Err(CodecError::ResourceLimit(actual)) if actual == original));
         }
-    }
+
+        if cap < text_bytes {
+            Err(ctx.resource_refusal().expect("retained text refusal").into())
+        } else {
+            Ok::<_, CodecError>(())
+        }
+});
 }

@@ -1584,7 +1584,7 @@ fn numerical_followup_slot_requires_one_tangent_radius() {
 }
 
 #[test]
-fn parallel_supports_resolve_each_plane_once() {
+fn parallel_supports_use_production_resolution_and_radius() {
     use crate::decode::analytic::equations::PlaneEquation;
     let planes = [
         PlaneEquation {
@@ -1604,14 +1604,50 @@ fn parallel_supports_resolve_each_plane_once() {
             normal: [0.0, 1.0, 0.0],
         },
     ];
-    let mut resolutions = [0; 4];
-    let radius = crate::decode::with_test_decode_ctx(|ctx| {
-        super::parallel_support_radius(ctx, &[0, 1, 2, 3], |index| {
-            resolutions[*index] += 1;
-            Ok::<_, cadmpeg_core::CodecError>(Some(planes[*index]))
-        })
-    })
-    .expect("service support pairs");
+    let radius = crate::test_support::assert_work_boundaries(
+        &["creo round support plane IDs", "creo round support plane pairs"],
+        |ctx| radius_from_support_planes(ctx, &planes),
+    );
     assert_eq!(radius, Some(1.0));
-    assert_eq!(resolutions, [1; 4]);
+}
+
+/// Supply caps and model carriers to the production support-plane route.
+pub(in crate::decode) fn radius_from_support_planes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    planes: &[crate::decode::analytic::equations::PlaneEquation],
+) -> Result<Option<f64>, cadmpeg_core::CodecError> {
+    use cadmpeg_ir::geometry::{Surface, SurfaceGeometry, SolvedSurfaceGeometry};
+    use cadmpeg_ir::geometry::analytic::PlaneSurface;
+    use cadmpeg_ir::math::{Point3, Vector3};
+    let cap_axis = (0..3).find(|axis| planes.iter().all(|plane| plane.normal[*axis] == 0.0))
+        .expect("fixture support normals share an orthogonal axis");
+    let cap_normal = std::array::from_fn(|axis| if axis == cap_axis { 1.0 } else { 0.0 });
+    let cap_direction = std::array::from_fn(|axis| if axis == (cap_axis + 1) % 3 { 1.0 } else { 0.0 });
+    let caps = [
+        crate::decode::analytic::equations::PlaneEquation { origin: [0.0; 3], normal: cap_normal },
+        crate::decode::analytic::equations::PlaneEquation { origin: cap_normal.map(|value| 5.0 * value), normal: cap_normal },
+    ];
+    let mut scan = crate::test_support::empty_container_scan();
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    let mut ids = Vec::new();
+    for (index, plane) in caps.iter().chain(planes).enumerate() {
+        let id = u32::try_from(index + 1).expect("fixture surface ID");
+        ids.push(id);
+        let direction = if index < 2 { cap_direction } else { cap_normal };
+        ir.model.surfaces.push(Surface {
+            id: cadmpeg_ir::ids::SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("surface ID"),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                PlaneSurface::try_new(Point3::from(plane.origin), Vector3::from(plane.normal), Vector3::from(direction))
+                    .expect("fixture plane"),
+            )),
+            source_object: None,
+        });
+    }
+    scan.features.affected_ids.push(crate::feature::rows::FeatureAffectedIds {
+        feature_id: 913,
+        kind: crate::feature::rows::AffectedIdKind::Geometry,
+        ids,
+        offset: 0,
+    });
+    super::round_support_radius(ctx, &scan, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(), 913)
 }

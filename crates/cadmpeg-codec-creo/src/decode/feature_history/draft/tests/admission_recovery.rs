@@ -66,7 +66,11 @@ fn boundary_surface_table_recovery_visits_only_present_prefix_rows() {
     for (tables, table_visits) in [(Vec::new(), 0),
         (vec![table(99, 29)], 1), (duplicate_prefix, 2)] {
         let need = 1 + table_visits;
-        for cap in 0..=need {
+        crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, &if table_visits == 0 {
+            vec!["creo boundary surface generated rows"]
+        } else {
+            vec!["creo boundary surface generated rows", "creo boundary surface entity tables"]
+        }, |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
@@ -93,7 +97,13 @@ fn boundary_surface_table_recovery_visits_only_present_prefix_rows() {
                     (ResourceDimension::WorkUnits, cap, 1, operation));
                 assert!(matches!(run(), Err(CodecError::ResourceLimit(actual)) if actual == original));
             }
-        }
+
+            if cap < need {
+                Err(ctx.resource_refusal().expect("present visit refusal").into())
+            } else {
+                Ok::<_, CodecError>(())
+            }
+});
     }
 }
 
