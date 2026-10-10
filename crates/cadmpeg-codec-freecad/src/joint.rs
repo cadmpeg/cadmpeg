@@ -1325,7 +1325,10 @@ pub(crate) mod tests {
             "fcstd:native:joint#Joint".into(),
             "fcstd:native:object#Joint".into(),
             crate::native::joint::JointBody::Grounded {
-                reference: None,
+                reference: Some(serde_json::from_value(serde_json::json!({
+                    "document": null, "document_attribute": null,
+                    "object": "fcstd:native:object#Target", "subelements": []
+                })).expect("local reference")),
                 placement: crate::native::frame::FiniteFrame::default(),
             },
             std::collections::BTreeMap::default(),
