@@ -3637,7 +3637,7 @@ fn project_draft(
     Ok(match role_groups.as_slice() {
         [neutral_plane]
             if member_of_scope(neutral_plane)
-                && group_has_entity_selection(scope, neutral_plane, entity_selection_operands) =>
+                && group_has_entity_selection(ctx, scope, neutral_plane, entity_selection_operands)? =>
         {
             if let Some(neutral_plane) =
                 selected_work_plane(ctx, scope, neutral_plane, entity_selection_operands, scopes)?
@@ -3723,12 +3723,12 @@ fn project_draft(
                 selected_work_plane(ctx, scope, second, entity_selection_operands, scopes)?;
             let (parting_tool, pull_plane) = match (first_plane, second_plane) {
                 (Some(plane), None)
-                    if !group_has_entity_selection(scope, second, entity_selection_operands) =>
+                    if !group_has_entity_selection(ctx, scope, second, entity_selection_operands)? =>
                 {
                     (second, plane)
                 }
                 (None, Some(plane))
-                    if !group_has_entity_selection(scope, first, entity_selection_operands) =>
+                    if !group_has_entity_selection(ctx, scope, first, entity_selection_operands)? =>
                 {
                     (first, plane)
                 }
@@ -3902,30 +3902,39 @@ fn project_draft_face_selection(
 }
 
 fn group_has_entity_selection(
+    ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
-) -> bool {
-    let Some(stream) = native_stream(&scope.id) else {
-        return false;
+) -> Result<bool, CodecError> {
+    ctx.charge_work(0, "find F3D group entity selection")?;
+    if group.members().is_empty() || entity_selection_operands.is_empty() {
+        return Ok(false);
+    }
+    let Some(stream) = ids::native_stream_charged(
+        ctx, &scope.id, "resolve F3D group entity scope stream",
+    )? else {
+        return Ok(false);
     };
-    group
-        .members()
-        .iter()
-        .map(|member| &member.value)
-        .enumerate()
-        .any(|(ordinal, record_index)| {
+    ctx.any_by(
+        group.members().iter().enumerate(),
+        |(ordinal, member)| {
             let Ok(ordinal) = u32::try_from(ordinal) else {
-                return false;
+                return Ok(false);
             };
-            entity_selection_operands.iter().any(|operand| {
-                native_stream(&operand.id) == Some(stream)
-                    && operand.scope_record_index == scope.record_index
+            ctx.any_by(
+                entity_selection_operands,
+                |operand| Ok(feature_stream_matches(
+                    ctx, &operand.id, Some(stream), "match F3D group entity operand stream",
+                )? && operand.scope_record_index == scope.record_index
                     && operand.group_record_index == group.record_index
                     && operand.group_member_ordinal == ordinal
-                    && operand.record_index() == *record_index
-            })
-        })
+                    && operand.record_index() == member.value),
+                "visit F3D group entity operand",
+            )
+        },
+        "visit F3D group entity member",
+    )
 }
 
 fn selected_work_plane<'a>(
