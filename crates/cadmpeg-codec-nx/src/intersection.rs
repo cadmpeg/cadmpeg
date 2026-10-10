@@ -1653,9 +1653,8 @@ pub(crate) fn support_uv_records(
         label_start = label + 1;
     }
     ctx.try_collect_vec(
-        out.into_values().map(|(record, storage)| {
-            storage.commit_value(record)
-        }),
+        out.into_values()
+            .map(|(record, storage)| storage.commit_value(record)),
         "NX support-UV records",
     )
 }

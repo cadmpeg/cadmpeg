@@ -99,7 +99,8 @@ impl SupportUvValues {
             },
         )?
         .ok();
-        data.map(|value| reservation.commit_value(value)).transpose()
+        data.map(|value| reservation.commit_value(value))
+            .transpose()
     }
 
     pub(crate) fn new(packing: SupportUvPacking, values: &[f64]) -> Result<Self, &'static str> {

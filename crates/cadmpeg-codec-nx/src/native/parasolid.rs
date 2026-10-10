@@ -378,6 +378,14 @@ pub(super) fn parasolid_groups(
     })
 }
 
+/// A malformed-record error whose message is copied under the decode budget.
+fn retained_malformed(ctx: &DecodeContext<'_>, message: &str) -> CodecError {
+    match ctx.copy_retained_text(message, "retain NX Parasolid rejection") {
+        Ok(message) => CodecError::Malformed(message),
+        Err(error) => error,
+    }
+}
+
 fn replace_group_record_id(ctx: &DecodeContext<'_>, id: &str) -> Result<String, CodecError> {
     let operation = "NX GROUP record identity";
     match ctx.split_once(id, "deltas-record", operation)? {
@@ -1393,7 +1401,7 @@ pub(super) fn parasolid_deltas_events_with_censuses(
             None => crate::deltas::census::walk(ctx, &stream.inflated)?,
         };
         let mut residual_start = 0;
-        let (covered_spans, _coverage_storage) = census.covered_spans(ctx)?;
+        let (covered_spans, _covered_spans_storage) = census.covered_spans(ctx)?;
         for &(covered_start, covered_end) in
             ctx.admit_iter(&covered_spans, "NX deltas residual spans")?
         {
@@ -3425,12 +3433,14 @@ pub(super) fn parasolid_attribute_definitions(
             slots: _scan_slots,
             payloads,
         } = crate::parasolid::attribute_definitions(ctx, &stream.inflated)?;
-        let scanned = payloads.commit_value(scanned)?;
+        payloads.commit()?;
         for definition in ctx.admit_iter(scanned, "NX attribute definitions")? {
             ctx.reserve_vec(&mut records, 1, "NX attribute definitions")?;
-            let name = definition
-                .name
-                .try_into_owned_for_decode(ctx, "retain NX attribute definition name")?;
+            let name = crate::printable_string::PrintableString::new(ctx.copy_retained_text(
+                definition.name.as_str(),
+                "retain NX attribute definition name",
+            )?)
+            .map_err(|message| retained_malformed(ctx, message))?;
             let id = parasolid_record_id(
                 ctx,
                 stream_ordinal,
@@ -3479,7 +3489,7 @@ pub(super) fn parasolid_field_names_records(
             slots: _scan_slots,
             payloads,
         } = crate::parasolid::field_names_records(ctx, &stream.inflated)?;
-        let scanned = payloads.commit_value(scanned)?;
+        payloads.commit()?;
         for record in ctx.admit_iter(scanned, "NX field names records")? {
             ctx.reserve_vec(&mut records, 1, "NX field names records")?;
             let id = parasolid_offset_record_id(
@@ -3789,7 +3799,7 @@ pub(super) fn parasolid_entity_51_records(
             slots: _scan_slots,
             payloads,
         } = crate::parasolid::entity_51_records(ctx, &stream.inflated)?;
-        let scanned = payloads.commit_value(scanned)?;
+        payloads.commit()?;
         for record in ctx.admit_iter(scanned, "NX entity 51 records")? {
             ctx.reserve_vec(&mut records, 1, "NX entity 51 records")?;
             let id = parasolid_offset_record_id(
@@ -3939,9 +3949,10 @@ pub(super) fn parasolid_entity_value_records(
                 u32::from(record.xmt),
                 record.offset,
             )?;
-            let value = record
-                .value
-                .try_into_owned_for_decode(ctx, "retain NX Parasolid string value")?;
+            let value = crate::printable_string::PrintableString::new(
+                ctx.copy_retained_text(record.value.as_str(), "retain NX Parasolid string value")?,
+            )
+            .map_err(|message| retained_malformed(ctx, message))?;
             records.strings.push(ParasolidEntity54StringRecord {
                 id,
                 stream_ordinal: ordinal,

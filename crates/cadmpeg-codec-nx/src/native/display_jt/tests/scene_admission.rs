@@ -77,8 +77,8 @@ fn scene_node_paths(
 ) -> Result<usize, CodecError> {
     let index = JtTessellationIndex::new(ctx, inputs)?;
     let graph = JtSceneGraph::new(ctx, "scene", inputs, &index)?.expect("complete scene graph");
-    let paths = graph.node_paths(ctx, 7)?.expect("resolved node paths");
-    Ok(paths.values.len())
+    let (paths, _storage) = graph.node_paths(ctx, 7)?.expect("resolved node paths");
+    Ok(paths.len())
 }
 
 #[test]
@@ -192,7 +192,14 @@ fn scene_node_families_reject_elements_independently() {
         compression: Some(compression),
         source_offset: 0,
     };
-    let version = JtVersionField::new(&format!("{:<80}", "Version 9.4 JT")).unwrap();
+    let version = match JtVersionField::new(
+        format!("{:<80}", "Version 9.4 JT"),
+        Ok::<_, std::convert::Infallible>,
+        |text, _| Ok(text.parse()),
+    ) {
+        Ok(version) => version.unwrap(),
+        Err(error) => match error {},
+    };
     let document = DisplayJtDocument {
         id: "nx:jt:document#0".into(),
         index_row: "nx:jt:row#0".into(),

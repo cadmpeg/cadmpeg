@@ -1023,20 +1023,15 @@ struct DomainCandidates {
 }
 
 pub(crate) enum BodyShapeShellVisitor<'graph, 'visit> {
-    Faces(
-        &'visit mut dyn FnMut(&'graph Node, u32, &[u32]) -> Result<ControlFlow<()>, CodecError>,
-    ),
+    Faces(&'visit mut dyn FnMut(&'graph Node, u32, &[u32]) -> Result<ControlFlow<()>, CodecError>),
     Summary(&'visit mut dyn FnMut(u32, usize) -> Result<ControlFlow<()>, CodecError>),
 }
 
 enum BodyShapeShellTraversal<'graph, 'visit> {
     Faces {
         owners: BTreeMap<u32, Vec<u32>>,
-        visit: &'visit mut dyn FnMut(
-            &'graph Node,
-            u32,
-            &[u32],
-        ) -> Result<ControlFlow<()>, CodecError>,
+        visit:
+            &'visit mut dyn FnMut(&'graph Node, u32, &[u32]) -> Result<ControlFlow<()>, CodecError>,
     },
     Summary {
         owner_counts: BTreeMap<u32, usize>,
@@ -1059,7 +1054,8 @@ impl Graph {
         let (baseline_candidate, mut baseline_storage) =
             Self::select_graph(ctx, stream, &baseline_candidates)?;
         let mut baseline = baseline_candidate;
-        let (full_candidate, full_domain_storage) = Self::select_graph(ctx, stream, &full_candidates)?;
+        let (full_candidate, full_domain_storage) =
+            Self::select_graph(ctx, stream, &full_candidates)?;
         let full_domain = full_candidate;
         drop((baseline_candidates, full_candidates, candidate_storage));
         if !baseline.is_preserved_by(ctx, &full_domain)? {
@@ -1088,7 +1084,9 @@ impl Graph {
         for group in &self.kinds {
             let mut nodes = group.iter();
             while !nodes.as_slice().is_empty() {
-                let Some(node) = ctx.next_charged(&mut nodes, "NX baseline topology preservation")? else {
+                let Some(node) =
+                    ctx.next_charged(&mut nodes, "NX baseline topology preservation")?
+                else {
                     break;
                 };
                 let Some(candidate) = other.get(ctx, node.kind, node.xmt())? else {
@@ -1770,10 +1768,7 @@ impl Graph {
     }
 
     /// Return whether any validated body-shape shell exists.
-    pub(crate) fn has_body_shape_shell(
-        &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<bool, CodecError> {
+    pub(crate) fn has_body_shape_shell(&self, ctx: &DecodeContext<'_>) -> Result<bool, CodecError> {
         let mut visit = |_, _| Ok(ControlFlow::Break(()));
         Ok(matches!(
             self.visit_body_shape_shells(ctx, BodyShapeShellVisitor::Summary(&mut visit))?,
@@ -1816,13 +1811,7 @@ impl Graph {
             match &mut traversal {
                 BodyShapeShellTraversal::Faces { owners, .. } => {
                     index_storage.with_storage(|| {
-                        ctx.push_btree_group(
-                            owners,
-                            shell,
-                            face.xmt(),
-                            FACE_INDEX,
-                            FACE_INDEX,
-                        )
+                        ctx.push_btree_group(owners, shell, face.xmt(), FACE_INDEX, FACE_INDEX)
                     })?;
                 }
                 BodyShapeShellTraversal::Summary { owner_counts, .. } => {
@@ -1923,11 +1912,10 @@ impl Graph {
                         shell,
                         fields.first_face,
                         owner_count,
-                        |face| {
-                            ctx.push_vec(&mut faces, face, "NX shell face identities")
-                        },
+                        |face| ctx.push_vec(&mut faces, face, "NX shell face identities"),
                     )
-                })? else {
+                })?
+                else {
                     return Ok(None);
                 };
                 if face_count == 0 {
@@ -2059,7 +2047,8 @@ impl Graph {
             }
             Ok(ControlFlow::Continue(()))
         };
-        let _ = self.visit_body_shape_shells(ctx, BodyShapeShellVisitor::Faces(&mut visit_shell))?;
+        let _ =
+            self.visit_body_shape_shells(ctx, BodyShapeShellVisitor::Faces(&mut visit_shell))?;
         drop(visit_shell);
         if !rings_complete || faces == 0 {
             drop(reachable_fins);

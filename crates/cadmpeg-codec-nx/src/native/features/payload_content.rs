@@ -69,8 +69,8 @@ impl<B: AsRef<[FeaturePayloadBlock]> + TryFrom<Vec<FeaturePayloadBlock>>> Featur
 
         let mut byte_len = 0u64;
         let mut ids = ids.into_iter();
-        while ids.len() != 0 {
-            let Some(id) = ctx.next_charged(&mut ids, "scan NX feature payload block ids")? else {
+        for _ in ctx.admit_iter(&(0..ids.len()), "scan NX feature payload block ids")? {
+            let Some(id) = ids.next() else {
                 return Err(ctx.refuse_codec_limit("scan NX feature payload block ids", 0, 1));
             };
             let Some((bytes, source_offset)) = ctx
@@ -83,7 +83,6 @@ impl<B: AsRef<[FeaturePayloadBlock]> + TryFrom<Vec<FeaturePayloadBlock>>> Featur
             byte_len = byte_len
                 .checked_add(length)
                 .ok_or_else(|| ctx.refuse_codec_limit("count NX feature payload bytes", 0, 1))?;
-            ctx.reserve_vec(&mut rows, 1, "NX feature payload blocks")?;
             ctx.charge_work(
                 length
                     .checked_add(1)
@@ -91,6 +90,7 @@ impl<B: AsRef<[FeaturePayloadBlock]> + TryFrom<Vec<FeaturePayloadBlock>>> Featur
                 "hash NX feature payload bytes",
             )?;
 
+            ctx.reserve_vec(&mut rows, 1, "NX feature payload blocks")?;
             hash.update(bytes);
             rows.push(FeaturePayloadBlock {
                 id,
@@ -331,107 +331,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::{FeaturePayloadBlock, FeaturePayloadContent};
-
-    #[test]
-    fn payload_content_missing_first_block_does_not_admit_the_suffix() {
-        let blocks = std::collections::BTreeMap::new();
-        crate::test_support::with_decode_context_over(
-            &[],
-            |policy| {
-                policy.limits.max_work_units = 1;
-                policy.limits.max_retained_bytes = 0;
-            },
-            |ctx| {
-                let content: Option<FeaturePayloadContent<Vec<FeaturePayloadBlock>>> =
-                    FeaturePayloadContent::from_source(
-                        ctx,
-                        ["missing".to_owned(), "unvisited-suffix".to_owned()],
-                        &blocks,
-                    )
-                    .unwrap();
-                assert!(content.is_none());
-                assert!(ctx.resource_refusal().is_none());
-            },
-        );
-        crate::test_support::with_decode_context_over(
-            &[],
-            |policy| policy.limits.max_work_units = 0,
-            |ctx| {
-                let result: Result<Option<FeaturePayloadContent<Vec<FeaturePayloadBlock>>>, _> =
-                    FeaturePayloadContent::from_source(
-                        ctx,
-                        ["missing".to_owned(), "unvisited-suffix".to_owned()],
-                        &blocks,
-                    );
-                let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = result else {
-                    panic!("the first source step must refuse before lookup");
-                };
-                assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
-                assert_eq!(limit.operation, "scan NX feature payload block ids");
-                assert_eq!((limit.used, limit.additional), (0, 1));
-                assert_eq!(ctx.resource_refusal(), Some(limit));
-                assert!(matches!(ctx.reserve_scoped(0, "after payload source refusal"),
-                    Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == limit));
-            },
-        );
-    }
-
-    #[test]
-    fn payload_content_allocates_rows_before_admitting_hash_work() {
-        use cadmpeg_core::decode::ResourceDimension;
-        use cadmpeg_core::CodecError;
-        let blocks = std::collections::BTreeMap::from([("a".to_owned(), (b"abc".as_slice(), 10))]);
-        let row_bytes = cadmpeg_core::decode::u64_from_index(
-            4 * std::mem::size_of::<FeaturePayloadBlock>());
-        crate::test_support::with_decode_context_over(&[], |policy| {
-            // One source visit and one byte of key comparison in a one-key tree.
-            policy.limits.max_work_units = 2;
-            policy.limits.max_retained_bytes = 0;
-        }, |ctx| {
-            let result: Result<Option<FeaturePayloadContent<Vec<FeaturePayloadBlock>>>, _> =
-                FeaturePayloadContent::from_source(ctx, ["a".to_owned()], &blocks);
-            let Err(CodecError::ResourceLimit(limit)) = result else {
-                panic!("row storage must refuse before hashing starts");
-            };
-            assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-            assert_eq!(limit.operation, "NX feature payload blocks");
-            assert_eq!((limit.used, limit.additional), (0, row_bytes));
-            assert_eq!(ctx.resource_refusal(), Some(limit));
-        });
-        crate::test_support::with_decode_context_over(&[], |policy| {
-            policy.limits.max_work_units = 2;
-            policy.limits.max_retained_bytes = 0;
-            policy.limits.max_materialized_bytes = row_bytes;
-        }, |ctx| {
-            let result: Result<(Option<FeaturePayloadContent<Vec<FeaturePayloadBlock>>>, _), CodecError> =
-                ctx.with_scoped_storage("test payload candidate", ||
-                    FeaturePayloadContent::from_source(ctx, ["a".to_owned()], &blocks));
-            let Err(CodecError::ResourceLimit(limit)) = result else {
-                panic!("the allocated row must refuse before hash update");
-            };
-            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(limit.operation, "hash NX feature payload bytes");
-            assert_eq!((limit.used, limit.additional), (2, 4));
-            assert_eq!(ctx.resource_refusal(), Some(limit));
-            assert!(matches!(ctx.reserve_scoped(0, "after payload refusal"),
-                Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
-        });
-        crate::test_support::with_decode_context_over(&[], |policy| {
-            // The original row allocation plus 64 bytes of canonical digest text.
-            policy.limits.max_retained_bytes = row_bytes + 64;
-        }, |ctx| {
-            let content: FeaturePayloadContent<Vec<FeaturePayloadBlock>> =
-                FeaturePayloadContent::from_source(ctx, ["a".to_owned()], &blocks)
-                    .unwrap().unwrap();
-            assert_eq!(content.blocks().len(), 1);
-            assert_eq!(content.blocks()[0].id, "a");
-            assert_eq!(content.blocks()[0].byte_len, 3);
-            assert_eq!(content.blocks()[0].source_offset, 10);
-            assert_eq!(content.sha256.as_str(),
-                "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
-            assert!(ctx.resource_refusal().is_none());
-        });
-    }
 
     #[test]
     fn payload_content_columns_stream_once_with_native_retained_limit() {

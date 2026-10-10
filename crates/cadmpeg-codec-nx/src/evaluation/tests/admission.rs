@@ -120,8 +120,7 @@ fn census_phase_peak(saved: usize, replay: usize) -> u64 {
     fn set_bytes<T>(count: usize) -> usize {
         let nodes = if count == 0 { 0 } else { (count - 1) / 5 + 1 };
         let alignment = std::mem::align_of::<T>().max(std::mem::align_of::<usize>());
-        nodes * (11 * std::mem::size_of::<T>()
-            + 16 * std::mem::size_of::<usize>() + 2 * alignment)
+        nodes * (11 * std::mem::size_of::<T>() + 16 * std::mem::size_of::<usize>() + 2 * alignment)
     }
     cadmpeg_core::decode::u64_from_index(
         4 * std::mem::size_of::<&cadmpeg_ir::features::Feature>()
@@ -131,7 +130,6 @@ fn census_phase_peak(saved: usize, replay: usize) -> u64 {
     )
 }
 
-
 fn assert_census_refusal_is_sticky(
     ir: &cadmpeg_ir::CadIr,
     policy: &cadmpeg_core::decode::DecodePolicy,
@@ -139,37 +137,54 @@ fn assert_census_refusal_is_sticky(
     operation: &str,
     need: u64,
 ) {
-    crate::test_support::with_decode_context_over(&[], |actual| *actual = *policy, |ctx| {
-        let error = evaluate_saved_body_census(ctx, ir).unwrap_err();
-        let CodecError::ResourceLimit(limit) = error else {
-            panic!("the original caller must retain the resource refusal");
-        };
-        assert_eq!(limit.dimension, dimension);
-        assert_eq!(limit.operation, operation);
-        assert_eq!(limit.used + limit.additional, need);
-        assert_eq!(ctx.resource_refusal(), Some(limit.clone()));
-        assert!(matches!(ctx.charge_work(0, "census sticky refusal control"),
-            Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
-    });
+    crate::test_support::with_decode_context_over(
+        &[],
+        |actual| *actual = *policy,
+        |ctx| {
+            let error = evaluate_saved_body_census(ctx, ir).unwrap_err();
+            let CodecError::ResourceLimit(limit) = error else {
+                panic!("the original caller must retain the resource refusal");
+            };
+            assert_eq!(limit.dimension, dimension);
+            assert_eq!(limit.operation, operation);
+            assert_eq!(limit.used + limit.additional, need);
+            assert_eq!(ctx.resource_refusal(), Some(limit.clone()));
+            assert!(
+                matches!(ctx.charge_work(0, "census sticky refusal control"),
+            Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+            );
+        },
+    );
 }
 
 #[test]
 fn verified_census_releases_saved_index_before_output_growth() {
-    use cadmpeg_ir::features::{BodySelection, DistinctMembers, FeatureDefinition,
-        FeatureEvaluation, FeatureOperation};
+    use cadmpeg_ir::features::{
+        BodySelection, DistinctMembers, FeatureDefinition, FeatureEvaluation, FeatureOperation,
+    };
     let mut ir = complete_block_ir();
     ir.model.bodies = (0..32)
         .map(|index| super::model_body(&format!("test:model:entity#body-{index:02}")))
         .collect();
-    let expected = ir.model.bodies.iter().map(|body| body.id.clone()).collect::<Vec<_>>();
-    let members = DistinctMembers::try_from(expected.clone(),
-        &cadmpeg_test_support::service_decode_context()).unwrap();
+    let expected = ir
+        .model
+        .bodies
+        .iter()
+        .map(|body| body.id.clone())
+        .collect::<Vec<_>>();
+    let members = DistinctMembers::try_from(
+        expected.clone(),
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .unwrap();
     ir.model.features[0].evaluation = FeatureEvaluation::new(
         FeatureDefinition::Operation(FeatureOperation::BaseFeature {
             bodies: BodySelection::Resolved {
-                bodies: members.clone(), native: "synthetic:test:census".to_owned(),
+                bodies: members.clone(),
+                native: "synthetic:test:census".to_owned(),
             },
-        }), members,
+        }),
+        members,
     );
     let peak = census_phase_peak(32, 32);
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
@@ -185,18 +200,32 @@ fn verified_census_releases_saved_index_before_output_growth() {
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::MaterializedBytes
             && limit.operation == "NX selected body replay identity"));
-    assert_census_refusal_is_sticky(&ir, &policy, ResourceDimension::MaterializedBytes,
-        "NX selected body replay identity", peak);
+    assert_census_refusal_is_sticky(
+        &ir,
+        &policy,
+        ResourceDimension::MaterializedBytes,
+        "NX selected body replay identity",
+        peak,
+    );
 }
 
 #[test]
 fn mismatched_census_releases_replay_index_before_saved_output_growth() {
     let mut ir = complete_block_ir();
-    let expected_rederived = ir.model.features[0].evaluation.outputs().as_slice().to_vec();
+    let expected_rederived = ir.model.features[0]
+        .evaluation
+        .outputs()
+        .as_slice()
+        .to_vec();
     ir.model.bodies = (0..32)
         .map(|index| super::model_body(&format!("test:model:entity#saved-{index:02}")))
         .collect();
-    let expected_saved = ir.model.bodies.iter().map(|body| body.id.clone()).collect::<Vec<_>>();
+    let expected_saved = ir
+        .model
+        .bodies
+        .iter()
+        .map(|body| body.id.clone())
+        .collect::<Vec<_>>();
     let peak = census_phase_peak(32, 1);
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
     policy.limits.max_materialized_bytes = peak;
@@ -212,8 +241,13 @@ fn mismatched_census_releases_replay_index_before_saved_output_growth() {
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::MaterializedBytes
             && limit.operation == "NX new body replay identity"));
-    assert_census_refusal_is_sticky(&ir, &policy, ResourceDimension::MaterializedBytes,
-        "NX new body replay identity", peak);
+    assert_census_refusal_is_sticky(
+        &ir,
+        &policy,
+        ResourceDimension::MaterializedBytes,
+        "NX new body replay identity",
+        peak,
+    );
 }
 
 #[test]
@@ -228,7 +262,10 @@ fn unsupported_census_keeps_boundary_identity_after_scratch_release() {
     let crate::evaluation::BodyCensusEvaluation::Unsupported { feature, reason } = result else {
         panic!("a new block with unresolved suppression must retain its boundary");
     };
-    assert_eq!(reason, crate::evaluation::UnsupportedBodyCensusReason::UnresolvedSuppression);
+    assert_eq!(
+        reason,
+        crate::evaluation::UnsupportedBodyCensusReason::UnresolvedSuppression
+    );
     assert_eq!(feature.id, source.id);
     assert_eq!(feature.name, source.name);
     assert_eq!(feature.ordinal, source.ordinal);
@@ -239,6 +276,11 @@ fn unsupported_census_keeps_boundary_identity_after_scratch_release() {
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "NX census boundary feature identity"));
-    assert_census_refusal_is_sticky(&ir, &policy, ResourceDimension::RetainedBytes,
-        "NX census boundary feature identity", cadmpeg_core::decode::u64_from_index(source.id.as_str().len()));
+    assert_census_refusal_is_sticky(
+        &ir,
+        &policy,
+        ResourceDimension::RetainedBytes,
+        "NX census boundary feature identity",
+        cadmpeg_core::decode::u64_from_index(source.id.as_str().len()),
+    );
 }

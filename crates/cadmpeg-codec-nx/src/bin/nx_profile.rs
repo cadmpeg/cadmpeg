@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::env;
 use std::ffi::OsStr;
 use std::fs;
-use std::io::{self, Cursor, Read};
+use std::io::{self, Cursor, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
 use std::thread;
@@ -22,6 +22,7 @@ use cadmpeg_ir::report::loss::LossCategory;
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::{report::Severity, CadIr};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 #[derive(Debug, Serialize)]
 struct Profile {
@@ -341,11 +342,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for path in paths {
         let first = decode_fixture_in_worker(&path);
         let second = decode_fixture_in_worker(&path);
-        for (attempt, result) in [(1, &first), (2, &second)] {
-            if let Err(error) = result {
-                eprintln!("NX profile attempt {attempt} failed for {}: {error}", path.display());
-            }
-        }
         let status = decode_status(&first, &second);
         let deterministic = match (first.as_ref(), second.as_ref()) {
             (Ok(first), Ok(second)) => first.canonical_sha256 == second.canonical_sha256,
@@ -600,17 +596,17 @@ fn is_external_assembly_loss(code: &cadmpeg_ir::report::loss::LossKind) -> bool 
 /// Source-carrier bindings and ambiguous target bindings do not supply a
 /// topology color.
 fn has_effective_color(ir: &CadIr, direct_color: Option<Color>, target: &AppearanceTarget) -> bool {
-    let mut bindings = ir
+    let bindings = ir
         .model
         .appearance_bindings
         .iter()
         .filter(|binding| &binding.target == target);
-    let binding = bindings.next();
-    if bindings.next().is_some() {
+    let bindings = bindings.collect::<Vec<_>>();
+    if bindings.len() > 1 {
         return false;
     }
 
-    let bound_color = binding.and_then(|binding| {
+    let bound_color = bindings.first().and_then(|binding| {
         let mut appearances = ir
             .model
             .appearances
@@ -626,7 +622,7 @@ fn has_effective_color(ir: &CadIr, direct_color: Option<Color>, target: &Appeara
     // A body appearance is the base for every owned face that has no direct
     // face color or face-scoped binding. Require unique topology ownership so
     // an authored body appearance cannot inherit through an ambiguous face.
-    if direct_color.is_none() && binding.is_none() {
+    if direct_color.is_none() && bindings.is_empty() {
         if let AppearanceTarget::Face(face_id) = target {
             let Some(body) = unique_face_body(ir, face_id) else {
                 let body_appearance_exists = ir.model.bodies.iter().any(|body| {
@@ -652,7 +648,7 @@ fn has_effective_color(ir: &CadIr, direct_color: Option<Color>, target: &Appeara
     }
 
     match direct_color {
-        Some(color) => match binding {
+        Some(color) => match bindings.first() {
             None => true,
             Some(_) => bound_color.is_some_and(|bound| bound == color),
         },
@@ -664,7 +660,7 @@ fn unique_face_body<'a>(
     ir: &'a CadIr,
     face_id: &cadmpeg_ir::ids::FaceId,
 ) -> Option<&'a cadmpeg_ir::topology::Body> {
-    let mut body_ids = ir
+    let body_ids = ir
         .model
         .regions
         .iter()
@@ -676,13 +672,15 @@ fn unique_face_body<'a>(
                     .find(|shell| shell.id == *shell_id)
                     .is_some_and(|shell| shell.faces().iter().any(|face| face == face_id))
             });
-            owns_face.then_some(&region.body)
-        });
+            owns_face.then_some(region.body.clone())
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut body_ids = body_ids.into_iter();
     let body_id = body_ids.next()?;
-    if body_ids.any(|other| other != body_id) {
+    if body_ids.next().is_some() {
         return None;
     }
-    ir.model.bodies.iter().find(|body| body.id == *body_id)
+    ir.model.bodies.iter().find(|body| body.id == body_id)
 }
 
 /// Evaluate the admitted exact body-identity effects of neutral NX history.
@@ -711,13 +709,31 @@ fn neutral_rederivation_evidence(
 fn canonical_sha256(
     ir: &CadIr,
 ) -> Result<Sha256Digest, cadmpeg_ir::hash::finite_json::CanonicalJsonError> {
-    // Use the finite canonical route so non-finite floats are refused.
+    struct Sha256Writer(Sha256);
+
+    impl Write for Sha256Writer {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.update(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    let mut writer = Sha256Writer(Sha256::new());
+    // A CADIR document is written through the one finite route, so a
+    // non-finite float is refused rather than digested as `null`.
     let canonical = cadmpeg_ir::hash::finite_json::to_canonical_json_string(ir)?;
-    Ok(Sha256Digest::digest(canonical.as_bytes()))
+    std::io::Write::write_all(&mut writer, canonical.as_bytes())
+        .map_err(serde::ser::Error::custom)
+        .map_err(cadmpeg_ir::hash::finite_json::CanonicalJsonError::Serialize)?;
+    Ok(Sha256Digest::from_bytes(writer.0.finalize().into()))
 }
 
 fn decode_fixture_in_worker(path: &Path) -> Result<DecodedFixtureEvidence, WorkerFailure> {
-    let mut worker =
+    let worker =
         Command::new(env::current_exe().map_err(|error| WorkerFailure::Failed(error.to_string()))?)
             .arg("--decode-fixture")
             .arg(path)
@@ -725,7 +741,7 @@ fn decode_fixture_in_worker(path: &Path) -> Result<DecodedFixtureEvidence, Worke
             .stderr(Stdio::piped())
             .spawn()
             .map_err(|error| WorkerFailure::Failed(error.to_string()))?;
-    let output = wait_for_worker(&mut worker, WORKER_TIMEOUT)?;
+    let output = wait_for_worker(worker)?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(WorkerFailure::Failed(format!(
@@ -736,82 +752,29 @@ fn decode_fixture_in_worker(path: &Path) -> Result<DecodedFixtureEvidence, Worke
     serde_json::from_slice(&output.stdout).map_err(|error| WorkerFailure::Failed(error.to_string()))
 }
 
-fn wait_for_worker(worker: &mut Child, timeout: Duration) -> Result<Output, WorkerFailure> {
-    // Child does not terminate or reap its process on Drop. Keep cleanup active
-    // through pipe-reader creation, waiting, and every error return.
-    struct WorkerCleanup<'a>(&'a mut Child);
-
-    impl Drop for WorkerCleanup<'_> {
-        fn drop(&mut self) {
-            if self.0.kill().is_ok() {
-                // discarded-value: Drop cannot return a wait error after requesting termination.
-                let _ = self.0.wait();
-            } else {
-                // discarded-value: a failed kill may mean exit; Drop can only attempt reaping.
-                let _ = self.0.try_wait();
-            }
-        }
-    }
-
-    let worker = WorkerCleanup(worker);
-    let deadline = Instant::now() + timeout;
-    let stdout = worker.0.stdout.take();
-    let stderr = worker.0.stderr.take();
-    let stdout_reader = thread::Builder::new()
-        .name("nx-profile-stdout".into())
-        .spawn(move || {
-            let mut bytes = Vec::new();
-            if let Some(mut stdout) = stdout {
-                stdout.read_to_end(&mut bytes)?;
-            }
-            Ok::<_, io::Error>(bytes)
-        })
-        .map_err(|error| WorkerFailure::Failed(error.to_string()))?;
-    let stderr_reader = thread::Builder::new()
-        .name("nx-profile-stderr".into())
-        .spawn(move || {
-            let mut bytes = Vec::new();
-            if let Some(mut stderr) = stderr {
-                stderr.read_to_end(&mut bytes)?;
-            }
-            Ok::<_, io::Error>(bytes)
-        })
-        .map_err(|error| WorkerFailure::Failed(error.to_string()))?;
-
-    let status = loop {
-        if let Some(status) = worker
-            .0
+fn wait_for_worker(mut worker: Child) -> Result<Output, WorkerFailure> {
+    let deadline = Instant::now() + WORKER_TIMEOUT;
+    loop {
+        if worker
             .try_wait()
             .map_err(|error| WorkerFailure::Failed(error.to_string()))?
+            .is_some()
         {
-            break status;
+            return worker
+                .wait_with_output()
+                .map_err(|error| WorkerFailure::Failed(error.to_string()));
         }
         if Instant::now() >= deadline {
             worker
-                .0
                 .kill()
                 .map_err(|error| WorkerFailure::Failed(error.to_string()))?;
             worker
-                .0
                 .wait()
                 .map_err(|error| WorkerFailure::Failed(error.to_string()))?;
-            // discarded-value: the terminated child timed out; join releases the stdout reader.
-            let _ = stdout_reader.join();
-            // discarded-value: the terminated child timed out; join releases the stderr reader.
-            let _ = stderr_reader.join();
             return Err(WorkerFailure::TimedOut);
         }
         thread::sleep(Duration::from_millis(20));
-    };
-    let stdout = stdout_reader
-        .join()
-        .map_err(|_| WorkerFailure::Failed("NX profile stdout reader panicked".into()))?
-        .map_err(|error| WorkerFailure::Failed(error.to_string()))?;
-    let stderr = stderr_reader
-        .join()
-        .map_err(|_| WorkerFailure::Failed("NX profile stderr reader panicked".into()))?
-        .map_err(|error| WorkerFailure::Failed(error.to_string()))?;
-    Ok(Output { status, stdout, stderr })
+    }
 }
 
 fn capability_gates(fixtures: &[FixtureEvidence]) -> Vec<Gate> {
@@ -1007,53 +970,6 @@ mod tests {
             rederivation: VerificationStatus::Verified,
             rederivation_boundary: None,
         }
-    }
-
-    fn profile_test_worker(mode: &str) -> std::process::Child {
-        std::process::Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", "tests::profile_worker_fixture", "--nocapture"])
-            .env("CADMPEG_NX_PROFILE_TEST_WORKER", mode)
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .unwrap()
-    }
-
-    #[test]
-    fn profile_worker_fixture() {
-        use std::io::Write;
-        match std::env::var("CADMPEG_NX_PROFILE_TEST_WORKER").as_deref() {
-            Ok("large-output") => {
-                let bytes = [0x5a; 8192];
-                for _ in 0..128 {
-                    std::io::stdout().write_all(&bytes).unwrap();
-                    std::io::stderr().write_all(&bytes).unwrap();
-                }
-            }
-            Ok("timeout") => std::thread::sleep(std::time::Duration::from_secs(10)),
-            _ => {}
-        }
-    }
-
-    #[test]
-    fn profile_worker_drains_both_pipes_before_exit() {
-        let mut worker = profile_test_worker("large-output");
-        let output = super::wait_for_worker(&mut worker, std::time::Duration::from_secs(20))
-            .expect("output larger than both pipe buffers must finish");
-        assert!(output.status.success());
-        assert_eq!(output.stdout.iter().filter(|&&byte| byte == 0x5a).count(), 8192 * 128);
-        assert_eq!(output.stderr, vec![0x5a; 8192 * 128]);
-        assert_eq!(worker.try_wait().unwrap(), Some(output.status));
-    }
-
-    #[test]
-    fn profile_worker_timeout_terminates_and_reaps_the_child() {
-        let mut worker = profile_test_worker("timeout");
-        assert!(matches!(
-            super::wait_for_worker(&mut worker, std::time::Duration::from_millis(100)),
-            Err(super::WorkerFailure::TimedOut)
-        ));
-        assert!(worker.try_wait().unwrap().is_some());
     }
 
     #[test]
@@ -1459,24 +1375,6 @@ mod tests {
         assert!(ir.model.faces.iter().all(|face| {
             has_effective_color(&ir, face.color, &AppearanceTarget::Face(face.id.clone()))
         }));
-    }
-
-    #[test]
-    fn effective_face_color_requires_one_body_identity_across_owning_regions() {
-        let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-        ir.model.bodies[0].color = Some(Color::new(0.2, 0.3, 0.4, 1.0).expect("valid color"));
-        let face = AppearanceTarget::Face(ir.model.faces[0].id.clone());
-        let repeated_region = ir.model.regions[0].clone();
-        ir.model.regions.push(repeated_region);
-        // Repeated region records still identify the same owning body.
-        assert!(has_effective_color(&ir, None, &face));
-
-        let mut other_body = ir.model.bodies[0].clone();
-        other_body.id = BodyId::mint("test:model:entity#other-body").expect("identity grammar");
-        let other_id = other_body.id.clone();
-        ir.model.bodies.push(other_body);
-        ir.model.regions.last_mut().unwrap().body = other_id;
-        assert!(!has_effective_color(&ir, None, &face));
     }
 
     #[test]

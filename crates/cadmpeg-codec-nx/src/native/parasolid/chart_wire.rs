@@ -146,11 +146,11 @@ impl TryFrom<ChartWire> for ParasolidChartRecord {
         if wire.parameter_errors != [MISSING_PARAMETER, MISSING_PARAMETER] {
             return Err("parameter_errors: both slots must encode the missing-parameter value");
         }
-        let points = wire
+        let points: Vec<_> = wire
             .points
             .into_iter()
             .map(|[x, y, z]| Point3::new(x, y, z))
-            .collect::<Vec<_>>();
+            .collect();
         let data = match (wire.point_layout, wire.native_parameters, wire.ext_support_uv) {
             (ChartPointLayout::Xyz3, None, [None, None]) => SourceChartData::xyz3(&points)?,
             (ChartPointLayout::Ext11, Some(parameters), support_uv) => SourceChartData::ext11(&points, &parameters, support_uv)?,

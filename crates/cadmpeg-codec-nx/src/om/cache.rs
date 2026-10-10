@@ -490,9 +490,7 @@ mod tests {
         }
     }
 
-    fn indexed_section_with_invalid_second_fixed_record<'a>(
-        bytes: &'a [u8],
-    ) -> IndexedSection<'a> {
+    fn indexed_section_with_invalid_second_fixed_record<'a>(bytes: &'a [u8]) -> IndexedSection<'a> {
         IndexedSection {
             base: 0,
             entity_index_offset: 0,
@@ -566,9 +564,7 @@ mod tests {
             } else {
                 std::mem::size_of::<CachedRange>()
             };
-            let candidate_bytes = cadmpeg_core::decode::u64_from_index(
-                2 * cached_record_size,
-            );
+            let candidate_bytes = cadmpeg_core::decode::u64_from_index(2 * cached_record_size);
             crate::test_support::with_decode_context_over(
                 &[],
                 |policy| {
@@ -576,12 +572,9 @@ mod tests {
                     policy.limits.max_materialized_bytes = candidate_bytes;
                 },
                 |ctx| {
-                    let (layout, storage) = IndexedSectionLayout::from_section(
-                        ctx,
-                        &section,
-                        &source,
-                    )
-                    .expect("partial candidate storage fits its scoped cap");
+                    let (layout, storage) =
+                        IndexedSectionLayout::from_section(ctx, &section, &source)
+                            .expect("partial candidate storage fits its scoped cap");
                     assert!(layout.is_none());
                     drop(storage);
                     let probe = ctx
@@ -620,8 +613,10 @@ mod tests {
                     Ok(())
                 },
             );
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == operation && limit.additional == 1));
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == operation && limit.additional == 1)
+            );
 
             crate::test_support::with_decode_context_over(
                 &[],
@@ -685,17 +680,19 @@ mod tests {
             },
         ];
         for section in sections {
-        let error = crate::test_support::with_decode_context_over(
-            &[],
-            |policy| policy.limits.max_work_units = 1,
-            |ctx| IndexedSectionLayout::from_section(ctx, &section, &source).map(|_| ()),
-        )
+            let error = crate::test_support::with_decode_context_over(
+                &[],
+                |policy| policy.limits.max_work_units = 1,
+                |ctx| IndexedSectionLayout::from_section(ctx, &section, &source).map(|_| ()),
+            )
             .expect_err("the first cached definition name copy exceeds admitted work");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
                 && limit.operation == "NX cached definition name"
                 && limit.used == 1
-                && limit.additional == 1));
+                && limit.additional == 1)
+            );
         }
     }
 
@@ -724,10 +721,12 @@ mod tests {
             |ctx| SectionLayout::from_section(ctx, &section, &source).map(|_| ()),
         )
         .expect_err("the first cached label value copy exceeds admitted work");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
                 && limit.operation == "NX cached operation label"
                 && limit.used == 1
-                && limit.additional == 1));
+                && limit.additional == 1)
+        );
     }
 }

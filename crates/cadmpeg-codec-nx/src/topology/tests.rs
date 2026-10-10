@@ -59,7 +59,8 @@ fn one_point_graph_storage() -> (Vec<u8>, u64, u64) {
     fn tree_node_bytes<K, V>() -> usize {
         11 * (std::mem::size_of::<K>() + std::mem::size_of::<V>())
             + 16 * std::mem::size_of::<usize>()
-            + 2 * std::mem::align_of::<K>().max(std::mem::align_of::<V>())
+            + 2 * std::mem::align_of::<K>()
+                .max(std::mem::align_of::<V>())
                 .max(std::mem::align_of::<usize>())
     }
     let mut bytes = record(29, 40);
@@ -80,22 +81,33 @@ fn topology_graph_promotions_preserve_node_then_index_refusals() {
     let (bytes, node_bytes, index_bytes) = one_point_graph_storage();
     for (cap, operation, used, additional) in [
         (node_bytes - 1, "NX topology node bytes", 0, node_bytes),
-        (node_bytes + index_bytes - 1, "NX topology node index", node_bytes, index_bytes),
+        (
+            node_bytes + index_bytes - 1,
+            "NX topology node index",
+            node_bytes,
+            index_bytes,
+        ),
     ] {
-        crate::test_support::with_decode_context_over(&bytes, |policy| {
-            policy.limits.max_retained_bytes = cap;
-        }, |ctx| {
-            let error = Graph::parse(ctx, &bytes).unwrap_err();
-            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-                panic!("the selected graph must refuse at the first binding promotion");
-            };
-            assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-            assert_eq!(limit.operation, operation);
-            assert_eq!((limit.used, limit.additional), (used, additional));
-            assert_eq!(ctx.resource_refusal(), Some(limit));
-            assert!(matches!(ctx.reserve_scoped(0, "after graph promotion refusal"),
-                Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == limit));
-        });
+        crate::test_support::with_decode_context_over(
+            &bytes,
+            |policy| {
+                policy.limits.max_retained_bytes = cap;
+            },
+            |ctx| {
+                let error = Graph::parse(ctx, &bytes).unwrap_err();
+                let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+                    panic!("the selected graph must refuse at the first binding promotion");
+                };
+                assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+                assert_eq!(limit.operation, operation);
+                assert_eq!((limit.used, limit.additional), (used, additional));
+                assert_eq!(ctx.resource_refusal(), Some(limit));
+                assert!(
+                    matches!(ctx.reserve_scoped(0, "after graph promotion refusal"),
+                Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == limit)
+                );
+            },
+        );
     }
 }
 
@@ -104,37 +116,45 @@ fn topology_graph_promotes_only_selected_backing_and_keeps_identity() {
     use cadmpeg_core::decode::ResourceDimension;
     let (bytes, node_bytes, index_bytes) = one_point_graph_storage();
     let retained = node_bytes + index_bytes;
-    crate::test_support::with_decode_context_over(&bytes, |policy| {
-        policy.limits.max_retained_bytes = retained;
-    }, |ctx| {
-        let graph = Graph::parse(ctx, &bytes).unwrap();
-        let [point] = graph.of_kind(NodeKind::Point) else {
-            panic!("the admitted point must remain the sole point record");
-        };
-        assert_eq!(point.xmt(), 11);
-        assert_eq!(point.pos(), 0);
-        assert_eq!(point.bytes, bytes);
-        assert_eq!(graph.get(ctx, NodeKind::Point, 11).unwrap().unwrap().pos(), 0);
-        assert_eq!(graph.at_pos(ctx, 0).unwrap().unwrap().xmt(), 11);
-        assert!(ctx.resource_refusal().is_none());
-        let error = ctx.collection_vec::<u8>(1, "next graph output slot").unwrap_err();
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-            panic!("the selected graph fills the retained allowance exactly");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-        assert_eq!(limit.operation, "next graph output slot");
-        assert_eq!((limit.used, limit.additional), (retained, 1));
-        assert_eq!(ctx.resource_refusal(), Some(limit));
-    });
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            policy.limits.max_retained_bytes = retained;
+        },
+        |ctx| {
+            let graph = Graph::parse(ctx, &bytes).unwrap();
+            let [point] = graph.of_kind(NodeKind::Point) else {
+                panic!("the admitted point must remain the sole point record");
+            };
+            assert_eq!(point.xmt(), 11);
+            assert_eq!(point.pos(), 0);
+            assert_eq!(point.bytes, bytes);
+            assert_eq!(
+                graph.get(ctx, NodeKind::Point, 11).unwrap().unwrap().pos(),
+                0
+            );
+            assert_eq!(graph.at_pos(ctx, 0).unwrap().unwrap().xmt(), 11);
+            assert!(ctx.resource_refusal().is_none());
+            let error = ctx
+                .collection_vec::<u8>(1, "next graph output slot")
+                .unwrap_err();
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+                panic!("the selected graph fills the retained allowance exactly");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+            assert_eq!(limit.operation, "next graph output slot");
+            assert_eq!((limit.used, limit.additional), (retained, 1));
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        },
+    );
 }
 
 #[test]
 fn topology_candidates_release_each_completed_selection_phase() {
     use cadmpeg_core::decode::ResourceDimension;
     let (bytes, node_bytes, index_bytes) = one_point_graph_storage();
-    let candidate_slots = cadmpeg_core::decode::u64_from_index(
-        4 * std::mem::size_of::<NodeCandidate>(),
-    );
+    let candidate_slots =
+        cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<NodeCandidate>());
     // Both scanned domains, one current selected candidate vector, and both
     // materialized graphs coexist at the final full-domain index growth.
     // Later, both graphs and the referenced-node root coexist. Select the
@@ -145,45 +165,61 @@ fn topology_candidates_release_each_completed_selection_phase() {
     let reference_root = cadmpeg_core::decode::u64_from_index(
         11 * (std::mem::size_of::<(super::ReferenceRole, u32)>()
             + std::mem::size_of::<Option<&Node>>())
-            + 16 * std::mem::size_of::<usize>() + 2 * reference_alignment,
+            + 16 * std::mem::size_of::<usize>()
+            + 2 * reference_alignment,
     );
     let graph_bytes = node_bytes + index_bytes;
     let selection_peak = 3 * candidate_slots + 2 * graph_bytes;
     let reference_peak = reference_root + 2 * graph_bytes;
     let peak = selection_peak.max(reference_peak);
-    crate::test_support::with_decode_context_over(&bytes, |policy| {
-        policy.limits.max_materialized_bytes = peak;
-        policy.limits.max_retained_bytes = node_bytes + index_bytes;
-    }, |ctx| {
-        let graph = Graph::parse(ctx, &bytes).unwrap();
-        let [point] = graph.of_kind(NodeKind::Point) else {
-            panic!("selection must keep the original complete point");
-        };
-        assert_eq!(point.xmt(), 11);
-        assert_eq!(point.pos(), 0);
-        assert_eq!(point.bytes, bytes);
-        assert!(ctx.resource_refusal().is_none());
-    });
-    crate::test_support::with_decode_context_over(&bytes, |policy| {
-        policy.limits.max_materialized_bytes = peak - 1;
-    }, |ctx| {
-        let error = Graph::parse(ctx, &bytes).unwrap_err();
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-            panic!("the peak topology workspace must require its final byte");
-        };
-        let (operation, additional) = if selection_peak >= reference_peak {
-            ("NX topology node index",
-                cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<Node>()))
-        } else {
-            ("NX topology full-domain references", reference_root)
-        };
-        assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
-        assert_eq!(limit.operation, operation);
-        assert_eq!((limit.used, limit.additional), (peak - additional, additional));
-        assert_eq!(ctx.resource_refusal(), Some(limit));
-        assert!(matches!(ctx.reserve_scoped(0, "after topology selection refusal"),
-            Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == limit));
-    });
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            policy.limits.max_materialized_bytes = peak;
+            policy.limits.max_retained_bytes = node_bytes + index_bytes;
+        },
+        |ctx| {
+            let graph = Graph::parse(ctx, &bytes).unwrap();
+            let [point] = graph.of_kind(NodeKind::Point) else {
+                panic!("selection must keep the original complete point");
+            };
+            assert_eq!(point.xmt(), 11);
+            assert_eq!(point.pos(), 0);
+            assert_eq!(point.bytes, bytes);
+            assert!(ctx.resource_refusal().is_none());
+        },
+    );
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            policy.limits.max_materialized_bytes = peak - 1;
+        },
+        |ctx| {
+            let error = Graph::parse(ctx, &bytes).unwrap_err();
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+                panic!("the peak topology workspace must require its final byte");
+            };
+            let (operation, additional) = if selection_peak >= reference_peak {
+                (
+                    "NX topology node index",
+                    cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<Node>()),
+                )
+            } else {
+                ("NX topology full-domain references", reference_root)
+            };
+            assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+            assert_eq!(limit.operation, operation);
+            assert_eq!(
+                (limit.used, limit.additional),
+                (peak - additional, additional)
+            );
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+            assert!(
+                matches!(ctx.reserve_scoped(0, "after topology selection refusal"),
+            Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == limit)
+            );
+        },
+    );
 }
 
 #[test]
@@ -226,45 +262,58 @@ fn referenced_graph_rebuild_admits_only_real_node_moves() {
     // Each second key is searched before growth and again before insertion.
     // Both kind vectors are initially empty, so neither relocates slots.
     let rebuild_work = cadmpeg_core::decode::u64_from_index(
-        2 + 4 * (root_bytes::<(NodeKind, u32), usize>()
-            + root_bytes::<usize, (NodeKind, usize)>())
+        2 + 4 * (root_bytes::<(NodeKind, u32), usize>() + root_bytes::<usize, (NodeKind, usize)>())
             + 2 * (std::mem::size_of::<NodeKind>()
-                + std::mem::size_of::<u32>() + std::mem::size_of::<usize>()),
+                + std::mem::size_of::<u32>()
+                + std::mem::size_of::<usize>()),
     );
     let work = prefix.used + rebuild_work;
-    crate::test_support::with_decode_context_over(&bytes, |policy| {
-        policy.limits.max_work_units = work;
-    }, |ctx| {
-        let graph = Graph::parse(ctx, &bytes).unwrap();
-        let [vertex] = graph.of_kind(NodeKind::Vertex) else {
-            panic!("the baseline vertex must survive the rebuild");
-        };
-        let [selected] = graph.of_kind(NodeKind::Point) else {
-            panic!("the referenced full-domain point must survive the rebuild");
-        };
-        assert_eq!((vertex.xmt(), vertex.pos()), (2, 0));
-        assert_eq!((selected.xmt(), selected.pos()), (11, 28));
-        assert_eq!(selected.u32_at(4), Some(u32::MAX));
-        assert_eq!(selected.bytes, point);
-        assert_eq!(graph.keys.len(), 2);
-        assert_eq!(graph.by_pos.len(), 2);
-        assert!(ctx.resource_refusal().is_none());
-    });
-    crate::test_support::with_decode_context_over(&bytes, |policy| {
-        policy.limits.max_work_units = work - 1;
-    }, |ctx| {
-        let error = Graph::parse(ctx, &bytes).unwrap_err();
-        let CodecError::ResourceLimit(limit) = error else {
-            panic!("the final offset-index comparison must require its full work");
-        };
-        let additional = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>());
-        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(limit.operation, super::INDEX_OPERATION);
-        assert_eq!((limit.used, limit.additional), (work - additional, additional));
-        assert_eq!(ctx.resource_refusal(), Some(limit));
-        assert!(matches!(ctx.reserve_scoped(0, "after graph rebuild refusal"),
-            Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
-    });
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            policy.limits.max_work_units = work;
+        },
+        |ctx| {
+            let graph = Graph::parse(ctx, &bytes).unwrap();
+            let [vertex] = graph.of_kind(NodeKind::Vertex) else {
+                panic!("the baseline vertex must survive the rebuild");
+            };
+            let [selected] = graph.of_kind(NodeKind::Point) else {
+                panic!("the referenced full-domain point must survive the rebuild");
+            };
+            assert_eq!((vertex.xmt(), vertex.pos()), (2, 0));
+            assert_eq!((selected.xmt(), selected.pos()), (11, 28));
+            assert_eq!(selected.u32_at(4), Some(u32::MAX));
+            assert_eq!(selected.bytes, point);
+            assert_eq!(graph.keys.len(), 2);
+            assert_eq!(graph.by_pos.len(), 2);
+            assert!(ctx.resource_refusal().is_none());
+        },
+    );
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            policy.limits.max_work_units = work - 1;
+        },
+        |ctx| {
+            let error = Graph::parse(ctx, &bytes).unwrap_err();
+            let CodecError::ResourceLimit(limit) = error else {
+                panic!("the final offset-index comparison must require its full work");
+            };
+            let additional = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>());
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(limit.operation, super::INDEX_OPERATION);
+            assert_eq!(
+                (limit.used, limit.additional),
+                (work - additional, additional)
+            );
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+            assert!(
+                matches!(ctx.reserve_scoped(0, "after graph rebuild refusal"),
+            Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+            );
+        },
+    );
 }
 
 #[test]
@@ -399,7 +448,10 @@ fn topology_rejects_shell_with_broken_face_ownership_chain() {
             crate::topology::Graph::parse(ctx, &independent_previous)
         })
         .unwrap();
-        assert_eq!(body_shape_shell_count(&independent_previous_graph, ctx).unwrap(), 1);
+        assert_eq!(
+            body_shape_shell_count(&independent_previous_graph, ctx).unwrap(),
+            1
+        );
         assert!(independent_previous_graph
             .has_body_shape_shell(ctx)
             .unwrap());
@@ -745,10 +797,8 @@ fn body_shape_presence_stops_at_the_first_valid_shell() {
     put_ref(&mut unrelated_point, 2, 24);
     put_vec3(&mut unrelated_point, 16, [0.01, 0.02, 0.03]);
     first_stream.extend(unrelated_point);
-    let first_graph = crate::test_support::with_decode_context(|ctx| {
-        Graph::parse(ctx, &first_stream)
-    })
-    .unwrap();
+    let first_graph =
+        crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &first_stream)).unwrap();
 
     let mut trailing_stream = topology_partition_stream();
     let mut trailing_shell = record(13, 24);
@@ -766,10 +816,9 @@ fn body_shape_presence_stops_at_the_first_valid_shell() {
         put_ref(&mut trailing_shell, offset, reference);
     }
     trailing_stream.extend(trailing_shell);
-    let trailing_graph = crate::test_support::with_decode_context(|ctx| {
-        Graph::parse(ctx, &trailing_stream)
-    })
-    .unwrap();
+    let trailing_graph =
+        crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &trailing_stream))
+            .unwrap();
     assert_eq!(first_graph.of_kind(NodeKind::Shell).len(), 1);
     assert_eq!(trailing_graph.of_kind(NodeKind::Shell).len(), 2);
     assert_eq!(first_graph.keys.len(), trailing_graph.keys.len());
@@ -778,8 +827,8 @@ fn body_shape_presence_stops_at_the_first_valid_shell() {
         trailing_graph.of_kind(NodeKind::Face).len()
     );
 
-    let allows_presence = |graph: &Graph, work_limit| {
-        match crate::test_support::with_decode_context_over(
+    let allows_presence =
+        |graph: &Graph, work_limit| match crate::test_support::with_decode_context_over(
             &[],
             |policy| policy.limits.max_work_units = work_limit,
             |ctx| graph.has_body_shape_shell(ctx),
@@ -791,8 +840,7 @@ fn body_shape_presence_stops_at_the_first_valid_shell() {
                 false
             }
             result => panic!("presence query did not return true or a work refusal: {result:?}"),
-        }
-    };
+        };
 
     let mut high = 1_u64;
     while !allows_presence(&first_graph, high) {
@@ -1036,14 +1084,8 @@ fn topology_keeps_nonmonotone_linked_face_order_in_native_identity() {
         assert_eq!(result.ir().model.regions[0].id.as_str(), "nx:s0:region#12");
         assert_eq!(result.ir().model.faces.len(), 2);
         // Finalization sorts arena identities; shell membership keeps record order.
-        assert_eq!(
-            result.ir().model.faces[0].id.as_str(),
-            "nx:s0:face#2"
-        );
-        assert_eq!(
-            result.ir().model.faces[1].id.as_str(),
-            "nx:s0:face#4"
-        );
+        assert_eq!(result.ir().model.faces[0].id.as_str(), "nx:s0:face#2");
+        assert_eq!(result.ir().model.faces[1].id.as_str(), "nx:s0:face#4");
         assert_eq!(
             result.ir().model.shells[0]
                 .faces()
@@ -1572,8 +1614,9 @@ fn intersection_data_duplicates_admit_identity_search_and_keep_only_output_stora
     crate::test_support::with_decode_context_over(
         &[],
         |policy| {
-            policy.limits.max_retained_bytes =
-                4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::CompositeCurve>());
+            policy.limits.max_retained_bytes = 4 * cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<super::CompositeCurve>(),
+            );
         },
         |ctx| {
             let curves = intersection_data_curves(ctx, &stream).unwrap();
@@ -1583,30 +1626,39 @@ fn intersection_data_duplicates_admit_identity_search_and_keep_only_output_stora
     );
     // Core admits the first B-tree insertion as three node passes. The node
     // bound has eleven keys, sixteen pointer words, and two alignment pads.
-    let first_insert_work = cadmpeg_core::decode::u64_from_index(3 * (
-        11 * std::mem::size_of::<u32>()
+    let first_insert_work = cadmpeg_core::decode::u64_from_index(
+        3 * (11 * std::mem::size_of::<u32>()
             + 16 * std::mem::size_of::<usize>()
-            + 2 * std::mem::align_of::<usize>()
-    ));
+            + 2 * std::mem::align_of::<usize>()),
+    );
     let before_duplicate = cadmpeg_core::decode::u64_from_index(stream.len()) + first_insert_work;
     crate::test_support::with_decode_context_over(
         &[],
         |policy| policy.limits.max_work_units = before_duplicate + 3,
         |ctx| {
             let error = intersection_data_curves(ctx, &stream).unwrap_err();
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::WorkUnits
                     && limit.operation == "NX intersection identities"
-                    && limit.used == before_duplicate && limit.additional == 4));
+                    && limit.used == before_duplicate && limit.additional == 4)
+            );
         },
     );
-    for dimension in [ResourceDimension::WorkUnits, ResourceDimension::MaterializedBytes] {
+    for dimension in [
+        ResourceDimension::WorkUnits,
+        ResourceDimension::MaterializedBytes,
+    ] {
         let error = crate::test_support::resource_refusal_at(
-            &[], dimension, "NX intersection identities",
+            &[],
+            dimension,
+            "NX intersection identities",
             |ctx| intersection_data_curves(ctx, &stream),
         );
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == dimension && limit.operation == "NX intersection identities"));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == dimension && limit.operation == "NX intersection identities")
+        );
     }
 }
 
@@ -1637,20 +1689,27 @@ fn topology_preservation_stops_before_the_unused_node_suffix() {
 #[test]
 fn topology_ambiguous_boundaries_stop_before_the_unused_candidate_suffix() {
     let stream = vec![0_u8; 4098];
-    let nodes: Vec<_> = (0..4096).map(|pos| NodeCandidate {
-        kind: NodeKind::Point,
-        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(2).unwrap(),
-        pos,
-        end: if pos == 0 { stream.len() - 1 } else { stream.len() },
-        shift: 0,
-    }).collect();
+    let nodes: Vec<_> = (0..4096)
+        .map(|pos| NodeCandidate {
+            kind: NodeKind::Point,
+            xmt: crate::framing::xmt_reference::NonNullXmt::try_from(2).unwrap(),
+            pos,
+            end: if pos == 0 {
+                stream.len() - 1
+            } else {
+                stream.len()
+            },
+            shift: 0,
+        })
+        .collect();
     crate::test_support::with_decode_context_over(
         &[],
         // The full overlap cluster requires 4096 visits. Its boundary test
         // stops after the unbounded first candidate and two bounded candidates.
         |policy| policy.limits.max_work_units = 4099,
         |ctx| {
-            let (selected, storage) = Graph::select_non_overlapping_candidates(ctx, &stream, &nodes).unwrap();
+            let (selected, storage) =
+                Graph::select_non_overlapping_candidates(ctx, &stream, &nodes).unwrap();
             assert!(selected.is_empty());
             assert!(ctx.resource_refusal().is_none());
             drop(selected);
@@ -1860,7 +1919,16 @@ fn topology_body_census_stops_after_the_first_face_without_loops() {
     for (shell_xmt, face_xmt) in [(10, 11), (12, 13)] {
         let mut shell = record(13, crate::layout::shell_node::LEN);
         put_ref(&mut shell, 2, shell_xmt);
-        for (offset, target) in [(8, 1), (10, 2), (12, 1), (14, face_xmt), (16, 1), (18, 1), (20, 3), (22, 1)] {
+        for (offset, target) in [
+            (8, 1),
+            (10, 2),
+            (12, 1),
+            (14, face_xmt),
+            (16, 1),
+            (18, 1),
+            (20, 3),
+            (22, 1),
+        ] {
             put_ref(&mut shell, offset, target);
         }
         stream.extend(shell);
@@ -1895,9 +1963,15 @@ fn topology_body_census_stops_after_the_first_face_without_loops() {
     );
     crate::test_support::with_decode_context_over(
         &[],
-        |policy| policy.limits.max_work_units = limit.used + 1 + lookup_work
-            + 1 + 2 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>())
-            + 1 + lookup_work,
+        |policy| {
+            policy.limits.max_work_units = limit.used
+                + 1
+                + lookup_work
+                + 1
+                + 2 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>())
+                + 1
+                + lookup_work
+        },
         |ctx| {
             assert_eq!(graph.body_topology_census(ctx).unwrap(), (false, 2));
             assert!(ctx.resource_refusal().is_none());
@@ -1911,11 +1985,13 @@ fn topology_fin_visit_refuses_before_building_the_identity_index() {
         &[],
         |policy| policy.limits.max_work_units = 0,
         |ctx| {
-            let error = Graph::default().fin_ring(
-                ctx,
-                3,
-                crate::framing::xmt_reference::XmtTarget::from_wire(2).unwrap(),
-            ).unwrap_err();
+            let error = Graph::default()
+                .fin_ring(
+                    ctx,
+                    3,
+                    crate::framing::xmt_reference::XmtTarget::from_wire(2).unwrap(),
+                )
+                .unwrap_err();
             let FaceLoopError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) = error else {
                 panic!("the FIN visit must refuse before its identity insertion");
             };

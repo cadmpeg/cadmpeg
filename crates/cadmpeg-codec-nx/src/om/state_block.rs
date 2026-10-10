@@ -134,10 +134,8 @@ impl<'a, 'ctx> OperationStateBlock<'a, 'ctx> {
     pub(super) fn into_status_table(
         self,
         ctx: &DecodeContext<'_>,
-    ) -> Result<
-        Option<(OperationStateStatusTable<'a, 'ctx>, ScopedReservation<'ctx>)>,
-        CodecError,
-    > {
+    ) -> Result<Option<(OperationStateStatusTable<'a, 'ctx>, ScopedReservation<'ctx>)>, CodecError>
+    {
         let Self {
             offset,
             body,
@@ -224,13 +222,11 @@ fn locate_messages<'a>(
     let mut located = Vec::new();
     let (initial, last, mut remaining) = match body {
         BlockBody::Statuses { messages, .. } => (messages.as_slice(), &[][..], messages.len()),
-        BlockBody::Messages(messages) => {
-            (
-                messages.initial(),
-                std::slice::from_ref(messages.last()),
-                messages.len(),
-            )
-        }
+        BlockBody::Messages(messages) => (
+            messages.initial(),
+            std::slice::from_ref(messages.last()),
+            messages.len(),
+        ),
     };
     let mut messages = initial.iter().chain(last.iter()).copied();
     while remaining != 0 {
@@ -596,10 +592,12 @@ mod tests {
                 let error = OperationStateBlock::new(ctx, 100, Vec::new(), vec![message, message])
                     .and_then(|block| block.unwrap().into_messages(ctx))
                     .expect_err("the second message visit must be admitted separately");
-                assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
                     if limit.operation == "NX state message traversal"
                         && limit.used == second_visit_cap
-                        && limit.additional == 1));
+                        && limit.additional == 1)
+                );
             },
         );
         crate::test_support::with_decode_context_over(
@@ -611,10 +609,11 @@ mod tests {
                     .expect("exact message visit cap fits")
             },
             |ctx| {
-                let messages = OperationStateBlock::new(ctx, 100, Vec::new(), vec![message, message])
-                    .and_then(|block| block.unwrap().into_messages(ctx))
-                    .expect("both message visits fit exactly")
-                    .expect("message block is nonempty");
+                let messages =
+                    OperationStateBlock::new(ctx, 100, Vec::new(), vec![message, message])
+                        .and_then(|block| block.unwrap().into_messages(ctx))
+                        .expect("both message visits fit exactly")
+                        .expect("message block is nonempty");
                 assert_eq!(messages.len(), 2);
                 assert_eq!(ctx.resource_refusal(), None);
             },
@@ -631,15 +630,10 @@ mod tests {
         .body();
 
         crate::test_support::with_decode_context(|ctx| {
-            let (lane, token_storage) = StateSlotLane::read(
-                ctx,
-                &[2, 1, 0x11, 0xff, 2, 0x11],
-                0,
-                6,
-                0,
-            )
-                .unwrap()
-                .unwrap();
+            let (lane, token_storage) =
+                StateSlotLane::read(ctx, &[2, 1, 0x11, 0xff, 2, 0x11], 0, 6, 0)
+                    .unwrap()
+                    .unwrap();
             let message = crate::test_support::with_decode_context(|ctx| {
                 OperationStateMessage::read(
                     ctx,
@@ -653,10 +647,7 @@ mod tests {
             .body();
             let entries = vec![
                 StateTableEntry::Status(row),
-                StateTableEntry::Slots(StateSlotTokens::new(
-                    lane.into_slots(),
-                    token_storage,
-                )),
+                StateTableEntry::Slots(StateSlotTokens::new(lane.into_slots(), token_storage)),
                 StateTableEntry::Status(row),
             ];
             let block = OperationStateBlock::new(ctx, 100, entries, vec![message])
@@ -676,29 +667,21 @@ mod tests {
             drop(positioned);
             drop(entry_storage);
 
-            let (lane, token_storage) = StateSlotLane::read(
-                ctx,
-                &[2, 1, 0x11, 0xff, 2, 0x11],
-                0,
-                6,
-                0,
-            )
-            .unwrap()
-            .unwrap();
+            let (lane, token_storage) =
+                StateSlotLane::read(ctx, &[2, 1, 0x11, 0xff, 2, 0x11], 0, 6, 0)
+                    .unwrap()
+                    .unwrap();
             let entries = vec![
                 StateTableEntry::Status(row),
-                StateTableEntry::Slots(StateSlotTokens::new(
-                    lane.into_slots(),
-                    token_storage,
-                )),
+                StateTableEntry::Slots(StateSlotTokens::new(lane.into_slots(), token_storage)),
                 StateTableEntry::Status(row),
             ];
             let messages = OperationStateBlock::new(ctx, 100, entries, vec![message])
-                    .unwrap()
-                    .unwrap()
-                    .into_messages(ctx)
-                    .unwrap()
-                    .unwrap();
+                .unwrap()
+                .unwrap()
+                .into_messages(ctx)
+                .unwrap()
+                .unwrap();
             assert_eq!((messages[0].offset(), messages[0].end_offset()), (112, 125));
         });
     }
@@ -1018,12 +1001,17 @@ mod tests {
             &[],
             |policy| policy.limits.max_work_units = 0,
             |ctx| {
-                let error = super::locate_messages(ctx, 100,
+                let error = super::locate_messages(
+                    ctx,
+                    100,
                     &super::BlockBody::Messages(super::NonEmpty::new([message]).unwrap()),
-                ).expect_err("the first input-sized visit must be admitted");
-                assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                )
+                .expect_err("the first input-sized visit must be admitted");
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
                     if limit.operation == "NX state message traversal"
-                        && limit.used == 0 && limit.additional == 1));
+                        && limit.used == 0 && limit.additional == 1)
+                );
             },
         );
         crate::test_support::with_decode_context_over(

@@ -158,12 +158,7 @@ fn operation_state_group_prefix_stops_before_unvisited_suffix() {
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "NX selected state group path traversal",
         |ctx| {
-            operation_state_group_table_before_counter_map(
-                ctx,
-                &bytes,
-                bytes.len(),
-                usize::MAX - 1,
-            )
+            operation_state_group_table_before_counter_map(ctx, &bytes, bytes.len(), usize::MAX - 1)
         },
     );
     let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
@@ -403,7 +398,10 @@ fn state_group_materialization_releases_the_predecessor_index() {
             };
             assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
             assert_eq!(limit.operation, "NX operation-state group path");
-            assert_eq!(limit.used, u64_from_index(candidates + predecessors + index));
+            assert_eq!(
+                limit.used,
+                u64_from_index(candidates + predecessors + index)
+            );
             assert_eq!(limit.additional, u64_from_index(path));
             assert_eq!(ctx.resource_refusal(), Some(limit));
         },

@@ -1,7 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
 
+#[test]
+fn parameterized_expression_refuses_scoped_limit() {
+    let bytes = b"p1 + 2";
+
+    crate::test_support::with_decode_context_over(
+        bytes,
+        |policy| {
+            policy.limits.max_materialized_bytes = 0;
+        },
+        |ctx| {
+            let error = super::evaluate_parameterized_expression(ctx, "p1 + 2", |_| Ok(Some(3.0)))
+                .unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+            );
+        },
+    );
+}
+
 use crate::test_support::test_om::offset_only_indexed_om_section;
 use crate::test_support::test_om::offset_only_indexed_om_section_with_control;
+use crate::test_support::test_om::offset_only_indexed_om_section_with_index_values;
 use crate::test_support::test_om::size_framed_om_section;
 use crate::test_support::test_prt::prt_with_arrangement_attribute;
 use crate::test_support::test_prt::prt_with_arrangements;
@@ -9,6 +29,35 @@ use crate::test_support::test_prt::prt_with_indexed_om_section;
 use crate::test_support::test_prt::prt_with_named_payloads;
 use crate::test_support::test_prt::prt_with_size_framed_om_section;
 use cadmpeg_test_support::EditableDecodeResult;
+
+#[test]
+fn data_block_reference_wire_preserves_feature_token_and_rejects_mismatch() {
+    for (value, raw) in [
+        (0, vec![0]),
+        (0, vec![0x80, 0]),
+        (0, vec![0x90, 0, 0]),
+        (6466, vec![0x90, 0x19, 0x42]),
+    ] {
+        let wire = serde_json::json!({"id":"reference", "data_block":"block", "ordinal":0,
+            "object_id":value, "raw_object_id":raw, "source_offset":12});
+        let record: super::DataBlockReference = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(record).unwrap(), wire);
+    }
+    for (value, raw) in [
+        (1, vec![0]),
+        (0, vec![0xff]),
+        (0, vec![0xf0, 0]),
+        (0, vec![0x90, 0]),
+        (0, vec![0, 0]),
+    ] {
+        let wire = serde_json::json!({"id":"reference", "data_block":"block", "ordinal":0,
+            "object_id":value, "raw_object_id":raw, "source_offset":12});
+        assert!(serde_json::from_value::<super::DataBlockReference>(wire)
+            .unwrap_err()
+            .to_string()
+            .contains("object_id/raw_object_id"));
+    }
+}
 
 mod expression_wire;
 mod native_units;
@@ -20,6 +69,124 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use crate::container;
 
 use crate::NxCodec;
+
+#[test]
+fn om_offset_store_values_precede_unique_product_anchor() {
+    let mut bytes = vec![0, 0];
+    bytes.extend_from_slice(&7u32.to_le_bytes());
+    bytes.extend_from_slice(&0x1020u32.to_le_bytes());
+    bytes.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0tail");
+    assert_eq!(
+        crate::test_support::with_decode_context(|ctx| crate::om::offset_store_control_form(
+            ctx, &bytes, None
+        )
+        .map(|form| form.map(|(form, _storage)| form)))
+        .unwrap(),
+        Some(crate::om::OffsetStoreControlForm::ProductAnchored {
+            leading_value: Some(
+                crate::om::control_leading_value::ControlLeadingValue::from_wire(2, 0).unwrap()
+            ),
+            values: crate::om::nonempty::NonEmpty::new([7, 0x1020]).unwrap(),
+        })
+    );
+
+    let mut nonzero_leading = vec![0x34, 0x12, 0x00];
+    nonzero_leading.extend_from_slice(&7u32.to_le_bytes());
+    nonzero_leading.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0tail");
+    assert_eq!(
+        crate::test_support::with_decode_context(|ctx| crate::om::offset_store_control_form(
+            ctx,
+            &nonzero_leading,
+            None
+        )
+        .map(|form| form.map(|(form, _storage)| form)))
+        .unwrap(),
+        Some(crate::om::OffsetStoreControlForm::ProductAnchored {
+            leading_value: Some(
+                crate::om::control_leading_value::ControlLeadingValue::from_wire(3, 0x1234)
+                    .unwrap()
+            ),
+            values: crate::om::nonempty::NonEmpty::new([7]).unwrap(),
+        })
+    );
+
+    let mut duplicate = bytes;
+    duplicate.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0");
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::om::offset_store_control_form(ctx, &duplicate, None)
+            .map(|form| form.map(|(form, _storage)| form))
+    })
+    .unwrap()
+    .is_none());
+    assert_eq!(
+        crate::test_support::with_decode_context(|ctx| super::control_index_data_block(
+            ctx, 2, 700, 496
+        ))
+        .unwrap()
+        .as_deref(),
+        Some("nx:om-data-blocks-2:block#496")
+    );
+    assert!(
+        crate::test_support::with_decode_context(|ctx| super::control_index_data_block(
+            ctx, 2, 700, 700
+        ))
+        .unwrap()
+        .is_none()
+    );
+}
+
+fn control_form_route_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let file =
+        prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", offset_only_indexed_om_section())]);
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.as_slice())
+    })
+    .expect("control form fixture");
+    crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx).map(|_| ()))
+        .expect("cached control form section");
+    let forms = crate::test_support::with_decode_context(|ctx| {
+        super::data_block_control_forms(ctx, &container)
+    })
+    .expect("control form projection");
+    assert_eq!(forms.len(), 1);
+    assert_eq!(forms[0].id, "nx:om-data-block-control-forms:form#0");
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| super::data_block_control_forms(ctx, &container).unwrap_err(),
+    )
+}
+
+fn control_class_route_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let file =
+        prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", offset_only_indexed_om_section())]);
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, file))
+            .expect("control class fixture");
+    let classes = crate::test_support::with_decode_context(|ctx| {
+        super::data_block_control_class_references(ctx, &container)
+    })
+    .expect("control class projection");
+    assert_eq!(classes.len(), 1);
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            super::data_block_control_class_references(ctx, &container)
+                .expect_err("control class resource refusal")
+        },
+    )
+}
 
 fn data_block_reference_route_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
@@ -215,6 +382,324 @@ fn data_block_reference_route_refuses_work_limit() {
 }
 
 #[test]
+fn control_class_route_refuses_collection_limit() {
+    let error = control_class_route_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn control_class_route_refuses_retained_limit() {
+    let error = control_class_route_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn control_class_route_refuses_scoped_limit() {
+    let error = control_class_route_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn control_class_route_refuses_work_limit() {
+    let error = control_class_route_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn data_block_control_form_route_refuses_collection_limit() {
+    let early = control_form_route_refusal(|policy| policy.limits.max_collection_items = 4);
+    assert!(
+        matches!(early, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && limit.operation == "NX nonempty mapped entries")
+    );
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "NX data block control forms",
+        |limit| {
+            Err::<(), _>(control_form_route_refusal(|policy| {
+                policy.limits.max_collection_items = limit;
+            }))
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && limit.operation == "NX data block control forms"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn data_block_control_form_route_refuses_retained_limit() {
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain NX control form id",
+        |limit| {
+            Err::<(), _>(control_form_route_refusal(|policy| {
+                policy.limits.max_retained_bytes = limit;
+            }))
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && limit.operation == "retain NX control form id"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn data_block_control_form_route_refuses_work_limit() {
+    // The cached indexed-section traversal is admitted before control-field work.
+    let early = control_form_route_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(
+        matches!(early, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && limit.operation == "NX indexed OM section visits")
+    );
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "retain NX control form id",
+        |limit| {
+            Err::<(), _>(control_form_route_refusal(|policy| {
+                policy.limits.max_work_units = limit;
+            }))
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && limit.operation == "retain NX control form id"),
+        "{error:?}"
+    );
+}
+
+fn control_reference_route_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let control = [0xe0, 0, 0, 0, 1, 0xc0, 0, 0, 1];
+    let file = prt_with_named_payloads(&[(
+        "/Root/UG_PART/UG_PART",
+        offset_only_indexed_om_section_with_control(&control),
+    )]);
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.as_slice())
+    })
+    .expect("control reference fixture");
+    crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx).map(|_| ()))
+        .expect("cached control reference section");
+    let references = crate::test_support::with_decode_context(|ctx| {
+        super::data_block_control_references(ctx, &container)
+    })
+    .expect("control reference projection");
+    assert_eq!(references.len(), 2);
+    assert!(references[0]
+        .id
+        .starts_with("nx:om-data-block-control-references-0:reference#"));
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| super::data_block_control_references(ctx, &container).unwrap_err(),
+    )
+}
+
+#[test]
+fn data_block_control_reference_route_refuses_collection_limit() {
+    let error = control_reference_route_refusal(|policy| policy.limits.max_collection_items = 3);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && limit.operation == "NX data block control references"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn data_block_control_reference_route_refuses_retained_limit() {
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain NX control reference id",
+        |limit| {
+            Err::<(), _>(control_reference_route_refusal(|policy| {
+                policy.limits.max_retained_bytes = limit;
+            }))
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && limit.operation == "retain NX control reference id"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn data_block_control_reference_route_refuses_scoped_limit() {
+    let error = control_reference_route_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+            && limit.operation == "NX control reference block id"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn data_block_control_reference_route_refuses_work_limit() {
+    // The cached indexed-section traversal is admitted before control-field work.
+    let early = control_reference_route_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(
+        matches!(early, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && limit.operation == "NX indexed OM section visits"),
+        "{early:?}"
+    );
+
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "NX control reference block id",
+        |limit| {
+            Err::<(), _>(control_reference_route_refusal(|policy| {
+                policy.limits.max_work_units = limit;
+            }))
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && limit.operation == "NX control reference block id"),
+        "{error:?}"
+    );
+}
+
+fn control_value_route_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let file =
+        prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", offset_only_indexed_om_section())]);
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.as_slice())
+    })
+    .expect("offset-store control fixture");
+    crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx).map(|_| ()))
+        .expect("cached offset-store section");
+    let values = crate::test_support::with_decode_context(|ctx| {
+        super::data_block_control_values(ctx, &container)
+    })
+    .expect("control-value projection");
+    assert_eq!(values.len(), 2);
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| super::data_block_control_values(ctx, &container).unwrap_err(),
+    )
+}
+
+#[test]
+fn data_block_control_value_route_refuses_collection_limit() {
+    let early = control_value_route_refusal(|policy| policy.limits.max_collection_items = 4);
+    assert!(
+        matches!(early, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && limit.operation == "NX nonempty mapped entries")
+    );
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "NX data block control values",
+        |limit| {
+            Err::<(), _>(control_value_route_refusal(|policy| {
+                policy.limits.max_collection_items = limit;
+            }))
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && limit.operation == "NX data block control values"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn data_block_control_value_route_refuses_retained_limit() {
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain NX control value id",
+        |limit| {
+            Err::<(), _>(control_value_route_refusal(|policy| {
+                policy.limits.max_retained_bytes = limit;
+            }))
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && limit.operation == "retain NX control value id"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn data_block_control_value_route_refuses_scoped_limit() {
+    let error = control_value_route_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+            && limit.operation == "NX control value block id"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn data_block_control_value_route_refuses_work_limit() {
+    // The cached indexed-section traversal is admitted before control-field work.
+    let early = control_value_route_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(
+        matches!(early, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && limit.operation == "NX indexed OM section visits")
+    );
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "NX control value block id",
+        |limit| {
+            Err::<(), _>(control_value_route_refusal(|policy| {
+                policy.limits.max_work_units = limit;
+            }))
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && limit.operation == "NX control value block id"),
+        "{error:?}"
+    );
+}
+
+#[test]
 fn native_catalog_separates_offset_only_blocks_from_object_records() {
     let file =
         prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", offset_only_indexed_om_section())]);
@@ -349,38 +834,288 @@ fn data_blocks_refuses_identity_work_at_caller_limit() {
     let container = crate::test_support::with_decode_context_over(
         &[0],
         |_| {},
-        |ctx| crate::container::scan_bytes(ctx, file.as_slice()),
+        |ctx| container::scan_bytes(ctx, &file),
     )
-    .expect("control route fixture");
+    .unwrap();
     crate::test_support::with_decode_context_over(
         &[0],
         |_| {},
-        |ctx| {
-            let (sections, storage) = container.indexed_om_sections(ctx)?;
-            drop(sections);
-            drop(storage);
-            Ok::<(), cadmpeg_core::CodecError>(())
+        |ctx| container.indexed_om_sections(ctx).map(|_| ()),
+    )
+    .unwrap();
+
+    // The section-count traversal precedes each data-block identity digest.
+    let early = crate::test_support::with_decode_context_over(
+        &file,
+        |policy| {
+            policy.limits.max_work_units = 0;
         },
-    )
-    .expect("cached control section");
-    let values = crate::test_support::with_decode_context_over(
-        &file,
-        |_| {},
-        |ctx| super::data_blocks(ctx, &container),
-    )
-    .expect("route succeeds before refusal");
-    assert!(!values.is_empty());
-    let error = crate::test_support::resource_refusal_at(
-        &file,
+        |ctx| super::data_blocks(ctx, &container).expect_err("work refusal"),
+    );
+    assert!(
+        matches!(
+            early,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                    && limit.operation == "NX data block section count"
+        ),
+        "{early:?}"
+    );
+
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "nx data block identity digest",
-        |ctx| super::data_blocks(ctx, &container),
+        |limit| {
+            crate::test_support::with_decode_context_over(
+                &file,
+                |policy| policy.limits.max_work_units = limit,
+                |ctx| super::data_blocks(ctx, &container),
+            )
+        },
+    );
+    assert!(
+        matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                    && limit.operation == "nx data block identity digest"
+        ),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn control_form_wire_checks_nonempty_counts_and_derived_length() {
+    let json = r#"{"id":"c","data_block":"b","kind":"zero_prefixed","value_count":2,"byte_len":8,"source_offset":0}"#;
+    let value: super::DataBlockControlForm = serde_json::from_str(json).unwrap();
+    assert_eq!(serde_json::to_string(&value).unwrap(), json);
+    for (field, invalid) in [("value_count", 0), ("byte_len", 0), ("byte_len", 7)] {
+        let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+        wire[field] = invalid.into();
+        assert!(serde_json::from_value::<super::DataBlockControlForm>(wire)
+            .unwrap_err()
+            .to_string()
+            .contains(field));
+    }
+    let json = r#"{"id":"c","data_block":"b","kind":"product_anchored","value_count":2,"byte_len":1,"source_offset":0}"#;
+    let value: super::DataBlockControlForm = serde_json::from_str(json).unwrap();
+    assert_eq!(serde_json::to_string(&value).unwrap(), json);
+    for field in ["value_count", "byte_len"] {
+        let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+        wire[field] = 0.into();
+        assert!(serde_json::from_value::<super::DataBlockControlForm>(wire)
+            .unwrap_err()
+            .to_string()
+            .contains(field));
+    }
+}
+
+#[test]
+fn control_leading_value_preserves_wire_and_rejects_width_mismatch() {
+    let json = r#"{"id":"c","data_block":"b","kind":"product_anchored","value_count":2,"leading_value_width":2,"leading_value":0,"byte_len":26,"source_offset":0}"#;
+    let value: super::DataBlockControlForm = serde_json::from_str(json).unwrap();
+    assert_eq!(serde_json::to_string(&value).unwrap(), json);
+    let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+    wire["leading_value_width"] = 4.into();
+    assert!(
+        serde_json::from_value::<super::DataBlockControlForm>(wire.clone())
+            .unwrap_err()
+            .to_string()
+            .contains("leading_value_width")
+    );
+    wire["leading_value_width"] = 2.into();
+    wire["leading_value"] = 65536.into();
+    assert!(serde_json::from_value::<super::DataBlockControlForm>(wire)
+        .unwrap_err()
+        .to_string()
+        .contains("leading_value"));
+}
+
+fn control_index_value_route_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let file = prt_with_named_payloads(&[(
+        "/Root/UG_PART/UG_PART",
+        offset_only_indexed_om_section_with_index_values(),
+    )]);
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.as_slice())
+    })
+    .expect("product-anchored control fixture");
+    crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx).map(|_| ()))
+        .expect("cached product-anchored section");
+    let values = crate::test_support::with_decode_context(|ctx| {
+        super::data_block_control_index_values(ctx, &container)
+    })
+    .expect("control-index projection");
+    assert_eq!(values.len(), 2);
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| super::data_block_control_index_values(ctx, &container).unwrap_err(),
+    )
+}
+
+#[test]
+fn data_block_control_index_value_route_refuses_collection_limit() {
+    let early = control_index_value_route_refusal(|policy| policy.limits.max_collection_items = 4);
+    assert!(
+        matches!(early, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && limit.operation == "NX nonempty mapped entries")
+    );
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "NX data block control index values",
+        |limit| {
+            Err::<(), _>(control_index_value_route_refusal(|policy| {
+                policy.limits.max_collection_items = limit;
+            }))
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && limit.operation == "NX data block control index values"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn data_block_control_index_value_route_refuses_retained_limit() {
+    let error = control_index_value_route_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn data_block_control_index_value_route_refuses_scoped_limit() {
+    let error =
+        control_index_value_route_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+            && limit.operation == "NX control index value block id"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn data_block_control_index_value_route_refuses_work_limit() {
+    // The cached indexed-section traversal is admitted before control-field work.
+    let early = control_index_value_route_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(
+        matches!(early, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && limit.operation == "NX indexed OM section visits")
+    );
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "NX control index value block id",
+        |limit| {
+            Err::<(), _>(control_index_value_route_refusal(|policy| {
+                policy.limits.max_work_units = limit;
+            }))
+        },
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && limit.operation == "nx data block identity digest"),
+            && limit.operation == "NX control index value block id"),
         "{error:?}"
+    );
+}
+
+#[test]
+fn data_block_control_index_value_target_refuses_retained_limit() {
+    let mut section = offset_only_indexed_om_section_with_index_values();
+    let control = [0, 0, 7, 0, 0, 0, 0x20, 0x10, 0, 0];
+    let at = section
+        .windows(control.len())
+        .position(|window| window == control)
+        .expect("control prefix in synthetic section");
+    section[at + 2..at + 6].copy_from_slice(&1u32.to_le_bytes());
+    let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", section)]);
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.as_slice())
+    })
+    .expect("in-range control target fixture");
+    crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx).map(|_| ()))
+        .expect("cached in-range section");
+    let values = crate::test_support::with_decode_context(|ctx| {
+        super::data_block_control_index_values(ctx, &container)
+    })
+    .expect("in-range control projection");
+    assert_eq!(
+        values[0].target_data_block.as_deref(),
+        Some("nx:om-data-blocks-0:block#1")
+    );
+
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain NX control index value target block",
+        |limit| {
+            crate::test_support::with_decode_context_over(
+                &[],
+                |policy| policy.limits.max_retained_bytes = limit,
+                |ctx| super::data_block_control_index_values(ctx, &container),
+            )
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && limit.operation == "retain NX control index value target block"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn native_catalog_classifies_product_anchored_control_atomically() {
+    let file = prt_with_named_payloads(&[(
+        "/Root/UG_PART/UG_PART",
+        offset_only_indexed_om_section_with_index_values(),
+    )]);
+    let container =
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
+            .expect("required invariant");
+
+    let forms = crate::test_support::with_decode_context(|ctx| {
+        super::data_block_control_forms(ctx, &container)
+    })
+    .unwrap();
+    assert_eq!(forms.len(), 1);
+    assert_eq!(
+        forms[0].kind,
+        super::DataBlockControlFormKind::ProductAnchored {
+            leading: Some(
+                crate::om::control_leading_value::ControlLeadingValue::from_wire(2, 0).unwrap()
+            ),
+            value_count: std::num::NonZeroU32::new(2).unwrap(),
+            byte_len: std::num::NonZeroU64::new(26).unwrap(),
+        }
+    );
+    assert_eq!(forms[0].kind.value_count(), 2);
+    assert!(
+        crate::test_support::with_decode_context(|ctx| super::data_block_control_values(
+            ctx, &container
+        ))
+        .unwrap()
+        .is_empty()
+    );
+    assert_eq!(
+        crate::test_support::with_decode_context(|ctx| super::data_block_control_index_values(
+            ctx, &container
+        ))
+        .unwrap()
+        .len(),
+        2
     );
 }
 
@@ -986,7 +1721,6 @@ fn nx_neutral_active_configuration_requires_the_exact_attribute_join() {
     }
 }
 mod expression_admission;
-mod external_references;
 mod material_and_external_records;
 mod material_catalog_admission;
 mod record_area_admission;
@@ -1194,5 +1928,3 @@ fn nx_object_record_handle_pair_work_loops_refuse_named_sites() {
 mod registry_search;
 
 mod column_search;
-
-mod control_admission;

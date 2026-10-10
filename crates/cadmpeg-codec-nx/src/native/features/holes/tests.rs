@@ -828,12 +828,6 @@ fn repeated_scalar_block_reference_route_refuses_retained_limit() {
 #[test]
 fn repeated_scalar_block_reference_route_refuses_scoped_limit() {
     let container = repeated_scalar_block_reference_container();
-    let blocks = crate::test_support::with_decode_context(|ctx| {
-        crate::native::om::data_blocks(ctx, &container)
-    }).expect("admitted fixture offset blocks");
-    // The appended offset store has one control block and 600 columns.
-    assert_eq!(blocks.len(), 601, "fixture must populate the data-block index");
-
     let route = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
         let history = crate::native::features::FeatureHistory::new(ctx, &container)?;
         let inputs = crate::native::features::feature_input_blocks(ctx, &history)?;

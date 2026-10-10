@@ -342,7 +342,8 @@ impl SourceChartData {
             },
         )?
         .ok();
-        data.map(|value| reservation.commit_value(value)).transpose()
+        data.map(|value| reservation.commit_value(value))
+            .transpose()
     }
 
     pub(crate) fn xyz3(points: &[Point3]) -> Result<Self, &'static str> {

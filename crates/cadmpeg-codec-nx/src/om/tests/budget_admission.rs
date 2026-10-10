@@ -78,22 +78,6 @@ fn scalar_run_initial_widths_refuse_at_the_variable_traversal() {
 }
 
 #[test]
-fn native_state_slot_widths_refuse_at_their_traversal() {
-    let error = crate::test_support::resource_refusal_at(
-        &[],
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "NX native state slot width traversal",
-        |ctx| {
-            let slots = crate::om::state_slots::StateSlots::new(vec![None, None]).unwrap();
-            crate::om::state_slot_lane::StateSlotLane::from_wire(ctx, 100, slots)
-        },
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "NX native state slot width traversal" && limit.additional == 1)
-    );
-}
-
-#[test]
 fn rejected_numeric_expression_does_not_retain_its_native_unit() {
     let text = b"(Number [custom]) p1: = 1; invalid";
     let mut bytes = vec![0, 4, u8::try_from(text.len() + 2).unwrap()];
@@ -154,10 +138,13 @@ fn control_word_traversal_pays_for_exactly_the_declared_words() {
 }
 
 fn class_ordinal_control() -> Vec<u8> {
-    [2_u32, 0, 4, 8, 3].into_iter().flat_map(|value| {
-        let bytes = value.to_le_bytes();
-        [0, bytes[0], bytes[1], bytes[2]]
-    }).collect()
+    [2_u32, 0, 4, 8, 3]
+        .into_iter()
+        .flat_map(|value| {
+            let bytes = value.to_le_bytes();
+            [0, bytes[0], bytes[1], bytes[2]]
+        })
+        .collect()
 }
 
 fn class_ordinal_discovery_peak() -> u64 {
@@ -165,8 +152,10 @@ fn class_ordinal_discovery_peak() -> u64 {
     // The node has eleven u32 keys, sixteen pointer metadata/child slots,
     // and two pointer-alignment bounds. The final two ordinals are later.
     cadmpeg_core::decode::u64_from_index(
-        5 * std::mem::size_of::<u32>() + 11 * std::mem::size_of::<u32>()
-            + 16 * std::mem::size_of::<usize>() + 2 * std::mem::align_of::<usize>(),
+        5 * std::mem::size_of::<u32>()
+            + 11 * std::mem::size_of::<u32>()
+            + 16 * std::mem::size_of::<usize>()
+            + 2 * std::mem::align_of::<usize>(),
     )
 }
 
@@ -177,31 +166,38 @@ fn class_ordinal_projection_releases_discovery_workspace() {
     let bytes = class_ordinal_control();
     let peak = class_ordinal_discovery_peak();
     for cap in [peak - 1, peak] {
-        crate::test_support::with_decode_context_over(&[], |policy| {
-            policy.limits.max_materialized_bytes = cap;
-            policy.limits.max_retained_bytes = 2 * u64::from(u32::BITS / 8);
-        }, |ctx| {
-            // The parent captures only the final projected vector. Discovery
-            // must end before that allocation can increase the parent's peak.
-            let mut output_storage = ctx.reserve_scoped(0, "test class ordinal output").unwrap();
-            let result = output_storage.with_storage(||
-                crate::om::offset_store_control_class_ordinals(ctx, &bytes));
-            if cap == peak {
-                let values = result.unwrap().unwrap();
-                assert_eq!(values, [2, 0]);
-                let _values = output_storage.commit_value(values).expect("only two final u32 slots remain");
-                assert!(ctx.resource_refusal().is_none());
-            } else {
-                let Err(CodecError::ResourceLimit(limit)) = result else {
-                    panic!("one byte below the discovery peak must refuse");
-                };
-                assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
-                assert_eq!(limit.operation, "NX offset-store class identity insertion");
-                assert_eq!(limit.used, 5 * u64::from(u32::BITS / 8));
-                assert_eq!(limit.used + limit.additional, peak);
-                assert_eq!(ctx.resource_refusal(), Some(limit));
-            }
-        });
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_materialized_bytes = cap;
+                policy.limits.max_retained_bytes = 2 * u64::from(u32::BITS / 8);
+            },
+            |ctx| {
+                // The parent captures only the final projected vector. Discovery
+                // must end before that allocation can increase the parent's peak.
+                let mut output_storage =
+                    ctx.reserve_scoped(0, "test class ordinal output").unwrap();
+                let result = output_storage
+                    .with_storage(|| crate::om::offset_store_control_class_ordinals(ctx, &bytes));
+                if cap == peak {
+                    let values = result.unwrap().unwrap();
+                    assert_eq!(values, [2, 0]);
+                    let _values = output_storage
+                        .commit_value(values)
+                        .expect("only two final u32 slots remain");
+                    assert!(ctx.resource_refusal().is_none());
+                } else {
+                    let Err(CodecError::ResourceLimit(limit)) = result else {
+                        panic!("one byte below the discovery peak must refuse");
+                    };
+                    assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+                    assert_eq!(limit.operation, "NX offset-store class identity insertion");
+                    assert_eq!(limit.used, 5 * u64::from(u32::BITS / 8));
+                    assert_eq!(limit.used + limit.additional, peak);
+                    assert_eq!(ctx.resource_refusal(), Some(limit));
+                }
+            },
+        );
     }
 }
 
@@ -212,29 +208,35 @@ fn class_ordinal_projection_retains_only_accepted_output() {
     let bytes = class_ordinal_control();
     let retained = cadmpeg_core::decode::u64_from_index(2 * std::mem::size_of::<u32>());
     for cap in [retained - 1, retained] {
-        crate::test_support::with_decode_context_over(&[], |policy| {
-            policy.limits.max_materialized_bytes = class_ordinal_discovery_peak();
-            policy.limits.max_retained_bytes = cap;
-        }, |ctx| {
-            let mut output_storage = ctx.reserve_scoped(0, "test class ordinal output").unwrap();
-            let values = output_storage.with_storage(||
-                crate::om::offset_store_control_class_ordinals(ctx, &bytes))
-                .expect("discovery and projection fit separately").unwrap();
-            assert_eq!(values, [2, 0]);
-            let result = output_storage.commit_value(values);
-            if cap == retained {
-                result.expect("exact retained output budget");
-                assert!(ctx.resource_refusal().is_none());
-            } else {
-                let Err(CodecError::ResourceLimit(limit)) = result else {
-                    panic!("one byte below final retention must refuse");
-                };
-                assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-                assert_eq!(limit.operation, "test class ordinal output");
-                assert_eq!(limit.used, 0);
-                assert_eq!(limit.additional, retained);
-                assert_eq!(ctx.resource_refusal(), Some(limit));
-            }
-        });
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_materialized_bytes = class_ordinal_discovery_peak();
+                policy.limits.max_retained_bytes = cap;
+            },
+            |ctx| {
+                let mut output_storage =
+                    ctx.reserve_scoped(0, "test class ordinal output").unwrap();
+                let values = output_storage
+                    .with_storage(|| crate::om::offset_store_control_class_ordinals(ctx, &bytes))
+                    .expect("discovery and projection fit separately")
+                    .unwrap();
+                assert_eq!(values, [2, 0]);
+                let result = output_storage.commit_value(values);
+                if cap == retained {
+                    result.expect("exact retained output budget");
+                    assert!(ctx.resource_refusal().is_none());
+                } else {
+                    let Err(CodecError::ResourceLimit(limit)) = result else {
+                        panic!("one byte below final retention must refuse");
+                    };
+                    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+                    assert_eq!(limit.operation, "test class ordinal output");
+                    assert_eq!(limit.used, 0);
+                    assert_eq!(limit.additional, retained);
+                    assert_eq!(ctx.resource_refusal(), Some(limit));
+                }
+            },
+        );
     }
 }

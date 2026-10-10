@@ -1036,7 +1036,9 @@ fn schema_reference_preamble(
                 },
             )?
             .ok();
-            let state = state.map(|state| entry_storage.commit_value(state)).transpose()?;
+            let state = state
+                .map(|state| entry_storage.commit_value(state))
+                .transpose()?;
             return Ok(state.map(|state| SchemaReferencePreamble { state, offset, end }));
         }
         entry_storage.with_storage(|| {
@@ -2240,9 +2242,10 @@ fn merge_records(
     ctx.retain_btree_map(
         &mut replacements,
         |key, record| {
-            Ok::<bool, CodecError>(ctx
-                .get_btree_map(&tombstones, key, "NX replacement tombstone lookup")?
-                .is_none_or(|tombstone| record.offset > tombstone.offset))
+            Ok::<bool, CodecError>(
+                ctx.get_btree_map(&tombstones, key, "NX replacement tombstone lookup")?
+                    .is_none_or(|tombstone| record.offset > tombstone.offset),
+            )
         },
         "NX replacement filtering",
     )?;

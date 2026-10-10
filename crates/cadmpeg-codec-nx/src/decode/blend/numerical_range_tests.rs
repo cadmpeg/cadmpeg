@@ -5,25 +5,31 @@ use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
 
 #[test]
 fn periodic_circle_inverse_refuses_nonfinite_seeds() {
-    let circle = SolvedCurveGeometry::Circle(
-        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-            Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(0.0, 0.0, 1.0),
-            Vector3::new(1.0, 0.0, 0.0),
-            1.0,
-        )
-        .expect("unit circle is valid"),
-    );
-    for seed in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-        assert_eq!(
-            closest_periodic_analytic_curve_parameter(
-                &circle,
-                Point3::new(1.0, 0.0, 0.0),
-                Some(seed),
-            ),
-            None
+    crate::test_support::with_decode_context(|geometry_ctx| {
+        let circle = SolvedCurveGeometry::Circle(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                1.0,
+            )
+            .expect("unit circle is valid"),
         );
-    }
+        for seed in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert_eq!(
+                closest_periodic_analytic_curve_parameter_with_budget(
+                    &circle,
+                    Point3::new(1.0, 0.0, 0.0),
+                    Some(seed),
+                    &GeometryWorkBudget::from_context(
+                        geometry_ctx,
+                        cadmpeg_core::decode::u64_from_index(100)
+                    ),
+                ),
+                Ok(None)
+            );
+        }
+    });
 }
 
 #[test]
@@ -86,44 +92,60 @@ fn numerical_0922_contact_inverse_ignores_knot_units() {
 }
 #[test]
 fn numerical_0922_large_ellipse_keeps_inverse() {
-    for scale in [1., 1e200] {
+    crate::test_support::with_decode_context(|geometry_ctx| {
+        for scale in [1., 1e200] {
+            let g = SolvedCurveGeometry::Ellipse(
+                cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
+                    Point3::new(0., 0., 0.),
+                    Vector3::new(0., 0., 1.),
+                    Vector3::new(1., 0., 0.),
+                    scale,
+                    0.5 * scale,
+                )
+                .unwrap(),
+            );
+            let r = closest_periodic_analytic_curve_parameter_with_budget(
+                &g,
+                Point3::new(scale, 0., 0.),
+                None,
+                &GeometryWorkBudget::from_context(
+                    geometry_ctx,
+                    cadmpeg_core::decode::u64_from_index(10000),
+                ),
+            );
+            println!(
+                "NX ellipse axes ({scale:e}, {}), exact major tip: {r:?}",
+                scale * 0.5
+            );
+            assert_eq!(r, Ok(Some(0.)));
+        }
+    });
+}
+#[test]
+fn numerical_0922_far_ellipse_query_keeps_inverse() {
+    crate::test_support::with_decode_context(|geometry_ctx| {
         let g = SolvedCurveGeometry::Ellipse(
             cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
                 Point3::new(0., 0., 0.),
                 Vector3::new(0., 0., 1.),
                 Vector3::new(1., 0., 0.),
-                scale,
-                0.5 * scale,
+                2.,
+                1.,
             )
             .unwrap(),
         );
-        let r = closest_periodic_analytic_curve_parameter(
+        let r = closest_periodic_analytic_curve_parameter_with_budget(
             &g,
-            Point3::new(scale, 0., 0.),
+            Point3::new(2., 0., 1e200),
             None,
+            &GeometryWorkBudget::from_context(
+                geometry_ctx,
+                cadmpeg_core::decode::u64_from_index(10000),
+            ),
         );
-        println!(
-            "NX ellipse axes ({scale:e}, {}), exact major tip: {r:?}",
-            scale * 0.5
-        );
-        assert_eq!(r, Some(0.));
-    }
-}
-#[test]
-fn numerical_0922_far_ellipse_query_keeps_inverse() {
-    let g = SolvedCurveGeometry::Ellipse(
-        cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
-            Point3::new(0., 0., 0.),
-            Vector3::new(0., 0., 1.),
-            Vector3::new(1., 0., 0.),
-            2.,
-            1.,
-        )
-        .unwrap(),
-    );
-    let r = closest_periodic_analytic_curve_parameter(&g, Point3::new(2., 0., 1e200), None);
-    println!("NX ordinary ellipse with query z1e200: {r:?}");
-    assert_eq!(r, Some(0.));
+        println!("NX ordinary ellipse with query z1e200: {r:?}");
+        assert_eq!(r, Ok(Some(0.)));
+    });
 }
 
 #[test]

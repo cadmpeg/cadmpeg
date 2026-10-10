@@ -37,12 +37,6 @@ impl<'ctx> StateSlotTokens<'ctx> {
     ) -> (StateSlots<Option<StateIndexToken>>, ScopedReservation<'ctx>) {
         (self.slots, self.storage)
     }
-
-    pub(crate) fn discard(self) {
-        let (slots, storage) = self.into_parts();
-        drop(slots);
-        drop(storage);
-    }
 }
 
 impl StateTableEntry<'_, '_> {
@@ -96,10 +90,6 @@ impl<'a, 'ctx> OperationStateStatusTable<'a, 'ctx> {
             return Ok(None);
         }
         Ok(Some(Self { offset, entries }))
-    }
-
-    pub(crate) fn len(&self) -> usize {
-        self.entries.len()
     }
 
     pub(crate) fn into_entries<'iter, 'policy>(
@@ -251,12 +241,13 @@ mod tests {
                     object_index: token,
                     payload: StateStatusPayload::Plain,
                 });
-                OperationStateStatusTable::new(ctx, 0, NonEmpty::new([entry]).unwrap())
-                    .map(|_| ())
+                OperationStateStatusTable::new(ctx, 0, NonEmpty::new([entry]).unwrap()).map(|_| ())
             },
         );
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "NX status table entries" && limit.additional == 1));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "NX status table entries" && limit.additional == 1)
+        );
     }
 
     #[test]
@@ -279,10 +270,12 @@ mod tests {
                     .next()
                     .expect("the table contains one entry")
                     .expect_err("entry extent conversion has a separate visit admission");
-                assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
                     if limit.operation == "NX status table entry extents"
                         && limit.used == 1
-                        && limit.additional == 1));
+                        && limit.additional == 1)
+                );
             },
         );
     }
@@ -299,34 +292,38 @@ mod tests {
         ]);
         bytes.extend([0x02, 0x01, 0x11, 0xff, 0x83, 0xad, 0xff, 0x02, 0x11]);
 
-        crate::test_support::with_decode_context_over(&bytes, |_| {}, |ctx| {
-            let table = operation_state_status_table(ctx, &bytes, 0, bytes.len(), 700)
-                .expect("status table");
-            assert_eq!(table.rows().len(), 4);
-            assert_eq!(table.rows()[0].status_code.value(), 0x41);
-            assert!(matches!(table.rows()[0].payload, StateStatusPayload::Plain));
-            assert!(matches!(
-                table.rows()[1].payload,
-                StateStatusPayload::Linked {
-                    link_code,
-                    ..
-                } if u8::from(link_code) == 0x45
-            ));
-            let StateStatusPayload::Diagnostic(message) = table.rows()[2].payload else {
-                panic!("diagnostic row was not typed");
-            };
-            assert_eq!(message.text.as_str(), "bad curve");
-            let StateStatusPayload::Opaque { raw } = table.rows()[3].payload else {
-                panic!("opaque state lane was not retained");
-            };
-            assert_eq!(raw, &[0x1e, 0x01, 0x41, 0xff, 0x83, 0xad, 0xff, 0x02, 0x11]);
-            assert_eq!(table.slot_lanes().len(), 1);
-            assert_eq!(table.slot_lanes()[0].len(), 3);
-            assert_eq!(
-                table.slot_lanes()[0].as_slice()[1].map(StateIndexToken::value),
-                Some(0x3ad)
-            );
-            assert_eq!(&bytes[table.end_offset() - 700..], &b""[..]);
-        });
+        crate::test_support::with_decode_context_over(
+            &bytes,
+            |_| {},
+            |ctx| {
+                let table = operation_state_status_table(ctx, &bytes, 0, bytes.len(), 700)
+                    .expect("status table");
+                assert_eq!(table.rows().len(), 4);
+                assert_eq!(table.rows()[0].status_code.value(), 0x41);
+                assert!(matches!(table.rows()[0].payload, StateStatusPayload::Plain));
+                assert!(matches!(
+                    table.rows()[1].payload,
+                    StateStatusPayload::Linked {
+                        link_code,
+                        ..
+                    } if u8::from(link_code) == 0x45
+                ));
+                let StateStatusPayload::Diagnostic(message) = table.rows()[2].payload else {
+                    panic!("diagnostic row was not typed");
+                };
+                assert_eq!(message.text.as_str(), "bad curve");
+                let StateStatusPayload::Opaque { raw } = table.rows()[3].payload else {
+                    panic!("opaque state lane was not retained");
+                };
+                assert_eq!(raw, &[0x1e, 0x01, 0x41, 0xff, 0x83, 0xad, 0xff, 0x02, 0x11]);
+                assert_eq!(table.slot_lanes().len(), 1);
+                assert_eq!(table.slot_lanes()[0].len(), 3);
+                assert_eq!(
+                    table.slot_lanes()[0].as_slice()[1].map(StateIndexToken::value),
+                    Some(0x3ad)
+                );
+                assert_eq!(&bytes[table.end_offset() - 700..], &b""[..]);
+            },
+        );
     }
 }

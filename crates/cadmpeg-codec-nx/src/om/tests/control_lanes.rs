@@ -129,9 +129,11 @@ fn offset_control_form_refuses_materialized_scratch_limit() {
             Ok(())
         },
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
-            && limit.operation == "NX zero-prefixed control values"));
+            && limit.operation == "NX zero-prefixed control values")
+    );
 }
 
 #[test]
@@ -184,8 +186,8 @@ fn control_interpretations_do_not_double_the_live_vector_peak() {
             &[],
             |policy| policy.limits.max_materialized_bytes = u64::try_from(4 * slots).unwrap(),
             |ctx| {
-                let Some((form, storage)) = crate::om::offset_store_control_form(ctx, bytes, None)
-                    .unwrap()
+                let Some((form, storage)) =
+                    crate::om::offset_store_control_form(ctx, bytes, None).unwrap()
                 else {
                     panic!("complete control grammar must parse");
                 };

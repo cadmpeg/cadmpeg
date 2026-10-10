@@ -259,7 +259,7 @@ pub(crate) fn evaluate_saved_body_census(
                 return Ok(BodyCensusEvaluation::Unsupported {
                     feature: feature_boundary(ctx, feature)?,
                     reason,
-                })
+                });
             }
             Err(CensusError::Resource(error)) => return Err(error),
         };
@@ -272,19 +272,22 @@ pub(crate) fn evaluate_saved_body_census(
             "NX body census comparison traversal",
         )?;
     if !same {
-        let rederived = CanonicalBodyCensus(ctx.try_collect_vec(
-            rederived.into_iter().map(|body| {
-                body.try_clone_for_decode(ctx, "NX rederived census body identity")
-            }),
-            "NX rederived body census",
-        )?);
+        let rederived =
+            CanonicalBodyCensus(ctx.try_collect_vec(
+                rederived.into_iter().map(|body| {
+                    body.try_clone_for_decode(ctx, "NX rederived census body identity")
+                }),
+                "NX rederived body census",
+            )?);
         drop(replay_storage);
-        let saved = CanonicalBodyCensus(ctx.try_collect_vec(
-            saved.into_iter().map(|body| {
-                body.try_clone_for_decode(ctx, "NX saved census body identity")
-            }),
-            "NX saved body census",
-        )?);
+        let saved = CanonicalBodyCensus(
+            ctx.try_collect_vec(
+                saved
+                    .into_iter()
+                    .map(|body| body.try_clone_for_decode(ctx, "NX saved census body identity")),
+                "NX saved body census",
+            )?,
+        );
         drop(saved_storage);
         return Ok(BodyCensusEvaluation::Mismatch {
             evidence: BodyCensusDifference { rederived, saved },
@@ -295,12 +298,14 @@ pub(crate) fn evaluate_saved_body_census(
     }
     drop(saved);
     drop(saved_storage);
-    let bodies = CanonicalBodyCensus(ctx.try_collect_vec(
-        rederived
-            .into_iter()
-            .map(|body| body.try_clone_for_decode(ctx, "NX verified census body identity")),
-        "NX verified body census",
-    )?);
+    let bodies = CanonicalBodyCensus(
+        ctx.try_collect_vec(
+            rederived
+                .into_iter()
+                .map(|body| body.try_clone_for_decode(ctx, "NX verified census body identity")),
+            "NX verified body census",
+        )?,
+    );
     drop(replay_storage);
     Ok(BodyCensusEvaluation::Verified { bodies })
 }
@@ -941,7 +946,7 @@ fn rederived_body_census<'ir>(
                     } else {
                         ToolRetention::Delete
                     },
-                    feature_completeness::combine_definition_is_incomplete(feature),
+                    feature_completeness::combine_definition_is_incomplete(ctx, feature)?,
                 )?;
             }
             FeatureDefinition::Operation(FeatureOperation::SewBodies {
@@ -955,7 +960,7 @@ fn rederived_body_census<'ir>(
                     feature,
                     &mut bodies,
                     selection,
-                    feature_completeness::sew_bodies_definition_is_incomplete(feature),
+                    feature_completeness::sew_bodies_definition_is_incomplete(ctx, feature)?,
                 )?;
             }
             FeatureDefinition::Operation(FeatureOperation::TrimBodies { operands, .. }) => {
@@ -970,7 +975,7 @@ fn rederived_body_census<'ir>(
                     &bodies,
                     targets,
                     tools,
-                    feature_completeness::trim_bodies_definition_is_incomplete(feature),
+                    feature_completeness::trim_bodies_definition_is_incomplete(ctx, feature)?,
                 )?;
             }
             FeatureDefinition::Operation(FeatureOperation::DeleteBody {
@@ -984,7 +989,7 @@ fn rederived_body_census<'ir>(
                     selection,
                     ResolvedBodyRetentionMode::try_from(*mode)
                         .map_err(|reason| CensusError::Unsupported(feature, reason))?,
-                    feature_completeness::operands::body_selection_is_incomplete(selection),
+                    feature_completeness::operands::body_selection_is_incomplete(ctx, selection)?,
                 )?;
             }
             FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) => {

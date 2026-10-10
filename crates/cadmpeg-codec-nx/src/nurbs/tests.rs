@@ -1190,7 +1190,10 @@ fn nurbs_prefix_storage_refusal_precedes_unexecuted_reads() {
     let multiplicity = [0, 2];
     let knot = [0; 8];
     for (array, operation) in [
-        (super::ArrayValues::U16(&multiplicity), "NX NURBS multiplicity prefix"),
+        (
+            super::ArrayValues::U16(&multiplicity),
+            "NX NURBS multiplicity prefix",
+        ),
         (super::ArrayValues::F64(&knot), "NX NURBS knot prefix"),
     ] {
         crate::test_support::with_decode_context_over(
@@ -1236,7 +1239,13 @@ fn nurbs_duplicate_payload_index_refuses_lookup_work() {
         &[],
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "resolve duplicate NX NURBS payload",
-        |ctx| super::unique_records(ctx, [Ok(Some((12, 7_u8))), Ok(Some((12, 7_u8)))].into_iter()).map(|_| ()),
+        |ctx| {
+            super::unique_records(
+                ctx,
+                [Ok(Some((12, 7_u8))), Ok(Some((12, 7_u8)))].into_iter(),
+            )
+            .map(|_| ())
+        },
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "resolve duplicate NX NURBS payload")
@@ -1391,11 +1400,26 @@ fn nurbs_source_scanners_refuse_one_visit_before_reading_a_suffix() {
             |policy| policy.limits.max_work_units = 0,
             |ctx| {
                 let (operation, result) = match scanner {
-                    0 => ("scan NX NURBS arrays", super::arrays(ctx, &bytes).map(|_| ())),
-                    1 => ("scan NX NURBS payloads", super::surface_payloads(ctx, &bytes).map(|_| ())),
-                    2 => ("scan NX NURBS payloads", super::curve_payloads(ctx, &bytes).map(|_| ())),
-                    3 => ("scan NX NURBS descriptors", super::surface_descriptors(ctx, &bytes).map(|_| ())),
-                    _ => ("scan NX NURBS descriptors", super::curve_descriptors(ctx, &bytes).map(|_| ())),
+                    0 => (
+                        "scan NX NURBS arrays",
+                        super::arrays(ctx, &bytes).map(|_| ()),
+                    ),
+                    1 => (
+                        "scan NX NURBS payloads",
+                        super::surface_payloads(ctx, &bytes).map(|_| ()),
+                    ),
+                    2 => (
+                        "scan NX NURBS payloads",
+                        super::curve_payloads(ctx, &bytes).map(|_| ()),
+                    ),
+                    3 => (
+                        "scan NX NURBS descriptors",
+                        super::surface_descriptors(ctx, &bytes).map(|_| ()),
+                    ),
+                    _ => (
+                        "scan NX NURBS descriptors",
+                        super::curve_descriptors(ctx, &bytes).map(|_| ()),
+                    ),
                 };
                 let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = result else {
                     panic!("NURBS source scanner did not preserve its first visit refusal");
@@ -1404,7 +1428,9 @@ fn nurbs_source_scanners_refuse_one_visit_before_reading_a_suffix() {
                 assert_eq!(limit.used, 0);
                 assert_eq!(limit.additional, 1);
                 assert_eq!(ctx.resource_refusal(), Some(limit));
-                assert!(matches!(ctx.charge_work(0, "later NURBS scan"), Err(cadmpeg_core::CodecError::ResourceLimit(later)) if later == limit));
+                assert!(
+                    matches!(ctx.charge_work(0, "later NURBS scan"), Err(cadmpeg_core::CodecError::ResourceLimit(later)) if later == limit)
+                );
             },
         );
     }
@@ -1455,7 +1481,9 @@ fn nurbs_invalid_knot_prefix_does_not_visit_the_unused_suffix() {
         &[],
         |policy| policy.limits.max_work_units = 1,
         |ctx| {
-            assert!(super::expand_knots(ctx, &distinct, &multiplicities, 4096).unwrap().is_none());
+            assert!(super::expand_knots(ctx, &distinct, &multiplicities, 4096)
+                .unwrap()
+                .is_none());
             assert!(ctx.resource_refusal().is_none());
         },
     );
@@ -1472,15 +1500,29 @@ fn nurbs_control_point_refusals_admit_one_visit() {
             &bytes,
             cadmpeg_core::decode::ResourceDimension::WorkUnits,
             operation,
-            |ctx| if surface { super::surfaces(ctx, &bytes).map(|_| ()) } else { super::curves(ctx, &bytes).map(|_| ()) },
+            |ctx| {
+                if surface {
+                    super::surfaces(ctx, &bytes).map(|_| ())
+                } else {
+                    super::curves(ctx, &bytes).map(|_| ())
+                }
+            },
         );
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == operation && limit.additional == 1));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == operation && limit.additional == 1)
+        );
     }
     let mut bytes = bytes;
-    let descriptor = bytes.windows(4).position(|window| window == [0, 136, 0, 40]).unwrap();
+    let descriptor = bytes
+        .windows(4)
+        .position(|window| window == [0, 136, 0, 40])
+        .unwrap();
     put_ref(&mut bytes, descriptor + 10, 2);
-    let payload = bytes.windows(4).position(|window| window == [0, 135, 0, 41]).unwrap();
+    let payload = bytes
+        .windows(4)
+        .position(|window| window == [0, 135, 0, 41])
+        .unwrap();
     for (index, value) in [0.0, 0.0, 1.0, 0.02, 0.0, 1.0].into_iter().enumerate() {
         put_f64(&mut bytes, payload + 15 + index * 8, value);
     }
@@ -1491,25 +1533,44 @@ fn nurbs_control_point_refusals_admit_one_visit() {
         operation,
         |ctx| super::pcurves(ctx, &bytes).map(|_| ()),
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == operation && limit.additional == 1));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == operation && limit.additional == 1)
+    );
 }
 
 #[test]
 fn nurbs_rejected_candidates_release_their_storage_without_retaining_it() {
-    enum Family { Surface, Curve, Pcurve }
+    enum Family {
+        Surface,
+        Curve,
+        Pcurve,
+    }
     let mut surface = bspline_partition_stream();
-    let surface_payload = surface.windows(4).position(|bytes| bytes == [0, 125, 0, 21]).unwrap();
+    let surface_payload = surface
+        .windows(4)
+        .position(|bytes| bytes == [0, 125, 0, 21])
+        .unwrap();
     put_f64(&mut surface, surface_payload + 97, f64::MAX);
     let mut curve = bspline_partition_stream();
-    let curve_payload = curve.windows(4).position(|bytes| bytes == [0, 135, 0, 41]).unwrap();
+    let curve_payload = curve
+        .windows(4)
+        .position(|bytes| bytes == [0, 135, 0, 41])
+        .unwrap();
     put_f64(&mut curve, curve_payload + 15, f64::MAX);
     let mut pcurve = curve.clone();
-    let descriptor = pcurve.windows(4).position(|bytes| bytes == [0, 136, 0, 40]).unwrap();
+    let descriptor = pcurve
+        .windows(4)
+        .position(|bytes| bytes == [0, 136, 0, 40])
+        .unwrap();
     put_ref(&mut pcurve, descriptor + 10, 2);
     put_f64(&mut pcurve, curve_payload + 31, f64::MIN_POSITIVE);
 
-    for (family, bytes) in [(Family::Surface, surface), (Family::Curve, curve), (Family::Pcurve, pcurve)] {
+    for (family, bytes) in [
+        (Family::Surface, surface),
+        (Family::Curve, curve),
+        (Family::Pcurve, pcurve),
+    ] {
         crate::test_support::with_decode_context(|source_ctx| {
             let arrays = super::arrays(source_ctx, &bytes).unwrap();
             let surface_payloads = super::surface_payloads(source_ctx, &bytes).unwrap();
@@ -1527,15 +1588,47 @@ fn nurbs_rejected_candidates_release_their_storage_without_retaining_it() {
                 |ctx| {
                     let mut refusals = Vec::new();
                     let empty = match family {
-                        Family::Surface => super::decode_surfaces(ctx, &graph, &arrays, &surface_payloads, &surface_descriptors, &mut refusals).unwrap().is_empty(),
-                        Family::Curve => super::decode_curves(ctx, &graph, &arrays, &curve_payloads, &curve_descriptors, &mut refusals).unwrap().is_empty(),
-                        Family::Pcurve => super::decode_pcurves(ctx, &graph, &arrays, &curve_payloads, &curve_descriptors, &mut refusals).unwrap().is_empty(),
+                        Family::Surface => super::decode_surfaces(
+                            ctx,
+                            &graph,
+                            &arrays,
+                            &surface_payloads,
+                            &surface_descriptors,
+                            &mut refusals,
+                        )
+                        .unwrap()
+                        .is_empty(),
+                        Family::Curve => super::decode_curves(
+                            ctx,
+                            &graph,
+                            &arrays,
+                            &curve_payloads,
+                            &curve_descriptors,
+                            &mut refusals,
+                        )
+                        .unwrap()
+                        .is_empty(),
+                        Family::Pcurve => super::decode_pcurves(
+                            ctx,
+                            &graph,
+                            &arrays,
+                            &curve_payloads,
+                            &curve_descriptors,
+                            &mut refusals,
+                        )
+                        .unwrap()
+                        .is_empty(),
                     };
                     assert!(empty);
                     assert!(refusals.is_empty());
                     // A reservation of the entire limit fits only after all
                     // provisional knots, rows and pole vectors are released.
-                    let released = ctx.reserve_scoped(materialized_limit, "probe released NURBS candidate storage").unwrap();
+                    let released = ctx
+                        .reserve_scoped(
+                            materialized_limit,
+                            "probe released NURBS candidate storage",
+                        )
+                        .unwrap();
                     drop(released);
                     assert!(ctx.resource_refusal().is_none());
                 },
