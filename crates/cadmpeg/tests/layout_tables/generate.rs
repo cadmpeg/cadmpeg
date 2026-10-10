@@ -278,6 +278,7 @@ fn cell(text: &str) -> String {
 pub(crate) const GENERATED_LAYOUT_RS: &[(&str, &str)] = &[
     ("asm", "crates/cadmpeg-asm/src/layout.rs"),
     ("catia", "crates/cadmpeg-codec-catia/src/layout.rs"),
+    ("cfb", "crates/cadmpeg-container/src/layout.rs"),
     ("creo", "crates/cadmpeg-codec-creo/src/layout.rs"),
     ("f3d", "crates/cadmpeg-codec-f3d/src/layout.rs"),
     ("freecad", "crates/cadmpeg-codec-freecad/src/layout.rs"),

@@ -1,11 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native surface construction branches with derived reference positions.
 
-use super::{
-    charged_unique_offset_data_block, format_feature_history_id,
-    visit_feature_history_operation_records,
-};
-use crate::container::Container;
+use super::{charged_unique_offset_data_block, format_feature_history_id, FeatureHistory};
 use crate::om::branch_items::BranchItems;
 use crate::om::discriminators::SurfaceBranchMode;
 use crate::om::reference_index::PayloadIndexToken;
@@ -169,70 +165,63 @@ impl TryFrom<SurfaceBranchWire> for FeatureSurfaceConstructionBranch {
 /// Resolve branch references without assigning section or guide semantics.
 pub(in crate::native) fn feature_surface_construction_branches(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    container: &Container,
+    history: &FeatureHistory<'_, '_, '_>,
 ) -> Result<Vec<FeatureSurfaceConstructionBranch>, cadmpeg_core::CodecError> {
-    let indexed = container.indexed_om_sections(ctx)?;
+    let indexed = history.container().indexed_om_sections(ctx)?;
     let mut branches = Vec::new();
-    let mut failure = None;
-    visit_feature_history_operation_records(
-        ctx,
-        container,
-        |_section, section_key, entry_offset, operation_ordinal, record| {
-            if failure.is_some() {
-                return;
-            }
-            let projected = (|| -> Result<(), cadmpeg_core::CodecError> {
-                let Some(group) = surface_feature_payload_branches(ctx, record.payload_view())?
-                else {
-                    return Ok(());
+    for history_section in
+        ctx.admit_iter(history.sections(), "visit NX feature history sections")?
+    {
+        let section_key = history_section.key.as_str();
+        let entry_offset = history_section.entry_offset;
+        for &(operation_ordinal, record) in ctx.admit_iter(
+            &history_section.records,
+            "visit NX feature operation records",
+        )? {
+            let Some(group) = surface_feature_payload_branches(ctx, record.payload_view())? else {
+                continue;
+            };
+            let family = group.family;
+            let header_code = group.header_code;
+            for (ordinal, branch) in ctx
+                .admit_iter(group.into_branches(), "visit NX surface branches")?
+                .enumerate()
+            {
+                let Some(order) = u8::try_from(ordinal + 1).ok().and_then(NonZeroU8::new) else {
+                    continue;
                 };
-                let family = group.family;
-                let header_code = group.header_code;
-                for (ordinal, branch) in group.into_branches().into_iter().enumerate() {
-                    let Some(order) = u8::try_from(ordinal + 1).ok().and_then(NonZeroU8::new)
-                    else {
-                        continue;
-                    };
-                    let Some(references) = branch.resolve(ctx, entry_offset, |token| {
-                        charged_unique_offset_data_block(ctx, &indexed, token.value())
-                    })?
-                    else {
-                        continue;
-                    };
-                    let id = format_feature_history_id(
-                        ctx,
-                        "surface-construction-branch",
-                        section_key,
-                        operation_ordinal,
-                        Some(ordinal),
-                    )?;
-                    let operation_label = format_feature_history_id(
-                        ctx,
-                        "operation-label",
-                        section_key,
-                        operation_ordinal,
-                        None,
-                    )?;
-                    ctx.charge_entities(1, "NX surface construction branch")?;
-                    ctx.reserve_vec(&mut branches, 1, "NX surface construction branches")?;
-                    branches.push(FeatureSurfaceConstructionBranch {
-                        id,
-                        operation_label,
-                        order,
-                        family,
-                        header_code,
-                        references,
-                    });
-                }
-                Ok(())
-            })();
-            if let Err(error) = projected {
-                failure = Some(error);
+                let Some(references) = branch.resolve(ctx, entry_offset, |token| {
+                    charged_unique_offset_data_block(ctx, &indexed, token.value())
+                })?
+                else {
+                    continue;
+                };
+                let id = format_feature_history_id(
+                    ctx,
+                    "surface-construction-branch",
+                    section_key,
+                    operation_ordinal,
+                    Some(ordinal),
+                )?;
+                let operation_label = format_feature_history_id(
+                    ctx,
+                    "operation-label",
+                    section_key,
+                    operation_ordinal,
+                    None,
+                )?;
+                ctx.charge_entities(1, "NX surface construction branch")?;
+                ctx.reserve_vec(&mut branches, 1, "NX surface construction branches")?;
+                branches.push(FeatureSurfaceConstructionBranch {
+                    id,
+                    operation_label,
+                    order,
+                    family,
+                    header_code,
+                    references,
+                });
             }
-        },
-    )?;
-    if let Some(error) = failure {
-        return Err(error);
+        }
     }
     Ok(branches)
 }
@@ -259,7 +248,10 @@ mod tests {
             crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, file))
                 .expect("composed surface branch container");
         let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-            super::feature_surface_construction_branches(ctx, &container)
+            super::feature_surface_construction_branches(
+                ctx,
+                &crate::native::features::FeatureHistory::new(ctx, &container)?,
+            )
         };
         let admitted = crate::test_support::with_decode_context(|ctx| decode(ctx))
             .expect("admitted surface branches");

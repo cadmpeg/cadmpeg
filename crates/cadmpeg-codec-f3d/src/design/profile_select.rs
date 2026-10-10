@@ -3323,8 +3323,7 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
             group.scope_reference_ordinal,
             header,
             resolution.entities,
-        )
-        .transpose()?
+        )?
         else {
             continue;
         };
