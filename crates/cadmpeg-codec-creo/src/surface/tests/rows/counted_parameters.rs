@@ -397,27 +397,39 @@ fn counted_parameter_empty_extents_are_free_and_preserve_original_refusal() {
     // Exactly zero slots consume exactly zero bytes. A nonempty body with
     // count zero and an empty body with positive count have no complete parse.
     let cases: &[(&[u8], usize, bool)] = &[
-        (&[], 0, true), (&[0xe4], 0, false), (&[0xe5, 0xe6], 0, false),
-        (&[], 1, false), (&[], usize::MAX, false),
+        (&[], 0, true),
+        (&[0xe4], 0, false),
+        (&[0xe5, 0xe6], 0, false),
+        (&[], 1, false),
+        (&[], usize::MAX, false),
     ];
     for &(body, count, complete) in cases {
-        assert_eq!(crate::surface::counted_parameter_scalar_slots(&ctx, body, count, &cache)
-            .expect("extent needs no state table"), complete.then(Vec::new));
+        assert_eq!(
+            crate::surface::counted_parameter_scalar_slots(&ctx, body, count, &cache)
+                .expect("extent needs no state table"),
+            complete.then(Vec::new)
+        );
     }
     assert_eq!(ctx.resource_refusal(), None);
-    let original = ctx.charge_work_limit(1, "after empty counted parameter extent")
+    let original = ctx
+        .charge_work_limit(1, "after empty counted parameter extent")
         .expect_err("zero work cap");
-    assert_eq!((original.dimension, original.used, original.additional),
-        (ResourceDimension::WorkUnits, 0, 1));
+    assert_eq!(
+        (original.dimension, original.used, original.additional),
+        (ResourceDimension::WorkUnits, 0, 1)
+    );
     for _ in 0..2 {
         for &(body, count, _) in cases {
-            assert!(matches!(crate::surface::counted_parameter_scalar_slots(&ctx, body, count, &cache),
-                Err(CodecError::ResourceLimit(actual)) if actual == original));
+            assert!(
+                matches!(crate::surface::counted_parameter_scalar_slots(&ctx, body, count, &cache),
+                Err(CodecError::ResourceLimit(actual)) if actual == original)
+            );
         }
     }
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original)
+    );
 }
-
 
 #[test]
 fn counted_parameter_ambiguity_survives_following_scalar_and_zero_runs() {
@@ -426,6 +438,9 @@ fn counted_parameter_ambiguity_survives_following_scalar_and_zero_runs() {
     // continuation cannot make those earlier tokenizations unique.
     for (suffix, additional) in [(0xe4, 1), (0xe5, 2), (0xe6, 3)] {
         let body = [0x18, 0, 0xe5, 0x29, 0x18, 4, 0x29, 5, 0xe6, suffix];
-        assert_eq!(super::super::counted_parameter_scalar_slots(&body, 5 + additional, &cache), None);
+        assert_eq!(
+            super::super::counted_parameter_scalar_slots(&body, 5 + additional, &cache),
+            None
+        );
     }
 }

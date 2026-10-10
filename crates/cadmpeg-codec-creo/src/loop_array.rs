@@ -122,9 +122,8 @@ fn find_named_field(
     };
     let mut markers = bytes.windows(marker_len).enumerate();
     while markers.len() != 0 {
-        let Some((offset, marker)) = ctx.next_charged(
-            &mut markers, "creo loop prototype scan",
-        )? else {
+        let Some((offset, marker)) = ctx.next_charged(&mut markers, "creo loop prototype scan")?
+        else {
             break;
         };
         if marker[0] == 0xe0 && &marker[2..2 + name.len()] == name && marker[2 + name.len()] == 0 {
@@ -164,9 +163,7 @@ fn prototype_close(
     };
     let mut offsets = start..=close_end;
     while !offsets.is_empty() {
-        let Some(offset) = ctx.next_charged(
-            &mut offsets, "creo loop prototype scan",
-        )? else {
+        let Some(offset) = ctx.next_charged(&mut offsets, "creo loop prototype scan")? else {
             break;
         };
         if data.get(offset..offset + 2) != Some(&[0xf1, 0xf7]) {
@@ -197,7 +194,11 @@ fn named_prototype_end(
         let Some(offset) = find_named_field(ctx, data, cursor, close_end, field)? else {
             return Ok(None);
         };
-        let Some(after_field) = field.len().checked_add(3).and_then(|length| offset.checked_add(length)) else {
+        let Some(after_field) = field
+            .len()
+            .checked_add(3)
+            .and_then(|length| offset.checked_add(length))
+        else {
             return Ok(None);
         };
         cursor = after_field;
@@ -314,12 +315,21 @@ fn parse_frame(
         return Ok(None);
     }
     let header_end = after_class + 2;
-    let Some(tail) = data.get(header_end..section_end) else { return Ok(None); };
-    let end = ctx.find_map(
-        0..tail.len(),
-        |offset| Ok(ARRAY_BOUNDARY_LABELS.iter().any(|label| tail[offset..].starts_with(label)).then_some(header_end + offset)),
-        "creo loop frame boundaries",
-    )?.unwrap_or(section_end);
+    let Some(tail) = data.get(header_end..section_end) else {
+        return Ok(None);
+    };
+    let end = ctx
+        .find_map(
+            0..tail.len(),
+            |offset| {
+                Ok(ARRAY_BOUNDARY_LABELS
+                    .iter()
+                    .any(|label| tail[offset..].starts_with(label))
+                    .then_some(header_end + offset))
+            },
+            "creo loop frame boundaries",
+        )?
+        .unwrap_or(section_end);
     let Some(prototype_end) = named_prototype_end(ctx, data, header_end, end, class_id)? else {
         return Ok(None);
     };
@@ -390,15 +400,21 @@ pub(crate) fn scan(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<LoopArrayScan
     }
     let mut result = LoopArrayScan::default();
     let mut search = 0;
-    while data.len().saturating_sub(search) >= LO_ARRAY_LABEL.len() {
+    while data
+        .get(search..)
+        .is_some_and(|remaining| remaining.len() >= LO_ARRAY_LABEL.len())
+    {
         let Some(offset) = ctx.find_map(
-        data.get(search..)
-            .unwrap_or_default()
-            .windows(LO_ARRAY_LABEL.len())
-            .enumerate(),
-        |(offset, bytes)| Ok((bytes == LO_ARRAY_LABEL).then_some(search + offset)),
-        "creo loop array discovery",
-    )? else { break; };
+            data.get(search..)
+                .unwrap_or_default()
+                .windows(LO_ARRAY_LABEL.len())
+                .enumerate(),
+            |(offset, bytes)| Ok((bytes == LO_ARRAY_LABEL).then_some(search + offset)),
+            "creo loop array discovery",
+        )?
+        else {
+            break;
+        };
         let Some(next_search) = offset.checked_add(LO_ARRAY_LABEL.len()) else {
             break;
         };

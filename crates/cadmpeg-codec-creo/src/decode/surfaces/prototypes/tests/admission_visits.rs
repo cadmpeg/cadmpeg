@@ -12,12 +12,12 @@ use cadmpeg_core::CodecError;
 
 fn record(name: &str, value: SurfaceNamedValue) -> SurfacePrototypeRecord {
     SurfacePrototypeRecord::new_for_test(
-SurfacePrototypeFamily::Spline(crate::surface::SplineLabel::Splsrf),
-vec![SurfaceNamedParameter {
+        SurfacePrototypeFamily::Spline(crate::surface::SplineLabel::Splsrf),
+        vec![SurfaceNamedParameter {
             name: name.to_owned(), value, body: Vec::new(), offset: 0, value_offset: 0,
         }],
-0,
-)
+        0,
+    )
 }
 
 fn assert_work_events(
@@ -108,11 +108,8 @@ fn prototype_fixed_returns_are_free_and_preserve_original_refusal() {
     let scan = crate::test_support::empty_container_scan();
     let section = crate::container::Section::scan_for_test("VisibGeom".to_owned(), 32, 48, None, &[0; 48])
         .expect("section extent").section;
-    let wrong_family = SurfacePrototypeRecord::new_for_test(
-SurfacePrototypeFamily::Plane,
-Vec::new(),
-0,
-);
+    let wrong_family =
+        SurfacePrototypeRecord::new_for_test(SurfacePrototypeFamily::Plane, Vec::new(), 0);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;

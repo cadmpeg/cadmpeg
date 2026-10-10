@@ -19,7 +19,12 @@ fn named_row_scan_keeps_first_fields_and_stops_at_the_next_namespace() {
 
 #[test]
 fn surface_frame_scan_selects_each_earliest_array_boundary() {
-    for label in [b"srf_array\0".as_slice(), b"crv_array\0", b"lo_array\0", b"qlt_array\0"] {
+    for label in [
+        b"srf_array\0".as_slice(),
+        b"crv_array\0",
+        b"lo_array\0",
+        b"qlt_array\0",
+    ] {
         let mut payload = b"srf_array\0\xf8\x01".to_vec();
         let start = payload.len();
         payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
@@ -28,7 +33,8 @@ fn surface_frame_scan_selects_each_earliest_array_boundary() {
         payload.extend_from_slice(b"paddinglo_array\0srf_array\0");
         let frame = super::work_output(|ctx| {
             crate::surface::next_surface_array_frame(ctx, &payload, &mut 0)
-        }).expect("complete frame header");
+        })
+        .expect("complete frame header");
         assert_eq!(frame.start, start);
         assert_eq!(frame.end, end);
         assert_eq!(frame.count, 1);

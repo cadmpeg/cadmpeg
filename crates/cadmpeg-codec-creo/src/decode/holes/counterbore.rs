@@ -579,7 +579,9 @@ fn terminal_corner_envelope(
     let Some(row) = crate::surface::unique_surface_row(&scan.surfaces.rows, id) else {
         return Ok(None);
     };
-    let Some(record) = unique_surface_parameter_record(ctx, scan, row)? else { return Ok(None); };
+    let Some(record) = unique_surface_parameter_record(ctx, scan, row)? else {
+        return Ok(None);
+    };
     record.type24_terminal_corner_envelope_checked(ctx)
 }
 

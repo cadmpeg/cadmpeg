@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 
-
 use crate::scalar::ScalarCache;
 use crate::surface::{scalar_tokens, SurfaceKind};
 
@@ -10,7 +9,13 @@ fn surface_scalar_dispatch_admits_only_visited_unknown_offsets_and_no_terminal_p
         let kind = SurfaceKind::from_byte(code).expect("surface family");
         for count in [0, 1, 7, 17, 257] {
             let body = vec![0xed; count];
-            assert!(super::work_output(|ctx| scalar_tokens(ctx, kind, &body, &ScalarCache::default())).is_empty());
+            assert!(super::work_output(|ctx| scalar_tokens(
+                ctx,
+                kind,
+                &body,
+                &ScalarCache::default()
+            ))
+            .is_empty());
         }
     }
 }
@@ -26,12 +31,13 @@ fn surface_scalar_dispatch_skips_scalar_interior_bytes_and_keeps_raw_identity() 
             let mut body = vec![0xed; prefix];
             body.extend_from_slice(&raw);
             body.extend(std::iter::repeat_n(0xed, suffix));
-            let tokens = super::work_output(|ctx| scalar_tokens(ctx, SurfaceKind::Cylinder, &body, &ScalarCache::default()));
+            let tokens = super::work_output(|ctx| {
+                scalar_tokens(ctx, SurfaceKind::Cylinder, &body, &ScalarCache::default())
+            });
             assert_eq!(tokens.len(), 1);
             assert_eq!(tokens[0].value, Some(expected));
             assert_eq!(tokens[0].raw, raw);
             assert_eq!(tokens[0].offset, prefix);
-
         }
     }
 }
@@ -42,8 +48,12 @@ fn surface_scalar_dispatch_refuses_before_copy_or_token_storage() {
     for prefix in [0, 1, 7, 17, 257] {
         let mut body = vec![0xed; prefix];
         body.extend_from_slice(&raw);
-        crate::test_support::assert_work_boundaries(&[
-            "creo surface scalar token dispatch", "creo surface scalar token bytes",
-        ], |ctx| scalar_tokens(ctx, SurfaceKind::Cylinder, &body, &ScalarCache::default()));
+        crate::test_support::assert_work_boundaries(
+            &[
+                "creo surface scalar token dispatch",
+                "creo surface scalar token bytes",
+            ],
+            |ctx| scalar_tokens(ctx, SurfaceKind::Cylinder, &body, &ScalarCache::default()),
+        );
     }
 }

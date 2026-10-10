@@ -144,8 +144,14 @@ fn cone_terminal_half_angle_has_one_fixed_start() {
         assert_eq!(angle.end, body.len());
         assert_eq!(angle.value.get().get(), 0.6875);
     }
-    assert_eq!(terminal_cone_half_angle_layout(&[0xb7, 0, 0, 0, 0, 0, 0])
-        .expect("alternate positive DICT head").value.get().get(), 0.625);
+    assert_eq!(
+        terminal_cone_half_angle_layout(&[0xb7, 0, 0, 0, 0, 0, 0])
+            .expect("alternate positive DICT head")
+            .value
+            .get()
+            .get(),
+        0.625
+    );
     // DICT 8b selects IEEE 40 00, which states 2.0 radians, above pi/2.
     for body in [&ANGLE[..6], &[0x00; 7], &[0x8b, 0, 0, 0, 0, 0, 0]] {
         assert!(terminal_cone_half_angle_layout(body).is_none());
@@ -167,18 +173,27 @@ fn cone_support_suffix_preserves_frame_after_unrelated_prefix() {
                 body.extend_from_slice(apex);
                 body.extend_from_slice(&[reference_head, 0, 0, 0, 0, 0, 0, 0]);
                 body.extend_from_slice(&[0x32, 0x19, 0]);
-                let frame = crate::surface::decode_support_apex_cone_frame(&body, half_angle, &cache)
-                    .expect("complete support-apex suffix");
+                let frame =
+                    crate::surface::decode_support_apex_cone_frame(&body, half_angle, &cache)
+                        .expect("complete support-apex suffix");
                 assert_eq!(frame.frame().origin(), [0.0, 0.0, expected_apex]);
                 assert_eq!(frame.frame().axis(), [0.0, 0.0, -1.0]);
                 assert_eq!(frame.frame().ref_direction(), [0.0, -1.0, 0.0]);
                 assert_eq!(frame.half_angle, half_angle);
                 body[prefix_len + SUPPORT.len() + apex.len()] = 0xed;
-                assert!(crate::surface::decode_support_apex_cone_frame(&body, half_angle, &cache).is_none());
+                assert!(
+                    crate::surface::decode_support_apex_cone_frame(&body, half_angle, &cache)
+                        .is_none()
+                );
             }
         }
     }
     for short_len in 0..11 {
-        assert!(crate::surface::decode_support_apex_cone_frame(&[0x19; 11][..short_len], half_angle, &cache).is_none());
+        assert!(crate::surface::decode_support_apex_cone_frame(
+            &[0x19; 11][..short_len],
+            half_angle,
+            &cache
+        )
+        .is_none());
     }
 }

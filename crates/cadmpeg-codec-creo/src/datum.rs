@@ -154,11 +154,12 @@ pub(crate) fn planes(
         .admit_iter(&rows, "creo datum plane rows")?
         .enumerate()
         .filter(|(_, (row, _))| {
-        row.id != 0
-            && row.kind == SurfaceKind::Plane
-            && row.boundary_type == crate::surface::BoundaryType::Code01
-            && row.next_surface == 0
-    }) {
+            row.id != 0
+                && row.kind == SurfaceKind::Plane
+                && row.boundary_type == crate::surface::BoundaryType::Code01
+                && row.next_surface == 0
+        })
+    {
         let row_end = rows
             .get(index + 1)
             .map_or(*frame_end, |(next, _)| (*frame_end).min(next.offset));
@@ -238,8 +239,10 @@ fn active_cylinder_frame(
         return Err(refusal.into());
     }
     if row.kind != crate::surface::SurfaceKind::Cylinder
-        || !matches!(row.boundary_type,
-            crate::surface::BoundaryType::Code00 | crate::surface::BoundaryType::Code01)
+        || !matches!(
+            row.boundary_type,
+            crate::surface::BoundaryType::Code00 | crate::surface::BoundaryType::Code01
+        )
     {
         return Ok(None);
     }
@@ -251,10 +254,17 @@ fn active_cylinder_frame(
     else {
         return Ok(None);
     };
-    let Some(terminal_values) = (|| Some([
-        length_slot.value?, corner0.value?, corner1.value?, corner2.value?,
-        corner3.value?, corner4.value?, corner5.value?,
-    ]))() else {
+    let Some(terminal_values) = (|| {
+        Some([
+            length_slot.value?,
+            corner0.value?,
+            corner1.value?,
+            corner2.value?,
+            corner3.value?,
+            corner4.value?,
+            corner5.value?,
+        ])
+    })() else {
         return Ok(None);
     };
     if !terminal_values.into_iter().all(f64::is_finite) {
@@ -340,16 +350,16 @@ fn active_cylinder_frame(
     }
     let mut frames = parameter.scalar_frames[..preceding_count].iter();
     while frames.len() != 0 {
-        let Some(frame) = ctx.next_charged(
-            &mut frames, "creo active datum cylinder scalar frames",
-        )? else {
+        let Some(frame) =
+            ctx.next_charged(&mut frames, "creo active datum cylinder scalar frames")?
+        else {
             break;
         };
         let mut slots = frame.slots.iter();
         while slots.len() != 0 {
-            let Some(slot) = ctx.next_charged(
-                &mut slots, "creo active datum cylinder scalar slots",
-            )? else {
+            let Some(slot) =
+                ctx.next_charged(&mut slots, "creo active datum cylinder scalar slots")?
+            else {
                 break;
             };
             if let Some(length) = slot.value {
@@ -445,9 +455,9 @@ pub(crate) fn named_plane(
     let mut id_windows = prefix.windows(id_marker.len()).enumerate().rev();
     let mut id_at = None;
     while id_windows.len() != 0 {
-        let Some((offset, window)) = ctx.next_charged(
-            &mut id_windows, "creo named datum geometry identity",
-        )? else {
+        let Some((offset, window)) =
+            ctx.next_charged(&mut id_windows, "creo named datum geometry identity")?
+        else {
             break;
         };
         if window == id_marker {
@@ -462,9 +472,9 @@ pub(crate) fn named_plane(
     let mut feature_windows = prefix.windows(feature_marker.len()).enumerate().rev();
     let mut feature_at = None;
     while feature_windows.len() != 0 {
-        let Some((offset, window)) = ctx.next_charged(
-            &mut feature_windows, "creo named datum feature identity",
-        )? else {
+        let Some((offset, window)) =
+            ctx.next_charged(&mut feature_windows, "creo named datum feature identity")?
+        else {
             break;
         };
         if window == feature_marker {

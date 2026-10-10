@@ -9,12 +9,12 @@ const FIELD: &str = "end_uv_deriv";
 
 fn record(value: SurfaceNamedValue) -> SurfacePrototypeRecord {
     SurfacePrototypeRecord::new_for_test(
-SurfacePrototypeFamily::Spline(crate::surface::SplineLabel::Splsrf),
-vec![SurfaceNamedParameter {
+        SurfacePrototypeFamily::Spline(crate::surface::SplineLabel::Splsrf),
+        vec![SurfaceNamedParameter {
             name: FIELD.to_owned(), value, body: Vec::new(), offset: 0, value_offset: 0,
         }],
-0,
-)
+        0,
+    )
 }
 
 fn array(dimensions: u32, count: u32, values: Vec<Option<f64>>) -> SurfaceNamedValue {
@@ -91,8 +91,10 @@ fn mixed_derivatives_preserve_absent_partial_shape_and_ambiguity_routes() {
     let mut duplicate = record(array(4, 3, vec![Some(1.0); 12]));
     let mut parameters = duplicate.parameters().to_vec();
     parameters.push(parameters[0].clone());
-    duplicate = SurfacePrototypeRecord::new_for_test(duplicate.family, parameters, duplicate.offset);
+    duplicate =
+        SurfacePrototypeRecord::new_for_test(duplicate.family, parameters, duplicate.offset);
     assert_projection(&duplicate, None);
-    duplicate = SurfacePrototypeRecord::new_for_test(duplicate.family, Vec::new(), duplicate.offset);
+    duplicate =
+        SurfacePrototypeRecord::new_for_test(duplicate.family, Vec::new(), duplicate.offset);
     assert_projection(&duplicate, None);
 }

@@ -1368,8 +1368,6 @@ fn torus_rows_keep_the_byte_after_a_seven_byte_coordinate() {
 
 mod named_local_systems;
 
-
-
 #[test]
 fn placed_outline_support_index_preserves_duplicates_and_conflicts() {
     let record = PlaneEnvelopeRecord {
