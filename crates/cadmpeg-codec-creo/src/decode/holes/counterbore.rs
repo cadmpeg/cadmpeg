@@ -40,11 +40,7 @@ fn unique_model_surface_geometries<'a>(
     while let Some(surface) =
         ctx.next_charged(&mut surfaces, "creo counterbore model surface scan")?
     {
-        let Some(digits) = ctx.strip_prefix(
-            surface.id.as_str(),
-            "creo:visibgeom:surface#",
-            "creo counterbore surface identity prefix",
-        )?
+        let Some(digits) = surface.id.as_str().strip_prefix("creo:visibgeom:surface#")
         else {
             continue;
         };

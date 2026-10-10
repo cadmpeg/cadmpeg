@@ -750,12 +750,7 @@ impl ProfileGeometry {
                 radius: *radius,
             },
             Self::Nurbs { curve } => SketchGeometryDefinition::Nurbs {
-                curve: super::nurbs::copy_pcurve_nurbs(
-                    ctx,
-                    curve,
-                    "creo profile sketch NURBS knots",
-                    "creo profile sketch NURBS poles",
-                )?,
+                curve: curve.try_clone_for_decode(ctx, "creo profile sketch NURBS copy")?,
             },
         })
         .ok())
