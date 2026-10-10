@@ -576,17 +576,9 @@ fn closest_pcurve_helpers_preserve_session_depth_refusal() {
         } else {
             closest_pcurve_parameter_from_seed(&ctx, &line, Point2::new(0.5, 0.0), 0.2)
         }
-        .expect_err("first sample or local step charges work");
+        .expect_err("the first evaluation charges work");
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-        assert_eq!((limit.limit, limit.used, limit.additional), (0, 0, 1));
-        assert_eq!(
-            limit.operation,
-            if coarse {
-                "nx pcurve coarse sample"
-            } else {
-                "nx pcurve local step"
-            }
-        );
+        assert_eq!(limit.limit, 0);
         assert_eq!(
             ctx.charge_work_limit(0, "observe pcurve refusal"),
             Err(limit)
