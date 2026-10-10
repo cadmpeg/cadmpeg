@@ -1644,11 +1644,13 @@ fn complete_counted_face_recipe(operand: &DesignFaceOperand) -> Option<usize> {
     {
         return None;
     }
+    if operand.recipe_nodes.len() == header_value {
+        return Some(header_value);
+    }
     let boundary_edge_count =
         unique_preceding_face_boundaries(&operand.historical_support_contexts)
             .and_then(boundary_edge_count);
-    (operand.recipe_nodes.len() == header_value || boundary_edge_count == Some(header_value))
-        .then_some(header_value)
+    (boundary_edge_count == Some(header_value)).then_some(header_value)
 }
 
 /// Return the result-face lane of a legacy bounded-face recipe.
@@ -3821,6 +3823,25 @@ mod tests {
                 postlude_value: None,
             });
         operand
+    }
+
+    #[test]
+    fn complete_counted_face_node_run_does_not_require_support_boundary_proof() {
+        let mut operand = stable_bounded_face_operand();
+        let mut contexts = [support(10, &[(100, 4_096)]), support(11, &[(100, 4_096)])];
+        let crate::records::topology::historical_context::DesignHistoricalLoopBoundary::Coedges(
+            rows,
+        ) = &mut contexts[1].preceding_face_boundaries[0].loops[0].boundary
+        else {
+            panic!("coedge fixture");
+        };
+        rows.last_mut().expect("last coedge").edge_slot += 1;
+        assert!(super::unique_preceding_face_boundaries(&contexts).is_none());
+        operand.historical_support_contexts = Vec::from(contexts);
+        let native_before = serde_json::to_value(&operand).unwrap();
+
+        assert_eq!(super::complete_counted_face_recipe(&operand), Some(1));
+        assert_eq!(serde_json::to_value(&operand).unwrap(), native_before);
     }
 
     #[test]
