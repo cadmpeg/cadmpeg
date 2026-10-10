@@ -11,53 +11,66 @@ use std::collections::BTreeMap;
 fn attribute_instances_reuse_valid_and_invalid_definition_widths() {
     const ATTRIBUTES: usize = 4_000;
     const INSTANCES: usize = 4_000;
-    for invalid in [false, true] {
-        let mut tokens = vec![322, 0, 1, i64::try_from(ATTRIBUTES).unwrap()];
-        for _ in 0..ATTRIBUTES {
-            tokens.extend([10, 1, 0]);
+    for overflow in [false, true] {
+        for invalid in [false, true] {
+            let mut tokens = vec![322, 0, 1, i64::try_from(ATTRIBUTES).unwrap()];
+            for _ in 0..ATTRIBUTES {
+                tokens.extend([10, 1, 0]);
+            }
+            if invalid {
+                *tokens.last_mut().unwrap() = -1;
+            }
+            let definition = integer_parameter_record(1, &tokens);
+            let definition_entry = directory_target(1, 322);
+            let mut entry = directory_target(3, 422);
+            entry.structure = -1;
+            let record = integer_parameter_record(3, &[422, 9]);
+            let directory = BTreeMap::from([(1, &definition_entry)]);
+            let records = BTreeMap::from([(1, &definition)]);
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            // One descriptor scan plus bounded tree work per instance.
+            policy.limits.max_work_units = u64::try_from(ATTRIBUTES + 100 * INSTANCES).unwrap();
+            policy.limits.max_retained_bytes = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut widths = AttributeDefinitionWidths::new(&ctx).unwrap();
+            if overflow {
+                let first = integer_parameter_record(7, &[322, 0, 1, 1, 10, 1, 1]);
+                assert_eq!(widths.width(&first, &ctx).unwrap(), Some(1));
+            }
+            for _ in 0..INSTANCES {
+                assert_eq!(
+                    attribute_table_instance_primary_end(
+                        &record,
+                        &entry,
+                        &directory,
+                        &records,
+                        &mut widths,
+                        &ctx,
+                    )
+                    .unwrap(),
+                    if invalid { 2 } else { 1 }
+                );
+            }
+            let expected = if invalid { None } else { Some(0) };
+            if overflow {
+                assert_eq!(widths.first, Some((7, Some(1))));
+                assert_eq!(widths.values.len(), 1);
+                assert_eq!(widths.values[&1], expected);
+            } else {
+                assert_eq!(widths.first, Some((1, expected)));
+                assert!(widths.values.is_empty());
+            }
+            drop(widths);
+            let CodecError::ResourceLimit(limit) = ctx
+                .reserve_scoped(u64::MAX, "test released attribute widths")
+                .unwrap_err()
+            else {
+                panic!("expected storage refusal");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+            assert_eq!(limit.used, 0);
         }
-        if invalid {
-            *tokens.last_mut().unwrap() = -1;
-        }
-        let definition = integer_parameter_record(1, &tokens);
-        let definition_entry = directory_target(1, 322);
-        let mut entry = directory_target(3, 422);
-        entry.structure = -1;
-        let record = integer_parameter_record(3, &[422, 9]);
-        let directory = BTreeMap::from([(1, &definition_entry)]);
-        let records = BTreeMap::from([(1, &definition)]);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        // One descriptor scan plus bounded tree work per instance.
-        policy.limits.max_work_units = u64::try_from(ATTRIBUTES + 100 * INSTANCES).unwrap();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut widths = AttributeDefinitionWidths::new(&ctx).unwrap();
-        for _ in 0..INSTANCES {
-            assert_eq!(
-                attribute_table_instance_primary_end(
-                    &record,
-                    &entry,
-                    &directory,
-                    &records,
-                    &mut widths,
-                    &ctx,
-                )
-                .unwrap(),
-                if invalid { 2 } else { 1 }
-            );
-        }
-        assert_eq!(widths.values.len(), 1);
-        assert_eq!(widths.values[&1], if invalid { None } else { Some(0) });
-        drop(widths);
-        let CodecError::ResourceLimit(limit) = ctx
-            .reserve_scoped(u64::MAX, "test released attribute widths")
-            .unwrap_err()
-        else {
-            panic!("expected storage refusal");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
-        assert_eq!(limit.used, 0);
     }
 }
 
@@ -79,6 +92,8 @@ fn attribute_width_cache_admits_nodes_before_insertion() {
             }
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let mut widths = AttributeDefinitionWidths::new(&ctx)?;
+            let first = integer_parameter_record(3, &[322, 0, 1, 1, 10, 1, 1]);
+            assert_eq!(widths.width(&first, &ctx)?, Some(1));
             widths.width(&record, &ctx)
         });
         let CodecError::ResourceLimit(limit) = error else {
