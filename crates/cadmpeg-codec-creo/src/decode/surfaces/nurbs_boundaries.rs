@@ -118,9 +118,6 @@ fn nurbs_surface_boundaries<'ctx>(
     surface_id: u32,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Result<Option<[NurbsSurfaceBoundary<'ctx>; 4]>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let u_count = nurbs.u_count();
     let v_count = nurbs.v_count();
     let (Some(last_u), Some(last_v)) = (u_count.checked_sub(1), v_count.checked_sub(1)) else {
@@ -240,9 +237,6 @@ fn visit_surface_poles(
     nurbs: &NurbsSurface,
     mut visit: impl FnMut(usize, FinitePoint3) -> Result<bool, CodecError>,
 ) -> Result<(), CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut index = 0;
     match nurbs.pole_grid() {
         NurbsPoleGrid::Polynomial { rows } => {
@@ -460,9 +454,6 @@ fn nurbs_curves_match(
     reversed: bool,
     point_tolerance: f64,
 ) -> Result<bool, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if left.degree() != right.degree()
         || left.periodic() != right.periodic()
         || left.pole_count() != right.pole_count()
@@ -608,9 +599,6 @@ fn generator_separates_control_nets(
     second: &NurbsSurface,
     second_boundary: &NurbsSurfaceBoundary,
 ) -> Result<bool, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let (Some(origin), Some(end)) = (
         curve_point(&first_boundary.curve, 0),
         curve_point(&first_boundary.curve, 1),
@@ -1261,9 +1249,6 @@ pub(in super::super) fn cubic_extrusion_plane_generator_curve<'ctx>(
         };
         Some(Ok(NurbsCurveCandidate { curve, storage }))
     }
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut refusal = crate::lane_refusal::LaneRefusals::new();
     let recognized = recognize(ctx, nurbs, surface_id, plane, &mut refusal).transpose();
     let refused = refusal.take_records_checked()?;
@@ -1409,42 +1394,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn fixed_nurbs_curve_mismatch_is_free_and_preserves_refusal() {
-        let fixture_ctx = cadmpeg_test_support::service_decode_context();
-        let make_curve = |weights| {
-            super::NurbsCurve::from_lanes(
-                &fixture_ctx,
-                1,
-                vec![0.0, 0.0, 1.0, 1.0],
-                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-                weights,
-                false,
-            )
-            .expect("fixture admission")
-            .expect("valid degree-one curve")
-        };
-        let polynomial = make_curve(None);
-        let rational = make_curve(Some(vec![1.0, 1.0]));
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        policy.limits.max_materialized_bytes = 0;
-        policy.limits.max_retained_bytes = 0;
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        assert!(
-            !super::nurbs_curves_match(&ctx, &polynomial, &rational, false, EPS_TEST_VALUE)
-                .expect("fixed pole-kind mismatch")
-        );
-        let original = ctx
-            .charge_work_limit(1, "seed curve mismatch refusal")
-            .expect_err("zero work cap");
-        assert!(
-            matches!(super::nurbs_curves_match(&ctx, &polynomial, &rational, false, EPS_TEST_VALUE),
-            Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) if refusal == original)
-        );
-    }
 
     #[test]
     fn nurbs_pole_visitor_refuses_before_grid_traversal() {
@@ -1963,39 +1912,6 @@ mod tests {
     const RATIONAL_BOUNDARY_BYTES: u64 = 4 * (3 * 8 + 8) + 4 * 8;
     const FOUR_RATIONAL_BOUNDARIES_BYTES: u64 = 4 * RATIONAL_BOUNDARY_BYTES;
 
-    #[test]
-    fn fixed_cubic_generator_shape_rejection_is_free_and_preserves_refusal() {
-        let (surface, _) = shared_generator_surfaces();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        policy.limits.max_materialized_bytes = 0;
-        policy.limits.max_retained_bytes = 0;
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        let plane = super::PlaneEquation {
-            origin: [0.0; 3],
-            normal: [1.0, 0.0, 0.0],
-        };
-        let mut losses = Vec::new();
-        assert!(super::cubic_extrusion_plane_generator_curve(
-            &ctx,
-            &surface,
-            7,
-            plane,
-            &mut losses,
-        )
-        .expect("degree-one surface has no cubic generator")
-        .is_none());
-        assert!(losses.is_empty());
-        let original = ctx
-            .charge_work_limit(1, "seed cubic generator refusal")
-            .expect_err("zero work limit");
-        assert!(matches!(super::cubic_extrusion_plane_generator_curve(
-            &ctx, &surface, 7, plane, &mut losses,
-        ), Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) if refusal == original));
-        assert!(losses.is_empty());
-    }
 
     #[test]
     fn nurbs_boundary_promotion_retains_only_the_selected_curve_backing() {

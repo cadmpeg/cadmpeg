@@ -203,9 +203,6 @@ impl<'a> Index<'a> {
         ctx: &DecodeContext<'_>,
         persistence: &'a Persistence,
     ) -> Result<Option<Self>, CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let mut object_by_offset = HashMap::new();
         let mut objects_by_parent_name = BTreeMap::new();
         let mut objects = persistence.objects.iter();
@@ -1283,27 +1280,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn empty_family_index_is_free_and_preserves_original_refusal() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        policy.limits.max_materialized_bytes = 0;
-        policy.limits.max_retained_bytes = 0;
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        let persistence = Persistence::default();
-        let index = super::Index::build(&ctx, &persistence)
-            .expect("empty index has no variable work or backing")
-            .expect("empty index is structurally valid");
-        assert!(index.object_by_offset.is_empty());
-        let original = ctx
-            .charge_work_limit(1, "seed empty family index refusal")
-            .expect_err("zero work cap");
-        assert_eq!((original.used, original.additional), (0, 1));
-        assert!(matches!(super::Index::build(&ctx, &persistence),
-            Err(CodecError::ResourceLimit(refusal)) if refusal == original));
-    }
 
     #[test]
     fn family_array_rows_keep_then_release_their_scoped_backing() {

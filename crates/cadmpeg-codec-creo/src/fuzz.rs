@@ -196,28 +196,6 @@ mod tests {
     }
 
     #[test]
-    fn psb_token_probe_preserves_caller_resource_refusal() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-        use cadmpeg_core::CodecError;
-
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is admitted");
-        let CodecError::ResourceLimit(original) = ctx
-            .charge_work(1, "caller refusal")
-            .expect_err("work limit is zero")
-        else {
-            panic!("work refusal expected");
-        };
-        assert!(matches!(
-            super::psb_tokens(&ctx, &[]),
-            Err(CodecError::ResourceLimit(actual)) if actual == original
-        ));
-        assert_eq!(ctx.resource_refusal(), Some(original));
-    }
-    #[test]
     fn scalar_probe_releases_cache_backing_before_return() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_core::CodecError;

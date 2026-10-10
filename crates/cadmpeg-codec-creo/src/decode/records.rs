@@ -4128,9 +4128,6 @@ pub(super) fn sketch_section_point_records(
     definition: &crate::feature::definitions::FeatureDefinition,
     storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
 ) -> Result<Vec<CreoSketchSectionPoint>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(variables) = &definition.variables else {
         return Ok(Vec::new());
     };

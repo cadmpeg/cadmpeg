@@ -62,9 +62,6 @@ fn native_surface_namespace(
     scan: &ContainerScan,
     surface_id: u32,
 ) -> Result<(cadmpeg_ir::ids::IdentityNamespace, &'static str), cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let visible_present = scan.surfaces.rows.contains_id(surface_id);
     let nonvisible_present =
         !visible_present && scan.surfaces.nonvisible_rows.contains_id(surface_id);
@@ -110,20 +107,6 @@ pub(super) fn native_surface_id(
     )
 }
 
-/// Compare a selected native surface identity without constructing one.
-pub(super) fn matches_native_surface_id(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    scan: &ContainerScan,
-    surface_id: u32,
-    candidate: &SurfaceId,
-) -> Result<bool, cadmpeg_core::CodecError> {
-    Ok(crate::identity::matches_numbered_identity(
-        candidate.as_str(),
-        native_surface_namespace(ctx, scan, surface_id)?.1,
-        surface_id,
-    ))
-}
-
 /// Return a native surface row only when its compact identifier is unique
 /// across visible and non-visible geometry namespaces.
 pub(super) fn unique_native_surface_row<'a>(
@@ -145,7 +128,7 @@ pub(super) fn unique_native_surface_row<'a>(
 #[cfg(test)]
 mod tests {
     use super::{
-        matches_native_surface_id, native_surface_id, native_surface_namespace,
+        native_surface_id, native_surface_namespace,
         transfer_part_product,
     };
     use crate::surface::{SurfaceKind, SurfaceRow};
@@ -438,24 +421,12 @@ mod tests {
             prefix,
             17,
         ));
-        assert!(
-            crate::decode::with_test_decode_ctx(|ctx| matches_native_surface_id(
-                ctx, &scan, 17, &native
-            ))
-            .expect("surface match")
-        );
         let visible = cadmpeg_ir::ids::SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, 17);
         assert!(!crate::identity::matches_numbered_identity(
             visible.as_str(),
             prefix,
             17,
         ));
-        assert!(
-            !crate::decode::with_test_decode_ctx(|ctx| matches_native_surface_id(
-                ctx, &scan, 17, &visible
-            ))
-            .expect("surface match")
-        );
     }
 
     #[test]
@@ -494,9 +465,6 @@ pub(super) fn transfer_part_product(
     annotations: &mut AnnotationBuilder,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(model_name) = scan.framing.model_name.as_ref() else {
         return Ok(false);
     };
@@ -645,9 +613,6 @@ impl Fc05CapPairFrame {
         pair: &crate::curve::Fc05CylinderCapPair,
         outlines: &native_ids::UniqueRows<'_, '_, crate::surface::OutlinePlane>,
     ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         if pair.cap_edges.len() < 2 {
             return Ok(None);
         }
@@ -755,9 +720,6 @@ pub(super) fn fc05_cap_pair_model_frame(
     scan: &ContainerScan,
     pair: &crate::curve::Fc05CylinderCapPair,
 ) -> Result<Option<Fc05CapPairFrame>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if pair.cap_edges.len() < 2 {
         return Ok(None);
     }

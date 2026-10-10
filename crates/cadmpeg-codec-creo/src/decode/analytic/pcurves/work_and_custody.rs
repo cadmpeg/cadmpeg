@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{
-    map_pcurve_paths, planar_curve_pcurve, unique_oriented_native_pcurve, OrientedNativePcurve,
-    SurfaceIndex,
+     planar_curve_pcurve, unique_oriented_native_pcurve, OrientedNativePcurve,
+    
 };
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, WeightedPole2};
 use cadmpeg_ir::geometry::{
@@ -77,44 +76,9 @@ fn assert_projection(value: &PcurveGeometry, rational: bool) {
     assert!(!nurbs.periodic());
 }
 
-fn fixed_absent_paths(count: usize) {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    policy.limits.max_retained_bytes = 0;
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let ir = CadIr::empty();
-    let index = SurfaceIndex::new(&ctx, &[]).expect("empty index");
-    let paths = [0, 1].map(|side| (side < count).then_some((None, [[0.0; 2]; 2])));
-    let carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
-    let result = map_pcurve_paths(&ctx, &ir, paths, &carriers, &index).expect("fixed paths");
-    assert_eq!(result.missing_surfaces, count);
-    assert_eq!(result.unevaluable_paths, 0);
-    assert!(result.mapped.iter().all(Option::is_none));
-    let original = ctx
-        .charge_work_limit(1, "before fixed path mapping")
-        .expect_err("zero work");
-    assert!(
-        matches!(map_pcurve_paths(&ctx, &ir, paths, &carriers, &index),
-        Err(CodecError::ResourceLimit(actual)) if actual == original)
-    );
-}
 
-#[test]
-fn empty_fixed_pcurve_paths_are_free_and_keep_original_refusal() {
-    fixed_absent_paths(0);
-}
 
-#[test]
-fn one_absent_face_pcurve_path_is_free_and_keeps_original_refusal() {
-    fixed_absent_paths(1);
-}
 
-#[test]
-fn two_absent_face_pcurve_paths_are_free_and_keep_original_refusal() {
-    fixed_absent_paths(2);
-}
 
 #[test]
 fn oriented_pcurve_candidates_admit_only_present_rows() {
@@ -359,10 +323,6 @@ fn empty_pcurve_domain_propagation_needs_no_work() {
 
 #[test]
 fn mapped_pcurve_endpoint_agreement_needs_no_work() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let points = [[0.0; 3], [1.0, 0.0, 0.0]];
     let path = super::MappedPcurvePath {
         face_id: 1,
@@ -373,8 +333,7 @@ fn mapped_pcurve_endpoint_agreement_needs_no_work() {
         [None, Some(path)],
         [Some(path), Some(path)],
     ] {
-        let evidence = super::pcurve_endpoint_evidence_from_mapped(&ctx, &paths, true)
-            .expect("fixed agreement")
+        let evidence = super::pcurve_endpoint_evidence_from_mapped(&paths, true)
             .expect("finite paths agree");
         assert_eq!(evidence.points, points);
         assert_eq!(evidence.complete, paths.iter().flatten().count() == 2);

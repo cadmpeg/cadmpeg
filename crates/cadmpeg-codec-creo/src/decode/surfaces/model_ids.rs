@@ -81,9 +81,6 @@ impl<'ctx> ModelIdentityIndex<'ctx> {
         arena: &[T],
         identity: impl Fn(&T) -> &str,
     ) -> Result<(), CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let Some(new_records) = arena.get(self.indexed_len..) else {
             return Err(CodecError::malformed("model identity index arena shrank"));
         };
@@ -121,7 +118,7 @@ mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_core::CodecError;
 
-    fn assert_shrunken_index_refusal(count: bool) {
+    fn assert_shrunken_index_rejection(count: bool) {
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
@@ -141,15 +138,6 @@ mod tests {
         };
         assert!(matches!(query(&mut index), Err(CodecError::Malformed(message))
             if message == "model identity index arena shrank"));
-        let original = ctx.charge_work_limit(
-            policy.limits.max_work_units + 1,
-            "before shrunken model identity query",
-        ).expect_err("work cap");
-        for _ in 0..2 {
-            assert!(matches!(query(&mut index), Err(CodecError::ResourceLimit(actual))
-                if actual == original));
-            assert_eq!(ctx.resource_refusal(), Some(original));
-        }
         assert_eq!(calls.get(), 0);
         assert_eq!(index.indexed_len, records.len());
         assert_eq!(index.positions.len(), 1);
@@ -157,13 +145,13 @@ mod tests {
     }
 
     #[test]
-    fn shrunken_model_identity_lookup_keeps_original_refusal() {
-        assert_shrunken_index_refusal(false);
+    fn shrunken_model_identity_lookup_rejects_shrink() {
+        assert_shrunken_index_rejection(false);
     }
 
     #[test]
-    fn shrunken_model_identity_count_keeps_original_refusal() {
-        assert_shrunken_index_refusal(true);
+    fn shrunken_model_identity_count_rejects_shrink() {
+        assert_shrunken_index_rejection(true);
     }
 
     #[test]

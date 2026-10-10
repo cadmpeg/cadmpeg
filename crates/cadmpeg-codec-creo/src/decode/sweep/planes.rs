@@ -147,9 +147,6 @@ pub(in super::super) fn feature_outline_plane(
     feature_id: u32,
     surface_id: u32,
 ) -> Result<Option<FeatureOutlinePlane>, CodecError> {
-    if let Some(error) = ctx.resource_refusal() {
-        return Err(error.into());
-    }
     let Some(row) = scan.surfaces.rows.unique(surface_id) else {
         return Ok(None);
     };
@@ -269,9 +266,6 @@ pub(in super::super) fn generated_arc_cylinder_extent(
     definition: &crate::feature::definitions::FeatureDefinition,
     transform: &crate::placement::FeatureSectionTransform,
 ) -> Result<Option<(ExtrudeExtent, [f64; 3])>, CodecError> {
-    if let Some(error) = ctx.resource_refusal() {
-        return Err(error.into());
-    }
     let Some(feature_id) = definition.identity.owner_feature_id() else {
         return Ok(None);
     };
@@ -526,9 +520,6 @@ pub(in super::super) fn unique_available_positional_cylinder_frame_records(
     surface_ids: &BTreeSet<u32>,
     parameters: &crate::surface::SurfaceParameters,
 ) -> Result<Option<Vec<(u32, crate::surface::PositionalCylinderFrame)>>, CodecError> {
-    if let Some(error) = ctx.resource_refusal() {
-        return Err(error.into());
-    }
     let mut frames = Vec::new();
     let mut ids = surface_ids.iter();
     while ids.len() != 0 {
@@ -554,9 +545,6 @@ pub(in super::super) fn agreed_generated_cylinder_extent<'a>(
     transform: &crate::placement::FeatureSectionTransform,
     mut frames: impl ExactSizeIterator<Item = &'a crate::surface::PositionalCylinderFrame>,
 ) -> Result<Option<(ExtrudeExtent, [f64; 3])>, CodecError> {
-    if let Some(error) = ctx.resource_refusal() {
-        return Err(error.into());
-    }
     let normal = transform.normal();
     if frames.len() == 0 {
         return Ok(None);

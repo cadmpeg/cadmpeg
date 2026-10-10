@@ -133,45 +133,6 @@ fn conic_quartic_work_is_free_before_output_admission() {
     }
 }
 
-#[test]
-fn fixed_quartic_paths_preserve_original_refusal() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let original = ctx
-        .charge_work_limit(1, "original quartic refusal")
-        .expect_err("refuse session");
-    let plane = PlaneEquation {
-        origin: [0.0; 3],
-        normal: [0.0, 0.0, 1.0],
-    };
-    let torus = TorusEquation {
-        center: [0.0; 3],
-        axis: [0.0, 0.0, 1.0],
-        ref_direction: [1.0, 0.0, 0.0],
-        major_radius: 3.0,
-        minor_radius: 1.0,
-    };
-    let error = intersect_two_planes_with_torus(&ctx, plane, plane, torus)
-        .expect_err("parallel planes preserve refusal");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal) if refusal == &original)
-    );
-    let zero = PlaneConicEquation {
-        uu: Coefficient::single(0.0),
-        uv: Coefficient::single(0.0),
-        vv: Coefficient::single(0.0),
-        u: Coefficient::single(0.0),
-        v: Coefficient::single(0.0),
-        constant: Coefficient::single(0.0),
-    };
-    let error =
-        common_plane_conic_parameters(&ctx, zero, zero).expect_err("empty roots preserve refusal");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal) if refusal == &original)
-    );
-}
 
 #[test]
 fn plane_quadric_parameter_conversion_needs_no_work() {

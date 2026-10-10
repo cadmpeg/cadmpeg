@@ -603,16 +603,12 @@ fn arc_z_coordinate(data: &[u8], offset: usize, cache: &ScalarCache) -> Option<(
 }
 
 fn scalar_suffix<const COUNT: usize>(
-    ctx: &DecodeContext<'_>,
     row: &[u8],
     cache: &ScalarCache,
-) -> Result<Option<[f64; COUNT]>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
+) -> Option<[f64; COUNT]> {
     let mut candidate = None;
     let Some(max_span) = COUNT.checked_mul(9) else {
-        return Ok(None);
+        return None;
     };
     let suffix_span = row.len().min(max_span);
     for start in row.len() - suffix_span..row.len() {
@@ -630,11 +626,11 @@ fn scalar_suffix<const COUNT: usize>(
             continue;
         }
         if candidate.is_some() {
-            return Ok(None);
+            return None;
         }
         candidate = Some(values);
     }
-    Ok(candidate)
+    candidate
 }
 
 const CONIC_FIELD_HEADERS: [&[u8]; 10] = [
@@ -1052,38 +1048,34 @@ fn conic_parameter(
 }
 
 fn positional_conic_local_system(
-    ctx: &DecodeContext<'_>,
     body: &[u8],
     local_start: usize,
     cache: &ScalarCache,
-) -> Result<Option<(usize, cadmpeg_ir::units::FiniteVector<12>)>, CodecError> {
+) -> Option<(usize, cadmpeg_ir::units::FiniteVector<12>)> {
     const MAX_FRAME_BYTES: usize = 12 * 9;
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(first_end) = local_start.checked_add(1) else {
-        return Ok(None);
+        return None;
     };
     let Some(last_end) = local_start.checked_add(MAX_FRAME_BYTES) else {
-        return Ok(None);
+        return None;
     };
     let last_end = last_end.min(body.len());
     let mut candidate = None;
     for end in first_end..=last_end {
         let Some(tail) = body.get(end..) else {
-            return Ok(None);
+            return None;
         };
         if !(tail.is_empty() || tail.first() == Some(&0xe2)) {
             continue;
         }
         if let Some(frame) = conic_local_system(&body[local_start..end], cache) {
             if candidate.is_some() {
-                return Ok(None);
+                return None;
             }
             candidate = Some((end, frame));
         }
     }
-    Ok(candidate)
+    candidate
 }
 
 fn positional_conic_body(
@@ -1113,12 +1105,7 @@ fn positional_conic_body(
     let (coefficient_1, next) = coordinate(body, cursor, cache)?;
     cursor = next;
     let (coefficient_2, local_start) = coordinate(body, cursor, cache)?;
-    let (local_end, local_system) =
-        match positional_conic_local_system(ctx, body, local_start, cache) {
-            Ok(Some(frame)) => frame,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+    let (local_end, local_system) = positional_conic_local_system(body, local_start, cache)?;
     let start = FinitePoint3::new(endpoints[0].into())?;
     let end = FinitePoint3::new(endpoints[1].into())?;
     let coefficient_1 = FiniteReal::new(coefficient_1)?;
@@ -1187,7 +1174,7 @@ pub(crate) fn positional_conics(
             let Ok((entity_id, after_id)) = crate::psb::reference_id(payload, close + 1) else {
                 continue;
             };
-            if !matching_row_id(ctx, payload, close, entity_id)? {
+            if !matching_row_id(payload, close, entity_id) {
                 continue;
             }
             let (type_id, after_type) = crate::psb::compact_int(payload, after_id);
@@ -1335,7 +1322,7 @@ pub(crate) fn lines(
                 continue;
             }
             let Some([first_x, first_y, first_z, last_x, last_y, last_z]) =
-                scalar_suffix::<6>(ctx, &payload[start..end], &cache)?
+                scalar_suffix::<6>(&payload[start..end], &cache)
             else {
                 continue;
             };
@@ -1417,16 +1404,12 @@ fn line3d_fields(
 }
 
 fn matching_row_id(
-    ctx: &DecodeContext<'_>,
     payload: &[u8],
     close: usize,
     id: u32,
-) -> Result<bool, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
+) -> bool {
     let Some(prefix) = payload.get(..close) else {
-        return Ok(false);
+        return false;
     };
     for (candidate, _) in prefix.iter().enumerate().rev().take(8) {
         let Ok((previous, after)) = crate::psb::reference_id(payload, candidate) else {
@@ -1440,10 +1423,10 @@ fn matching_row_id(
                 && crate::psb::reference_id(payload, after + 1)
                     .is_ok_and(|(_, reference_end)| reference_end == close))
         {
-            return Ok(true);
+            return true;
         }
     }
-    Ok(false)
+    false
 }
 
 /// Decode complete positional `line3d` rows whose endpoint distance equals
@@ -1493,7 +1476,7 @@ pub(crate) fn line3d_lines(
             let Ok((id, after_id)) = crate::psb::reference_id(payload, close + 1) else {
                 continue;
             };
-            if !matching_row_id(ctx, payload, close, id)? {
+            if !matching_row_id(payload, close, id) {
                 continue;
             }
             let (_, body_start) = crate::psb::compact_int(payload, after_id);
@@ -1638,9 +1621,6 @@ fn arc_z_fields(
             start,
         )
     };
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut selected = None;
     for stored_center in [true, false] {
         let mut starts = 0..body.len();
@@ -1701,7 +1681,7 @@ pub(crate) fn arc_z_circles(
             let Ok((id, after_id)) = crate::psb::reference_id(payload, close + 1) else {
                 continue;
             };
-            if !matching_row_id(ctx, payload, close, id)? {
+            if !matching_row_id(payload, close, id) {
                 continue;
             }
             let (_, body_start) = crate::psb::compact_int(payload, after_id);

@@ -35,7 +35,7 @@ fn with_reference_ctx<T>(
 }
 
 fn scalar_suffix<const COUNT: usize>(row: &[u8], cache: &ScalarCache) -> Option<[f64; COUNT]> {
-    with_reference_ctx(row, |ctx| super::scalar_suffix(ctx, row, cache))
+    super::scalar_suffix(row, cache)
 }
 
 fn positional_conic_local_system(
@@ -43,7 +43,7 @@ fn positional_conic_local_system(
     local_start: usize,
     cache: &ScalarCache,
 ) -> Option<(usize, cadmpeg_ir::units::FiniteVector<12>)> {
-    with_reference_ctx(body, |ctx| super::positional_conic_local_system(ctx, body, local_start, cache))
+    super::positional_conic_local_system(body, local_start, cache)
 }
 
 fn lines(payload: &[u8]) -> Vec<super::ReferenceLine> {

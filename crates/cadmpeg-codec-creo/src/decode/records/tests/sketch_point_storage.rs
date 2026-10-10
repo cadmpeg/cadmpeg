@@ -6,7 +6,6 @@ use crate::feature::definitions::{
     FeatureVariableTable, ScalarLane, VariableType,
 };
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
 
 fn definition(with_variables: bool) -> FeatureDefinition {
     FeatureDefinition {
@@ -81,34 +80,6 @@ fn expected_points() -> serde_json::Value {
     ])
 }
 
-#[test]
-fn sketch_point_absence_is_free_and_preserves_original_refusal() {
-    let definition = definition(false);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    policy.limits.max_collection_items = 0;
-    policy.limits.max_retained_bytes = 0;
-    policy.limits.max_materialized_bytes = 0;
-    policy.limits.max_recursion_depth = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let mut storage = ctx
-        .reserve_scoped(0, "point projection storage")
-        .expect("empty storage");
-    assert!(
-        sketch_section_point_records(&ctx, &definition, &mut storage)
-            .expect("absent variables")
-            .is_empty()
-    );
-    let original = ctx
-        .charge_collection_items_limit(1, "after absent sketch points")
-        .expect_err("zero items");
-    assert!(
-        matches!(sketch_section_point_records(&ctx, &definition, &mut storage),
-        Err(CodecError::ResourceLimit(actual)) if actual == original)
-    );
-    assert_eq!(ctx.resource_refusal(), Some(original));
-}
 
 #[test]
 fn sketch_point_indices_release_while_projection_backing_stays_live() {

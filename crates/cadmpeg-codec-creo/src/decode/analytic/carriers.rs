@@ -606,9 +606,6 @@ fn positional_cylinder_carrier(
     model_surface: Option<&Surface>,
     source_carriers: &SourceUnitCarriers,
 ) -> Result<Option<CarrierEquation>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if row.kind != crate::surface::SurfaceKind::Cylinder {
         return Ok(None);
     }
@@ -713,9 +710,6 @@ pub(in crate::decode) fn geometry_section_record(
     scan: &ContainerScan,
     offset: usize,
 ) -> Result<Option<UnknownId>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut sections = scan.framing.sections.iter();
     while sections.len() != 0 {
         let Some(section) = ctx.next_charged(&mut sections, "creo geometry section lookup")? else {
@@ -795,9 +789,6 @@ fn polygon_strictly_contains(
     };
     use cadmpeg_ir::units::FinitePoint2;
     use std::cmp::Ordering;
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if polygon.len() < 3 {
         return Ok(false);
     }
@@ -861,9 +852,6 @@ fn polygon_strictly_contains_polygon(
     outer: &[[f64; 2]],
     inner: &[[f64; 2]],
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut traversal = (inner).iter();
     while traversal.len() != 0 {
         let Some(point) = ctx.next_charged(&mut traversal, "creo contained polygon vertices")? else {
@@ -957,9 +945,6 @@ fn ordered_contained_face_loops<'a>(
     mut loops: Vec<&'a crate::topology::Loop>,
     polygons: &[Vec<[f64; 2]>],
 ) -> Result<Option<Vec<&'a crate::topology::Loop>>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if loops.len() < 2 || loops.len() != polygons.len() {
         return Ok(None);
     }
@@ -1045,9 +1030,6 @@ pub(in crate::decode) fn ordered_parameter_face_loops<'a>(
     loops: Vec<&'a crate::topology::Loop>,
     polygons: &[Vec<[f64; 2]>],
 ) -> Result<Option<Vec<&'a crate::topology::Loop>>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if loops.len() == 1 {
         return Ok(Some(loops));
     }
