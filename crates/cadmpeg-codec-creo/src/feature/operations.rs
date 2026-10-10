@@ -484,7 +484,10 @@ fn recipe_bindings(
             continue;
         };
         const DISPLAY_WINDOW: usize = 96;
-        let display_end = tail.iter().take(DISPLAY_WINDOW).position(|byte| *byte == 0)
+        let display_end = tail
+            .iter()
+            .take(DISPLAY_WINDOW)
+            .position(|byte| *byte == 0)
             .map(|relative| display_start + relative);
         let Some(display_end) = display_end else {
             continue;
@@ -654,7 +657,12 @@ pub(crate) fn for_each_recipe_state(
     let states = storage.with_storage(|| parse_operation_states(ctx, payload))?;
     for state in ctx.admit_iter(states, "creo DEPDB recipe source traversal")? {
         if let Some(recipe) = state.recipe.candidate() {
-            visit(state.feature_id, state.root_schema_class(), recipe, state.offset)?;
+            visit(
+                state.feature_id,
+                state.root_schema_class(),
+                recipe,
+                state.offset,
+            )?;
         }
     }
     Ok(())
@@ -1030,11 +1038,11 @@ pub(crate) fn operations(
 
 #[cfg(test)]
 mod tests {
-    mod decode_cost;
-    mod resource_limits;
     mod admission_visits;
+    mod decode_cost;
     mod prefix_visits;
     mod recipe_owner;
+    mod resource_limits;
 
     use super::reference_names;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};

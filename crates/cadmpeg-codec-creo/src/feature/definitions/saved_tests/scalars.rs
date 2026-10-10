@@ -4,25 +4,37 @@ use super::*;
 
 #[test]
 fn saved_dummy_body_refuses_before_retained_copy() {
-    assert!(
-        matches!(crate::test_support::last_refusal_at(SAVED_DUMMY_LIMIT_INPUT, ResourceDimension::RetainedBytes, "creo saved dummy body", |ctx| {
-        parse_saved_dummy_entities(ctx, SAVED_DUMMY_LIMIT_INPUT, 0,
-            SAVED_DUMMY_LIMIT_INPUT.len())
-    }),
-CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo saved dummy body")
-    );
-    assert_eq!(
-        with_saved_leaf_limits(SAVED_DUMMY_LIMIT_INPUT, 1,
-            u64::try_from(4 * std::mem::size_of::<FeatureSavedEntity>() + 1).expect("dummy backing"), |ctx| {
+    let refusal = crate::test_support::last_refusal_at(
+        SAVED_DUMMY_LIMIT_INPUT,
+        ResourceDimension::RetainedBytes,
+        "creo saved dummy body",
+        |ctx| {
             parse_saved_dummy_entities(
                 ctx,
                 SAVED_DUMMY_LIMIT_INPUT,
                 0,
                 SAVED_DUMMY_LIMIT_INPUT.len(),
             )
-        })
+        },
+    );
+    assert!(matches!(refusal, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo saved dummy body"));
+    assert_eq!(
+        with_saved_leaf_limits(
+            SAVED_DUMMY_LIMIT_INPUT,
+            1,
+            u64::try_from(4 * std::mem::size_of::<FeatureSavedEntity>() + 1)
+                .expect("dummy backing"),
+            |ctx| {
+                parse_saved_dummy_entities(
+                    ctx,
+                    SAVED_DUMMY_LIMIT_INPUT,
+                    0,
+                    SAVED_DUMMY_LIMIT_INPUT.len(),
+                )
+            }
+        )
         .expect("dummy admitted")
         .len(),
         1
@@ -31,25 +43,37 @@ CodecError::ResourceLimit(limit)
 
 #[test]
 fn saved_dummy_entity_refuses_before_append() {
-    assert!(
-        matches!(crate::test_support::last_refusal_at(SAVED_DUMMY_LIMIT_INPUT, ResourceDimension::CollectionItems, "creo saved dummy entities", |ctx| {
-        parse_saved_dummy_entities(ctx, SAVED_DUMMY_LIMIT_INPUT, 0,
-            SAVED_DUMMY_LIMIT_INPUT.len())
-    }),
-CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo saved dummy entities")
-    );
-    assert_eq!(
-        with_saved_leaf_limits(SAVED_DUMMY_LIMIT_INPUT, 1,
-            u64::try_from(4 * std::mem::size_of::<FeatureSavedEntity>() + 1).expect("dummy backing"), |ctx| {
+    let refusal = crate::test_support::last_refusal_at(
+        SAVED_DUMMY_LIMIT_INPUT,
+        ResourceDimension::CollectionItems,
+        "creo saved dummy entities",
+        |ctx| {
             parse_saved_dummy_entities(
                 ctx,
                 SAVED_DUMMY_LIMIT_INPUT,
                 0,
                 SAVED_DUMMY_LIMIT_INPUT.len(),
             )
-        })
+        },
+    );
+    assert!(matches!(refusal, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo saved dummy entities"));
+    assert_eq!(
+        with_saved_leaf_limits(
+            SAVED_DUMMY_LIMIT_INPUT,
+            1,
+            u64::try_from(4 * std::mem::size_of::<FeatureSavedEntity>() + 1)
+                .expect("dummy backing"),
+            |ctx| {
+                parse_saved_dummy_entities(
+                    ctx,
+                    SAVED_DUMMY_LIMIT_INPUT,
+                    0,
+                    SAVED_DUMMY_LIMIT_INPUT.len(),
+                )
+            }
+        )
         .expect("dummy admitted")
         .len(),
         1

@@ -611,9 +611,10 @@ fn round_replay_short_scalar(
     }
     let mut offset = start;
     while offset < end {
-        let fixed = matches!(body.get(offset), Some(0xe0 | 0x19 | 0x28 | 0x32 | 0x37 | 0x41
-            | 0x31 | 0x4f | 0x90 | 0xd5 | 0xd7 | 0x18))
-            || scalar::decode(body, offset).is_some();
+        let fixed = matches!(
+            body.get(offset),
+            Some(0xe0 | 0x19 | 0x28 | 0x32 | 0x37 | 0x41 | 0x31 | 0x4f | 0x90 | 0xd5 | 0xd7 | 0x18)
+        ) || scalar::decode(body, offset).is_some();
         if fixed {
             ctx.next_charged(&mut (offset..end), "creo round replay scalar traversal")?;
         }
@@ -666,8 +667,9 @@ fn round_replay_fixed_token_end(
         0x18 => Some(psb::compact_int(body, offset + 1).1),
         _ => match scalar::decode(body, offset) {
             Some((_, scalar_end)) => Some(scalar_end),
-            None => psb::token_at(ctx, body, offset)?
-                .and_then(|token| offset.checked_add(token.length)),
+            None => {
+                psb::token_at(ctx, body, offset)?.and_then(|token| offset.checked_add(token.length))
+            }
         },
     };
     Ok(next.filter(|&next| next > offset && next <= end))
@@ -815,7 +817,8 @@ pub(super) fn field_value(
         let mut values = Vec::new();
         let mut items = 0..count;
         while !items.is_empty() && cursor < payload.len() {
-            let Some(_) = ctx.next_charged(&mut items, "creo compact integer field traversal")? else {
+            let Some(_) = ctx.next_charged(&mut items, "creo compact integer field traversal")?
+            else {
                 break;
             };
             let (value, next) = psb::compact_int(payload, cursor);
@@ -1053,7 +1056,9 @@ fn positional_datum_geometry_table_at(
     let mut entry_ids = Vec::new();
     let mut items = 0..count;
     while !items.is_empty() {
-        if cursor == body.len() { return Ok(None); }
+        if cursor == body.len() {
+            return Ok(None);
+        }
         let Some(index) = ctx.next_charged(&mut items, "creo positional datum traversal")? else {
             break;
         };
@@ -1223,7 +1228,8 @@ pub(crate) fn affected_ids(
                         ids.clear();
                         break;
                     }
-                    let Some(_) = ctx.next_charged(&mut items, "creo affected ID traversal")? else {
+                    let Some(_) = ctx.next_charged(&mut items, "creo affected ID traversal")?
+                    else {
                         break;
                     };
                     let (id, next) = psb::compact_int(&row.body, cursor);
@@ -1327,7 +1333,9 @@ fn replay_ids<'a>(
     let start = cursor;
     let mut items = 0..count;
     while !items.is_empty() {
-        if cursor == run.len() { return None; }
+        if cursor == run.len() {
+            return None;
+        }
         match ctx.next_charged(&mut items, "creo replay ID traversal") {
             Ok(Some(_)) => {}
             Ok(None) => break,
@@ -2133,7 +2141,9 @@ fn loop_history_prototypes<'a, 'ctx>(
     }
     let mut items = 0..count;
     while !items.is_empty() {
-        if cursor == body.len() { return None; }
+        if cursor == body.len() {
+            return None;
+        }
         let index = match ctx.next_charged(&mut items, "creo loop history roster traversal") {
             Ok(Some(index)) => index,
             Ok(None) => break,
@@ -2363,10 +2373,14 @@ pub(crate) fn revolution_extents(
         if row.body.get(schema_end) != Some(&2) {
             continue;
         }
-        let Some(choice_start) = row.body
+        let Some(choice_start) = row
+            .body
             .get(schema_end + 1..row.body.len().min(64))
-            .and_then(|prefix| prefix.windows(PARAMETER_CHOICE_PREFIX.len())
-                .position(|window| window == PARAMETER_CHOICE_PREFIX))
+            .and_then(|prefix| {
+                prefix
+                    .windows(PARAMETER_CHOICE_PREFIX.len())
+                    .position(|window| window == PARAMETER_CHOICE_PREFIX)
+            })
             .map(|relative| schema_end + 1 + relative + PARAMETER_CHOICE_PREFIX.len())
         else {
             continue;

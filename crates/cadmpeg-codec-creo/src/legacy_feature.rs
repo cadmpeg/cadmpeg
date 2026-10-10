@@ -67,7 +67,9 @@ impl<'a> Index<'a> {
         let mut children = BTreeMap::new();
         let mut input = persistence.objects.iter();
         while input.len() != 0 {
-            let Some(object) = ctx.next_charged(&mut input, "creo legacy feature object traversal")? else {
+            let Some(object) =
+                ctx.next_charged(&mut input, "creo legacy feature object traversal")?
+            else {
                 break;
             };
             match ctx.entry_hash_map(
@@ -224,7 +226,8 @@ pub(crate) fn scan(
     let next = index.children(ctx, features_root.offset, "next_feat_ptr")?;
     let mut feature_nodes = first.iter().chain(next);
     while feature_nodes.size_hint().0 != 0 {
-        let Some(feature) = ctx.next_charged(&mut feature_nodes, "creo legacy feature nodes")? else {
+        let Some(feature) = ctx.next_charged(&mut feature_nodes, "creo legacy feature nodes")?
+        else {
             break;
         };
         let Some(feature_id) = index
@@ -372,7 +375,8 @@ fn full_data_dimension_rows<'a>(
     let mut count = 1_u64;
     let mut dimensions = dimensions.iter();
     while dimensions.len() != 0 {
-        let Some(dimension) = ctx.next_charged(&mut dimensions, "creo legacy dimension extent")? else {
+        let Some(dimension) = ctx.next_charged(&mut dimensions, "creo legacy dimension extent")?
+        else {
             break;
         };
         let Some(product) = count.checked_mul(u64::from(*dimension)) else {
@@ -388,7 +392,9 @@ fn full_data_dimension_rows<'a>(
     ctx.reserve_vec(&mut rows, elements.len(), "creo legacy dimension rows")?;
     let mut elements = elements.iter();
     while elements.len() != 0 {
-        let Some(element_id) = ctx.next_charged(&mut elements, "creo legacy dimension row traversal")? else {
+        let Some(element_id) =
+            ctx.next_charged(&mut elements, "creo legacy dimension row traversal")?
+        else {
             break;
         };
         let Some(number) =
@@ -739,14 +745,18 @@ mod tests {
         fixture.real_values.rows.push(real_row);
         crate::test_support::assert_refusal_order(
             ResourceDimension::WorkUnits,
-            &["creo legacy value index traversal", "creo legacy value index traversal"],
+            &[
+                "creo legacy value index traversal",
+                "creo legacy value index traversal",
+            ],
             |work| {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_work_units = work;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
                 assert!(super::Index::build(&ctx, &fixture)?.is_some());
-                let limit = ctx.charge_work_limit(u64::MAX, "measure legacy index visits")
+                let limit = ctx
+                    .charge_work_limit(u64::MAX, "measure legacy index visits")
                     .expect_err("measure completed traversal");
                 assert_eq!(limit.used, 2);
                 Ok::<_, CodecError>(())
