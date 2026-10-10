@@ -2600,52 +2600,29 @@ pub(super) fn section_dimension_constraints_with_links(
     let saved_coordinate_witnesses = scratch_storage.with_storage(|| {
         saved_section_coordinate_witnesses(ctx, definition, &ambiguous_point_ids)
     })?;
-    let mut index_storage = ctx.reserve_scoped(0, "creo dimension geometry indexes")?;
-    let mut measured_by_points = HashMap::new();
-    let mut circles_by_radius = HashMap::new();
-    for segment in ctx.admit_iter(&segments, "creo dimension geometry index rows")? {
-        index_storage.with_storage(|| {
-            ctx.entry_hash_map(
-                &mut measured_by_points,
-                point_pair(segment.point_ids()),
-                "creo measured point pair index",
-            )?
-            .and_modify(|unique| *unique = None)
-            .or_insert(Some(segment));
-            if matches!(
-                segment.kind,
-                crate::feature::definitions::FeatureSegmentKind::Arc(_)
-            ) {
-                if let Some(radius) = segment.radius_ref {
-                    ctx.entry_hash_map(
-                        &mut circles_by_radius,
-                        radius,
-                        "creo circular dimension radius index",
-                    )?
-                    .and_modify(|unique| *unique = None)
-                    .or_insert(Some(segment.external_id));
-                }
+    let (measured_by_points, _measured_storage) = ctx.unique_index(
+        segments.iter().map(|segment| (point_pair(segment.point_ids()), segment)),
+        "creo measured point pair index",
+    )?;
+    let arc_radii = ctx.admit_iter(&segments, "creo dimension geometry index rows")?
+        .filter_map(|segment| {
+            if matches!(segment.kind, crate::feature::definitions::FeatureSegmentKind::Arc(_)) {
+                segment.radius_ref.map(|radius| (radius, segment.external_id))
+            } else {
+                None
             }
-            Ok::<_, cadmpeg_core::CodecError>(())
-        })?;
-    }
-    if let Some(table) = &definition.segments {
-        for row in ctx.admit_iter(table.rows.as_slice(), "creo circular dimension index rows")? {
-            let SegmentRow::Circle(segment) = row else {
-                continue;
-            };
-            index_storage.with_storage(|| {
-                ctx.entry_hash_map(
-                    &mut circles_by_radius,
-                    segment.radius_ref,
-                    "creo circular dimension radius index",
-                )?
-                .and_modify(|unique| *unique = None)
-                .or_insert(Some(segment.external_id));
-                Ok::<_, cadmpeg_core::CodecError>(())
-            })?;
-        }
-    }
+        });
+    let circle_radii = ctx.admit_iter(
+        definition.segments.as_ref().map_or(&[][..], |table| table.rows.as_slice()),
+        "creo circular dimension index rows",
+    )?.filter_map(|row| match row {
+        SegmentRow::Circle(segment) => Some((segment.radius_ref, segment.external_id)),
+        _ => None,
+    });
+    let (circles_by_radius, _radius_storage) = ctx.unique_index(
+        arc_radii.chain(circle_radii),
+        "creo circular dimension radius index",
+    )?;
     let mut constraints = Vec::new();
     for (relation_index, relation) in ctx
         .admit_iter(&relations.rows, "creo section dimension relation rows")?
