@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import io
 import json
@@ -55,6 +56,20 @@ class TempSourceCase(unittest.TestCase):
 
 
 class StripCfgTest(unittest.TestCase):
+    def test_cfg_recognition_uses_only_code_tokens(self) -> None:
+        for attribute, expected in (
+            ('/* banner */ #[cfg(test)]', True),
+            ('#[ /* note */ cfg( /* note */ test)]', True),
+            ('#[cfg(all(feature = "test", /* note */ test))]', True),
+            ('/* #[cfg(test)] */', False),
+            ('// #[cfg(test)]', False),
+            ('r#"#[cfg(test)]"#', False),
+            ('#[cfg(feature = "test")]', False),
+            ('#[cfg(any(test, feature = "x"))]', False),
+        ):
+            with self.subTest(attribute=attribute):
+                self.assertEqual(policy.attr_is_test_cfg(attribute), expected)
+
     def test_long_flat_cfg_does_not_backtrack(self) -> None:
         # A subprocess deadline also bounds failures if the old regex returns.
         probe = """
@@ -384,6 +399,19 @@ class PatternFilters(unittest.TestCase):
 
 
 class PlacementRules(TempSourceCase):
+    def test_cfg_and_path_text_inside_literals_are_not_module_attributes(self) -> None:
+        self.write("crates/demo/src/lib.rs", '''const TEXT: &str = r#"
+#[cfg(test)]
+#[path = "fake.rs"]
+mod fake;
+"#;
+#[cfg(test)]
+#[path = "real.rs"]
+mod tests;
+''')
+        self.write("crates/demo/src/real.rs", "fn fixture() {}\n")
+        self.assertEqual([f.line for f in self.findings("test_path_include")], [6])
+
     def test_production_cfg_is_not_test_placement_or_excluded_from_size(self) -> None:
         self.write("crates/demo/src/lib.rs", '\n'.join([
             '#[cfg(not(test))]', '#[path = "prod.rs"]', 'mod prod;',
@@ -497,6 +525,25 @@ class PlacementRules(TempSourceCase):
 
 
 class ModuleVisibility(TempSourceCase):
+    def test_module_walk_uses_code_only_cfg_and_brace_boundaries(self) -> None:
+        root = self.write("crates/demo/src/lib.rs", '''const TEXT: &str = r#"
+};
+#[cfg(test)]
+mod fake;
+pub mod ghost;
+"#;
+#[cfg(test)]
+mod fixtures;
+#[path = "actual.rs"]
+pub(crate) mod real;
+''')
+        for name in ("fake", "ghost", "fixtures", "actual"):
+            self.write(f"crates/demo/src/{name}.rs", "fn value() {}\n")
+        self.assertEqual(policy.module_scopes(root), [
+            (root.resolve(), (), ()),
+            ((root.parent / "actual.rs").resolve(), ("real",), ()),
+        ])
+
     def test_private_inner_module_cannot_grant_crate_reach(self) -> None:
         self.write("crates/demo/src/lib.rs", "pub mod outer;\n")
         self.write("crates/demo/src/outer.rs", "mod inner;\n")
@@ -779,6 +826,32 @@ class WireMirrorPolicyScope(unittest.TestCase):
 
 
 class EndianExceptions(TempSourceCase):
+    def test_test_only_markers_are_masked_but_production_markers_still_fail(self) -> None:
+        self.write("crates/demo/src/lib.rs", """#[cfg(test)]
+mod tests {
+    fn test_only() {
+        // endian-exception: unknown-test-reason
+        let x = u32::from_le_bytes(bytes);
+        // discarded-value: test-only answer has no reader
+        let _ = x;
+        // wrapping-exception: test-only modular arithmetic
+        let y = x.wrapping_add(1);
+    }
+}
+fn production() {
+    // endian-exception: unknown-production-reason
+    let x = u32::from_le_bytes(bytes);
+    // discarded-value: stale production reason
+    let x = 0;
+    // wrapping-exception: stale production reason
+    let x = 0;
+}
+""")
+        self.assertEqual([f.line for f in self.findings("endian_exception")], [13])
+        self.assertEqual([f.line for f in self.findings("unapproved_endian_read")], [14])
+        self.assertEqual([f.line for f in self.findings("discarded_value")], [15])
+        self.assertEqual([f.line for f in self.findings("wrapping_exception")], [17])
+
     def test_literal_cannot_supply_an_exception(self) -> None:
         self.write("crates/demo/src/lib.rs", '''fn f() {
     let text = r#"
@@ -1052,6 +1125,26 @@ class ScriptTestCollection(TempSourceCase):
     def test_a_case_before_the_main_block_is_collected(self) -> None:
         self.write("scripts/test_zz_scratch.py", self.CASE + self.GUARD)
         self.assertEqual(self.findings("script_test_collection"), [])
+
+    def test_a_case_inside_the_main_block_is_named(self) -> None:
+        case = "".join("    " + line + "\n" for line in self.CASE.removeprefix("import unittest\n").splitlines())
+        self.write("scripts/test_zz_scratch.py",
+                   'import unittest\nif __name__ == "__main__":\n' + case + "    unittest.main()\n")
+        self.assertEqual(len(self.findings("script_test_collection")), 1)
+
+    def test_main_guard_requires_one_equality_comparison(self) -> None:
+        for expression, expected in (
+            ('__name__ == "__main__"', True),
+            ('__name__ != "__main__"', False),
+            ('__name__ <= "__main__"', False),
+            ('__name__ is "__main__"', False),
+            ('__name__ == "__main__" == other', False),
+        ):
+            with self.subTest(expression=expression):
+                node = ast.parse(f"if {expression}:\n    pass\n").body[0]
+                self.assertEqual(policy.is_main_guard(node), expected)
+                self.write("scripts/test_zz_scratch.py", f"if {expression}:\n    pass\n" + self.CASE)
+                self.assertEqual(len(self.findings("script_test_collection")), int(expected))
 
 
 class AuthoringPaths(TempSourceCase):
