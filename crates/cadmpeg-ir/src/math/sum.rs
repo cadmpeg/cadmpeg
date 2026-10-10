@@ -6,7 +6,7 @@ use crate::scalar::{FiniteReal, NonZeroReal};
 pub(crate) mod quotient_third;
 pub(crate) mod quotient_fourth;
 pub(crate) mod quotient_fifth;
-pub(super) mod six_product;
+mod expanded;
 pub(crate) mod contact;
 
 /// A finite dot product with an exact-product fallback for range loss or cancellation.
