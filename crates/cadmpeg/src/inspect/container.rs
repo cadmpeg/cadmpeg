@@ -51,18 +51,17 @@ pub(super) fn list(bytes: &[u8], limits: ResourceLimits) -> Result<Listing> {
     };
     let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
         .context("the file does not fit the resource-limit profile")?;
-    match detect(bytes) {
-        ContainerKind::Cfb => {
-            let snapshot =
-                CompoundSnapshot::new(&ctx, root).context("reading the CFB directory")?;
-            Ok(Listing::Cfb(snapshot.entries().to_vec()))
-        }
-        ContainerKind::Zip => {
-            let snapshot =
-                ArchiveSnapshot::new(&ctx, root).context("reading the ZIP central directory")?;
-            Ok(Listing::Zip(snapshot.entries().to_vec()))
-        }
-    }
+    let listing = match detect(bytes) {
+        ContainerKind::Cfb => CompoundSnapshot::new(&ctx, root)
+            .map(|snapshot| Listing::Cfb(snapshot.entries().to_vec())),
+        ContainerKind::Zip => ArchiveSnapshot::new(&ctx, root)
+            .map(|snapshot| Listing::Zip(snapshot.entries().to_vec())),
+    };
+    let context = match detect(bytes) {
+        ContainerKind::Cfb => "reading the CFB directory",
+        ContainerKind::Zip => "reading the ZIP central directory",
+    };
+    ctx.finish(listing).context(context)
 }
 
 /// Extracts one ZIP entry or CFB stream.
@@ -84,8 +83,8 @@ pub(super) fn extract(bytes: &[u8], limits: ResourceLimits, name: &str) -> Resul
     };
     let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
         .context("the file does not fit the resource-limit profile")?;
-    match detect(bytes) {
-        ContainerKind::Cfb => {
+    let extracted = match detect(bytes) {
+        ContainerKind::Cfb => (|| -> Result<Vec<u8>> {
             let snapshot =
                 CompoundSnapshot::new(&ctx, root).context("reading the CFB directory")?;
             let entry = snapshot.stream(&ctx, name)?.ok_or_else(|| {
@@ -95,8 +94,8 @@ pub(super) fn extract(bytes: &[u8], limits: ResourceLimits, name: &str) -> Resul
                 .open(&ctx, entry)
                 .with_context(|| format!("opening stream {}", shell_quote(name)))?;
             Ok(view.window().to_vec())
-        }
-        ContainerKind::Zip => {
+        })(),
+        ContainerKind::Zip => (|| -> Result<Vec<u8>> {
             let snapshot =
                 ArchiveSnapshot::new(&ctx, root).context("reading the ZIP central directory")?;
             let entry = snapshot
@@ -106,8 +105,9 @@ pub(super) fn extract(bytes: &[u8], limits: ResourceLimits, name: &str) -> Resul
                 .open(&ctx, &entry.name)
                 .with_context(|| format!("opening entry {}", shell_quote(name)))?;
             Ok(view.window().to_vec())
-        }
-    }
+        })(),
+    };
+    ctx.finish(extracted)
 }
 
 fn missing_compound_member_message(snapshot: &CompoundSnapshot<'_>, name: &str) -> String {
