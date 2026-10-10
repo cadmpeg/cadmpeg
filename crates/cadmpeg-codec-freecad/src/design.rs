@@ -68,15 +68,15 @@ fn malformed_design(ctx: &DecodeContext<'_>, message: std::fmt::Arguments<'_>) -
     crate::resource::malformed_charged(ctx, message, "fcstd design diagnostic")
 }
 
-pub(crate) fn transfer(
-    ctx: &DecodeContext<'_>,
+pub(crate) fn transfer<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     ir: &mut CadIr,
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
     payloads: &[ShapePayloadRecord],
     entries: &[EntryRecord],
     program_version: Option<&str>,
-) -> Result<BTreeSet<String>, CodecError> {
+) -> Result<(BTreeSet<String>, ScopedReservation<'ctx>), CodecError> {
     let (_properties_by_owner_storage, properties_by_owner);
     (properties_by_owner, _properties_by_owner_storage) = ctx.collect_scoped_btree_groups(
         properties
@@ -257,14 +257,20 @@ pub(crate) fn transfer(
             }
             Ok::<_, CodecError>(body_ids)
         })?;
-    let (feature_ordinal_storage, feature_ordinals, mut cycle_affected);
-    (feature_ordinals, cycle_affected, feature_ordinal_storage) = {
+    let (feature_ordinal_storage, mut cycle_storage, feature_ordinals, mut cycle_affected);
+    (
+        feature_ordinals,
+        cycle_affected,
+        feature_ordinal_storage,
+        cycle_storage,
+    ) = {
         let ordering::FeatureOrdering {
             ordinals,
             cycle_affected,
             storage,
+            cycle_storage,
         } = ordering::feature_ordinals(ctx, objects, &properties_by_owner, &parent_by_member)?;
-        (ordinals, cycle_affected, storage)
+        (ordinals, cycle_affected, storage, cycle_storage)
     };
     drop(parent_by_member);
     drop(parent_by_member_storage);
@@ -328,6 +334,10 @@ pub(crate) fn transfer(
             && !is_sketch(&object.type_name)
             && !is_spreadsheet(&object.type_name)
         {
+            if is_extrusion(&object.type_name) {
+                extrusion_profile_normal(ctx, owned, &object_by_id, &properties_by_owner)?;
+                extrusion_source(ctx, owned)?;
+            }
             native_definition(ctx, &object.type_name, owned)?
         } else if is_spreadsheet(&object.type_name) {
             ctx.push_vec(
@@ -496,24 +506,8 @@ pub(crate) fn transfer(
                 }
                 profile => profile,
             };
-            let profile_normal = match profile_target(ctx, owned)? {
-                Some((_, target)) => {
-                    match object_by_id.get(target, "fcstd profile object lookup")? {
-                        Some(profile_object) => {
-                            let profile_properties = ctx
-                                .get_btree_map(
-                                    &properties_by_owner,
-                                    profile_object.id().as_str(),
-                                    "fcstd profile owner properties",
-                                )?
-                                .map_or(&[][..], Vec::as_slice);
-                            Some(sketch_frame(ctx, profile_properties)?.1)
-                        }
-                        None => None,
-                    }
-                }
-                None => None,
-            };
+            let profile_normal =
+                extrusion_profile_normal(ctx, owned, &object_by_id, &properties_by_owner)?;
             extrusion_definition(
                 ctx,
                 &object.type_name,
@@ -596,7 +590,7 @@ pub(crate) fn transfer(
             }
         }
         let definition = post_processed_definition(ctx, definition, &object.type_name, owned)?;
-        append_operation_parameters(ctx, &mut ir.model.parameters, object, owned)?;
+        append_operation_parameters(ctx, &mut ir.model.parameters, object, &id, owned)?;
         let mut outputs = Vec::new();
         let owned_payloads = ctx
             .get_btree_map(
@@ -867,11 +861,19 @@ pub(crate) fn transfer(
         )? {
             continue;
         }
-        ctx.insert_btree_set(
-            &mut cycle_affected,
-            ctx.copy_retained_text(object.id(), "fcstd design parameter cycle identity")?,
-            "fcstd design parameter cycle objects",
-        )?;
+        if !ctx.contains_btree_set(
+            &cycle_affected,
+            object.id().as_str(),
+            "fcstd design parameter cycle object lookup",
+        )? {
+            cycle_storage.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut cycle_affected,
+                    ctx.copy_retained_text(object.id(), "fcstd design parameter cycle identity")?,
+                    "fcstd design parameter cycle objects",
+                )
+            })?;
+        }
         let feature_index = ctx.position_by(
             &ir.model.features,
             |feature| match feature.native_ref.as_deref() {
@@ -899,7 +901,7 @@ pub(crate) fn transfer(
             feature.dependencies.clear();
         }
     }
-    Ok(cycle_affected)
+    Ok((cycle_affected, cycle_storage))
 }
 
 /// A body identity prefix and the reservation for its temporary text.
@@ -1143,6 +1145,7 @@ fn append_operation_parameters(
     ctx: &DecodeContext<'_>,
     parameters: &mut Vec<DesignParameter>,
     object: &ObjectRecord,
+    owner: &FeatureId,
     properties: &[&PropertyRecord],
 ) -> Result<(), CodecError> {
     if let Some(limit) = ctx.resource_refusal() {
@@ -1169,7 +1172,6 @@ fn append_operation_parameters(
         "ThreadDepth",
         "CustomThreadClearance",
     ];
-    let mut owner = None;
     let mut source = properties.iter();
     while source.len() != 0 {
         let Some(property) =
@@ -1187,14 +1189,6 @@ fn append_operation_parameters(
         if tag == "Bool" {
             continue;
         }
-        let (owner, _owner_storage) = match &mut owner {
-            Some(owner) => owner,
-            slot @ None => slot.insert(
-                ctx.with_scoped_storage("fcstd operation parameter owner storage", || {
-                    feature_id(ctx, object)
-                })?,
-            ),
-        };
         if ctx.any_by(
             parameters.as_slice(),
             |parameter| {
@@ -5072,6 +5066,52 @@ fn extrude_side_type(
     })
 }
 
+fn extrusion_profile_normal(
+    ctx: &DecodeContext<'_>,
+    properties: &[&PropertyRecord],
+    objects: &ObjectIndex<'_, '_, '_>,
+    properties_by_owner: &BTreeMap<&str, Vec<&PropertyRecord>>,
+) -> Result<Option<Vector3>, CodecError> {
+    let Some((_, target)) = profile_target(ctx, properties)? else {
+        return Ok(None);
+    };
+    let Some(object) = objects.get(target, "fcstd profile object lookup")? else {
+        return Ok(None);
+    };
+    let owned = ctx
+        .get_btree_map(
+            properties_by_owner,
+            object.id().as_str(),
+            "fcstd profile owner properties",
+        )?
+        .map_or(&[][..], Vec::as_slice);
+    Ok(Some(sketch_frame(ctx, owned)?.1))
+}
+
+fn extrusion_source(
+    ctx: &DecodeContext<'_>,
+    properties: &[&PropertyRecord],
+) -> Result<ExtrudeSource, CodecError> {
+    // `TaperAngle2` states the draft of a second, independent side. The
+    // property set an extrude record means depends on its extent kind, so the
+    // reader decides the kind first and reads the second side's draft only
+    // for the kind that carries one. A one-sided or midplane extrude has no
+    // second side: reading a property its kind does not carry is over-reach,
+    // and refusing the whole feature over it deletes what the record states.
+    let extent = extrude_side_type(ctx, properties)?;
+    let taper_second = if extent.side_type == Some(1) {
+        taper_angle(ctx, properties, "TaperAngle2")?
+    } else {
+        None
+    };
+    Ok(ExtrudeSource {
+        extent,
+        taper: taper_angle(ctx, properties, "TaperAngle")?,
+        taper_reverse: taper_angle(ctx, properties, "TaperAngleRev")?,
+        taper_second,
+    })
+}
+
 fn extrusion_definition(
     ctx: &DecodeContext<'_>,
     kind: &str,
@@ -5088,24 +5128,7 @@ fn extrusion_definition(
     } else {
         None
     };
-    // `TaperAngle2` states the draft of a second, independent side. The
-    // property set an extrude record means depends on its extent kind, so the
-    // reader decides the kind first and reads the second side's draft only
-    // for the kind that carries one. A one-sided or midplane extrude has no
-    // second side: reading a property its kind does not carry is over-reach,
-    // and refusing the whole feature over it deletes what the record states.
-    let extent = extrude_side_type(ctx, properties)?;
-    let taper_second = if extent.side_type == Some(1) {
-        taper_angle(ctx, properties, "TaperAngle2")?
-    } else {
-        None
-    };
-    let source = ExtrudeSource {
-        extent,
-        taper: taper_angle(ctx, properties, "TaperAngle")?,
-        taper_reverse: taper_angle(ctx, properties, "TaperAngleRev")?,
-        taper_second,
-    };
+    let source = extrusion_source(ctx, properties)?;
     extrusion_shape(
         ctx,
         kind,
@@ -7937,11 +7960,6 @@ struct PatternSources<'a, 'b, 'ctx, 'arena> {
     entries: &'a [EntryRecord],
 }
 
-enum PatternSeedCandidates<'a> {
-    Borrowed(Vec<&'a FeatureId>),
-    Owned(Vec<FeatureId>),
-}
-
 fn pattern_definition(
     ctx: &DecodeContext<'_>,
     kind: &str,
@@ -8013,13 +8031,13 @@ fn pattern_definition(
         if seeds.is_empty() {
             return Ok(None);
         }
-        (PatternSeedCandidates::Borrowed(seeds), seed_storage)
+        (seeds, seed_storage)
     } else if let Some(selected_seeds) =
         multi_transform_stage_seeds(ctx, owner, features, objects, properties_by_owner)?
     {
         let (storage, seeds);
         (seeds, storage) = selected_seeds;
-        (PatternSeedCandidates::Owned(seeds), storage)
+        (seeds, storage)
     } else {
         let Some(feature) = predecessors.get(owner, "fcstd implicit body predecessor")? else {
             return Ok(None);
@@ -8032,7 +8050,7 @@ fn pattern_definition(
             feature,
             "fcstd implicit pattern seed",
         )?;
-        (PatternSeedCandidates::Borrowed(seeds), storage)
+        (seeds, storage)
     };
 
     let pattern = if kind.ends_with("MultiTransform") {
@@ -8097,34 +8115,24 @@ fn pattern_definition(
         };
         pattern
     };
-    let pattern_seeds = match seeds {
-        PatternSeedCandidates::Borrowed(seeds) => {
-            let mut output = ctx.vector_storage(seeds.len(), "fcstd pattern seed variants")?;
-            let identity_operation = if originals.is_some() {
-                "fcstd pattern seed identity"
-            } else {
-                "fcstd implicit pattern seed identity"
-            };
-            let mut source = seeds.into_iter();
-            while source.len() != 0 {
-                let Some(seed) =
-                    ctx.next_charged(&mut source, "fcstd selected pattern seed candidates")?
-                else {
-                    break;
-                };
-                ctx.push_vec(
-                    &mut output,
-                    PatternSeed::Feature(seed.try_clone_for_decode(ctx, identity_operation)?),
-                    "fcstd pattern seed variants",
-                )?;
-            }
-            output
-        }
-        PatternSeedCandidates::Owned(seeds) => ctx.collect_vec(
-            seeds.into_iter().map(PatternSeed::Feature),
-            "fcstd pattern seed variants",
-        )?,
+    let mut pattern_seeds = ctx.vector_storage(seeds.len(), "fcstd pattern seed variants")?;
+    let identity_operation = if originals.is_some() {
+        "fcstd pattern seed identity"
+    } else {
+        "fcstd implicit pattern seed identity"
     };
+    let mut source = seeds.into_iter();
+    while source.len() != 0 {
+        let Some(seed) = ctx.next_charged(&mut source, "fcstd selected pattern seed candidates")?
+        else {
+            break;
+        };
+        ctx.push_vec(
+            &mut pattern_seeds,
+            PatternSeed::Feature(seed.try_clone_for_decode(ctx, identity_operation)?),
+            "fcstd pattern seed variants",
+        )?;
+    }
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Pattern {
             seeds: pattern_seeds,
@@ -8133,13 +8141,13 @@ fn pattern_definition(
     )))
 }
 
-fn multi_transform_stage_seeds<'ctx>(
+fn multi_transform_stage_seeds<'ctx, 'features>(
     ctx: &'ctx DecodeContext<'_>,
     stage: &str,
-    features: &HashMap<&str, FeatureId>,
+    features: &'features HashMap<&str, FeatureId>,
     objects: &[ObjectRecord],
     properties_by_owner: &BTreeMap<&str, Vec<&PropertyRecord>>,
-) -> Result<Option<(Vec<FeatureId>, ScopedReservation<'ctx>)>, CodecError> {
+) -> Result<Option<(Vec<&'features FeatureId>, ScopedReservation<'ctx>)>, CodecError> {
     let mut consumers = objects.iter();
     if let Some(limit) = ctx.resource_refusal() {
         return Err(CodecError::ResourceLimit(limit));
@@ -8214,25 +8222,7 @@ fn multi_transform_stage_seeds<'ctx>(
         if !complete || selected.is_empty() {
             continue;
         }
-        let mut seed_storage = ctx.reserve_scoped(0, "fcstd multi-transform seed storage")?;
-        let mut seeds = Vec::new();
-        let mut source = selected.iter();
-        while source.len() != 0 {
-            let Some(feature) =
-                ctx.next_charged(&mut source, "fcstd multi-transform source seeds")?
-            else {
-                break;
-            };
-            let feature =
-                feature.try_clone_for_decode(ctx, "fcstd multi-transform seed identity")?;
-            ctx.push_scoped_vec(
-                &mut seed_storage,
-                &mut seeds,
-                feature,
-                "fcstd multi-transform source seeds",
-            )?;
-        }
-        return Ok(Some((seeds, seed_storage)));
+        return Ok(Some((selected, _selected_storage)));
     }
     Ok(None)
 }

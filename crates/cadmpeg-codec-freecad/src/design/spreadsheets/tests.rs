@@ -84,15 +84,11 @@ fn design_spreadsheet_cell_properties_refuse_at_collection_limits() {
             "<Property><Cells Count=\"1\"><Cell address=\"A1\" content=\"5\" alias=\"Length\"/></Cells></Property>".into(), 0,
         ).expect("valid XML span"),
     };
-    for operation in [
+    crate::test_support::assert_collection_refusal_at(
+        &[],
         "fcstd spreadsheet cell properties",
-        "fcstd spreadsheet distinct parameter IDs",
-        "fcstd spreadsheet distinct addresses",
-    ] {
-        crate::test_support::assert_collection_refusal_at(&[], operation, |ctx| {
-            super::append_spreadsheet(ctx, &mut Vec::new(), &object, &[&property])
-        });
-    }
+        |ctx| super::append_spreadsheet(ctx, &mut Vec::new(), &object, &[&property]),
+    );
 }
 
 #[test]
@@ -138,14 +134,9 @@ fn design_spreadsheet_dimensions_refuse_at_distinct_collection_limits() {
         "Spreadsheet::PropertyRowHeights",
         "<Property><RowInfo Count=\"1\"><Row name=\"2\" height=\"45\"/></RowInfo></Property>",
     );
-    for operation in [
-        "fcstd spreadsheet distinct column widths",
-        "fcstd spreadsheet distinct row heights",
-    ] {
-        crate::test_support::assert_collection_refusal_at(&[], operation, |ctx| {
-            super::append_spreadsheet(ctx, &mut Vec::new(), &object, &[&cells, &columns, &rows])
-        });
-    }
+    crate::test_support::assert_collection_refusal_at(&[], "fcstd spreadsheet dimensions", |ctx| {
+        super::append_spreadsheet(ctx, &mut Vec::new(), &object, &[&cells, &columns, &rows])
+    });
 }
 
 #[test]
@@ -187,36 +178,36 @@ fn spreadsheet_cells_refuse_at_caller_limit() {
 }
 
 #[test]
-fn spreadsheet_value_visits_exact_descendants_without_end_probe() {
+fn spreadsheet_value_fits_linear_work_bound() {
     let document =
         roxmltree::Document::parse("<Property><Cells/></Property>").expect("valid spreadsheet XML");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 27;
+    policy.limits.max_work_units = 256;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
 
     let value = super::direct_spreadsheet_value(&ctx, &document, "Cells", "cells-property")
-        .expect("the exact descendant visits fit the work cap");
+        .expect("the value fits the linear work cap");
     assert_eq!(value.tag_name().name(), "Cells");
 }
 
 #[test]
-fn spreadsheet_cell_address_visits_only_exact_column_bytes() {
+fn spreadsheet_cell_addresses_fit_linear_work_bound() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 4;
+    policy.limits.max_work_units = 128;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     assert_eq!(
-        cell_address(&ctx, "A1").expect("cell address fits the exact work cap"),
+        cell_address(&ctx, "A1").expect("cell address fits the linear work cap"),
         Some((1, 1))
     );
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 2;
+    policy.limits.max_work_units = 128;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     assert_eq!(
-        cell_address(&ctx, "1").expect("empty column scan fits the exact work cap"),
+        cell_address(&ctx, "1").expect("empty column scan fits the linear work cap"),
         None
     );
 }

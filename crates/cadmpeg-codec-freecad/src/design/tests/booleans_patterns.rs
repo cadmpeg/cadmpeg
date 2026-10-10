@@ -114,7 +114,7 @@ fn pattern_seed_vectors_and_identities_refuse_at_matching_limits() {
 }
 
 #[test]
-fn multi_transform_seed_vector_and_identity_refuse_at_matching_limits() {
+fn multi_transform_seed_selection_borrows_identities_and_refuses_collection_limit() {
     let consumer = crate::native::ObjectRecord {
         identity: crate::native::object_identity::ObjectIdentity::try_new(
             "fcstd:native:object#consumer".into(),
@@ -150,7 +150,7 @@ fn multi_transform_seed_vector_and_identity_refuse_at_matching_limits() {
     );
     crate::test_support::assert_collection_refusal_at(
         &[],
-        "fcstd multi-transform source seeds",
+        "fcstd multi-transform selected seeds",
         |ctx| {
             crate::design::multi_transform_stage_seeds(
                 ctx,
@@ -162,20 +162,49 @@ fn multi_transform_seed_vector_and_identity_refuse_at_matching_limits() {
             .map(|seeds| seeds.map(|(seeds, _storage)| seeds))
         },
     );
-    crate::test_support::assert_retained_refusal_at(
-        &[],
-        "fcstd multi-transform seed identity",
-        |ctx| {
-            crate::design::multi_transform_stage_seeds(
-                ctx,
-                "stage",
-                &features,
-                std::slice::from_ref(&consumer),
-                &properties_by_owner,
-            )
-            .map(|seeds| seeds.map(|(seeds, _storage)| seeds))
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let (seeds, _storage) = crate::design::multi_transform_stage_seeds(
+        &ctx,
+        "stage",
+        &features,
+        std::slice::from_ref(&consumer),
+        &properties_by_owner,
+    )
+    .expect("selection")
+    .expect("consumer seeds");
+    assert_eq!(seeds.len(), 1);
+    assert!(std::ptr::eq(seeds[0], features.get("base").expect("seed")));
+    assert_eq!(ctx.resource_refusal(), None);
+    let invalid_factor = super::scalar_property("stage", "Factor", "0");
+    let object_by_id = crate::design::ObjectIndex::new(&ctx, std::slice::from_ref(&consumer))
+        .expect("object index");
+    let predecessors = crate::design::BodyPredecessors::new(
+        &ctx,
+        std::slice::from_ref(&consumer),
+        &features,
+        &properties_by_owner,
+    )
+    .expect("predecessors");
+    let definition = crate::design::pattern_definition(
+        &ctx,
+        "PartDesign::Scaled",
+        "stage",
+        &[&invalid_factor],
+        &features,
+        crate::design::PatternSources {
+            objects: std::slice::from_ref(&consumer),
+            object_by_id: &object_by_id,
+            predecessors: &predecessors,
+            properties_by_owner: &properties_by_owner,
+            entries: &[],
         },
-    );
+    )
+    .expect("invalid factor does not retain discarded seeds");
+    assert!(definition.is_none());
+    assert_eq!(ctx.resource_refusal(), None);
 }
 
 #[test]

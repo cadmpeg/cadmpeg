@@ -258,22 +258,6 @@ pub(super) fn append_spreadsheet(
         "Row",
         "height",
     )?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(cell_ids.len()),
-        "fcstd spreadsheet distinct parameter IDs",
-    )?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(cell_ids.len()),
-        "fcstd spreadsheet distinct addresses",
-    )?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(column_widths.len()),
-        "fcstd spreadsheet distinct column widths",
-    )?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(row_heights.len()),
-        "fcstd spreadsheet distinct row heights",
-    )?;
     Spreadsheet::new(
         SpreadsheetId::mint(design_identity_text(
             ctx,
