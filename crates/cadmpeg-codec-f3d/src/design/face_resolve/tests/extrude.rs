@@ -469,23 +469,25 @@ fn selected_face_start_requires_unique_sketch_plane_coincidence() {
         ),
     ];
 
-    assert!(crate::design::face_resolve::face_coincident_with_sketch(
+    assert!(crate::test_support::with_decode_context(|ctx| crate::design::face_resolve::planes::face_coincident_with_sketch(
+        ctx,
         &faces[0].id,
         &sketch,
         &faces,
         &surfaces,
         EPS_EXTRUDE_START_LINEAR,
         EPS_EXTRUDE_START_ANGULAR,
-    ));
+    )).unwrap());
     for candidate in &faces[1..] {
-        assert!(!crate::design::face_resolve::face_coincident_with_sketch(
+        assert!(!crate::test_support::with_decode_context(|ctx| crate::design::face_resolve::planes::face_coincident_with_sketch(
+            ctx,
             &candidate.id,
             &sketch,
             &faces,
             &surfaces,
             EPS_EXTRUDE_START_LINEAR,
             EPS_EXTRUDE_START_ANGULAR,
-        ));
+        )).unwrap());
     }
 }
 
@@ -1024,4 +1026,48 @@ fn extrude_active_face_refuses_collection_limit() {
             if failure.dimension == ResourceDimension::CollectionItems
                 && failure.operation == "f3d Extrude active face")
     );
+}
+
+#[test]
+fn target_plane_query_refuses_before_carrier_visit_and_preserves_native_source() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, ResourceFailure, ResourceLimit};
+    use cadmpeg_core::CodecError;
+
+    let (mut operand, group, faces) = start_geometry_fixture();
+    operand.candidate_faces = vec![face(10)];
+    let surfaces = [Surface {
+        id: faces[0].surface.clone(),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                Point3::new(3.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0),
+            ).unwrap(),
+        )), source_object: None,
+    }];
+    let before = serde_json::to_value(&operand).unwrap();
+    let mut operands = [operand];
+    let resolution = ExtrudeFaceResolution {
+        faces: &faces, surfaces: &surfaces, groups: &[], operands: &mut operands,
+        linear_tolerance: EPS_FACE_TEST_TARGET_LINEAR_E9,
+        angular_tolerance: EPS_FACE_TEST_TARGET_ANGULAR_E9,
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // The real direct candidate visit executes; its first face lookup visit refuses.
+    policy.limits.max_work_units = 1;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let original = ResourceLimit {
+        dimension: ResourceDimension::WorkUnits, reason: ResourceFailure::BudgetExceeded,
+        limit: 1, used: 1, additional: 1, operation: "visit F3D plane face",
+    };
+    assert!(matches!(extrude_target_plane_candidate(&ctx, &group, &resolution,
+        Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)),
+        Err(CodecError::ResourceLimit(actual)) if actual == original));
+    assert_eq!(serde_json::to_value(&resolution.operands[0]).unwrap(), before);
+    assert!(matches!(extrude_target_plane_candidate(&ctx, &group, &resolution,
+        Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)),
+        Err(CodecError::ResourceLimit(actual)) if actual == original));
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original));
 }

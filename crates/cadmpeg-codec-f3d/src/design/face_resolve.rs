@@ -18,13 +18,14 @@ use crate::records::{
 };
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{HashMap, HashSet};
 
 use self::membership::{contains_face, contains_slot};
+use self::planes::{face_coincident_with_sketch, parallel_vectors, plane_for_face};
 
 mod membership;
+mod planes;
 
 fn face_slot_id(ctx: &DecodeContext<'_>, slot: i64) -> Result<cadmpeg_ir::ids::FaceId, CodecError> {
     const PREFIX: &str = "f3d:brep:entity#";
@@ -2575,13 +2576,14 @@ pub(crate) fn bind_extrude_start_planes(
                     let mut coincident = Vec::new();
                     for candidate in candidates {
                         if face_coincident_with_sketch(
+                            ctx,
                             &candidate,
                             sketch,
                             resolution.faces,
                             resolution.surfaces,
                             resolution.linear_tolerance,
                             resolution.angular_tolerance,
-                        ) {
+                        )? {
                             ctx.push_vec(
                                 &mut coincident,
                                 candidate,
@@ -2752,6 +2754,7 @@ fn extrude_target_plane_candidate(
     sketch_origin: Point3,
     sweep_direction: Vector3,
 ) -> Result<Option<cadmpeg_ir::ids::FaceId>, CodecError> {
+    ctx.charge_work(0, "resolve F3D target plane candidate")?;
     let [crate::records::identity::Located {
         value: record_index,
         ..
@@ -2776,29 +2779,14 @@ fn extrude_target_plane_candidate(
     let direction_length = sweep_direction.norm();
     let mut found = None;
     let mut ambiguous = false;
-    let mut consider = |candidate: &cadmpeg_ir::ids::FaceId| {
-        let Some((index, face)) = resolution
-            .faces
-            .iter()
-            .enumerate()
-            .find(|(_, face)| face.id == *candidate)
-        else {
-            return;
-        };
-        let Some(surface) = resolution
-            .surfaces
-            .iter()
-            .find(|surface| surface.id == face.surface)
-        else {
-            return;
-        };
-        let Some(SolvedSurfaceGeometry::Plane(plane_surface)) = surface.geometry.solved() else {
-            return;
+    let mut consider = |candidate: &cadmpeg_ir::ids::FaceId| -> Result<(), CodecError> {
+        let Some((index, plane_surface)) = plane_for_face(ctx, candidate, resolution.faces, resolution.surfaces)? else {
+            return Ok(());
         };
         let origin = plane_surface.origin().get();
         let normal = plane_surface.frame().axis().as_raw();
         if !parallel_vectors(*normal, sweep_direction, resolution.angular_tolerance) {
-            return;
+            return Ok(());
         }
         let distance = origin.vector_from(sketch_origin).dot(sweep_direction) / direction_length;
         if distance > resolution.linear_tolerance {
@@ -2808,24 +2796,27 @@ fn extrude_target_plane_candidate(
                 found = Some(index);
             }
         }
+        Ok(())
     };
     let direct = face_operand_candidates(operand);
     if direct.is_empty() {
         if !has_nested_bounded_face_history_candidates(operand) {
             return Ok(None);
         }
-        for reference in &operand.recipe_references {
-            for candidate in reference
-                .candidate_faces
-                .iter()
-                .chain(&reference.alternate_selector_faces)
-            {
-                consider(candidate);
+        let mut references = operand.recipe_references.iter();
+        while let Some(reference) = ctx.next_charged(&mut references, "visit F3D target plane reference")? {
+            if reference.candidate_faces.is_empty() && reference.alternate_selector_faces.is_empty() {
+                continue;
+            }
+            let mut candidates = reference.candidate_faces.iter().chain(&reference.alternate_selector_faces);
+            while let Some(candidate) = ctx.next_charged(&mut candidates, "visit F3D target plane nested candidate")? {
+                consider(candidate)?;
             }
         }
     } else {
-        for candidate in direct {
-            consider(candidate);
+        let mut candidates = direct.iter();
+        while let Some(candidate) = ctx.next_charged(&mut candidates, "visit F3D target plane candidate")? {
+            consider(candidate)?;
         }
     }
     if ambiguous {
@@ -2904,52 +2895,6 @@ pub(super) fn retain_face_operand_resolution(
     }
     operand.resolved_face_slots = vec![slot];
     Ok(true)
-}
-
-fn face_coincident_with_sketch(
-    candidate: &cadmpeg_ir::ids::FaceId,
-    sketch: &cadmpeg_ir::sketches::Sketch,
-    faces: &[cadmpeg_ir::topology::Face],
-    surfaces: &[cadmpeg_ir::geometry::Surface],
-    linear_tolerance: f64,
-    angular_tolerance: f64,
-) -> bool {
-    use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
-
-    let Some(face) = faces.iter().find(|face| face.id == *candidate) else {
-        return false;
-    };
-    let Some(surface) = surfaces.iter().find(|surface| surface.id == face.surface) else {
-        return false;
-    };
-    let Some(SolvedSurfaceGeometry::Plane(plane_surface)) = surface.geometry.solved() else {
-        return false;
-    };
-    let origin = plane_surface.origin().get();
-    let normal = plane_surface.frame().axis().as_raw();
-    let Some((sketch_origin, sketch_normal, _)) = sketch.resolved_placement() else {
-        return false;
-    };
-    parallel_vectors(*normal, sketch_normal.get(), angular_tolerance)
-        && point_plane_distance(origin, sketch_origin.get(), sketch_normal.get())
-            <= linear_tolerance
-}
-
-fn parallel_vectors(left: Vector3, right: Vector3, tolerance: f64) -> bool {
-    let left_length = left.norm();
-    let right_length = right.norm();
-    let cross_length = left.cross(right).norm();
-    left_length > 0.0
-        && right_length > 0.0
-        && cross_length <= tolerance * left_length * right_length
-}
-
-fn point_plane_distance(point: Point3, origin: Point3, normal: Vector3) -> f64 {
-    let normal_length = normal.norm();
-    if normal_length == 0.0 {
-        return f64::INFINITY;
-    }
-    point.vector_from(origin).dot(normal).abs() / normal_length
 }
 
 pub(super) fn design_angle(parameter: &DesignParameter) -> Option<cadmpeg_ir::scalar::Angle> {
