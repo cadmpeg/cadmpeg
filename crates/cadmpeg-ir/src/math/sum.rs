@@ -3,6 +3,7 @@
 
 use crate::scalar::{FiniteReal, NonZeroReal};
 
+pub(crate) mod quotient_second;
 pub(crate) mod quotient_third;
 pub(crate) mod quotient_fourth;
 pub(crate) mod quotient_fifth;
