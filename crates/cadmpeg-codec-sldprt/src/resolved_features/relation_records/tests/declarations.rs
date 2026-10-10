@@ -322,10 +322,13 @@ fn sketch_case_fold_keeps_relation_identity_and_admits_comparison() {
         assert_eq!(relation.scalar_refs(), ["scalar-20"]);
         assert_eq!(relation.feature_ref, "sketch");
         assert_eq!(ctx.resource_refusal(), None);
-        let CodecError::ResourceLimit(limit) = crate::test_support::work_refusal_at(
-            "match SLDPRT sketch feature tags",
-            |ctx| relation_instances(ctx, &history, &input),
-        ) else { panic!("case-fold comparison must refuse"); };
+        let CodecError::ResourceLimit(limit) =
+            crate::test_support::work_refusal_at("match SLDPRT sketch feature tags", |ctx| {
+                relation_instances(ctx, &history, &input)
+            })
+        else {
+            panic!("case-fold comparison must refuse");
+        };
         assert_eq!(limit.operation, "match SLDPRT sketch feature tags");
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
         assert_eq!(limit.additional, 6);

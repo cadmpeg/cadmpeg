@@ -59,11 +59,16 @@ fn circle_handle_admits_class_names_and_skips_singleton_sort() {
         operands: Vec::new(),
     };
     let ctx = cadmpeg_test_support::service_decode_context();
-    assert!(circle_dimension_handle_driver(&ctx, &relation, &input).unwrap().is_none());
-    let CodecError::ResourceLimit(limit) = crate::test_support::work_refusal_at(
-        "match SLDPRT circle handle class",
-        |ctx| circle_dimension_handle_driver(ctx, &relation, &input),
-    ) else { panic!("class comparison must refuse"); };
+    assert!(circle_dimension_handle_driver(&ctx, &relation, &input)
+        .unwrap()
+        .is_none());
+    let CodecError::ResourceLimit(limit) =
+        crate::test_support::work_refusal_at("match SLDPRT circle handle class", |ctx| {
+            circle_dimension_handle_driver(ctx, &relation, &input)
+        })
+    else {
+        panic!("class comparison must refuse");
+    };
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
     assert_eq!(limit.operation, "match SLDPRT circle handle class");
     assert_eq!(limit.additional, 11);
@@ -79,13 +84,18 @@ fn circle_handle_admits_class_names_and_skips_singleton_sort() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     for _ in 0..64 {
-        assert!(circle_dimension_handle_driver(&ctx, &relation, &input).unwrap().is_none());
+        assert!(circle_dimension_handle_driver(&ctx, &relation, &input)
+            .unwrap()
+            .is_none());
     }
     assert_eq!(ctx.resource_refusal(), None);
-    let CodecError::ResourceLimit(limit) = crate::test_support::work_refusal_at(
-        "match SLDPRT circle handle driver",
-        |ctx| circle_dimension_handle_driver(ctx, &relation, &input),
-    ) else { panic!("driver visit after class comparisons must refuse"); };
+    let CodecError::ResourceLimit(limit) =
+        crate::test_support::work_refusal_at("match SLDPRT circle handle driver", |ctx| {
+            circle_dimension_handle_driver(ctx, &relation, &input)
+        })
+    else {
+        panic!("driver visit after class comparisons must refuse");
+    };
     assert_eq!(limit.used, WORK - 1);
     assert_eq!(limit.additional, 1);
 
@@ -97,12 +107,17 @@ fn circle_handle_admits_class_names_and_skips_singleton_sort() {
     policy.limits.max_retained_bytes = 0;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(circle_dimension_handle_driver(&ctx, &relation, &singleton).unwrap().is_none());
+    assert!(circle_dimension_handle_driver(&ctx, &relation, &singleton)
+        .unwrap()
+        .is_none());
     assert_eq!(ctx.resource_refusal(), None);
-    let CodecError::ResourceLimit(limit) = crate::test_support::work_refusal_at(
-        "match SLDPRT circle handle driver",
-        |ctx| circle_dimension_handle_driver(ctx, &relation, &singleton),
-    ) else { panic!("singleton driver visit must refuse"); };
+    let CodecError::ResourceLimit(limit) =
+        crate::test_support::work_refusal_at("match SLDPRT circle handle driver", |ctx| {
+            circle_dimension_handle_driver(ctx, &relation, &singleton)
+        })
+    else {
+        panic!("singleton driver visit must refuse");
+    };
     assert_eq!(limit.used, 4);
     assert_eq!(limit.additional, 1);
     singleton.scalars.clear();
@@ -110,9 +125,10 @@ fn circle_handle_admits_class_names_and_skips_singleton_sort() {
     policy.limits.max_work_units = 1;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(circle_dimension_handle_driver(&ctx, &relation, &singleton).unwrap().is_none());
+    assert!(circle_dimension_handle_driver(&ctx, &relation, &singleton)
+        .unwrap()
+        .is_none());
     assert_eq!(ctx.resource_refusal(), None);
-
 }
 
 fn detached_driver_with_duplicate_index_key(

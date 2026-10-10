@@ -73,8 +73,11 @@ fn materialized_peak() -> (u64, u64) {
     // scores append 3*4 + 4*6 = 36 rows. The final swapped score grows the
     // amortized vector from 32 to 64 rows, holding its two tree-node bound
     // while core linear_growth reserves the old 32 rows as copy overlap.
-    let before_growth = lookups + 2 * tree_node::<(i64, i64), usize>()
-        + cadmpeg_core::decode::u64_from_index(64 * std::mem::size_of::<(MarkerTransform, usize)>());
+    let before_growth = lookups
+        + 2 * tree_node::<(i64, i64), usize>()
+        + cadmpeg_core::decode::u64_from_index(
+            64 * std::mem::size_of::<(MarkerTransform, usize)>(),
+        );
     let overlap =
         cadmpeg_core::decode::u64_from_index(32 * std::mem::size_of::<(MarkerTransform, usize)>());
     (before_growth, overlap)
@@ -88,7 +91,8 @@ fn circle_candidates_preserve_all_matching_frames_at_source_derived_peak() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = need;
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(8 * std::mem::size_of::<MarkerTransform>());
+    policy.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index(8 * std::mem::size_of::<MarkerTransform>());
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let candidates =
         dimensioned_circle_surface_transforms(&ctx, &sketch, &surfaces, &CIRCLES, 1.0).unwrap();
@@ -129,7 +133,9 @@ fn circle_candidates_refuse_live_scoring_storage_and_stay_sticky() {
     let (sketch, surfaces) = fixture();
     let (before_growth, _) = materialized_peak();
     let first_score = before_growth
-        - cadmpeg_core::decode::u64_from_index(64 * std::mem::size_of::<(MarkerTransform, usize)>())
+        - cadmpeg_core::decode::u64_from_index(
+            64 * std::mem::size_of::<(MarkerTransform, usize)>(),
+        )
         - tree_node::<(i64, i64), usize>();
     let mut policy = DecodePolicy::service();
     let error = cadmpeg_test_support::refusal::resource_limit_at(
@@ -143,14 +149,20 @@ fn circle_candidates_refuse_live_scoring_storage_and_stay_sticky() {
             dimensioned_circle_surface_transforms(&ctx, &sketch, &surfaces, &CIRCLES, 1.0)
         },
     );
-    let CodecError::ResourceLimit(boundary) = &error else { panic!("scoring storage boundary"); };
+    let CodecError::ResourceLimit(boundary) = &error else {
+        panic!("scoring storage boundary");
+    };
     assert_eq!(boundary.used + boundary.additional, first_score);
-    assert_eq!(boundary.operation, "score SLDPRT compatible marker transforms");
+    assert_eq!(
+        boundary.operation,
+        "score SLDPRT compatible marker transforms"
+    );
     // Replay with the located finite limit to check the sticky failure on this context.
     let arena = DecodeArena::new();
     policy.limits.max_materialized_bytes = boundary.limit;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let repeated = dimensioned_circle_surface_transforms(&ctx, &sketch, &surfaces, &CIRCLES, 1.0).unwrap_err();
+    let repeated =
+        dimensioned_circle_surface_transforms(&ctx, &sketch, &surfaces, &CIRCLES, 1.0).unwrap_err();
     assert!(matches!(&repeated, CodecError::ResourceLimit(limit) if limit == boundary));
     assert!(matches!(
         ctx.reserve_scoped(0, "refusal stays sticky"),
@@ -170,13 +182,16 @@ fn circle_candidate_scoped_calls_release_score_and_output_backing() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     for _ in 0..64 {
-        let (candidates, storage) = ctx.with_scoped_storage("circle output workspace", || {
-            dimensioned_circle_surface_transforms(&ctx, &sketch, &surfaces, &CIRCLES, 1.0)
-        }).unwrap();
+        let (candidates, storage) = ctx
+            .with_scoped_storage("circle output workspace", || {
+                dimensioned_circle_surface_transforms(&ctx, &sketch, &surfaces, &CIRCLES, 1.0)
+            })
+            .unwrap();
         assert_eq!(candidates.len(), 6);
         drop(candidates);
         drop(storage);
-        ctx.reserve_scoped(need, "reuse all circle candidate storage").unwrap();
+        ctx.reserve_scoped(need, "reuse all circle candidate storage")
+            .unwrap();
     }
     ctx.finish_session().unwrap();
 }

@@ -477,7 +477,9 @@ pub(super) fn relation_instances(
     for history in ctx.admit_iter(histories, "index SLDPRT relation records")? {
         for feature in ctx.admit_iter(&history.features, "index SLDPRT relation records")? {
             if ctx.eq_ignore_ascii_case(
-                feature.xml_tag.as_str(), "Sketch", "match SLDPRT sketch feature tags",
+                feature.xml_tag.as_str(),
+                "Sketch",
+                "match SLDPRT sketch feature tags",
             )? {
                 temporary_storage.with_storage(|| {
                     ctx.insert_hash_set(
@@ -1268,12 +1270,12 @@ pub(super) fn circle_dimension_handle_driver<'a>(
         })?;
     }
     if scalars.len() > 1 {
-    ctx.sort_unstable_by(
-        &mut scalars,
-        |value| &value.offset,
-        Ord::cmp,
-        "sort SLDPRT relation scalars",
-    )?;
+        ctx.sort_unstable_by(
+            &mut scalars,
+            |value| &value.offset,
+            Ord::cmp,
+            "sort SLDPRT relation scalars",
+        )?;
     }
     let mut names: Option<HashMap<&str, &str>> = None;
     let Some(first_id) = relation.scalar_refs().first() else {
@@ -1304,9 +1306,13 @@ pub(super) fn circle_dimension_handle_driver<'a>(
                 next_relation_offset.map_or(class.offset, |limit: u64| limit.min(class.offset)),
             );
         }
-        if class.offset > first.offset && ctx.equal(
-            class.name.as_str(), "sgEntHandle", "match SLDPRT circle handle class",
-        )? {
+        if class.offset > first.offset
+            && ctx.equal(
+                class.name.as_str(),
+                "sgEntHandle",
+                "match SLDPRT circle handle class",
+            )?
+        {
             first_handle_offset = Some(
                 first_handle_offset.map_or(class.offset, |offset: u64| offset.min(class.offset)),
             );
