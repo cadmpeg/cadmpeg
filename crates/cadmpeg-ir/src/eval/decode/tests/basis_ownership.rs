@@ -23,14 +23,24 @@ fn reusable_basis_constructor_preserves_initialization_refusal_and_backing_lifet
             assert_eq!(limit.used, 0);
             assert_eq!(limit.additional, u64::try_from(support).unwrap());
             assert_eq!(ctx.resource_refusal(), Some(limit));
-            assert_eq!(super::super::NurbsPointEvaluator::new(&ctx, &curve).err(), Some(limit));
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+            assert_eq!(
+                super::super::NurbsPointEvaluator::new(&ctx, &curve).err(),
+                Some(limit)
+            );
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+            );
         } else {
             let evaluator = result.expect("exact initialization work");
             assert_eq!(&*evaluator.basis, &[0.0; 3]);
-            assert!(evaluator._storage.is_some());
+            let super::super::NurbsPointEvaluator {
+                _storage: storage, ..
+            } = &evaluator;
+            assert!(storage.is_some());
             drop(evaluator);
-            let reuse = ctx.reserve_scoped_limit(bytes, "basis backing released").unwrap();
+            let reuse = ctx
+                .reserve_scoped_limit(bytes, "basis backing released")
+                .unwrap();
             drop(reuse);
             ctx.finish_session().unwrap();
         }

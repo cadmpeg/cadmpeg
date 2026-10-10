@@ -505,19 +505,13 @@ mod tests {
         let original = ctx
             .charge_work_limit(1, "original split completion refusal")
             .unwrap_err();
-        let actual = split
-            .into_polygons()
-            .err()
-            .expect("original session refusal");
+        let actual = split.into_polygons().expect_err("original session refusal");
         assert_eq!(actual, original);
         assert_eq!(actual.dimension, ResourceDimension::WorkUnits);
         assert_eq!(actual.operation, "original split completion refusal");
         assert_eq!(actual.used, 4);
         assert_eq!(actual.additional, 1);
-        assert_eq!(
-            ctx.resource_refusal(),
-            Some(original)
-        );
+        assert_eq!(ctx.resource_refusal(), Some(original));
         assert!(
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
         );

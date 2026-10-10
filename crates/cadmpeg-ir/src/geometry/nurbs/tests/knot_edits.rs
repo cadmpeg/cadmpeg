@@ -177,13 +177,16 @@ fn knot_edit_callback_unwind_preserves_original_and_releases_candidate() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let _ = curve.edit_knots(&ctx, |knots| {
+        let _result = curve.edit_knots(&ctx, |knots| {
             knots.fill(2.0);
             panic!("knot edit callback unwind");
         });
     }));
     assert!(result.is_err());
     assert_eq!(curve, original);
-    drop(ctx.reserve_scoped(bytes, "knot unwind candidate released").unwrap());
+    drop(
+        ctx.reserve_scoped(bytes, "knot unwind candidate released")
+            .unwrap(),
+    );
     ctx.finish_session().unwrap();
 }
