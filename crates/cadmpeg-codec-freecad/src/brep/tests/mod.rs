@@ -8,6 +8,7 @@ mod numeric_text;
 mod parser_recursion;
 mod reference_diagnostics;
 mod source_transfer;
+mod shape_check;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
