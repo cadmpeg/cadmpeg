@@ -105,3 +105,31 @@ fn native_occurrence_admission_preserves_caller_resource_refusals() {
         );
     }
 }
+
+#[test]
+fn invalid_first_occurrence_stops_conversion_before_the_roster_suffix() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::native::NativeConvertError;
+    let mut first = rows(0)[0].clone();
+    first["prototype"] = json!("invalid");
+    let wire = vec![first; 128];
+    let namespace: NativeNamespace = serde_json::from_value(json!({"fast_load_component_occurrences": wire})).unwrap();
+    const MESSAGE: &str = "FastLoadComponentOccurrence.prototype disagrees with prototype_index";
+    let error = crate::test_support::resource_refusal_at(&[], ResourceDimension::WorkUnits,
+        "convert NX occurrence roster record", |ctx| {
+            FastLoadOccurrences::from_namespace_with_context(ctx, &namespace).map_err(|error| match error {
+                NativeConvertError::Resource(error) => error,
+                other => panic!("conversion refused before its visit boundary: {other}"),
+            })
+        });
+    let CodecError::ResourceLimit(limit) = error else { panic!("conversion visit must refuse") };
+    assert_eq!(limit.additional, 1);
+    crate::test_support::with_decode_context_over(&[],
+        |policy| policy.limits.max_work_units = limit.used + 1 + cadmpeg_core::decode::u64_from_index(MESSAGE.len()),
+        |ctx| {
+            let error = FastLoadOccurrences::from_namespace_with_context(ctx, &namespace).unwrap_err();
+            assert!(matches!(error, NativeConvertError::InvalidCollection(message) if message == MESSAGE));
+            assert_eq!(ctx.resource_refusal(), None);
+        });
+}
