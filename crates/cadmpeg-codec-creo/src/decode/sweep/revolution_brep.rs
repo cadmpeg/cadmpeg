@@ -127,7 +127,11 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
         else {
             continue;
         };
-        let Some(sketch_id) = model_sketch_id(ctx, scan, definition)? else {
+        let (sketch_id, _sketch_identity_storage) = ctx
+            .with_scoped_storage("creo sweep sketch identity scratch", || {
+                model_sketch_id(ctx, scan, definition)
+            })?;
+        let Some(sketch_id) = sketch_id else {
             continue;
         };
         let (profiles, _profile_storage) = ctx
@@ -157,10 +161,13 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
         let mut surface_storage = ctx.reserve_scoped(0, "creo revolution surface slots")?;
         let mut surfaces = Vec::new();
+        let mut failed_surface_storage = None;
         let mut complete = true;
         let mut candidates = profile.iter().enumerate();
         while candidates.len() > 0 {
-            let Some((index, entity)) = ctx.next_charged(&mut candidates, "creo revolution surface scan")? else {
+            let Some((index, entity)) =
+                ctx.next_charged(&mut candidates, "creo revolution surface scan")?
+            else {
                 break;
             };
             let (geometry, _geometry_storage) = ctx
@@ -171,16 +178,20 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                 complete = false;
                 break;
             };
-            let Some(surface) = revolved_brep_surface(
-                ctx,
-                transform,
-                &geometry,
-                entity.reversed(),
-                &axis,
-                &format_args!("revolution feature {feature_id} profile segment {index}"),
-                &mut refusal,
-            )?
-            else {
+            let (surface, geometry_storage) =
+                ctx.with_scoped_storage("creo revolution surface candidate", || {
+                    revolved_brep_surface(
+                        ctx,
+                        transform,
+                        &geometry,
+                        entity.reversed(),
+                        &axis,
+                        &format_args!("revolution feature {feature_id} profile segment {index}"),
+                        &mut refusal,
+                    )
+                })?;
+            let Some(surface) = surface else {
+                failed_surface_storage = Some(geometry_storage);
                 complete = false;
                 break;
             };
@@ -190,7 +201,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                 1,
                 "creo revolution surface geometries",
             )?;
-            surfaces.push(surface);
+            surfaces.push((surface, geometry_storage));
         }
         let surface_geometries = complete.then_some(surfaces);
         let Some(surface_geometries) = surface_geometries else {
@@ -205,11 +216,15 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             continue;
         };
         let mut boundary_storage = ctx.reserve_scoped(0, "creo revolution boundary slots")?;
+        drop(failed_surface_storage);
         let mut boundary_rows = Vec::new();
+        let mut failed_boundary_storage = None;
         let mut complete = true;
         let mut candidates = profile.iter().enumerate();
         while candidates.len() > 0 {
-            let Some((index, segment)) = ctx.next_charged(&mut candidates, "creo revolution boundary scan")? else {
+            let Some((index, segment)) =
+                ctx.next_charged(&mut candidates, "creo revolution boundary scan")?
+            else {
                 break;
             };
             let next = (index + 1) % profile.len();
@@ -244,16 +259,20 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                 let record = record_owned_storage.0;
                 let mut diagnostics =
                     crate::lane_refusal::LaneRefusalContext::new(&record, &mut refusal);
-                let Some(geometry) = revolution_profile_boundary_pcurve(
-                    ctx,
-                    transform,
-                    segment,
-                    &surface_geometries[index],
-                    &axis,
-                    (section_point, boundary),
-                    &mut diagnostics,
-                )?
-                else {
+                let (geometry, geometry_storage) =
+                    ctx.with_scoped_storage("creo revolution boundary candidate", || {
+                        revolution_profile_boundary_pcurve(
+                            ctx,
+                            transform,
+                            segment,
+                            &surface_geometries[index].0,
+                            &axis,
+                            (section_point, boundary),
+                            &mut diagnostics,
+                        )
+                    })?;
+                let Some(geometry) = geometry else {
+                    failed_boundary_storage = Some(geometry_storage);
                     complete = false;
                     break;
                 };
@@ -264,7 +283,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                     1,
                     "creo revolution segment boundaries",
                 )?;
-                segment_boundaries.push(row);
+                segment_boundaries.push((row, geometry_storage));
             }
             if !complete {
                 break;
@@ -289,15 +308,17 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             )?;
             continue;
         };
-        let face_senses_owned_storage =
-            ctx.temporary_vec(0, "creo revolution face senses")?;
+        drop(failed_boundary_storage);
+        let face_senses_owned_storage = ctx.temporary_vec(0, "creo revolution face senses")?;
         let mut face_sense_storage = face_senses_owned_storage.1;
         let mut face_senses = face_senses_owned_storage.0;
         let mut _failed_sense_storage = None;
         let mut complete = true;
         let mut candidates = profile.iter().zip(&surface_geometries).enumerate();
         while candidates.len() > 0 {
-            let Some((index, (segment, surface))) = ctx.next_charged(&mut candidates, "creo revolution face sense scan")? else {
+            let Some((index, (segment, surface))) =
+                ctx.next_charged(&mut candidates, "creo revolution face sense scan")?
+            else {
                 break;
             };
             let (sense, sense_storage) =
@@ -306,7 +327,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                         ctx,
                         transform,
                         segment,
-                        surface,
+                        &surface.0,
                         &axis,
                         area.get(),
                         (
@@ -343,7 +364,10 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             )?;
             continue;
         };
-        let body_id: BodyId = revolution_identity(ctx, feature_id, "body")?;
+        let (body_id, body_id_storage) = ctx
+            .with_scoped_storage("creo revolution body identity candidate", || {
+                revolution_identity::<BodyId>(ctx, feature_id, "body")
+            })?;
         // The unique first material feature reaches this lookup at most once.
         if ctx.any_by(
             &ir.model.bodies,
@@ -439,7 +463,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             edges[index] = Some(edge_id);
         }
         let mut faces = Vec::new();
-        for (index, ((surface_geometry, face_sense), boundaries)) in ctx
+        for (index, (((surface_geometry, geometry_storage), face_sense), boundaries)) in ctx
             .admit_iter(surface_geometries, "creo revolution face traversal")?
             .zip(face_senses)
             .zip(boundaries)
@@ -456,15 +480,18 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                 ir,
                 Surface {
                     id: surface_id.try_clone_for_decode(ctx, "creo revolution identity copy")?,
-                    geometry: surface_geometry,
+                    geometry: geometry_storage.commit_value(surface_geometry)?,
                     source_object: None,
                 },
             )?;
             let mut loops = Vec::new();
-            for PrevalidatedRevolutionBoundary {
-                boundary,
-                geometry: pcurve_geometry,
-            } in boundaries
+            for (
+                PrevalidatedRevolutionBoundary {
+                    boundary,
+                    geometry: pcurve_geometry,
+                },
+                pcurve_storage,
+            ) in boundaries
             {
                 let (vertex_index, sense) = match boundary {
                     RevolutionBoundary::Start => (index, Sense::Reversed),
@@ -504,7 +531,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                         format_args!("pcurve:{index}:{boundary_key}"),
                     )?,
                     transform.offset,
-                    pcurve_geometry,
+                    pcurve_storage.commit_value(pcurve_geometry)?,
                 )?;
                 let mut ring_coedges = Vec::new();
                 ctx.reserve_vec(&mut ring_coedges, 1, "creo revolution ring coedges")?;
@@ -600,7 +627,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             ctx,
             ir,
             Body {
-                id: body_id,
+                id: body_id_storage.commit_value(body_id)?,
                 kind: BodyKind::Solid,
                 regions: body_regions,
                 transform: None,
