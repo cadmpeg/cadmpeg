@@ -120,9 +120,13 @@ fn native_terminal_maximum_entry_refuses_work_and_preserves_terminal_identity() 
     );
     let index_arena = cadmpeg_core::decode::DecodeArena::new();
     let (index_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &index_arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).expect("semantic index preparation fits the service profile");
-    let mut index_storage = index_ctx.reserve_scoped(0, "test semantic indices")
+        &[],
+        &index_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("semantic index preparation fits the service profile");
+    let mut index_storage = index_ctx
+        .reserve_scoped(0, "test semantic indices")
         .expect("semantic index preparation storage");
     let indices = derive_semantic_indices(&index_ctx, &native, &mut index_storage)
         .expect("service profile admits semantic indices");
@@ -146,9 +150,13 @@ fn native_binding_graph_entry_refuses_work_and_preserves_parameter_binding() {
     let native = parameter_native();
     let index_arena = cadmpeg_core::decode::DecodeArena::new();
     let (index_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &index_arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).expect("semantic index preparation fits the service profile");
-    let mut index_storage = index_ctx.reserve_scoped(0, "test semantic indices")
+        &[],
+        &index_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("semantic index preparation fits the service profile");
+    let mut index_storage = index_ctx
+        .reserve_scoped(0, "test semantic indices")
         .expect("semantic index preparation storage");
     let indices = derive_semantic_indices(&index_ctx, &native, &mut index_storage)
         .expect("service profile admits semantic indices");
@@ -175,9 +183,13 @@ fn native_binding_symbol_entry_refuses_work_and_preserves_parameter_binding() {
     let native = parameter_native();
     let index_arena = cadmpeg_core::decode::DecodeArena::new();
     let (index_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &index_arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).expect("semantic index preparation fits the service profile");
-    let mut index_storage = index_ctx.reserve_scoped(0, "test semantic indices")
+        &[],
+        &index_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("semantic index preparation fits the service profile");
+    let mut index_storage = index_ctx
+        .reserve_scoped(0, "test semantic indices")
         .expect("semantic index preparation storage");
     let indices = derive_semantic_indices(&index_ctx, &native, &mut index_storage)
         .expect("service profile admits semantic indices");

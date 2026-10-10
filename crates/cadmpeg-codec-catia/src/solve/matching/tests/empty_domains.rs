@@ -11,8 +11,8 @@ fn with_no_storage(run: impl FnOnce(&DecodeContext<'_>)) {
     policy.limits.max_collection_items = 0;
     policy.limits.max_materialized_bytes = 0;
     policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root needs no storage");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root needs no storage");
     run(&ctx);
 }
 
@@ -20,7 +20,10 @@ fn with_no_storage(run: impl FnOnce(&DecodeContext<'_>)) {
 fn empty_distinct_matching_preserves_required_and_excluded_edges_without_point_storage() {
     with_no_storage(|ctx| {
         for point_count in [0, 4096, usize::MAX] {
-            for constraint in [None, Some(MatchingEdgeConstraint::Exclude(usize::MAX, usize::MAX))] {
+            for constraint in [
+                None,
+                Some(MatchingEdgeConstraint::Exclude(usize::MAX, usize::MAX)),
+            ] {
                 assert_eq!(
                     distinct_domain_matching_with_budget(ctx, [], point_count, None, constraint)
                         .expect("empty matching needs no point arrays"),
@@ -32,8 +35,14 @@ fn empty_distinct_matching_preserves_required_and_excluded_edges_without_point_s
                 MatchingEdgeConstraint::Require(usize::MAX, usize::MAX),
             ] {
                 assert_eq!(
-                    distinct_domain_matching_with_budget(ctx, [], point_count, None, Some(constraint))
-                        .expect("required domain does not exist"),
+                    distinct_domain_matching_with_budget(
+                        ctx,
+                        [],
+                        point_count,
+                        None,
+                        Some(constraint)
+                    )
+                    .expect("required domain does not exist"),
                     None
                 );
             }
@@ -90,7 +99,8 @@ fn empty_matching_supports_preserve_mapping_validation_without_point_storage() {
 #[test]
 fn empty_matching_paths_preserve_the_original_caller_refusal() {
     crate::test_support::with_work_limit(0, |ctx| {
-        let Err(CodecError::ResourceLimit(original)) = ctx.charge_work(1, "test original refusal") else {
+        let Err(CodecError::ResourceLimit(original)) = ctx.charge_work(1, "test original refusal")
+        else {
             panic!("original refusal")
         };
         let results = [
@@ -114,7 +124,10 @@ fn completed_matching_refuses_retention_at_the_actual_return_boundary() {
             panic!("owned completed matching cannot be retained")
         };
         assert_eq!(original.operation, "catia_match_completed");
-        assert_eq!(original.dimension, cadmpeg_core::decode::ResourceDimension::RetainedBytes);
+        assert_eq!(
+            original.dimension,
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes
+        );
         assert_eq!(ctx.resource_refusal(), Some(original));
         assert!(matches!(
             distinct_domain_matching_with_budget(ctx, [], usize::MAX, None, None),

@@ -228,12 +228,19 @@ fn revolution_curve_edge_count_lookup_propagates_caller_work_refusal() {
 fn empty_revolution_domain_skips_model_indexes() {
     let (mut ir, _) = fixture();
     crate::test_support::with_work_limit(0, |ctx| {
-        assert_eq!(bind_consolidated_revolution_faces_and_seams(
-            ctx, &mut ir, &mut AnnotationBuilder::new(), &[],
-        )?, (0, 0));
+        assert_eq!(
+            bind_consolidated_revolution_faces_and_seams(
+                ctx,
+                &mut ir,
+                &mut AnnotationBuilder::new(),
+                &[],
+            )?,
+            (0, 0)
+        );
         assert_eq!(ctx.resource_refusal(), None);
         Ok::<_, CodecError>(())
-    }).expect("an empty revolution domain performs no model traversal");
+    })
+    .expect("an empty revolution domain performs no model traversal");
 }
 
 #[test]
@@ -248,7 +255,8 @@ fn conflicting_revolution_face_aliases_are_not_counted_as_bound() {
                 Vector3::new(1.0, 0.0, 0.0),
                 2.0,
                 3.0,
-            ).expect("finite second torus"),
+            )
+            .expect("finite second torus"),
         )),
         profile_sweep: 0.5,
     };
@@ -262,11 +270,19 @@ fn conflicting_revolution_face_aliases_are_not_counted_as_bound() {
         let source = ir.model.points[index].position().get();
         ir.model.points.push(Point::new(
             point_id.clone(),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(source.x + 100.0, source.y, source.z))
-                .expect("finite translated point"),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                source.x + 100.0,
+                source.y,
+                source.z,
+            ))
+            .expect("finite translated point"),
             None,
         ));
-        ir.model.vertices.push(Vertex { id: vertex_id.clone(), point: point_id, tolerance: None });
+        ir.model.vertices.push(Vertex {
+            id: vertex_id.clone(),
+            point: point_id,
+            tolerance: None,
+        });
         vertex_id
     });
     edge.start = vertices[0].clone();
@@ -285,8 +301,11 @@ fn conflicting_revolution_face_aliases_are_not_counted_as_bound() {
     loop_.boundary = cadmpeg_ir::topology::LoopBoundary::Ring(
         cadmpeg_ir::topology::LoopRing::new(
             &cadmpeg_test_support::service_decode_context(),
-            vec![coedge.id.clone()], Vec::new(),
-        ).expect("fixture ring admission").expect("one repeated witness coedge"),
+            vec![coedge.id.clone()],
+            Vec::new(),
+        )
+        .expect("fixture ring admission")
+        .expect("one repeated witness coedge"),
     );
     face.loops = cadmpeg_ir::topology::FaceLoops::unspecified(vec![loop_.id.clone()]);
     ir.model.faces.push(face);
@@ -295,11 +314,17 @@ fn conflicting_revolution_face_aliases_are_not_counted_as_bound() {
     let surfaces = ir.model.surfaces.clone();
     let result = crate::test_support::with_service_context(|ctx| {
         bind_consolidated_revolution_faces_and_seams(
-            ctx, &mut ir, &mut AnnotationBuilder::new(), &[first, second],
+            ctx,
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &[first, second],
         )
-    }).expect("two finite torus witnesses are admitted");
+    })
+    .expect("two finite torus witnesses are admitted");
     assert_eq!(result, (0, 0));
     assert_eq!(ir.model.surfaces, surfaces);
-    assert!(matches!(ir.model.curves[0].geometry.solved_cache(),
-        Some(SolvedCurveGeometry::Unknown { .. })));
+    assert!(matches!(
+        ir.model.curves[0].geometry.solved_cache(),
+        Some(SolvedCurveGeometry::Unknown { .. })
+    ));
 }

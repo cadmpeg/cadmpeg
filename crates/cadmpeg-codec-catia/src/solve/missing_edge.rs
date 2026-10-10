@@ -1248,13 +1248,12 @@ pub(crate) fn standard_repeated_edge_face_handle_candidates(
     let Some((edge_rows, trims)) = parsed else {
         return Ok(None);
     };
-    let face_handles =
-        ctx.with_scoped_storage("catia repeated edge face handles", || {
-            ctx.collect_vec(
-                trims.iter().map(|trim| trim.packet.handles()),
-                "catia repeated edge face handles",
-            )
-        })?;
+    let face_handles = ctx.with_scoped_storage("catia repeated edge face handles", || {
+        ctx.collect_vec(
+            trims.iter().map(|trim| trim.packet.handles()),
+            "catia repeated edge face handles",
+        )
+    })?;
     repeated_edge_face_handle_candidates_from_sets(ctx, &edge_rows, &face_handles.0, serialized)
 }
 
@@ -1673,10 +1672,7 @@ impl FaceOptions {
         let mut rest = faces.into_iter();
         // discarded-value: first holds this face; advance the remaining run
         let _ = rest.next();
-        Ok(Self {
-            first,
-            rest,
-        })
+        Ok(Self { first, rest })
     }
 
     /// How many faces this slot admits. Never zero.
@@ -1744,10 +1740,11 @@ where
             if valid(assignment)? {
                 match outcome {
                     SearchOutcome::Open => {
-                        *outcome = SearchOutcome::Solved(ctx.with_scoped_storage(
-                            "catia_duplicate_face_solution",
-                            || ctx.copy_slice(assignment, "catia_duplicate_face_solution"),
-                        )?);
+                        *outcome = SearchOutcome::Solved(
+                            ctx.with_scoped_storage("catia_duplicate_face_solution", || {
+                                ctx.copy_slice(assignment, "catia_duplicate_face_solution")
+                            })?,
+                        );
                     }
                     SearchOutcome::Solved(previous) => {
                         if !ctx.equal(
@@ -2917,11 +2914,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                 if self.assignments == before {
                     let dead_states = &mut self.dead_states;
                     let entry = self.storage.with_storage(|| {
-                        ctx.entry_hash_map(
-                            dead_states,
-                            state,
-                            "catia_gap_dead_states",
-                        )
+                        ctx.entry_hash_map(dead_states, state, "catia_gap_dead_states")
                     })?;
                     if let std::collections::hash_map::Entry::Vacant(entry) = entry {
                         entry.insert(points_storage);
@@ -3703,22 +3696,21 @@ fn standard_mesh_missing_edge_assignment_domains(
             }
         }
         if let Some(candidates) = edge_candidates {
-            let points =
-                ctx.with_scoped_storage("catia_mesh_corner_candidate_points", || {
-                    let mut points = BTreeSet::new();
-                    for pair in
-                        ctx.admit_iter(&candidates[run.edge], "catia_mesh_corner_candidate_points")?
-                    {
-                        for &point in pair {
-                            ctx.insert_btree_set(
-                                &mut points,
-                                point,
-                                "catia_mesh_corner_candidate_points",
-                            )?;
-                        }
+            let points = ctx.with_scoped_storage("catia_mesh_corner_candidate_points", || {
+                let mut points = BTreeSet::new();
+                for pair in
+                    ctx.admit_iter(&candidates[run.edge], "catia_mesh_corner_candidate_points")?
+                {
+                    for &point in pair {
+                        ctx.insert_btree_set(
+                            &mut points,
+                            point,
+                            "catia_mesh_corner_candidate_points",
+                        )?;
                     }
-                    Ok::<_, CodecError>(points)
-                })?;
+                }
+                Ok::<_, CodecError>(points)
+            })?;
             if !points.0.is_empty() {
                 for corner in [run.start, end] {
                     let key = (run.face, run.cycle, corner);
@@ -3885,9 +3877,7 @@ fn standard_mesh_missing_edge_assignments(
     edge_candidates: Option<&[Vec<[usize; 2]>]>,
     canonicalize_spans: bool,
 ) -> Result<Option<Vec<Vec<Vec<MeshEdgePlacementCandidate>>>>, CodecError> {
-    let Some(context) =
-        StandardMeshBoundaryContext::parse(ctx, bytes, edge_faces)?
-    else {
+    let Some(context) = StandardMeshBoundaryContext::parse(ctx, bytes, edge_faces)? else {
         return Ok(None);
     };
     let Some((domains, _)) = standard_mesh_missing_edge_assignment_domains(
@@ -3948,9 +3938,7 @@ pub(crate) fn standard_mesh_boundary_assignments(
     edge_faces: &[[usize; 2]],
     edge_candidates: Option<&[Vec<[usize; 2]>]>,
 ) -> Result<Option<Vec<Vec<MeshFaceBoundaryAssignment>>>, CodecError> {
-    let Some(context) =
-        StandardMeshBoundaryContext::parse(ctx, bytes, edge_faces)?
-    else {
+    let Some(context) = StandardMeshBoundaryContext::parse(ctx, bytes, edge_faces)? else {
         return Ok(None);
     };
     standard_mesh_boundary_assignments_from_context(ctx, &context.0, edge_candidates)
@@ -4614,10 +4602,9 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
             if evaluated.is_empty() {
                 return Ok(None);
             }
-            let mut kept = ctx
-                .with_scoped_storage("catia_prune_assignment_marks", || {
-                    ctx.alloc_filled(assignments.len(), false, "catia_prune_assignment_marks")
-                })?;
+            let mut kept = ctx.with_scoped_storage("catia_prune_assignment_marks", || {
+                ctx.alloc_filled(assignments.len(), false, "catia_prune_assignment_marks")
+            })?;
             for &(index, _, _) in ctx.admit_iter(&evaluated, "catia_prune_retained_assignments")? {
                 kept.0[index] = true;
             }

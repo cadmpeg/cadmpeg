@@ -190,13 +190,21 @@ impl CatiaNative {
         let class_graphs = graphs.clone();
         let index_arena = cadmpeg_core::decode::DecodeArena::new();
         let (index_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[], &index_arena, &cadmpeg_core::decode::DecodePolicy::service(),
-        ).expect("semantic index preparation fits the service profile");
-        let mut index_storage = index_ctx.reserve_scoped(0, "test semantic indices")
+            &[],
+            &index_arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .expect("semantic index preparation fits the service profile");
+        let mut index_storage = index_ctx
+            .reserve_scoped(0, "test semantic indices")
             .expect("semantic index preparation storage");
-        let (entity_classes_by_graph_identity, semantic) =
-            semantic_indices_for_test(&index_ctx, &mut index_storage, &class_graphs, &entity_records)
-                .map_err(|error| cadmpeg_ir::NativeConvertError::InvalidOwner(error.to_string()))?;
+        let (entity_classes_by_graph_identity, semantic) = semantic_indices_for_test(
+            &index_ctx,
+            &mut index_storage,
+            &class_graphs,
+            &entity_records,
+        )
+        .map_err(|error| cadmpeg_ir::NativeConvertError::InvalidOwner(error.to_string()))?;
         let entities_by_graph_identity = &semantic.entities;
         let terminal_nulls_by_graph = &semantic.maxima;
         let expected_reference_signature_cohorts =

@@ -1,7 +1,9 @@
 //! Triangle cache storage remains charged while its trim packet is live.
 
 use cadmpeg_core::decode::refusal_probe::RefusalProbe;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, ResourceLimit};
+use cadmpeg_core::decode::{
+    DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, ResourceLimit,
+};
 use cadmpeg_core::CodecError;
 
 fn two_face_stream(closed_tetrahedron: bool) -> Vec<u8> {
@@ -22,7 +24,9 @@ fn two_face_stream(closed_tetrahedron: bool) -> Vec<u8> {
     // Reuse the complete edge/vertex tables, independently of the first
     // packet's closed tetrahedron or ignored two-handle strips.
     let quad = crate::test_support::test_topology::standard_quad_topology_stream();
-    let edge_table = quad.windows(3).position(|part| part == [0x01, 0x01, 0x04])
+    let edge_table = quad
+        .windows(3)
+        .position(|part| part == [0x01, 0x01, 0x04])
         .expect("synthetic edge table");
     bytes.extend_from_slice(&quad[edge_table..]);
     bytes
@@ -32,10 +36,12 @@ fn second_face_refusal(bytes: &[u8]) -> ResourceLimit {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = u64::MAX;
-    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
-        .expect("synthetic input admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(bytes, &arena, &policy).expect("synthetic input admitted");
     let probe = RefusalProbe::arm(
-        ResourceDimension::MaterializedBytes, "catia_boundary_edge_directions", None,
+        ResourceDimension::MaterializedBytes,
+        "catia_boundary_edge_directions",
+        None,
     );
     let CodecError::ResourceLimit(limit) = super::super::standard_mesh_analysis(&ctx, bytes)
         .expect_err("the second face's boundary map raises the live peak")
@@ -59,7 +65,8 @@ fn mesh_analysis_holds_prior_face_triangle_cache_until_trim_destruction() {
     for bytes in [&plain, &closed] {
         crate::test_support::with_service_context(|ctx| {
             let analysis = super::super::standard_mesh_analysis(ctx, bytes)
-                .expect("service resource budget").expect("complete two-face analysis");
+                .expect("service resource budget")
+                .expect("complete two-face analysis");
             assert_eq!(analysis.cycles.len(), 2);
             assert_eq!(analysis.cycles[0], [vec![0, 1, 2]]);
             assert_eq!(analysis.cycles[1].len(), 200);
@@ -70,6 +77,8 @@ fn mesh_analysis_holds_prior_face_triangle_cache_until_trim_destruction() {
     // The packets have equal handle/length capacities and identical first
     // boundaries. Amortized reservation gives the one-triangle cache four
     // slots and the five-triangle cache five slots.
-    assert_eq!(closed_refusal.used - plain_refusal.used,
-        std::mem::size_of::<[u32; 3]>() as u64);
+    assert_eq!(
+        closed_refusal.used - plain_refusal.used,
+        std::mem::size_of::<[u32; 3]>() as u64
+    );
 }

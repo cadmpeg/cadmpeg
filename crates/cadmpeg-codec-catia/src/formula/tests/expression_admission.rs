@@ -293,8 +293,10 @@ fn formula_extremum_fold_propagates_the_original_work_refusal() {
                 result
             },
         );
-        assert!(matches!(refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_formula_extremum_argument_visits"));
+        assert!(
+            matches!(refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_formula_extremum_argument_visits")
+        );
     }
 }
 

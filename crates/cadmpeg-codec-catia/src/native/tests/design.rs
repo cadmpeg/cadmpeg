@@ -943,9 +943,11 @@ fn parallel_reference_table_rejects_before_unread_rows() {
                 matching_design_object: None,
             })
             .collect();
-        assert!(crate::native::CatiaDesignParallelReferenceTable::new(ctx, columns, rows)
-            .expect("only the first invalid row is visited")
-            .is_none());
+        assert!(
+            crate::native::CatiaDesignParallelReferenceTable::new(ctx, columns, rows)
+                .expect("only the first invalid row is visited")
+                .is_none()
+        );
         assert_eq!(ctx.resource_refusal(), None);
     });
 }
@@ -953,9 +955,11 @@ fn parallel_reference_table_rejects_before_unread_rows() {
 #[test]
 fn parallel_reference_table_empty_rows_preserve_sticky_refusal() {
     crate::test_support::with_work_limit(0, |ctx| {
-        assert!(crate::native::CatiaDesignParallelReferenceTable::new(ctx, Vec::new(), Vec::new())
-            .expect("no rows require work")
-            .is_some());
+        assert!(
+            crate::native::CatiaDesignParallelReferenceTable::new(ctx, Vec::new(), Vec::new())
+                .expect("no rows require work")
+                .is_some()
+        );
         let rows = vec![crate::native::CatiaDesignReferenceRow {
             cells: Vec::new(),
             matching_design_object: None,
@@ -966,8 +970,11 @@ fn parallel_reference_table_empty_rows_preserve_sticky_refusal() {
             panic!("resource refusal required")
         };
         assert_eq!(limit.operation, "catia_design_reference_table_row_visits");
-        let empty = crate::native::CatiaDesignParallelReferenceTable::new(ctx, Vec::new(), Vec::new());
-        assert!(matches!(empty, Err(cadmpeg_core::CodecError::ResourceLimit(ref sticky)) if sticky == &limit));
+        let empty =
+            crate::native::CatiaDesignParallelReferenceTable::new(ctx, Vec::new(), Vec::new());
+        assert!(
+            matches!(empty, Err(cadmpeg_core::CodecError::ResourceLimit(ref sticky)) if sticky == &limit)
+        );
         assert_eq!(ctx.resource_refusal(), Some(limit));
     });
 }

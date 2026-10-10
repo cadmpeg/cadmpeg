@@ -2457,9 +2457,8 @@ fn partial_compact_assignment_viable(
                 {
                     let mut incidence_storage =
                         ctx.reserve_scoped(0, "catia coordinate incidence scratch")?;
-                    let incidence = incidence_storage.with_storage(|| {
-                        incidence_cycles(ctx, component, &edge_points)
-                    })?;
+                    let incidence = incidence_storage
+                        .with_storage(|| incidence_cycles(ctx, component, &edge_points))?;
                     let Some([incidence]) = incidence.as_deref() else {
                         return Ok(false);
                     };
@@ -4573,42 +4572,64 @@ mod tests {
 
         let deferred = MeshFaceBoundaryDomain::DeferredValidation(MeshDeferredFaceBoundary {
             cycles: vec![
-                MeshDeferredBoundaryCycle { length: 3, exact_uses: Vec::new() },
-                MeshDeferredBoundaryCycle { length: 3, exact_uses: Vec::new() },
+                MeshDeferredBoundaryCycle {
+                    length: 3,
+                    exact_uses: Vec::new(),
+                },
+                MeshDeferredBoundaryCycle {
+                    length: 3,
+                    exact_uses: Vec::new(),
+                },
             ],
             missing_edges: vec![0, 1, 2, 3, 4, 5],
         });
         let unordered = MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 1, 2, 3, 4, 5]);
         let edge_by_id = HashMap::from([(0, 0), (1, 1), (2, 2), (3, 3), (4, 4), (5, 5)]);
         let edges = [[0, 1], [2, 3], [4, 5], [6, 7], [8, 9], [10, 11]];
-        let assigned = [Some(0), Some(1), Some(1), Some(2), Some(2), Some(0),
-            Some(3), Some(4), Some(4), Some(5), Some(5), Some(3)];
+        let assigned = [
+            Some(0),
+            Some(1),
+            Some(1),
+            Some(2),
+            Some(2),
+            Some(0),
+            Some(3),
+            Some(4),
+            Some(4),
+            Some(5),
+            Some(5),
+            Some(3),
+        ];
         let run = |ctx: &DecodeContext<'_>, domain| {
-            partial_compact_assignment_viable(ctx, PartialCompactAssignmentViableInputs {
-                domain,
-                local_edge_by_id: &edge_by_id,
-                edges: &edges,
-                global_edge_count: 6,
-                assigned: &assigned,
-                candidate: (0, 0),
-                budget: None,
-            })
+            partial_compact_assignment_viable(
+                ctx,
+                PartialCompactAssignmentViableInputs {
+                    domain,
+                    local_edge_by_id: &edge_by_id,
+                    edges: &edges,
+                    global_edge_count: 6,
+                    assigned: &assigned,
+                    candidate: (0, 0),
+                    budget: None,
+                },
+            )
         };
         crate::test_support::with_retained_limit(0, |ctx| {
             assert!(run(ctx, &deferred).expect("two separate deferred cycles close"));
             assert!(!run(ctx, &unordered).expect("two cycles cannot close one full cycle"));
             assert_eq!(ctx.resource_refusal(), None);
         });
-        let refused = crate::test_support::with_work_refusal("catia coordinate seen edges", |ctx| {
-            let result = run(ctx, &deferred);
-            let Err(CodecError::ResourceLimit(limit)) = &result else {
-                panic!("component set refusal");
-            };
-            assert_eq!(ctx.resource_refusal(), Some(*limit));
-            assert!(matches!(ctx.charge_work(0, "after component refusal"),
+        let refused =
+            crate::test_support::with_work_refusal("catia coordinate seen edges", |ctx| {
+                let result = run(ctx, &deferred);
+                let Err(CodecError::ResourceLimit(limit)) = &result else {
+                    panic!("component set refusal");
+                };
+                assert_eq!(ctx.resource_refusal(), Some(*limit));
+                assert!(matches!(ctx.charge_work(0, "after component refusal"),
                 Err(CodecError::ResourceLimit(later)) if later == *limit));
-            result
-        });
+                result
+            });
         assert!(matches!(refused, Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::WorkUnits
                 && limit.operation == "catia coordinate seen edges"));
@@ -5050,26 +5071,38 @@ mod tests {
         let candidates = [vec![[0, 1]], vec![[0, 1]]];
         let edge_faces = [[0, 1], [0, 1]];
         let boundary = MeshFaceBoundaryAssignment {
-            boundaries: vec![(0..2).map(|edge| MeshBoundaryEdgeCandidate {
-                edge,
-                start: 0,
-                end: 0,
-                reversed: None,
-            }).collect()],
+            boundaries: vec![(0..2)
+                .map(|edge| MeshBoundaryEdgeCandidate {
+                    edge,
+                    start: 0,
+                    end: 0,
+                    reversed: None,
+                })
+                .collect()],
         };
         let domains = [
             MeshFaceBoundaryDomain::Ordered(vec![boundary.clone()]),
             MeshFaceBoundaryDomain::Ordered(vec![boundary]),
         ];
         let run = |ctx: &DecodeContext<'_>| {
-            let mut quotient = MeshQuotient::new((0..4).map(|node| {
-                Arc::new(HashSet::from([node % 2]))
-            }).collect());
-            quotient.merge_charged(ctx, 0, 2)?.expect("shared left endpoint");
-            quotient.merge_charged(ctx, 1, 3)?.expect("shared right endpoint");
+            let mut quotient = MeshQuotient::new(
+                (0..4)
+                    .map(|node| Arc::new(HashSet::from([node % 2])))
+                    .collect(),
+            );
+            quotient
+                .merge_charged(ctx, 0, 2)?
+                .expect("shared left endpoint");
+            quotient
+                .merge_charged(ctx, 1, 3)?
+                .expect("shared right endpoint");
             let budget = WorkBudget::new(39);
             let outcome = quotient.coordinate_root_closure_outcome(
-                ctx, 2, &candidates, Some((&edge_faces, &domains)), Some(&budget),
+                ctx,
+                2,
+                &candidates,
+                Some((&edge_faces, &domains)),
+                Some(&budget),
             )?;
             assert!(!budget.exhausted());
             Ok::<_, CodecError>(outcome)
@@ -5080,16 +5113,22 @@ mod tests {
         ] {
             crate::test_support::with_work_limit(u64::MAX, |ctx| {
                 let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-                    ResourceDimension::WorkUnits, operation, None,
+                    ResourceDimension::WorkUnits,
+                    operation,
+                    None,
                 );
-                assert_eq!(run(ctx).expect("no domain backup is constructed"),
-                    MeshSolve::Solved(HashMap::from([(0, 0), (1, 1)])));
+                assert_eq!(
+                    run(ctx).expect("no domain backup is constructed"),
+                    MeshSolve::Solved(HashMap::from([(0, 0), (1, 1)]))
+                );
                 assert_eq!(ctx.resource_refusal(), None);
             });
         }
         crate::test_support::with_work_limit(u64::MAX, |ctx| {
             let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-                ResourceDimension::WorkUnits, "catia_arc_supports", None,
+                ResourceDimension::WorkUnits,
+                "catia_arc_supports",
+                None,
             );
             let Err(CodecError::ResourceLimit(limit)) = run(ctx) else {
                 panic!("the actual arc-support work must remain admitted");

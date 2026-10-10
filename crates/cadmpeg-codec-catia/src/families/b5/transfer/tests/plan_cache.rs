@@ -16,25 +16,38 @@ fn repeated_pcurve_plan_avoids_duplicate_lane_storage() {
         candidate.object_id = id;
         distinct.pcurves.insert(id, candidate);
     }
-    for (member, id) in distinct.loops.get_mut(&2).expect("loop").members.iter_mut().zip([20, 21, 22]) {
+    for (member, id) in distinct
+        .loops
+        .get_mut(&2)
+        .expect("loop")
+        .members
+        .iter_mut()
+        .zip([20, 21, 22])
+    {
         member.pcurve = id;
     }
     for incidence in distinct.parameter_incidences.values_mut() {
         let lane = &incidence.lanes[0];
-        incidence.lanes = [20, 21, 22].map(|curve| B5IncidenceLane {
-            curve,
-            parameter: lane.parameter,
-            control: lane.control,
-        }).into();
+        incidence.lanes = [20, 21, 22]
+            .map(|curve| B5IncidenceLane {
+                curve,
+                parameter: lane.parameter,
+                control: lane.control,
+            })
+            .into();
     }
-    let payload = UnknownId::mint("catia:test:unknown#plan-cache".to_owned())
-        .expect("identity grammar");
+    let payload =
+        UnknownId::mint("catia:test:unknown#plan-cache".to_owned()).expect("identity grammar");
     let minimum = |graph: &B5Graph| {
         let succeeds = |cap| {
             crate::test_support::with_collection_limit(cap, |ctx| {
                 let mut storage = ctx.reserve_scoped(0, "test_plan_cache")?;
                 let plan = super::super::build_plan(
-                    ctx, graph, &payload, &mut crate::nurbs::LaneRefusals::new(), &mut storage,
+                    ctx,
+                    graph,
+                    &payload,
+                    &mut crate::nurbs::LaneRefusals::new(),
+                    &mut storage,
                 );
                 if let Err(CodecError::ResourceLimit(refusal)) = &plan {
                     assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
@@ -46,7 +59,9 @@ fn repeated_pcurve_plan_avoids_duplicate_lane_storage() {
             })
         };
         let mut low = 0;
-        let mut high = cadmpeg_core::decode::DecodePolicy::service().limits.max_collection_items;
+        let mut high = cadmpeg_core::decode::DecodePolicy::service()
+            .limits
+            .max_collection_items;
         succeeds(high).expect("service collection ceiling admits fixture");
         while low < high {
             let middle = low + (high - low) / 2;
@@ -85,9 +100,15 @@ fn cached_pcurve_plan_still_rejects_another_loop_surface() {
     crate::test_support::with_service_context(|ctx| {
         let mut storage = ctx.reserve_scoped(0, "test_plan_cache")?;
         assert!(super::super::build_plan(
-            ctx, &graph, &payload, &mut crate::nurbs::LaneRefusals::new(), &mut storage,
-        )?.is_none());
+            ctx,
+            &graph,
+            &payload,
+            &mut crate::nurbs::LaneRefusals::new(),
+            &mut storage,
+        )?
+        .is_none());
         assert!(ctx.resource_refusal().is_none());
         Ok::<_, CodecError>(())
-    }).expect("incompatible occurrence is a semantic refusal");
+    })
+    .expect("incompatible occurrence is a semantic refusal");
 }

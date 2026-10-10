@@ -1927,5 +1927,5 @@ fn final_terminator_suffix_is_scanned_once_for_nonfinal_fe_atoms() {
     ));
 }
 
-mod extent_index;
 mod classification;
+mod extent_index;

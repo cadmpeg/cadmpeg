@@ -21,8 +21,7 @@ fn missing_schema_prefix_rejects_before_suffix_scan_and_copy() {
         else {
             panic!("resource refusal");
         };
-        let CodecError::ResourceLimit(actual) = run(ctx).expect_err("sticky schema refusal")
-        else {
+        let CodecError::ResourceLimit(actual) = run(ctx).expect_err("sticky schema refusal") else {
             panic!("resource refusal");
         };
         assert_eq!(actual, original);
@@ -98,7 +97,8 @@ fn schema_footer_stops_one_forward_scan_before_unread_tail() {
     assert_eq!(program.bytes, [0xfe]);
     assert!(program.identifiers.is_empty());
     crate::test_support::with_work_limit(1, |ctx| {
-        let CodecError::ResourceLimit(limit) = run(ctx).expect_err("footer position needs admission")
+        let CodecError::ResourceLimit(limit) =
+            run(ctx).expect_err("footer position needs admission")
         else {
             panic!("resource refusal");
         };
@@ -112,8 +112,7 @@ fn schema_footer_stops_one_forward_scan_before_unread_tail() {
         else {
             panic!("resource refusal");
         };
-        let CodecError::ResourceLimit(actual) = run(ctx).expect_err("sticky schema refusal")
-        else {
+        let CodecError::ResourceLimit(actual) = run(ctx).expect_err("sticky schema refusal") else {
             panic!("resource refusal");
         };
         assert_eq!(actual, original);

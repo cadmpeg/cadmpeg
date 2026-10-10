@@ -247,8 +247,12 @@ fn mesh_boundary_domain_limit_operation(max_collection_items: u64) -> Option<&'s
     let bytes = standard_quad_topology_stream();
     crate::test_support::with_service_context(|preparation_ctx| {
         let context = crate::solve::missing_edge::StandardMeshBoundaryContext::parse(
-            preparation_ctx, &bytes, &[[0, 0]; 4],
-        ).expect("service resource budget").expect("quad boundary context");
+            preparation_ctx,
+            &bytes,
+            &[[0, 0]; 4],
+        )
+        .expect("service resource budget")
+        .expect("quad boundary context");
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = max_collection_items;
@@ -1071,23 +1075,32 @@ fn gap_assignment_promotion_preserves_sticky_refusal() {
     use cadmpeg_core::{decode::ResourceDimension, CodecError};
 
     let mut bytes = standard_quad_topology_stream();
-    let header = bytes.windows(3).position(|window| window == [0x01, 0x01, 0x04])
+    let header = bytes
+        .windows(3)
+        .position(|window| window == [0x01, 0x01, 0x04])
         .expect("edge table header");
     let first_row = header + 3;
     bytes[first_row + 1] = 4;
     bytes.splice(first_row + 6..first_row + 6, 0x7ffe_u16.to_be_bytes());
     let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
         crate::solve::missing_edge::standard_mesh_missing_edge_assignments(
-            ctx, &bytes, &[[0, 0]; 4], None, false,
+            ctx,
+            &bytes,
+            &[[0, 0]; 4],
+            None,
+            false,
         )
     };
     let assignments = crate::test_support::with_service_context(run)
-        .expect("complete gap search").expect("one face");
+        .expect("complete gap search")
+        .expect("one face");
     assert_eq!(assignments[0].len(), 1);
     assert_eq!(assignments[0][0][0].edge, 0);
     assert_eq!(assignments[0][0][0].segment_count, 2);
     let refused = crate::test_support::with_retained_refusal(
-        &bytes, "catia_gap_complete_assignments", |ctx| {
+        &bytes,
+        "catia_gap_complete_assignments",
+        |ctx| {
             let result = run(ctx);
             let Err(CodecError::ResourceLimit(limit)) = &result else {
                 panic!("actual gap-output promotion refusal");

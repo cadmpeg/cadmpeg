@@ -97,11 +97,13 @@ fn distinct_domain_mates<'a>(
         return Ok(None);
     }
     if count == 0 {
-        return Ok(if matches!(edge_constraint, Some(MatchingEdgeConstraint::Require(..))) {
-            None
-        } else {
-            Some(Vec::new())
-        });
+        return Ok(
+            if matches!(edge_constraint, Some(MatchingEdgeConstraint::Require(..))) {
+                None
+            } else {
+                Some(Vec::new())
+            },
+        );
     }
     let mut owner = ctx.alloc_filled(point_count, None, "catia_match_owners")?;
     let mut mates = ctx.alloc_filled(count, None, "catia_match_mates")?;

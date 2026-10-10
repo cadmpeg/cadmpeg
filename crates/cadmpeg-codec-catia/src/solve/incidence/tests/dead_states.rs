@@ -35,9 +35,7 @@ fn incidence_dead_state_insertion_refuses_after_rejected_completion() {
             coordinate_propagation_budget: &budget,
             boundary_propagation_budget: &budget,
             state: super::super::IncidenceSearchState::Open,
-            search_storage: std::cell::RefCell::new(
-                ctx.reserve_scoped(0, "incidence memo test")?,
-            ),
+            search_storage: std::cell::RefCell::new(ctx.reserve_scoped(0, "incidence memo test")?),
         };
         search.search_with_quotient(&[], None, &[])?;
         assert!(search.solutions.is_empty());
@@ -52,10 +50,13 @@ fn incidence_dead_state_insertion_refuses_after_rejected_completion() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = u64::MAX;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
-    let probe = RefusalProbe::arm(ResourceDimension::CollectionItems,
-        "catia incidence dead states", Some(1));
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
+    let probe = RefusalProbe::arm(
+        ResourceDimension::CollectionItems,
+        "catia incidence dead states",
+        Some(1),
+    );
     let CodecError::ResourceLimit(limit) = run(&ctx).expect_err("dead-state entry admission")
     else {
         panic!("resource refusal");
@@ -65,6 +66,8 @@ fn incidence_dead_state_insertion_refuses_after_rejected_completion() {
     assert_eq!(limit.operation, "catia incidence dead states");
     assert_eq!(limit.additional, 1);
     assert_eq!(ctx.resource_refusal(), Some(limit));
-    assert!(matches!(ctx.charge_work(0, "after rejected memo insertion"),
-        Err(CodecError::ResourceLimit(later)) if later == limit));
+    assert!(
+        matches!(ctx.charge_work(0, "after rejected memo insertion"),
+        Err(CodecError::ResourceLimit(later)) if later == limit)
+    );
 }

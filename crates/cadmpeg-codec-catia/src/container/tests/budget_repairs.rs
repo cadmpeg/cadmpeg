@@ -129,11 +129,18 @@ fn duplicate_save_versions_retain_only_the_selected_date() {
 #[test]
 fn rejected_logical_stream_promotes_no_discarded_extent_bytes() {
     let mut descriptor = test_descriptor("MainDataStream", 1, 2);
-    descriptor.extents.push(Extent { phys_off: 9, phys_len: 2, flags: 0 });
+    descriptor.extents.push(Extent {
+        phys_off: 9,
+        phys_len: 2,
+        flags: 0,
+    });
     crate::test_support::with_retained_limit(0, |ctx| {
         let (stream, storage) = reconstruct_logical_stream(ctx, b"0123456789", &descriptor, 0)
             .expect("invalid extent rejects the complete stream");
-        assert!(storage.commit_value(stream).expect("empty result owns no backing").is_empty());
+        assert!(storage
+            .commit_value(stream)
+            .expect("empty result owns no backing")
+            .is_empty());
         assert_eq!(ctx.resource_refusal(), None);
         let valid = test_descriptor("MainDataStream", 1, 2);
         let (stream, storage) = reconstruct_logical_stream(ctx, b"0123456789", &valid, 0)
@@ -142,11 +149,16 @@ fn rejected_logical_stream_promotes_no_discarded_extent_bytes() {
         let Err(CodecError::ResourceLimit(limit)) = storage.commit_value(stream) else {
             panic!("the actual retained stream still needs storage");
         };
-        assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::RetainedBytes);
+        assert_eq!(
+            limit.dimension,
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes
+        );
         assert_eq!(limit.operation, "catia_logical_stream_bytes");
         assert_eq!(ctx.resource_refusal(), Some(limit));
-        assert!(matches!(ctx.charge_work(0, "after stream promotion refusal"),
-            Err(CodecError::ResourceLimit(later)) if later == limit));
+        assert!(
+            matches!(ctx.charge_work(0, "after stream promotion refusal"),
+            Err(CodecError::ResourceLimit(later)) if later == limit)
+        );
     });
 }
 
@@ -156,8 +168,11 @@ fn logical_stream_roster_refuses_before_installing_an_unreserved_lease() {
     let bytes = super::outer_directory_catpart();
     let scan = crate::test_support::with_service_context(|ctx| scan_bytes(ctx, bytes))
         .expect("complete fixture scan");
-    let _probe = RefusalProbe::arm(ResourceDimension::CollectionItems,
-        "catia_logical_stream_reservations", None);
+    let _probe = RefusalProbe::arm(
+        ResourceDimension::CollectionItems,
+        "catia_logical_stream_reservations",
+        None,
+    );
     crate::test_support::with_collection_limit(u64::MAX, |ctx| {
         let Err(CodecError::ResourceLimit(limit)) = logical_record_streams(ctx, &scan) else {
             panic!("the actual parallel reservation roster must refuse");
@@ -174,11 +189,17 @@ fn logical_stream_roster_refuses_before_installing_an_unreserved_lease() {
 fn container_output_promotions_preserve_refusal_and_live_parent_storage() {
     use cadmpeg_core::decode::ResourceDimension;
     let summary = summary_preview_segment();
-    let directory = InnerDir { inner: 0, descriptors: vec![
-        test_descriptor("MainDataStream", 0, 4),
-        test_descriptor("SurfacicReps", 4, 2),
-    ] };
-    for operation in ["catia_last_save_version_storage", "catia_logical_stream_bytes"] {
+    let directory = InnerDir {
+        inner: 0,
+        descriptors: vec![
+            test_descriptor("MainDataStream", 0, 4),
+            test_descriptor("SurfacicReps", 4, 2),
+        ],
+    };
+    for operation in [
+        "catia_last_save_version_storage",
+        "catia_logical_stream_bytes",
+    ] {
         let run = |ctx: &DecodeContext<'_>| {
             if operation == "catia_last_save_version_storage" {
                 last_save_version(ctx, &summary).map(|_| ())
@@ -194,19 +215,24 @@ fn container_output_promotions_preserve_refusal_and_live_parent_storage() {
             assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
             assert_eq!(limit.operation, operation);
             assert_eq!(ctx.resource_refusal(), Some(*limit));
-            assert!(matches!(ctx.charge_work(0, "after container output refusal"),
-                Err(CodecError::ResourceLimit(later)) if later == *limit));
+            assert!(
+                matches!(ctx.charge_work(0, "after container output refusal"),
+                Err(CodecError::ResourceLimit(later)) if later == *limit)
+            );
             result
         });
         assert!(matches!(refused, Err(CodecError::ResourceLimit(_))));
     }
     crate::test_support::with_retained_limit(0, |ctx| -> Result<(), CodecError> {
         let mut parent = ctx.reserve_scoped(0, "test container output parent")?;
-        let version = parent.with_storage(|| last_save_version(ctx, &summary))?
+        let version = parent
+            .with_storage(|| last_save_version(ctx, &summary))?
             .expect("summary version");
-        let brep = parent.with_storage(|| brep_stream(ctx, b"123456", &directory))?
+        let brep = parent
+            .with_storage(|| brep_stream(ctx, b"123456", &directory))?
             .expect("complete BREP");
-        let main = parent.with_storage(|| main_data_stream(ctx, b"123456", &directory))?
+        let main = parent
+            .with_storage(|| main_data_stream(ctx, b"123456", &directory))?
             .expect("canonical main stream");
         assert_eq!(version.build_date, "03-10-2017.22.00");
         assert_eq!(brep, b"123456");
@@ -217,5 +243,6 @@ fn container_output_promotions_preserve_refusal_and_live_parent_storage() {
         drop(version);
         drop(parent);
         Ok(())
-    }).expect("actual outputs stay under their live parent");
+    })
+    .expect("actual outputs stay under their live parent");
 }

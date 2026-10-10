@@ -1397,9 +1397,7 @@ fn numeric_value_packets(
     let mut packets = Vec::new();
     let mut previous_end = 0;
     let mut candidates = candidates.into_iter().peekable();
-    while let Some(candidate) =
-        ctx.next_charged(&mut candidates, "catia_numeric_packet_overlap")?
-    {
+    while let Some(candidate) = ctx.next_charged(&mut candidates, "catia_numeric_packet_overlap")? {
         let overlaps = previous_end > candidate.1.start
             || candidates
                 .peek()
@@ -1761,58 +1759,57 @@ fn unique_monotone_run(
     }
     let mut layers = Vec::new();
     for record in ctx.admit_iter(&records[1..], "catia_entity_path_record_visits")? {
-        let predecessors =
-            ctx.with_scoped_storage("catia_entity_predecessor_workspace", || {
-                let mut ordered_predecessors =
-                    ctx.collection_vec(previous.len(), "collect CATIA 7C05 ordered predecessors")?;
-                for (index, state) in ctx
-                    .admit_iter(&previous, "catia_entity_predecessor_visits")?
-                    .enumerate()
-                {
-                    ordered_predecessors.push((index, state));
-                }
-                match ordered_predecessors.as_mut_slice() {
-                    [] | [_] => {}
-                    [left, right] => {
-                        if left.1.identity.entity_id > right.1.identity.entity_id {
-                            std::mem::swap(left, right);
-                        }
-                    }
-                    _ => {
-                        ctx.stable_sort_by(
-                            &mut ordered_predecessors,
-                            |value| &value.1.identity.entity_id,
-                            Ord::cmp,
-                            "sort CATIA 7C05 predecessor states",
-                        )?;
+        let predecessors = ctx.with_scoped_storage("catia_entity_predecessor_workspace", || {
+            let mut ordered_predecessors =
+                ctx.collection_vec(previous.len(), "collect CATIA 7C05 ordered predecessors")?;
+            for (index, state) in ctx
+                .admit_iter(&previous, "catia_entity_predecessor_visits")?
+                .enumerate()
+            {
+                ordered_predecessors.push((index, state));
+            }
+            match ordered_predecessors.as_mut_slice() {
+                [] | [_] => {}
+                [left, right] => {
+                    if left.1.identity.entity_id > right.1.identity.entity_id {
+                        std::mem::swap(left, right);
                     }
                 }
-                let mut cumulative = ctx.collection_vec(
-                    ordered_predecessors.len(),
-                    "collect CATIA 7C05 cumulative paths",
-                )?;
-                let mut cumulative_count = PathCount::None;
-                for (index, state) in
-                    ctx.admit_iter(&ordered_predecessors, "catia_entity_cumulative_path_visits")?
-                {
-                    cumulative_count = cumulative_count.join(state.path_count);
-                    cumulative.push((
-                        cumulative_count,
-                        (cumulative_count == PathCount::One).then_some(*index),
-                    ));
+                _ => {
+                    ctx.stable_sort_by(
+                        &mut ordered_predecessors,
+                        |value| &value.1.identity.entity_id,
+                        Ord::cmp,
+                        "sort CATIA 7C05 predecessor states",
+                    )?;
                 }
-                Ok::<_, CodecError>((ordered_predecessors, cumulative))
-            })?;
+            }
+            let mut cumulative = ctx.collection_vec(
+                ordered_predecessors.len(),
+                "collect CATIA 7C05 cumulative paths",
+            )?;
+            let mut cumulative_count = PathCount::None;
+            for (index, state) in
+                ctx.admit_iter(&ordered_predecessors, "catia_entity_cumulative_path_visits")?
+            {
+                cumulative_count = cumulative_count.join(state.path_count);
+                cumulative.push((
+                    cumulative_count,
+                    (cumulative_count == PathCount::One).then_some(*index),
+                ));
+            }
+            Ok::<_, CodecError>((ordered_predecessors, cumulative))
+        })?;
         let mut layer = Vec::new();
         for identity in ctx.admit_iter(&record.identities, "catia_entity_path_identity_visits")? {
             let predecessor_count = ctx.partition_point(
-                &predecessors.0.0,
+                &predecessors.0 .0,
                 |(_, state)| Ok(state.identity.entity_id < identity.entity_id),
                 "resolve CATIA 7C05 identity paths",
             )?;
             let (path_count, predecessor) = predecessor_count
                 .checked_sub(1)
-                .map_or((PathCount::None, None), |index| predecessors.0.1[index]);
+                .map_or((PathCount::None, None), |index| predecessors.0 .1[index]);
             if path_count != PathCount::None {
                 path_storage.with_storage(|| {
                     ctx.push_vec(
