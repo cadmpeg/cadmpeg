@@ -48,7 +48,13 @@ fn oriented_nurbs_range(
     edge_end: [f64; 3],
 ) -> Option<CurvePlan> {
     crate::test_support::with_service_context(|ctx| {
-        super::super::pcurves::oriented_nurbs_range(ctx, geometry, parameters, edge_start, edge_end)
+        super::super::pcurves::oriented_nurbs_range(
+            ctx,
+            &mut geometry.clone(),
+            parameters,
+            edge_start,
+            edge_end,
+        )
     })
     .expect("service budget")
 }
@@ -658,19 +664,18 @@ fn affine_lift_range_orients_and_trims_the_nurbs_carrier() {
         .expect("fixture constructor admission")
         .expect("valid affine lift curve"),
     ));
-    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+    let admitted = crate::test_support::with_retained_limit(0, |ctx| {
         super::super::pcurves::oriented_nurbs_range(
             ctx,
-            &geometry,
+            &mut geometry.clone(),
             [2.0, 8.0],
             [2.0, 0.0, 2.0],
             [8.0, 0.0, 2.0],
         )
-    });
-    assert!(
-        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_oriented_nurbs_curve")
-    );
+    })
+    .expect("forward orientation moves owned geometry")
+    .expect("forward trimmed range");
+    assert_eq!(admitted.geometry, geometry);
     let forward = oriented_nurbs_range(&geometry, [2.0, 8.0], [2.0, 0.0, 2.0], [8.0, 0.0, 2.0])
         .expect("forward trimmed range");
     assert_eq!(forward.geometry, geometry);

@@ -173,3 +173,28 @@ fn plane_finite_knots_still_require_order_and_cardinality() {
     };
     assert!(super::lifted_curve_geometry(&pcurve, &plane()).is_none());
 }
+
+#[test]
+fn plane_lifting_retains_only_the_constructed_knot_and_pole_lanes() {
+    for rational in [false, true] {
+        let (mut pcurve, _) = fixture();
+        if rational {
+            pcurve.weights = Some(vec![
+                crate::test_support::test_b5::positive(1.0),
+                crate::test_support::test_b5::positive(2.0),
+            ]);
+        }
+        // Four f64 knots and two finite poles. Rational poles add one f64 weight.
+        let retained = 4 * 8 + 2 * if rational { 32 } else { 24 };
+        crate::test_support::with_retained_limit(retained, |ctx| {
+            let Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve))) =
+                super::super::super::pcurves::lifted_curve_geometry(ctx, &pcurve, &plane())
+                    .expect("only the final lanes need retained allowance")
+            else {
+                panic!("plane NURBS lift")
+            };
+            assert_eq!(curve.knots().as_slice(), &[0.0, 0.0, 1.0, 1.0]);
+            assert_eq!(curve.pole_rows().count(), 2);
+        });
+    }
+}
