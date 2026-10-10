@@ -5,6 +5,7 @@ use super::admission;
 use super::cacheless_constant_rolling_ball_first_order;
 use super::cacheless_constant_rolling_ball_point;
 use super::cacheless_law_sweep_point;
+use super::cacheless_law_sweep_first_order;
 use super::cacheless_variable_blend_point;
 use super::model_axis_revolution_point;
 use super::model_axis_revolution_jet;
@@ -466,6 +467,20 @@ pub(super) fn model_surface_point_by_id_inner(
                     let profile = definition_payload.profile();
                     let spine = definition_payload.spine();
 
+                    if normal {
+                        return match cacheless_law_sweep_first_order(
+                            admission, index, profile, spine, construction, u, v,
+                        ) {
+                            Ok(order) => first_evaluation(Ok(order), false),
+                            Err(EvaluationFailure::ResourceLimit(limit)) => Some(resource(limit)),
+                            Err(failure) => cache_fallback(
+                                failure,
+                                sweep_has_current_cache(construction)
+                                    .then(|| cache_evaluation(admission, &surface.geometry, u, v, true))
+                                    .flatten(),
+                            ),
+                        };
+                    }
                     match cacheless_law_sweep_point(
                         admission,
                         index,
