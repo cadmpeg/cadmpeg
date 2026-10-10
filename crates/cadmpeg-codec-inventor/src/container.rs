@@ -17,7 +17,7 @@ use crate::rse::{database_band, direct_rse_child, RseInventory, SegmentMetaState
 
 /// One parsed Inventor compound container.
 pub(crate) struct InventorContainer<'a, 'ctx> {
-    pub(crate) snapshot: CompoundSnapshot<'a>,
+    pub(crate) snapshot: CompoundSnapshot<'a, 'ctx>,
     pub(crate) rse: RseInventory<'a>,
     pub(crate) property_sets: Vec<PropertySetDescriptor<'a>>,
     pub(crate) protein: ProteinState<'a, 'ctx>,
@@ -195,7 +195,7 @@ fn summary_note(
 
 fn admit_container_entries(
     ctx: &DecodeContext<'_>,
-    snapshot: &CompoundSnapshot<'_>,
+    snapshot: &CompoundSnapshot<'_, '_>,
 ) -> Result<(), CodecError> {
     let count = cadmpeg_core::decode::u64_from_index(snapshot.entries().len());
     ctx.charge_collection_items(count, "collect Inventor container summary entries")?;
