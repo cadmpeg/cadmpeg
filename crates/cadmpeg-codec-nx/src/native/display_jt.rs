@@ -3,6 +3,8 @@
 
 pub(crate) mod admission;
 #[cfg(test)]
+mod candidate_tests;
+#[cfg(test)]
 mod document_admission_tests;
 #[cfg(test)]
 mod index_admission_tests;
@@ -2703,92 +2705,107 @@ fn parse_jt9_partition_node_body(
     ctx: &DecodeContext<'_>,
     body: &[u8],
 ) -> Result<Option<ParsedJtPartitionNode>, CodecError> {
-    let parsed = (|| {
-        let (_, _, _, family) = parse_jt_base_node_body(body, 9)?;
-        let (group_version, child_bytes, family) = parse_jt9_group_data(family)?;
-        let child_object_ids =
-            match read_jt_object_ids(ctx, child_bytes, "decode DisplayJT group children") {
-                Ok(value) => value,
-                Err(error) => return Some(Err(error)),
-            };
-        let mut view = View::over_retained(family);
-        let partition_flags = view.u32_le()?;
-        if partition_flags & !1 != 0 {
-            return None;
-        }
-        let name_count = usize::try_from(view.u32_le()?).ok()?;
-        let name_bytes = view.take(name_count.checked_mul(2)?)?;
-        let file_name = match ctx.utf16le_text(
-            name_bytes,
-            name_count,
-            false,
-            "retain DisplayJT partition name",
-        ) {
-            Ok(value) => value,
-            Err(CodecError::Malformed(_)) => return None,
-            Err(error) => return Some(Err(error)),
+    let mut storage = ctx.provisional_retained("DisplayJT partition candidate")?;
+    let parsed = storage.with_storage(|| {
+        let Some((_, _, _, family)) = parse_jt_base_node_body(body, 9) else {
+            return Ok(None);
         };
-        let mut characters =
-            match ctx.admit_iter(file_name.as_str(), "validate DisplayJT partition name") {
-                Ok(characters) => characters,
-                Err(error) => return Some(Err(CodecError::ResourceLimit(error))),
-            };
-        if file_name.is_empty() || characters.any(char::is_control) {
-            return None;
+        let Some((group_version, child_bytes, family)) = parse_jt9_group_data(family) else {
+            return Ok(None);
+        };
+        let child_object_ids = read_jt_object_ids(ctx, child_bytes, "decode DisplayJT group children")?;
+        let mut view = View::over_retained(family);
+        let Some(partition_flags) = view.u32_le() else {
+            return Ok(None);
+        };
+        if partition_flags & !1 != 0 {
+            return Ok(None);
+        }
+        let Some(name_count) = view.u32_le().and_then(|count| usize::try_from(count).ok()) else {
+            return Ok(None);
+        };
+        let Some(name_bytes) = name_count.checked_mul(2).and_then(|length| view.take(length)) else {
+            return Ok(None);
+        };
+        let file_name = match ctx.utf16le_text(name_bytes, name_count, false, "retain DisplayJT partition name") {
+            Ok(value) => value,
+            Err(CodecError::Malformed(_)) => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        if file_name.is_empty() || ctx.any_by(file_name.chars(), |character| Ok(character.is_control()), "validate DisplayJT partition name")? {
+            return Ok(None);
         }
         let name_end = view.position();
         let f32_at = |offset: usize| FiniteBinary32::new(View::f32_le_at(family, offset)?);
         let bounds_at = |offset: usize| {
-            let bounds = [
+            JtBounds::from_finite([
                 [f32_at(offset)?, f32_at(offset + 4)?, f32_at(offset + 8)?],
-                [
-                    f32_at(offset + 12)?,
-                    f32_at(offset + 16)?,
-                    f32_at(offset + 20)?,
-                ],
-            ];
-            JtBounds::from_finite(bounds)
+                [f32_at(offset + 12)?, f32_at(offset + 16)?, f32_at(offset + 20)?],
+            ])
         };
-        let first_bounds = bounds_at(name_end)?;
-        let mut cursor = name_end.checked_add(24)?;
+        let Some(first_bounds) = bounds_at(name_end) else {
+            return Ok(None);
+        };
+        let Some(mut cursor) = name_end.checked_add(24) else {
+            return Ok(None);
+        };
         let transformed_bounds = if partition_flags & 1 == 0 {
-            let transformed = bounds_at(cursor)?;
-            cursor = cursor.checked_add(24)?;
+            let Some(transformed) = bounds_at(cursor) else {
+                return Ok(None);
+            };
+            let Some(next) = cursor.checked_add(24) else {
+                return Ok(None);
+            };
+            cursor = next;
             transformed
         } else {
             first_bounds
         };
-        let area = JtArea::new(View::f32_le_at(family, cursor)?)?;
-        cursor = cursor.checked_add(4)?;
+        let Some(area) = View::f32_le_at(family, cursor).and_then(JtArea::new) else {
+            return Ok(None);
+        };
+        let Some(next) = cursor.checked_add(4) else {
+            return Ok(None);
+        };
+        cursor = next;
         let count_range = |offset: usize| {
             let minimum = View::i32_le_at(family, offset)?;
             let maximum = View::i32_le_at(family, offset.checked_add(4)?)?;
             (minimum >= 0 && (maximum == -1 || maximum >= minimum)).then_some([minimum, maximum])
         };
-        let vertex_count_range = count_range(cursor)?;
-        let node_count_range = count_range(cursor + 8)?;
-        let polygon_count_range = count_range(cursor + 16)?;
-        cursor = cursor.checked_add(24)?;
+        let (Some(vertex_count_range), Some(node_count_range), Some(polygon_count_range)) =
+            (count_range(cursor), count_range(cursor + 8), count_range(cursor + 16))
+        else {
+            return Ok(None);
+        };
+        let Some(next) = cursor.checked_add(24) else {
+            return Ok(None);
+        };
+        cursor = next;
         let bounds = if partition_flags & 1 != 0 {
-            let bounds = bounds_at(cursor)?;
-            cursor = cursor.checked_add(24)?;
+            let Some(bounds) = bounds_at(cursor) else {
+                return Ok(None);
+            };
+            let Some(next) = cursor.checked_add(24) else {
+                return Ok(None);
+            };
+            cursor = next;
             DisplayJtPartitionBounds::Untransformed(bounds)
         } else {
             DisplayJtPartitionBounds::Reserved(first_bounds)
         };
-        (cursor == family.len()).then_some(Ok(ParsedJtPartitionNode {
-            group_version,
-            child_object_ids,
-            file_name,
-            transformed_bounds,
-            area,
-            vertex_count_range,
-            node_count_range,
-            polygon_count_range,
-            bounds,
+        if cursor != family.len() {
+            return Ok(None);
+        }
+        Ok(Some(ParsedJtPartitionNode {
+            group_version, child_object_ids, file_name, transformed_bounds, area,
+            vertex_count_range, node_count_range, polygon_count_range, bounds,
         }))
-    })();
-    parsed.transpose()
+    })?;
+    let Some(parsed) = parsed else {
+        return Ok(None);
+    };
+    Ok(Some(storage.commit_value(parsed)?))
 }
 
 struct ParsedJtRangeLodNode {
