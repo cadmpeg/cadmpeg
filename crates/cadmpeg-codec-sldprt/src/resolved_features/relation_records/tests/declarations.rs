@@ -875,7 +875,8 @@ fn declaration_signature_rejection_leaves_feature_probe_armed() {
     let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
         ResourceDimension::WorkUnits, "compare SLDPRT relation declaration feature references", None,
     );
-    assert!(index.declaration(&ctx, &classes[0], false).unwrap().is_none());
+    assert!(index.declaration(&ctx, &classes[0],
+        super::super::feature_at_offset(&ctx, classes[0].offset, &intervals).unwrap(), false).unwrap().is_none());
     assert_eq!(ctx.resource_refusal(), None);
     let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, "compare SLDPRT relation declaration feature references")
     else { panic!("wrong signature must leave feature comparison probe armed"); };
@@ -977,4 +978,114 @@ fn promoted_group_reuses_proved_class_difference() {
         Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
     assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
     drop(probe);
+}
+
+#[test]
+fn unstatable_declaration_does_not_demand_an_index() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let classes = [class(u64::MAX - 100, "sgPntPntHorDist")];
+    let scalars = [scalar(u64::MAX - 50, FeatureInputScalarRole::Driving)];
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    // One admitted class visit per call; the empty interval search visits nothing.
+    policy.limits.max_work_units = 64;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    for _ in 0..64 {
+        assert!(super::super::unique_relation_declaration_candidates_charged(&ctx, &classes, &scalars, &[])
+            .unwrap().is_empty());
+    }
+    assert_eq!(ctx.resource_refusal(), None);
+
+    policy.limits.max_work_units = u64::MAX;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits, "index SLDPRT relation declarations", None,
+    );
+    assert!(super::super::unique_relation_declaration_candidates_charged(&ctx, &classes, &scalars, &[])
+        .unwrap().is_empty());
+    assert_eq!(ctx.resource_refusal(), None);
+    let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, "index SLDPRT relation declarations")
+    else { panic!("unstatable scope must leave index probe armed"); };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(limit.operation, "index SLDPRT relation declarations");
+    assert_eq!(limit.used, 1);
+    assert_eq!(limit.additional, 1);
+    assert_eq!(ctx.resource_refusal(), Some(limit));
+    assert!(matches!(ctx.charge_work(0, "after unused declaration index"),
+        Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    drop(probe);
+
+    policy.limits.max_work_units = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let Err(CodecError::ResourceLimit(limit)) =
+        super::super::unique_relation_declaration_candidates_charged(&ctx, &classes, &scalars, &[])
+    else { panic!("unstatable class source must still be admitted"); };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(limit.operation, "scan SLDPRT relation declarations");
+    assert_eq!(limit.limit, 0);
+    assert_eq!(limit.used, 0);
+    assert_eq!(limit.additional, 1);
+    assert_eq!(ctx.resource_refusal(), Some(limit));
+    assert!(matches!(ctx.charge_work(0, "after unstatable class visit refusal"),
+        Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+}
+
+#[test]
+fn open_interval_still_demands_the_declaration_index_at_high_offsets() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let classes = [class(u64::MAX - 100, "sgPntPntHorDist")];
+    let scalars = [scalar(u64::MAX - 50, FeatureInputScalarRole::Driving)];
+    let intervals = [(0, None, "sketch".to_owned())];
+    let service = cadmpeg_test_support::service_decode_context();
+    let selected = super::super::unique_relation_declaration_candidates_charged(
+        &service, &classes, &scalars, &intervals,
+    ).unwrap();
+    assert_eq!(selected.len(), 1);
+    assert!(std::ptr::eq(selected[0].0, &classes[0]));
+    assert!(std::ptr::eq(selected[0].1, &scalars[0]));
+    assert_eq!(selected[0].2, FeatureInputRelationFamily::PointPointHorizontalDistance);
+    assert_eq!(service.resource_refusal(), None);
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits, "index SLDPRT relation declarations", None,
+    );
+    let Err(CodecError::ResourceLimit(limit)) =
+        super::super::unique_relation_declaration_candidates_charged(&ctx, &classes, &scalars, &intervals)
+    else { panic!("open interval must demand its valid declaration index"); };
+    // Outer class visit and one actual interval probe precede the index's class visit.
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(limit.operation, "index SLDPRT relation declarations");
+    assert_eq!(limit.used, 2);
+    assert_eq!(limit.additional, 1);
+    assert_eq!(ctx.resource_refusal(), Some(limit));
+    assert!(matches!(ctx.charge_work(0, "after required declaration index"),
+        Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    drop(probe);
+}
+
+#[test]
+fn rejected_unknown_span_does_not_suppress_a_later_valid_declaration() {
+    let classes = [class(u64::MAX - 100, "sgPntPntHorDist"), class(1000, "sgPntPntHorDist")];
+    let scalars = [scalar(u64::MAX - 50, FeatureInputScalarRole::Driving), scalar(1050, FeatureInputScalarRole::Driving)];
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let selected = super::super::unique_relation_declaration_candidates_charged(&ctx, &classes, &scalars, &[]).unwrap();
+    assert_eq!(selected.len(), 1);
+    assert!(std::ptr::eq(selected[0].0, &classes[1]));
+    assert!(std::ptr::eq(selected[0].1, &scalars[1]));
+    assert_eq!(selected[0].2, FeatureInputRelationFamily::PointPointHorizontalDistance);
+    assert_eq!(ctx.resource_refusal(), None);
 }

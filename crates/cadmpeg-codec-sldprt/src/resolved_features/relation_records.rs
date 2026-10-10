@@ -149,7 +149,6 @@ enum RelationScope {
 
 /// The relation classes and scalars of one lane, ordered for scope searches.
 struct DeclarationIndex<'a, 'i> {
-    intervals: &'i [(u64, Option<u64>, String)],
     /// The offsets of the relation classes inside each feature interval, ascending.
     relation_class_offsets: HashMap<&'i str, Vec<u64>>,
     /// The scalars in offset order; equal offsets keep lane order.
@@ -201,7 +200,6 @@ impl<'a, 'i> DeclarationIndex<'a, 'i> {
         let mut ordered = ctx.collect_vec(scalars.iter(), OPERATION)?;
         ctx.stable_sort_by(&mut ordered, |scalar| &scalar.offset, Ord::cmp, OPERATION)?;
         Ok(Self {
-            intervals,
             relation_class_offsets,
             scalars: ordered,
         })
@@ -256,13 +254,13 @@ impl<'a, 'i> DeclarationIndex<'a, 'i> {
         &self,
         ctx: &DecodeContext<'_>,
         class: &FeatureInputClass,
+        class_interval: Option<FeatureIntervalMatch<'_>>,
         allow_dynamic: bool,
     ) -> Result<Option<(&'a FeatureInputScalar, FeatureInputRelationFamily)>, CodecError> {
         const OPERATION: &str = "match SLDPRT relation scalar declarations";
         let Some(family) = relation_family(&class.name) else {
             return Ok(None);
         };
-        let class_interval = feature_at_offset(ctx, class.offset, self.intervals)?;
         let class_feature = class_interval.map(|interval| interval.feature_name);
         let scope_end = match self.scope_end(ctx, class, class_interval)? {
             RelationScope::Ends(end) => Some(end),
@@ -347,6 +345,10 @@ fn relation_declaration_candidates_impl<'a>(
         if relation_family(&class.name).is_none() {
             continue;
         }
+        let class_interval = feature_at_offset(ctx, class.offset, intervals)?;
+        if class_interval.is_none() && class.offset.checked_add(UNKNOWN_FEATURE_SPAN).is_none() {
+            continue;
+        }
         let (index, _) = match declaration_index.get() {
             Some(index) => index,
             None => {
@@ -356,7 +358,7 @@ fn relation_declaration_candidates_impl<'a>(
                 declaration_index.get_or_init(|| built)
             }
         };
-        if let Some((scalar, family)) = index.declaration(ctx, class, allow_dynamic)? {
+        if let Some((scalar, family)) = index.declaration(ctx, class, class_interval, allow_dynamic)? {
             ctx.push_vec(
                 &mut candidates,
                 (class, scalar, family),
