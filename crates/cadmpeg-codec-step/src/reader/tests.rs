@@ -293,21 +293,30 @@ use crate::StepCodec;
 
 #[test]
 fn semantic_decode_uses_the_decode_session_work_budget() {
-    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
-    // Admit preceding lexer and container operations before this exact named gate.
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT('',(1.,2.,3.));ENDSEC;END-ISO-10303-21;";
+    let (exchange, diagnostics) = crate::test_support::with_service_context(source, crate::parse::parse_inner).unwrap();
     let limit = crate::test_support::resource_refusal_at(
         source,
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "step_entity_index_name_storage",
-        |source, ctx| crate::reader::decode(source, ctx, Packaging::Bare),
+        "step_geometry_points",
+        |source, ctx| crate::reader::decode_exchange(source, exchange.clone(), &diagnostics, ctx, Packaging::Bare),
     );
-
-    assert_eq!(
-        Some(limit.operation),
-        Some("step_entity_index_name_storage")
-    );
+    assert_eq!(limit.operation, "step_geometry_points");
 }
 
+#[test]
+fn semantic_decode_charges_each_mesh_entity_once() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=COORDINATES_LIST('',3,((0.,0.,0.),(1.,0.,0.),(0.,1.,0.)));#2=TRIANGULATED_SURFACE_SET('',#1,3,$,$,((1,2,3)));ENDSEC;END-ISO-10303-21;";
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    // Two parsed source entities and one retained mesh entity.
+    policy.limits.max_entities = 3;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(source, &arena, &policy).unwrap();
+    let decoded = super::decode(source, &ctx, Packaging::Bare).unwrap();
+    assert_eq!(decoded.ir.model.entity_count(), 1);
+    assert_eq!(decoded.ir.model.tessellations.len(), 1);
+    ctx.finish_session().unwrap();
+}
 #[test]
 fn semantic_decode_admits_ir_entities_at_stage_boundaries() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));ENDSEC;DATA;#1=CARTESIAN_POINT('',(1.,2.,3.));#2=VERTEX_POINT('',#1);ENDSEC;END-ISO-10303-21;";
@@ -1103,46 +1112,6 @@ mod set_lookups;
 mod equality;
 
 #[test]
-fn instance_identity_reverse_split_preserves_refusal() {
-    cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "STEP instance identity reverse split",
-        |cap| {
-            let arena = cadmpeg_core::decode::DecodeArena::new();
-            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) =
-                cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-            let result = super::step_instance_id(&ctx, "step:data:curve#7").map(|_| ());
-            if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result {
-                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
-            }
-            result
-        },
-    );
-}
-
-#[test]
-fn source_record_identity_reverse_split_preserves_refusal() {
-    cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "STEP source record identity reverse split",
-        |cap| {
-            let arena = cadmpeg_core::decode::DecodeArena::new();
-            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) =
-                cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-            let result = super::source_record_id(&ctx, "step:data:curve#7-member").map(|_| ());
-            if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result {
-                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
-            }
-            result
-        },
-    );
-}
-
-#[test]
 fn instance_identity_number_parse_preserves_refusal() {
     cadmpeg_test_support::refusal::resource_limit_at(
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
@@ -1195,29 +1164,6 @@ fn identity_reader_splits_preserve_existing_optional_results() {
             "{identity}"
         );
     }
-}
-
-#[test]
-fn retained_carrier_identity_refusal_reaches_caller() {
-    let removed = std::collections::BTreeSet::from([7_u64]);
-    let protected = std::collections::BTreeSet::new();
-    cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "STEP instance identity reverse split",
-        |cap| {
-            let arena = cadmpeg_core::decode::DecodeArena::new();
-            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) =
-                cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-            let result =
-                super::retains_carrier(&ctx, "step:data:curve#7", &removed, &protected).map(|_| ());
-            if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result {
-                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
-            }
-            result
-        },
-    );
 }
 
 #[test]

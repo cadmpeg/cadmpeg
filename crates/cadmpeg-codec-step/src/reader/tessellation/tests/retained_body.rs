@@ -39,7 +39,8 @@ fn decode_with_body(policy: DecodePolicy) -> Result<CadIr, CodecError> {
     );
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)?;
-    super::super::decode(&exchange, &geometry, &topology, &mut ir, &ctx)?;
+    let mut admitted = cadmpeg_core::decode::u64_from_index(ir.model.entity_count());
+    super::super::decode(&exchange, &geometry, &topology, &mut ir, &ctx, &mut admitted)?;
     Ok(ir)
 }
 
