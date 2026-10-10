@@ -141,10 +141,11 @@ pub(super) fn next_subtype_reference(
     tokens: &[crate::sab::Token],
     position: &mut usize,
 ) -> Result<Option<usize>, CodecError> {
+    use crate::sab::Token;
+
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
     }
-    use crate::sab::Token;
     let start = *position;
     let Some(remaining) = tokens.get(start..) else {
         return Ok(None);
@@ -321,13 +322,25 @@ mod ownership_tests {
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         for _ in 0..64 {
-            assert!(owned_subtype_defs(&ctx, &[], RefWidth::Four).unwrap().unwrap().is_empty());
-            for (input, start) in [(b"".as_slice(), 0), (b"\x0b".as_slice(), 0), (b"\x0f".as_slice(), 1)] {
-                assert!(subtype_span(&ctx, input, start, RefWidth::Four).unwrap().is_none());
+            assert!(owned_subtype_defs(&ctx, &[], RefWidth::Four)
+                .unwrap()
+                .unwrap()
+                .is_empty());
+            for (input, start) in [
+                (b"".as_slice(), 0),
+                (b"\x0b".as_slice(), 0),
+                (b"\x0f".as_slice(), 1),
+            ] {
+                assert!(subtype_span(&ctx, input, start, RefWidth::Four)
+                    .unwrap()
+                    .is_none());
             }
         }
-        let Err(CodecError::ResourceLimit(first)) = ctx.charge_work(1, "test original byte-subtype refusal")
-        else { panic!("original refusal"); };
+        let Err(CodecError::ResourceLimit(first)) =
+            ctx.charge_work(1, "test original byte-subtype refusal")
+        else {
+            panic!("original refusal");
+        };
         for input in [b"".as_slice(), b"\x0f\x10".as_slice()] {
             assert!(matches!(owned_subtype_defs(&ctx, input, RefWidth::Four),
                 Err(CodecError::ResourceLimit(last)) if last == first));
@@ -336,7 +349,9 @@ mod ownership_tests {
                     Err(CodecError::ResourceLimit(last)) if last == first));
             }
         }
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
+        );
     }
     use super::{find_owned_intcurve_subtype, owned_subtype_defs, subtype_span};
     use crate::kernel_header::RefWidth;
@@ -537,31 +552,30 @@ mod ownership_tests {
         assert_eq!(limit.operation, "scan ASM subtype scope token");
     }
 
-#[test]
-fn entry_byte_intcurve_empty_name_preserves_original_refusal() {
-    crate::test_support::with_entry_context(|ctx, original| {
+    #[test]
+    fn entry_byte_intcurve_empty_name_preserves_original_refusal() {
+        crate::test_support::with_entry_context(|ctx, original| {
+            let result = super::find_owned_intcurve_subtype(ctx, &[], &[], RefWidth::Four);
+            if let Some(first) = original {
+                assert!(matches!(result, Err(CodecError::ResourceLimit(last)) if last == first));
+            } else {
+                assert!(result.unwrap().is_none());
+            }
+        });
+    }
 
-        let result = super::find_owned_intcurve_subtype(ctx, &[], &[], RefWidth::Four);
-        if let Some(first) = original {
-            assert!(matches!(result, Err(CodecError::ResourceLimit(last)) if last == first));
-
-        } else {
-            assert!(result.unwrap().is_none());
-        }
-    });
-}
-
-#[test]
-fn entry_invalid_subtype_reference_preserves_original_refusal_and_cursor() {
-    crate::test_support::with_entry_context(|ctx, original| {
-        let mut position = usize::MAX;
-        let result = super::next_subtype_reference(ctx, &[], &mut position);
-        if let Some(first) = original {
-            assert!(matches!(result, Err(CodecError::ResourceLimit(last)) if last == first));
-            assert_eq!(position, usize::MAX);
-        } else {
-            assert!(result.unwrap().is_none()); assert_eq!(position, usize::MAX);
-        }
-    });
-}
+    #[test]
+    fn entry_invalid_subtype_reference_preserves_original_refusal_and_cursor() {
+        crate::test_support::with_entry_context(|ctx, original| {
+            let mut position = usize::MAX;
+            let result = super::next_subtype_reference(ctx, &[], &mut position);
+            if let Some(first) = original {
+                assert!(matches!(result, Err(CodecError::ResourceLimit(last)) if last == first));
+                assert_eq!(position, usize::MAX);
+            } else {
+                assert!(result.unwrap().is_none());
+                assert_eq!(position, usize::MAX);
+            }
+        });
+    }
 }

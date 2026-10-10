@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::brep::records::WireMembers;
 use cadmpeg_core::decode::refusal_probe::RefusalProbe;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
-use crate::brep::records::WireMembers;
 
 #[test]
 fn wire_member_collector_admits_each_member_without_source_preadmission() {
@@ -19,37 +19,67 @@ fn wire_member_collector_admits_each_member_without_source_preadmission() {
     ];
     let by_index = indexed_records(&records);
     let table = nurbs::toks::SubtypeTable::from_records(
-        &cadmpeg_test_support::service_decode_context(), &records,
-    ).unwrap();
+        &cadmpeg_test_support::service_decode_context(),
+        &records,
+    )
+    .unwrap();
     let run = |ctx: &DecodeContext<'_>| {
         let mut storage = ctx.reserve_scoped(0, "test wire scratch")?;
         let mut carriers = Carriers::default();
         let mut reach = Reachable::default();
         let mut out = AsmBrep::default();
-        super::super::collect_wire_topology(TopologyContext {
-            ctx, by_index: &by_index, token_table: &table,
-            purpose: DecodePurpose::Model, format: crate::asm_format!("sat"),
-        }, &mut out, &records, None, &mut carriers, &mut reach, &mut storage)?;
+        super::super::collect_wire_topology(
+            TopologyContext {
+                ctx,
+                by_index: &by_index,
+                token_table: &table,
+                purpose: DecodePurpose::Model,
+                format: crate::asm_format!("sat"),
+            },
+            &mut out,
+            &records,
+            None,
+            &mut carriers,
+            &mut reach,
+            &mut storage,
+        )?;
         Ok::<_, CodecError>(out)
     };
     let ctx = cadmpeg_test_support::service_decode_context();
-    let probe = RefusalProbe::arm(ResourceDimension::WorkUnits, "ASM wire member sources", None);
+    let probe = RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "ASM wire member sources",
+        None,
+    );
     let out = run(&ctx).unwrap();
     drop(probe);
     assert_eq!(out.wire_topologies.len(), 1);
-    let WireMembers::Edges(edges) = &out.wire_topologies[0].members else { panic!("wire edges"); };
-    assert_eq!(edges.iter().map(|edge| edge.as_str()).collect::<Vec<_>>(), ["sat:brep:entity#3"]);
+    let WireMembers::Edges(edges) = &out.wire_topologies[0].members else {
+        panic!("wire edges");
+    };
+    assert_eq!(
+        edges
+            .iter()
+            .map(cadmpeg_ir::ids::EdgeId::as_str)
+            .collect::<Vec<_>>(),
+        ["sat:brep:entity#3"]
+    );
     ctx.finish_session().unwrap();
 
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::WorkUnits, "ASM wire member edges", |cap| {
+        ResourceDimension::WorkUnits,
+        "ASM wire member edges",
+        |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
             run(&ctx)
-        });
-    let CodecError::ResourceLimit(limit) = error else { panic!("wire member refusal"); };
+        },
+    );
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("wire member refusal");
+    };
     assert_eq!(limit.operation, "ASM wire member edges");
     assert_eq!(limit.additional, 1);
 }

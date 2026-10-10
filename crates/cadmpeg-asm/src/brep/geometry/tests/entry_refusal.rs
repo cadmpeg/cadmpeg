@@ -6,15 +6,28 @@ use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 use cadmpeg_ir::math::{Point3, Vector3};
 
 fn curve(periodic: bool) -> NurbsCurve {
-    let knots = if periodic { vec![-1.0, 0.0, 1.0, 2.0] } else { vec![0.0, 0.0, 1.0, 1.0] };
-    NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 1, knots,
-        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)], None, periodic)
-        .expect("fixture constructor admission").expect("valid degree-one spline")
+    let knots = if periodic {
+        vec![-1.0, 0.0, 1.0, 2.0]
+    } else {
+        vec![0.0, 0.0, 1.0, 1.0]
+    };
+    NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        1,
+        knots,
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        None,
+        periodic,
+    )
+    .expect("fixture constructor admission")
+    .expect("valid degree-one spline")
 }
 
-fn unavailable<T>(result: Option<Result<T, CodecError>>, original: Option<ResourceLimit>) {
+fn unavailable<T>(result: &Option<Result<T, CodecError>>, original: Option<ResourceLimit>) {
     match original {
-        Some(first) => assert!(matches!(result, Some(Err(CodecError::ResourceLimit(last))) if last == first)),
+        Some(first) => {
+            assert!(matches!(result, Some(Err(CodecError::ResourceLimit(last))) if *last == first));
+        }
         None => assert!(result.is_none()),
     }
 }
@@ -23,7 +36,10 @@ fn unavailable<T>(result: Option<Result<T, CodecError>>, original: Option<Resour
 fn asm_polynomial_circle_recognition_preserves_original_refusal() {
     let curve = curve(false);
     crate::test_support::with_entry_context(|ctx, original| {
-        unavailable(super::super::rational_four_arc_circle(ctx, &curve), original);
+        unavailable(
+            &super::super::rational_four_arc_circle(ctx, &curve),
+            original,
+        );
     });
 }
 
@@ -31,50 +47,75 @@ fn asm_polynomial_circle_recognition_preserves_original_refusal() {
 fn asm_periodic_spine_recognition_preserves_original_refusal() {
     let curve = curve(true);
     crate::test_support::with_entry_context(|ctx, original| {
-        unavailable(super::super::linear_nurbs_spine(ctx, &curve), original);
+        unavailable(&super::super::linear_nurbs_spine(ctx, &curve), original);
     });
 }
 
 #[test]
 fn asm_empty_spine_points_preserve_original_refusal() {
     crate::test_support::with_entry_context(|ctx, original| {
-        unavailable(super::super::linear_spine_points(ctx, &[] as &[cadmpeg_ir::features::FinitePoint3],
-            |_| panic!("empty spine must execute no point callback")), original);
+        unavailable(
+            &super::super::linear_spine_points(
+                ctx,
+                &[],
+                |_: &cadmpeg_ir::features::FinitePoint3| {
+                    panic!("empty spine must execute no point callback")
+                },
+            ),
+            original,
+        );
     });
 }
 
 #[test]
 fn asm_polynomial_extrusion_recognition_preserves_original_refusal() {
     let definition = crate::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Extrusion {
-        directrix: curve(false), parameter_interval: [0.0, 1.0], direction: Vector3::new(0.0, 0.0, 1.0),
-        native_position: Point3::new(0.0, 0.0, 0.0), revision_form: None,
+        directrix: curve(false),
+        parameter_interval: [0.0, 1.0],
+        direction: Vector3::new(0.0, 0.0, 1.0),
+        native_position: Point3::new(0.0, 0.0, 0.0),
+        revision_form: None,
     };
     crate::test_support::with_entry_context(|ctx, original| {
-        unavailable(super::super::analytic_procedural_surface(ctx, &definition), original);
+        unavailable(
+            &super::super::analytic_procedural_surface(ctx, &definition),
+            original,
+        );
     });
 }
 
 fn rolling_ball(radius: f64) {
     let spine = curve(false);
     crate::test_support::with_entry_context(|ctx, original| {
-        unavailable(super::super::analytic_rolling_ball_surface(ctx, &[None, None], None, &spine, radius), original);
+        unavailable(
+            &super::super::analytic_rolling_ball_surface(ctx, &[None, None], None, &spine, radius),
+            original,
+        );
     });
 }
 
 #[test]
-fn asm_zero_radius_rolling_ball_preserves_original_refusal() { rolling_ball(0.0); }
+fn asm_zero_radius_rolling_ball_preserves_original_refusal() {
+    rolling_ball(0.0);
+}
 
 #[test]
-fn asm_absent_rolling_ball_supports_preserve_original_refusal() { rolling_ball(1.0); }
+fn asm_absent_rolling_ball_supports_preserve_original_refusal() {
+    rolling_ball(1.0);
+}
 
 #[test]
 fn asm_fixed_curve_reversal_preserves_original_refusal() {
-    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
     use cadmpeg_ir::geometry::analytic::LineCurve;
-    let line = CurveGeometry::Solved(SolvedCurveGeometry::Line(LineCurve::try_new(
-        Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)).expect("line fixture")));
-    let reversed = CurveGeometry::Solved(SolvedCurveGeometry::Line(LineCurve::try_new(
-        Point3::new(0.0, 0.0, 0.0), Vector3::new(-1.0, 0.0, 0.0)).expect("reversed line fixture")));
+    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
+    let line = CurveGeometry::Solved(SolvedCurveGeometry::Line(
+        LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0))
+            .expect("line fixture"),
+    ));
+    let reversed = CurveGeometry::Solved(SolvedCurveGeometry::Line(
+        LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(-1.0, 0.0, 0.0))
+            .expect("reversed line fixture"),
+    ));
     crate::test_support::with_entry_context(|ctx, original| {
         let mut geometry = line.clone();
         let result = super::super::reverse_curve_geometry(ctx, &mut geometry);
@@ -92,23 +133,42 @@ fn asm_fixed_curve_reversal_preserves_original_refusal() {
 }
 
 fn rational_arc_storage_boundary(degree: usize, last_underflow: bool, exact: bool) {
-    use cadmpeg_core::decode::{u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{
+        u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
+    };
     const MAX_WEIGHT: f64 = 1.0e308;
     const TINY_WEIGHT: f64 = f64::MIN_POSITIVE / 2.0;
     let count = 4 * degree + 1;
     let mut knots = Vec::new();
     for span in 0..=4 {
-        let repeats = if span == 0 || span == 4 { degree + 1 } else { degree };
+        let repeats = if span == 0 || span == 4 {
+            degree + 1
+        } else {
+            degree
+        };
         knots.extend(std::iter::repeat_n(f64::from(span), repeats));
     }
     let underflow = if last_underflow { count - 1 } else { 0 };
-    let weights = (0..count).map(|index| {
-        if index == underflow { TINY_WEIGHT } else { MAX_WEIGHT }
-    }).collect();
+    let weights = (0..count)
+        .map(|index| {
+            if index == underflow {
+                TINY_WEIGHT
+            } else {
+                MAX_WEIGHT
+            }
+        })
+        .collect();
     let points = (0..count).map(|_| Point3::new(0.0, 0.0, 0.0)).collect();
-    let source = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(),
-        u32::try_from(degree).unwrap(), knots, points, Some(weights), false)
-        .expect("trusted source admission").expect("valid rational lanes");
+    let source = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        u32::try_from(degree).unwrap(),
+        knots,
+        points,
+        Some(weights),
+        false,
+    )
+    .expect("trusted source admission")
+    .expect("valid rational lanes");
     let polynomial = curve(false);
     let before = serde_json::to_value(&source).unwrap();
     let bytes = u64_from_index(count * std::mem::size_of::<[f64; 4]>());
@@ -125,21 +185,24 @@ fn rational_arc_storage_boundary(degree: usize, last_underflow: bool, exact: boo
     if exact {
         assert!(result.is_none());
         assert_eq!(serde_json::to_value(&source).unwrap(), before);
-        let released = ctx.reserve_scoped(bytes, "test rational arc scratch released").unwrap();
+        let released = ctx
+            .reserve_scoped(bytes, "test rational arc scratch released")
+            .unwrap();
         drop(released);
         ctx.finish_session().unwrap();
     } else {
-        let first = match result {
-            Some(Err(CodecError::ResourceLimit(first))) => first,
-            _ => panic!("expected homogeneous storage refusal"),
+        let Some(Err(CodecError::ResourceLimit(first))) = result else {
+            panic!("expected homogeneous storage refusal");
         };
         assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
         assert_eq!(first.operation, "ASM rational four-arc homogeneous poles");
         assert_eq!((first.limit, first.used, first.additional), (cap, 0, bytes));
         for _ in 0..64 {
             for replay in [&source, &polynomial] {
-                assert!(matches!(super::super::rational_four_arc_circle(&ctx, replay),
-                    Some(Err(CodecError::ResourceLimit(last))) if last == first));
+                assert!(
+                    matches!(super::super::rational_four_arc_circle(&ctx, replay),
+                    Some(Err(CodecError::ResourceLimit(last))) if last == first)
+                );
                 assert_eq!(serde_json::to_value(&source).unwrap(), before);
             }
         }
