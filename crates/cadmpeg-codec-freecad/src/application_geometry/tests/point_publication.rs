@@ -26,7 +26,7 @@ fn failed_point_transform_is_malformed_before_row_publication() {
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
         let mut points = Vec::new();
         let mut admitted = 0;
-        let error = parse_points(&ctx, &property, &bytes, 0, &mut admitted, None, &mut points)
+        let error = parse_points(&ctx, &property, &bytes, 0, &mut admitted, &mut points)
             .expect_err("transformed coordinate overflow");
         assert!(matches!(error, CodecError::Malformed(message)
             if message == "transformed point-cloud point contains a non-finite coordinate"));
@@ -45,7 +45,7 @@ fn invalid_point_source_is_malformed_before_row_publication() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
     let mut points = Vec::new();
-    let error = parse_points(&ctx, &property, &bytes, 0, &mut 0, None, &mut points)
+    let error = parse_points(&ctx, &property, &bytes, 0, &mut 0, &mut points)
         .expect_err("blank source object");
     assert!(
         matches!(error, CodecError::Malformed(message) if message == "source object_id must not be empty")
@@ -65,7 +65,7 @@ fn accepted_point_rows_keep_identities_positions_and_source() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("context");
     let mut points = Vec::new();
-    parse_points(&ctx, &property, &bytes, 0, &mut 0, None, &mut points).expect("point rows");
+    parse_points(&ctx, &property, &bytes, 0, &mut 0, &mut points).expect("point rows");
     assert_eq!(points.len(), 2);
     for (point, id, position) in [
         (
@@ -97,7 +97,7 @@ fn point_source_refusal_keeps_original_limit() {
         "FreeCAD geometry object identity",
         |ctx| {
             let mut points = Vec::new();
-            let result = parse_points(ctx, &property, &bytes, 0, &mut 0, None, &mut points);
+            let result = parse_points(ctx, &property, &bytes, 0, &mut 0, &mut points);
             if let Err(CodecError::ResourceLimit(original)) = &result {
                 assert_eq!(original.dimension, ResourceDimension::RetainedBytes);
                 assert!(points.is_empty());
@@ -118,7 +118,7 @@ fn point_trailing_payload_keeps_completed_row_and_retained_diagnostic() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("context");
     let mut points = Vec::new();
-    let error = parse_points(&ctx, &property, &bytes, 0, &mut 0, None, &mut points)
+    let error = parse_points(&ctx, &property, &bytes, 0, &mut 0, &mut points)
         .expect_err("trailing byte");
     let CodecError::Malformed(message) = error else {
         panic!("payload diagnostic")
@@ -173,7 +173,6 @@ fn point_population_retained_limit_refuses_large_population() {
             &bytes,
             0,
             &mut 0,
-            None,
             &mut Vec::new(),
         );
         if count == 1 {
