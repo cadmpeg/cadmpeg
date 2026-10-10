@@ -480,31 +480,63 @@ fn stored_sequence_tail_digest_mismatch_reads_as_the_serialized_rejection() {
 }
 
 fn native_resource(error: cadmpeg_ir::native::NativeConvertError) -> CodecError {
-    match error { cadmpeg_ir::native::NativeConvertError::Resource(error) => error, error => panic!("unexpected refusal: {error}") }
+    match error {
+        cadmpeg_ir::native::NativeConvertError::Resource(error) => error,
+        error => panic!("unexpected refusal: {error}"),
+    }
 }
 
 #[test]
 fn graph_duplicate_identity_does_not_visit_the_remaining_records() {
     let mut records = vec!["duplicate".to_owned(); 2];
-    let measure = |records: &[String]| crate::test_support::with_decode_context(|ctx| {
-        let mut storage = ctx.reserve_scoped(0, "test graph index").unwrap();
-        assert!(matches!(super::by_id(ctx, &mut storage, records, String::as_str, "duplicate identity"), Err(cadmpeg_ir::native::NativeConvertError::InvalidCollection(_))));
-        let CodecError::ResourceLimit(limit) = ctx.charge_work(u64::MAX, "measure admission work").unwrap_err() else { panic!("work measurement"); }; limit.used
-    });
-    let prefix = measure(&records); records.extend(vec!["suffix".to_owned(); 128]);
+    let measure = |records: &[String]| {
+        crate::test_support::with_decode_context(|ctx| {
+            let mut storage = ctx.reserve_scoped(0, "test graph index").unwrap();
+            assert!(matches!(
+                super::by_id(
+                    ctx,
+                    &mut storage,
+                    records,
+                    String::as_str,
+                    "duplicate identity"
+                ),
+                Err(cadmpeg_ir::native::NativeConvertError::InvalidCollection(_))
+            ));
+            let CodecError::ResourceLimit(limit) = ctx
+                .charge_work(u64::MAX, "measure admission work")
+                .unwrap_err()
+            else {
+                panic!("work measurement");
+            };
+            limit.used
+        })
+    };
+    let prefix = measure(&records);
+    records.extend(vec!["suffix".to_owned(); 128]);
     assert_eq!(prefix, measure(&records));
 }
 
 #[test]
 fn graph_duplicate_toc_does_not_visit_the_remaining_entries() {
-    let measure = |extra| crate::test_support::with_decode_context(|ctx| {
-        let mut raw: DisplayJtGraphWire = serde_json::from_value(graph_wire()).unwrap();
-        let first = raw.documents[0].toc_entries[0].clone();
-        raw.documents[0].toc_entries = vec![first.clone(), first.clone()];
-        raw.documents[0].toc_entries.extend(vec![first; extra]);
-        assert!(matches!(DisplayJtGraph::from_wire_with_context(ctx, raw), Err(cadmpeg_ir::native::NativeConvertError::InvalidCollection(_))));
-        let CodecError::ResourceLimit(limit) = ctx.charge_work(u64::MAX, "measure admission work").unwrap_err() else { panic!("work measurement"); }; limit.used
-    });
+    let measure = |extra| {
+        crate::test_support::with_decode_context(|ctx| {
+            let mut raw: DisplayJtGraphWire = serde_json::from_value(graph_wire()).unwrap();
+            let first = raw.documents[0].toc_entries[0].clone();
+            raw.documents[0].toc_entries = vec![first.clone(), first.clone()];
+            raw.documents[0].toc_entries.extend(vec![first; extra]);
+            assert!(matches!(
+                DisplayJtGraph::from_wire_with_context(ctx, raw),
+                Err(cadmpeg_ir::native::NativeConvertError::InvalidCollection(_))
+            ));
+            let CodecError::ResourceLimit(limit) = ctx
+                .charge_work(u64::MAX, "measure admission work")
+                .unwrap_err()
+            else {
+                panic!("work measurement");
+            };
+            limit.used
+        })
+    };
     assert_eq!(measure(0), measure(128));
 }
 
@@ -512,80 +544,169 @@ fn graph_duplicate_toc_does_not_visit_the_remaining_entries() {
 fn graph_missing_owners_admit_one_record_before_rejection() {
     for (arena, operation) in [
         ("display_jt_segments", "admit DisplayJT segments"),
-        ("display_jt_shape_lod_elements", "admit DisplayJT shape elements"),
-        ("display_jt_compressed_elements", "admit DisplayJT compressed elements"),
-        ("display_jt_compressed_element_sequences", "admit DisplayJT compressed element sequences"),
+        (
+            "display_jt_shape_lod_elements",
+            "admit DisplayJT shape elements",
+        ),
+        (
+            "display_jt_compressed_elements",
+            "admit DisplayJT compressed elements",
+        ),
+        (
+            "display_jt_compressed_element_sequences",
+            "admit DisplayJT compressed element sequences",
+        ),
     ] {
-        let mut wire = graph_wire(); let source = wire[arena][0].clone();
+        let mut wire = graph_wire();
+        let source = wire[arena][0].clone();
         let mut records = Vec::new();
-        for ordinal in 0..129 { let mut record = source.clone(); record["id"] = json!(format!("nx:display-jt:record#{ordinal}")); records.push(record); }
-        let field = if arena == "display_jt_segments" { "document" } else { "segment" };
-        records[0][field] = json!("nx:display-jt:owner#missing"); wire[arena] = json!(records);
-        let error = crate::test_support::resource_refusal_at(&[], ResourceDimension::WorkUnits, operation, |ctx| {
-            let raw = serde_json::from_value(wire.clone()).unwrap();
-            DisplayJtGraph::from_wire_with_context(ctx, raw).map_err(native_resource)
-        });
-        let CodecError::ResourceLimit(limit) = error else { panic!("owner visit refusal"); };
+        for ordinal in 0..129 {
+            let mut record = source.clone();
+            record["id"] = json!(format!("nx:display-jt:record#{ordinal}"));
+            records.push(record);
+        }
+        let field = if arena == "display_jt_segments" {
+            "document"
+        } else {
+            "segment"
+        };
+        records[0][field] = json!("nx:display-jt:owner#missing");
+        wire[arena] = json!(records);
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            ResourceDimension::WorkUnits,
+            operation,
+            |ctx| {
+                let raw = serde_json::from_value(wire.clone()).unwrap();
+                DisplayJtGraph::from_wire_with_context(ctx, raw).map_err(native_resource)
+            },
+        );
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("owner visit refusal");
+        };
         assert_eq!(limit.additional, 1, "{arena}");
-        crate::test_support::with_decode_context(|ctx| { let raw = serde_json::from_value(wire).unwrap(); assert!(matches!(DisplayJtGraph::from_wire_with_context(ctx, raw), Err(cadmpeg_ir::native::NativeConvertError::InvalidCollection(_)))); });
+        crate::test_support::with_decode_context(|ctx| {
+            let raw = serde_json::from_value(wire).unwrap();
+            assert!(matches!(
+                DisplayJtGraph::from_wire_with_context(ctx, raw),
+                Err(cadmpeg_ir::native::NativeConvertError::InvalidCollection(_))
+            ));
+        });
     }
 }
 
 #[test]
 fn graph_unresolved_sequence_element_admits_one_identity_before_rejection() {
-    let mut wire = graph_wire(); wire["display_jt_compressed_element_sequences"][0]["elements"] = json!(vec!["nx:display-jt:element#missing"; 129]);
+    let mut wire = graph_wire();
+    wire["display_jt_compressed_element_sequences"][0]["elements"] =
+        json!(vec!["nx:display-jt:element#missing"; 129]);
     wire["display_jt_compressed_element_sequences"][0]["framed_byte_len"] = json!(129 * 25 + 20);
-    let error = crate::test_support::resource_refusal_at(&[], ResourceDimension::WorkUnits, "admit DisplayJT sequence elements", |ctx| {
-        let raw = serde_json::from_value(wire.clone()).unwrap();
-        DisplayJtGraph::from_wire_with_context(ctx, raw).map_err(native_resource)
-    });
-    let CodecError::ResourceLimit(limit) = error else { panic!("sequence visit refusal"); };
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "admit DisplayJT sequence elements",
+        |ctx| {
+            let raw = serde_json::from_value(wire.clone()).unwrap();
+            DisplayJtGraph::from_wire_with_context(ctx, raw).map_err(native_resource)
+        },
+    );
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("sequence visit refusal");
+    };
     assert_eq!(limit.additional, 1);
 }
 
 #[test]
 fn graph_rejection_charges_the_long_identity_copy() {
     let id = "x".repeat(4096);
-    let error = crate::test_support::resource_refusal_at(&[], ResourceDimension::WorkUnits, "retain DisplayJT graph rejection", |ctx| {
-        match super::invalid(ctx, &id, "document does not resolve") {
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "retain DisplayJT graph rejection",
+        |ctx| match super::invalid(ctx, &id, "document does not resolve") {
             cadmpeg_ir::native::NativeConvertError::Resource(error) => Err(error),
-            cadmpeg_ir::native::NativeConvertError::InvalidCollection(message) => { assert!(message.contains(&id)); Ok(()) },
+            cadmpeg_ir::native::NativeConvertError::InvalidCollection(message) => {
+                assert!(message.contains(&id));
+                Ok(())
+            }
             error => panic!("unexpected diagnostic: {error}"),
-        }
-    });
-    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "retain DisplayJT graph rejection" && limit.additional == 4096));
-    let measure = |id: &str| crate::test_support::with_decode_context(|ctx| {
-        let cadmpeg_ir::native::NativeConvertError::InvalidCollection(message) = super::invalid(ctx, id, "document does not resolve") else { panic!("expected graph diagnostic"); };
-        let code = crate::loss::NxLossCode::DisplayJtGraphRejected.code();
-        assert_eq!(message, format!("{code}: display_jt {id}: document does not resolve"));
-        let CodecError::ResourceLimit(limit) = ctx.charge_work(u64::MAX, "measure diagnostic work").unwrap_err() else { panic!("work measurement"); }; limit.used
-    });
+        },
+    );
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "retain DisplayJT graph rejection" && limit.additional == 4096)
+    );
+    let measure = |id: &str| {
+        crate::test_support::with_decode_context(|ctx| {
+            let cadmpeg_ir::native::NativeConvertError::InvalidCollection(message) =
+                super::invalid(ctx, id, "document does not resolve")
+            else {
+                panic!("expected graph diagnostic");
+            };
+            let code = crate::loss::NxLossCode::DisplayJtGraphRejected.code();
+            assert_eq!(
+                message,
+                format!("{code}: display_jt {id}: document does not resolve")
+            );
+            let CodecError::ResourceLimit(limit) = ctx
+                .charge_work(u64::MAX, "measure diagnostic work")
+                .unwrap_err()
+            else {
+                panic!("work measurement");
+            };
+            limit.used
+        })
+    };
     // The diagnostic copies each input identity once through the core append.
     assert_eq!(measure(&id) - measure("x"), 4096 - 1);
 }
 
 #[test]
 fn graph_invalid_sequence_wire_does_not_visit_the_remaining_records() {
-    let measure = |extra| crate::test_support::with_decode_context(|ctx| {
-        let mut wire = graph_wire(); wire["display_jt_compressed_element_sequences"][0]["tail_sha256"] = json!(cadmpeg_ir::hash::sha256_hex(b"wrong"));
-        let record = wire["display_jt_compressed_element_sequences"][0].clone();
-        let mut records = vec![record.clone()]; records.extend(vec![record; extra]);
-        wire["display_jt_compressed_element_sequences"] = json!(records);
-        let namespace = serde_json::from_value(wire).unwrap();
-        assert!(super::sequences_for_decode(ctx, &namespace).is_err());
-        let CodecError::ResourceLimit(limit) = ctx.charge_work(u64::MAX, "measure admission work").unwrap_err() else { panic!("work measurement"); }; limit.used
-    });
+    let measure = |extra| {
+        crate::test_support::with_decode_context(|ctx| {
+            let mut wire = graph_wire();
+            wire["display_jt_compressed_element_sequences"][0]["tail_sha256"] =
+                json!(cadmpeg_ir::hash::sha256_hex(b"wrong"));
+            let record = wire["display_jt_compressed_element_sequences"][0].clone();
+            let mut records = vec![record.clone()];
+            records.extend(vec![record; extra]);
+            wire["display_jt_compressed_element_sequences"] = json!(records);
+            let namespace = serde_json::from_value(wire).unwrap();
+            assert!(super::sequences_for_decode(ctx, &namespace).is_err());
+            let CodecError::ResourceLimit(limit) = ctx
+                .charge_work(u64::MAX, "measure admission work")
+                .unwrap_err()
+            else {
+                panic!("work measurement");
+            };
+            limit.used
+        })
+    };
     assert_eq!(measure(0), measure(128));
 }
 
 #[test]
 fn graph_duplicate_toc_admits_one_document_before_its_entries() {
-    let error = crate::test_support::resource_refusal_at(&[], ResourceDimension::WorkUnits, "index DisplayJT TOC entries", |ctx| {
-        let mut raw: DisplayJtGraphWire = serde_json::from_value(graph_wire()).unwrap();
-        let mut first = raw.documents[0].clone(); first.toc_entries.push(first.toc_entries[0].clone());
-        raw.documents = (0..129).map(|ordinal| { let mut document = first.clone(); document.id = format!("nx:display-jt:document#{ordinal}"); document }).collect();
-        DisplayJtGraph::from_wire_with_context(ctx, raw).map_err(native_resource)
-    });
-    let CodecError::ResourceLimit(limit) = error else { panic!("document visit refusal"); };
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "index DisplayJT TOC entries",
+        |ctx| {
+            let mut raw: DisplayJtGraphWire = serde_json::from_value(graph_wire()).unwrap();
+            let mut first = raw.documents[0].clone();
+            first.toc_entries.push(first.toc_entries[0].clone());
+            raw.documents = (0..129)
+                .map(|ordinal| {
+                    let mut document = first.clone();
+                    document.id = format!("nx:display-jt:document#{ordinal}");
+                    document
+                })
+                .collect();
+            DisplayJtGraph::from_wire_with_context(ctx, raw).map_err(native_resource)
+        },
+    );
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("document visit refusal");
+    };
     assert_eq!(limit.additional, 1);
 }
