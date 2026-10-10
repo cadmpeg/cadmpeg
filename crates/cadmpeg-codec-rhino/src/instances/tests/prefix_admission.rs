@@ -44,11 +44,11 @@ fn empty_linked_userdata_scan_has_no_exhaustion_visit_and_preserves_fuse() {
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
     let mut definition = super::support::static_definition([7; 16], &[]);
     definition.kind = crate::instances::DefinitionKind::Linked;
-    assert!(!crate::instances::apply_idef_alternative_path(&ctx, &[], &[], ArchiveVersion::V5, &mut definition, &mut Diagnostics::new()).unwrap());
+    assert!(!crate::instances::apply_idef_alternative_path(&ctx, &[], &[], ArchiveVersion::V5, &mut definition, &mut |code, message| Diagnostics::new().push_coded_admitted(&ctx, code, message)).unwrap());
     let CodecError::ResourceLimit(original) = ctx.charge_work(1, "instance original fuse").unwrap_err() else {
         panic!("original work refusal");
     };
-    assert!(matches!(crate::instances::apply_idef_alternative_path(&ctx, &[], &[], ArchiveVersion::V5, &mut definition, &mut Diagnostics::new()), Err(FramingError::Resource(limit)) if limit == original));
+    assert!(matches!(crate::instances::apply_idef_alternative_path(&ctx, &[], &[], ArchiveVersion::V5, &mut definition, &mut |code, message| Diagnostics::new().push_coded_admitted(&ctx, code, message)), Err(FramingError::Resource(limit)) if limit == original));
     assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original));
 }
 

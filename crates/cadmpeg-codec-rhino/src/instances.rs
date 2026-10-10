@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rhino instance-definition and instance-reference records.
 
-use crate::loss::{DiagnosticSink, Diagnostics, RhinoDiagnostic, RhinoLossCode, ScratchDiagnostics};
+use crate::loss::{RhinoDiagnostic, RhinoLossCode};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::ops::Range;
 
@@ -15,7 +15,9 @@ use crate::chunks::{
     BoundedReader, ChecksumStatus, FramingError,
 };
 use crate::container::{OpaqueRecord, Record};
-use crate::objects::{parse_class_wrapper_with_userdata, ClassUserdata, UserdataDescriptor};
+use crate::objects::{scan_class_wrapper, ClassUserdata, UserdataDescriptor};
+use cadmpeg_core::CodecError;
+
 use crate::settings::{bbox, utf16_retained, MillimeterScale};
 use crate::wire::{uuid, Uuid};
 
@@ -328,7 +330,7 @@ pub(crate) struct DefinitionParse<'ctx> {
         Uuid,
         cadmpeg_core::decode::ScopedReservation<'ctx>,
     )>,
-    /// The vector of definition guards stays scratch through projection.
+    /// Definition guards and diagnostic storage stay scratch through projection.
     pub(crate) _definition_guards_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
     /// Definition-vector backing stays scratch until the scan is dropped.
     pub(crate) _definitions_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
@@ -393,22 +395,21 @@ pub(crate) fn hex(
     Ok(value)
 }
 
-fn checksum_warning_excluding<D: DiagnosticSink>(
+fn checksum_warning_excluding(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     chunk: &crate::chunks::Chunk,
     children: &[Range<usize>],
     label: &str,
-    warnings: &mut D,
+    warnings: &mut impl FnMut(Option<RhinoLossCode>, std::fmt::Arguments<'_>) -> Result<(), CodecError>,
 ) -> Result<(), FramingError> {
     let direct = direct_checksum_ranges(ctx, &chunk.body(), children)?;
     if matches!(
         verify_checksum_ranges(ctx, data, chunk, &direct)?,
         ChecksumStatus::Mismatch { .. }
     ) {
-        warnings.push_coded_admitted(
-            ctx,
-            crate::loss::RhinoLossCode::IntegrityFailure,
+        warnings(
+            Some(RhinoLossCode::IntegrityFailure),
             format_args!("{label} CRC mismatch at offset {}", chunk.header_start),
         )?;
     }
@@ -456,14 +457,14 @@ fn members(
     Ok(values)
 }
 
-fn anonymous_versioned<'a, D: DiagnosticSink>(
+fn anonymous_versioned<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &'a [u8],
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
     label: &str,
     verify_container_crc: bool,
-    warnings: &mut D,
+    warnings: &mut impl FnMut(Option<RhinoLossCode>, std::fmt::Arguments<'_>) -> Result<(), CodecError>,
 ) -> Result<(crate::chunks::Chunk, BoundedReader<'a>, (i32, i32)), FramingError> {
     let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
     if chunk.typecode != ANONYMOUS || chunk.short() {
@@ -475,8 +476,8 @@ fn anonymous_versioned<'a, D: DiagnosticSink>(
             )?,
         ));
     }
-    if verify_container_crc {
-        crate::chunks::warn_checksum(ctx, data, &chunk, label, warnings)?;
+    if verify_container_crc && matches!(crate::chunks::verify_checksum(ctx, data, &chunk)?, ChecksumStatus::Mismatch { .. }) {
+        warnings(Some(RhinoLossCode::IntegrityFailure), format_args!("{label} CRC mismatch at offset {}", chunk.header_start))?;
     }
     let mut payload = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     let version = (payload.i32()?, payload.i32()?);
@@ -484,13 +485,13 @@ fn anonymous_versioned<'a, D: DiagnosticSink>(
     Ok((chunk, payload, version))
 }
 
-fn anonymous<'a, D: DiagnosticSink>(
+fn anonymous<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &'a [u8],
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
     label: &str,
-    warnings: &mut D,
+    warnings: &mut impl FnMut(Option<RhinoLossCode>, std::fmt::Arguments<'_>) -> Result<(), CodecError>,
 ) -> Result<(crate::chunks::Chunk, BoundedReader<'a>), FramingError> {
     let (chunk, payload, version) =
         anonymous_versioned(ctx, data, reader, archive, label, true, warnings)?;
@@ -506,12 +507,12 @@ fn anonymous<'a, D: DiagnosticSink>(
     Ok((chunk, payload))
 }
 
-fn unit_detail<'a, D: DiagnosticSink>(
+fn unit_detail<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &'a [u8],
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
-    warnings: &mut D,
+    warnings: &mut impl FnMut(Option<RhinoLossCode>, std::fmt::Arguments<'_>) -> Result<(), CodecError>,
 ) -> Result<UnitDetail, FramingError> {
     let (_chunk, mut payload) = anonymous(ctx, data, reader, archive, "unit detail", warnings)?;
     let unit = payload.u32()?;
@@ -528,7 +529,7 @@ fn unit_detail<'a, D: DiagnosticSink>(
     if unit != 11
         && (!custom_name.is_empty() || standard_scale.is_some_and(|scale| scale != meters_per_unit))
     {
-        warnings.push_coded_admitted(ctx, RhinoLossCode::RedundantFieldRepaired, format_args!(
+        warnings(Some(RhinoLossCode::RedundantFieldRepaired), format_args!(
             "redundant instance unit detail contradicts unit {unit}; meters-per-unit {meters_per_unit} and custom name {custom_name:?} retained"
         ))?;
     }
@@ -541,12 +542,12 @@ fn unit_detail<'a, D: DiagnosticSink>(
     })
 }
 
-fn model_component<D: DiagnosticSink>(
+fn model_component(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
-    warnings: &mut D,
+    warnings: &mut impl FnMut(Option<RhinoLossCode>, std::fmt::Arguments<'_>) -> Result<(), CodecError>,
 ) -> Result<(Option<i32>, Uuid, String), FramingError> {
     let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
     if chunk.typecode != MODEL_ATTRIBUTES || chunk.short() {
@@ -555,7 +556,9 @@ fn model_component<D: DiagnosticSink>(
             "missing model-component attributes",
         ));
     }
-    crate::chunks::warn_checksum(ctx, data, &chunk, "model-component attributes", warnings)?;
+    if matches!(crate::chunks::verify_checksum(ctx, data, &chunk)?, ChecksumStatus::Mismatch { .. }) {
+            warnings(Some(RhinoLossCode::IntegrityFailure), format_args!("model-component attributes CRC mismatch at offset {}", chunk.header_start))?;
+        }
     let mut payload = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     let major = payload.i32()?;
     let minor = payload.i32()?;
@@ -621,12 +624,12 @@ fn model_component<D: DiagnosticSink>(
     Ok((index, id, name))
 }
 
-pub(crate) fn file_reference<'a, D: DiagnosticSink>(
+pub(crate) fn file_reference<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &'a [u8],
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
-    warnings: &mut D,
+    warnings: &mut impl FnMut(Option<RhinoLossCode>, std::fmt::Arguments<'_>) -> Result<(), CodecError>,
 ) -> Result<FileReference, FramingError> {
     let (chunk, mut payload, version) = anonymous_versioned(
         ctx,
@@ -673,7 +676,9 @@ pub(crate) fn file_reference<'a, D: DiagnosticSink>(
                     "missing SHA-1 chunk",
                 ));
             }
-            crate::chunks::warn_checksum(ctx, data, &digest, "SHA-1 hash", warnings)?;
+            if matches!(crate::chunks::verify_checksum(ctx, data, &digest)?, ChecksumStatus::Mismatch { .. }) {
+            warnings(Some(RhinoLossCode::IntegrityFailure), format_args!("SHA-1 hash CRC mismatch at offset {}", digest.header_start))?;
+        }
             let mut bytes = BoundedReader::new(data, digest.body().start, digest.body().end)?;
             let digest_major = bytes.i32()?;
             let digest_minor = bytes.i32()?;
@@ -765,12 +770,12 @@ fn skip_object_array(
     Ok(())
 }
 
-fn reference_settings<'a, D: DiagnosticSink>(
+fn reference_settings<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &'a [u8],
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
-    warnings: &mut D,
+    warnings: &mut impl FnMut(Option<RhinoLossCode>, std::fmt::Arguments<'_>) -> Result<(), CodecError>,
 ) -> Result<Range<usize>, FramingError> {
     let (chunk, mut payload, version) = anonymous_versioned(
         ctx,
@@ -874,13 +879,13 @@ fn reference_settings<'a, D: DiagnosticSink>(
     Ok(chunk.range())
 }
 
-fn parse_v5<D: DiagnosticSink>(
+fn parse_v5(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     source_range: Range<usize>,
     range: Range<usize>,
     archive: ArchiveVersion,
-    warnings: &mut D,
+    warnings: &mut impl FnMut(Option<RhinoLossCode>, std::fmt::Arguments<'_>) -> Result<(), CodecError>,
 ) -> Result<InstanceDefinition, FramingError> {
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let packed = reader.u8()?;
@@ -961,13 +966,13 @@ fn parse_v5<D: DiagnosticSink>(
     })
 }
 
-fn parse_v6<D: DiagnosticSink>(
+fn parse_v6(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     source_range: Range<usize>,
     range: Range<usize>,
     archive: ArchiveVersion,
-    warnings: &mut D,
+    warnings: &mut impl FnMut(Option<RhinoLossCode>, std::fmt::Arguments<'_>) -> Result<(), CodecError>,
 ) -> Result<InstanceDefinition, FramingError> {
     let mut outer = BoundedReader::new(data, range.start, range.end)?;
     let (outer_chunk, mut reader, outer_version) = anonymous_versioned(
@@ -1149,7 +1154,7 @@ fn extract_member_ids(
         archive,
         "instance definition",
         false,
-        &mut Diagnostics::new(),
+        &mut |_, _| Ok(()),
     )?;
     if version.0 != 1 || version.1 < 0 {
         return Err(FramingError::structural(
@@ -1179,13 +1184,13 @@ fn extract_member_ids(
     }
 }
 
-fn parse_idef_alternative_path<D: DiagnosticSink>(
+fn parse_idef_alternative_path(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     workspace: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     data: &[u8],
     userdata: &ClassUserdata,
     archive: ArchiveVersion,
-    warnings: &mut D,
+    warnings: &mut impl FnMut(Option<RhinoLossCode>, std::fmt::Arguments<'_>) -> Result<(), CodecError>,
 ) -> Result<(String, bool), FramingError> {
     let mut reader = BoundedReader::new(
         data,
@@ -1215,13 +1220,13 @@ fn parse_idef_alternative_path<D: DiagnosticSink>(
     Ok((path, relative))
 }
 
-fn apply_idef_alternative_path<D: DiagnosticSink>(
+fn apply_idef_alternative_path(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     userdata: &[UserdataDescriptor],
     archive: ArchiveVersion,
     definition: &mut InstanceDefinition,
-    warnings: &mut D,
+    warnings: &mut impl FnMut(Option<RhinoLossCode>, std::fmt::Arguments<'_>) -> Result<(), CodecError>,
 ) -> Result<bool, FramingError> {
     if !matches!(
         definition.kind,
@@ -1258,8 +1263,8 @@ fn apply_idef_alternative_path<D: DiagnosticSink>(
             Err(error @ FramingError::Resource(_)) => return Err(error),
             Err(error) => {
                 degraded = true;
-                warnings.push_admitted(
-                    ctx,
+                warnings(
+                    None,
                     format_args!(
                     "instance-definition alternate-path userdata at offset {} was dropped: {error}",
                     item.range.start
@@ -1351,15 +1356,18 @@ pub(crate) fn parse_definitions<'ctx>(
         let (source_order, record) = ctx.next_charged(&mut source_records, "Rhino parse definitions traversal")?
             .ok_or_else(|| cadmpeg_core::CodecError::malformed("Rhino instance source ended early"))?;
         let mut record_storage = ctx.reserve_scoped(0, "Rhino instance definition fields")?;
-        let mut warnings = ScratchDiagnostics::new(ctx, "Rhino instance definition diagnostics")?;
+        let mut warnings = |code, message: std::fmt::Arguments<'_>| {
+            let message = result._definition_guards_storage.with_storage(|| ctx.format_retained(message, "Rhino diagnostic message"))?;
+            ctx.push_scoped_vec(&mut result._definition_guards_storage, &mut result.scan.diagnostics,
+                DefinitionDiagnostic { diagnostic: RhinoDiagnostic { code, message }, source_range: record.range.clone() },
+                "Rhino instance definition diagnostics")
+        };
         let parsed = record_storage.with_storage(|| (|| {
-            let (class, userdata) = parse_class_wrapper_with_userdata(
-                ctx,
-                data,
-                record.body(),
-                archive,
-                &mut warnings,
-            )?;
+            let mut userdata = Vec::new();
+            let mut userdata_storage = ctx.reserve_scoped(0, "Rhino definition userdata descriptors")?;
+            let class = scan_class_wrapper(ctx, data, record.body(), archive, &mut warnings, |value| {
+                ctx.push_scoped_vec(&mut userdata_storage, &mut userdata, value, "Rhino class userdata").map_err(FramingError::from)
+            })?;
             if class.class_uuid != INSTANCE_DEFINITION_UUID {
                 return Err(FramingError::Structural {
                     offset: record.range.start,
@@ -1447,26 +1455,6 @@ pub(crate) fn parse_definitions<'ctx>(
             )?;
             Ok((definition, userdata_degraded))
         })());
-        let mut retained_warnings = Diagnostics::new();
-        retained_warnings.append_scoped_admitted(
-            ctx,
-            warnings,
-            "Rhino instance definition diagnostic promotion",
-        )?;
-        let mut warnings = retained_warnings.into_iter();
-        for _ in 0..warnings.len() {
-            let diagnostic = ctx.next_charged(&mut warnings, "Rhino definition diagnostic traversal")?
-                .ok_or_else(|| cadmpeg_core::CodecError::malformed("Rhino instance source ended early"))?;
-            ctx.reserve_vec(
-                &mut result.scan.diagnostics,
-                1,
-                "Rhino instance definition diagnostics",
-            )?;
-            result.scan.diagnostics.push(DefinitionDiagnostic {
-                diagnostic,
-                source_range: record.range.clone(),
-            });
-        }
         match parsed {
             Ok((definition, userdata_degraded)) => {
                 if userdata_degraded {
@@ -1492,12 +1480,6 @@ pub(crate) fn parse_definitions<'ctx>(
                         source_order,
                         "Rhino opaque instance definition indexes",
                     )?;
-                    let duplicate_message = || {
-                        ctx.format_retained(
-                            format_args!("duplicate instance definition UUID {}", definition.id),
-                            "Rhino duplicate instance definition diagnostic",
-                        )
-                    };
                     if result._ambiguous_storage.with_storage(|| {
                         ctx.insert_hash_set(
                             &mut result.scan.ambiguous_ids,
@@ -1505,7 +1487,8 @@ pub(crate) fn parse_definitions<'ctx>(
                             "Rhino ambiguous instance definitions",
                         )
                     })? {
-                        ctx.reserve_vec(
+                        ctx.reserve_scoped_vec(
+                            &mut result._definition_guards_storage,
                             &mut result.scan.diagnostics,
                             1,
                             "Rhino instance definition diagnostics",
@@ -1513,12 +1496,16 @@ pub(crate) fn parse_definitions<'ctx>(
                         result.scan.diagnostics.push(DefinitionDiagnostic {
                             diagnostic: RhinoDiagnostic {
                                 code: Some(RhinoLossCode::ContainerInstanceDefinitionDegraded),
-                                message: duplicate_message()?,
+                                message: result._definition_guards_storage.with_storage(|| ctx.format_retained(
+                                    format_args!("duplicate instance definition UUID {}", definition.id),
+                                    "Rhino duplicate instance definition diagnostic",
+                                ))?,
                             },
                             source_range: records[first].range.clone(),
                         });
                     }
-                    ctx.reserve_vec(
+                    ctx.reserve_scoped_vec(
+                            &mut result._definition_guards_storage,
                         &mut result.scan.diagnostics,
                         1,
                         "Rhino instance definition diagnostics",
@@ -1526,7 +1513,10 @@ pub(crate) fn parse_definitions<'ctx>(
                     result.scan.diagnostics.push(DefinitionDiagnostic {
                         diagnostic: RhinoDiagnostic {
                             code: Some(RhinoLossCode::ContainerInstanceDefinitionDegraded),
-                            message: duplicate_message()?,
+                            message: result._definition_guards_storage.with_storage(|| ctx.format_retained(
+                                    format_args!("duplicate instance definition UUID {}", definition.id),
+                                    "Rhino duplicate instance definition diagnostic",
+                                ))?,
                         },
                         source_range: record.range.clone(),
                     });
@@ -1560,15 +1550,16 @@ pub(crate) fn parse_definitions<'ctx>(
                 return Err(cadmpeg_core::CodecError::ResourceLimit(limit));
             }
             Err(error) => {
-                ctx.reserve_vec(
+                ctx.reserve_scoped_vec(
+                            &mut result._definition_guards_storage,
                     &mut result.scan.diagnostics,
                     1,
                     "Rhino instance definition diagnostics",
                 )?;
-                let message = ctx.format_retained(
+                let message = result._definition_guards_storage.with_storage(|| ctx.format_retained(
                     format_args!("instance definition retained: {error}"),
                     "Rhino instance definition diagnostic",
-                )?;
+                ))?;
                 drop(error);
                 result.scan.diagnostics.push(DefinitionDiagnostic {
                     diagnostic: RhinoDiagnostic {
@@ -1608,8 +1599,8 @@ pub(crate) fn parse_definitions<'ctx>(
         },
         "Rhino ambiguous instance definition storage retention",
     )?;
-    let mut opaque_records =
-        ctx.collection_vec(opaque_indices.len(), "Rhino opaque instance definitions")?;
+    let mut opaque_records = result._definition_guards_storage.with_storage(||
+        ctx.collection_vec(opaque_indices.len(), "Rhino opaque instance definitions"))?;
     for index in ctx.admit_iter(opaque_indices, "Rhino opaque definition traversal")? {
         opaque_records.push(OpaqueRecord {
             table_typecode,

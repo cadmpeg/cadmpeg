@@ -361,7 +361,7 @@ fn image_reference<'a>(
     archive: ArchiveVersion,
     warnings: &mut Diagnostics,
 ) -> Result<(ImageReference, std::ops::Range<usize>), FramingError> {
-    let value = crate::instances::file_reference(ctx, data, reader, archive, warnings)?;
+    let value = crate::instances::file_reference(ctx, data, reader, archive, &mut |code,message| warnings.push_coded_admitted(ctx,code,message))?;
     let source_range = value.source_range.clone();
     Ok((
         ImageReference {
@@ -1177,7 +1177,7 @@ fn scan_viewport_userdata<'ctx>(
                             data,
                             &child,
                             archive,
-                            &mut warnings,
+                            &mut |code, message| warnings.push_coded_admitted(ctx, code, message),
                         ))
                     })
                     .map_err(crate::chunks::FramingError::from)?;

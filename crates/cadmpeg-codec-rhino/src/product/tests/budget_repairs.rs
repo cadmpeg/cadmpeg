@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use super::super::{external_record, LinkSource};
 use crate::test_support::test_dump as support;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
@@ -100,40 +101,44 @@ fn native_occurrence_and_external_staging_use_materialized_storage() {
 
 #[test]
 fn product_staging_borrows_source_names_and_paths_without_copying_them() {
-    let scan = one_linked_definition_scan(7);
-    for operation in [
-        "Rhino product definition name",
-        "Rhino product definition description",
-        "Rhino product definition URL",
-        "Rhino product definition URL tag",
-        "Rhino external full path",
-        "Rhino external relative path",
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = u64::MAX;
-        let (ctx, _) = DecodeContext::from_root_bytes(scan.data, &arena, &policy).unwrap();
-        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-            ResourceDimension::WorkUnits,
-            operation,
-            None,
-        );
-        let mut ir = CadIr::empty();
-        install(&ctx, &scan, &mut ir).expect("no staging text copies");
-        let namespace = ir.native.namespace("rhino").unwrap();
-        assert_eq!(
-            namespace.arenas()["product_definitions"][0].field("name"),
-            Some(serde_json::json!("v5 definition"))
-        );
-        assert_eq!(
-            namespace.arenas()["external_references"][0].field("full_path"),
-            Some(serde_json::json!("/full/source.3dm"))
-        );
-        assert_eq!(
-            namespace.arenas()["external_references"][0].field("relative_path"),
-            Some(serde_json::json!("source.3dm"))
-        );
+    let mut prior_staging_bytes = None;
+    for length in [1, 4096] {
+        let path = "p".repeat(length);
+        let archive = crate::chunks::ArchiveVersion::V5;
+        let payload = support::v5_definition_payload_with_paths(archive, 6, [0x51; 16], &[], true, &path, false);
+        let record = support::definition_record(archive, &payload);
+        let scan = crate::container::scan_owned(support::document_with_definitions("50", archive, &[record], &[])).unwrap();
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::MaterializedBytes, "Rhino product definitions", |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_materialized_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(scan.data, &arena, &policy)?;
+                install(&ctx, &scan, &mut CadIr::empty()).map(drop)
+            });
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("staging storage refusal"); };
+        if let Some(prior) = prior_staging_bytes { assert_eq!(limit.used, prior); }
+        prior_staging_bytes = Some(limit.used);
+        let definition = &scan.definitions.definitions()[0];
+        let LinkSource::LegacyFull(source_path) = &definition.link else { panic!("legacy full path"); };
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let record = external_record(&ctx, definition.id(), &definition.link).unwrap().unwrap();
+        assert_eq!(record.full_path.as_ptr(), source_path.as_str().as_ptr());
+        assert_eq!(record.full_path.len(), path.len());
     }
+    let scan = one_linked_definition_scan(7);
+    let definition = &scan.definitions.definitions()[0];
+    let LinkSource::Structured(reference) = &definition.link else { panic!("structured reference"); };
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let record = external_record(&ctx, definition.id(), &definition.link).unwrap().unwrap();
+    assert_eq!(record.full_path.as_ptr(), reference.full_path.as_ptr());
+    assert_eq!(record.relative_path.as_ptr(), reference.relative_path.as_ptr());
+    let mut ir = CadIr::empty();
+    install(&ctx, &scan, &mut ir).expect("borrowed fields serialize");
+    let namespace = ir.native.namespace("rhino").unwrap();
+    assert_eq!(namespace.arenas()["product_definitions"][0].field("name"), Some(serde_json::json!("v5 definition")));
+    assert_eq!(namespace.arenas()["external_references"][0].field("full_path"), Some(serde_json::json!("/full/source.3dm")));
+    assert_eq!(namespace.arenas()["external_references"][0].field("relative_path"), Some(serde_json::json!("source.3dm")));
 }
 
 

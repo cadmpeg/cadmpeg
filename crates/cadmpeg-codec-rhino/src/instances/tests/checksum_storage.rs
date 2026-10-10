@@ -27,7 +27,7 @@ fn definition_checksum_storage_releases_before_retained_fields() {
     let mut warnings = Diagnostics::new();
     let definition = field_storage.with_storage(|| {
         crate::instances::parse_v6(
-            &ctx, &data, 0..data.len(), 0..data.len(), ArchiveVersion::V8, &mut warnings,
+            &ctx, &data, 0..data.len(), 0..data.len(), ArchiveVersion::V8, &mut |code, message| warnings.push_coded_admitted(&ctx, code, message),
         )
     }).unwrap();
     assert_eq!(definition.name, "modern definition");
@@ -59,7 +59,7 @@ fn definition_checksum_storage_keeps_original_live_peak_refusal() {
     let mut field_storage = ctx.reserve_scoped(0, "instance test fields").unwrap();
     let error = field_storage.with_storage(|| {
         crate::instances::parse_v6(
-            &ctx, &data, 0..data.len(), 0..data.len(), ArchiveVersion::V8, &mut Diagnostics::new(),
+            &ctx, &data, 0..data.len(), 0..data.len(), ArchiveVersion::V8, &mut |code, message| Diagnostics::new().push_coded_admitted(&ctx, code, message),
         )
     }).unwrap_err();
     let FramingError::Resource(limit) = error else {
@@ -86,7 +86,7 @@ fn linked_checksum_storage_releases_both_nested_buffers() {
     let mut warnings = Diagnostics::new();
     let definition = field_storage.with_storage(|| {
         crate::instances::parse_v6(
-            &ctx, &data, 0..data.len(), 0..data.len(), ArchiveVersion::V8, &mut warnings,
+            &ctx, &data, 0..data.len(), 0..data.len(), ArchiveVersion::V8, &mut |code, message| warnings.push_coded_admitted(&ctx, code, message),
         )
     }).unwrap();
     let LinkSource::Structured(reference) = &definition.link else {
@@ -143,7 +143,7 @@ fn reference_checksum_storage_releases_arrays_and_parent_buffer() {
     let mut reader = BoundedReader::new(&data, 0, data.len()).unwrap();
     let mut warnings = Diagnostics::new();
     let range = field_storage.with_storage(|| {
-        crate::instances::reference_settings(&ctx, &data, &mut reader, archive, &mut warnings)
+        crate::instances::reference_settings(&ctx, &data, &mut reader, archive, &mut |code, message| warnings.push_coded_admitted(&ctx, code, message))
     }).unwrap();
     assert_eq!(range, 0..data.len());
     assert_eq!(reader.position(), data.len());

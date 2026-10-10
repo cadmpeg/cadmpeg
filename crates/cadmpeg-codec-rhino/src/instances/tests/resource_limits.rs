@@ -2,7 +2,7 @@
 
 use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, FramingError};
 use crate::container::Record;
-use crate::loss::{Diagnostics, ScratchDiagnostics};
+use crate::loss::{Diagnostics};
 use crate::test_support::test_dump::{
     anonymous_chunk, class_userdata, definition_record, definition_record_with_userdata,
     file_reference as file_reference_bytes, long_chunk, v5_definition_payload,
@@ -186,7 +186,7 @@ fn reference_parent_layer_range_refuses_collection_limit() {
             &data,
             &mut reader,
             archive,
-            &mut Diagnostics::new(),
+            &mut |code, message| Diagnostics::new().push_coded_admitted(ctx, code, message),
         )
         .expect_err("parent range exceeds collection limit");
         assert_resource(&error, "Rhino reference parent layer range");
@@ -388,13 +388,13 @@ fn unit_detail_name_refuses_materialized_limit() {
         let error = ctx
             .with_scoped_storage("Rhino test unit detail fields", || {
                 let mut reader = BoundedReader::new(&data, 0, data.len())?;
-                let mut warnings = ScratchDiagnostics::new(ctx, "Rhino test unit diagnostics")?;
+                let mut warnings = Diagnostics::new();
                 crate::instances::unit_detail(
                     ctx,
                     &data,
                     &mut reader,
                     archive,
-                    &mut warnings,
+                    &mut |code, message| warnings.push_coded_admitted(ctx, code, message),
                 )
             })
             .expect_err("unit name exceeds materialized limit");
@@ -408,8 +408,8 @@ fn file_reference_refusal(limit: u64) -> FramingError {
     with_materialized_limit(limit, |ctx| {
         ctx.with_scoped_storage("Rhino test file-reference fields", || {
             let mut reader = BoundedReader::new(&data, 0, data.len())?;
-            let mut warnings = ScratchDiagnostics::new(ctx, "Rhino test file-reference diagnostics")?;
-            crate::instances::file_reference(ctx, &data, &mut reader, archive, &mut warnings)
+            let mut warnings = Diagnostics::new();
+            crate::instances::file_reference(ctx, &data, &mut reader, archive, &mut |code,message| warnings.push_coded_admitted(ctx,code,message))
         })
         .expect_err("file-reference string exceeds materialized limit")
     })
@@ -470,3 +470,25 @@ fn instance_alternative_path_trim_preserves_refusal_without_degradation() {
     );
 }
 
+
+#[test]
+fn scan_definition_diagnostics_stay_scoped_until_report_construction() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    const SCRATCH_BYTES: u64 = 1 << 20;
+    let record = Record::short(0x2000_807b, 0..0, 0);
+    let records = vec![record; 32];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = SCRATCH_BYTES;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let parsed = crate::instances::parse_definitions(&ctx, &[], &records, ArchiveVersion::V5, 0x1000_0021)
+        .expect("scan messages and staging consume no retained storage");
+    assert_eq!(parsed.scan.diagnostics().len(), records.len());
+    assert_eq!(parsed.opaque_records.len(), records.len());
+    assert!(parsed.scan.diagnostics().iter().all(|note| note.diagnostic.message.starts_with("instance definition retained: ")));
+    drop(parsed);
+    let reusable = ctx.reserve_scoped(SCRATCH_BYTES, "next scan diagnostics").expect("scan storage released");
+    drop(reusable);
+    ctx.finish_session().unwrap();
+}

@@ -1120,12 +1120,14 @@ fn read_arrow_position(
 /// Decodes one modern linear, angular, or radial dimension.
 pub(crate) fn decode(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     data: &[u8],
     class: Uuid,
     range: Range<usize>,
     scale: MillimeterScale,
     archive: ArchiveVersion,
 ) -> Result<Dimension, FramingError> {
+    storage.with_storage(|| {
     if matches!(class, V2_LINEAR | V2_ANGULAR | V2_RADIAL) {
         return decode_v2(ctx, data, class, range, scale);
     }
@@ -1334,6 +1336,8 @@ pub(crate) fn decode(
         measurement,
         override_present: annotation.override_present,
     })
+
+    })
 }
 
 /// Applies the built-in V5 dimension extension carried as class userdata.
@@ -1502,6 +1506,7 @@ impl fmt::Display for PointText<'_> {
 /// not carry.
 pub(crate) fn project(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    unresolved_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     dimension: &Dimension,
     key: &str,
     name: Option<&str>,
@@ -1797,8 +1802,7 @@ pub(crate) fn project(
                 Ok(())
             }
             Some(_) => {
-                ctx.reserve_vec(&mut unresolved, 1, "Rhino unresolved dimension references")?;
-                unresolved.push(code);
+                ctx.push_scoped_vec(unresolved_storage, &mut unresolved, code, "Rhino unresolved dimension references")?;
                 Ok(())
             }
         }
@@ -1826,14 +1830,16 @@ pub(crate) fn project(
             })
         })
         .transpose()?;
-    let key = cadmpeg_ir::ids::IdentityKey::try_new(
-        ctx.copy_retained_text(key, "Rhino dimension identity key")?,
-    )
+    let (key, _key_storage) = ctx.with_scoped_storage("Rhino dimension identity key", || {
+        cadmpeg_ir::ids::IdentityKey::try_new(
+            ctx.copy_retained_text(key, "Rhino dimension identity key")?,
+        )
     .or_else(|error| {
         Err(cadmpeg_core::CodecError::malformed(ctx.format_retained(
             format_args!("{error}"),
             "Rhino project text",
         )?))
+        })
     })?;
     let annotation_id = SemanticAnnotationId::try_from(ctx.format_retained(
         format_args!("rhino:dimension:annotation#{}", key.as_str()),
@@ -1892,12 +1898,20 @@ pub(crate) fn semantic_json(
             map.end()
         }
     }
-    let (annotation, _) = project(ctx, dimension, "embedded-history-dimension", None, "", 0)?;
-    crate::wire::admitted_canonical_json(
+    let mut unresolved_storage = ctx.reserve_scoped(0, "Rhino dimension unresolved references")?;
+    let ((annotation, unresolved), annotation_storage) = ctx.with_scoped_storage("Rhino dimension semantic fields", || {
+        project(ctx, &mut unresolved_storage, dimension, "embedded-history-dimension", None, "", 0)
+    })?;
+    drop(unresolved);
+    drop(unresolved_storage);
+    let json = crate::wire::admitted_canonical_json(
         ctx,
         &DimensionJson(&annotation),
         "Rhino dimension semantic JSON",
-    )
+    );
+    drop(annotation);
+    drop(annotation_storage);
+    json
 }
 
 #[cfg(test)]
@@ -2006,8 +2020,20 @@ pub(crate) mod tests {
         archive: ArchiveVersion,
     ) -> Result<super::Dimension, crate::chunks::FramingError> {
         with_test_context(data, |ctx| {
-            super::decode(ctx, data, class, range, scale, archive)
+            super::decode(ctx, &mut ctx.reserve_scoped(0, "test dimension fields")?, data, class, range, scale, archive)
         })
+    }
+
+    fn with_materialized_limit<R>(
+        data: &[u8],
+        limit: u64,
+        apply: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> R,
+    ) -> R {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_materialized_bytes = limit;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy).unwrap();
+        apply(&ctx)
     }
 
     fn with_collection_limit<R>(
@@ -2134,44 +2160,46 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn modern_dimension_rich_text_refuses_retained_limit() {
+    fn modern_dimension_rich_text_refuses_materialized_limit() {
         let family = [3.0_f64, 4.0, 8.0, 9.0]
             .into_iter()
             .flat_map(f64::to_le_bytes)
             .collect::<Vec<_>>();
         let bytes = payload(1, &family);
-        let error = with_retained_limit(&bytes, 0, |ctx| {
+        let error = with_materialized_limit(&bytes, 0, |ctx| {
             super::decode(
                 ctx,
+                &mut ctx.reserve_scoped(0, "test dimension fields").unwrap(),
                 &bytes,
                 LINEAR,
                 0..bytes.len(),
                 MillimeterScale::IDENTITY,
                 ArchiveVersion::V8,
             )
-            .expect_err("rich text exceeds retained limit")
+            .expect_err("rich text exceeds materialized limit")
         });
         assert_resource(&error, "Rhino dimension rich text");
     }
 
     #[test]
-    fn modern_dimension_user_text_refuses_retained_limit() {
+    fn modern_dimension_user_text_refuses_materialized_limit() {
         let family = [3.0_f64, 4.0, 8.0, 9.0]
             .into_iter()
             .flat_map(f64::to_le_bytes)
             .collect::<Vec<_>>();
         let bytes =
             dimension_payload_with_arrow_fit(1, &family, [0; 16], &plane(), None, 0, "user");
-        let error = with_retained_limit(&bytes, 3, |ctx| {
+        let error = with_materialized_limit(&bytes, 3, |ctx| {
             super::decode(
                 ctx,
+                &mut ctx.reserve_scoped(0, "test dimension fields").unwrap(),
                 &bytes,
                 LINEAR,
                 0..bytes.len(),
                 MillimeterScale::IDENTITY,
                 ArchiveVersion::V8,
             )
-            .expect_err("user text exceeds retained limit")
+            .expect_err("user text exceeds materialized limit")
         });
         assert_resource(&error, "Rhino dimension user text");
         assert!(test_decode(
@@ -2801,7 +2829,7 @@ pub(crate) mod tests {
         )
         .expect("valid linear dimension");
         let refusal = with_collection_limit(&[], 0, |ctx| {
-            super::project(ctx, &dimension, "test", None, "", 0)
+            super::project(ctx, &mut ctx.reserve_scoped(0, "test dimension references").unwrap(), &dimension, "test", None, "", 0)
                 .expect_err("first parameter exceeds zero items")
         });
         assert!(matches!(
@@ -2811,7 +2839,7 @@ pub(crate) mod tests {
         ));
         let ctx = cadmpeg_test_support::service_decode_context();
         let (annotation, _) =
-            super::project(&ctx, &dimension, "embedded-history-dimension", None, "", 0)
+            super::project(&ctx, &mut ctx.reserve_scoped(0, "test dimension references").unwrap(), &dimension, "embedded-history-dimension", None, "", 0)
                 .expect("service profile admits projection");
         let baseline = serde_json::json!({
             "kind": "dimension",

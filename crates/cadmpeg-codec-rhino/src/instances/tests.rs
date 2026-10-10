@@ -112,13 +112,14 @@ fn anonymous_instance_crc_mismatch_warns_and_consumes_boundary() {
     bytes[crc] ^= 1;
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
     let mut warnings = Diagnostics::new();
+    let ctx = cadmpeg_test_support::service_decode_context();
     let (_, payload) = anonymous(
-        &cadmpeg_test_support::service_decode_context(),
+        &ctx,
         &bytes,
         &mut reader,
         ArchiveVersion::V5,
         "instance test",
-        &mut warnings,
+        &mut |code, message| warnings.push_coded_admitted(&ctx, code, message),
     )
     .expect("recoverable anonymous chunk");
     assert_eq!(reader.remaining(), 0);
@@ -152,7 +153,7 @@ fn anonymous_instance_crc_diagnostic_refuses_collection_limit() {
         &mut reader,
         ArchiveVersion::V5,
         "instance test",
-        &mut Diagnostics::new(),
+        &mut |code, message| Diagnostics::new().push_coded_admitted(&ctx, code, message),
     )
     .expect_err("checksum diagnostic exceeds zero collection items");
     assert!(
@@ -343,12 +344,13 @@ fn instance_definition_readers_follow_source_minor_boundaries() {
     set_anonymous_minor(&mut reference, 9);
     append_crc_suffix(&mut reference, &[0xa5, 0x5a]);
     let mut reader = BoundedReader::new(&reference, 0, reference.len()).expect("chunk bounds");
+    let ctx = cadmpeg_test_support::service_decode_context();
     let parsed = parse_file_reference(
-        &cadmpeg_test_support::service_decode_context(),
+        &ctx,
         &reference,
         &mut reader,
         ArchiveVersion::V6,
-        &mut Diagnostics::new(),
+        &mut |code, message| Diagnostics::new().push_coded_admitted(&ctx, code, message),
     )
     .expect("future file-reference suffix is bounded");
     assert_eq!(parsed.full_path, "/full/source.3dm");
@@ -1651,12 +1653,13 @@ fn contradictory_standard_unit_detail_preserves_scale_and_name() {
     let data = anonymous_chunk(archive, 0, &body);
     let mut reader = BoundedReader::new(&data, 0, data.len()).expect("bounded units");
     let mut warnings = Diagnostics::new();
+    let ctx = cadmpeg_test_support::service_decode_context();
     let units = super::unit_detail(
-        &cadmpeg_test_support::service_decode_context(),
+        &ctx,
         &data,
         &mut reader,
         archive,
-        &mut warnings,
+        &mut |code, message| warnings.push_coded_admitted(&ctx, code, message),
     )
     .expect("unit evidence");
     assert_eq!(units.unit, 2);
@@ -1681,12 +1684,13 @@ fn file_reference_fixtures_have_valid_nested_checksums() {
         let mut reader =
             BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded file reference");
         let mut warnings = Diagnostics::new();
+        let ctx = cadmpeg_test_support::service_decode_context();
         let reference = parse_file_reference(
-            &cadmpeg_test_support::service_decode_context(),
+            &ctx,
             &bytes,
             &mut reader,
             archive,
-            &mut warnings,
+            &mut |code, message| warnings.push_coded_admitted(&ctx, code, message),
         )
         .expect("valid file reference");
         assert_eq!(reference.full_path, "/full/source.3dm");

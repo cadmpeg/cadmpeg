@@ -12,7 +12,7 @@ use serde::Serialize;
 
 use crate::container::Scan;
 use crate::instances::{hex, DefinitionKind, LinkSource, UnitDetail};
-use crate::loss::{RhinoLossCode, ScratchVec};
+use crate::loss::RhinoLossCode;
 use crate::settings::UnitBinding;
 use crate::wire::Uuid;
 
@@ -201,10 +201,11 @@ fn external_record<'a>(
 /// Installs the source product graph without requiring occurrence expansion.
 pub(crate) fn install<'ctx>(
     ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
+    loss_storage: &mut cadmpeg_core::decode::ScopedReservation<'ctx>,
     scan: &Scan<'_>,
     ir: &mut CadIr,
-) -> Result<ScratchVec<'ctx, LossNote>, CodecError> {
-    let mut losses = ScratchVec::new(ctx, "Rhino product loss Vec")?;
+) -> Result<Vec<LossNote>, CodecError> {
+    let mut losses = Vec::new();
     let mut object_workspace = ctx.reserve_scoped(0, "Rhino product object workspace")?;
     let mut object_records = HashMap::<Uuid, Option<usize>>::new();
     let mut object_source = scan.objects.iter().enumerate();
@@ -390,8 +391,9 @@ pub(crate) fn install<'ctx>(
                     ),
                     "Rhino product occurrence loss tag",
                 )?;
-                losses.push_admitted(
-                    ctx,
+                ctx.push_scoped_vec(
+                    loss_storage,
+                    &mut losses,
                     loss.with_provenance(
                         SourceProvenance::root(
                             "rhino",
@@ -502,7 +504,6 @@ pub(crate) fn install<'ctx>(
 #[cfg(test)]
 mod tests {
     mod budget_repairs;
-    use super::install;
     use crate::test_support::test_dump::{
         object_record_with_payload, scan_with_objects, INSTANCE_REFERENCE_CLASS,
     };
@@ -563,6 +564,15 @@ mod tests {
             &[],
         ))
         .expect("linked definition document is framed")
+    }
+
+    fn install(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        scan: &crate::container::Scan<'_>,
+        ir: &mut CadIr,
+    ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, cadmpeg_core::CodecError> {
+        let mut storage = ctx.reserve_scoped(0, "test product loss backing")?;
+        super::install(ctx, &mut storage, scan, ir)
     }
 
     #[test]
