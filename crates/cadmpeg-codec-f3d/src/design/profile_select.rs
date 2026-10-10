@@ -864,6 +864,8 @@ fn historical_face_profile_selection(
 ) -> Result<Option<cadmpeg_ir::features::PlanarProfileRef>, CodecError> {
     use cadmpeg_ir::features::PlanarProfileRef;
 
+    ctx.charge_work(0, "F3D historical profile query boundary")?;
+
     let Some(previous_state_id) = previous_state_id else {
         return Ok(None);
     };
@@ -920,7 +922,11 @@ fn historical_face_profile_selection(
             let (kind, entity_ref) = match &member.historical {
                 Some(binding) => {
                     if !binding.state_ids.is_empty()
-                        && !binding.state_ids.contains(&previous_state_id)
+                        && !ctx.any_by(
+                            &binding.state_ids,
+                            |state_id| Ok(*state_id == previous_state_id),
+                            "visit F3D historical profile binding state",
+                        )?
                     {
                         return Ok(None);
                     }
@@ -2248,6 +2254,7 @@ fn historical_selection_regions(
     arrangement_budget: &WorkBudget<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<ResolvedProfileSelection>, CodecError> {
+    ctx.charge_work(0, "F3D historical profile query boundary")?;
     // The document linear tolerance is admitted at or above the analytic floor
     // when the kernel header is read, so it drives the comparisons unchanged.
     let tolerance = linear_tolerance;
@@ -2265,11 +2272,21 @@ fn historical_selection_regions(
     let Some(first_member) = members.first() else {
         return Ok(None);
     };
+    let mut state_storage = ctx.reserve_scoped(0, "hold F3D historical selection states")?;
     let mut state_ids = Vec::new();
     if let Some(binding) = first_member.historical.as_ref() {
-        for state_id in binding.state_ids.iter().copied() {
-            if !state_ids.contains(&state_id) {
-                ctx.push_vec(
+        let mut source_states = binding.state_ids.iter().copied();
+        while let Some(state_id) = ctx.next_charged(
+            &mut source_states,
+            "visit F3D historical selection first member state",
+        )? {
+            if state_ids.is_empty() || !ctx.any_by(
+                &state_ids,
+                |existing| Ok(*existing == state_id),
+                "visit F3D historical selection duplicate state",
+            )? {
+                ctx.push_scoped_vec(
+                    &mut state_storage,
                     &mut state_ids,
                     state_id,
                     "f3d historical selection state id",
@@ -2277,13 +2294,35 @@ fn historical_selection_regions(
             }
         }
     }
-    for member in &members[1..] {
-        state_ids.retain(|state_id| {
-            member
-                .historical
-                .as_ref()
-                .is_some_and(|binding| binding.state_ids.contains(state_id))
-        });
+    let mut remaining_members = members[1..].iter();
+    while !state_ids.is_empty() {
+        let Some(member) = ctx.next_charged(
+            &mut remaining_members,
+            "visit F3D historical selection intersecting member",
+        )? else {
+            break;
+        };
+        let Some(binding) = member.historical.as_ref() else {
+            state_ids.clear();
+            break;
+        };
+        let mut kept = 0;
+        let mut state_slots = 0..state_ids.len();
+        while let Some(index) = ctx.next_charged(
+            &mut state_slots,
+            "visit F3D historical selection intersection state",
+        )? {
+            let state_id = state_ids[index];
+            if !binding.state_ids.is_empty() && ctx.any_by(
+                &binding.state_ids,
+                |candidate| Ok(*candidate == state_id),
+                "visit F3D historical selection member binding state",
+            )? {
+                state_ids[kept] = state_id;
+                kept += 1;
+            }
+        }
+        state_ids.truncate(kept);
     }
     ctx.sort_unstable_by(
         &mut state_ids,
@@ -2294,7 +2333,11 @@ fn historical_selection_regions(
     let mut previous_member_points: Option<Vec<Vec<Point3>>> = None;
     let mut state_selection = None;
     let mut conflicting_state_selections = false;
-    for state_id in state_ids {
+    let mut selected_states = state_ids.into_iter();
+    while let Some(state_id) = ctx.next_charged(
+        &mut selected_states,
+        "visit F3D historical selection selected state",
+    )? {
         let Some(topology) = states
             .get(&state_id)
             .and_then(|state| state.as_ref())
@@ -2356,6 +2399,8 @@ fn historical_selection_regions(
             }
         }
     }
+    drop(selected_states);
+    drop(state_storage);
     if state_selection.is_some() {
         return Ok(if conflicting_state_selections {
             None
