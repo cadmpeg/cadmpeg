@@ -308,7 +308,11 @@ impl FramingRecoveries {
         Ok(())
     }
 
-    pub(crate) fn merge(&mut self, other: Self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
+    pub(crate) fn merge(
+        &mut self,
+        other: &Self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<(), CodecError> {
         // Five sections and five defect classes define every slot and its order.
         for (held_row, incoming_row) in self.0.iter_mut().zip(other.0) {
             for (slot, incoming) in held_row.iter_mut().zip(incoming_row) {
@@ -558,7 +562,7 @@ fn physical_lines<'a>(
         };
         let mut card_start = start;
         let mut source_values = IntoIterator::into_iter(0..cards);
-        while source_values.len() != 0 {
+        while !source_values.is_empty() {
             let Some(index) = ctx.next_charged(&mut source_values, "iges physical cards")? else {
                 break;
             };

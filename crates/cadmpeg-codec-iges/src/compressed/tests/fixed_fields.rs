@@ -24,12 +24,8 @@ fn compressed_fixed_numbers_use_eight_column_decimal_fields() {
 
 #[test]
 fn compressed_section_sequences_use_one_marker_and_seven_decimal_columns() {
-    for marker in [b'S', b'G', b'D', b'P', b'T'] {
-        for (sequence, digits) in [
-            (0, *b"      0"),
-            (1, *b"      1"),
-            (9_999_999, *b"9999999"),
-        ] {
+    for marker in *b"SGDPT" {
+        for (sequence, digits) in [(0, *b"      0"), (1, *b"      1"), (9_999_999, *b"9999999")] {
             let field = super::super::sequence_field(marker, sequence).unwrap();
             assert_eq!(field[0], marker);
             assert_eq!(&field[1..], &digits);

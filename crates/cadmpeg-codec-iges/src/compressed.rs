@@ -567,10 +567,10 @@ fn fixed_number(value: i64) -> Result<[u8; 8], CodecError> {
 }
 
 fn sequence_field(marker: u8, sequence: u32) -> Result<[u8; 8], CodecError> {
-    let mut output = [b' '; 8];
-    output[0] = marker;
     // Every u32 spelling fits in ten decimal digits.
     const DIGIT_WIDTH: usize = 10;
+    let mut output = [b' '; 8];
+    output[0] = marker;
     let mut digits = [0_u8; DIGIT_WIDTH];
     let count = {
         let mut remaining = digits.as_mut_slice();

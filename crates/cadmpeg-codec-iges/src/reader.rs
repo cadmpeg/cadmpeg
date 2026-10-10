@@ -160,7 +160,9 @@ fn attributed_sequences(
     let mut attributed = BTreeSet::new();
     let mut source = losses.iter();
     while source.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some(loss) = ctx.next_charged(&mut source, "iges attributed loss records")? else { break; };
+        let Some(loss) = ctx.next_charged(&mut source, "iges attributed loss records")? else {
+            break;
+        };
         let Some(tag) = loss
             .provenance
             .as_ref()
@@ -203,7 +205,9 @@ fn projection_directory<'ctx>(
     storage = result_storage;
     let mut source = directory.iter();
     while source.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some(entry) = ctx.next_charged(&mut source, "iges projected directory entries")? else { break; };
+        let Some(entry) = ctx.next_charged(&mut source, "iges projected directory entries")? else {
+            break;
+        };
         if !ctx.contains_btree_set(
             quarantined,
             &entry.sequence,
@@ -257,19 +261,29 @@ fn append_generic_losses(
 ) -> Result<(), CodecError> {
     let mut source = directory.iter();
     while source.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some(entry) = ctx.next_charged(&mut source, "iges generic loss directory entries")? else { break; };
+        let Some(entry) = ctx.next_charged(&mut source, "iges generic loss directory entries")?
+        else {
+            break;
+        };
         if entry.entity_type == 0 {
             continue;
         }
         let admitted =
             crate::profile::envelope_a_admits(entry.entity_type, entry.form, global_table);
         if admitted
-            && (ctx.contains_btree_set(&projection.decoded, &entry.sequence,
-                    "iges generic loss decoded lookup")?
-                || ctx.contains_btree_set(&projection.consumed, &entry.sequence,
-                    "iges generic loss consumed lookup")?
-                || ctx.contains_btree_set(attributed, &entry.sequence,
-                    "iges generic loss attributed lookup")?)
+            && (ctx.contains_btree_set(
+                &projection.decoded,
+                &entry.sequence,
+                "iges generic loss decoded lookup",
+            )? || ctx.contains_btree_set(
+                &projection.consumed,
+                &entry.sequence,
+                "iges generic loss consumed lookup",
+            )? || ctx.contains_btree_set(
+                attributed,
+                &entry.sequence,
+                "iges generic loss attributed lookup",
+            )?)
         {
             continue;
         }
@@ -369,7 +383,11 @@ fn mark_quarantined_placements<'ctx>(
 ) -> Result<(), CodecError> {
     let mut source = quarantined.iter();
     while source.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some(sequence) = ctx.next_charged(&mut source, "iges quarantined placement sequences")? else { break; };
+        let Some(sequence) =
+            ctx.next_charged(&mut source, "iges quarantined placement sequences")?
+        else {
+            break;
+        };
         let Some(entry) = directory::entry_by_sequence(directory, *sequence, ctx)?
             .filter(|entry| matches!(entry.entity_type, 408 | 420) && entry.form == 0)
         else {
@@ -439,8 +457,8 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
         global_storage = result_global_storage;
         global_loss_storage = result_loss_storage;
         let directory_storage;
-        let ((directory, quarantined_directory), result_directory_storage) =
-            ctx.with_scoped_storage("iges parsed directory storage", || {
+        let ((directory, quarantined_directory), result_directory_storage) = ctx
+            .with_scoped_storage("iges parsed directory storage", || {
                 directory::parse(&scan, global.global_table(), ctx)
             })?;
         directory_storage = result_directory_storage;
@@ -470,16 +488,19 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
         parameter_analysis_storage = analysis_storage;
         parameter_quarantine_storage = quarantine_storage;
         let conditional_loss_storage;
-        let (mut conditional_losses, result_conditional_storage) = global.conditional_double_precision_losses(
-            parameter::uses_double_precision(&parameters, ctx)?,
-            ctx,
-        )?;
+        let (mut conditional_losses, result_conditional_storage) = global
+            .conditional_double_precision_losses(
+                parameter::uses_double_precision(&parameters, ctx)?,
+                ctx,
+            )?;
         conditional_loss_storage = result_conditional_storage;
-        global_loss_storage.with_storage(|| ctx.append_vec(
-            &mut global_losses,
-            &mut conditional_losses,
-            "iges combined global loss notes",
-        ))?;
+        global_loss_storage.with_storage(|| {
+            ctx.append_vec(
+                &mut global_losses,
+                &mut conditional_losses,
+                "iges combined global loss notes",
+            )
+        })?;
         drop(conditional_losses);
         drop(conditional_loss_storage);
         let reference_storage;
@@ -487,7 +508,7 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
         reference_storage = result_reference_storage;
         let mut scan = scan;
         let mut framing_recoveries = std::mem::take(&mut scan.recoveries);
-        framing_recoveries.merge(parameter_recoveries, ctx)?;
+        framing_recoveries.merge(&parameter_recoveries, ctx)?;
         Ok(Self {
             scan,
             global,
@@ -551,7 +572,11 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
         storage = result_storage;
         let mut directory_records = self.quarantined_directory.iter();
         while directory_records.len() != 0 || ctx.resource_refusal().is_some() {
-            let Some(record) = ctx.next_charged(&mut directory_records, "iges record loss slots")? else { break; };
+            let Some(record) =
+                ctx.next_charged(&mut directory_records, "iges record loss slots")?
+            else {
+                break;
+            };
             ctx.push_scoped_vec(
                 &mut storage,
                 &mut losses,
@@ -561,7 +586,11 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
         }
         let mut parameter_records = self.quarantined_parameters.iter();
         while parameter_records.len() != 0 || ctx.resource_refusal().is_some() {
-            let Some(record) = ctx.next_charged(&mut parameter_records, "iges record loss slots")? else { break; };
+            let Some(record) =
+                ctx.next_charged(&mut parameter_records, "iges record loss slots")?
+            else {
+                break;
+            };
             ctx.push_scoped_vec(
                 &mut storage,
                 &mut losses,
@@ -651,9 +680,8 @@ fn decode_with_occurrence_limits(
     let mut parse = PhysicalParse::run(parse_bytes, ctx, ParseMode::Decode)?;
     let length_context = parse.global.length_context();
     let mut quarantine_storage = ctx.reserve_scoped(0, "iges parameter quarantine index")?;
-    let quarantined_parameter_sequences = quarantine_storage.with_storage(|| {
-        quarantined_parameter_sequences(&parse.quarantined_parameters, ctx)
-    })?;
+    let quarantined_parameter_sequences = quarantine_storage
+        .with_storage(|| quarantined_parameter_sequences(&parse.quarantined_parameters, ctx))?;
     let projection_directory_storage =
         projection_directory(&parse.directory, &quarantined_parameter_sequences, ctx)?;
     let projected_directory = projection_directory_storage
@@ -778,11 +806,15 @@ fn decode_with_occurrence_limits(
     )?;
     drop(record_losses);
     drop(record_loss_storage);
-    let mut malformed_definitions = product_occurrence_expansion.malformed_definition_sequences.into_iter();
+    let mut malformed_definitions = product_occurrence_expansion
+        .malformed_definition_sequences
+        .into_iter();
     while malformed_definitions.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some(source_sequence) = ctx.next_charged(
-        &mut malformed_definitions, "iges occurrence loss sequences",
-    )? else { break; };
+        let Some(source_sequence) =
+            ctx.next_charged(&mut malformed_definitions, "iges occurrence loss sequences")?
+        else {
+            break;
+        };
         push_occurrence_loss(ctx, &mut losses,
             IgesLossCode::OccurrenceRootInferenceBlocked,
             format_args!("IGES product occurrence root inference was suppressed because a definition member list is malformed"),
@@ -792,11 +824,15 @@ fn decode_with_occurrence_limits(
     }
     drop(malformed_definitions);
     drop(definition_storage);
-    let mut malformed_placements = product_occurrence_expansion.malformed_placement_sequences.into_iter();
+    let mut malformed_placements = product_occurrence_expansion
+        .malformed_placement_sequences
+        .into_iter();
     while malformed_placements.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some(source_sequence) = ctx.next_charged(
-        &mut malformed_placements, "iges occurrence loss sequences",
-    )? else { break; };
+        let Some(source_sequence) =
+            ctx.next_charged(&mut malformed_placements, "iges occurrence loss sequences")?
+        else {
+            break;
+        };
         push_occurrence_loss(ctx, &mut losses,
             IgesLossCode::OccurrencePlacementMalformed,
             format_args!("IGES product occurrence expansion omitted an instance or member with malformed placement data"),
@@ -809,12 +845,12 @@ fn decode_with_occurrence_limits(
     let mut boundaries = ambiguous_parameter_boundaries.into_iter();
     while boundaries.len() != 0 || ctx.resource_refusal().is_some() {
         let Some(native::AmbiguousParameterBoundary {
-        sequence: source_sequence,
-        ambiguity,
-    }) = ctx.next_charged(
-        &mut boundaries,
-        "iges parameter boundary losses",
-    )? else { break; };
+            sequence: source_sequence,
+            ambiguity,
+        }) = ctx.next_charged(&mut boundaries, "iges parameter boundary losses")?
+        else {
+            break;
+        };
         let (candidate_count, kind) = match ambiguity {
             native::ParameterBoundaryAmbiguity::EquallyValid(count) => (count, "equally valid"),
             native::ParameterBoundaryAmbiguity::Structural(count) => (count, "structural"),
@@ -832,7 +868,11 @@ fn decode_with_occurrence_limits(
     drop(boundary_storage);
     let mut counts = overdeclared_counts.into_iter();
     while counts.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some((source_sequence, crate::parameter::OverdeclaredCount { declared, present })) = ctx.next_charged(&mut counts, "iges overdeclared count losses")? else { break; };
+        let Some((source_sequence, crate::parameter::OverdeclaredCount { declared, present })) =
+            ctx.next_charged(&mut counts, "iges overdeclared count losses")?
+        else {
+            break;
+        };
         push_occurrence_loss(ctx, &mut losses,
             IgesLossCode::ParameterCountOverdeclared,
             format_args!(
@@ -846,10 +886,11 @@ fn decode_with_occurrence_limits(
     drop(count_storage);
     let mut attributes = unstatable_attribute_tables.into_iter();
     while attributes.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some((source_sequence, refusal)) = ctx.next_charged(
-        &mut attributes,
-        "iges attribute table count losses",
-    )? else { break; };
+        let Some((source_sequence, refusal)) =
+            ctx.next_charged(&mut attributes, "iges attribute table count losses")?
+        else {
+            break;
+        };
         push_occurrence_loss(
             ctx,
             &mut losses,
@@ -868,7 +909,8 @@ fn decode_with_occurrence_limits(
     let attributed = if ctx.container_only() {
         BTreeSet::new()
     } else {
-        let mut attributed = attribution_storage.with_storage(|| attributed_sequences(&losses, ctx))?;
+        let mut attributed =
+            attribution_storage.with_storage(|| attributed_sequences(&losses, ctx))?;
         append_generic_losses(
             ctx,
             &mut losses,
@@ -889,8 +931,12 @@ fn decode_with_occurrence_limits(
     let mut directory_records = parse.directory.iter();
     while directory_records.len() != 0 || ctx.resource_refusal().is_some() {
         let Some(entry) = ctx.next_charged(
-        &mut directory_records, "iges transfer ledger directory records",
-    )? else { break; };
+            &mut directory_records,
+            "iges transfer ledger directory records",
+        )?
+        else {
+            break;
+        };
         if entry.entity_type == 0 {
             continue;
         }
@@ -899,18 +945,27 @@ fn decode_with_occurrence_limits(
         } else if !crate::profile::envelope_a_admits(entry.entity_type, entry.form, global_table) {
             "native record retained; entity is outside the declared read envelope"
         } else {
-            let decoded = ctx.contains_btree_set(&projection.decoded, &entry.sequence,
-                "iges transfer decoded lookup")?;
-            let attributed_loss = ctx.contains_btree_set(&attributed, &entry.sequence,
-                "iges transfer attributed lookup")?;
+            let decoded = ctx.contains_btree_set(
+                &projection.decoded,
+                &entry.sequence,
+                "iges transfer decoded lookup",
+            )?;
+            let attributed_loss = ctx.contains_btree_set(
+                &attributed,
+                &entry.sequence,
+                "iges transfer attributed lookup",
+            )?;
             if decoded && attributed_loss {
                 "native record retained; semantic projection emitted with an attributed loss"
             } else if decoded {
                 "native record retained; semantic projection emitted"
             } else if attributed_loss {
                 "native record retained; semantic projection omitted with an attributed loss"
-            } else if ctx.contains_btree_set(&projection.consumed, &entry.sequence,
-                "iges transfer consumed lookup")? {
+            } else if ctx.contains_btree_set(
+                &projection.consumed,
+                &entry.sequence,
+                "iges transfer consumed lookup",
+            )? {
                 "native record retained; record was consumed as construction support"
             } else {
                 // The generic pass attributes every envelope-admitted record that
@@ -934,9 +989,12 @@ fn decode_with_occurrence_limits(
     let mut quarantined_directory_records = parse.quarantined_directory.iter();
     while quarantined_directory_records.len() != 0 || ctx.resource_refusal().is_some() {
         let Some(record) = ctx.next_charged(
-        &mut quarantined_directory_records,
-        "iges transfer ledger quarantined records",
-    )? else { break; };
+            &mut quarantined_directory_records,
+            "iges transfer ledger quarantined records",
+        )?
+        else {
+            break;
+        };
         let source = ctx.format_retained(
             format_args!("D{}", record.sequence),
             "iges transfer ledger quarantine source",
@@ -952,9 +1010,12 @@ fn decode_with_occurrence_limits(
     let mut quarantined_parameter_records = parse.quarantined_parameters.iter();
     while quarantined_parameter_records.len() != 0 || ctx.resource_refusal().is_some() {
         let Some(record) = ctx.next_charged(
-        &mut quarantined_parameter_records,
-        "iges transfer ledger quarantined records",
-    )? else { break; };
+            &mut quarantined_parameter_records,
+            "iges transfer ledger quarantined records",
+        )?
+        else {
+            break;
+        };
         let source = ctx.format_retained(
             format_args!("D{}:parameter", record.sequence),
             "iges transfer ledger quarantine source",
