@@ -1199,8 +1199,7 @@ struct NurbsProfileSpan {
 }
 
 fn nurbs_profile_point(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    evaluator: &mut cadmpeg_ir::eval::decode::NurbsPointEvaluator<'_, '_>,
+    evaluator: &mut cadmpeg_ir::eval::decode::NurbsPointEvaluator<'_, '_, '_>,
     nurbs: &NurbsCurve,
     parameter: f64,
 ) -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
@@ -1209,7 +1208,7 @@ fn nurbs_profile_point(
         require_some!(cadmpeg_ir::scalar::FiniteReal::new(parameter)),
     ));
     let point = require_some!(cadmpeg_ir::eval::finite_or_refusal(
-        evaluator.point(ctx, parameter.get())?
+        evaluator.point(parameter.get())?
     )?);
     Ok(Some([point.x, point.y]))
 }
@@ -1241,7 +1240,7 @@ fn append_nurbs_profile_point(
 
 fn append_nurbs_profile_span(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    evaluator: &mut cadmpeg_ir::eval::decode::NurbsPointEvaluator<'_, '_>,
+    evaluator: &mut cadmpeg_ir::eval::decode::NurbsPointEvaluator<'_, '_, '_>,
     nurbs: &NurbsCurve,
     span: &NurbsProfileSpan,
     points: &mut Vec<[f64; 2]>,
@@ -1261,9 +1260,9 @@ fn append_nurbs_profile_span(
     let first_quarter = span.start + (span.end - span.start) * 0.25;
     let third_quarter = span.start + (span.end - span.start) * 0.75;
     let (Some(middle_point), Some(first_quarter_point), Some(third_quarter_point)) = (
-        nurbs_profile_point(ctx, evaluator, nurbs, middle)?,
-        nurbs_profile_point(ctx, evaluator, nurbs, first_quarter)?,
-        nurbs_profile_point(ctx, evaluator, nurbs, third_quarter)?,
+        nurbs_profile_point(evaluator, nurbs, middle)?,
+        nurbs_profile_point(evaluator, nurbs, first_quarter)?,
+        nurbs_profile_point(evaluator, nurbs, third_quarter)?,
     ) else {
         return Ok(None);
     };
@@ -1344,7 +1343,7 @@ fn nurbs_profile_polyline<'ctx>(
     };
     let mut evaluator = cadmpeg_ir::eval::decode::NurbsPointEvaluator::new(ctx, nurbs)?;
     let [lower, upper] = cadmpeg_ir::scalar::FiniteReal::raw_array(range);
-    let Some(first) = nurbs_profile_point(ctx, &mut evaluator, nurbs, lower)? else {
+    let Some(first) = nurbs_profile_point(&mut evaluator, nurbs, lower)? else {
         return Ok(None);
     };
     let mut points = Vec::new();
@@ -1357,8 +1356,8 @@ fn nurbs_profile_polyline<'ctx>(
             continue;
         }
         let (Some(start_point), Some(end_point)) = (
-            nurbs_profile_point(ctx, &mut evaluator, nurbs, start)?,
-            nurbs_profile_point(ctx, &mut evaluator, nurbs, end)?,
+            nurbs_profile_point(&mut evaluator, nurbs, start)?,
+            nurbs_profile_point(&mut evaluator, nurbs, end)?,
         ) else {
             return Ok(None);
         };
