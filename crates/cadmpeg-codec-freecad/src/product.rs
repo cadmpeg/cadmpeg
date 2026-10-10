@@ -35,8 +35,7 @@ pub(crate) fn transfer(
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
     }
-    let mut _owner_storage = None;
-    let mut by_owner = None;
+    let mut owner_index = None;
     let mut output = Vec::new();
     let mut object_visits = objects.iter();
     while object_visits.len() != 0 {
@@ -47,21 +46,23 @@ pub(crate) fn transfer(
         let Some(kind) = product_kind(&object.type_name) else {
             continue;
         };
-        if by_owner.is_none() {
-            let owner_index = ctx.collect_scoped_btree_groups(
-                properties
-                    .iter()
-                    .map(|property| (property.owner.as_str(), property)),
-                "fcstd product owner index",
-            )?;
-            _owner_storage = Some(owner_index.1);
-            by_owner = Some(owner_index.0);
-        }
-        let by_owner = by_owner
-            .as_ref()
-            .expect("supported product object initializes the owner index");
+        let owner_index = match &mut owner_index {
+            Some(index) => index,
+            empty @ None => empty.insert(
+                ctx.collect_scoped_btree_groups(
+                    properties
+                        .iter()
+                        .map(|property| (property.owner.as_str(), property)),
+                    "fcstd product owner index",
+                )?,
+            ),
+        };
         let owned = ctx
-            .get_btree_map(by_owner, object.id().as_str(), "fcstd product owner lookup")?
+            .get_btree_map(
+                &owner_index.0,
+                object.id().as_str(),
+                "fcstd product owner lookup",
+            )?
             .map_or(&[][..], Vec::as_slice);
         let group = sole_named_property(ctx, "product", owned, "Group")?;
         let members = group
