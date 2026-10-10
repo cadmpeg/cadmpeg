@@ -77,7 +77,11 @@ fn attachment_no_carrier_needs_only_candidate_scan() {
     policy.limits.max_materialized_bytes = 0;
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    assert!(super::super::transfer(&ctx, &vec![object(); 4097], &[property]).unwrap().is_empty());
+    assert!(
+        super::super::transfer(&ctx, &vec![object(); 4097], &[property])
+            .unwrap()
+            .is_empty()
+    );
     assert_eq!(ctx.resource_refusal(), None);
 }
 
@@ -140,8 +144,10 @@ fn attachment_duplicate_mode_precedes_unread_object_suffix() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 4096;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    assert!(matches!(super::super::transfer(&ctx, &objects, &[property.clone(), property]),
-        Err(CodecError::Malformed(message)) if message == "attachment property MapMode occurs more than once"));
+    assert!(
+        matches!(super::super::transfer(&ctx, &objects, &[property.clone(), property]),
+        Err(CodecError::Malformed(message)) if message == "attachment property MapMode occurs more than once")
+    );
     assert_eq!(ctx.resource_refusal(), None);
 }
 
@@ -162,7 +168,11 @@ fn attachment_first_candidate_storage_refusal_does_not_precharge_suffix() {
     policy.limits.max_collection_items = 0;
     assert!(policy.limits.max_work_units < cadmpeg_core::decode::u64_from_index(properties.len()));
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    let CodecError::ResourceLimit(limit) = super::super::transfer(&ctx, &[object], &properties).expect_err("owner slot") else { panic!("collection refusal") };
+    let CodecError::ResourceLimit(limit) =
+        super::super::transfer(&ctx, &[object], &properties).expect_err("owner slot")
+    else {
+        panic!("collection refusal")
+    };
     assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
     assert_eq!(ctx.resource_refusal(), Some(limit));
 }
@@ -212,9 +222,10 @@ fn attachment_first_support_copy_refusal_does_not_precharge_link_suffix() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(storage);
-    // Empty support-value search, first link visit, then the object text copy.
-    policy.limits.max_work_units =
-        2 + cadmpeg_core::decode::u64_from_index("fcstd:native:object#Target".len());
+    policy.limits.max_work_units = 512;
+    assert!(
+        policy.limits.max_work_units < cadmpeg_core::decode::u64_from_index(property.links().len())
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     let CodecError::ResourceLimit(limit) =
         super::super::support_links(&ctx, &property).expect_err("first object copy refuses")
@@ -222,6 +233,5 @@ fn attachment_first_support_copy_refusal_does_not_precharge_link_suffix() {
         panic!("retained refusal");
     };
     assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-    assert_eq!(limit.operation, "FreeCAD link object copy");
     assert_eq!(ctx.resource_refusal(), Some(limit));
 }

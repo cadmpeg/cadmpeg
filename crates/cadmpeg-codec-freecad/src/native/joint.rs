@@ -64,8 +64,13 @@ impl JointParameter {
     fn from_raw(name: &str, raw: String) -> Result<Self, String> {
         let value = match parameter_kind(name) {
             ParameterKind::Scalar => {
-                let value = raw.parse::<f64>().ok().and_then(FiniteReal::new)
-                    .ok_or_else(|| format!("joint parameter {name} has an invalid value {raw:?}"))?;
+                let value = raw
+                    .parse::<f64>()
+                    .ok()
+                    .and_then(FiniteReal::new)
+                    .ok_or_else(|| {
+                        format!("joint parameter {name} has an invalid value {raw:?}")
+                    })?;
                 JointParameterValue::Scalar(value)
             }
             ParameterKind::Boolean => JointParameterValue::Boolean(raw == "true"),
@@ -140,7 +145,10 @@ pub(crate) fn parameter_from_property(
     } else {
         JointParameterValue::Boolean(value == "true")
     };
-    Ok(Some(JointParameter { raw: ctx.copy_retained_text(value, "fcstd joint scalar parameter")?, value: checked }))
+    Ok(Some(JointParameter {
+        raw: ctx.copy_retained_text(value, "fcstd joint scalar parameter")?,
+        value: checked,
+    }))
 }
 
 /// Checked joint parameters with lossless source text.
@@ -148,12 +156,20 @@ pub(crate) fn parameter_from_property(
 pub(crate) struct JointParameters(BTreeMap<String, JointParameter>);
 
 impl JointParameters {
-    pub(crate) fn insert(&mut self, ctx: &DecodeContext<'_>, name: String, value: JointParameter) -> Result<(), CodecError> {
+    pub(crate) fn insert(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        name: String,
+        value: JointParameter,
+    ) -> Result<(), CodecError> {
         ctx.insert_btree_map(&mut self.0, name, value, "fcstd joint parameters")?;
         Ok(())
     }
 
-    pub(crate) fn from_raw(parameters: BTreeMap<String, String>, joint_id: &str) -> Result<Self, String> {
+    pub(crate) fn from_raw(
+        parameters: BTreeMap<String, String>,
+        joint_id: &str,
+    ) -> Result<Self, String> {
         parameters
             .into_iter()
             .map(|(name, raw)| {
@@ -177,7 +193,10 @@ impl JointParameters {
     ) -> Result<Option<bool>, CodecError> {
         Ok(
             match ctx.get_btree_map(&self.0, name, "fcstd joint boolean lookup")? {
-                Some(JointParameter { value: JointParameterValue::Boolean(value), .. }) => Some(*value),
+                Some(JointParameter {
+                    value: JointParameterValue::Boolean(value),
+                    ..
+                }) => Some(*value),
                 _ => None,
             },
         )
@@ -190,7 +209,10 @@ impl JointParameters {
     ) -> Result<Option<FiniteReal>, CodecError> {
         Ok(
             match ctx.get_btree_map(&self.0, name, "fcstd joint scalar lookup")? {
-                Some(JointParameter { value: JointParameterValue::Scalar(value), .. }) => Some(*value),
+                Some(JointParameter {
+                    value: JointParameterValue::Scalar(value),
+                    ..
+                }) => Some(*value),
                 _ => None,
             },
         )
@@ -530,10 +552,14 @@ mod tests {
                     reference: None,
                     placement: super::FiniteFrame::default(),
                 },
-                super::JointParameters::from_raw(BTreeMap::from([
-                    ("Angle".into(), "15.5".into()),
-                    ("Suppressed".into(), "true".into()),
-                ]), "fcstd:native:joint#Joint").expect("checked values"),
+                super::JointParameters::from_raw(
+                    BTreeMap::from([
+                        ("Angle".into(), "15.5".into()),
+                        ("Suppressed".into(), "true".into()),
+                    ]),
+                    "fcstd:native:joint#Joint",
+                )
+                .expect("checked values"),
             )
             .expect("checked parameters")
         });
@@ -639,7 +665,10 @@ mod tests {
     fn wire_joint_parameter_diagnostics_preserve_nonfinite_message() {
         let wire = serde_json::json!({"id":"fcstd:native:joint#Joint", "object":"fcstd:native:object#Joint", "kind":"grounded", "references":[], "placements":[super::FiniteFrame::default().rows()], "offsets":[], "parameters":{"Angle":"NaN"}});
         let error = serde_json::from_value::<JointRecord>(wire).expect_err("nonfinite scalar");
-        assert_eq!(error.to_string(), "joint fcstd:native:joint#Joint: joint parameter Angle has an invalid value \"NaN\"");
+        assert_eq!(
+            error.to_string(),
+            "joint fcstd:native:joint#Joint: joint parameter Angle has an invalid value \"NaN\""
+        );
     }
 
     #[test]

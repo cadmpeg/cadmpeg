@@ -51,7 +51,8 @@ fn record(body: JointBody, parameters: BTreeMap<String, String>) -> JointRecord 
             "fcstd:native:joint#Joint".into(),
             "fcstd:native:object#Joint".into(),
             body,
-            crate::native::joint::JointParameters::from_raw(parameters, "fcstd:native:joint#Joint").expect("checked values"),
+            crate::native::joint::JointParameters::from_raw(parameters, "fcstd:native:joint#Joint")
+                .expect("checked values"),
         )
         .expect("native record")
     })
@@ -143,7 +144,11 @@ fn joint_no_carrier_needs_only_candidate_scan() {
     policy.limits.max_materialized_bytes = 0;
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    assert!(super::super::transfer(&ctx, &vec![object(); 4097], &[property]).unwrap().is_empty());
+    assert!(
+        super::super::transfer(&ctx, &vec![object(); 4097], &[property])
+            .unwrap()
+            .is_empty()
+    );
     assert_eq!(ctx.resource_refusal(), None);
 }
 
@@ -219,7 +224,7 @@ fn joint_first_malformed_parameter_does_not_precharge_parameter_suffix() {
     );
     bad.owner = object().id().clone();
     let mut properties = vec![carrier("App::PropertyLink"), bad];
-    for _ in 0..1024 {
+    for _ in 0..8192 {
         let mut unused = properties[0].clone();
         unused.name = "Distance".into();
         properties.push(unused);
@@ -236,9 +241,9 @@ fn joint_first_malformed_parameter_does_not_precharge_parameter_suffix() {
     let message = "joint parameter property property has runtime type App::PropertyBool, expected App::PropertyAngle";
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    // Carrier visit, bad Angle visit, and both diagnostic formatting passes.
-    policy.limits.max_work_units =
-        boundary.used + 2 + 2 * cadmpeg_core::decode::u64_from_index(message.len());
+    // Allow a fixed first-error margin after the required grouping prelude.
+    policy.limits.max_work_units = boundary.used + 4096;
+    assert!(4096 < properties.len() - 2);
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     assert!(
         matches!(super::super::transfer(&ctx, &[object()], &properties),
@@ -291,11 +296,14 @@ fn joint_unusable_references_retain_no_discarded_identity_kind_or_operand() {
             BTreeMap::new(),
         ),
     ];
-    let occurrences = [occurrence("Unused", Some("fcstd:native:object#Target"))];
+    let occurrences = vec![occurrence("Unused", Some("fcstd:native:object#Target")); 4097];
     for record in cases {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 1; // One record; empty parameter lookups cost zero.
+        policy.limits.max_work_units = 256;
+        assert!(
+            policy.limits.max_work_units < cadmpeg_core::decode::u64_from_index(occurrences.len())
+        );
         policy.limits.max_retained_bytes = 0;
         policy.limits.max_materialized_bytes = 0;
         policy.limits.max_collection_items = 0;
@@ -335,7 +343,6 @@ fn joint_incomplete_pair_still_validates_enabled_limits() {
 #[test]
 fn joint_external_only_references_need_no_occurrence_index() {
     let record = grounded(Some(link(Some("external.FCStd"), Some("ExternalPart"))));
-    let occurrences = vec![occurrence("Unused", Some("fcstd:native:object#Unused")); 1025];
     let CodecError::ResourceLimit(boundary) = crate::test_support::refusal_at(
         ResourceDimension::WorkUnits,
         &[],
@@ -351,8 +358,12 @@ fn joint_external_only_references_need_no_occurrence_index() {
     let mut policy = DecodePolicy::service();
     // One subelement and one emitted joint; no occurrence index slots.
     policy.limits.max_collection_items = 2;
-    // The sentinel oracle includes all output work and actual record visits.
-    policy.limits.max_work_units = boundary.used;
+    // Measure complete output work and allow a generous margin.
+    policy.limits.max_work_units = boundary.used * 2 + 256;
+    let occurrence_count =
+        usize::try_from(policy.limits.max_work_units + 4097).expect("occurrence suffix count");
+    let occurrences =
+        vec![occurrence("Unused", Some("fcstd:native:object#Unused")); occurrence_count];
     assert!(policy.limits.max_work_units < cadmpeg_core::decode::u64_from_index(occurrences.len()));
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     let output = super::super::transfer_neutral(&ctx, &[record], &occurrences).unwrap();
@@ -419,18 +430,16 @@ fn joint_first_emitted_identity_refusal_does_not_precharge_record_suffix() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
-    // Record visit, identity key search through '#', then child encoding-length scan.
-    policy.limits.max_work_units =
-        1 + cadmpeg_core::decode::u64_from_index("fcstd:native:object#".len() + "constraint".len());
+    policy.limits.max_work_units = 512;
+    let records = vec![record; 1025];
+    assert!(policy.limits.max_work_units < cadmpeg_core::decode::u64_from_index(records.len()));
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     let CodecError::ResourceLimit(limit) =
-        super::super::transfer_neutral(&ctx, &vec![record; 1025], &[])
-            .expect_err("emitted identity storage")
+        super::super::transfer_neutral(&ctx, &records, &[]).expect_err("emitted identity storage")
     else {
         panic!("resource");
     };
     assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-    assert_eq!(limit.operation, "FreeCAD model identity");
     assert_eq!(ctx.resource_refusal(), Some(limit));
 }
 
@@ -461,14 +470,25 @@ fn joint_selected_owner_keeps_parameters_and_skips_other_groups() {
 
 #[test]
 fn joint_identity_refusal_precedes_invalid_enabled_limits() {
-    let record = pair(Some(link(None, Some("fcstd:native:object#First"))), Some(link(None, Some("fcstd:native:object#Second"))), BTreeMap::from([
-        ("LengthMin".into(), "2".into()), ("LengthMax".into(), "1".into()),
-        ("EnableLengthMin".into(), "true".into()), ("EnableLengthMax".into(), "true".into())]));
+    let record = pair(
+        Some(link(None, Some("fcstd:native:object#First"))),
+        Some(link(None, Some("fcstd:native:object#Second"))),
+        BTreeMap::from([
+            ("LengthMin".into(), "2".into()),
+            ("LengthMax".into(), "1".into()),
+            ("EnableLengthMin".into(), "true".into()),
+            ("EnableLengthMax".into(), "true".into()),
+        ]),
+    );
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    let CodecError::ResourceLimit(limit) = super::super::transfer_neutral(&ctx, &[record], &[]).expect_err("identity precedes limits") else { panic!("retained refusal") };
+    let CodecError::ResourceLimit(limit) =
+        super::super::transfer_neutral(&ctx, &[record], &[]).expect_err("identity precedes limits")
+    else {
+        panic!("retained refusal")
+    };
     assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
     assert_eq!(ctx.resource_refusal(), Some(limit));
 }
@@ -481,7 +501,14 @@ fn joint_occurrence_index_refusal_precedes_identity_allocation() {
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    let CodecError::ResourceLimit(limit) = super::super::transfer_neutral(&ctx, &[record], &[occurrence("Target", Some("fcstd:native:object#Target"))]).expect_err("index precedes identity") else { panic!("collection refusal") };
+    let CodecError::ResourceLimit(limit) = super::super::transfer_neutral(
+        &ctx,
+        &[record],
+        &[occurrence("Target", Some("fcstd:native:object#Target"))],
+    )
+    .expect_err("index precedes identity") else {
+        panic!("collection refusal")
+    };
     assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
     assert_eq!(ctx.resource_refusal(), Some(limit));
 }

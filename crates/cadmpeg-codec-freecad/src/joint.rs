@@ -244,38 +244,59 @@ pub(crate) fn transfer_neutral(
             break;
         };
         let usable_references = match &record.body {
-            JointBody::Grounded { reference, .. } => reference.as_ref()
-                .filter(|reference| reference.object().is_some()).map(|reference| [Some(reference), None]),
-            JointBody::Pair { connectors, .. } => match (&connectors[0].reference, &connectors[1].reference) {
-                (Some(first), Some(second)) if first.object().is_some() && second.object().is_some() => Some([Some(first), Some(second)]),
-                _ => None,
-            },
-        };
-        if !occurrence_indexed && usable_references.is_some_and(|references| references.into_iter().flatten().any(|reference| reference.document().is_none())) {
-                let mut input = occurrences.iter();
-                while input.len() != 0 {
-                    let Some(occurrence) =
-                        ctx.next_charged(&mut input, "fcstd joint occurrences")?
-                    else {
-                        break;
-                    };
-                    if let Some(native) = occurrence.native_ref.as_deref() {
-                        lookup_storage.with_storage(|| {
-                            ctx.insert_btree_map(
-                                &mut occurrence_by_native,
-                                native,
-                                &occurrence.id,
-                                "fcstd joint occurrence index",
-                            )
-                        })?;
+            JointBody::Grounded { reference, .. } => reference
+                .as_ref()
+                .filter(|reference| reference.object().is_some())
+                .map(|reference| [Some(reference), None]),
+            JointBody::Pair { connectors, .. } => {
+                match (&connectors[0].reference, &connectors[1].reference) {
+                    (Some(first), Some(second))
+                        if first.object().is_some() && second.object().is_some() =>
+                    {
+                        Some([Some(first), Some(second)])
                     }
+                    _ => None,
                 }
-                occurrence_indexed = true;
+            }
+        };
+        if !occurrence_indexed
+            && usable_references.is_some_and(|references| {
+                references
+                    .into_iter()
+                    .flatten()
+                    .any(|reference| reference.document().is_none())
+            })
+        {
+            let mut input = occurrences.iter();
+            while input.len() != 0 {
+                let Some(occurrence) = ctx.next_charged(&mut input, "fcstd joint occurrences")?
+                else {
+                    break;
+                };
+                if let Some(native) = occurrence.native_ref.as_deref() {
+                    lookup_storage.with_storage(|| {
+                        ctx.insert_btree_map(
+                            &mut occurrence_by_native,
+                            native,
+                            &occurrence.id,
+                            "fcstd joint occurrence index",
+                        )
+                    })?;
+                }
+            }
+            occurrence_indexed = true;
         }
-        let id = usable_references.map(|_| {
-            JointId::mint(crate::native::model_id_charged(ctx, "joint", record.object(), "constraint")?)
+        let id = usable_references
+            .map(|_| {
+                JointId::mint(crate::native::model_id_charged(
+                    ctx,
+                    "joint",
+                    record.object(),
+                    "constraint",
+                )?)
                 .map_err(CodecError::malformed)
-        }).transpose()?;
+            })
+            .transpose()?;
         let parameters = record.parameters();
         let bool_value = |name: &str| parameters.bool_value(ctx, name);
         let scalar = |name: &str| parameters.scalar_value(ctx, name);
@@ -314,9 +335,7 @@ pub(crate) fn transfer_neutral(
                         })
                 }
             };
-        let operand = |reference: &LinkTarget,
-                           name: &str|
-         -> Result<JointOperand, CodecError> {
+        let operand = |reference: &LinkTarget, name: &str| -> Result<JointOperand, CodecError> {
             let object = ctx.copy_retained_text(name, "fcstd joint operand object")?;
             let mut subelements = Vec::new();
             let mut names = reference.subelements().iter();
@@ -372,7 +391,9 @@ pub(crate) fn transfer_neutral(
             "EnableLengthMax",
             1.0,
         )?;
-        let Some(id) = id else { continue; };
+        let Some(id) = id else {
+            continue;
+        };
         let mut joint = match &record.body {
             JointBody::Grounded {
                 reference,
@@ -752,7 +773,6 @@ fn enumeration_value(
     }
 }
 
-
 fn connector(
     ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
@@ -1003,8 +1023,8 @@ pub(crate) mod tests {
         let ctx = diagnostic_context(&arena, &policy);
         for (type_name, xml) in cases {
             let property = scalar_property(type_name, xml);
-            let error =
-                crate::native::joint::parameter_from_property(&ctx, &property).expect_err("diagnostic must be admitted");
+            let error = crate::native::joint::parameter_from_property(&ctx, &property)
+                .expect_err("diagnostic must be admitted");
             assert!(
                 matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
                 if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
@@ -1227,10 +1247,13 @@ pub(crate) mod tests {
             "fcstd:native:joint#Joint".into(),
             "fcstd:native:object#Joint".into(),
             crate::native::joint::JointBody::Grounded {
-                reference: Some(serde_json::from_value(serde_json::json!({
-                    "document": null, "document_attribute": null,
-                    "object": "fcstd:native:object#Target", "subelements": []
-                })).expect("local reference")),
+                reference: Some(
+                    serde_json::from_value(serde_json::json!({
+                        "document": null, "document_attribute": null,
+                        "object": "fcstd:native:object#Target", "subelements": []
+                    }))
+                    .expect("local reference"),
+                ),
                 placement: crate::native::frame::FiniteFrame::default(),
             },
             crate::native::joint::JointParameters::default(),

@@ -350,7 +350,13 @@ fn operation_parameters_reuse_owner_and_clone_only_emitted_values() {
         "fcstd operation parameter owner",
         |ctx| {
             let mut parameters = vec![existing.clone()];
-            super::super::append_operation_parameters(ctx, &mut parameters, &object, &owner, &[&valid])
+            super::super::append_operation_parameters(
+                ctx,
+                &mut parameters,
+                &object,
+                &owner,
+                &[&valid],
+            )
         },
     );
     assert!(matches!(owner_comparison_error,
@@ -363,7 +369,13 @@ fn operation_parameters_reuse_owner_and_clone_only_emitted_values() {
         "fcstd operation parameter owner",
         |ctx| {
             let mut parameters = Vec::new();
-            super::super::append_operation_parameters(ctx, &mut parameters, &object, &owner, &[&valid])
+            super::super::append_operation_parameters(
+                ctx,
+                &mut parameters,
+                &object,
+                &owner,
+                &[&valid],
+            )
         },
     );
     assert!(matches!(owner_output_error,
@@ -374,7 +386,13 @@ fn operation_parameters_reuse_owner_and_clone_only_emitted_values() {
     let marker = "test operation owner scope release marker";
     let error = crate::test_support::materialized_refusal_at(marker, |ctx| {
         let mut parameters = Vec::new();
-        super::super::append_operation_parameters(ctx, &mut parameters, &object, &owner, &[&valid])?;
+        super::super::append_operation_parameters(
+            ctx,
+            &mut parameters,
+            &object,
+            &owner,
+            &[&valid],
+        )?;
         assert_eq!(parameters.len(), 1);
         ctx.reserve_scoped(MEASUREMENT_MARKER_BYTES, marker)
             .map(drop)
@@ -925,19 +943,49 @@ fn constraint_boolean_attributes_use_the_shared_native_boolean_grammar() {
 
 #[test]
 fn cyclic_extrusion_preserves_taper_validation_and_side_selection() {
-    let object = object("fcstd:native:object#Pad", "PartDesign::Pad", 0, vec!["fcstd:native:object#Pad".into()]);
-    for (key, side, malformed) in [("TaperAngle", "0", true), ("TaperAngleRev", "0", true), ("TaperAngle2", "1", true), ("TaperAngle2", "0", false)] {
+    let object = object(
+        "fcstd:native:object#Pad",
+        "PartDesign::Pad",
+        0,
+        vec!["fcstd:native:object#Pad".into()],
+    );
+    for (key, side, malformed) in [
+        ("TaperAngle", "0", true),
+        ("TaperAngleRev", "0", true),
+        ("TaperAngle2", "1", true),
+        ("TaperAngle2", "0", false),
+    ] {
         let taper = super::scalar_property(object.id(), key, "90");
-        let side = property(object.id(), "SideType", "App::PropertyEnumeration", format!("<Property><Integer value=\"{side}\"/></Property>"));
+        let side = property(
+            object.id(),
+            "SideType",
+            "App::PropertyEnumeration",
+            format!("<Property><Integer value=\"{side}\"/></Property>"),
+        );
         crate::test_support::with_service_context(&[], |ctx| {
             let mut ir = cadmpeg_ir::document::CadIr::empty();
-            let result = super::super::transfer(ctx, &mut ir, std::slice::from_ref(&object), &[taper.clone(), side.clone()], &[], &[], None);
+            let result = super::super::transfer(
+                ctx,
+                &mut ir,
+                std::slice::from_ref(&object),
+                &[taper.clone(), side.clone()],
+                &[],
+                &[],
+                None,
+            );
             if malformed {
-                assert!(matches!(result, Err(CodecError::Malformed(ref message)) if message.starts_with(&format!("{key}: "))));
+                assert!(
+                    matches!(result, Err(CodecError::Malformed(ref message)) if message.starts_with(&format!("{key}: ")))
+                );
             } else {
                 let (cycles, _storage) = result.expect("unused second-side draft");
                 assert!(cycles.contains(object.id().as_str()));
-                assert!(matches!(ir.model.features[0].evaluation.definition(), FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Native { .. })));
+                assert!(matches!(
+                    ir.model.features[0].evaluation.definition(),
+                    FeatureDefinition::Operation(
+                        cadmpeg_ir::features::FeatureOperation::Native { .. }
+                    )
+                ));
             }
         });
     }
@@ -945,16 +993,49 @@ fn cyclic_extrusion_preserves_taper_validation_and_side_selection() {
 
 #[test]
 fn cyclic_extrusion_preserves_profile_placement_before_taper_error() {
-    let pad = object("fcstd:native:object#Pad", "PartDesign::Pad", 0, vec!["fcstd:native:object#Pad".into()]);
-    let profile = object("fcstd:native:object#Profile", "Sketcher::SketchObject", 1, Vec::new());
+    let pad = object(
+        "fcstd:native:object#Pad",
+        "PartDesign::Pad",
+        0,
+        vec!["fcstd:native:object#Pad".into()],
+    );
+    let profile = object(
+        "fcstd:native:object#Profile",
+        "Sketcher::SketchObject",
+        1,
+        Vec::new(),
+    );
     let mut link = membership_property(pad.id(), &[profile.id()]);
     link.name = "Profile".into();
     link.type_name = "App::PropertyLink".into();
-    let placement = placement_property(profile.id(), &[("Px", "0"), ("Py", "0"), ("Pz", "0"), ("Q0", "0"), ("Q1", "0"), ("Q2", "0"), ("Q3", "0")]);
+    let placement = placement_property(
+        profile.id(),
+        &[
+            ("Px", "0"),
+            ("Py", "0"),
+            ("Pz", "0"),
+            ("Q0", "0"),
+            ("Q1", "0"),
+            ("Q2", "0"),
+            ("Q3", "0"),
+        ],
+    );
     let taper = super::scalar_property(pad.id(), "TaperAngle", "90");
     crate::test_support::with_service_context(&[], |ctx| {
         let mut ir = cadmpeg_ir::document::CadIr::empty();
-        let error = super::super::transfer(ctx, &mut ir, &[pad, profile], &[link, placement, taper], &[], &[], None).err().expect("placement must be validated");
-        assert!(matches!(error, CodecError::Malformed(ref message) if message == "sketch Placement placement carrier has incomplete or invalid components"));
+        let error = super::super::transfer(
+            ctx,
+            &mut ir,
+            &[pad, profile],
+            &[link, placement, taper],
+            &[],
+            &[],
+            None,
+        )
+        .err()
+        .expect("placement must be validated");
+        assert!(
+            matches!(error, CodecError::Malformed(ref message) if message == "sketch Placement placement carrier has incomplete or invalid components")
+        );
     });
 }

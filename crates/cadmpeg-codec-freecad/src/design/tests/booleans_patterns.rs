@@ -166,16 +166,43 @@ fn multi_transform_seed_selection_borrows_identities_and_refuses_collection_limi
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    let (seeds, _storage) = crate::design::multi_transform_stage_seeds(&ctx, "stage", &features, std::slice::from_ref(&consumer), &properties_by_owner).expect("selection").expect("consumer seeds");
+    let (seeds, _storage) = crate::design::multi_transform_stage_seeds(
+        &ctx,
+        "stage",
+        &features,
+        std::slice::from_ref(&consumer),
+        &properties_by_owner,
+    )
+    .expect("selection")
+    .expect("consumer seeds");
     assert_eq!(seeds.len(), 1);
     assert!(std::ptr::eq(seeds[0], features.get("base").expect("seed")));
     assert_eq!(ctx.resource_refusal(), None);
     let invalid_factor = super::scalar_property("stage", "Factor", "0");
-    let object_by_id = crate::design::ObjectIndex::new(&ctx, std::slice::from_ref(&consumer)).expect("object index");
-    let predecessors = crate::design::BodyPredecessors::new(&ctx, std::slice::from_ref(&consumer), &features, &properties_by_owner).expect("predecessors");
-    let definition = crate::design::pattern_definition(&ctx, "PartDesign::Scaled", "stage", &[&invalid_factor], &features, crate::design::PatternSources {
-        objects: std::slice::from_ref(&consumer), object_by_id: &object_by_id, predecessors: &predecessors, properties_by_owner: &properties_by_owner, entries: &[]
-    }).expect("invalid factor does not retain discarded seeds");
+    let object_by_id = crate::design::ObjectIndex::new(&ctx, std::slice::from_ref(&consumer))
+        .expect("object index");
+    let predecessors = crate::design::BodyPredecessors::new(
+        &ctx,
+        std::slice::from_ref(&consumer),
+        &features,
+        &properties_by_owner,
+    )
+    .expect("predecessors");
+    let definition = crate::design::pattern_definition(
+        &ctx,
+        "PartDesign::Scaled",
+        "stage",
+        &[&invalid_factor],
+        &features,
+        crate::design::PatternSources {
+            objects: std::slice::from_ref(&consumer),
+            object_by_id: &object_by_id,
+            predecessors: &predecessors,
+            properties_by_owner: &properties_by_owner,
+            entries: &[],
+        },
+    )
+    .expect("invalid factor does not retain discarded seeds");
     assert!(definition.is_none());
     assert_eq!(ctx.resource_refusal(), None);
 }
