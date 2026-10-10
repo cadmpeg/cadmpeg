@@ -489,9 +489,14 @@ fn annotation_stream_result(
 ) -> Result<cadmpeg_ir::codec::Decoded, CodecError> {
     let source = text_sphere_stream(1.0);
     let header = crate::test_support::with_context(
-        &source, &cadmpeg_core::decode::DecodePolicy::service(), |fixture_context| {
-            cadmpeg_asm::sat::parse(fixture_context, &source).expect("text fixture")
-                .header.as_kernel_header(fixture_context).expect("kernel header")
+        &source,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+        |fixture_context| {
+            cadmpeg_asm::sat::parse(fixture_context, &source)
+                .expect("text fixture")
+                .header
+                .as_kernel_header(fixture_context)
+                .expect("kernel header")
         },
     );
     let mut brep = cadmpeg_asm::brep::AsmBrep::default();
@@ -499,21 +504,36 @@ fn annotation_stream_result(
         ("sat:brep:entity#1", streams[0], 11),
         ("sat:brep:entity#2", streams[1], 23),
     ] {
-        brep.annotation_records.push(cadmpeg_asm::brep::annotations::AnnotationRecord {
-            id: id.into(), stream: stream.into(), offset,
-            tag: cadmpeg_asm::brep::annotations::AnnotationTag::Record("sphere-surface".into()),
-            derived_fields: Vec::new(),
-        });
+        brep.annotation_records
+            .push(cadmpeg_asm::brep::annotations::AnnotationRecord {
+                id: id.into(),
+                stream: stream.into(),
+                offset,
+                tag: cadmpeg_asm::brep::annotations::AnnotationTag::Record("sphere-surface".into()),
+                derived_fields: Vec::new(),
+            });
     }
-    let (matched, kernel) = crate::dialect::layers(ctx, &crate::dialect::StreamEvidence::Text(None))?;
-    super::build_result(ctx, Some(brep), std::collections::BTreeMap::new(), &header, None, matched, kernel)
+    let (matched, kernel) =
+        crate::dialect::layers(ctx, &crate::dialect::StreamEvidence::Text(None))?;
+    super::build_result(
+        ctx,
+        Some(brep),
+        std::collections::BTreeMap::new(),
+        &header,
+        None,
+        matched,
+        kernel,
+    )
 }
 
 #[test]
 fn sat_annotation_stream_comparison_admits_each_visited_byte() {
     use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
 
-    let streams = [format!("a{}", "x".repeat(4096)), format!("b{}", "x".repeat(4096))];
+    let streams = [
+        format!("a{}", "x".repeat(4096)),
+        format!("b{}", "x".repeat(4096)),
+    ];
     let run = |limit| {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = limit;
@@ -521,21 +541,33 @@ fn sat_annotation_stream_comparison_admits_each_visited_byte() {
             let result = annotation_stream_result(ctx, [&streams[0], &streams[1]]);
             if let Err(CodecError::ResourceLimit(ref refusal)) = result {
                 assert_eq!(ctx.resource_refusal(), Some(refusal.clone()));
-                assert!(matches!(ctx.charge_work(0, "after annotation comparison refusal"),
-                    Err(CodecError::ResourceLimit(original)) if original == *refusal));
+                assert!(
+                    matches!(ctx.charge_work(0, "after annotation comparison refusal"),
+                    Err(CodecError::ResourceLimit(original)) if original == *refusal)
+                );
             }
             result
         })
     };
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::WorkUnits, "compare SAT annotation stream", run,
+        ResourceDimension::WorkUnits,
+        "compare SAT annotation stream",
+        run,
     );
-    let CodecError::ResourceLimit(limit) = error else { panic!("comparison refusal"); };
-    assert_eq!(limit.additional, 1, "admission precedes the first compared pair");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("comparison refusal");
+    };
+    assert_eq!(
+        limit.additional, 1,
+        "admission precedes the first compared pair"
+    );
     let decoded = run(DecodePolicy::service().limits.max_work_units).expect("first-byte mismatch");
     let provenance = decoded.source_fidelity.annotations.provenance;
     assert_eq!(provenance.len(), 2);
-    for (id, stream, offset) in [("sat:brep:entity#1", &streams[0], 11), ("sat:brep:entity#2", &streams[1], 23)] {
+    for (id, stream, offset) in [
+        ("sat:brep:entity#1", &streams[0], 11),
+        ("sat:brep:entity#2", &streams[1], 23),
+    ] {
         let record = &provenance[id];
         assert_eq!(record.stream(), format!("sat:{stream}"));
         assert_eq!(record.offset, offset);
@@ -550,7 +582,11 @@ fn sat_annotation_stream_length_mismatch_does_no_byte_work() {
     let long = "x".repeat(4096);
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = u64::MAX;
-    let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, "compare SAT annotation stream", None);
+    let _probe = RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "compare SAT annotation stream",
+        None,
+    );
     let decoded = crate::test_support::with_context(&[], &policy, |ctx| {
         let decoded = annotation_stream_result(ctx, [&long, "short"])
             .expect("different lengths execute no byte comparison");
@@ -558,7 +594,10 @@ fn sat_annotation_stream_length_mismatch_does_no_byte_work() {
         decoded
     });
     let provenance = decoded.source_fidelity.annotations.provenance;
-    assert_eq!(provenance["sat:brep:entity#1"].stream(), format!("sat:{long}"));
+    assert_eq!(
+        provenance["sat:brep:entity#1"].stream(),
+        format!("sat:{long}")
+    );
     assert_eq!(provenance["sat:brep:entity#2"].stream(), "sat:short");
     assert_eq!(provenance["sat:brep:entity#1"].offset, 11);
     assert_eq!(provenance["sat:brep:entity#2"].offset, 23);

@@ -210,7 +210,9 @@ fn text_header_magic_uses_the_admitted_first_field_scan() {
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("input");
     let error = super::looks_like_text_stream(&ctx, &bytes)
         .expect_err("the digit run must be admitted before scanning");
-    let CodecError::ResourceLimit(limit) = error else { panic!("work refusal expected"); };
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("work refusal expected");
+    };
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
     assert_eq!(limit.operation, "SAT text header line");
     assert_eq!(limit.used, 0);
@@ -219,7 +221,12 @@ fn text_header_magic_uses_the_admitted_first_field_scan() {
     assert!(matches!(super::looks_like_text_stream(&ctx, &bytes),
         Err(CodecError::ResourceLimit(original)) if original == limit));
     let service = cadmpeg_test_support::service_decode_context();
-    for invalid in [&b"70 0 6 0\n3"[..], b"700\t0 6 0\n3", b"700x 0 6 0\n3", b" 700 0 6 0\n3"] {
+    for invalid in [
+        &b"70 0 6 0\n3"[..],
+        b"700\t0 6 0\n3",
+        b"700x 0 6 0\n3",
+        b" 700 0 6 0\n3",
+    ] {
         assert!(!super::looks_like_text_stream(&service, invalid).expect("invalid discriminant"));
     }
     assert!(super::looks_like_text_stream(&service, b"000700 0 6 0\n3")
@@ -243,7 +250,9 @@ fn text_header_detection_has_an_exact_first_line_work_boundary() {
     policy.limits.max_work_units = WORK;
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("input");
     assert!(super::looks_like_text_stream(&ctx, &bytes).expect("exact header work fits"));
-    let error = ctx.charge_work(1, "after exact first line").expect_err("no unused work");
+    let error = ctx
+        .charge_work(1, "after exact first line")
+        .expect_err("no unused work");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits && limit.used == WORK));
     policy.limits.max_work_units = WORK - 1;
