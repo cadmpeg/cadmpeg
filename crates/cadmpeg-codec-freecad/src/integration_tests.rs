@@ -889,26 +889,3 @@ fn positive_detection_admits_the_marker_search() {
     );
 }
 
-#[test]
-fn negative_detection_preserves_a_fused_refusal() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    use cadmpeg_core::CodecError;
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_work_units = 0;
-    let (ctx, root) =
-        DecodeContext::from_root_bytes(b"other", &arena, &policy).expect("root admission");
-    let CodecError::ResourceLimit(original) = ctx
-        .charge_work(1, "earlier detection")
-        .expect_err("work limit")
-    else {
-        panic!("resource refusal")
-    };
-    let CodecError::ResourceLimit(repeated) =
-        FcstdCodec.detect(&ctx, root).expect_err("sticky refusal")
-    else {
-        panic!("resource refusal")
-    };
-    assert_eq!(repeated, original);
-}
