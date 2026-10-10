@@ -408,8 +408,7 @@ fn datum_reference_refuses(records: &str, operation: &str) {
                     &mut ctx.reserve_scoped(0, "reference fixture").expect("scope"),
                 ),
                 &ctx,
-            )
-            .map(|_| ());
+            );
             if let Err(CodecError::ResourceLimit(refusal)) = &result {
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
             }
@@ -471,8 +470,7 @@ fn placement_refuses(operation: &str) {
                 &mut BTreeMap::new(),
                 0,
                 &ctx,
-            )
-            .map(|_| ());
+            );
             if let Err(CodecError::ResourceLimit(refusal)) = &result {
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
             }

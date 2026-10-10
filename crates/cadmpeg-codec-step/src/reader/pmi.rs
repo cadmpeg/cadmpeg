@@ -3090,16 +3090,14 @@ fn characteristic_values(
                     }
                 }
             }
-            let selection = if named_count == 1 {
-                NominalSelection::Unique(named_first.expect("one named nominal"))
-            } else if named_count > 1 {
-                NominalSelection::NamedAmbiguous(named_count)
-            } else {
-                match values.as_slice() {
+            let selection = match named_count {
+                1 => NominalSelection::Unique(named_first.expect("one named nominal")),
+                0 => match values.as_slice() {
                     [] => NominalSelection::Absent,
                     [(_, value)] => NominalSelection::Unique(*value),
                     values => NominalSelection::UnnamedAmbiguous(values.len()),
-                }
+                },
+                count => NominalSelection::NamedAmbiguous(count),
             };
             let analysis = CharacteristicAnalysis {
                 selection,
