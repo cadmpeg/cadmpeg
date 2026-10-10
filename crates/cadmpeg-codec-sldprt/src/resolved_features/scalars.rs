@@ -334,6 +334,7 @@ impl<'lane, 'ctx> ObjectNames<'lane, 'ctx> {
             let mut source_names = self.by_object.borrow_mut();
             if source_names.index.is_none() {
                 const OPERATION: &str = "index SLDPRT object names by id";
+                let mut index_storage = self.ctx.reserve_scoped(0, OPERATION)?;
                 let mut index = std::collections::HashMap::new();
                 for name in self.ctx.admit_iter(&self.lane.names, OPERATION)? {
                     let Some(source) = name.object_id.and_then(ObjectId::value) else {
@@ -342,11 +343,12 @@ impl<'lane, 'ctx> ObjectNames<'lane, 'ctx> {
                     if let Some(previous) = self.ctx.get_mut_hash_map(&mut index, &source, OPERATION)? {
                         *previous = None;
                     } else {
-                        source_names.storage.with_storage(|| {
+                        index_storage.with_storage(|| {
                             self.ctx.insert_hash_map(&mut index, source, Some(name), OPERATION)
                         })?;
                     }
                 }
+                source_names.storage.absorb(&mut index_storage)?;
                 source_names.index = Some(index);
             }
             if let Some(index) = &source_names.index {
