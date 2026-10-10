@@ -1,9 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::super::CopiousProjectionOutcome;
+use super::super::{project, CopiousProjectionOutcome};
+use super::super::super::geometry::SourceSequences;
+use crate::parameter::{ParameterRecord, Token, TokenValue};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
-use std::collections::BTreeSet;
+use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::ids::{PointId, VertexId};
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::topology::{Point, Vertex};
+use cadmpeg_ir::CadIr;
+use std::collections::{BTreeMap, BTreeSet};
+use std::mem::{align_of, size_of};
 
 fn node_bytes() -> usize {
     let alignment = std::mem::align_of::<u32>()
@@ -181,5 +189,173 @@ fn copious_duplicate_merge_accepts_exact_whole_source_without_new_storage() {
         let free = ctx.reserve_scoped(allowance, "test duplicate source backing released").unwrap();
         drop(free);
         ctx.finish_session().unwrap();
+    }
+}
+
+fn point_source_work(count: usize, completed: usize) -> u64 {
+    if count == 0 {
+        return 0;
+    }
+    let sequence_node = 11 * (size_of::<PointId>() + size_of::<u32>())
+        + 16 * size_of::<usize>()
+        + 2 * align_of::<PointId>().max(align_of::<u32>()).max(align_of::<usize>());
+    // Directory visit1, parameter lookup4, tuple visits, and position Vec
+    // moves at capacities4/8/16/32. There are no exhausted iterator reads.
+    let mut work = 5 + count;
+    for capacity in [4, 8, 16, 32] {
+        if capacity < count {
+            work += capacity * size_of::<FinitePoint3>();
+        }
+    }
+    for existing in 0..completed {
+        let point_bytes = format!("iges:model:point#D1-{}", existing + 1).len();
+        let vertex_bytes = format!("iges:model:vertex#D1-{}", existing + 1).len();
+        // The fixture has at most64keys. A second level can first exist at
+        // eleven keys; lookup is bounded by min(keycount,11*height).
+        let comparisons = if existing < 11 { existing } else { existing.min(22) };
+        let node_added = existing == 0 || existing % 5 == 0;
+        // One source visit, two formatting passes per ID, two point copies
+        // and one vertex copy. Source index get_mut, contains and insert
+        // each compare the new key. Node work is one shift plus two passes
+        // when the insertion raises the node bound (n-1)/5+1.
+        work += 1 + 4 * point_bytes + 3 * vertex_bytes
+            + 3 * point_bytes * comparisons
+            + sequence_node * (1 + 2 * usize::from(node_added));
+        if existing >= 4 && existing.is_power_of_two() {
+            work += existing * (size_of::<Point>() + size_of::<Vertex>() + size_of::<VertexId>());
+        }
+    }
+    u64::try_from(work).unwrap()
+}
+
+fn point_projection_source_boundary(form: i64, count: usize, completed: usize, exact: bool) {
+    let bytes = crate::test_support::test_owned::owned_test_file(&[]);
+    let global = crate::test_support::with_service_context(&bytes, |setup| {
+        let scan = crate::card::scan_with_context(&bytes, setup).unwrap();
+        let (global, _, _) = crate::global::parse(&scan, setup).unwrap();
+        global.length_context().unwrap()
+    });
+    assert_eq!(global.length_factor_mm(), 1.0);
+    let mut entry = crate::test_support::directory_target(1, 106);
+    entry.form = form;
+    let directory = [entry];
+    let entries = BTreeMap::from([(1, &directory[0])]);
+    let mut values = vec![106, form, i64::try_from(count).unwrap()];
+    if form == 1 {
+        values.push(0);
+    }
+    let mut expected = CadIr::empty();
+    for index in 0..count {
+        let x = i64::try_from(index).unwrap();
+        match form {
+            1 => values.extend([x, 0]),
+            2 => values.extend([x, 0, 0]),
+            3 => values.extend([x, 0, 0, 0, 0, 1]),
+            _ => panic!("unsupported point fixture form"),
+        }
+        let point = PointId::mint(format!("iges:model:point#D1-{}", index + 1)).unwrap();
+        expected.model.points.push(Point::new(point.clone(),
+            FinitePoint3::new(Point3::new(f64::from(u32::try_from(index).unwrap()), 0.0, 0.0)).unwrap(), None));
+        expected.model.vertices.push(Vertex {
+            id: VertexId::mint(format!("iges:model:vertex#D1-{}", index + 1)).unwrap(),
+            point, tolerance: None,
+        });
+    }
+    expected.model.points.truncate(completed);
+    expected.model.vertices.truncate(completed);
+    let expected_free: Vec<_> = expected.model.vertices.iter().map(|vertex| vertex.id.clone()).collect();
+    let record = ParameterRecord::from_test_tokens(1, 1..2, Vec::new(), values.len(),
+        values.into_iter().map(|value| Token {
+            value: TokenValue::Integer(value), span: 0..0,
+        }).collect(), Vec::new());
+    let records = BTreeMap::from([(1, &record)]);
+    let cap = point_source_work(count, completed)
+        + if exact && count != 0 { u64::try_from(3 * node_bytes()).unwrap() } else { 0 };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = cap;
+    // One position, sequence entry, point, vertex and free-vertex slot per
+    // tuple, followed by one decoded sequence. Two entities per tuple.
+    policy.limits.max_collection_items = if count == 0 { 0 } else { u64::try_from(5 * count + 1).unwrap() };
+    policy.limits.max_entities = u64::try_from(2 * count).unwrap();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_recursion_depth = 0;
+    if count == 0 {
+        policy.limits.max_materialized_bytes = 0;
+    }
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut output = ctx.reserve_scoped(0, "test copious point source output").unwrap();
+    let mut sequences = SourceSequences::new(&ctx).unwrap();
+    let mut ir = CadIr::empty();
+    let source = if count == 0 { &[][..] } else { &directory[..] };
+    let result = output.with_storage(||
+        project(&mut ir, source, &entries, &records, &global, &ctx, &mut sequences));
+    if exact {
+        let outcome = result.unwrap();
+        assert_eq!(ir, expected);
+        assert_eq!(outcome.free_vertices, expected_free);
+        assert_eq!(outcome.decoded, if count == 0 { BTreeSet::new() } else { BTreeSet::from([1]) });
+        assert!(outcome.losses.is_empty() && outcome.wire_edges.is_empty());
+        drop(outcome);
+        drop(ir);
+        drop(sequences);
+        drop(output);
+        let allowance = policy.limits.max_materialized_bytes.min(16 * 1024 * 1024);
+        let released = ctx.reserve_scoped(allowance, "test copious point source released").unwrap();
+        drop(released);
+        let Err(CodecError::ResourceLimit(first)) = ctx.charge_work(1, "test copious exact point work") else {
+            panic!("expected exact completed point work");
+        };
+        assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+        assert_eq!((first.limit, first.used, first.additional), (cap, cap, 1));
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+    } else {
+        let first = match result.as_ref() {
+            Err(CodecError::ResourceLimit(first)) => *first,
+            _ => panic!("expected actual point source refusal"),
+        };
+        drop(result);
+        assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(first.operation, "iges copious point projection");
+        assert_eq!((first.limit, first.used, first.additional), (cap, cap, 1));
+        assert_eq!(ir, expected);
+        for _ in 0..64 {
+            for source in [&directory[..], &[][..]] {
+                assert!(matches!(project(&mut ir, source, &entries, &records, &global,
+                    &ctx, &mut sequences), Err(CodecError::ResourceLimit(last)) if last == first));
+                assert_eq!(ir, expected);
+            }
+        }
+        drop(ir);
+        drop(sequences);
+        drop(output);
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+    }
+}
+
+#[test]
+fn copious_point_sources_refuse_first_actual_position_visit() {
+    for form in [1, 2, 3] {
+        for count in [1, 64] {
+            point_projection_source_boundary(form, count, 0, false);
+        }
+    }
+}
+
+#[test]
+fn copious_point_sources_refuse_last_actual_position_visit() {
+    for form in [1, 2, 3] {
+        for count in [1, 64] {
+            point_projection_source_boundary(form, count, count - 1, false);
+        }
+    }
+}
+
+#[test]
+fn copious_point_sources_accept_exact_whole_work_without_an_exhausted_read() {
+    for form in [1, 2, 3] {
+        for count in [0, 1, 64] {
+            point_projection_source_boundary(form, count, count, true);
+        }
     }
 }
