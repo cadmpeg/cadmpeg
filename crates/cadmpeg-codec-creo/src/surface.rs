@@ -3533,6 +3533,9 @@ fn parsed_named_surface_value(
     refusal: &mut ScalarBodyRefusal,
     grid: Option<arrays::ScalarExtent<[u32; 2]>>,
 ) -> Option<Result<SurfaceNamedValue, CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     if body.is_empty() {
         return Some(Ok(SurfaceNamedValue::Empty));
     }
@@ -3598,7 +3601,14 @@ fn parsed_named_surface_value(
                             ) {
                                 return Some(Err(error));
                             }
-                            references.extend(start_id..end_id);
+                            let references_source = match ctx.admit_iter(
+                                start_id..end_id,
+                                "creo contiguous surface reference values",
+                            ) {
+                                Ok(source) => source,
+                                Err(error) => return Some(Err(error.into())),
+                            };
+                            references.extend(references_source);
                             return Some(Ok(SurfaceNamedValue::ContiguousEntityReferences(
                                 references,
                             )));
@@ -3630,18 +3640,29 @@ fn parsed_named_surface_value(
                     .transpose();
             }
             let mut values = Vec::new();
-            for _ in 0..count {
-                let (value, next) = compact_int(body, cursor);
-                if next == cursor {
+            let mut remaining = count;
+            let mut positions = cursor..body.len();
+            while remaining != 0 && !positions.is_empty() {
+                let Some(position) = (match ctx.next_charged(
+                    &mut positions,
+                    "creo compact surface integer dispatch",
+                ) {
+                    Ok(position) => position,
+                    Err(error) => return Some(Err(error)),
+                }) else {
                     break;
-                }
+                };
+                // A present compact integer always consumes at least one byte.
+                let (value, next) = compact_int(body, position);
                 if let Err(error) = ctx.reserve_vec(&mut values, 1, "creo compact surface integers")
                 {
                     return Some(Err(error));
                 }
                 values.push(value);
-                cursor = next;
+                positions.start = next;
+                remaining -= 1;
             }
+            cursor = positions.start;
             if Some(values.len()) == usize::try_from(count).ok() && cursor == body.len() {
                 return Some(Ok(SurfaceNamedValue::CompactIntArray(values)));
             }
@@ -3734,8 +3755,17 @@ fn parsed_named_surface_value(
         return None;
     }
     let mut values = Vec::new();
-    let mut cursor = 0;
-    while cursor < body.len() {
+    let mut positions = 0..body.len();
+    while !positions.is_empty() {
+        let Some(cursor) = (match ctx.next_charged(
+            &mut positions,
+            "creo named surface scalar dispatch",
+        ) {
+            Ok(cursor) => cursor,
+            Err(error) => return Some(Err(error)),
+        }) else {
+            break;
+        };
         if matches!(body[cursor], 0xe0..=0xe3 | 0xf1 | 0xf7 | 0xfb) {
             break;
         }
@@ -3761,7 +3791,7 @@ fn parsed_named_surface_value(
             return Some(Err(error));
         }
         values.push(value);
-        cursor = next;
+        positions.start = next;
     }
     if !values.is_empty() {
         return Some(Ok(SurfaceNamedValue::ScalarSequence(values)));
