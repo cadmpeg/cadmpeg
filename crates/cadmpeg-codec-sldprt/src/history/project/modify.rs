@@ -146,17 +146,7 @@ pub(super) fn project_fillet(
                 drop(storage);
                 if ctx.any_by(
                     &feature.parameters,
-                    |(name, _)| {
-                        let Some(suffix) = name.as_str().strip_prefix("Radius") else {
-                            return Ok(false);
-                        };
-                        Ok(!suffix.is_empty()
-                            && ctx.all_by(
-                                suffix.as_bytes(),
-                                |byte| Ok(byte.is_ascii_digit()),
-                                "scan SLDPRT fillet radius digits",
-                            )?)
-                    },
+                    |(name, _)| crate::history::classify::indexed_name_for_decode(ctx, name.as_str(), "Radius"),
                     "scan SLDPRT project_fillet map keys",
                 )? {
                     RadiusSpec::Unresolved {

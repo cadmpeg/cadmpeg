@@ -431,30 +431,39 @@ pub(in crate::history) fn rewrite_parameter_expression(
     expression: &str,
     aliases: &HashMap<String, String>,
 ) -> Result<Option<String>, CodecError> {
+    if aliases.is_empty() {
+        return Ok(None);
+    }
     let (tokens, _token_storage) = expression_identifier_tokens(ctx, expression)?;
     let Some(tokens) = tokens else {
         return Ok(None);
     };
-    let mut rewritten = String::with_capacity(expression.len());
+    const OPERATION: &str = "rewrite SLDPRT parameter expression";
+    let mut rewritten = String::new();
     let mut tail = expression;
     let mut replaced = false;
-    for token in tokens {
+    for token in ctx.admit_iter(tokens, OPERATION)? {
         if token.is_syntax(ctx)? {
             continue;
         }
-        let Some(replacement) = aliases.get(token.value()) else {
+        let Some(replacement) = ctx.get_hash_map(aliases, token.value(), OPERATION)? else {
             continue;
         };
         let Some(preceding) = token.preceding(tail) else {
             continue;
         };
-        rewritten.push_str(preceding);
-        if token.is_quoted() || !unquoted_expression_identifier(replacement) {
-            rewritten.push('"');
-            rewritten.push_str(&replacement.replace('"', "\"\""));
-            rewritten.push('"');
+        ctx.append_retained(&mut rewritten, preceding, OPERATION)?;
+        if token.is_quoted() || !unquoted_expression_identifier(ctx, replacement)? {
+            ctx.push_retained_char(&mut rewritten, '"', OPERATION)?;
+            for character in ctx.admit_iter(replacement.as_str(), OPERATION)? {
+                ctx.push_retained_char(&mut rewritten, character, OPERATION)?;
+                if character == '"' {
+                    ctx.push_retained_char(&mut rewritten, '"', OPERATION)?;
+                }
+            }
+            ctx.push_retained_char(&mut rewritten, '"', OPERATION)?;
         } else {
-            rewritten.push_str(replacement);
+            ctx.append_retained(&mut rewritten, replacement, OPERATION)?;
         }
         tail = token.following();
         replaced = true;
@@ -462,19 +471,30 @@ pub(in crate::history) fn rewrite_parameter_expression(
     if !replaced {
         return Ok(None);
     }
-    rewritten.push_str(tail);
+    ctx.append_retained(&mut rewritten, tail, OPERATION)?;
     Ok(Some(rewritten))
 }
 
-pub(in crate::history) fn unquoted_expression_identifier(value: &str) -> bool {
+pub(in crate::history) fn unquoted_expression_identifier(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    value: &str,
+) -> Result<bool, CodecError> {
+    const OPERATION: &str = "recognize SLDPRT unquoted expression identifier";
     let mut characters = value.chars();
-    characters.next().is_some_and(|character| {
-        !character.is_ascii_digit()
-            && character != '.'
-            && (character.is_ascii_alphanumeric() || matches!(character, '_' | '@' | '$'))
-    }) && characters.all(|character| {
-        character.is_ascii_alphanumeric() || matches!(character, '_' | '@' | '$' | '.')
-    })
+    let Some(first) = ctx.next_charged(&mut characters, OPERATION)? else {
+        return Ok(false);
+    };
+    if first.is_ascii_digit()
+        || first == '.'
+        || !(first.is_ascii_alphanumeric() || matches!(first, '_' | '@' | '$'))
+    {
+        return Ok(false);
+    }
+    ctx.all_by(
+        characters,
+        |character| Ok(character.is_ascii_alphanumeric() || matches!(character, '_' | '@' | '$' | '.')),
+        OPERATION,
+    )
 }
 
 pub(super) fn restore_equivalent_parameter_expressions(

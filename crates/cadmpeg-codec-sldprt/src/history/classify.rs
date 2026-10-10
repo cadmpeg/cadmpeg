@@ -780,12 +780,35 @@ pub(super) fn loft_op(kind: &str) -> Option<BooleanOp> {
 }
 
 /// Whether `name` is `prefix` followed by a non-empty run of ASCII digits.
-///
-/// A decode caller admits the text before checking its digit suffix.
 pub(super) fn indexed_name(name: &str, prefix: &str) -> bool {
-    name.strip_prefix(prefix).is_some_and(|suffix| {
-        !suffix.is_empty() && suffix.bytes().all(|byte| byte.is_ascii_digit())
+    match indexed_name_with(name, prefix, |suffix| {
+        Ok::<_, std::convert::Infallible>(suffix.iter().all(u8::is_ascii_digit))
+    }) {
+        Ok(indexed) => indexed,
+        Err(never) => match never {},
+    }
+}
+
+/// Recognize an indexed name, admitting only the visited digit suffix.
+pub(super) fn indexed_name_for_decode(
+    ctx: &DecodeContext<'_>,
+    name: &str,
+    prefix: &str,
+) -> Result<bool, CodecError> {
+    indexed_name_with(name, prefix, |suffix| {
+        ctx.all_by(suffix, |byte| Ok(byte.is_ascii_digit()), "scan SLDPRT fillet radius digits")
     })
+}
+
+fn indexed_name_with<E>(
+    name: &str,
+    prefix: &str,
+    digits: impl FnOnce(&[u8]) -> Result<bool, E>,
+) -> Result<bool, E> {
+    let Some(suffix) = name.strip_prefix(prefix).filter(|suffix| !suffix.is_empty()) else {
+        return Ok(false);
+    };
+    digits(suffix.as_bytes())
 }
 
 #[cfg(test)]

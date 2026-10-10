@@ -265,7 +265,7 @@ fn numeric_literals_do_not_bind_numeric_parameter_names() {
         by_name["Reference"].value,
         Some(ParameterValue::Length(Length::new(6.0).unwrap()))
     );
-    assert!(!unquoted_expression_identifier("4"));
+    assert!(!unquoted_expression_identifier(&cadmpeg_test_support::service_decode_context(), "4").unwrap());
     assert_eq!(
         rewrite_parameter_expression(
             &cadmpeg_test_support::service_decode_context(),
@@ -881,7 +881,7 @@ fn coherence_without_a_stated_value_leaves_expression_unread() {
 }
 
 #[test]
-fn empty_quoted_equation_alias_evaluates_consumer() {
+fn empty_quoted_equation_alias_does_not_evaluate_consumer() {
     let mut owner = feature("owner", Some("1"), 0);
     owner.parameters = BTreeMap::from([
         (cadmpeg_core::nonblank_literal!("Width"), "1".into()),
@@ -921,7 +921,7 @@ fn empty_quoted_equation_alias_evaluates_consumer() {
             .find(|p| p.name.as_str() == "Consumer")
             .unwrap()
             .value,
-        Some(ParameterValue::Integer(2))
+        None
     );
     let _storage;
     let aliases;
@@ -929,9 +929,15 @@ fn empty_quoted_equation_alias_evaluates_consumer() {
         ParameterAliases::scoped(&ctx, &parameters, &HashMap::new(), &HashSet::new()).unwrap();
     assert_eq!(
         parameters_with_unevaluable_expressions(&ctx, &parameters, &aliases, &[]).unwrap(),
-        0
+        1
     );
     assert!(expression_identifiers("\"\"").next().is_none());
+    assert!(parameters
+        .iter()
+        .find(|p| p.name.as_str() == "Consumer")
+        .unwrap()
+        .dependencies
+        .is_empty());
 }
 
 #[test]
@@ -1091,4 +1097,48 @@ fn configured_validation_reference_builds_no_model_value_index() {
         0
     );
     assert!(ctx.resource_refusal().is_none());
+}
+
+#[test]
+fn expression_rewrite_skips_output_storage_without_replacements() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert_eq!(rewrite_parameter_expression(&ctx, &"A+".repeat(4096), &HashMap::new()).unwrap(), None);
+    ctx.finish_session().unwrap();
+
+    policy.limits.max_materialized_bytes = u64::MAX;
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert_eq!(rewrite_parameter_expression(&ctx, "A + A", &HashMap::from([("B".into(), "C".into())])).unwrap(), None);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn expression_rewrite_preserves_unicode_quotes_and_repeated_token_offsets() {
+    let aliases = HashMap::from([("A".into(), "quoted\"owner".into()), ("β".into(), "δ".into())]);
+    assert_eq!(rewrite_parameter_expression(&cadmpeg_test_support::service_decode_context(), "A + A + \"β\"", &aliases).unwrap().as_deref(), Some("\"quoted\"\"owner\" + \"quoted\"\"owner\" + \"δ\""));
+}
+
+#[test]
+fn expression_rewrite_refuses_admitted_output_storage() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    for dimension in [ResourceDimension::RetainedBytes, ResourceDimension::WorkUnits] {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(dimension, "rewrite SLDPRT parameter expression", |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
+                ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+                _ => unreachable!(),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            rewrite_parameter_expression(&ctx, "A + A", &HashMap::from([("A".into(), "B".into())]))?;
+            ctx.finish_session()
+        });
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == dimension));
+    }
 }

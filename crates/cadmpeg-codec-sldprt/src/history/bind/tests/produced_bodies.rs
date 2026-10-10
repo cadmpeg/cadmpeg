@@ -29,11 +29,10 @@ fn projected() -> Feature {
 
 #[test]
 fn produced_body_membership_retires_before_output_validation() {
-    // One-entry tables: ordinal131, owners131, seen99, produced163
-    // plus one exact8-byte group slot, and record sources131. The seen
-    // table dies before record sources. Output validation's two-pointer
-    // membership key needs99 while the other live tables hold564.
-    const MATERIALIZED: u64 = 131 + 131 + 163 + 8 + 131 + 99;
+    // One-entry tables: owners131, seen99, produced163 plus one exact8-byte
+    // group slot, and record sources131. Seen storage dies before record sources.
+    // Output validation needs99 while the remaining live tables hold433.
+    const MATERIALIZED: u64 = 131 + 163 + 8 + 131 + 99;
     let fixture = face_owner_fixture();
     let model = &fixture.ir().model;
     let histories = [history()];
@@ -78,66 +77,36 @@ fn produced_body_membership_preserves_actual_refusals() {
     let model = &fixture.ir().model;
     let histories = [history()];
     let producers = [(model.faces[0].id.as_str(), 700)];
-    // Before produced membership, ordinal131 remains live while the owner
-    // lookup builds region131 and shell131. Thus360 refuses the shell first.
-    for (dimension, cap, used, additional, operation) in [
-        (
-            ResourceDimension::MaterializedBytes,
-            360,
-            262,
-            131,
-            "index SLDPRT face owner shells",
-        ),
-        (
-            ResourceDimension::CollectionItems,
-            4,
-            4,
-            1,
-            "collect SLDPRT produced bodies",
-        ),
-        (
-            ResourceDimension::MaterializedBytes,
-            662,
-            564,
-            99,
-            "validate distinct decoded members",
-        ),
+    for (dimension, operation) in [
+        (ResourceDimension::MaterializedBytes, "index SLDPRT face owner shells"),
+        (ResourceDimension::CollectionItems, "collect SLDPRT produced bodies"),
+        (ResourceDimension::MaterializedBytes, "validate distinct decoded members"),
     ] {
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
-            _ => panic!("produced body resource dimension"),
-        }
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut features = [projected()];
-        let Err(CodecError::ResourceLimit(limit)) = derive_feature_outputs(
-            &ctx,
-            &mut features,
-            &histories,
-            FeatureOutputSources {
-                face_producers: &producers,
-                body_modifiers: &[],
-            },
-            &model.faces,
-            &model.shells,
-            &model.regions,
-        ) else {
-            panic!("required produced body backing refuses before publication");
-        };
+        let error = cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
+                ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+                _ => panic!("produced body resource dimension"),
+            }
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut features = [projected()];
+            let result = derive_feature_outputs(
+                &ctx, &mut features, &histories,
+                FeatureOutputSources { face_producers: &producers, body_modifiers: &[] },
+                &model.faces, &model.shells, &model.regions,
+            );
+            if let Err(CodecError::ResourceLimit(limit)) = &result {
+                assert!(features[0].evaluation.outputs().is_empty());
+                assert_eq!(ctx.resource_refusal(), Some(*limit));
+                assert!(matches!(ctx.charge_work(0, "after produced body refusal"), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit));
+                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit));
+            }
+            result
+        });
+        let CodecError::ResourceLimit(limit) = error else { panic!("required produced body backing refuses before publication"); };
         assert_eq!(limit.dimension, dimension);
         assert_eq!(limit.operation, operation);
-        assert_eq!(limit.limit, cap);
-        assert_eq!(limit.used, used);
-        assert_eq!(limit.additional, additional);
-        assert!(features[0].evaluation.outputs().is_empty());
-        assert_eq!(ctx.resource_refusal(), Some(limit));
-        assert!(
-            matches!(ctx.charge_work(0, "after produced body refusal"), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-        );
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-        );
     }
 }
