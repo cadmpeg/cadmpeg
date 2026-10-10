@@ -279,21 +279,21 @@ pub(crate) enum ExtrusionLabel {
 }
 
 impl SurfacePrototypeFamily {
-    fn from_known_name(name: &str) -> Option<Self> {
+    fn from_known_name_bytes(name: &[u8]) -> Option<Self> {
         match name {
-            "plane" => Some(Self::Plane),
-            "cylinder" => Some(Self::Cylinder),
-            "cone" => Some(Self::Cone),
-            "torus" => Some(Self::Torus(TorusLabel::Torus)),
-            "sphere" => Some(Self::Torus(TorusLabel::Sphere)),
-            "spline" => Some(Self::Spline(SplineLabel::Spline)),
-            "splsrf" => Some(Self::Spline(SplineLabel::Splsrf)),
-            "fillet" => Some(Self::Fillet(FilletLabel::Fillet)),
-            "fillet_srf" => Some(Self::Fillet(FilletLabel::FilletSrf)),
-            "surface_of_extrusion" => Some(Self::Extrusion(ExtrusionLabel::SurfaceOfExtrusion)),
-            "extrusion" => Some(Self::Extrusion(ExtrusionLabel::Extrusion)),
-            "tab_cyl" => Some(Self::Extrusion(ExtrusionLabel::TabulatedCylinder)),
-            "ruled_srf" => Some(Self::Extrusion(ExtrusionLabel::RuledSurface)),
+            b"plane" => Some(Self::Plane),
+            b"cylinder" => Some(Self::Cylinder),
+            b"cone" => Some(Self::Cone),
+            b"torus" => Some(Self::Torus(TorusLabel::Torus)),
+            b"sphere" => Some(Self::Torus(TorusLabel::Sphere)),
+            b"spline" => Some(Self::Spline(SplineLabel::Spline)),
+            b"splsrf" => Some(Self::Spline(SplineLabel::Splsrf)),
+            b"fillet" => Some(Self::Fillet(FilletLabel::Fillet)),
+            b"fillet_srf" => Some(Self::Fillet(FilletLabel::FilletSrf)),
+            b"surface_of_extrusion" => Some(Self::Extrusion(ExtrusionLabel::SurfaceOfExtrusion)),
+            b"extrusion" => Some(Self::Extrusion(ExtrusionLabel::Extrusion)),
+            b"tab_cyl" => Some(Self::Extrusion(ExtrusionLabel::TabulatedCylinder)),
+            b"ruled_srf" => Some(Self::Extrusion(ExtrusionLabel::RuledSurface)),
             _ => None,
         }
     }
@@ -4145,17 +4145,16 @@ fn named_prototype_frames<'a>(
             break;
         };
         let family_bytes = &payload[family_start..close];
-        let family = match ctx.validate_utf8(family_bytes, "creo UTF-8 validation")? {
-            Ok(name) => SurfacePrototypeFamily::from_known_name(name).map_or_else(
-                || {
-                    ctx.copy_retained_text(name, "creo prototype family name")
-                        .map(SurfacePrototypeFamily::Other)
+        let family = match SurfacePrototypeFamily::from_known_name_bytes(family_bytes) {
+            Some(family) => family,
+            None => SurfacePrototypeFamily::Other(
+                match ctx.validate_utf8(family_bytes, "creo UTF-8 validation")? {
+                    Ok(name) => ctx.copy_retained_text(name, "creo prototype family name")?,
+                    Err(_) => ctx.copy_retained_lossy_utf8(
+                        family_bytes, "creo prototype family name",
+                    )?,
                 },
-                Ok,
-            )?,
-            Err(_) => SurfacePrototypeFamily::Other(ctx.copy_retained_lossy_utf8(
-                family_bytes, "creo prototype family name",
-            )?),
+            ),
         };
         const BOUNDARY_MARKERS: [&[u8]; 6] = [
             b"srf_prim_ptr(", b"srf_prim_ptr\0", b"\xe0\x00entity_ptr(",
@@ -8643,10 +8642,7 @@ pub(crate) fn prototype_count(
         else {
             break;
         };
-        if ctx
-            .validate_utf8(&payload[family_start..close], "creo UTF-8 validation")?
-            .ok()
-            .and_then(SurfacePrototypeFamily::from_known_name)
+        if SurfacePrototypeFamily::from_known_name_bytes(&payload[family_start..close])
             .is_some()
         {
             named += 1;

@@ -286,18 +286,10 @@ fn prototype_family_utf8_refuses_before_unknown_family() {
 }
 
 #[test]
-fn prototype_count_utf8_refuses_before_unknown_family() {
-    let error = crate::test_support::last_refusal_at(
-        &[],
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "creo UTF-8 validation",
-        |ctx| super::super::prototype_count(ctx, b"srf_prim_ptr(\xff)\0"),
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo UTF-8 validation")
-    );
+fn prototype_count_ignores_invalid_unknown_family_bytes() {
+    assert_eq!(super::work_output(|ctx| {
+        super::super::prototype_count(ctx, b"srf_prim_ptr(\xff)\0")
+    }), 0);
 }
 
 #[test]
