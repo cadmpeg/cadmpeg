@@ -449,26 +449,16 @@ impl<C: CodecBackend + ?Sized> Codec for C {
             limits: options.limits,
         };
         let (ctx, root) = DecodeContext::read_root(reader, &arena, &policy, false)?;
-        let result = (|| {
-            let result = self.inspect_impl(&ctx, root)?;
-            if !ctx.equal_bytes(
-                result.format().as_bytes(),
-                C::FORMAT.as_str().as_bytes(),
-                "inspect format identity",
-            )? {
-                return Err(CodecError::WrongFormat(ctx.format_retained(
-                    format_args!(
-                        "codec {:?} inspected a {:?} container",
-                        C::FORMAT.as_str(),
-                        result.format()
-                    ),
-                    "inspect format refusal",
-                )?));
-            }
-            Ok(result)
-        })();
-        ctx.finish_session()?;
-        result
+        let result = self.inspect_impl(&ctx, root);
+        let result = ctx.finish(result)?;
+        if result.format() != C::FORMAT.as_str() {
+            return Err(CodecError::WrongFormat(format!(
+                "codec {:?} inspected a {:?} container",
+                C::FORMAT.as_str(),
+                result.format()
+            )));
+        }
+        Ok(result)
     }
 
     fn decode(
@@ -480,8 +470,7 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         let (ctx, root) =
             DecodeContext::read_root(reader, &arena, &options.policy, options.container_only)?;
         let result = self.decode_with_context(&ctx, root, options);
-        ctx.finish_session()?;
-        result
+        ctx.finish(result)
     }
 
     fn decode_with_context(
