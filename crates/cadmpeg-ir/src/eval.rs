@@ -6660,7 +6660,7 @@ fn variable_blend_contact_track(
     };
     // A non-finite offset-pcurve point still reaches the actual support.
     let uv = pcurve.point.map_or_else(|point| point, FinitePoint2::get);
-    let support = model_surface_first_order_by_id(admission, index, surface, uv.u, uv.v)
+    let support = surface_request::model::first_order(admission, index, surface, uv.u, uv.v)
         .map_err(|failure| failure.map(|_| ()))?;
     let uv_tangent = if request == ContactRequest::Support {
         Err(no_value)
@@ -7732,107 +7732,9 @@ pub fn model_surface_partials_by_id(
     v: f64,
 ) -> Result<SurfacePartials<FinitePoint3, FiniteVector3>, EvaluationFailure<Point3>> {
     admission.within_model(|admission| {
-        model_surface_first_order_by_id(admission, index, surface, u, v)
+        surface_request::model::first_order(admission, index, surface, u, v)
             .and_then(SurfaceFirstOrder::partials)
     })
-}
-
-/// The point and first partials of an arena surface, the first partials
-/// with their own outcome, or why the point has none.
-///
-/// A cacheless blend or sweep whose point and first partials both have
-/// values is evaluated with the selected admission policy.
-/// Otherwise one with a current cache falls back to the cache: the cache's
-/// complete evaluation wins, then an evaluation with a point, the cacheless
-/// one first; of two failures, the cacheless one outside the finite range
-/// wins.
-fn model_surface_first_order_by_id(
-    admission: admission::EvaluationAdmission<'_, '_>,
-    index: &crate::index::ModelIndex<'_>,
-    surface: &crate::ids::SurfaceId,
-    u: f64,
-    v: f64,
-) -> Result<SurfaceFirstOrder, EvaluationFailure<Point3>> {
-    let budget = admission.work_slice();
-    let _depth =
-        ModelEvaluationDepthGuard::enter(budget).map_err(EvaluationFailure::ResourceLimit)?;
-    let cacheless = match index
-        .procedural_surface_for_surface(surface.as_str(), admission)
-        .map_err(EvaluationFailure::ResourceLimit)?
-        .map(crate::geometry::ProceduralSurface::definition)
-    {
-        Some(ProceduralSurfaceDefinition::Blend(definition_payload)) => {
-            definition_payload.native().map(|native| {
-                (
-                    cacheless_constant_rolling_ball_first_order(
-                        admission,
-                        index,
-                        definition_payload,
-                        u,
-                        v,
-                    ),
-                    revision_surface_tail_has_current_cache(&native.cache),
-                )
-            })
-        }
-        Some(ProceduralSurfaceDefinition::VariableBlend(definition_payload)) => {
-            let construction = definition_payload.construction();
-            Some((
-                cacheless_variable_blend_first_order(admission, index, definition_payload, u, v),
-                variable_blend_has_current_cache(construction),
-            ))
-        }
-        Some(ProceduralSurfaceDefinition::Sweep(definition_payload)) => {
-            definition_payload.native().as_deref().map(|construction| {
-                (
-                    cacheless_law_sweep_first_order(
-                        admission,
-                        index,
-                        definition_payload.profile(),
-                        definition_payload.spine(),
-                        construction,
-                        u,
-                        v,
-                    ),
-                    sweep_has_current_cache(construction),
-                )
-            })
-        }
-        _ => None,
-    };
-    let cached =
-        || surface_request::model_jet(admission, index, surface, u, v, SurfaceRequest::First).map(SurfaceJet::first_order);
-    let complete = |order: &Result<SurfaceFirstOrder, EvaluationFailure<Point3>>| match order {
-        Ok(order) => match &order.first {
-            Ok(_) => Ok(true),
-            Err(EvaluationFailure::ResourceLimit(limit)) => {
-                Err(EvaluationFailure::ResourceLimit(*limit))
-            }
-            Err(EvaluationFailure::NoValue | EvaluationFailure::NonFinite(())) => Ok(false),
-        },
-        Err(EvaluationFailure::ResourceLimit(limit)) => {
-            Err(EvaluationFailure::ResourceLimit(*limit))
-        }
-        Err(EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_)) => Ok(false),
-    };
-    let Some((cacheless, has_current_cache)) = cacheless else {
-        return cached();
-    };
-    if complete(&cacheless)? || !has_current_cache {
-        return cacheless;
-    }
-    let cached = cached();
-    if complete(&cached)? {
-        return cached;
-    }
-    match (cacheless, cached) {
-        (Ok(order), _) | (Err(_), Ok(order)) => Ok(order),
-        (Err(cacheless), Err(cached)) => Err(match cacheless {
-            EvaluationFailure::NonFinite(_) => cacheless,
-            EvaluationFailure::NoValue => cached,
-            EvaluationFailure::ResourceLimit(limit) => EvaluationFailure::ResourceLimit(limit),
-        }),
-    }
 }
 
 fn model_surface_second_partials_by_id(
