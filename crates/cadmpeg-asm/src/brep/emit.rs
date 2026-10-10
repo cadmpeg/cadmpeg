@@ -6018,8 +6018,9 @@ pub(super) fn emit_attributes(
         ..
     } = reach;
     let mut emitted_attributes = HashSet::new();
-    let mut attribute_targets = HashMap::new();
     let mut target_storage = ctx.reserve_scoped(0, "ASM attribute target storage")?;
+    let mut attribute_targets = HashMap::new();
+    let mut inherited_targets = HashMap::new();
     let mut body_ids = HashSet::new();
     let mut source_values = out.bodies.iter();
     while !source_values.as_slice().is_empty() {
@@ -6165,7 +6166,8 @@ pub(super) fn emit_attributes(
             continue;
         }
         if let Some(target) = attribute_owner(record)
-            .map(|owner| inherited_attribute_target(ctx, owner, by_index, &attribute_targets))
+            .map(|owner| inherited_attribute_target(ctx, owner, by_index, &attribute_targets,
+                &mut inherited_targets, &mut target_storage))
             .transpose()?
             .flatten()
         {
