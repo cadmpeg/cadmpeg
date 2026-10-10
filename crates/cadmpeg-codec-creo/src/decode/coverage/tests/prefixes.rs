@@ -82,12 +82,17 @@ fn native_constraint_kind_coverage_preserves_counts() {
         native_ref: None,
     };
     let [coverage] = crate::test_support::assert_work_boundaries(
-        &["creo constraint coverage traversal", "creo constraint identity marker"],
-        |ctx| design_constraint_transfer_coverage(
-            ctx,
-            std::slice::from_ref(&constraint),
-            [(":relation:", "creo:relation:")],
-        ),
+        &[
+            "creo constraint coverage traversal",
+            "creo constraint identity marker",
+        ],
+        |ctx| {
+            design_constraint_transfer_coverage(
+                ctx,
+                std::slice::from_ref(&constraint),
+                [(":relation:", "creo:relation:")],
+            )
+        },
     );
     assert_eq!(coverage.transferred, 1);
     assert_eq!(coverage.native, 1);
@@ -101,12 +106,9 @@ fn curve_coverage_admits_model_traversal_and_uses_scoped_lookup_storage() {
     let curve = curve(CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
         record: None,
     }));
-    crate::test_support::assert_work_boundaries(
-        &[
-            "creo curve coverage traversal",
-        ],
-        |ctx| curve_transfer_coverage(ctx, &[], std::slice::from_ref(&curve)),
-    );
+    crate::test_support::assert_work_boundaries(&["creo curve coverage traversal"], |ctx| {
+        curve_transfer_coverage(ctx, &[], std::slice::from_ref(&curve))
+    });
     let error = crate::test_support::last_refusal_at(
         &[],
         ResourceDimension::MaterializedBytes,
@@ -122,12 +124,9 @@ fn surface_coverage_admits_model_traversal_and_uses_scoped_lookup_storage() {
     let surface = surface(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
         record: None,
     }));
-    crate::test_support::assert_work_boundaries(
-        &[
-            "creo surface coverage traversal",
-        ],
-        |ctx| surface_transfer_coverage(ctx, &[], std::slice::from_ref(&surface), &[]),
-    );
+    crate::test_support::assert_work_boundaries(&["creo surface coverage traversal"], |ctx| {
+        surface_transfer_coverage(ctx, &[], std::slice::from_ref(&surface), &[])
+    });
     let error = crate::test_support::last_refusal_at(
         &[],
         ResourceDimension::MaterializedBytes,

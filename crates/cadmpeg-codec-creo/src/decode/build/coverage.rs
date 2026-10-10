@@ -290,41 +290,40 @@ pub(super) fn collect_feature_coverage(
                         }
                     );
                 }
-                let has_generated_surface = if let Some(digits) =
-                    feature.id.as_str().strip_prefix("creo:model:feature#")
-                {
-                    let parsed = if digits.len() <= 10 {
-                        digits.parse::<u32>()
-                    } else {
-                        ctx.parse_text::<u32>(digits, "creo fillet feature ID parsing")?
-                    };
-                    if let Ok(feature_id) = parsed {
-                        let generated = match &generated_features {
-                            Some(generated) => generated,
-                            None => {
-                                let mut generated = std::collections::HashSet::new();
-                                for row in ctx.admit_iter(
-                                    &*scan.surfaces.rows,
-                                    "creo generated feature surface coverage traversal",
-                                )? {
-                                    lookup_storage.with_storage(|| {
-                                        ctx.insert_hash_set(
-                                            &mut generated,
-                                            row.feature_id,
-                                            "creo generated feature surface coverage nodes",
-                                        )
-                                    })?;
-                                }
-                                generated_features.insert(generated)
-                            }
+                let has_generated_surface =
+                    if let Some(digits) = feature.id.as_str().strip_prefix("creo:model:feature#") {
+                        let parsed = if digits.len() <= 10 {
+                            digits.parse::<u32>()
+                        } else {
+                            ctx.parse_text::<u32>(digits, "creo fillet feature ID parsing")?
                         };
-                        generated.contains(&feature_id)
+                        if let Ok(feature_id) = parsed {
+                            let generated = match &generated_features {
+                                Some(generated) => generated,
+                                None => {
+                                    let mut generated = std::collections::HashSet::new();
+                                    for row in ctx.admit_iter(
+                                        &*scan.surfaces.rows,
+                                        "creo generated feature surface coverage traversal",
+                                    )? {
+                                        lookup_storage.with_storage(|| {
+                                            ctx.insert_hash_set(
+                                                &mut generated,
+                                                row.feature_id,
+                                                "creo generated feature surface coverage nodes",
+                                            )
+                                        })?;
+                                    }
+                                    generated_features.insert(generated)
+                                }
+                            };
+                            generated.contains(&feature_id)
+                        } else {
+                            false
+                        }
                     } else {
                         false
-                    }
-                } else {
-                    false
-                };
+                    };
                 unresolved_fillet_edge_selection_feature_count += usize::from(unresolved_edges);
                 native_fillet_edge_selection_feature_count += usize::from(native_edges);
                 unresolved_fillet_radius_feature_count += usize::from(unresolved_radius);
