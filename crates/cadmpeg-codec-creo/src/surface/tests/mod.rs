@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+mod close_scan;
 mod contours;
 mod cost;
 mod dump;

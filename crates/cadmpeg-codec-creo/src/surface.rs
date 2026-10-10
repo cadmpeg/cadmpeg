@@ -4136,15 +4136,36 @@ fn terminal_cone_half_angle_layout(body: &[u8]) -> Option<ConeHalfAngleLayout> {
     Some(ConeHalfAngleLayout { value, start, end })
 }
 
-fn cone_half_angle_before_close(body: &[u8]) -> Option<ConeHalfAngleLayout> {
-    let mut layouts = (0..body.len()).filter_map(|start| {
-        let (value, end) = scalar::decode_positive_dict(body, start)?;
-        let value = ApexConeHalfAngle::new(value)?;
-        (body.get(end) == Some(&psb::token::COMPOUND_CLOSE))
-            .then_some(ConeHalfAngleLayout { value, start, end })
-    });
-    let layout = layouts.next()?;
-    layouts.next().is_none().then_some(layout)
+fn cone_half_angle_before_close(
+    ctx: &DecodeContext<'_>,
+    body: &[u8],
+) -> Result<Option<ConeHalfAngleLayout>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    // Seven token bytes and the following close must fit. Shorter suffixes
+    // cannot produce a layout and need no scalar dispatch.
+    let mut starts = 0..body.len().saturating_sub(7);
+    let mut layout = None;
+    while !starts.is_empty() {
+        let Some(start) = ctx.next_charged(&mut starts, "creo cone close angle scan")? else {
+            break;
+        };
+        let Some((value, end)) = scalar::decode_positive_dict(body, start) else {
+            continue;
+        };
+        let Some(value) = ApexConeHalfAngle::new(value) else {
+            continue;
+        };
+        if body.get(end) != Some(&psb::token::COMPOUND_CLOSE) {
+            continue;
+        }
+        if layout.is_some() {
+            return Ok(None);
+        }
+        layout = Some(ConeHalfAngleLayout { value, start, end });
+    }
+    Ok(layout)
 }
 
 fn scalar_tokens(
@@ -6360,13 +6381,19 @@ fn surface_body_compound_close(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Result<Option<usize>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    if body.is_empty() {
+        return Ok(None);
+    }
     if kind == SurfaceKind::Plane {
         if let Some(close) = plane_envelope_compound_close(ctx, body, cache)? {
             return Ok(Some(close));
         }
     }
     if kind == SurfaceKind::Cone {
-        if let Some(layout) = cone_half_angle_before_close(body) {
+        if let Some(layout) = cone_half_angle_before_close(ctx, body)? {
             return Ok(Some(layout.end));
         }
     }
@@ -6384,7 +6411,13 @@ fn surface_body_compound_close(
     }
     let mut cursor = 0;
     while cursor < body.len() {
-        if body[cursor] == psb::token::COMPOUND_CLOSE {
+        let Some(&byte) = ctx.next_charged(
+            &mut body[cursor..].iter(),
+            "creo surface compound-close scalar dispatch",
+        )? else {
+            break;
+        };
+        if byte == psb::token::COMPOUND_CLOSE {
             return Ok(Some(cursor));
         }
         if let Some((_, next)) = decode_row_scalar(kind, body, cursor, cache) {
@@ -6402,17 +6435,27 @@ fn first_compound_close(
     start: usize,
     end: usize,
 ) -> Result<Option<usize>, CodecError> {
-    const OUTLINE_PAIR_SEPARATOR: &[u8] = &[0x00, 0x0c, 0x98];
-    let Some(body) = payload.get(start..end) else {
+    const OUTLINE_PAIR_CLOSE: &[u8; 4] = &[0x00, 0x0c, 0x98, psb::token::COMPOUND_CLOSE];
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let Some(body) = payload.get(start..end).filter(|body| !body.is_empty()) else {
         return Ok(None);
     };
-    let separator_close = body
-        .windows(OUTLINE_PAIR_SEPARATOR.len() + 1)
-        .position(|window| {
-            window.starts_with(OUTLINE_PAIR_SEPARATOR)
-                && window.last() == Some(&psb::token::COMPOUND_CLOSE)
-        })
-        .map(|offset| start + offset + OUTLINE_PAIR_SEPARATOR.len());
+    let mut windows = body.windows(OUTLINE_PAIR_CLOSE.len()).enumerate();
+    let mut separator_close = None;
+    while windows.len() != 0 {
+        let Some((offset, window)) = ctx.next_charged(
+            &mut windows,
+            "creo outline pair close scan",
+        )? else {
+            break;
+        };
+        if window == OUTLINE_PAIR_CLOSE {
+            separator_close = Some(start + offset + OUTLINE_PAIR_CLOSE.len() - 1);
+            break;
+        }
+    }
     for token in psb::tokens(ctx, body) {
         let token = token?;
         match token.kind {
@@ -6437,6 +6480,9 @@ fn plane_local_system_compound_close(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> Result<Option<usize>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     // Keep the established structural boundary when it exists. Some local
     // systems contain an e0 byte inside a numeric token; in that case the
     // generic scanner can stop without finding the following e3. Validate a
@@ -6444,7 +6490,11 @@ fn plane_local_system_compound_close(
     if let Some(close) = first_compound_close(ctx, payload, start, end)? {
         return Ok(Some(close));
     }
-    for close in start..end {
+    let mut closes = start..end;
+    while !closes.is_empty() {
+        let Some(close) = ctx.next_charged(&mut closes, "creo plane local-system close scan")? else {
+            break;
+        };
         if payload.get(close) == Some(&psb::token::COMPOUND_CLOSE)
             && complete_plane_local_system(ctx, &payload[start..close], cache)?.is_some()
         {
