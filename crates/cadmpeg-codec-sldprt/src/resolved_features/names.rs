@@ -70,6 +70,7 @@ pub(crate) fn object_names(
             ctx.refuse_codec_limit("collect SLDPRT feature input names", u64::MAX - 1, u64::MAX)
         })?;
         let value = ctx.copy_retained_text(&decoded, "retain SLDPRT feature input name")?;
+        drop((decoded, _name_reservation));
         let id = record_id(ctx, "name", lane_key, offset)?;
         let parent = ctx.copy_retained_text(parent, "retain SLDPRT feature input name parent")?;
         ctx.push_vec(
