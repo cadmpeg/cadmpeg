@@ -1527,15 +1527,9 @@ fn predefined_associativity_valid(
             )
         }
         6 => {
-            if record.integer(1) != Some(1) {
-                return Ok(false);
-            }
             let Some(visible_count) = record.count(2) else {
                 return Ok(false);
             };
-            if end != 4 + visible_count {
-                return Ok(false);
-            }
             let view = existing_pointer(record, 3, entries, ctx)?;
             let visible_valid = ctx.all_by(
                 0..visible_count,
@@ -1574,19 +1568,16 @@ fn predefined_associativity_valid(
                 }
                 _ => false,
             };
-            Ok(view_back_pointer_valid && visible_valid)
+            Ok(record.integer(1) == Some(1)
+                && end == 4 + visible_count
+                && view_back_pointer_valid
+                && visible_valid)
         }
         9 => {
-            if record.integer(1) != Some(1) {
-                return Ok(false);
-            }
             let Some(child_count) = record.count(2).filter(|count| *count > 0) else {
                 return Ok(false);
             };
-            if end != 4 + child_count {
-                return Ok(false);
-            }
-            ctx.all_by(
+            let members_valid = ctx.all_by(
                 3..4 + child_count,
                 |index| {
                     let Some((sequence, _)) = existing_pointer(record, index, entries, ctx)? else {
@@ -1602,7 +1593,8 @@ fn predefined_associativity_valid(
                     has_association_back_pointer(member, entry.sequence, association_owners, ctx)
                 },
                 "iges predefined associativity fields",
-            )
+            )?;
+            Ok(record.integer(1) == Some(1) && end == 4 + child_count && members_valid)
         }
         2 | 12 => {
             let count = record.count(1).filter(|count| *count > 0);
@@ -2594,20 +2586,21 @@ fn legacy_single_parent_face<'ir, 'ctx>(
     let (mut boundary_sequences, result_boundary_storage) =
         ctx.temporary_vec(boundary_count, "iges legacy plane boundary pointers")?;
     _boundary_storage = result_boundary_storage;
-    for sequence in std::iter::once(parent_sequence).chain(
-        ctx.admit_iter(&children, "iges legacy plane children traversal")
-            .map_err(CodecError::from)?
-            .copied(),
-    ) {
-        let Some(plane) =
-            ctx.get_btree_map(records, &sequence, "iges legacy plane record lookup")?
-        else {
+    let mut append_boundary = |sequence| -> Result<(), LegacyPlaneError> {
+        let Some(plane) = ctx.get_btree_map(records, &sequence, "iges legacy plane record lookup")? else {
             return Err("legacy single-parent plane has an invalid boundary pointer".into());
         };
         let Some((boundary, _)) = existing_pointer(plane, 5, entries, ctx)? else {
             return Err("legacy single-parent plane has an invalid boundary pointer".into());
         };
         boundary_sequences.push(boundary);
+        Ok(())
+    };
+    append_boundary(parent_sequence)?;
+    let mut children_to_visit = children.iter().copied();
+    while children_to_visit.len() != 0 {
+        let Some(sequence) = ctx.next_charged(&mut children_to_visit, "iges legacy plane children traversal")? else { break; };
+        append_boundary(sequence)?;
     }
     let parent_plane = plane_carrier(index, parent_sequence, ctx)?
         .ok_or("legacy single-parent parent plane was not projected")?;

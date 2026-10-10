@@ -200,3 +200,77 @@ fn decode_preserves_zero_width_attribute_fields_for_many_instances() {
         INSTANCE_COUNT
     );
 }
+
+#[test]
+fn predefined_associativity_visits_members_before_header_and_extent_rejection() {
+    use crate::parameter::{ParameterRecord, Token, TokenValue};
+    use std::collections::BTreeMap;
+    for form in [6, 9] {
+        for values in [&[402, 0, 1, 3, 3][..], &[402, 1, 1, 3, 3, 0][..]] {
+            let mut entry = crate::test_support::directory_target(1, 402);
+            entry.form = form;
+            let member = crate::test_support::directory_target(3, 116);
+            let entries = BTreeMap::from([(1, &entry), (3, &member)]);
+            let record = ParameterRecord::from_test_tokens(
+                1, 1..2, Vec::new(), values.len(),
+                values.iter().map(|value| Token {
+                    value: TokenValue::Integer(*value), span: 0..0,
+                }).collect(), Vec::new(),
+            );
+            let error = cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::WorkUnits, "iges predefined associativity fields", |cap| {
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_work_units = cap;
+                    crate::test_support::with_policy_context(&[], &policy, |ctx| {
+                        super::super::predefined_associativity_valid(
+                            &entry, &record, &entries, &BTreeMap::new(), &BTreeMap::new(), ctx,
+                        )
+                    })
+                },
+            );
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == "iges predefined associativity fields" && limit.additional == 1));
+        }
+    }
+}
+
+#[test]
+fn legacy_plane_invalid_parent_boundary_does_not_visit_children() {
+    use crate::parameter::{ParameterRecord, Token, TokenValue};
+    use cadmpeg_core::decode::refusal_probe::RefusalProbe;
+    use cadmpeg_ir::{index::ModelIndex, CadIr};
+    use std::collections::BTreeMap;
+    let bytes = crate::test_support::test_owned::owned_test_file(&[]);
+    crate::test_support::with_service_context(&bytes, |ctx| {
+        let scan = crate::card::scan_with_context(&bytes, ctx).unwrap();
+        let (global, _, _storage) = crate::global::parse(&scan, ctx).unwrap();
+        let mut parent = crate::test_support::directory_target(1, 108);
+        parent.form = 1;
+        let mut child = crate::test_support::directory_target(3, 108);
+        child.form = -1;
+        child.status = crate::directory::SourceStatus::from_codes([0, 1, 0, 0]);
+        let entry = crate::test_support::directory_target(5, 402);
+        let values = [402, 1, 1, 1, 3];
+        let record = ParameterRecord::from_test_tokens(
+            5, 1..2, Vec::new(), values.len(),
+            values.iter().map(|value| Token {
+                value: TokenValue::Integer(*value), span: 0..0,
+            }).collect(), Vec::new(),
+        );
+        let ir = CadIr::empty();
+        let index = ModelIndex::new_model_only(&ir, ctx).unwrap();
+        let mut proofs = super::super::PlaneBoundaryProofs {
+            proven: BTreeMap::new(), storage: ctx.reserve_scoped(0, "test plane proofs").unwrap(),
+        };
+        let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, "iges legacy plane children traversal", None);
+        let result = super::super::legacy_single_parent_face(
+            (&index, &mut proofs), super::super::LegacyPlaneSource { entry: &entry, record: &record },
+            (1, &parent), &BTreeMap::from([(1, &parent), (3, &child)]), &BTreeMap::new(),
+            &global.length_context().unwrap(), ctx, &mut super::super::super::geometry::SourceSequences::default(),
+        );
+        assert!(matches!(result, Err(super::super::LegacyPlaneError::Invalid(
+            "legacy single-parent plane has an invalid boundary pointer"
+        ))));
+        assert!(ctx.resource_refusal().is_none());
+    });
+}
