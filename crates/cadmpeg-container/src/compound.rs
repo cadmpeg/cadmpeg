@@ -685,7 +685,6 @@ impl CompoundState {
         let fat_count = usize::try_from(field(44, "FAT count")?)
             .map_err(|_| CodecError::Malformed("CFB FAT count does not fit memory".into()))?;
         let directory_start = field(48, "directory start")?;
-        let _transaction_signature = field(52, "transaction signature")?;
         let mini_stream_cutoff = u64::from(field(56, "mini-stream cutoff")?);
         let mini_fat_start = field(60, "mini FAT start")?;
         let mini_fat_count = usize::try_from(field(64, "mini FAT count")?)
@@ -1082,13 +1081,14 @@ impl CompoundState {
                                 ctx, fat, count, entry.start_sector,
                                 NonZeroUsize::new(expected).map(ChainLength::Declared), role,
                             ))?;
-                            match sectors {
-                                Some(chain) => StreamData::Allocated {
-                                    allocation,
-                                    logical_size,
-                                    chain,
-                                },
-                                None => empty(),
+                            // A declared nonzero chain cannot return an empty success.
+                            let chain = sectors.ok_or_else(|| {
+                                CodecError::Malformed("nonzero CFB stream has no sector chain".into())
+                            })?;
+                            StreamData::Allocated {
+                                allocation,
+                                logical_size,
+                                chain,
                             }
                         }
                     };
@@ -1294,10 +1294,6 @@ fn probe_directory_availability<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     prefix: View<'_>,
 ) -> Result<PrefixDirectoryAvailability<'ctx>, CodecError> {
-    enum FatLoadStop {
-        AvailablePrefix,
-        Incomplete,
-    }
     let prefix = prefix.window();
     if prefix.get(..8) != Some(&MAGIC) {
         return Ok(PrefixDirectoryAvailability::NotCompound);
@@ -1405,9 +1401,9 @@ fn probe_directory_availability<'ctx>(
                 "CFB DIFAT chain is cyclic",
             ));
         }
-        let Some(raw) = sector_slice(prefix, sector_size, available, next_difat) else {
-            return Ok(PrefixDirectoryAvailability::Incomplete);
-        };
+        // An id below `available` addresses a complete sector in this prefix.
+        let start = (cadmpeg_core::decode::index_from_u32(next_difat) + 1) * sector_size;
+        let raw = &prefix[start..start + sector_size];
         let mut free_seen = false;
         for index in 0..difat_entries {
             ctx.charge_work(1, "visit CFB DIFAT entries")?;
@@ -1455,13 +1451,13 @@ fn probe_directory_availability<'ctx>(
 
     let mut fat = (Vec::new(), ctx.reserve_scoped(0, "CFB probe FAT words")?);
     let mut loaded_fat_count = 0;
-    let fat_stop = ctx.find_map(&fat_sectors.0, |&id| {
+    ctx.find_map(&fat_sectors.0, |&id| {
         if cadmpeg_core::decode::index_from_u32(id) >= available {
-            return Ok(Some(FatLoadStop::AvailablePrefix));
+            return Ok(Some(()));
         }
-        let Some(raw) = sector_slice(prefix, sector_size, available, id) else {
-            return Ok(Some(FatLoadStop::Incomplete));
-        };
+        // An id below `available` addresses a complete sector in this prefix.
+        let start = (cadmpeg_core::decode::index_from_u32(id) + 1) * sector_size;
+        let raw = &prefix[start..start + sector_size];
         // Available sectors contain complete words, so the admitted width is exact.
         ctx.reserve_scoped_vec(&mut fat.1, &mut fat.0, raw.len() / 4, "CFB probe FAT words")?;
         for word in ctx.admit_iter(raw.as_chunks::<4>().0, "decode CFB probe FAT words")? {
@@ -1471,11 +1467,8 @@ fn probe_directory_availability<'ctx>(
             fat.0.push(View::u32_le_at(word, 0).ok_or_else(|| CodecError::Malformed("CFB probe FAT word is truncated".into()))?);
         }
         loaded_fat_count += 1;
-        Ok((loaded_fat_count == fat_count).then_some(FatLoadStop::AvailablePrefix))
+        Ok((loaded_fat_count == fat_count).then_some(()))
     }, "visit CFB FAT sectors")?;
-    if matches!(fat_stop, Some(FatLoadStop::Incomplete)) {
-        return Ok(PrefixDirectoryAvailability::Incomplete);
-    }
     let fat_role_stop = ctx.find_map(
         &fat_sectors.0[..loaded_fat_count.min(fat_sectors.0.len())],
         |id| Ok(match fat.0.get(cadmpeg_core::decode::index_from_u32(*id)) {
@@ -1508,12 +1501,8 @@ fn probe_directory_availability<'ctx>(
     drop(fat_sectors);
     let expected_directory_count = if version == CompoundVersion::V4 {
         Some(cadmpeg_core::decode::index_from_u32(directory_sector_count))
-    } else if directory_sector_count == 0 {
-        None
     } else {
-        return Ok(PrefixDirectoryAvailability::Malformed(
-            "CFB v3 declares directory sector count",
-        ));
+        None
     };
 
     let mut directory_chain_storage = ctx.reserve_scoped(0, "CFB probe directory chain")?;
@@ -2829,10 +2818,10 @@ mod tests {
         let id_node_bytes = 11 * std::mem::size_of::<u32>()
             + 16 * std::mem::size_of::<usize>()
             + 2 * std::mem::align_of::<u32>().max(std::mem::align_of::<usize>());
-        // FAT loading overlaps one FAT id with the FAT words. Directory
+        // FAT loading overlaps four id slots with the FAT words. Directory
         // traversal then overlaps those words with one visit node and the
         // four-slot minimum capacity of its chain vector.
-        let fat_loading_peak = std::mem::size_of::<u32>()
+        let fat_loading_peak = 4 * std::mem::size_of::<u32>()
             + (sector_size / 4) * std::mem::size_of::<u32>();
         let directory_chain_peak = (sector_size / 4) * std::mem::size_of::<u32>()
             + id_node_bytes
@@ -3133,14 +3122,15 @@ mod tests {
         initialize_empty_directory_entries(sector_mut(&mut file, 0));
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        // FAT loading holds one id and the FAT words. Directory traversal
-        // overlaps FAT words, one visited-id node and the chain capacity.
+        // FAT loading holds the four-slot id minimum and the FAT words.
+        // Directory traversal overlaps FAT words, one visited-id node
+        // and the chain capacity.
         // Parsing borrows sectors and overlaps only the chain and slots.
         let parsed_directory_bytes = 4 * std::mem::size_of::<DirectorySlot>();
         let id_node_bytes = 11 * std::mem::size_of::<u32>()
             + 16 * std::mem::size_of::<usize>()
             + 2 * std::mem::align_of::<u32>().max(std::mem::align_of::<usize>());
-        let fat_loading_peak = std::mem::size_of::<u32>()
+        let fat_loading_peak = 4 * std::mem::size_of::<u32>()
             + (SECTOR_SIZE / 4) * std::mem::size_of::<u32>();
         let directory_chain_peak = (SECTOR_SIZE / 4) * std::mem::size_of::<u32>()
             + 4 * std::mem::size_of::<u32>()
