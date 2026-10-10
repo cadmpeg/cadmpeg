@@ -1037,3 +1037,36 @@ fn swift_reference_class_search_stops_at_the_comma() {
     let comparison = u64::try_from(2 * "First".len()).unwrap();
     assert!(run(limit.used + search + comparison + 1).unwrap().is_some());
 }
+
+#[test]
+fn swift_empty_projection_skips_feature_and_provenance_work() {
+    use cadmpeg_core::decode::refusal_probe::RefusalProbe;
+    let mut root = Entity { class: crate::swift::ROOT_CLASS.into(), ..Entity::default() };
+    root.features.references.push(super::reference("F10", "GdtPlane"));
+    root.features.entities.push(super::entity("GdtPlane"));
+    let source = source_with_swift_root(&root);
+    let scan = crate::test_support::container::scan(&source);
+    for operation in ["index SWIFT features", "index SWIFT annotation provenance", "scan SWIFT annotation references"] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
+        let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
+        let projection = annotations(&ctx, &scan, &mut Default::default(), None).unwrap();
+        assert!(projection.annotations.is_empty());
+        assert!(projection.unsupported_loss.is_none());
+        ctx.finish_session().unwrap();
+    }
+    root.annotations.references.push(super::reference("A10", "GdtFlatness"));
+    let source = source_with_swift_root(&root);
+    let scan = crate::test_support::container::scan(&source);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
+    let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, "scan SWIFT annotation references", None);
+    let projection = annotations(&ctx, &scan, &mut Default::default(), None).unwrap();
+    assert!(projection.annotations.is_empty());
+    assert!(projection.unsupported_loss.unwrap().contains("GdtAnalysisIncompleteAnnotationRoster"));
+    ctx.finish_session().unwrap();
+}

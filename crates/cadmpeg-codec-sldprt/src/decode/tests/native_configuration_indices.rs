@@ -167,3 +167,25 @@ fn native_configuration_lookup_refuses_before_assigning_and_keeps_first_refusal(
         ));
     }
 }
+
+#[test]
+fn native_configuration_index_skips_histories_without_native_references() {
+    use cadmpeg_core::decode::refusal_probe::RefusalProbe;
+    for empty in [false, true] {
+        let (mut ir, mut native) = fixture();
+        if empty {
+            ir.model.configurations.clear();
+        } else {
+            for configuration in &mut ir.model.configurations { configuration.native_ref = None; }
+        }
+        let before = native.feature_histories.clone();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = u64::MAX;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let _probe = RefusalProbe::arm(ResourceDimension::MaterializedBytes, "assign SLDPRT native configuration indices", None);
+        assign_native_configuration_indices(&ctx, &ir, &mut native).unwrap();
+        assert_eq!(native.feature_histories, before);
+        ctx.finish_session().unwrap();
+    }
+}

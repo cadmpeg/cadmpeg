@@ -578,6 +578,7 @@ pub(crate) fn annotations(
         _ => project_with_topology(ctx, &root, None, &rendered_dimensions, None)?,
     };
     let projected = &projection.annotations;
+    if !projected.is_empty() {
     let _index_storage;
     let mut indexed;
     (indexed, _index_storage) =
@@ -672,6 +673,7 @@ pub(crate) fn annotations(
             "swift_gdt_analysis",
             cadmpeg_ir::Exactness::ByteExact,
         )?;
+    }
     }
     let missing = root
         .annotations
@@ -768,7 +770,8 @@ pub(crate) fn pattern_hole_nominal_context(
         let seed_dependents = ctx
             .get_btree_map(dependents, seed.as_str(), PatternFeatureIndex::OPERATION)?
             .map_or(&[][..], Vec::as_slice);
-        for candidate in ctx.admit_iter(seed_dependents, "swift pattern hole search")? {
+        let mut dependents_remaining = seed_dependents.iter();
+        while let Some(candidate) = ctx.next_charged(&mut dependents_remaining, "swift pattern hole search")? {
             if candidate.ordinal <= pattern.ordinal {
                 continue;
             }
@@ -1480,7 +1483,8 @@ fn project_with_topology<'ctx>(
     rendered: &[RenderedDimension],
     pattern_hole_nominals: Option<&BTreeMap<String, PositiveReal>>,
 ) -> Result<AnnotationProjection<'ctx>, CodecError> {
-    if root.annotations.references.len() != root.annotations.entities.len() {
+    if root.annotations.references.is_empty()
+        || root.annotations.references.len() != root.annotations.entities.len() {
         return Ok(AnnotationProjection {
             annotations: Vec::new(),
             unsupported: BTreeMap::new(),
@@ -2562,11 +2566,13 @@ where
         }
         admit_swift_depth(ctx, depth, self.operation)?;
         let _depth = ctx.enter_nested(self.operation)?;
+        if depth != 0 {
         if let Some(cached) = ctx.get_btree_map(&self.completed, &(id, depth), CACHE_LOOKUP)? {
             // The key includes logical depth. This subtree completed before
             // under the same query and policy, at this same nesting depth.
             ctx.extend_from_slice(output, cached, self.result_operation)?;
             return Ok(true);
+        }
         }
         let (_, path_storage) = ctx.with_scoped_storage("SWIFT traversal path storage", || {
             ctx.insert_btree_set(&mut self.active, id, self.path_operation)
@@ -2599,7 +2605,7 @@ where
                     }
                 }
             }
-            if cacheable {
+            if cacheable && depth != 0 {
                 let values = output
                     .get(first_value..)
                     .ok_or_else(|| CodecError::malformed("invalid SWIFT traversal result range"))?;
@@ -2738,7 +2744,8 @@ fn hole_diameter_excluding_counterbore(
         .with_scoped_storage("SWIFT counterbore candidates", || {
             counterbores.in_context(ctx, feature_index, &context)
         })?;
-    for candidate in ctx.admit_iter(candidates, "scan SWIFT counterbore diameters")? {
+    let mut candidates = candidates.into_iter();
+    while let Some(candidate) = ctx.next_charged(&mut candidates, "scan SWIFT counterbore diameters")? {
         let Some(value) = counterbore_from_direct_geometry(ctx, candidate, feature_index)? else {
             continue;
         };
@@ -2891,7 +2898,8 @@ fn counterbore_depth_from_sibling(
         .with_scoped_storage("SWIFT counterbore candidates", || {
             counterbores.in_context(ctx, feature_index, &context)
         })?;
-    for candidate in ctx.admit_iter(candidates, "scan SWIFT counterbore depths")? {
+    let mut candidates = candidates.into_iter();
+    while let Some(candidate) = ctx.next_charged(&mut candidates, "scan SWIFT counterbore depths")? {
         let Some(cylinder) = unique_direct_feature(ctx, candidate, feature_index, "GdtCylinder")?
         else {
             continue;
@@ -3268,8 +3276,9 @@ fn measurement_from_applied_geometry<'a>(
     mut measurement: impl FnMut(&'a str) -> Result<Option<PositiveReal>, CodecError>,
 ) -> Result<Option<PositiveReal>, CodecError> {
     let mut first: Option<PositiveReal> = None;
-    for reference in ctx.admit_iter(
-        &annotation.features.references,
+    let mut references = annotation.features.references.iter();
+    while let Some(reference) = ctx.next_charged(
+        &mut references,
         "scan SWIFT applied measurement features",
     )? {
         let Some(value) = measurement(&reference.id)? else {
@@ -3294,8 +3303,9 @@ fn measurement_from_direct_features(
     measurement: impl Fn(&Entity) -> Result<Option<PositiveReal>, CodecError>,
 ) -> Result<Option<PositiveReal>, CodecError> {
     let mut first: Option<PositiveReal> = None;
-    for reference in ctx.admit_iter(
-        &annotation.features.references,
+    let mut references = annotation.features.references.iter();
+    while let Some(reference) = ctx.next_charged(
+        &mut references,
         "scan SWIFT direct measurement features",
     )? {
         let Some(feature) = ctx.get_btree_map(
@@ -3558,6 +3568,7 @@ where
         }
         admit_swift_depth(ctx, depth, OPERATION)?;
         let _depth = ctx.enter_nested(OPERATION)?;
+        if depth != 0 {
         if let Some(cached) = ctx.get_btree_map(&self.completed, &(id, depth), CACHE_LOOKUP)? {
             // The key includes logical depth; a hit can only reuse a subtree
             // that already passed the same live recursion-depth policy.
@@ -3565,6 +3576,7 @@ where
                 value: *cached,
                 cacheable: true,
             });
+        }
         }
         let (_, path_storage) = ctx.with_scoped_storage("SWIFT traversal path storage", || {
             ctx.insert_btree_set(&mut self.active, id, "track SWIFT measurement path")
@@ -3587,10 +3599,26 @@ where
                     })?;
                     let mut first: Option<PositiveReal> = None;
                     let mut disagreement = false;
-                    let mut children = child_feature_ids(ctx, feature)?;
-                    while let Some(child) =
-                        ctx.next_charged(&mut children, "scan SWIFT child features")?
-                    {
+                    let mut children = Some(feature.features.references.iter());
+                    let mut subfeatures = None;
+                    loop {
+                        let reference = match children.as_mut() {
+                            Some(children) => ctx.next_charged(children, "scan SWIFT child features")?,
+                            None => None,
+                        };
+                        let child = if let Some(reference) = reference {
+                            reference.id.as_str()
+                        } else {
+                            children = None;
+                            if subfeatures.is_none() {
+                                subfeatures = Some(direct_subfeature_ids(ctx, feature)?.into_iter().flatten());
+                            }
+                            let Some(child) = ctx.next_charged(
+                                subfeatures.as_mut().ok_or_else(|| CodecError::malformed("missing SWIFT subfeature iterator"))?,
+                                "scan SWIFT child features",
+                            )? else { break; };
+                            child
+                        };
                         let child_result = self.visit(child, next_depth)?;
                         if !child_result.cacheable {
                             cacheable = false;
@@ -3610,7 +3638,7 @@ where
                     value = (!disagreement).then_some(first).flatten();
                 }
             }
-            if cacheable {
+            if cacheable && depth != 0 {
                 self.cache_storage.with_storage(|| {
                     ctx.insert_btree_map(&mut self.completed, (id, depth), value, CACHE_INSERT)
                 })?;
