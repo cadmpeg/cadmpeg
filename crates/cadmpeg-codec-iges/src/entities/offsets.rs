@@ -1625,6 +1625,10 @@ pub(super) fn project<'ctx>(
 
         ctx.charge_entities(1, "iges_geometry_offsets")?;
         let _attached = ir.model.add_procedural_curve(ctx, &curve_id, procedural)?;
+        drop(offset_source_id);
+        drop(source_id);
+        drop(curve_id);
+        drop(identity_storage);
         ctx.reserve_scoped_vec(&mut wire_slots_storage, &mut wire_edges, 1, "iges offset wire edge slots")?;
         wire_edges.push(edge_id);
         ctx.insert_scoped_btree_set(&mut decoded_storage, &mut decoded, entry.sequence, "iges offsets decoded sequences", "iges offsets decoded sequences")?;
