@@ -2,6 +2,7 @@
 
 use super::*;
 use super::super::{select_composite_edge, CompositeEdge, CompositeIndex};
+use cadmpeg_ir::geometry::nurbs::NurbsPoles3;
 
 fn candidates(range: Option<[f64; 2]>) -> [CompositeEdge; 3] {
     std::array::from_fn(|_| CompositeEdge {
@@ -246,4 +247,111 @@ fn composite_internal_knot_phase_accepts_exact_prelude_and_source_work() {
     // Four actual knot visits complete without allocating an internal value;
     // the exact phase limit next refuses the first elevated-span visit.
     internal_knot_boundary(4, true);
+}
+
+fn internal_value_curve(rational: bool) -> NurbsCurve {
+    test_nurbs(2, vec![0.0, 0.0, 0.0, 0.5, 1.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 2.0, 0.0),
+            Point3::new(2.0, -1.0, 0.0), Point3::new(3.0, 0.0, 0.0)],
+        rational.then(|| vec![1.0, 2.0, 1.0, 3.0]))
+}
+
+fn internal_value_storage_boundary(rational: bool, exact: bool) {
+    let mut curve = internal_value_curve(rational);
+    let before = serde_json::to_value(&curve).unwrap();
+    // Insertion leaves five homogeneous controls and eight knots. The
+    // earlier overlap is (4*32 + 7*8) + (5*32 + 8*8) + 4*8 = 440.
+    // The first elevated net needs four controls while its three-control
+    // source stays live. The consumed four-slot internal-value vector
+    // has no reader in this phase and must no longer contribute bytes.
+    let scalar = std::mem::size_of::<f64>();
+    let homogeneous = std::mem::size_of::<[f64; 4]>();
+    let prefix = u64::try_from(5 * homogeneous + 8 * scalar).unwrap();
+    let source = u64::try_from(3 * homogeneous).unwrap();
+    let additional = u64::try_from(4 * homogeneous).unwrap();
+    let peak = prefix + source + additional;
+    let cap = peak - u64::from(!exact);
+    let earlier_overlap = u64::try_from(9 * homogeneous + 19 * scalar).unwrap();
+    assert!(earlier_overlap < cap);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = cap;
+    policy.limits.max_retained_bytes = 0;
+    if exact {
+        // Four homogeneous controls, seven copied knots, one internal
+        // value, eight inserted knots, five inserted controls, three
+        // copied Bezier controls and four elevated controls. Stop at
+        // Euclidean allocation before judging later scratch lifetimes.
+        policy.limits.max_collection_items = 4 + 7 + 1 + 8 + 5 + 3 + 4;
+    }
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = elevate_nurbs_to_degree(&ctx, &mut curve, [0.0, 1.0], 3, None)
+        .expect_err("expected the next allocation boundary");
+    let first = match error.non_resource() {
+        Err(CodecError::ResourceLimit(first)) => first,
+        _ => panic!("expected the original materialized-byte refusal"),
+    };
+    if exact {
+        assert_eq!(first.dimension, ResourceDimension::CollectionItems);
+        assert_eq!(first.operation, "iges composite Euclidean control points");
+        assert_eq!((first.limit, first.used, first.additional),
+            (policy.limits.max_collection_items, policy.limits.max_collection_items, 4));
+    } else {
+        assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
+        assert_eq!(first.operation, "iges composite Bezier elevated net");
+        assert_eq!((first.limit, first.used, first.additional),
+            (cap, prefix + source, additional));
+    }
+    for _ in 0..64 {
+        for degree in [3, 2] {
+            let error = elevate_nurbs_to_degree(&ctx, &mut curve, [0.0, 1.0], degree, None)
+                .expect_err("expected refusal before the unchanged-degree route");
+            assert!(matches!(error.non_resource(), Err(CodecError::ResourceLimit(last)) if last == first));
+        }
+    }
+    assert_eq!(serde_json::to_value(&curve).unwrap(), before);
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+}
+
+#[test]
+fn composite_internal_values_release_before_one_short_elevated_net() {
+    for rational in [false, true] { internal_value_storage_boundary(rational, false); }
+}
+
+#[test]
+fn composite_internal_values_exact_net_peak_reaches_the_next_lane() {
+    for rational in [false, true] { internal_value_storage_boundary(rational, true); }
+}
+
+#[test]
+fn composite_internal_value_release_preserves_elevated_geometry_and_backing() {
+    const EPS_ELEVATED_POINT: f64 = 1.0e-10;
+    for rational in [false, true] {
+        let mut curve = internal_value_curve(rational);
+        let parameters = [0.0, 0.125, 0.5, 0.875, 1.0];
+        let expected = parameters.map(|parameter| cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &curve, parameter).unwrap());
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 16 * 1024 * 1024;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut output = ctx.reserve_scoped(0, "test elevated curve output").unwrap();
+        output.with_storage(|| elevate_nurbs_to_degree(&ctx, &mut curve, [0.0, 1.0], 3, None)).unwrap();
+        assert_eq!(curve.degree(), 3);
+        assert_eq!(&curve.knots()[..4], &[0.0; 4]);
+        assert_eq!(&curve.knots()[curve.knots().len() - 4..], &[1.0; 4]);
+        assert_eq!(matches!(curve.pole_rows(), NurbsPoles3::Rational { .. }), rational);
+        for (parameter, expected) in parameters.into_iter().zip(expected) {
+            let actual = cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &curve, parameter).unwrap();
+            assert!(actual.distance(expected.get()) <= EPS_ELEVATED_POINT);
+        }
+        drop(curve);
+        drop(output);
+        let free = ctx.reserve_scoped(policy.limits.max_materialized_bytes,
+            "test elevated backing released").unwrap();
+        drop(free);
+        ctx.finish_session().unwrap();
+    }
 }

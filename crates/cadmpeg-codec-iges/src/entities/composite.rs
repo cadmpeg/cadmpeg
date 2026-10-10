@@ -1591,6 +1591,8 @@ fn elevate_nurbs_to_degree(
             drop(std::mem::replace(&mut net_storage, storage));
         }
     }
+    drop(internal_knots);
+    drop(internal_storage);
     let Some(refined_count) = homogeneous.len().checked_sub(1) else {
         return Err(DegreeElevationError::RefinedKnotVector.into());
     };
