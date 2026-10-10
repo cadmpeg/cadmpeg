@@ -379,12 +379,14 @@ fn mark_quarantined_placements<'ctx>(
             Some(storage) => storage,
             empty @ None => empty.insert(ctx.reserve_scoped(0, "iges placement rejection nodes")?),
         };
-        storage.with_storage(|| ctx.insert_btree_map(
-            &mut projection.placement_rejections,
-            entry.sequence,
-            entities::structure::PlacementRejection::MissingRecord,
-            "iges quarantined placement rejections",
-        ))?;
+        storage.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut projection.placement_rejections,
+                entry.sequence,
+                entities::structure::PlacementRejection::MissingRecord,
+                "iges quarantined placement rejections",
+            )
+        })?;
     }
     Ok(())
 }

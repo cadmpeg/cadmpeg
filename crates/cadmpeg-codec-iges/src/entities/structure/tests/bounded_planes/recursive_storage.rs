@@ -17,7 +17,9 @@ fn composite_with_line_child() -> (CadIr, SolvedCurveGeometry) {
             curve: child,
             same_sense: true,
             transition: CompositeCurveTransition::Continuous,
-        }].try_into().unwrap(),
+        }]
+        .try_into()
+        .unwrap(),
         self_intersect: Some(false),
     };
     (ir, geometry)
@@ -35,13 +37,17 @@ fn bounded_plane_child_depth_refusal_destroys_path_before_frame_storage() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut active = BTreeSet::new();
         let result = super::super::super::bounded_plane_curve_is_simple(
-            &geometry, super::super::super::PlaneBoundarySimplicity {
+            &geometry,
+            super::super::super::PlaneBoundarySimplicity {
                 index: &index,
                 plane: (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)),
                 resolution: 0.001,
                 transform: Transform::identity(),
                 ctx: &ctx,
-            }, false, None, &mut active,
+            },
+            false,
+            None,
+            &mut active,
         );
         assert!(active.is_empty());
         if cap == 1 {
@@ -51,7 +57,9 @@ fn bounded_plane_child_depth_refusal_destroys_path_before_frame_storage() {
             assert_eq!(first.dimension, ResourceDimension::RecursionDepth);
             assert_eq!((first.limit, first.used, first.additional), (1, 1, 1));
             assert_eq!(first.operation, "iges plane boundary simplicity");
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
+            );
         } else {
             assert!(!result.unwrap());
             ctx.finish_session().unwrap();
@@ -64,41 +72,56 @@ fn bounded_plane_removal_refusal_destroys_path_before_frame_storage() {
     let (ir, geometry) = composite_with_line_child();
     let index = ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
     cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::WorkUnits, "iges plane boundary active removal", |cap| {
+        ResourceDimension::WorkUnits,
+        "iges plane boundary active removal",
+        |cap| {
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
             let arena = DecodeArena::new();
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let mut active = BTreeSet::new();
             let result = super::super::super::bounded_plane_curve_is_simple(
-                &geometry, super::super::super::PlaneBoundarySimplicity {
+                &geometry,
+                super::super::super::PlaneBoundarySimplicity {
                     index: &index,
                     plane: (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)),
                     resolution: 0.001,
                     transform: Transform::identity(),
                     ctx: &ctx,
-                }, false, None, &mut active,
+                },
+                false,
+                None,
+                &mut active,
             );
             assert!(active.is_empty());
             let Err(CodecError::ResourceLimit(first)) = &result else {
                 panic!("expected removal refusal")
             };
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == *first));
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == *first)
+            );
             result
         },
     );
 }
 
 fn node_bytes() -> u64 {
-    u64::try_from(11 * std::mem::size_of::<CurveId>() + 16 * std::mem::size_of::<usize>()
-        + 2 * std::mem::align_of::<CurveId>().max(std::mem::align_of::<usize>())).unwrap()
+    u64::try_from(
+        11 * std::mem::size_of::<CurveId>()
+            + 16 * std::mem::size_of::<usize>()
+            + 2 * std::mem::align_of::<CurveId>().max(std::mem::align_of::<usize>()),
+    )
+    .unwrap()
 }
 
 fn assert_nonsimple_child_root_destruction(unsolved: bool) {
     let (mut ir, geometry) = composite_with_line_child();
     if unsolved {
         ir.model.curves[0].geometry = CurveGeometry::Procedural {
-            construction: cadmpeg_ir::ids::ProceduralCurveId::mint("iges:model:procedural-curve#D1").unwrap(),
+            construction: cadmpeg_ir::ids::ProceduralCurveId::mint(
+                "iges:model:procedural-curve#D1",
+            )
+            .unwrap(),
             cache: None,
         };
     }
@@ -114,23 +137,40 @@ fn assert_nonsimple_child_root_destruction(unsolved: bool) {
         policy.limits.max_recursion_depth = 2;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut active = BTreeSet::new();
-        let result = super::super::super::bounded_plane_curve_is_simple(&geometry,
+        let result = super::super::super::bounded_plane_curve_is_simple(
+            &geometry,
             super::super::super::PlaneBoundarySimplicity {
-                index: &index, plane: (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)),
-                resolution: 0.001, transform: Transform::identity(), ctx: &ctx,
-            }, false, None, &mut active);
+                index: &index,
+                plane: (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)),
+                resolution: 0.001,
+                transform: Transform::identity(),
+                ctx: &ctx,
+            },
+            false,
+            None,
+            &mut active,
+        );
         assert!(active.is_empty());
         if cap == key + node {
             assert!(!result.unwrap());
-            let released = ctx.reserve_scoped(cap, "test destroyed nonsimple boundary root").unwrap();
+            let released = ctx
+                .reserve_scoped(cap, "test destroyed nonsimple boundary root")
+                .unwrap();
             drop(released);
             ctx.finish_session().unwrap();
         } else {
-            let Err(CodecError::ResourceLimit(first)) = result else { panic!("expected boundary active node refusal") };
+            let Err(CodecError::ResourceLimit(first)) = result else {
+                panic!("expected boundary active node refusal")
+            };
             assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
             assert_eq!(first.operation, "iges plane boundary active curve");
-            assert_eq!((first.limit, first.used, first.additional), (cap, key, node));
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+            assert_eq!(
+                (first.limit, first.used, first.additional),
+                (cap, key, node)
+            );
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
+            );
         }
     }
 }
@@ -158,23 +198,43 @@ fn bounded_plane_nonsimple_child_preserves_seeded_ancestor_storage() {
     policy.limits.max_materialized_bytes = node + seed_bytes + child_bytes;
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut storage = ctx.reserve_scoped(0, "test seeded boundary ancestor storage").unwrap();
+    let mut storage = ctx
+        .reserve_scoped(0, "test seeded boundary ancestor storage")
+        .unwrap();
     let mut active = BTreeSet::new();
-    storage.with_storage(|| {
-        let key = seed.try_clone_for_decode(&ctx, "test seeded boundary ancestor key")?;
-        ctx.insert_btree_set(&mut active, key, "test seeded boundary ancestor node")
-    }).unwrap();
-    assert!(!super::super::super::bounded_plane_curve_is_simple(&geometry,
+    storage
+        .with_storage(|| {
+            let key = seed.try_clone_for_decode(&ctx, "test seeded boundary ancestor key")?;
+            ctx.insert_btree_set(&mut active, key, "test seeded boundary ancestor node")
+        })
+        .unwrap();
+    assert!(!super::super::super::bounded_plane_curve_is_simple(
+        &geometry,
         super::super::super::PlaneBoundarySimplicity {
-            index: &index, plane: (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)),
-            resolution: 0.001, transform: Transform::identity(), ctx: &ctx,
-        }, false, None, &mut active).unwrap());
+            index: &index,
+            plane: (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)),
+            resolution: 0.001,
+            transform: Transform::identity(),
+            ctx: &ctx,
+        },
+        false,
+        None,
+        &mut active
+    )
+    .unwrap());
     assert_eq!(active, BTreeSet::from([seed]));
-    let child_released = ctx.reserve_scoped(child_bytes, "test removed nonsimple child backing").unwrap();
+    let child_released = ctx
+        .reserve_scoped(child_bytes, "test removed nonsimple child backing")
+        .unwrap();
     drop(child_released);
     drop(active);
     drop(storage);
-    let released = ctx.reserve_scoped(node + seed_bytes + child_bytes, "test destroyed seeded boundary path").unwrap();
+    let released = ctx
+        .reserve_scoped(
+            node + seed_bytes + child_bytes,
+            "test destroyed seeded boundary path",
+        )
+        .unwrap();
     drop(released);
     ctx.finish_session().unwrap();
 }
@@ -186,16 +246,24 @@ fn plane_boundary_destroys_active_path_before_retaining_proof_cache() {
     let scan = crate::test_support::scan(&bytes).unwrap();
     let (directory, quarantined) = crate::test_support::with_service_context(&bytes, |setup| {
         crate::directory::parse(&scan, crate::global::GlobalTable::V5_0, setup)
-    }).unwrap();
+    })
+    .unwrap();
     assert!(quarantined.is_empty());
-    let entries = directory.iter().map(|entry| (entry.sequence, entry)).collect();
+    let entries = directory
+        .iter()
+        .map(|entry| (entry.sequence, entry))
+        .collect();
     let index = ModelIndex::build(decoded.ir(), cadmpeg_ir::index::StandardIndex);
     type Key = super::super::super::PlaneBoundaryKey;
     type Value = super::super::super::PlaneBoundaryProof<'static>;
-    let cache = u64::try_from(11 * (std::mem::size_of::<Key>() + std::mem::size_of::<Value>())
-        + 16 * std::mem::size_of::<usize>()
-        + 2 * std::mem::align_of::<Key>().max(std::mem::align_of::<Value>())
-            .max(std::mem::align_of::<usize>())).unwrap();
+    let cache = u64::try_from(
+        11 * (std::mem::size_of::<Key>() + std::mem::size_of::<Value>())
+            + 16 * std::mem::size_of::<usize>()
+            + 2 * std::mem::align_of::<Key>()
+                .max(std::mem::align_of::<Value>())
+                .max(std::mem::align_of::<usize>()),
+    )
+    .unwrap();
     for cap in [cache - 1, cache] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -204,28 +272,47 @@ fn plane_boundary_destroys_active_path_before_retaining_proof_cache() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut proofs = super::super::super::PlaneBoundaryProofs {
             proven: std::collections::BTreeMap::new(),
-            storage: ctx.reserve_scoped(0, "test boundary proof cache storage").unwrap(),
+            storage: ctx
+                .reserve_scoped(0, "test boundary proof cache storage")
+                .unwrap(),
         };
-        let result = super::super::super::plane_boundary_edge(&index,
+        let result = super::super::super::plane_boundary_edge(
+            &index,
             (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)),
-            3, &entries, 0.001, &ctx, &mut proofs);
+            3,
+            &entries,
+            0.001,
+            &ctx,
+            &mut proofs,
+        );
         if cap == cache {
             let edge = result.unwrap_or_else(|_| panic!("expected unchanged closed circle proof"));
             assert_eq!(proofs.proven.len(), 1);
-            assert!(std::ptr::eq(edge, decoded.ir().model.edges.first().unwrap()));
+            assert!(std::ptr::eq(
+                edge,
+                decoded.ir().model.edges.first().unwrap()
+            ));
             drop(proofs);
-            let released = ctx.reserve_scoped(cap, "test destroyed complete boundary proof cache").unwrap();
+            let released = ctx
+                .reserve_scoped(cap, "test destroyed complete boundary proof cache")
+                .unwrap();
             drop(released);
             ctx.finish_session().unwrap();
         } else {
-            let Err(super::super::super::PlaneBoundaryError::Resource(CodecError::ResourceLimit(first))) = result
-            else { panic!("expected proof node allocation to refuse after active path destruction") };
+            let Err(super::super::super::PlaneBoundaryError::Resource(CodecError::ResourceLimit(
+                first,
+            ))) = result
+            else {
+                panic!("expected proof node allocation to refuse after active path destruction")
+            };
             assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
             assert_eq!(first.operation, "iges plane boundary proof cache");
             assert_eq!((first.limit, first.used, first.additional), (cap, 0, cache));
             assert!(proofs.proven.is_empty());
             drop(proofs);
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
+            );
         }
     }
 }

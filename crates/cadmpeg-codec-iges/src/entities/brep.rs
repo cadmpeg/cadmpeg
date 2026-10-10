@@ -155,25 +155,27 @@ fn topology_vertex<'ids>(
     if ctx.contains_key_btree_map(vertex_ids, &vertex_key, "iges B-rep topology vertex lookup")? {
         return ctx.get_btree_map(vertex_ids, &vertex_key, "iges B-rep topology vertex lookup");
     }
-    let position = ctx.get_btree_map(vertex_lists, &list, "iges B-rep vertex-list lookup")?
-        .and_then(|points| points.get(index)).copied();
+    let position = ctx
+        .get_btree_map(vertex_lists, &list, "iges B-rep vertex-list lookup")?
+        .and_then(|points| points.get(index))
+        .copied();
     let Some(position) = position.and_then(FinitePoint3::new) else {
         return Ok(None);
     };
-    ctx.reserve_scoped_vec(draft_slots, &mut candidate.model_mut().points,
+    ctx.reserve_scoped_vec(
+        draft_slots,
+        &mut candidate.model_mut().points,
         1,
         "iges B-rep topology points",
     )?;
-    ctx.reserve_scoped_vec(draft_slots, &mut candidate.model_mut().vertices,
+    ctx.reserve_scoped_vec(
+        draft_slots,
+        &mut candidate.model_mut().vertices,
         1,
         "iges B-rep topology vertices",
     )?;
     let slot = storage.with_storage(|| {
-        ctx.entry_btree_map(
-            vertex_ids,
-            vertex_key,
-            "iges B-rep topology vertex index",
-        )
+        ctx.entry_btree_map(vertex_ids, vertex_key, "iges B-rep topology vertex index")
     })?;
     let point_id = crate::ids::point_admitted(&stem.child(list).slot(index + 1), ctx)?;
     let point = Point::new(
@@ -209,8 +211,11 @@ fn source_edge_for_vertices<'a>(
     let mut positions = candidates.iter();
     while positions.len() != 0 || ctx.resource_refusal().is_some() {
         let Some(position) = ctx
-        .next_charged(&mut positions, "iges B-rep source edge candidates")
-        .map_err(SourceEdgeSelectionError::Codec)? else { break; };
+            .next_charged(&mut positions, "iges B-rep source edge candidates")
+            .map_err(SourceEdgeSelectionError::Codec)?
+        else {
+            break;
+        };
         let Some(edge) = ir.model.edges.get(*position) else {
             continue;
         };
@@ -269,7 +274,11 @@ fn project_pcurve_uses(
     let mut projected = ctx.collection_vec(resolved.len(), "iges B-rep projected pcurve uses")?;
     let mut pcurve_uses = uses.iter().zip(resolved).enumerate();
     while pcurve_uses.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some((index, ((isoparametric, _), (geometry, range)))) = ctx.next_charged(&mut pcurve_uses, "iges B-rep pcurve projection traversal")? else { break; };
+        let Some((index, ((isoparametric, _), (geometry, range)))) =
+            ctx.next_charged(&mut pcurve_uses, "iges B-rep pcurve projection traversal")?
+        else {
+            break;
+        };
         let parameter_range = cadmpeg_ir::units::FiniteVector::new(range).ok_or(
             PcurveProjectionError::Invalid(PcurveMetadata::NON_FINITE_PARAMETER_RANGE),
         )?;
@@ -280,7 +289,9 @@ fn project_pcurve_uses(
                 })
             })
             .transpose()?;
-        ctx.reserve_scoped_vec(draft_slots, &mut candidate.model_mut().pcurves,
+        ctx.reserve_scoped_vec(
+            draft_slots,
+            &mut candidate.model_mut().pcurves,
             1,
             "iges B-rep pcurve slots",
         )?;
@@ -342,7 +353,10 @@ fn resolve_pcurve_uses<'a>(
         tolerance,
     } = endpoints;
     if uses.is_empty() {
-        return Ok(Some((Vec::new(), ctx.reserve_scoped(0, "iges B-rep resolved pcurves")?)));
+        return Ok(Some((
+            Vec::new(),
+            ctx.reserve_scoped(0, "iges B-rep resolved pcurves")?,
+        )));
     }
     // A model without procedural surface records evaluates the support directly.
     if !source.model.procedural_surfaces.is_empty() && model_index.is_none() {
@@ -375,14 +389,19 @@ fn resolve_pcurve_uses<'a>(
         };
         surface_point_or_refusal(evaluation)
     };
-    let (mut resolved, resolved_slots) = ctx.temporary_vec(uses.len(), "iges B-rep resolved pcurves")?;
+    let (mut resolved, resolved_slots) =
+        ctx.temporary_vec(uses.len(), "iges B-rep resolved pcurves")?;
     let _mapped_storage;
     let (mut mapped, result_mapped_storage) =
         ctx.temporary_vec(uses.len(), "iges B-rep mapped pcurves")?;
     _mapped_storage = result_mapped_storage;
     let mut use_sequences = uses.iter();
     while use_sequences.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some((_, sequence)) = ctx.next_charged(&mut use_sequences, "iges B-rep pcurve resolution traversal")? else { break; };
+        let Some((_, sequence)) =
+            ctx.next_charged(&mut use_sequences, "iges B-rep pcurve resolution traversal")?
+        else {
+            break;
+        };
         let Some((geometry, range)) = pcurve_geometry(
             source,
             index,
@@ -468,7 +487,10 @@ pub(super) fn project<'ctx>(
         if !(entry.entity_type == 502 && entry.form == 1) {
             continue;
         }
-        let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges B-rep parameter lookup")?.copied() else {
+        let Some(record) = ctx
+            .get_btree_map(records, &entry.sequence, "iges B-rep parameter lookup")?
+            .copied()
+        else {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -503,7 +525,9 @@ pub(super) fn project<'ctx>(
             .with_storage(|| ctx.collection_vec(count, "iges B-rep vertex-list points"))?;
         let mut tuples = 0..count;
         while !tuples.is_empty() || ctx.resource_refusal().is_some() {
-            let Some(index) = ctx.next_charged(&mut tuples, "iges B-rep definition tuples")? else { break; };
+            let Some(index) = ctx.next_charged(&mut tuples, "iges B-rep definition tuples")? else {
+                break;
+            };
             let start = 2 + index * 3;
             let values = [
                 record.number(start),
@@ -561,7 +585,10 @@ pub(super) fn project<'ctx>(
             )?;
             continue;
         }
-        let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges B-rep parameter lookup")?.copied() else {
+        let Some(record) = ctx
+            .get_btree_map(records, &entry.sequence, "iges B-rep parameter lookup")?
+            .copied()
+        else {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -586,7 +613,9 @@ pub(super) fn project<'ctx>(
             .with_storage(|| ctx.collection_vec(count, "iges B-rep edge-list edges"))?;
         let mut tuples = 0..count;
         while !tuples.is_empty() || ctx.resource_refusal().is_some() {
-            let Some(item) = ctx.next_charged(&mut tuples, "iges B-rep definition tuples")? else { break; };
+            let Some(item) = ctx.next_charged(&mut tuples, "iges B-rep definition tuples")? else {
+                break;
+            };
             let start = 2 + item * 5;
             let Some(edge) = pointer(record, start)
                 .zip(pointer(record, start + 1))
@@ -606,9 +635,19 @@ pub(super) fn project<'ctx>(
                 edges.clear();
                 break;
             };
-            if ctx.get_btree_map(&vertex_lists, &edge.start_list, "iges B-rep vertex-list lookup")?
+            if ctx
+                .get_btree_map(
+                    &vertex_lists,
+                    &edge.start_list,
+                    "iges B-rep vertex-list lookup",
+                )?
                 .is_none_or(|list| edge.start_index >= list.len())
-                || ctx.get_btree_map(&vertex_lists, &edge.end_list, "iges B-rep vertex-list lookup")?
+                || ctx
+                    .get_btree_map(
+                        &vertex_lists,
+                        &edge.end_list,
+                        "iges B-rep vertex-list lookup",
+                    )?
                     .is_none_or(|list| edge.end_index >= list.len())
             {
                 edges.clear();
@@ -657,7 +696,10 @@ pub(super) fn project<'ctx>(
             )?;
             continue;
         }
-        let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges B-rep parameter lookup")?.copied() else {
+        let Some(record) = ctx
+            .get_btree_map(records, &entry.sequence, "iges B-rep parameter lookup")?
+            .copied()
+        else {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -682,9 +724,11 @@ pub(super) fn project<'ctx>(
         let mut uses =
             record_storage.with_storage(|| ctx.collection_vec(count, "iges B-rep loop uses"))?;
         let mut tuples = 0..count;
-        while (!tuples.is_empty() || ctx.resource_refusal().is_some()) && ctx
-            .next_charged(&mut tuples, "iges B-rep definition tuples")?
-            .is_some() {
+        while (!tuples.is_empty() || ctx.resource_refusal().is_some())
+            && ctx
+                .next_charged(&mut tuples, "iges B-rep definition tuples")?
+                .is_some()
+        {
             let Some(use_type) = record.integer(index) else {
                 uses.clear();
                 break;
@@ -705,7 +749,11 @@ pub(super) fn project<'ctx>(
                 .with_storage(|| ctx.collection_vec(pcurve_count, "iges B-rep use pcurves"))?;
             let mut pcurve_tuples = 0..pcurve_count;
             while !pcurve_tuples.is_empty() || ctx.resource_refusal().is_some() {
-                let Some(pcurve_index) = ctx.next_charged(&mut pcurve_tuples, "iges B-rep definition tuples")? else { break; };
+                let Some(pcurve_index) =
+                    ctx.next_charged(&mut pcurve_tuples, "iges B-rep definition tuples")?
+                else {
+                    break;
+                };
                 let isoparametric = match record.integer(index + 5 + pcurve_index * 2) {
                     Some(1) => true,
                     Some(0) => false,
@@ -718,9 +766,12 @@ pub(super) fn project<'ctx>(
                     pcurves.clear();
                     break;
                 };
-                if ctx.get_btree_map(entries, &sequence, "iges B-rep directory lookup")?.is_none_or(|entry| {
-                    entry.status.use_flag(global.global_table()) != Some(UseFlag::Parametric)
-                }) {
+                if ctx
+                    .get_btree_map(entries, &sequence, "iges B-rep directory lookup")?
+                    .is_none_or(|entry| {
+                        entry.status.use_flag(global.global_table()) != Some(UseFlag::Parametric)
+                    })
+                {
                     pcurves.clear();
                     break;
                 }
@@ -740,7 +791,8 @@ pub(super) fn project<'ctx>(
                             break;
                         }
                     };
-                    if ctx.get_btree_map(&edge_lists, &list, "iges B-rep edge-list lookup")?
+                    if ctx
+                        .get_btree_map(&edge_lists, &list, "iges B-rep edge-list lookup")?
                         .is_none_or(|items| item_index >= items.len())
                     {
                         uses.clear();
@@ -754,7 +806,8 @@ pub(super) fn project<'ctx>(
                     }
                 }
                 1 => {
-                    if ctx.get_btree_map(&vertex_lists, &list, "iges B-rep vertex-list lookup")?
+                    if ctx
+                        .get_btree_map(&vertex_lists, &list, "iges B-rep vertex-list lookup")?
                         .is_none_or(|items| item_index >= items.len())
                     {
                         uses.clear();
@@ -812,7 +865,10 @@ pub(super) fn project<'ctx>(
             )?;
             continue;
         }
-        let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges B-rep parameter lookup")?.copied() else {
+        let Some(record) = ctx
+            .get_btree_map(records, &entry.sequence, "iges B-rep parameter lookup")?
+            .copied()
+        else {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -872,7 +928,9 @@ pub(super) fn project<'ctx>(
         let mut valid_pointers = true;
         let mut tuples = 1..count;
         while !tuples.is_empty() || ctx.resource_refusal().is_some() {
-            let Some(index) = ctx.next_charged(&mut tuples, "iges B-rep definition tuples")? else { break; };
+            let Some(index) = ctx.next_charged(&mut tuples, "iges B-rep definition tuples")? else {
+                break;
+            };
             let Some(sequence) = pointer(record, 4 + index) else {
                 valid_pointers = false;
                 break;
@@ -899,7 +957,10 @@ pub(super) fn project<'ctx>(
         };
         if ctx.any_by(
             face_loops.iter(),
-            |sequence| ctx.contains_key_btree_map(&loops, &sequence, "iges B-rep loop lookup").map(|exists| !exists),
+            |sequence| {
+                ctx.contains_key_btree_map(&loops, &sequence, "iges B-rep loop lookup")
+                    .map(|exists| !exists)
+            },
             "iges B-rep face loop references",
         )? {
             super::push_entity_loss_with_scoped_slots(
@@ -948,7 +1009,10 @@ pub(super) fn project<'ctx>(
             )?;
             continue;
         }
-        let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges B-rep parameter lookup")?.copied() else {
+        let Some(record) = ctx
+            .get_btree_map(records, &entry.sequence, "iges B-rep parameter lookup")?
+            .copied()
+        else {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -973,7 +1037,9 @@ pub(super) fn project<'ctx>(
             .with_storage(|| ctx.collection_vec(count, "iges B-rep shell face uses"))?;
         let mut tuples = 0..count;
         while !tuples.is_empty() || ctx.resource_refusal().is_some() {
-            let Some(index) = ctx.next_charged(&mut tuples, "iges B-rep definition tuples")? else { break; };
+            let Some(index) = ctx.next_charged(&mut tuples, "iges B-rep definition tuples")? else {
+                break;
+            };
             let Some(face) = pointer(record, 2 + index * 2) else {
                 face_uses.clear();
                 break;
@@ -1027,8 +1093,13 @@ pub(super) fn project<'ctx>(
         if !(entry.entity_type == 514 && entry.form == 2) {
             continue;
         }
-        if ctx.contains_key_btree_map(&shell_definitions, &entry.sequence, "iges B-rep shell lookup")? {
-            let mut shell_storage = ctx.reserve_scoped(0, "iges B-rep definition record scratch")?;
+        if ctx.contains_key_btree_map(
+            &shell_definitions,
+            &entry.sequence,
+            "iges B-rep shell lookup",
+        )? {
+            let mut shell_storage =
+                ctx.reserve_scoped(0, "iges B-rep definition record scratch")?;
             let mut shells = shell_storage
                 .with_storage(|| ctx.collection_vec(1, "iges B-rep sheet shell uses"))?;
             shells.push((entry.sequence, Sense::Forward));
@@ -1056,7 +1127,10 @@ pub(super) fn project<'ctx>(
         if !(entry.entity_type == 186 && entry.form == 0) {
             continue;
         }
-        let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges B-rep parameter lookup")?.copied() else {
+        let Some(record) = ctx
+            .get_btree_map(records, &entry.sequence, "iges B-rep parameter lookup")?
+            .copied()
+        else {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -1100,9 +1174,9 @@ pub(super) fn project<'ctx>(
             )?;
             continue;
         };
-        let shell_count = void_count.checked_add(1).ok_or_else(|| {
-            ctx.refuse_codec_limit("iges B-rep solid shell uses", u64::MAX, 1)
-        })?;
+        let shell_count = void_count
+            .checked_add(1)
+            .ok_or_else(|| ctx.refuse_codec_limit("iges B-rep solid shell uses", u64::MAX, 1))?;
         let mut record_storage = ctx.reserve_scoped(0, "iges B-rep definition record scratch")?;
         let mut shell_uses = record_storage
             .with_storage(|| ctx.collection_vec(shell_count, "iges B-rep solid shell uses"))?;
@@ -1110,7 +1184,9 @@ pub(super) fn project<'ctx>(
         let mut valid = true;
         let mut tuples = 0..void_count;
         while !tuples.is_empty() || ctx.resource_refusal().is_some() {
-            let Some(index) = ctx.next_charged(&mut tuples, "iges B-rep definition tuples")? else { break; };
+            let Some(index) = ctx.next_charged(&mut tuples, "iges B-rep definition tuples")? else {
+                break;
+            };
             let Some(shell) = pointer(record, 4 + index * 2) else {
                 valid = false;
                 break;
@@ -1129,7 +1205,8 @@ pub(super) fn project<'ctx>(
             || ctx.any_by(
                 &shell_uses,
                 |(sequence, _)| {
-                    Ok(ctx.get_btree_map(&shell_definitions, sequence, "iges B-rep shell lookup")?
+                    Ok(ctx
+                        .get_btree_map(&shell_definitions, sequence, "iges B-rep shell lookup")?
                         .is_none_or(|shell| shell.form != 1))
                 },
                 "iges B-rep solid shell references",
@@ -1149,7 +1226,9 @@ pub(super) fn project<'ctx>(
         }
         let mut source_values = IntoIterator::into_iter(&shell_uses);
         while source_values.len() != 0 {
-            let Some((sequence, _)) = ctx.next_charged(&mut source_values, "iges B-rep shell reference traversal")? else {
+            let Some((sequence, _)) =
+                ctx.next_charged(&mut source_values, "iges B-rep shell reference traversal")?
+            else {
                 break;
             };
             definition_storage.with_storage(|| {
@@ -1175,7 +1254,13 @@ pub(super) fn project<'ctx>(
             Ok(transform) => (entry.transform != 0).then_some(transform),
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{message}"))?;
+                super::push_entity_loss_with_scoped_slots(
+                    ctx,
+                    &mut loss_slots_storage,
+                    &mut losses,
+                    entry,
+                    format_args!("{message}"),
+                )?;
                 continue;
             }
         };
@@ -1201,10 +1286,17 @@ pub(super) fn project<'ctx>(
         if !(entry.entity_type == 514 && entry.form == 1) {
             continue;
         }
-        if ctx.contains_key_btree_map(&shell_definitions, &entry.sequence, "iges B-rep shell lookup")?
-            && !ctx.contains_btree_set(&referenced_closed_shells, &entry.sequence, "iges B-rep referenced shell lookup")?
-        {
-            let mut shell_storage = ctx.reserve_scoped(0, "iges B-rep definition record scratch")?;
+        if ctx.contains_key_btree_map(
+            &shell_definitions,
+            &entry.sequence,
+            "iges B-rep shell lookup",
+        )? && !ctx.contains_btree_set(
+            &referenced_closed_shells,
+            &entry.sequence,
+            "iges B-rep referenced shell lookup",
+        )? {
+            let mut shell_storage =
+                ctx.reserve_scoped(0, "iges B-rep definition record scratch")?;
             let mut shells = shell_storage
                 .with_storage(|| ctx.collection_vec(1, "iges B-rep sheet shell uses"))?;
             shells.push((entry.sequence, Sense::Forward));
@@ -1233,8 +1325,10 @@ pub(super) fn project<'ctx>(
     if !body_definitions.is_empty() {
         let mut source_index_entries = ir.model.surfaces.iter().enumerate();
         while source_index_entries.len() != 0 {
-            let Some((position, surface)) =
-                ctx.next_charged(&mut source_index_entries, "iges B-rep surface index traversal")?
+            let Some((position, surface)) = ctx.next_charged(
+                &mut source_index_entries,
+                "iges B-rep surface index traversal",
+            )?
             else {
                 break;
             };
@@ -1260,8 +1354,10 @@ pub(super) fn project<'ctx>(
         }
         let mut source_index_entries = ir.model.curves.iter().enumerate();
         while source_index_entries.len() != 0 {
-            let Some((position, curve)) =
-                ctx.next_charged(&mut source_index_entries, "iges B-rep curve index traversal")?
+            let Some((position, curve)) = ctx.next_charged(
+                &mut source_index_entries,
+                "iges B-rep curve index traversal",
+            )?
             else {
                 break;
             };
@@ -1298,7 +1394,8 @@ pub(super) fn project<'ctx>(
     }
     let mut source_values = IntoIterator::into_iter(body_definitions);
     while source_values.len() != 0 {
-        let Some(definition) = ctx.next_charged(&mut source_values, "iges B-rep body traversal")? else {
+        let Some(definition) = ctx.next_charged(&mut source_values, "iges B-rep body traversal")?
+        else {
             break;
         };
         let entry = definition.entry;
@@ -2129,7 +2226,12 @@ pub(super) fn project<'ctx>(
         }
     }
 
-    Ok(ProjectionOutcome { decoded, decoded_storage, losses, loss_slots_storage })
+    Ok(ProjectionOutcome {
+        decoded,
+        decoded_storage,
+        losses,
+        loss_slots_storage,
+    })
 }
 
 #[cfg(test)]

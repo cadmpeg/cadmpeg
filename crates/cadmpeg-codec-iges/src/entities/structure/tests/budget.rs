@@ -212,24 +212,41 @@ fn predefined_associativity_visits_members_before_header_and_extent_rejection() 
             let member = crate::test_support::directory_target(3, 116);
             let entries = BTreeMap::from([(1, &entry), (3, &member)]);
             let record = ParameterRecord::from_test_tokens(
-                1, 1..2, Vec::new(), values.len(),
-                values.iter().map(|value| Token {
-                    value: TokenValue::Integer(*value), span: 0..0,
-                }).collect(), Vec::new(),
+                1,
+                1..2,
+                Vec::new(),
+                values.len(),
+                values
+                    .iter()
+                    .map(|value| Token {
+                        value: TokenValue::Integer(*value),
+                        span: 0..0,
+                    })
+                    .collect(),
+                Vec::new(),
             );
             let error = cadmpeg_test_support::refusal::resource_limit_at(
-                ResourceDimension::WorkUnits, "iges predefined associativity fields", |cap| {
+                ResourceDimension::WorkUnits,
+                "iges predefined associativity fields",
+                |cap| {
                     let mut policy = DecodePolicy::service();
                     policy.limits.max_work_units = cap;
                     crate::test_support::with_policy_context(&[], &policy, |ctx| {
                         super::super::predefined_associativity_valid(
-                            &entry, &record, &entries, &BTreeMap::new(), &BTreeMap::new(), ctx,
+                            &entry,
+                            &record,
+                            &entries,
+                            &BTreeMap::new(),
+                            &BTreeMap::new(),
+                            ctx,
                         )
                     })
                 },
             );
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == "iges predefined associativity fields" && limit.additional == 1));
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == "iges predefined associativity fields" && limit.additional == 1)
+            );
         }
     }
 }
@@ -252,25 +269,49 @@ fn legacy_plane_invalid_parent_boundary_does_not_visit_children() {
         let entry = crate::test_support::directory_target(5, 402);
         let values = [402, 1, 1, 1, 3];
         let record = ParameterRecord::from_test_tokens(
-            5, 1..2, Vec::new(), values.len(),
-            values.iter().map(|value| Token {
-                value: TokenValue::Integer(*value), span: 0..0,
-            }).collect(), Vec::new(),
+            5,
+            1..2,
+            Vec::new(),
+            values.len(),
+            values
+                .iter()
+                .map(|value| Token {
+                    value: TokenValue::Integer(*value),
+                    span: 0..0,
+                })
+                .collect(),
+            Vec::new(),
         );
         let ir = CadIr::empty();
         let index = ModelIndex::new_model_only(&ir, ctx).unwrap();
         let mut proofs = super::super::PlaneBoundaryProofs {
-            proven: BTreeMap::new(), storage: ctx.reserve_scoped(0, "test plane proofs").unwrap(),
+            proven: BTreeMap::new(),
+            storage: ctx.reserve_scoped(0, "test plane proofs").unwrap(),
         };
-        let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, "iges legacy plane children traversal", None);
-        let result = super::super::legacy_single_parent_face(
-            (&index, &mut proofs), super::super::LegacyPlaneSource { entry: &entry, record: &record },
-            (1, &parent), &BTreeMap::from([(1, &parent), (3, &child)]), &BTreeMap::new(),
-            &global.length_context().unwrap(), ctx, &mut super::super::super::geometry::SourceSequences::default(),
+        let _probe = RefusalProbe::arm(
+            ResourceDimension::WorkUnits,
+            "iges legacy plane children traversal",
+            None,
         );
-        assert!(matches!(result, Err(super::super::LegacyPlaneError::Invalid(
-            "legacy single-parent plane has an invalid boundary pointer"
-        ))));
+        let result = super::super::legacy_single_parent_face(
+            (&index, &mut proofs),
+            super::super::LegacyPlaneSource {
+                entry: &entry,
+                record: &record,
+            },
+            (1, &parent),
+            &BTreeMap::from([(1, &parent), (3, &child)]),
+            &BTreeMap::new(),
+            &global.length_context().unwrap(),
+            ctx,
+            &mut super::super::super::geometry::SourceSequences::default(),
+        );
+        assert!(matches!(
+            result,
+            Err(super::super::LegacyPlaneError::Invalid(
+                "legacy single-parent plane has an invalid boundary pointer"
+            ))
+        ));
         assert!(ctx.resource_refusal().is_none());
     });
 }
