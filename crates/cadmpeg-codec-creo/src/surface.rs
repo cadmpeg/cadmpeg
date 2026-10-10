@@ -4336,9 +4336,16 @@ fn opaque_spans(
     body: &[u8],
     tokens: &[SurfaceParameterScalar],
 ) -> Result<Vec<SurfaceParameterOpaqueSpan>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut spans = Vec::new();
     let mut cursor = 0;
-    for token in tokens {
+    let mut remaining = tokens.iter();
+    while remaining.len() != 0 {
+        let Some(token) = ctx.next_charged(&mut remaining, "creo surface opaque token spans")? else {
+            break;
+        };
         if cursor < token.offset {
             let raw = ctx.copy_retained(
                 &body[cursor..token.offset],
@@ -4367,18 +4374,33 @@ fn scalar_frames(
     ctx: &DecodeContext<'_>,
     tokens: &[SurfaceParameterScalar],
 ) -> Result<Vec<SurfaceParameterScalarFrame>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut frames = Vec::new();
-    let mut start = 0;
-    while start < tokens.len() {
+    let mut starts = 0..tokens.len();
+    while !starts.is_empty() {
+        let Some(start) = ctx.next_charged(&mut starts, "creo surface scalar frame starts")? else {
+            break;
+        };
         let mut end = start + 1;
-        while end < tokens.len()
-            && tokens[end - 1].offset + tokens[end - 1].raw.len() == tokens[end].offset
-        {
-            end += 1;
+        let mut candidates = end..tokens.len();
+        while !candidates.is_empty() {
+            let Some(candidate) = ctx.next_charged(&mut candidates, "creo surface scalar frame adjacency")? else {
+                break;
+            };
+            if tokens[candidate - 1].offset + tokens[candidate - 1].raw.len() != tokens[candidate].offset {
+                break;
+            }
+            end = candidate + 1;
         }
         let mut slots = Vec::new();
         ctx.reserve_vec(&mut slots, end - start, "creo surface scalar frame slots")?;
-        for token in &tokens[start..end] {
+        let mut selected = tokens[start..end].iter();
+        while selected.len() != 0 {
+            let Some(token) = ctx.next_charged(&mut selected, "creo surface scalar frame token copies")? else {
+                break;
+            };
             slots.push(SurfaceParameterScalar {
                 value: token.value,
                 raw: ctx.copy_retained(&token.raw, "creo surface scalar frame bytes")?,
@@ -4390,7 +4412,7 @@ fn scalar_frames(
             offset: tokens[start].offset,
             slots,
         });
-        start = end;
+        starts.start = end;
     }
     Ok(frames)
 }
