@@ -417,7 +417,7 @@ pub(super) fn nurbs_surface_requested_jet(
             || matches!(second, Err(EvaluationFailure::NonFinite(())));
         let recover_third = request.needs_third() && !polynomial_degree.is_some_and(|degree| degree < 3)
             && lower_projection_failed;
-        let recover_fourth = request == SurfaceRequest::Fourth && !polynomial_degree.is_some_and(|degree| degree < 4)
+        let recover_fourth = request.needs_fourth() && !polynomial_degree.is_some_and(|degree| degree < 4)
             && (lower_projection_failed || matches!(third_state, Err(EvaluationFailure::NonFinite(()))));
         let recovery = match (recover_third, recover_fourth) {
             (false, false) => None,
@@ -425,9 +425,9 @@ pub(super) fn nurbs_surface_requested_jet(
             (false, true) => Some(higher::evaluate(scratch, &local, higher::Orders::Fourth)),
             (true, true) => Some(higher::evaluate(scratch, &local, higher::Orders::ThirdAndFourth)),
         };
-        let fourth = if request == SurfaceRequest::Fourth && polynomial_degree.is_some_and(|degree| degree < 4) {
+        let fourth = if request.needs_fourth() && polynomial_degree.is_some_and(|degree| degree < 4) {
             Ok([FiniteVector3::ZERO; 5])
-        } else if request == SurfaceRequest::Fourth {
+        } else if request.needs_fourth() {
             match (&first, &second, &third_state) {
                 (Ok(first), Ok(second), Ok(third)) => local.fourth(scratch, first, second, third).map(|lanes| lanes.map(finite_vector)),
                 (Err(EvaluationFailure::ResourceLimit(limit)), _, _)
@@ -451,7 +451,14 @@ pub(super) fn nurbs_surface_requested_jet(
                 first: first.map(|first| first.lanes.map(finite_vector)),
                 second: second.map(|second| second.lanes.map(finite_vector)),
             },
-            higher: if request == SurfaceRequest::Fourth { HigherPartials::Fourth { third, fourth } }
+            higher: if request == SurfaceRequest::Fifth {
+                HigherPartials::Fifth {
+                    third, fourth,
+                    fifth: if polynomial_degree.is_some_and(|degree| degree < 5) {
+                        Ok([FiniteVector3::ZERO; 6])
+                    } else { Err(EvaluationFailure::NoValue) },
+                }
+            } else if request.needs_fourth() { HigherPartials::Fourth { third, fourth } }
                 else { HigherPartials::Third(third) },
         })
     })();

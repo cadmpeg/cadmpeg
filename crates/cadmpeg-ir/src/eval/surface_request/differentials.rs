@@ -2,6 +2,7 @@
 //! Analytic higher partials and second partials of an oriented offset.
 
 pub(super) mod normal_third;
+pub(super) mod normal_fourth;
 
 use super::super::{admit_lanes, vector_sum, EvaluationFailure, SurfaceJet};
 use crate::features::FiniteVector3;
@@ -95,6 +96,32 @@ pub(in crate::eval) fn analytic_fourth(
         _ => return Err(EvaluationFailure::NoValue),
     };
     admit_lanes(lanes)
+}
+
+/// Fifth derivatives of the stored analytic charts. These periodic identities
+/// use actual lower derivatives, including the torus's minor-only mixed lanes.
+pub(in crate::eval) fn analytic_fifth(
+    geometry: &SolvedSurfaceGeometry,
+    base: SurfaceJet,
+    third: Result<[FiniteVector3; 4], EvaluationFailure<()>>,
+) -> Result<[FiniteVector3; 6], EvaluationFailure<()>> {
+    let [du, dv] = base.first?;
+    let zero = FiniteVector3::ZERO;
+    Ok(match geometry {
+        SolvedSurfaceGeometry::Cylinder(_) => [du, zero, zero, zero, zero, zero],
+        SolvedSurfaceGeometry::Cone(_) => [du, third?[1].negated(), zero, zero, zero, zero],
+        SolvedSurfaceGeometry::Sphere(_) => {
+            let mixed = third?[1].negated();
+            [du, mixed, du, mixed, du, dv]
+        }
+        SolvedSurfaceGeometry::Torus(_) => {
+            let third = third?;
+            let uuv = third[1].negated();
+            let uvv = third[2].negated();
+            [du, uuv, uvv, uuv, uvv, dv]
+        }
+        _ => return Err(EvaluationFailure::NoValue),
+    })
 }
 
 #[derive(Clone, Copy)]

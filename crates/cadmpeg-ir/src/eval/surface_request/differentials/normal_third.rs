@@ -6,13 +6,13 @@ use crate::eval::{EvaluationFailure, SurfaceJet};
 
 // Higher normal products need their nonzero intermediate coefficients in
 // normal binary64. A rounded subnormal or zero must not be amplified later.
-fn finite_radial(value: Option<ScaledValue>) -> Result<FiniteReal, EvaluationFailure<()>> {
+pub(super) fn finite_radial(value: Option<ScaledValue>) -> Result<FiniteReal, EvaluationFailure<()>> {
     value.map_or(Ok(FiniteReal::ZERO), |value| {
         value.finite().ok().filter(|value| value.get().is_normal()).ok_or(EvaluationFailure::NoValue)
     })
 }
 
-fn normal_lanes(derivative: NormalDerivative) -> Result<[FiniteReal; 3], EvaluationFailure<()>> {
+pub(super) fn normal_lanes(derivative: NormalDerivative) -> Result<[FiniteReal; 3], EvaluationFailure<()>> {
     for (value, numerator) in derivative.finite.into_iter().zip(derivative.numerator) {
         if numerator.is_some() && !value.get().is_normal() {
             return Err(EvaluationFailure::NoValue);
@@ -21,13 +21,24 @@ fn normal_lanes(derivative: NormalDerivative) -> Result<[FiniteReal; 3], Evaluat
     Ok(derivative.finite)
 }
 
+pub(in crate::eval::surface_request) struct NormalThird {
+    pub(super) second: NormalSecond,
+    pub(super) normal: [[FiniteReal; 3]; 4],
+    pub(super) radial: [Option<ScaledValue>; 4],
+}
+
+pub(in crate::eval::surface_request) struct OffsetThird {
+    pub(in crate::eval::surface_request) offset: Result<[FiniteVector3; 4], EvaluationFailure<()>>,
+    pub(in crate::eval::surface_request) normal: Result<NormalThird, EvaluationFailure<()>>,
+}
+
 pub(in crate::eval::surface_request) fn offset_third(
     base: SurfaceJet,
     third: Result<[FiniteVector3; 4], EvaluationFailure<()>>,
     fourth: Result<[FiniteVector3; 5], EvaluationFailure<()>>,
     distance: f64,
     state: NormalSecond,
-) -> Result<[FiniteVector3; 4], EvaluationFailure<()>> {
+) -> Result<OffsetThird, EvaluationFailure<()>> {
     let [du, dv] = FiniteVector3::raw_array(base.first?);
     let [duu, duv, dvv] = FiniteVector3::raw_array(base.second?);
     let third = FiniteVector3::raw_array(third?);
@@ -53,7 +64,11 @@ pub(in crate::eval::surface_request) fn offset_third(
     // Repeated indices remain separate product-rule terms.
     let orders = [(0, 0, 0, 0, 0, 0), (0, 0, 1, 1, 1, 0), (0, 1, 1, 2, 1, 1), (1, 1, 1, 2, 2, 2)];
     let mut output = [FiniteVector3::ZERO; 4];
+    let mut normals = [[FiniteReal::ZERO; 3]; 4];
+    let mut radials = [None; 4];
+    let mut offset_failure = None;
     for (order, (i, j, k, jk, ik, ij)) in orders.into_iter().enumerate() {
+        let radial_result = (|| {
         let mut radial = ExactSignedSum::default();
         radial.add_scaled_product(dot_scaled(cross_third[order], state.normal)?, FiniteReal::ONE)
             .ok_or(EvaluationFailure::NoValue)?;
@@ -65,10 +80,19 @@ pub(in crate::eval::surface_request) fn offset_third(
             radial.add_factors([state.finite_magnitude.get(), first_normal[j][axis].get(), second_normal[ik][axis].get()]);
             radial.add_factors([state.finite_magnitude.get(), first_normal[k][axis].get(), second_normal[ij][axis].get()]);
         }
-        let radial = radial.finish();
+        Ok(radial.finish())
+        })();
+        let radial = match radial_result {
+            Ok(value) => value,
+            Err(failure) => return Ok(OffsetThird {
+                offset: Err(offset_failure.unwrap_or(failure)), normal: Err(failure),
+            }),
+        };
+        radials[order] = radial;
         let base_lanes = [third[order].x, third[order].y, third[order].z];
         let mut lanes = [FiniteReal::ZERO; 3];
         for (axis, lane) in lanes.iter_mut().enumerate() {
+            let normal_result = (|| {
             let mut numerator = ExactSignedSum::default();
             numerator.add_scaled_product(cross_third[order][axis], FiniteReal::ONE).ok_or(EvaluationFailure::NoValue)?;
             numerator.add_scaled_product(radial, state.normal[axis].negated()).ok_or(EvaluationFailure::NoValue)?;
@@ -78,17 +102,34 @@ pub(in crate::eval::surface_request) fn offset_third(
             numerator.add_product(-radial_first[i].get(), second_normal[jk][axis].get());
             numerator.add_product(-radial_first[j].get(), second_normal[ik][axis].get());
             numerator.add_product(-radial_first[k].get(), second_normal[ij][axis].get());
-            let normal_third = numerator.finish().map_or(Ok(FiniteReal::ZERO), |value| {
+            numerator.finish().map_or(Ok(FiniteReal::ZERO), |value| {
                 value.quotient(state.magnitude).ok().filter(|value| value.get().is_normal()).ok_or(EvaluationFailure::NoValue)
-            })?;
+            })
+            })();
+            let normal_third = match normal_result {
+                Ok(value) => value,
+                Err(failure) => return Ok(OffsetThird {
+                    offset: Err(offset_failure.unwrap_or(failure)), normal: Err(failure),
+                }),
+            };
+            normals[order][axis] = normal_third;
+            // Retain the original first offset error while computing actual
+            // normal coefficients needed by an independent fourth result.
+            if offset_failure.is_some() { continue; }
             let mut sum = ExactSignedSum::default();
             sum.add_product(base_lanes[axis], 1.0);
             sum.add_product(distance, normal_third.get());
-            *lane = sum.finish().map_or(Ok(FiniteReal::ZERO), |value| value.finite().map_err(|_| EvaluationFailure::NonFinite(())))?;
+            match sum.finish().map_or(Ok(FiniteReal::ZERO), |value| value.finite().map_err(|_| EvaluationFailure::NonFinite(()))) {
+                Ok(value) => *lane = value,
+                Err(failure) => offset_failure = Some(failure),
+            }
         }
         output[order] = FiniteVector3::from_components(lanes[0], lanes[1], lanes[2]);
     }
-    Ok(output)
+    Ok(OffsetThird {
+        offset: offset_failure.map_or(Ok(output), Err),
+        normal: Ok(NormalThird { second: state, normal: normals, radial: radials }),
+    })
 }
 
 #[cfg(test)]

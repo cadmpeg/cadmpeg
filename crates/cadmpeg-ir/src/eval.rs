@@ -3449,7 +3449,7 @@ enum ModelCurveRequest {
 
 impl ModelCurveRequest {
     fn for_surface_partials(request: SurfaceRequest) -> Self {
-        if request == SurfaceRequest::Fourth { Self::Fourth }
+        if request.needs_fourth() { Self::Fourth }
         else if request.needs_third() { Self::Third }
         else if request.needs_second() { Self::Second } else { Self::First }
     }
@@ -3831,7 +3831,7 @@ fn model_axis_revolution_jet(
             rotate_vector_about_axis(differential.third?.get(), axis, angle),
         ]))()
     } else { Err(EvaluationFailure::NoValue) };
-    let fourth = if request == SurfaceRequest::Fourth {
+    let fourth = if request.needs_fourth() {
         (|| admit_lanes([
             axis.cross(axis.cross(axis.cross(du))),
             axis.cross(axis.cross(axis.cross(rotated_tangent?))),
@@ -4145,7 +4145,7 @@ fn model_native_extrusion_jet(
             Ok([jerk, FiniteVector3::ZERO, FiniteVector3::ZERO, FiniteVector3::ZERO])
         })
     } else { Err(EvaluationFailure::NoValue) };
-    let fourth = if request == SurfaceRequest::Fourth {
+    let fourth = if request.needs_fourth() {
         derivative.and_then(|derivative| Ok([
             curve_higher::scale_fourth(differential.fourth?, [derivative; 4])?,
             FiniteVector3::ZERO, FiniteVector3::ZERO, FiniteVector3::ZERO, FiniteVector3::ZERO,
@@ -4343,7 +4343,7 @@ fn model_native_revolution_jet(
             Ok(if transposed { mapped } else { [mapped[3], mapped[2], mapped[1], mapped[0]] })
         })()
     } else { Err(EvaluationFailure::NoValue) };
-    let fourth = if request == SurfaceRequest::Fourth {
+    let fourth = if request.needs_fourth() {
         (|| {
             let angular = FiniteReal::new(angular_derivative).ok_or(EvaluationFailure::NonFinite(()))?;
             let carrier = carrier.derivative?;
@@ -5744,11 +5744,14 @@ fn surface_requested_jet_solved(
                 HigherPartials::Affine
             } else if request.needs_third() {
                 let third = surface_request::differentials::analytic_third(geometry, u, v, jet);
-                if request == SurfaceRequest::Fourth {
-                    HigherPartials::Fourth {
-                        third,
-                        fourth: surface_request::differentials::analytic_fourth(geometry, u, v, jet),
-                    }
+                if request.needs_fourth() {
+                    let fourth = surface_request::differentials::analytic_fourth(geometry, u, v, jet);
+                    if request == SurfaceRequest::Fifth {
+                        HigherPartials::Fifth {
+                            third, fourth,
+                            fifth: surface_request::differentials::analytic_fifth(geometry, jet, third),
+                        }
+                    } else { HigherPartials::Fourth { third, fourth } }
                 } else { HigherPartials::Third(third) }
             } else { HigherPartials::Third(Err(EvaluationFailure::NoValue)) };
             Ok(RequestedJet { jet, higher })
@@ -6044,7 +6047,7 @@ fn model_linear_sweep_jet(
     let third = if request.needs_third() {
         differential.third.map(|jerk| [jerk, FiniteVector3::ZERO, FiniteVector3::ZERO, FiniteVector3::ZERO])
     } else { Err(EvaluationFailure::NoValue) };
-    let fourth = if request == SurfaceRequest::Fourth {
+    let fourth = if request.needs_fourth() {
         differential.fourth.map(|fourth| [fourth, FiniteVector3::ZERO,
             FiniteVector3::ZERO, FiniteVector3::ZERO, FiniteVector3::ZERO])
     } else { Err(EvaluationFailure::NoValue) };
@@ -7523,7 +7526,7 @@ fn model_ruled_surface_jet(
             Vector3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 0.0),
         ]))()
     } else { Err(EvaluationFailure::NoValue) };
-    let fourth = if request == SurfaceRequest::Fourth {
+    let fourth = if request.needs_fourth() {
         (|| admit_lanes([
             blend(first.fourth?.get(), second.fourth?.get()),
             vector_sum(&[(-1.0, first.third?.get()), (1.0, second.third?.get())]),
@@ -7572,7 +7575,7 @@ fn model_sum_surface_jet(
     let third = if request.needs_third() {
         first.third.and_then(|first| Ok([first, FiniteVector3::ZERO, FiniteVector3::ZERO, second.third?]))
     } else { Err(EvaluationFailure::NoValue) };
-    let fourth = if request == SurfaceRequest::Fourth {
+    let fourth = if request.needs_fourth() {
         first.fourth.and_then(|first| Ok([first, FiniteVector3::ZERO,
             FiniteVector3::ZERO, FiniteVector3::ZERO, second.fourth?]))
     } else { Err(EvaluationFailure::NoValue) };

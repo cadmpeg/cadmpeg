@@ -164,7 +164,11 @@ fn actual_missing_fifth_keeps_nested_offset_point_first_and_second() {
         assert_eq!(result.jet.point.get(), Point3::new(7.0, 0.0, 0.0));
         assert_eq!(result.jet.first.unwrap()[0].get(), Vector3::new(0.0, 5.0, 0.0));
         assert_eq!(result.jet.second.unwrap()[0].get(), Vector3::new(-10.0, 0.0, 0.0));
-        assert_eq!(result.higher.third(), Err(EvaluationFailure::NoValue));
+        // The inner analytic offset now supplies its genuine fourth order.
+        // For the ellipse a=6,b=3, n_y=2u-(10/3)u^3+O(u^5).
+        let third = result.higher.third().unwrap();
+        assert_eq!(third[0].get(), Vector3::new(0.0, -23.0, 0.0));
+        assert_eq!(&third[1..], &[FiniteVector3::ZERO; 3]);
         Ok(())
     }).unwrap();
 }
