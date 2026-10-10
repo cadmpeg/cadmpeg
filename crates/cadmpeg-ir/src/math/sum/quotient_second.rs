@@ -9,10 +9,12 @@ use crate::scalar::FiniteReal;
 /// zero. Cancel the four terms before division by W^3 and physical width^2.
 /// Source scaled sums retain their own rounding, so this does not certify a
 /// correctly rounded quotient. A zero weight has no value.
-pub(crate) fn quotient_second(
+/// Fixed normalized multipliers join the ratio before final range admission.
+pub(crate) fn quotient_second<const MULTIPLIERS: usize>(
     h: [Option<ScaledValue>; 3],
     w: [Option<ScaledValue>; 3],
     width: ScaledValue,
+    multipliers: [ScaledValue; MULTIPLIERS],
 ) -> Option<Result<FiniteReal, f64>> {
     let weight = w[0]?;
     let mut numerator = Numerator::<3, 417, 3>::new();
@@ -20,7 +22,7 @@ pub(crate) fn quotient_second(
     numerator.add_product([h[1], w[1], w[0]], true, 2)?;
     numerator.add_product([h[0], w[2], w[0]], true, 1)?;
     numerator.add_product([h[0], w[1], w[1]], false, 2)?;
-    numerator.divide(weight, [width; 2])
+    numerator.divide(weight, [width; 2], multipliers)
 }
 
 #[cfg(test)]

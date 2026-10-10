@@ -11,10 +11,12 @@ use crate::scalar::FiniteReal;
 /// numerator cancels before rounding and division by W^5 * width^4.
 /// Homogeneous orders retain their existing 53-bit rounding; this operation
 /// does not certify a correctly rounded rational quotient.
-pub(crate) fn quotient_fourth(
+/// Fixed normalized multipliers join the ratio before final range admission.
+pub(crate) fn quotient_fourth<const MULTIPLIERS: usize>(
     h: [Option<ScaledValue>; 5],
     w: [Option<ScaledValue>; 5],
     width: ScaledValue,
+    multipliers: [ScaledValue; MULTIPLIERS],
 ) -> Option<Result<FiniteReal, f64>> {
     let weight = w[0]?;
     let mut numerator = Numerator::<5, 695, 5>::new();
@@ -30,7 +32,7 @@ pub(crate) fn quotient_fourth(
     numerator.add_product([h[0], w[0], w[0], w[2], w[2]], false, 6)?;
     numerator.add_product([h[0], w[0], w[1], w[1], w[2]], true, 36)?;
     numerator.add_product([h[0], w[1], w[1], w[1], w[1]], false, 24)?;
-    numerator.divide(weight, [width; 4])
+    numerator.divide(weight, [width; 4], multipliers)
 }
 
 pub(crate) mod mixed;

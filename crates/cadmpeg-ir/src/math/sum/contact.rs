@@ -32,7 +32,7 @@ pub(crate) fn contact_derivative<const N: usize>(
         // All source inputs are finite. The integer chain-rule term count
         // is sum S(N,m)*2^m, at most454 at N=5; six factors and454 copies
         // lie inside the owner's original1082-copy exponent/carry bound.
-        *result = sum.numerator.divide(unit, [unit; 5])?;
+        *result = sum.numerator.divide(unit, [unit; 5], [])?;
     }
     Some(output)
 }
@@ -64,7 +64,7 @@ pub(crate) fn directional_derivative<const N: usize>(
         }
         // The total binomial multiplicity is2^N, at most32. Every factor
         // is a genuine finite source coordinate or a padding unit.
-        *result = sum.divide(unit, [unit; 5])?;
+        *result = sum.divide(unit, [unit; 5], [])?;
     }
     Some(output)
 }

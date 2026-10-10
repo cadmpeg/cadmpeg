@@ -64,7 +64,7 @@ impl HigherLanes {
             for (axis, lane) in lanes.iter_mut().enumerate() {
                 if constant[axis].is_some() { continue; }
                 *lane = crate::math::sum::quotient_third::quotient_third(
-                    std::array::from_fn(|order| orders[order][axis]), w, width)?;
+                    std::array::from_fn(|order| orders[order][axis]), w, width, [])?;
             }
             Some(lanes)
         })();
@@ -76,7 +76,7 @@ impl HigherLanes {
                     if constant[axis].is_some() { continue; }
                     if !fourth_available { return None; }
                     *lane = crate::math::sum::quotient_fourth::quotient_fourth(
-                        std::array::from_fn(|order| orders[order][axis]), w, width)?;
+                        std::array::from_fn(|order| orders[order][axis]), w, width, [])?;
                 }
                 Some(lanes)
             })()

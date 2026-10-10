@@ -24,7 +24,7 @@ pub(crate) fn quotient_fifth(
         }
         numerator.add_product(factors, negative, copies)?;
     }
-    numerator.divide(w[0]?, [width; 5])
+    numerator.divide(w[0]?, [width; 5], [])
 }
 
 /// One actual six-factor numerator divided by W^6 and h^5.
@@ -38,7 +38,7 @@ pub(crate) fn product_fifth(
 ) -> Option<Result<FiniteReal, f64>> {
     let mut numerator = Numerator::<6, 834, 5>::new();
     numerator.add_product(factors, false, 1)?;
-    numerator.divide(weight, [width; 5])
+    numerator.divide(weight, [width; 5], [])
 }
 
 /// Complete normalized H/W triangle ordered by degree, then increasing v order.
@@ -63,7 +63,7 @@ pub(crate) fn quotient_fifth_partials(
             numerator.add_product(factors, negative, copies)?;
         }
         let denominators: [ScaledValue; 5] = std::array::from_fn(|at| widths[usize::from((at >= u_order) ^ transpose)]);
-        numerator.divide(weight, denominators)
+        numerator.divide(weight, denominators, [])
     };
     Some([
         partial(&terms::PURE, false, 5)?, partial(&terms::UUUUV, false, 4)?,
