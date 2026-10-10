@@ -3345,10 +3345,10 @@ pub(super) fn display_jt_documents(
         }
         Ok(documents)
     })?;
-    if !result.is_empty() {
-        storage.commit_value(result)
-    } else {
+    if result.is_empty() {
         Ok(result)
+    } else {
+        storage.commit_value(result)
     }
 }
 
@@ -3489,10 +3489,10 @@ pub(super) fn display_jt_segments(
         }
         Ok(segments)
     })?;
-    if !result.is_empty() {
-        storage.commit_value(result)
-    } else {
+    if result.is_empty() {
         Ok(result)
+    } else {
+        storage.commit_value(result)
     }
 }
 
@@ -3579,10 +3579,10 @@ pub(super) fn display_jt_shape_lod_elements(
         }
         Ok(elements)
     })?;
-    if !result.is_empty() {
-        storage.commit_value(result)
-    } else {
+    if result.is_empty() {
         Ok(result)
+    } else {
+        storage.commit_value(result)
     }
 }
 
@@ -3666,10 +3666,10 @@ pub(super) fn display_jt_tri_strip_lod_headers(
         }
         Ok(headers)
     })?;
-    if !result.is_empty() {
-        storage.commit_value(result)
-    } else {
+    if result.is_empty() {
         Ok(result)
+    } else {
+        storage.commit_value(result)
     }
 }
 
@@ -3746,10 +3746,10 @@ pub(super) fn display_jt_initial_face_degree_symbols(
         }
         Ok(vectors)
     })?;
-    if !result.is_empty() {
-        storage.commit_value(result)
-    } else {
+    if result.is_empty() {
         Ok(result)
+    } else {
+        storage.commit_value(result)
     }
 }
 
@@ -4065,10 +4065,10 @@ pub(super) fn display_jt_topology_packet_sequences(
             coordinate_headers,
         })
     })?;
-    if !result.sequences.is_empty() {
-        storage.commit_value(result)
-    } else {
+    if result.sequences.is_empty() {
         Ok(result)
+    } else {
+        storage.commit_value(result)
     }
 }
 
@@ -4139,10 +4139,10 @@ pub(super) fn display_jt_vertex_coordinates(
         }
         Ok(arrays)
     })?;
-    if !result.is_empty() {
-        storage.commit_value(result)
-    } else {
+    if result.is_empty() {
         Ok(result)
+    } else {
+        storage.commit_value(result)
     }
 }
 
@@ -4307,10 +4307,10 @@ pub(super) fn display_jt_polygon_meshes(
         }
         Ok(meshes)
     })?;
-    if !result.is_empty() {
-        storage.commit_value(result)
-    } else {
+    if result.is_empty() {
         Ok(result)
+    } else {
+        storage.commit_value(result)
     }
 }
 
@@ -4553,10 +4553,10 @@ pub(super) fn display_jt_vertex_normals(
         }
         Ok(arrays)
     })?;
-    if !result.is_empty() {
-        storage.commit_value(result)
-    } else {
+    if result.is_empty() {
         Ok(result)
+    } else {
+        storage.commit_value(result)
     }
 }
 
@@ -4638,10 +4638,10 @@ pub(super) fn display_jt_vertex_colors(
         }
         Ok(arrays)
     })?;
-    if !result.is_empty() {
-        storage.commit_value(result)
-    } else {
+    if result.is_empty() {
         Ok(result)
+    } else {
+        storage.commit_value(result)
     }
 }
 
@@ -4737,10 +4737,10 @@ pub(super) fn display_jt_vertex_texture_coordinates(
         }
         Ok(arrays)
     })?;
-    if !result.is_empty() {
-        storage.commit_value(result)
-    } else {
+    if result.is_empty() {
         Ok(result)
+    } else {
+        storage.commit_value(result)
     }
 }
 
@@ -4841,10 +4841,10 @@ pub(super) fn display_jt_vertex_flags(
         }
         Ok(arrays)
     })?;
-    if !result.is_empty() {
-        storage.commit_value(result)
-    } else {
+    if result.is_empty() {
         Ok(result)
+    } else {
+        storage.commit_value(result)
     }
 }
 
@@ -5013,10 +5013,10 @@ pub(super) fn display_jt_compressed_element_sequences(
         }
         Ok((elements, sequences))
     })?;
-    if !result.1.is_empty() {
-        storage.commit_value(result)
-    } else {
+    if result.1.is_empty() {
         Ok(result)
+    } else {
+        storage.commit_value(result)
     }
 }
 
@@ -5095,10 +5095,10 @@ pub(super) fn display_jt_string_property_atoms(
         }
         Ok(atoms)
     })?;
-    if !result.is_empty() {
-        storage.commit_value(result)
-    } else {
+    if result.is_empty() {
         Ok(result)
+    } else {
+        storage.commit_value(result)
     }
 }
 
@@ -5324,10 +5324,10 @@ pub(super) fn display_jt_shape_lod_bindings(
         }
         Ok(bindings)
     })?;
-    if !result.is_empty() {
-        storage.commit_value(result)
-    } else {
+    if result.is_empty() {
         Ok(result)
+    } else {
+        storage.commit_value(result)
     }
 }
 
