@@ -20,23 +20,20 @@ fn source_sketch_geometry_refuses_nurbs_copy_limit() {
         .expect("fixture pcurve construction admission")
         .expect("source NURBS"),
     );
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 8;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    let error = geometry
-        .try_clone_for_decode(&ctx, "creo source sketch geometry copy")
-        .expect_err("six knots and three poles exceed the limit");
-    assert!(
-        matches!(error, CodecError::ResourceLimit(resource)
-        if resource.operation == "creo source sketch geometry copy"),
-        "{error:?}"
+    let copy = crate::test_support::assert_refusal_order(
+        ResourceDimension::CollectionItems,
+        &[
+            "creo source sketch geometry copy",
+            "creo source sketch geometry copy",
+        ],
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            geometry.try_clone_for_decode(&ctx, "creo source sketch geometry copy")
+        },
     );
-    let copy = crate::decode::with_test_decode_ctx(|ctx| {
-        geometry.try_clone_for_decode(ctx, "creo source sketch geometry copy")
-    })
-    .expect("service copy");
     assert_eq!(copy, geometry);
 }
 
@@ -56,30 +53,28 @@ fn source_sketch_geometry_refuses_text_and_native_retained_limits() {
     let native = SketchGeometry::native(
         cadmpeg_core::text::NonBlankString::try_from("native").expect("native kind"),
     );
-    let arena = DecodeArena::new();
-    for (geometry, limit, operation) in [
-        (&text, 6, "creo source sketch geometry copy"),
-        (&text, 10, "creo source sketch geometry copy"),
-        (&native, 5, "creo source sketch geometry copy"),
+    for (geometry, operations) in [
+        (
+            &text,
+            [
+                "creo source sketch geometry copy",
+                "creo source sketch geometry copy",
+            ]
+            .as_slice(),
+        ),
+        (&native, ["creo source sketch geometry copy"].as_slice()),
     ] {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = limit;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-        let error = geometry
-            .try_clone_for_decode(&ctx, "creo source sketch geometry copy")
-            .expect_err("retained source text exceeds its limit");
-        assert!(
-            matches!(error, CodecError::ResourceLimit(resource)
-            if resource.operation == operation),
-            "{error:?}"
+        let copy = crate::test_support::assert_refusal_order(
+            ResourceDimension::RetainedBytes,
+            operations,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                geometry.try_clone_for_decode(&ctx, "creo source sketch geometry copy")
+            },
         );
-    }
-    for geometry in [&text, &native] {
-        let copy = crate::decode::with_test_decode_ctx(|ctx| {
-            geometry.try_clone_for_decode(ctx, "creo source sketch geometry copy")
-        })
-        .expect("service copy");
         assert_eq!(&copy, geometry);
     }
 }
@@ -92,43 +87,29 @@ fn source_sketch_geometry_refuses_external_reference_copies() {
         subelements: vec!["face".to_owned(), "edge".to_owned()],
     })
     .expect("external source geometry");
-    let arena = DecodeArena::new();
-    let mut item_policy = DecodePolicy::service();
-    item_policy.limits.max_collection_items = 1;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &item_policy).expect("empty root admitted");
-    let error = geometry
-        .try_clone_for_decode(&ctx, "creo source sketch geometry copy")
-        .expect_err("two selectors exceed the item limit");
-    assert!(
-        matches!(error, CodecError::ResourceLimit(resource)
-        if resource.operation == "creo source sketch geometry copy"),
-        "{error:?}"
-    );
-    for (limit, operation) in [
-        (2, "creo source sketch geometry copy"),
-        (6, "creo source sketch geometry copy"),
-        (10, "creo source sketch geometry copy"),
-        (14, "creo source sketch geometry copy"),
+    for (dimension, operations) in [
+        (
+            ResourceDimension::CollectionItems,
+            ["creo source sketch geometry copy"].as_slice(),
+        ),
+        (
+            ResourceDimension::RetainedBytes,
+            ["creo source sketch geometry copy"; 5].as_slice(),
+        ),
     ] {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = limit;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-        let error = geometry
-            .try_clone_for_decode(&ctx, "creo source sketch geometry copy")
-            .expect_err("external reference copy exceeds its retained limit");
-        assert!(
-            matches!(error, CodecError::ResourceLimit(resource)
-            if resource.operation == operation),
-            "{error:?}"
-        );
+        let copy = crate::test_support::assert_refusal_order(dimension, operations, |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+                ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
+                _ => unreachable!(),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            geometry.try_clone_for_decode(&ctx, "creo source sketch geometry copy")
+        });
+        assert_eq!(copy, geometry);
     }
-    let copy = crate::decode::with_test_decode_ctx(|ctx| {
-        geometry.try_clone_for_decode(ctx, "creo source sketch geometry copy")
-    })
-    .expect("service copy");
-    assert_eq!(copy, geometry);
 }
 
 #[test]
