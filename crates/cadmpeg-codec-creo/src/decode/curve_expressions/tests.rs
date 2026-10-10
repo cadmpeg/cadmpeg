@@ -596,41 +596,30 @@ fn transfer_record_in_context(
     )
 }
 
-fn assert_retained_transfer_boundary(
-    mut run: impl FnMut(cadmpeg_core::decode::DecodePolicy) -> Result<usize, cadmpeg_core::CodecError>,
+fn assert_transfer_boundary(
+    run: impl Fn(cadmpeg_core::decode::DecodePolicy) -> Result<usize, cadmpeg_core::CodecError>,
+    dimension: cadmpeg_core::decode::ResourceDimension,
     operation: &'static str,
 ) {
     use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
-
-    assert!(
-        run(DecodePolicy::service()).is_ok(),
-        "service transfer must succeed"
-    );
-    let mut limit = 0_u64;
-    for _ in 0..4096 {
+    assert!(run(DecodePolicy::service()).is_ok(), "service transfer must succeed");
+    let cap = crate::test_support::allocation_limit_at(dimension, Some(operation), |cap| {
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = limit;
-        match run(policy) {
-            Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
-                if refusal.operation == operation =>
-            {
-                assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
-                assert!(refusal.limit < refusal.used + refusal.additional);
-                return;
-            }
-            Err(cadmpeg_core::CodecError::ResourceLimit(resource)) => {
-                assert_eq!(resource.dimension, ResourceDimension::RetainedBytes);
-                let need = resource
-                    .used
-                    .checked_add(resource.additional)
-                    .expect("retained need");
-                assert!(need > limit);
-                limit = need;
-            }
-            other => panic!("{operation} was not reached before {other:?}"),
+        match dimension {
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
+            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
+            _ => panic!("identity storage dimension"),
         }
+        run(policy)
+    });
+    let mut policy = DecodePolicy::service();
+    match dimension {
+        ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
+        ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
+        _ => panic!("identity storage dimension"),
     }
-    panic!("{operation} was not reached within the retained-byte test range");
+    assert!(matches!(run(policy), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.dimension == dimension && limit.operation == operation));
 }
 
 #[test]
@@ -643,13 +632,19 @@ fn curve_expression_identities_refuse_retained_limit_at_each_copy() {
         "creo curve-expression owner ID copy",
         "creo curve-expression source parameter ID copy",
     ] {
-        assert_retained_transfer_boundary(
+        assert_transfer_boundary(
             |policy| transfer_with_limits(&["a=1"], &dimensions, policy),
+            if operation == "creo curve-expression parameter identity" {
+                cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+            } else {
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            },
             operation,
         );
     }
-    assert_retained_transfer_boundary(
+    assert_transfer_boundary(
         |policy| transfer_with_limits(&["a=1", "b=a+1"], &dimensions, policy),
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
         "creo curve-expression dependency identity",
     );
 }
@@ -664,12 +659,12 @@ fn curve_expression_helix_identities_refuse_retained_limit_at_each_copy() {
         .expect("complete curve expression");
     let dimensions = std::collections::BTreeMap::new();
     for operation in [
-        "creo curve-expression curve identity",
         "creo curve-expression procedural identity",
         "creo curve-expression IR curve ID copy",
     ] {
-        assert_retained_transfer_boundary(
+        assert_transfer_boundary(
             |policy| transfer_record_with_limits(payload, record.clone(), &dimensions, policy),
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
             operation,
         );
     }
@@ -1088,13 +1083,11 @@ fn quantity_property_result(
         crate::curve::CurveExpressionQuantity::new(3.5, [1, 2, 0, 0, 0])
             .expect("valid residual dimension fixture"),
     ));
-    let parameter_id = cadmpeg_ir::features::ParameterId::mint("test:test:parameter#a")
-        .expect("valid parameter ID");
     super::curve_expression_properties(
         ctx,
         &record.assignments[0],
         0,
-        ("a", &parameter_id),
+        "a",
         (
             &std::collections::BTreeMap::new(),
             &std::collections::BTreeMap::new(),
@@ -1295,54 +1288,23 @@ fn curve_expression_source_text_refuses_before_join() {
 }
 
 #[test]
-fn curve_expression_named_properties_refuse_before_second_tree() {
-    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
-        \xe0\x0aexpression\0\xf8\x01a=1\0";
-    let record = crate::curve::expression_records(payload)
-        .pop()
-        .expect("complete curve expression");
-    let assignment = &record.assignments[0];
-    let parameter_id = cadmpeg_ir::features::ParameterId::mint("test:test:parameter#a")
-        .expect("valid parameter id");
-    let assignment_indices = std::collections::BTreeMap::new();
-    let unique_indices = std::collections::BTreeMap::new();
-    let dimensions = std::collections::BTreeMap::new();
-    let edges = std::collections::HashSet::new();
-    assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| super::curve_expression_properties(
-            ctx,
-            assignment,
-            0,
-            ("a", &parameter_id),
-            (&assignment_indices, &unique_indices),
-            &dimensions,
-            &edges,
-        ))
-        .expect("service profile admits both property maps")
-        .len(),
-        2
-    );
-    let error = crate::test_support::last_refusal_at(
-        payload,
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        "named entry map nodes",
-        |ctx| {
-            super::curve_expression_properties(
-                ctx,
-                assignment,
-                0,
-                ("a", &parameter_id),
-                (&assignment_indices, &unique_indices),
-                &dimensions,
-                &edges,
-            )
-        },
-    );
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "named entry map nodes"
-    ));
+fn curve_expression_named_properties_use_one_tree() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\xe0\x0aexpression\0\xf8\x01a=1\0";
+    let record = crate::curve::expression_records(payload).pop().expect("complete curve expression");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy).expect("root");
+    let properties = super::curve_expression_properties(
+        &ctx, &record.assignments[0], 0, "a",
+        (&std::collections::BTreeMap::new(), &std::collections::BTreeMap::new()),
+        &std::collections::BTreeMap::new(), &std::collections::HashSet::new(),
+    ).expect("two properties need two final nodes");
+    assert_eq!(properties.len(), 2);
+    assert_eq!(properties.iter().map(|(key, value)| (key.as_str(), value.as_str())).collect::<Vec<_>>(),
+        [("activation", "active"), ("source_assignment_ordinal", "0")]);
+    ctx.finish_session().expect("no discarded property tree");
 }
 
 #[test]
