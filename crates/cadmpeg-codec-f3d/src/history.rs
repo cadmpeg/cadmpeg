@@ -9529,18 +9529,24 @@ fn bind_active_edge_operand_candidates(
                             None,
                         )
                     })?;
-                let _reference_faces_storage;
-                let reference_faces;
-                (reference_faces, _reference_faces_storage) = decode.with_scoped_storage(
-                    "collect F3D active edge local reference faces",
-                    || {
-                        terminal_edge_recipe_reference_faces(
+                let local_reference_faces = if let Some(ordinals) =
+                    operand.local_topology_references.as_deref()
+                {
+                    Some(decode.with_scoped_storage(
+                        "collect F3D active edge local reference faces",
+                        || terminal_edge_recipe_reference_faces(
                             decode,
                             &operand.recipe_references,
-                            operand.local_topology_references.as_deref(),
-                        )
-                    },
-                )?;
+                            Some(ordinals),
+                        ),
+                    )?)
+                } else {
+                    None
+                };
+                let reference_faces = local_reference_faces.as_ref().map_or(
+                    all_reference_faces.as_slice(),
+                    |(faces, _storage)| faces.as_slice(),
+                );
                 let _terminal_faces_storage;
                 let terminal_faces;
                 (terminal_faces, _terminal_faces_storage) =
@@ -9548,7 +9554,7 @@ fn bind_active_edge_operand_candidates(
                         terminal_edge_recipe_faces(
                             decode,
                             &operand.candidate_faces,
-                            &reference_faces,
+                            reference_faces,
                         )
                     })?;
                 let candidate_faces =
@@ -9570,14 +9576,20 @@ fn bind_active_edge_operand_candidates(
                     operand.recipe_structure.as_ref(),
                     &contexts,
                 )?;
-                let _reference_edge_sets_storage;
-                let reference_edge_sets;
-                (reference_edge_sets, _reference_edge_sets_storage) = decode
-                    .with_scoped_storage("collect F3D active edge reference sets", || {
-                        topology::collect_reference_edge_sets(decode, &reference_faces, topology)
-                    })?;
+                let local_reference_edge_sets = if local_reference_faces.is_some() {
+                    Some(decode.with_scoped_storage(
+                        "collect F3D active edge reference sets",
+                        || topology::collect_reference_edge_sets(decode, reference_faces, topology),
+                    )?)
+                } else {
+                    None
+                };
                 let all_reference_edge_sets =
                     topology::collect_reference_edge_sets(decode, &all_reference_faces, topology)?;
+                let reference_edge_sets = local_reference_edge_sets.as_ref().map_or(
+                    all_reference_edge_sets.as_slice(),
+                    |(sets, _storage)| sets.as_slice(),
+                );
                 let edge = crate::design::edge_resolve::resolved_edge_candidate_intersection(decode,
                     &selectors,
                     reference_edge_sets.iter().map(Vec::as_slice),
