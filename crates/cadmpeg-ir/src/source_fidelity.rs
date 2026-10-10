@@ -576,16 +576,21 @@ impl SourceFidelity {
                 while !prior.as_slice().is_empty() {
                     let mut storage = ctx.reserve_scoped(0, "read native unknown product")?;
                     let Some(product) = storage.with_storage(|| {
-                        Ok::<_, CodecError>(ctx.next_charged(&mut prior, "copy native unknown records")?.map(|record| {
-                            crate::NativeUnknownRecord::from_native_for_decode(
-                                ctx,
-                                crate::native::read_record::<crate::unknown::NativeUnknownWire>(
-                                    ctx, "unknowns", record,
-                                ),
-                                "unknowns",
-                                "read native unknown product",
-                            )
-                        }))
+                        Ok::<_, CodecError>(
+                            ctx.next_charged(&mut prior, "copy native unknown records")?
+                                .map(|record| {
+                                    crate::NativeUnknownRecord::from_native_for_decode(
+                                        ctx,
+                                        crate::native::read_record::<
+                                            crate::unknown::NativeUnknownWire,
+                                        >(
+                                            ctx, "unknowns", record
+                                        ),
+                                        "unknowns",
+                                        "read native unknown product",
+                                    )
+                                }),
+                        )
                     })?
                     else {
                         break;
@@ -634,26 +639,25 @@ impl SourceFidelity {
                 }
             }
         }
-        let existing_ids =
-            ctx.with_scoped_storage("native unknown existing identities", || {
-                let mut existing_ids = BTreeSet::new();
-                for (_, namespace) in ctx.admit_iter(&ir.native.0, "native unknown namespaces")? {
-                    if let Some(records) = ctx.get_btree_map(
-                        namespace.arenas(),
-                        "unknowns",
-                        "find existing native unknown arena",
-                    )? {
-                        for record in ctx.admit_iter(records, "native unknown identity scan")? {
-                            ctx.insert_btree_set(
-                                &mut existing_ids,
-                                record.id(),
-                                "native unknown existing identities",
-                            )?;
-                        }
+        let existing_ids = ctx.with_scoped_storage("native unknown existing identities", || {
+            let mut existing_ids = BTreeSet::new();
+            for (_, namespace) in ctx.admit_iter(&ir.native.0, "native unknown namespaces")? {
+                if let Some(records) = ctx.get_btree_map(
+                    namespace.arenas(),
+                    "unknowns",
+                    "find existing native unknown arena",
+                )? {
+                    for record in ctx.admit_iter(records, "native unknown identity scan")? {
+                        ctx.insert_btree_set(
+                            &mut existing_ids,
+                            record.id(),
+                            "native unknown existing identities",
+                        )?;
                     }
                 }
-                Ok::<_, CodecError>(existing_ids)
-            })?;
+            }
+            Ok::<_, CodecError>(existing_ids)
+        })?;
         let mut storage = ctx.reserve_scoped(0, "native unknown retained index")?;
         let mut retained = BTreeMap::new();
         for record in ctx.admit_iter(records, "native unknown incoming records")? {

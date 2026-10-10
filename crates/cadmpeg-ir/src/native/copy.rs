@@ -30,10 +30,17 @@ pub(super) fn insert(
     let len = fields.len();
     let length = u64_from_index(len);
     let half = length / 2 + length % 2;
-    let comparisons = if half == 0 { 0 } else { 11 * (u64::from(half.ilog(6)) + 1) }.min(length);
-    let work = u64_from_index(key.len()).checked_mul(comparisons).ok_or_else(|| {
-        ctx.refuse_codec_limit("insert copied native field", u64::MAX - 1, u64::MAX)
-    })?;
+    let comparisons = if half == 0 {
+        0
+    } else {
+        11 * (u64::from(half.ilog(6)) + 1)
+    }
+    .min(length);
+    let work = u64_from_index(key.len())
+        .checked_mul(comparisons)
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("insert copied native field", u64::MAX - 1, u64::MAX)
+        })?;
     ctx.charge_work(work, "insert copied native field")?;
     match fields.entry(key) {
         serde_json::map::Entry::Vacant(entry) => {
@@ -41,7 +48,9 @@ pub(super) fn insert(
             ctx.charge_collection_items(1, "insert copied native field")?;
             entry.insert(value);
         }
-        serde_json::map::Entry::Occupied(mut entry) => { entry.insert(value); }
+        serde_json::map::Entry::Occupied(mut entry) => {
+            entry.insert(value);
+        }
     }
     Ok(())
 }

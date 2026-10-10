@@ -342,7 +342,12 @@ impl NativeRecord {
         // A search visits at most eleven keys per level and no more than the stored keys.
         let length = u64_from_index(fields.len());
         let half = length / 2 + length % 2;
-        let comparisons = if half == 0 { 0 } else { 11 * (u64::from(half.ilog(6)) + 1) }.min(length);
+        let comparisons = if half == 0 {
+            0
+        } else {
+            11 * (u64::from(half.ilog(6)) + 1)
+        }
+        .min(length);
         ctx.charge_work(comparisons * 2, "remove native record identity")?;
         let Some(Value::String(id)) = fields.remove("id") else {
             return Err(NativeConvertError::MissingId);

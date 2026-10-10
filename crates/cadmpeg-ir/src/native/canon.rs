@@ -58,7 +58,11 @@ impl Node {
 }
 
 /// An externally tagged variant: `{"Variant": payload}`.
-fn tagged<'a>(ctx: &'a DecodeContext<'_>, variant: &str, payload: Value) -> Result<Node, CanonError<'a>> {
+fn tagged<'a>(
+    ctx: &'a DecodeContext<'_>,
+    variant: &str,
+    payload: Value,
+) -> Result<Node, CanonError<'a>> {
     let key = copy_text(ctx, variant)?;
     let mut entries = Map::new();
     ctx.admit_btree_node_storage::<String, Value>(entries.len(), STORAGE)?;
@@ -136,7 +140,10 @@ pub(super) enum CanonError<'a> {
     /// A NaN or infinite number, which JSON cannot state. The steps from the
     /// record to the number are collected innermost first while the refusal
     /// returns through the containers that hold it.
-    NonFinite { steps: Vec<Step>, storage: ScopedReservation<'a> },
+    NonFinite {
+        steps: Vec<Step>,
+        storage: ScopedReservation<'a>,
+    },
     /// Any other refusal.
     Json(serde_json::Error),
     Resource(CodecError),
@@ -146,7 +153,10 @@ pub(super) enum CanonError<'a> {
 impl<'a> CanonError<'a> {
     pub(super) fn into_native(self, ctx: &DecodeContext<'_>) -> super::NativeConvertError {
         match self {
-            Self::NonFinite { steps, storage: _storage } => match Self::field_path(ctx, &steps) {
+            Self::NonFinite {
+                steps,
+                storage: _storage,
+            } => match Self::field_path(ctx, &steps) {
                 Ok(field) => super::NativeConvertError::NonFiniteNumber { field },
                 Err(error) => super::NativeConvertError::Resource(error),
             },
@@ -158,7 +168,11 @@ impl<'a> CanonError<'a> {
 
     /// This refusal, stated from one container further out.
     fn within(self, ctx: &'a DecodeContext<'_>, step: impl FnOnce() -> Result<Step, Self>) -> Self {
-        let Self::NonFinite { mut steps, mut storage } = self else {
+        let Self::NonFinite {
+            mut steps,
+            mut storage,
+        } = self
+        else {
             return self;
         };
         let admitted = storage.with_storage(|| {
@@ -242,7 +256,7 @@ impl std::fmt::Display for CanonError<'_> {
 
 impl std::error::Error for CanonError<'_> {}
 
-impl<'a> ser::Error for CanonError<'a> {
+impl ser::Error for CanonError<'_> {
     fn custom<T: Display>(message: T) -> Self {
         Self::Json(<serde_json::Error as ser::Error>::custom(message))
     }
@@ -265,7 +279,10 @@ fn number<'a>(ctx: &'a DecodeContext<'_>, value: f64) -> Result<Node, CanonError
     serde_json::Number::from_f64(value)
         .map(|number| Node::Value(Value::Number(number)))
         .ok_or_else(|| match ctx.reserve_scoped(0, STORAGE) {
-            Ok(storage) => CanonError::NonFinite { steps: Vec::new(), storage },
+            Ok(storage) => CanonError::NonFinite {
+                steps: Vec::new(),
+                storage,
+            },
             Err(error) => CanonError::Resource(error),
         })
 }
@@ -528,7 +545,11 @@ impl<'a> ser::Serializer for CanonValue<'a> {
 
     /// `RawValue`'s struct protocol carries one JSON value and is no container
     /// of its own, so the payload replays with this value's whole budget.
-    fn serialize_struct(self, name: &'static str, len: usize) -> Result<CanonStruct<'a>, Error<'a>> {
+    fn serialize_struct(
+        self,
+        name: &'static str,
+        len: usize,
+    ) -> Result<CanonStruct<'a>, Error<'a>> {
         if name == RAW_VALUE_STRUCT {
             Ok(CanonStruct::Raw {
                 ctx: self.ctx,
@@ -671,8 +692,14 @@ impl<'a> CanonMap<'a> {
         let len = self.entries.len();
         let length = u64_from_index(len);
         let half = length / 2 + length % 2;
-        let comparisons = if half == 0 { 0 } else { 11 * (u64::from(half.ilog(6)) + 1) }.min(length);
-        let work = u64_from_index(key.len()).checked_mul(comparisons)
+        let comparisons = if half == 0 {
+            0
+        } else {
+            11 * (u64::from(half.ilog(6)) + 1)
+        }
+        .min(length);
+        let work = u64_from_index(key.len())
+            .checked_mul(comparisons)
             .ok_or_else(|| self.ctx.refuse_codec_limit(WORK, u64::MAX - 1, u64::MAX))?;
         self.ctx.charge_work(work, WORK)?;
         match self.entries.entry(key) {
@@ -784,7 +811,8 @@ impl<'a> ser::SerializeStruct for CanonStruct<'a> {
                 // remaining budget, so both refuse at the same container.
                 // Admit one text pass; replay admits each entered container separately.
                 ctx.charge_work(u64_from_index(json.len()), WORK)?;
-                let replayed = super::replay::emit(json, CanonValue::within(ctx, *depth), *depth, ctx);
+                let replayed =
+                    super::replay::emit(json, CanonValue::within(ctx, *depth), *depth, ctx);
                 ctx.charge_work(0, WORK)?;
                 *parsed = Some(replayed?);
                 Ok(())
@@ -865,7 +893,10 @@ impl Write for NumberText {
     }
 }
 
-fn number_key_text<'a, T: Serialize>(ctx: &'a DecodeContext<'_>, value: &T) -> Result<String, Error<'a>> {
+fn number_key_text<'a, T: Serialize>(
+    ctx: &'a DecodeContext<'_>,
+    value: &T,
+) -> Result<String, Error<'a>> {
     ctx.charge_work(128, WORK)?;
     let mut text = NumberText {
         bytes: [0; 128],
