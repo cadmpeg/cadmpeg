@@ -22,6 +22,8 @@ use crate::feature::definitions::ScalarLane;
 use crate::feature::definitions::VariableType;
 use std::collections::{BTreeMap, BTreeSet};
 
+mod admission_visits;
+
 #[test]
 fn scalar_component_loops_refuse_before_graph_visits() {
     let first = (VariableType::Result, 10);
