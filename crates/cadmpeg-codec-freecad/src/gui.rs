@@ -3232,32 +3232,37 @@ fn validate_gui_property(
     Ok(())
 }
 
+fn gui_element_child_count(
+    ctx: &DecodeContext<'_>,
+    node: roxmltree::Node<'_, '_>,
+    operation: &'static str,
+) -> Result<usize, CodecError> {
+    let mut count = 0;
+    let mut children = node.children();
+    while let Some(child) = ctx.next_charged(&mut children, operation)? {
+        count += usize::from(child.is_element());
+    }
+    Ok(count)
+}
+
 fn validate_gui_string_list(
     ctx: &DecodeContext<'_>,
     root: roxmltree::Node<'_, '_>,
     property_name: &str,
 ) -> Result<(), CodecError> {
     let count = gui_list_count(ctx, root, property_name, "StringList")?;
-    let (_children_storage, children) = ctx
-        .with_scoped_storage("FCStd GUI StringList child nodes", || {
-            ctx.collect_vec(root.children(), "FCStd GUI StringList child nodes")
-        })
-        .map(|(children, storage)| (storage, children))?;
-    let element_count = ctx
-        .admit_iter(&children, "FCStd GUI StringList element count")?
-        .filter(|value| value.is_element())
-        .count();
+    let element_count = gui_element_child_count(ctx, root, "FCStd GUI StringList element count")?;
     if element_count != count
         || ctx.any_by(
-            &children,
+            root.children(),
             |value| {
                 if !value.is_element() {
                     return Ok(false);
                 }
                 Ok(
-                    !ctx.xml_has_tag_name(*value, "String", "FCStd GUI value tag")?
+                    !ctx.xml_has_tag_name(value, "String", "FCStd GUI value tag")?
                         || ctx
-                            .xml_attribute(*value, "value", "FCStd GUI value attribute")?
+                            .xml_attribute(value, "value", "FCStd GUI value attribute")?
                             .is_none(),
                 )
             },
@@ -3270,10 +3275,10 @@ fn validate_gui_string_list(
         ));
     }
     if ctx.any_by(
-        &children,
+        root.children(),
         |value| {
             if value.is_element() {
-                has_nested_gui_elements(ctx, *value)
+                has_nested_gui_elements(ctx, value)
             } else {
                 Ok(false)
             }
