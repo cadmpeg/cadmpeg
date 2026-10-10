@@ -498,5 +498,4 @@ mod ownership_tests {
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
         assert_eq!(limit.operation, "scan ASM subtype scope token");
     }
-
 }

@@ -10,7 +10,12 @@ use crate::sab::Token;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::geometry::SurfaceGeometry;
 
-fn record(revision: bool, ranges: [f64; 4], subtransform: Vec<Token>, knot: f64) -> Record<'static> {
+fn record(
+    revision: bool,
+    ranges: [f64; 4],
+    subtransform: Vec<Token>,
+    knot: f64,
+) -> Record<'static> {
     let mut tokens = vec![Token::SubtypeOpen, Token::Ident("t_spl_sur".into())];
     if revision {
         tokens.extend([Token::Long(23_100), Token::Enum(2)]);

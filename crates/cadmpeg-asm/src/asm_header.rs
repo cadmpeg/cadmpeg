@@ -169,9 +169,9 @@ pub fn solved_record_limit(
         return Ok(None);
     };
     let Some(flags) = (match width {
-            RefWidth::Four => View::u32_le_at(bytes, bf4::FLAGS).map(u64::from),
-            RefWidth::Eight => View::u64_le_at(bytes, bf8::FLAGS),
-        }) else {
+        RefWidth::Four => View::u32_le_at(bytes, bf4::FLAGS).map(u64::from),
+        RefWidth::Eight => View::u64_le_at(bytes, bf8::FLAGS),
+    }) else {
         return Ok(None);
     };
     if flags & crate::kernel_header::HISTORY_PARTITION_FLAG == 0 {

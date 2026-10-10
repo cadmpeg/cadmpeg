@@ -139,5 +139,7 @@ pub fn record(
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("record fixture context");
-    Record::new(&ctx, index, name, tokens, offset, len).expect("indexed record fixture").into_fixture()
+    Record::new(&ctx, index, name, tokens, offset, len)
+        .expect("indexed record fixture")
+        .into_fixture()
 }

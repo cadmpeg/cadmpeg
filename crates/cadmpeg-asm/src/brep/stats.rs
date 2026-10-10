@@ -132,7 +132,9 @@ impl Stats {
         ] {
             let mut source_values = IntoIterator::into_iter(source);
             while source_values.len() != 0 {
-                let Some((kind, count)) = ctx.next_charged(&mut source_values, "ASM merge loss kind traversal")? else {
+                let Some((kind, count)) =
+                    ctx.next_charged(&mut source_values, "ASM merge loss kind traversal")?
+                else {
                     break;
                 };
                 ctx.admit_btree_entry(target, &kind, "ASM merge loss kinds")?;

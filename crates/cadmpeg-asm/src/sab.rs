@@ -245,15 +245,19 @@ impl<'ctx> Record<'ctx> {
                 break;
             };
             if !token.is_payload_ident() {
-                ctx.push_scoped_vec(&mut storage, &mut chunk_positions, position, "ASM record chunk positions")?;
+                ctx.push_scoped_vec(
+                    &mut storage,
+                    &mut chunk_positions,
+                    position,
+                    "ASM record chunk positions",
+                )?;
             }
         }
         // Share the vector without copying its file-controlled payload.
-        storage.grow(
-            cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<(Vec<usize>, Option<ScopedReservation<'ctx>>)>() + 2 * std::mem::size_of::<usize>(),
-            ),
-        )?;
+        storage.grow(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<(Vec<usize>, Option<ScopedReservation<'ctx>>)>()
+                + 2 * std::mem::size_of::<usize>(),
+        ))?;
         Ok(Self {
             index,
             name,
@@ -286,8 +290,12 @@ impl<'ctx> Record<'ctx> {
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn into_fixture(self) -> Record<'static> {
         Record {
-            index: self.index, name: self.name, tokens: self.tokens,
-            offset: self.offset, len: self.len, head_end: self.head_end,
+            index: self.index,
+            name: self.name,
+            tokens: self.tokens,
+            offset: self.offset,
+            len: self.len,
+            head_end: self.head_end,
             chunk_positions: Rc::new((self.chunk_positions.0.clone(), None)),
         }
     }
@@ -313,7 +321,8 @@ impl<'ctx> Record<'ctx> {
 
     /// Payload value tokens in order. Each iterator step reads one indexed token.
     pub fn chunks(&self) -> impl DoubleEndedIterator<Item = &Token> + ExactSizeIterator {
-        self.chunk_positions.0
+        self.chunk_positions
+            .0
             .iter()
             .map(|position| &self.tokens[*position])
     }
@@ -1019,7 +1028,8 @@ mod tests {
                 ResourceDimension::WorkUnits,
                 operation,
                 |ctx| {
-                    frame_stream(ctx, bytes, 0, bytes.len(), RefWidth::Eight, None).map(|_| ())
+                    frame_stream(ctx, bytes, 0, bytes.len(), RefWidth::Eight, None)
+                        .map(|_| ())
                         .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
                 },
             );
@@ -1035,7 +1045,8 @@ mod tests {
             ResourceDimension::CollectionItems,
             operation,
             |ctx| {
-                frame_stream(ctx, bytes, 0, bytes.len(), RefWidth::Eight, None).map(|_| ())
+                frame_stream(ctx, bytes, 0, bytes.len(), RefWidth::Eight, None)
+                    .map(|_| ())
                     .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
             },
         );

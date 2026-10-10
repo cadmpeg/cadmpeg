@@ -237,10 +237,10 @@ fn source_refusal(pass: RecordPass) {
     assert_eq!(first.dimension, ResourceDimension::WorkUnits);
     assert_eq!(first.operation, "ASM emitted record pass");
     assert_eq!((first.limit, first.used, first.additional), (work, work, 1));
-    for replay in [records.as_slice()] {
-        assert!(matches!(pass.run(&ctx, replay, &table, &mut out),
-            Err(CodecError::ResourceLimit(last)) if last == first));
-    }
+    assert!(
+        matches!(pass.run(&ctx, records.as_slice(), &table, &mut out),
+            Err(CodecError::ResourceLimit(last)) if last == first)
+    );
     assert!(out.points.is_empty() && out.curves.is_empty() && out.surfaces.is_empty());
     assert!(out.vertices.is_empty() && out.edges.is_empty() && out.coedges.is_empty());
     assert!(out.loops.is_empty() && out.faces.is_empty() && out.shells.is_empty());
@@ -252,7 +252,7 @@ fn source_refusal(pass: RecordPass) {
 fn source_acceptance(pass: RecordPass) {
     let records = records();
     let table = super::subtype_table(&[]);
-    for source in [records.as_slice()] {
+    for source in [records.as_slice(), &[]] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units =
@@ -297,10 +297,10 @@ fn first_index_refusal(pass: RecordPass) {
         (first.limit, first.used, first.additional),
         (limit, limit, 1)
     );
-    for replay in [records.as_slice()] {
-        assert!(matches!(pass.run(&ctx, replay, &table, &mut out),
-            Err(CodecError::ResourceLimit(last)) if last == first));
-    }
+    assert!(
+        matches!(pass.run(&ctx, records.as_slice(), &table, &mut out),
+            Err(CodecError::ResourceLimit(last)) if last == first)
+    );
     assert!(out.points.is_empty() && out.curves.is_empty() && out.surfaces.is_empty());
     assert!(out.vertices.is_empty() && out.edges.is_empty() && out.coedges.is_empty());
     assert!(out.loops.is_empty() && out.faces.is_empty() && out.shells.is_empty());
