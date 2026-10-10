@@ -2231,10 +2231,7 @@ fn planar_boundary_samples<'ctx>(
             const OPERATION: &str = "collect SLDPRT planar trim line samples";
             let (points, storage) =
                 ctx.with_scoped_storage(OPERATION, || ctx.collection_vec(1, OPERATION))?;
-            let mut samples = PlanarBoundarySamples {
-                points,
-                storage,
-            };
+            let mut samples = PlanarBoundarySamples { points, storage };
             samples.points.push(frame.project(start));
             Ok(Some((samples, 0.0)))
         }

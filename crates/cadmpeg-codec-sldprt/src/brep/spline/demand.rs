@@ -263,9 +263,13 @@ impl<'input, 'ctx, 'arena> Sources<'input, 'ctx, 'arena> {
         let selected = exact_f64_array(ctx, self.bytes, &self.arrays, attr, count)?;
         let result = match selected {
             Some(ArrayCandidate::Borrowed(_)) => ControlValues::Framed,
-            Some(ArrayCandidate::Owned { values, _storage: storage }) => {
-                ControlValues::Compact { values, _storage: storage }
-            }
+            Some(ArrayCandidate::Owned {
+                values,
+                _storage: storage,
+            }) => ControlValues::Compact {
+                values,
+                _storage: storage,
+            },
             None => ControlValues::Absent,
         };
         self.shell.with_storage(|| {

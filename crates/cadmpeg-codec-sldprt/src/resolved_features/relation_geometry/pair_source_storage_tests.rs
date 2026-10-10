@@ -8,8 +8,10 @@ use cadmpeg_core::CodecError;
 // Three references fit the core's first four-slot vector. The returned pair
 // vector also starts with four slots. At indexed construction the destination
 // pair shell, indexed reference roster and new indexed pair shell coexist.
-const ROSTER_BYTES: u64 = 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<&SketchInputEntity>());
-const PAIR_BYTES: u64 = 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<[&SketchInputEntity; 2]>());
+const ROSTER_BYTES: u64 =
+    4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<&SketchInputEntity>());
+const PAIR_BYTES: u64 =
+    4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<[&SketchInputEntity; 2]>());
 const QUERY_BYTES: u64 = PAIR_BYTES + ROSTER_BYTES + PAIR_BYTES;
 
 fn fixture() -> FeatureInputLane {
@@ -55,8 +57,14 @@ fn relation_pair_sources_reuse_storage_and_preserve_ordered_borrowed_pairs() {
             .unwrap();
         assert_eq!(pairs.len(), 2);
         for (pair, indices) in pairs.iter().zip([[0, 1], [1, 2]]) {
-            assert!(std::ptr::eq(pair[0], &raw const lane.sketch_entities[indices[0]]));
-            assert!(std::ptr::eq(pair[1], &raw const lane.sketch_entities[indices[1]]));
+            assert!(std::ptr::eq(
+                pair[0],
+                &raw const lane.sketch_entities[indices[0]]
+            ));
+            assert!(std::ptr::eq(
+                pair[1],
+                &raw const lane.sketch_entities[indices[1]]
+            ));
         }
         // Only the actual result shell remains. Consumed input shells and
         // construction rosters must have released their reservations.
@@ -110,7 +118,9 @@ fn relation_pair_sources_preserve_original_refusal() {
             declared_entity_handle_pairs(&ctx, &lane, "feature")
         })
     };
-    let Err(error) = run() else { panic!("expected indexed pair source storage refusal") };
+    let Err(error) = run() else {
+        panic!("expected indexed pair source storage refusal")
+    };
     let CodecError::ResourceLimit(limit) = error else {
         panic!("expected original resource refusal");
     };
@@ -120,7 +130,9 @@ fn relation_pair_sources_preserve_original_refusal() {
     assert_eq!(limit.additional, PAIR_BYTES);
     assert_eq!(limit.limit, QUERY_BYTES - 1);
     assert_eq!(ctx.resource_refusal().as_ref(), Some(&limit));
-    let Err(repeated) = run() else { panic!("expected sticky pair source refusal") };
+    let Err(repeated) = run() else {
+        panic!("expected sticky pair source refusal")
+    };
     let CodecError::ResourceLimit(repeated) = repeated else {
         panic!("expected original sticky resource refusal");
     };

@@ -1544,7 +1544,10 @@ mod tests {
             panic!("an accepted body must copy its stream-local ownership refs");
         };
         assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
-        assert_eq!(limit.additional, 2 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>()));
+        assert_eq!(
+            limit.additional,
+            2 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>())
+        );
         assert_eq!(ctx.resource_refusal(), Some(limit));
     }
 

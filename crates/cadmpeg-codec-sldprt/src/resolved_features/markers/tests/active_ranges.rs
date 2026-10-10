@@ -10,8 +10,10 @@ use cadmpeg_ir::math::Point3;
 use std::collections::HashMap;
 
 // Core amortized Vec growth uses four slots for each of these element types.
-const RANGE_BYTES: u64 = 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(u64, u64)>());
-const POINT_BYTES: u64 = 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(&str, Point3, usize)>());
+const RANGE_BYTES: u64 =
+    4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(u64, u64)>());
+const POINT_BYTES: u64 =
+    4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(&str, Point3, usize)>());
 const FEATURE: &str = "sldprt:history:feature#active-range";
 const MARKER_OFFSET: usize = 10;
 

@@ -2232,7 +2232,10 @@ impl CanonicalProfileLocus<'_> {
     ) -> Result<bool, CodecError> {
         ctx.equal(
             &(self.role.ordinal(), self.entity),
-            &(SketchLocusRole::of_locus(locus).ordinal(), locus_entity(locus)),
+            &(
+                SketchLocusRole::of_locus(locus).ordinal(),
+                locus_entity(locus),
+            ),
             operation,
         )
     }

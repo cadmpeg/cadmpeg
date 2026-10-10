@@ -624,7 +624,8 @@ fn scalar_update_error_text_refusal_is_named_and_sticky() {
                 panic!("expected retained-byte refusal: {refusal:?}");
             };
             assert_eq!(first.operation, OPERATION);
-            let cadmpeg_core::CodecError::ResourceLimit(repeated) = ctx.finish_session()
+            let cadmpeg_core::CodecError::ResourceLimit(repeated) = ctx
+                .finish_session()
                 .expect_err("the formatting refusal must fuse the session")
             else {
                 panic!("expected sticky refusal");

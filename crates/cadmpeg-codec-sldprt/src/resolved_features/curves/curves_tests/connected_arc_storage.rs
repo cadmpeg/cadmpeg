@@ -97,8 +97,7 @@ fn refuses_original_point_group(mut entities: Vec<SketchEntity>, duplicate: bool
     assert_eq!(limit.used, peak - tuple);
     assert_eq!(limit.additional, tuple);
     assert_eq!(ctx.resource_refusal().as_ref(), Some(&limit));
-    let replay = ctx.finish_session()
-        .unwrap_err();
+    let replay = ctx.finish_session().unwrap_err();
     let CodecError::ResourceLimit(replay) = replay else {
         panic!("sticky refusal")
     };

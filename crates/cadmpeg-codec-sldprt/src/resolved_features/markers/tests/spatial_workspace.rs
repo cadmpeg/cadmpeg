@@ -8,7 +8,8 @@ use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::math::Point3;
 
 const OFFSET_BYTES: u64 = 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>());
-const VERTEX_BYTES: u64 = 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FinitePoint3>());
+const VERTEX_BYTES: u64 =
+    4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FinitePoint3>());
 
 fn vertex_record(coordinates: [f64; 3]) -> Vec<u8> {
     let mut payload = vec![0x55; 7];

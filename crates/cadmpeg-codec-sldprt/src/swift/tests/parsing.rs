@@ -1075,7 +1075,13 @@ fn swift_empty_projection_skips_feature_and_provenance_work() {
         policy.limits.max_work_units = u64::MAX;
         let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
         let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
-        let projection = annotations(&ctx, &scan, &mut cadmpeg_ir::annotations::Annotations::default(), None).unwrap();
+        let projection = annotations(
+            &ctx,
+            &scan,
+            &mut cadmpeg_ir::annotations::Annotations::default(),
+            None,
+        )
+        .unwrap();
         assert!(projection.annotations.is_empty());
         assert!(projection.unsupported_loss.is_none());
         ctx.finish_session().unwrap();
@@ -1094,7 +1100,13 @@ fn swift_empty_projection_skips_feature_and_provenance_work() {
         "scan SWIFT annotation references",
         None,
     );
-    let projection = annotations(&ctx, &scan, &mut cadmpeg_ir::annotations::Annotations::default(), None).unwrap();
+    let projection = annotations(
+        &ctx,
+        &scan,
+        &mut cadmpeg_ir::annotations::Annotations::default(),
+        None,
+    )
+    .unwrap();
     assert!(projection.annotations.is_empty());
     assert!(projection
         .unsupported_loss

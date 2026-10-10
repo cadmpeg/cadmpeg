@@ -1058,9 +1058,7 @@ pub(crate) fn bind_pattern_inputs(
             continue;
         };
         let count = match ctx.get_btree_map(&native.parameters, "Count", PATTERN_INPUTS)? {
-            Some(value) => {
-                parse_count(ctx, value)?
-            }
+            Some(value) => parse_count(ctx, value)?,
             None => None,
         };
         let Some(count) = count else {

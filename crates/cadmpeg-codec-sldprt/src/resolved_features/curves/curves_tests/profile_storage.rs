@@ -95,8 +95,7 @@ fn closed_profile_publication_preserves_original_sticky_retained_refusal() {
     assert_eq!(limit.used, shell);
     assert_eq!(limit.additional, retained - shell);
     assert_eq!(ctx.resource_refusal().as_ref(), Some(&limit));
-    let replay = ctx.finish_session()
-        .unwrap_err();
+    let replay = ctx.finish_session().unwrap_err();
     let CodecError::ResourceLimit(replay) = replay else {
         panic!("refused session must replay its original refusal")
     };
@@ -123,8 +122,7 @@ fn closed_profile_publication_preserves_original_sticky_scratch_refusal() {
     assert_eq!(limit.used, scratch - copied_identity);
     assert_eq!(limit.additional, copied_identity);
     assert_eq!(ctx.resource_refusal().as_ref(), Some(&limit));
-    let replay = ctx.finish_session()
-        .unwrap_err();
+    let replay = ctx.finish_session().unwrap_err();
     let CodecError::ResourceLimit(replay) = replay else {
         panic!("refused session must replay its original refusal")
     };

@@ -6,7 +6,8 @@ use crate::resolved_features::SKETCH_MARKER;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
-const ROSTER_BYTES: u64 = 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<&SketchInputEntity>());
+const ROSTER_BYTES: u64 =
+    4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<&SketchInputEntity>());
 
 fn centered_source() -> (Vec<u8>, [SketchInputEntity; 3]) {
     let mut payload = [0; 142 + SKETCH_MARKER.len()].to_vec();

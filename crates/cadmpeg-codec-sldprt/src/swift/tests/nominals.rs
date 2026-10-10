@@ -1466,7 +1466,11 @@ fn counterbore_disagreement_scans_skip_unvisited_candidate_tails() {
             // its measured value directly. Depth also checks the context join.
             let fixture_ctx = cadmpeg_test_support::service_decode_context();
             for (index, expected) in [(0, 1.0), (1, 2.0)] {
-                let candidate = root.annotations.entities.get(index).expect("annotation fixture");
+                let candidate = root
+                    .annotations
+                    .entities
+                    .get(index)
+                    .expect("annotation fixture");
                 if operation == "scan SWIFT counterbore diameters" {
                     assert_eq!(
                         crate::swift::counterbore_from_direct_geometry(
@@ -1480,8 +1484,12 @@ fn counterbore_disagreement_scans_skip_unvisited_candidate_tails() {
                     );
                 } else {
                     let mut single = root.clone();
-                    single.annotations.references =
-                        vec![root.annotations.references.get(index).expect("reference fixture").clone()];
+                    single.annotations.references = vec![root
+                        .annotations
+                        .references
+                        .get(index)
+                        .expect("reference fixture")
+                        .clone()];
                     single.annotations.entities = vec![candidate.clone()];
                     assert_eq!(
                         query(&fixture_ctx, &single)
