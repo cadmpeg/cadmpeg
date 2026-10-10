@@ -56,3 +56,27 @@ fn record_clone_shares_the_value_index_without_visiting_payload() {
     assert_eq!(copy.chunk(4095), Some(&Token::False));
     ctx.finish_session().unwrap();
 }
+
+#[test]
+fn record_head_index_stops_at_the_first_separator() {
+    let name = format!("cone-{}", "x".repeat(4096));
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 5;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let record = Record::new(&ctx, 0, name.clone(), Vec::new().into(), 0, 0).unwrap();
+    assert_eq!(record.head(), "cone");
+    ctx.finish_session().unwrap();
+
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits, "index ASM record head", |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            Record::new(&ctx, 0, name.clone(), Vec::new().into(), 0, 0)
+        });
+    let CodecError::ResourceLimit(limit) = error else { panic!("head index refusal"); };
+    assert_eq!(limit.operation, "index ASM record head");
+    assert_eq!(limit.additional, 1);
+}
