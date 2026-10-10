@@ -1254,10 +1254,18 @@ mod admission_visits;
 fn display_construction_admits_span_validation_and_triangle_counting() {
     let scan = inch_strip(vec![[1.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 4.0]]);
     let ir = crate::test_support::assert_work_boundaries(
-        &["creo display strip span validation", "creo display triangle counting"],
+        &[
+            "creo display strip span validation",
+            "creo display triangle counting",
+        ],
         |ctx| {
             let mut ir = CadIr::empty();
-            transfer_display_tessellations(ctx, &scan, &mut ir, &mut cadmpeg_ir::AnnotationBuilder::new())?;
+            transfer_display_tessellations(
+                ctx,
+                &scan,
+                &mut ir,
+                &mut cadmpeg_ir::AnnotationBuilder::new(),
+            )?;
             Ok(ir)
         },
     );

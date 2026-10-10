@@ -89,4 +89,3 @@ fn rowless_round_cylinder_requires_the_four_entry_sibling_layout() {
         .is_empty()
     );
 }
-

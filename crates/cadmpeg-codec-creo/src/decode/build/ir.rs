@@ -137,10 +137,9 @@ pub(super) fn pattern_kind_has_unresolved_operands<
         PatternTransform::Composite { stages } => {
             let mut stages = stages.stages().iter();
             while !stages.as_slice().is_empty() {
-                let Some(stage) = ctx.next_charged(
-                    &mut stages,
-                    "creo pattern composite stage traversal",
-                )? else {
+                let Some(stage) =
+                    ctx.next_charged(&mut stages, "creo pattern composite stage traversal")?
+                else {
                     break;
                 };
                 if pattern_kind_has_unresolved_operands(ctx, &stage.pattern)? {
@@ -148,7 +147,7 @@ pub(super) fn pattern_kind_has_unresolved_operands<
                 }
             }
             false
-        },
+        }
         PatternTransform::Circular { .. }
         | PatternTransform::CircularAngles { .. }
         | PatternTransform::Mirror { .. } => false,
@@ -599,10 +598,9 @@ fn transfer_display_tessellations(
         .and_then(crate::legacy::PrincipalUnitSystem::length_scale_mm);
     let mut source_strips = scan.primitives.triangle_strips.iter();
     while !source_strips.as_slice().is_empty() {
-        let Some(strip) = ctx.next_charged(
-            &mut source_strips,
-            "creo display triangle strip traversal",
-        )? else {
+        let Some(strip) =
+            ctx.next_charged(&mut source_strips, "creo display triangle strip traversal")?
+        else {
             break;
         };
         let id: TessellationId = crate::identity::compose_checked(
@@ -630,7 +628,8 @@ fn transfer_display_tessellations(
             }
         };
         let mesh = {
-            let mut vertex_storage = ctx.reserve_scoped(0, "creo display vertex staging storage")?;
+            let mut vertex_storage =
+                ctx.reserve_scoped(0, "creo display vertex staging storage")?;
             let mut positions = Vec::new();
             ctx.reserve_scoped_vec(
                 &mut vertex_storage,
@@ -648,7 +647,8 @@ fn transfer_display_tessellations(
                 .chain(shaded.iter().map(|row| &row.position));
             // Exactly one lane is present, so the lower bound is its remaining row count.
             while source_positions.size_hint().0 != 0 {
-                let Some(position) = ctx.next_charged(&mut source_positions, position_operation)? else {
+                let Some(position) = ctx.next_charged(&mut source_positions, position_operation)?
+                else {
                     break;
                 };
                 let mut point = Point3::from(position.get());
@@ -688,10 +688,9 @@ fn transfer_display_tessellations(
                 )?;
                 let mut source_rows = positions.iter().copied().zip(normals);
                 while source_rows.len() != 0 {
-                    let Some((position, normal)) = ctx.next_charged(
-                        &mut source_rows,
-                        "creo display shaded position assembly",
-                    )? else {
+                    let Some((position, normal)) = ctx
+                        .next_charged(&mut source_rows, "creo display shaded position assembly")?
+                    else {
                         break;
                     };
                     let Some(normal) = FiniteVector3::new(Vector3::from(normal.get())) else {
@@ -703,7 +702,8 @@ fn transfer_display_tessellations(
                     };
                     rows.push(ShadedVertex { position, normal });
                 }
-                let Some(strips) = admitted_display_strips(ctx, rows, strip.strip_lengths())? else {
+                let Some(strips) = admitted_display_strips(ctx, rows, strip.strip_lengths())?
+                else {
                     return Err(display_strip_error(
                         ctx,
                         strip.offset,
@@ -730,16 +730,12 @@ fn transfer_display_tessellations(
         };
         match &mesh {
             TessellationMesh::Strips { strips } => {
-                let _count_admission = ctx.admit_iter(
-                    strips.as_slice(),
-                    "creo display triangle counting",
-                )?;
+                let _count_admission =
+                    ctx.admit_iter(strips.as_slice(), "creo display triangle counting")?;
             }
             TessellationMesh::ShadedStrips { strips } => {
-                let _count_admission = ctx.admit_iter(
-                    strips.as_slice(),
-                    "creo display triangle counting",
-                )?;
+                let _count_admission =
+                    ctx.admit_iter(strips.as_slice(), "creo display triangle counting")?;
             }
             _ => {}
         }
