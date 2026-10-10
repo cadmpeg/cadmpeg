@@ -2566,23 +2566,22 @@ fn build_profiles(
             continue;
         }
         let (component, component_storage) = line_component(ctx, start_index, &lines, &adjacency)?;
-        let mut open_component = false;
-        for &index in ctx.admit_iter(&component, "visit Inventor line component")? {
-            let endpoint_has_wrong_degree = ctx.any_by(
-                &lines[index].endpoint_refs,
-                |point| {
-                    Ok(ctx
-                        .get_hash_map(&adjacency, point.as_str(), "access Inventor sketch records")?
-                        .map_or(0, Vec::len)
-                        != 2)
-                },
-                "check Inventor profile endpoint degree",
-            )?;
-            if endpoint_has_wrong_degree {
-                open_component = true;
-                break;
-            }
-        }
+        let open_component = ctx.any_by(
+            &component,
+            |&index| {
+                ctx.any_by(
+                    &lines[index].endpoint_refs,
+                    |point| {
+                        Ok(ctx
+                            .get_hash_map(&adjacency, point.as_str(), "access Inventor sketch records")?
+                            .map_or(0, Vec::len)
+                            != 2)
+                    },
+                    "check Inventor profile endpoint degree",
+                )
+            },
+            "visit Inventor line component",
+        )?;
         // Open components and closed components with fewer than three lines cannot form a profile.
         if open_component || component.len() < 3 {
             for &index in ctx.admit_iter(&component, "visit Inventor line component")? {
