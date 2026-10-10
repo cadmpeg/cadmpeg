@@ -19,7 +19,8 @@ use crate::chunks::{
 };
 use crate::curves::{error, GeometryError};
 use crate::objects::{
-    parse_class_wrapper, parse_class_wrapper_with_userdata, ClassUserdata, UserdataDescriptor,
+    parse_class_wrapper, parse_class_wrapper_with_scoped_userdata, ClassUserdata,
+    UserdataDescriptor,
 };
 use crate::settings::{bbox, interval, BoundingBox, CoordinateLane, Interval, Point3};
 use crate::wire::{uuid, Uuid};
@@ -557,7 +558,7 @@ impl ValidatedRawBrep {
         ctx: &DecodeContext<'_>,
         mut raw: RawBrep,
     ) -> Result<Self, GeometryError> {
-        let (resolved, warnings) = Self::validate(ctx, &mut raw)?;
+        let (resolved, warnings) = Self::validate(ctx, &mut raw, None)?;
         Ok(Self {
             raw,
             resolved,
@@ -565,9 +566,10 @@ impl ValidatedRawBrep {
         })
     }
 
-    fn validate(
-        ctx: &DecodeContext<'_>,
+    fn validate<'ctx>(
+        ctx: &'ctx DecodeContext<'_>,
         raw: &mut RawBrep,
+        region_storage: Option<&mut cadmpeg_core::decode::ScopedReservation<'ctx>>,
     ) -> Result<(ResolvedBrep, Diagnostics), GeometryError> {
         let mut warnings = Diagnostics::new();
         for (label, mismatch) in [
@@ -626,15 +628,17 @@ impl ValidatedRawBrep {
         };
         let mut vertex_source = raw.vertices[..].iter();
         for _ in 0..vertex_source.len() {
-            let vertex = ctx.next_charged(&mut vertex_source, "Rhino validate traversal")?
+            let vertex = ctx
+                .next_charged(&mut vertex_source, "Rhino validate traversal")?
                 .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
             let edges = slots(ctx, &vertex.edges, raw.edges.len(), "vertex edge")?;
-            let tolerance = finite_tolerance(ctx, vertex.tolerance, "vertex tolerance")?;
+            let tolerance = finite_tolerance(vertex.tolerance, "vertex tolerance")?;
             resolved.vertices.push(ResolvedVertex { edges, tolerance });
         }
         let mut edge_source = raw.edges[..].iter().enumerate();
         for _ in 0..edge_source.len() {
-            let (index, edge) = ctx.next_charged(&mut edge_source, "Rhino validate traversal")?
+            let (index, edge) = ctx
+                .next_charged(&mut edge_source, "Rhino validate traversal")?
                 .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
             let Some(curve) = child_slot(&raw.c3, edge.curve, RawBrepBaseType::Curve) else {
                 return Err(error(
@@ -642,16 +646,19 @@ impl ValidatedRawBrep {
                     "edge C3 reference is invalid",
                 ));
             };
-            let vertices = slot_pair(ctx, edge.vertices, raw.vertices.len(), "edge vertex")?;
+            let vertices = slot_pair(edge.vertices, raw.vertices.len(), "edge vertex")?;
             let trims = slots(ctx, &edge.trims, raw.trims.len(), "edge trim")?;
             unique(ctx, &edge.trims, "edge trim")?;
-            ordered_interval(ctx, edge.proxy_domain, "edge proxy domain")?;
-            ordered_interval(ctx, edge.domain, "edge domain")?;
-            let tolerance = finite_tolerance(ctx, edge.tolerance, "edge tolerance")?;
+            ordered_interval(edge.proxy_domain, "edge proxy domain")?;
+            ordered_interval(edge.domain, "edge domain")?;
+            let tolerance = finite_tolerance(edge.tolerance, "edge tolerance")?;
             let mut trim_source = trims[..].iter();
             for _ in 0..trim_source.len() {
-                let trim = ctx.next_charged(&mut trim_source, "Rhino validate traversal")?
-                    .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
+                let trim = ctx
+                    .next_charged(&mut trim_source, "Rhino validate traversal")?
+                    .ok_or_else(|| {
+                        GeometryError::unpositioned("Brep traversal source ended early")
+                    })?;
                 if position(raw.trims[*trim].edge) != Some(index) {
                     return Err(error(
                         edge.source_range.start,
@@ -672,7 +679,8 @@ impl ValidatedRawBrep {
         })?;
         let mut loop_record_source = raw.loops[..].iter().enumerate();
         for _ in 0..loop_record_source.len() {
-            let (loop_index, loop_record) = ctx.next_charged(&mut loop_record_source, "Rhino Brep trim membership")?
+            let (loop_index, loop_record) = ctx
+                .next_charged(&mut loop_record_source, "Rhino Brep trim membership")?
                 .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
             for value in ctx
                 .admit_iter(&loop_record.trims[..], "Rhino Brep trim membership")
@@ -689,7 +697,8 @@ impl ValidatedRawBrep {
         }
         let mut trim_source = raw.trims[..].iter().enumerate();
         for _ in 0..trim_source.len() {
-            let (trim_index, trim) = ctx.next_charged(&mut trim_source, "Rhino validate traversal")?
+            let (trim_index, trim) = ctx
+                .next_charged(&mut trim_source, "Rhino validate traversal")?
                 .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
             let curve = if trim.trim_type == RawTrimKind::PointOnSurface {
                 if trim.curve.is_some() {
@@ -711,22 +720,22 @@ impl ValidatedRawBrep {
                 };
                 Some(curve)
             };
-            let vertices = slot_pair(ctx, trim.vertices, raw.vertices.len(), "trim vertex")?;
-            let loop_index = slot(ctx, trim.loop_index, raw.loops.len(), "trim loop")?;
+            let vertices = slot_pair(trim.vertices, raw.vertices.len(), "trim vertex")?;
+            let loop_index = slot(trim.loop_index, raw.loops.len(), "trim loop")?;
             if !listed_trims[trim_index] {
                 return Err(error(
                     trim.source_range.start,
                     "trim/loop reciprocity mismatch",
                 ));
             }
-            ordered_interval(ctx, trim.proxy_domain, "trim proxy domain")?;
-            ordered_interval(ctx, trim.domain, "trim domain")?;
+            ordered_interval(trim.proxy_domain, "trim proxy domain")?;
+            ordered_interval(trim.domain, "trim domain")?;
             let tolerances = [
-                finite_tolerance(ctx, trim.tolerances[0], "trim tolerance")?,
-                finite_tolerance(ctx, trim.tolerances[1], "trim tolerance")?,
+                finite_tolerance(trim.tolerances[0], "trim tolerance")?,
+                finite_tolerance(trim.tolerances[1], "trim tolerance")?,
             ];
             for tolerance in trim.legacy_tolerances {
-                finite_tolerance(ctx, tolerance, "trim tolerance")?;
+                finite_tolerance(tolerance, "trim tolerance")?;
             }
             let edge = if matches!(
                 trim.trim_type,
@@ -746,7 +755,7 @@ impl ValidatedRawBrep {
                         "trim edge reference is out of range",
                     ));
                 };
-                Some(slot(ctx, edge, raw.edges.len(), "trim edge")?)
+                Some(slot(edge, raw.edges.len(), "trim edge")?)
             };
             resolved.trims.push(ResolvedTrim {
                 curve,
@@ -759,12 +768,16 @@ impl ValidatedRawBrep {
         validate_edge_incidences(ctx, raw, &resolved)?;
         let mut vertex_source = resolved.vertices[..].iter().enumerate();
         for _ in 0..vertex_source.len() {
-            let (index, vertex) = ctx.next_charged(&mut vertex_source, "Rhino validate traversal")?
+            let (index, vertex) = ctx
+                .next_charged(&mut vertex_source, "Rhino validate traversal")?
                 .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
             let mut edge_source = vertex.edges.iter();
             for _ in 0..edge_source.len() {
-                let edge = ctx.next_charged(&mut edge_source, "Rhino validate traversal")?
-                    .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
+                let edge = ctx
+                    .next_charged(&mut edge_source, "Rhino validate traversal")?
+                    .ok_or_else(|| {
+                        GeometryError::unpositioned("Brep traversal source ended early")
+                    })?;
                 if !resolved.edges[*edge].vertices.contains(&index) {
                     return Err(error(
                         raw.vertices[index].source_range.start,
@@ -778,7 +791,8 @@ impl ValidatedRawBrep {
         })?;
         let mut face_source = raw.faces[..].iter().enumerate();
         for _ in 0..face_source.len() {
-            let (face_index, face) = ctx.next_charged(&mut face_source, "Rhino Brep loop membership")?
+            let (face_index, face) = ctx
+                .next_charged(&mut face_source, "Rhino Brep loop membership")?
                 .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
             for value in ctx
                 .admit_iter(&face.loops[..], "Rhino Brep loop membership")
@@ -795,11 +809,12 @@ impl ValidatedRawBrep {
         }
         let mut loop_record_source = raw.loops[..].iter().enumerate();
         for _ in 0..loop_record_source.len() {
-            let (index, loop_record) = ctx.next_charged(&mut loop_record_source, "Rhino validate traversal")?
+            let (index, loop_record) = ctx
+                .next_charged(&mut loop_record_source, "Rhino validate traversal")?
                 .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
             let trims = slots(ctx, &loop_record.trims, raw.trims.len(), "loop trim")?;
             unique(ctx, &loop_record.trims, "loop trim")?;
-            let face = slot(ctx, loop_record.face, raw.faces.len(), "loop face")?;
+            let face = slot(loop_record.face, raw.faces.len(), "loop face")?;
             if !listed_loops[index] {
                 return Err(error(
                     loop_record.source_range.start,
@@ -818,7 +833,8 @@ impl ValidatedRawBrep {
         }
         let mut face_source = raw.faces[..].iter().enumerate();
         for _ in 0..face_source.len() {
-            let (index, face) = ctx.next_charged(&mut face_source, "Rhino validate traversal")?
+            let (index, face) = ctx
+                .next_charged(&mut face_source, "Rhino validate traversal")?
                 .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
             let Some(surface) = child_slot(&raw.surfaces, face.surface, RawBrepBaseType::Surface)
             else {
@@ -839,8 +855,11 @@ impl ValidatedRawBrep {
             }
             let mut loop_index_source = loops[1..].iter();
             for _ in 0..loop_index_source.len() {
-                let loop_index = ctx.next_charged(&mut loop_index_source, "Rhino validate traversal")?
-                    .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
+                let loop_index = ctx
+                    .next_charged(&mut loop_index_source, "Rhino validate traversal")?
+                    .ok_or_else(|| {
+                        GeometryError::unpositioned("Brep traversal source ended early")
+                    })?;
                 let loop_type = raw.loops[*loop_index].loop_type;
                 if matches!(loop_type, RawLoopKind::Unknown | RawLoopKind::Outer) {
                     return Err(error(
@@ -851,8 +870,11 @@ impl ValidatedRawBrep {
             }
             let mut loop_index_source = loops[..].iter();
             for _ in 0..loop_index_source.len() {
-                let loop_index = ctx.next_charged(&mut loop_index_source, "Rhino validate traversal")?
-                    .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
+                let loop_index = ctx
+                    .next_charged(&mut loop_index_source, "Rhino validate traversal")?
+                    .ok_or_else(|| {
+                        GeometryError::unpositioned("Brep traversal source ended early")
+                    })?;
                 if resolved.loops[*loop_index].face != index {
                     return Err(error(
                         face.source_range.start,
@@ -868,8 +890,11 @@ impl ValidatedRawBrep {
                 Ok(face_sides) => resolved.face_sides = face_sides,
                 Err(error @ GeometryError::Codec(_)) => return Err(error),
                 Err(_) => {
-                    raw.face_sides.clear();
-                    raw.regions.clear();
+                    raw.face_sides = Vec::new();
+                    raw.regions = Vec::new();
+                    if let Some(storage) = region_storage {
+                        *storage = ctx.reserve_scoped(0, "Rhino Brep region input")?;
+                    }
                     warnings.push_coded_admitted(
                         ctx,
                         crate::loss::RhinoLossCode::RedundantFieldRepaired,
@@ -1122,8 +1147,17 @@ pub(crate) fn parse(
     } else {
         RawSolidFlag::Unstamped
     };
+    let mut region_storage = ctx.reserve_scoped(0, "Rhino Brep region input")?;
     let (mut face_sides, mut regions, _, inline_region_loaded) = if minor >= 3 {
-        read_regions(ctx, bytes, &mut reader, archive, faces.len(), &mut warnings)?
+        read_regions(
+            ctx,
+            bytes,
+            &mut reader,
+            archive,
+            faces.len(),
+            &mut warnings,
+            &mut region_storage,
+        )?
     } else {
         (Vec::new(), Vec::new(), None, false)
     };
@@ -1149,17 +1183,21 @@ pub(crate) fn parse(
                 archive,
                 faces.len(),
                 &mut warnings,
+                &mut region_storage,
             ) {
                 Ok((sides, topology_regions, _, _)) => {
                     face_sides = sides;
                     regions = topology_regions;
                 }
                 Err(error @ GeometryError::Codec(_)) => return Err(error),
-                Err(error) => warnings.push_coded_admitted(
-                    ctx,
-                    crate::loss::RhinoLossCode::RedundantFieldRepaired,
-                    format_args!("invalid optional Brep region topology discarded: {error}"),
-                )?,
+                Err(error) => {
+                    region_storage = ctx.reserve_scoped(0, "Rhino Brep region input")?;
+                    warnings.push_coded_admitted(
+                        ctx,
+                        crate::loss::RhinoLossCode::RedundantFieldRepaired,
+                        format_args!("invalid optional Brep region topology discarded: {error}"),
+                    )?;
+                }
             }
         }
     }
@@ -1189,7 +1227,13 @@ pub(crate) fn parse(
         regions,
         source_range: range,
     };
-    match ValidatedRawBrep::validate(ctx, &mut raw) {
+    let validation = ValidatedRawBrep::validate(ctx, &mut raw, Some(&mut region_storage));
+    if raw.face_sides.is_empty() && raw.regions.is_empty() {
+        drop(region_storage);
+    } else {
+        raw = region_storage.commit_value(raw)?;
+    }
+    match validation {
         Ok((resolved, mut validation_warnings)) => {
             validation_warnings.prepend_admitted(ctx, warnings)?;
             let validated = ValidatedRawBrep {
@@ -1537,7 +1581,8 @@ fn parse_legacy_major2(
     })?;
     let mut trim_source = trims[..].iter().enumerate();
     for _ in 0..trim_source.len() {
-        let (trim_index, trim) = ctx.next_charged(&mut trim_source, "Rhino parse legacy major2 traversal")?
+        let (trim_index, trim) = ctx
+            .next_charged(&mut trim_source, "Rhino parse legacy major2 traversal")?
             .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
         if let Some(edge_index) = position(trim.edge).filter(|index| *index < edge_count) {
             let group = &mut edge_trim_indexes[edge_index];
@@ -1559,19 +1604,24 @@ fn parse_legacy_major2(
     })?;
     let mut loop_record_source = loops[..].iter();
     for _ in 0..loop_record_source.len() {
-        let loop_record = ctx.next_charged(&mut loop_record_source, "Rhino parse legacy major2 traversal")?
+        let loop_record = ctx
+            .next_charged(
+                &mut loop_record_source,
+                "Rhino parse legacy major2 traversal",
+            )?
             .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
         let Some(head) = loop_record.trims.first() else {
             continue;
         };
         let mut last_source = loop_record.trims.iter().enumerate();
         for _ in 0..last_source.len() {
-            let (index, last) = ctx.next_charged(&mut last_source, "Rhino legacy Brep trim ring traversal")?
+            let (index, last) = ctx
+                .next_charged(&mut last_source, "Rhino legacy Brep trim ring traversal")?
                 .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
             let next = index + 1;
             let first = loop_record.trims.get(next).unwrap_or(head);
-            let last = slot(ctx, *last, trims.len(), "legacy Brep loop trim")?;
-            let first = slot(ctx, *first, trims.len(), "legacy Brep loop trim")?;
+            let last = slot(*last, trims.len(), "legacy Brep loop trim")?;
+            let first = slot(*first, trims.len(), "legacy Brep loop trim")?;
             legacy_union(
                 ctx,
                 &mut endpoint_parent,
@@ -1582,7 +1632,8 @@ fn parse_legacy_major2(
     }
     let mut trim_source = trims[..].iter().enumerate();
     for _ in 0..trim_source.len() {
-        let (trim_index, trim) = ctx.next_charged(&mut trim_source, "Rhino parse legacy major2 traversal")?
+        let (trim_index, trim) = ctx
+            .next_charged(&mut trim_source, "Rhino parse legacy major2 traversal")?
             .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
         if trim.edge.is_none() {
             legacy_union(
@@ -1595,14 +1646,22 @@ fn parse_legacy_major2(
     }
     let mut trim_indexes_source = edge_trim_indexes.iter();
     for _ in 0..trim_indexes_source.len() {
-        let trim_indexes = ctx.next_charged(&mut trim_indexes_source, "Rhino parse legacy major2 traversal")?
+        let trim_indexes = ctx
+            .next_charged(
+                &mut trim_indexes_source,
+                "Rhino parse legacy major2 traversal",
+            )?
             .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
         let Some(first) = trim_indexes.first() else {
             continue;
         };
         let mut trim_index_source = trim_indexes[1..].iter();
         for _ in 0..trim_index_source.len() {
-            let trim_index = ctx.next_charged(&mut trim_index_source, "Rhino parse legacy major2 traversal")?
+            let trim_index = ctx
+                .next_charged(
+                    &mut trim_index_source,
+                    "Rhino parse legacy major2 traversal",
+                )?
                 .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
             for edge_endpoint in 0..2 {
                 legacy_union(
@@ -1658,7 +1717,8 @@ fn parse_legacy_major2(
         .map_err(crate::curves::GeometryError::from)?;
     let mut curve_source = c3_meta[..].iter().enumerate();
     for _ in 0..curve_source.len() {
-        let (edge_index, curve) = ctx.next_charged(&mut curve_source, "Rhino parse legacy major2 traversal")?
+        let (edge_index, curve) = ctx
+            .next_charged(&mut curve_source, "Rhino parse legacy major2 traversal")?
             .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
         let endpoints = if let Some(trim_index) = edge_trim_indexes[edge_index].first() {
             let trim = &trims[*trim_index];
@@ -1710,7 +1770,8 @@ fn parse_legacy_major2(
             .map_err(crate::curves::GeometryError::from)?;
         let mut trim_source = trim_indexes.iter();
         for _ in 0..trim_source.len() {
-            let trim = ctx.next_charged(&mut trim_source, "Rhino legacy edge trim traversal")?
+            let trim = ctx
+                .next_charged(&mut trim_source, "Rhino legacy edge trim traversal")?
                 .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
             stored_trim_indexes.push(
                 i32::try_from(*trim)
@@ -1740,7 +1801,11 @@ fn parse_legacy_major2(
         .map_err(crate::curves::GeometryError::from)?;
     let mut vertex_source = vertices.into_iter();
     for _ in 0..vertex_source.len() {
-        let vertex = ctx.next_charged(&mut vertex_source, "Rhino legacy normalized vertex traversal")?
+        let vertex = ctx
+            .next_charged(
+                &mut vertex_source,
+                "Rhino legacy normalized vertex traversal",
+            )?
             .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
         normalized_vertices.push(vertex.into_vertex().ok_or_else(|| {
             error(
@@ -1752,7 +1817,8 @@ fn parse_legacy_major2(
     let mut vertices = normalized_vertices;
     let mut trim_source = trims[..].iter_mut().enumerate();
     for _ in 0..trim_source.len() {
-        let (trim_index, trim) = ctx.next_charged(&mut trim_source, "Rhino legacy trim endpoint traversal")?
+        let (trim_index, trim) = ctx
+            .next_charged(&mut trim_source, "Rhino legacy trim endpoint traversal")?
             .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
         trim.vertices = [
             i32::try_from(endpoint_vertices[legacy_trim_endpoint(trim_index, 0)])
@@ -1763,10 +1829,11 @@ fn parse_legacy_major2(
     }
     let mut edge_source = edges[..].iter();
     for _ in 0..edge_source.len() {
-        let edge = ctx.next_charged(&mut edge_source, "Rhino parse legacy major2 traversal")?
+        let edge = ctx
+            .next_charged(&mut edge_source, "Rhino parse legacy major2 traversal")?
             .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
         for vertex in edge.vertices {
-            let vertex = slot(ctx, vertex, vertices.len(), "legacy Brep edge vertex")?;
+            let vertex = slot(vertex, vertices.len(), "legacy Brep edge vertex")?;
             ctx.reserve_vec(
                 &mut vertices[vertex].edges,
                 1,
@@ -1777,15 +1844,17 @@ fn parse_legacy_major2(
     }
     let mut edge_source = edges[..].iter();
     for _ in 0..edge_source.len() {
-        let edge = ctx.next_charged(&mut edge_source, "Rhino parse legacy major2 traversal")?
+        let edge = ctx
+            .next_charged(&mut edge_source, "Rhino parse legacy major2 traversal")?
             .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
         let mut loop_storage = ctx.reserve_scoped(0, "Rhino legacy edge loop counts")?;
         let mut loop_counts = BTreeMap::new();
         let mut trim_index_source = edge.trims.iter();
         for _ in 0..trim_index_source.len() {
-            let trim_index = ctx.next_charged(&mut trim_index_source, "Rhino legacy edge loop indexing")?
+            let trim_index = ctx
+                .next_charged(&mut trim_index_source, "Rhino legacy edge loop indexing")?
                 .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
-            let trim_index = slot(ctx, *trim_index, trims.len(), "legacy Brep edge trim")?;
+            let trim_index = slot(*trim_index, trims.len(), "legacy Brep edge trim")?;
             loop_storage.with_storage(|| -> Result<(), cadmpeg_core::CodecError> {
                 *ctx.entry_btree_map(
                     &mut loop_counts,
@@ -1798,9 +1867,13 @@ fn parse_legacy_major2(
         }
         let mut trim_index_source = edge.trims.iter();
         for _ in 0..trim_index_source.len() {
-            let trim_index = ctx.next_charged(&mut trim_index_source, "Rhino parse legacy major2 traversal")?
+            let trim_index = ctx
+                .next_charged(
+                    &mut trim_index_source,
+                    "Rhino parse legacy major2 traversal",
+                )?
                 .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
-            let trim_index = slot(ctx, *trim_index, trims.len(), "legacy Brep edge trim")?;
+            let trim_index = slot(*trim_index, trims.len(), "legacy Brep edge trim")?;
             let same_loop = ctx
                 .get_btree_map(
                     &loop_counts,
@@ -1820,14 +1893,22 @@ fn parse_legacy_major2(
     }
     let mut vertex_source = vertices[..].iter_mut().enumerate();
     for _ in 0..vertex_source.len() {
-        let (vertex_index, vertex) = ctx.next_charged(&mut vertex_source, "Rhino legacy vertex tolerance traversal")?
+        let (vertex_index, vertex) = ctx
+            .next_charged(
+                &mut vertex_source,
+                "Rhino legacy vertex tolerance traversal",
+            )?
             .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
         let mut tolerance: f64 = 0.0;
         let mut edge_index_source = vertex.edges.iter();
         for _ in 0..edge_index_source.len() {
-            let edge_index = ctx.next_charged(&mut edge_index_source, "Rhino parse legacy major2 traversal")?
+            let edge_index = ctx
+                .next_charged(
+                    &mut edge_index_source,
+                    "Rhino parse legacy major2 traversal",
+                )?
                 .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
-            let edge_index = slot(ctx, *edge_index, edges.len(), "legacy Brep vertex edge")?;
+            let edge_index = slot(*edge_index, edges.len(), "legacy Brep vertex edge")?;
             let edge = &edges[edge_index];
             tolerance = tolerance.max(edge.tolerance);
             let endpoint = if position(Some(edge.vertices[0])) == Some(vertex_index) {
@@ -1837,7 +1918,7 @@ fn parse_legacy_major2(
             } else {
                 continue;
             };
-            let curve = slot(ctx, edge.curve, c3_meta.len(), "legacy Brep edge curve")?;
+            let curve = slot(edge.curve, c3_meta.len(), "legacy Brep edge curve")?;
             let expected = c3_meta[curve].endpoints[endpoint];
             let delta = [
                 vertex.point[0] - expected[0],
@@ -1912,7 +1993,7 @@ fn parse_legacy_major2(
         regions: Vec::new(),
         source_range: range,
     };
-    match ValidatedRawBrep::validate(ctx, &mut raw) {
+    match ValidatedRawBrep::validate(ctx, &mut raw, None) {
         Ok((resolved, mut validation_warnings)) => {
             validation_warnings.prepend_admitted(ctx, warnings)?;
             let validated = ValidatedRawBrep {
@@ -2102,7 +2183,8 @@ fn legacy_vertex(
         let mut points = BTreeMap::new();
         let mut vertex_source = vertices[..].iter().enumerate();
         for _ in 0..vertex_source.len() {
-            let (position, vertex) = ctx.next_charged(&mut vertex_source, "Rhino legacy Brep vertex indexing")?
+            let (position, vertex) = ctx
+                .next_charged(&mut vertex_source, "Rhino legacy Brep vertex indexing")?
                 .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
             if let Some(key) = legacy_point_key(vertex.vertex.point.get()) {
                 storage.with_storage(|| -> Result<(), cadmpeg_core::CodecError> {
@@ -2154,85 +2236,84 @@ fn read_legacy_mesh_sides(
 ) -> Result<(Vec<Option<RawBrepMesh>>, Range<usize>), GeometryError> {
     let start = reader.position();
     let mut slot_storage = ctx.reserve_scoped(0, "Rhino legacy Brep mesh slot scratch")?;
-    let mut slots = slot_storage
-        .with_storage(|| ctx.collection_vec(face_count, "Rhino legacy Brep mesh slots"))?;
-    for _ in 0..face_count {
-        ctx.charge_work(1, "Rhino brep read_legacy_mesh_sides records")?;
-        let present = match reader.u8() {
-            Ok(value) => value != 0,
-            Err(error) => {
-                reader.skip_remaining()?;
-                let degraded = empty_mesh_slots(ctx, face_count)?;
-                warnings.push_coded_admitted(
+    let parsed: Result<Vec<Option<RawBrepMesh>>, GeometryError> = (|| {
+        let mut slots = slot_storage
+            .with_storage(|| ctx.collection_vec(face_count, "Rhino legacy Brep mesh slots"))?;
+        for _ in 0..face_count {
+            ctx.charge_work(1, "Rhino brep read_legacy_mesh_sides records")?;
+            let present = reader.u8()? != 0;
+            let mesh = if present {
+                let object_start = reader.position();
+                let object = chunk_at(bytes, object_start, reader.end(), archive, false)?;
+                reader.skip(object.next_offset() - object_start)?;
+                match parse_class_wrapper_with_scoped_userdata(
                     ctx,
-                    crate::loss::RhinoLossCode::BrepMeshCacheDegraded,
-                    format_args!("legacy Brep mesh cache degraded: {error}"),
-                )?;
-                return Ok((degraded, start..reader.position()));
-            }
-        };
-        let mesh = if present {
-            let object_start = reader.position();
-            let object = match chunk_at(bytes, object_start, reader.end(), archive, false) {
-                Ok(object) => object,
-                Err(error) => {
-                    reader.skip_remaining()?;
-                    let degraded = empty_mesh_slots(ctx, face_count)?;
-                    warnings.push_coded_admitted(
-                        ctx,
-                        crate::loss::RhinoLossCode::BrepMeshCacheDegraded,
-                        format_args!("legacy Brep mesh cache degraded: {error}"),
-                    )?;
-                    return Ok((degraded, start..reader.position()));
+                    bytes,
+                    object.range(),
+                    archive,
+                    warnings,
+                ) {
+                    Ok((class, userdata)) if supported_mesh(class.class_uuid) => {
+                        let kept = slot_storage.with_storage(|| {
+                            ctx.collect_indexed_vec(
+                                userdata.len(),
+                                "Rhino Brep mesh userdata",
+                                |index| Ok(userdata[index].clone()),
+                            )
+                        })?;
+                        Some(RawBrepMesh {
+                            mesh: RawBrepChild {
+                                class_uuid: class.class_uuid,
+                                class_data_range: class.class_data_range,
+                                source_range: object_start..object.next_offset(),
+                            },
+                            userdata: kept,
+                        })
+                    }
+                    Ok(_) => {
+                        warnings.push_coded_admitted(
+                            ctx,
+                            crate::loss::RhinoLossCode::BrepMeshCacheDegraded,
+                            format_args!("legacy Brep mesh cache slot has wrong class"),
+                        )?;
+                        None
+                    }
+                    Err(FramingError::Resource(limit)) => {
+                        return Err(GeometryError::Codec(
+                            cadmpeg_core::CodecError::ResourceLimit(limit),
+                        ));
+                    }
+                    Err(error) => {
+                        warnings.push_coded_admitted(
+                            ctx,
+                            crate::loss::RhinoLossCode::BrepMeshCacheDegraded,
+                            format_args!("legacy Brep mesh cache slot degraded: {error}"),
+                        )?;
+                        None
+                    }
                 }
+            } else {
+                None
             };
-            if let Err(error) = reader.skip(object.next_offset() - object_start) {
-                reader.skip_remaining()?;
-                let degraded = empty_mesh_slots(ctx, face_count)?;
-                warnings.push_coded_admitted(
-                    ctx,
-                    crate::loss::RhinoLossCode::BrepMeshCacheDegraded,
-                    format_args!("legacy Brep mesh cache degraded: {error}"),
-                )?;
-                return Ok((degraded, start..reader.position()));
-            }
-            match parse_class_wrapper_with_userdata(ctx, bytes, object.range(), archive, warnings) {
-                Ok((class, userdata)) if supported_mesh(class.class_uuid) => Some(RawBrepMesh {
-                    mesh: RawBrepChild {
-                        class_uuid: class.class_uuid,
-                        class_data_range: class.class_data_range,
-                        source_range: object_start..object.next_offset(),
-                    },
-                    userdata,
-                }),
-                Ok(_) => {
-                    warnings.push_coded_admitted(
-                        ctx,
-                        crate::loss::RhinoLossCode::BrepMeshCacheDegraded,
-                        format_args!("legacy Brep mesh cache slot has wrong class"),
-                    )?;
-                    None
-                }
-                Err(FramingError::Resource(limit)) => {
-                    return Err(GeometryError::Codec(
-                        cadmpeg_core::CodecError::ResourceLimit(limit),
-                    ));
-                }
-                Err(error) => {
-                    warnings.push_coded_admitted(
-                        ctx,
-                        crate::loss::RhinoLossCode::BrepMeshCacheDegraded,
-                        format_args!("legacy Brep mesh cache slot degraded: {error}"),
-                    )?;
-                    None
-                }
-            }
-        } else {
-            None
-        };
-        slots.push(mesh);
+            slots.push(mesh);
+        }
+        Ok(slots)
+    })();
+    match parsed {
+        Ok(slots) => Ok(slot_storage.commit_value((slots, start..reader.position()))?),
+        Err(error @ GeometryError::Codec(_)) => Err(error),
+        Err(error) => {
+            drop(slot_storage);
+            reader.skip_remaining()?;
+            let degraded = empty_mesh_slots(ctx, face_count)?;
+            warnings.push_coded_admitted(
+                ctx,
+                crate::loss::RhinoLossCode::BrepMeshCacheDegraded,
+                format_args!("legacy Brep mesh cache degraded: {error}"),
+            )?;
+            Ok((degraded, start..reader.position()))
+        }
     }
-    Ok(slot_storage.commit_value((slots, start..reader.position()))?)
 }
 
 fn empty_mesh_slots(
@@ -2330,7 +2411,7 @@ fn read_vertices(
 ) -> Result<(Vec<RawBrepVertex>, Range<usize>), GeometryError> {
     let chunk = anonymous_chunk(bytes, reader, archive)?;
     let mut child = body_reader(bytes, &chunk)?;
-    let count = raw_array_start(ctx, &mut child, "vertex", 40)?;
+    let count = raw_array_start(&mut child, "vertex", 40)?;
     let mut result = ctx
         .collection_vec(count, "Rhino Brep vertices")
         .map_err(crate::curves::GeometryError::from)?;
@@ -2397,7 +2478,7 @@ fn read_edges(
 ) -> Result<(Vec<RawBrepEdge>, Range<usize>), GeometryError> {
     let chunk = anonymous_chunk(bytes, reader, archive)?;
     let mut child = body_reader(bytes, &chunk)?;
-    let count = raw_array_start(ctx, &mut child, "edge", 44)?;
+    let count = raw_array_start(&mut child, "edge", 44)?;
     let current = archive.value() >= 3 && writer_version.is_some_and(|v| v >= 200_206_180);
     unstamped_legacy_layout(ctx, archive, writer_version, count, "edge domains", losses)?;
     let mut result = ctx
@@ -2450,7 +2531,7 @@ fn read_trims(
 ) -> Result<(Vec<RawBrepTrim>, Range<usize>), GeometryError> {
     let chunk = anonymous_chunk(bytes, reader, archive)?;
     let mut child = body_reader(bytes, &chunk)?;
-    let count = raw_array_start(ctx, &mut child, "trim", 132)?;
+    let count = raw_array_start(&mut child, "trim", 132)?;
     let current = archive.value() >= 3 && writer_version.is_some_and(|v| v >= 200_206_180);
     unstamped_legacy_layout(
         ctx,
@@ -2528,7 +2609,7 @@ fn read_loops(
 ) -> Result<(Vec<RawBrepLoop>, Range<usize>), GeometryError> {
     let chunk = anonymous_chunk(bytes, reader, archive)?;
     let mut child = body_reader(bytes, &chunk)?;
-    let count = raw_array_start(ctx, &mut child, "loop", 20)?;
+    let count = raw_array_start(&mut child, "loop", 20)?;
     let mut result = ctx
         .collection_vec(count, "Rhino Brep loops")
         .map_err(crate::curves::GeometryError::from)?;
@@ -2608,7 +2689,8 @@ fn read_faces(
     if version & 0x0f >= 1 {
         let mut face_source = result[..].iter_mut();
         for _ in 0..face_source.len() {
-            let face = ctx.next_charged(&mut face_source, "Rhino face suffix traversal")?
+            let face = ctx
+                .next_charged(&mut face_source, "Rhino face suffix traversal")?
                 .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
             face.uuid = Some(uuid(&mut child)?);
         }
@@ -2621,8 +2703,11 @@ fn read_faces(
         if present != 0 {
             let mut face_source = result[..].iter_mut();
             for _ in 0..face_source.len() {
-                let face = ctx.next_charged(&mut face_source, "Rhino face suffix traversal")?
-                    .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
+                let face = ctx
+                    .next_charged(&mut face_source, "Rhino face suffix traversal")?
+                    .ok_or_else(|| {
+                        GeometryError::unpositioned("Brep traversal source ended early")
+                    })?;
                 face.color = Some(child.array::<4>()?);
             }
         }
@@ -2658,7 +2743,7 @@ fn read_mesh_sides(
                     ctx.reserve_vec(&mut children, 1, "Rhino Brep mesh cache child ranges")
                 })?;
                 children.push(object.range());
-                let class = parse_class_wrapper_with_userdata(
+                let class = parse_class_wrapper_with_scoped_userdata(
                     ctx,
                     bytes,
                     object.range(),
@@ -2668,13 +2753,20 @@ fn read_mesh_sides(
                 child.skip(object.next_offset() - start)?;
                 match class {
                     Ok((class, userdata)) if supported_mesh(class.class_uuid) => {
+                        let kept = slot_storage.with_storage(|| {
+                            ctx.collect_indexed_vec(
+                                userdata.len(),
+                                "Rhino Brep mesh userdata",
+                                |index| Ok(userdata[index].clone()),
+                            )
+                        })?;
                         Some(RawBrepMesh {
                             mesh: RawBrepChild {
                                 class_uuid: class.class_uuid,
                                 class_data_range: class.class_data_range,
                                 source_range: start..object.next_offset(),
                             },
-                            userdata,
+                            userdata: kept,
                         })
                     }
                     Ok(_) => {
@@ -2711,6 +2803,7 @@ fn read_mesh_sides(
         Ok(result) => Ok(slot_storage.commit_value(result)?),
         Err(error @ GeometryError::Codec(_)) => Err(error),
         Err(error) => {
+            drop(slot_storage);
             let degraded =
                 ctx.collect_indexed_vec(face_count, "Rhino Brep degraded mesh slots", |_| {
                     Ok(None)
@@ -2726,13 +2819,14 @@ fn read_mesh_sides(
     }
 }
 
-fn read_regions(
-    ctx: &DecodeContext<'_>,
+fn read_regions<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     bytes: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     face_count: usize,
     warnings: &mut Diagnostics,
+    input_storage: &mut cadmpeg_core::decode::ScopedReservation<'ctx>,
 ) -> Result<RegionRead, GeometryError> {
     let chunk = anonymous_chunk(bytes, reader, archive)?;
     let mut outer = body_reader(bytes, &chunk)?;
@@ -2758,10 +2852,11 @@ fn read_regions(
             ));
         }
         let sides_start = topology.position();
-        let sides = read_region_sides(ctx, bytes, &mut topology, archive, warnings)?;
+        let sides = read_region_sides(ctx, bytes, &mut topology, archive, warnings, input_storage)?;
         let sides_range = sides_start..topology.position();
         let regions_start = topology.position();
-        let regions = read_region_records(ctx, bytes, &mut topology, archive, warnings)?;
+        let regions =
+            read_region_records(ctx, bytes, &mut topology, archive, warnings, input_storage)?;
         let regions_range = regions_start..topology.position();
         finish_anonymous_children(
             ctx,
@@ -2802,6 +2897,7 @@ fn read_regions(
         }
         Err(error @ GeometryError::Codec(_)) => Err(error),
         Err(error) => {
+            *input_storage = ctx.reserve_scoped(0, "Rhino Brep region input")?;
             warnings.push_coded_admitted(
                 ctx,
                 crate::loss::RhinoLossCode::RedundantFieldRepaired,
@@ -2819,6 +2915,7 @@ fn read_region_topology_userdata(
     archive: ArchiveVersion,
     face_count: usize,
     warnings: &mut Diagnostics,
+    input_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
 ) -> Result<RegionRead, GeometryError> {
     let mut parent = BoundedReader::new(bytes, extra.payload_range.start, extra.payload_range.end)?;
     let topology_chunk = anonymous_chunk(bytes, &mut parent, archive)?;
@@ -2832,10 +2929,10 @@ fn read_region_topology_userdata(
         ));
     }
     let sides_start = topology.position();
-    let sides = read_region_sides(ctx, bytes, &mut topology, archive, warnings)?;
+    let sides = read_region_sides(ctx, bytes, &mut topology, archive, warnings, input_storage)?;
     let sides_range = sides_start..topology.position();
     let regions_start = topology.position();
-    let regions = read_region_records(ctx, bytes, &mut topology, archive, warnings)?;
+    let regions = read_region_records(ctx, bytes, &mut topology, archive, warnings, input_storage)?;
     let regions_range = regions_start..topology.position();
     finish_anonymous_children(
         ctx,
@@ -2868,11 +2965,11 @@ fn read_region_sides<'a>(
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
     warnings: &mut Diagnostics,
+    input_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
 ) -> Result<Vec<RawBrepFaceSide>, GeometryError> {
     let (chunk, mut child, count) = region_array(bytes, reader, archive)?;
-    let mut result = ctx
-        .collection_vec(count, "Rhino Brep region face sides")
-        .map_err(crate::curves::GeometryError::from)?;
+    let mut result =
+        input_storage.with_storage(|| ctx.collection_vec(count, "Rhino Brep region face sides"))?;
     let mut range_storage = ctx.reserve_scoped(0, "Rhino Brep region side ranges")?;
     let mut children = range_storage
         .with_storage(|| ctx.collection_vec(count, "Rhino Brep region side ranges"))?;
@@ -2900,11 +2997,11 @@ fn read_region_records<'a>(
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
     warnings: &mut Diagnostics,
+    input_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
 ) -> Result<Vec<RawBrepRegion>, GeometryError> {
     let (chunk, mut child, count) = region_array(bytes, reader, archive)?;
-    let mut result = ctx
-        .collection_vec(count, "Rhino Brep region records")
-        .map_err(crate::curves::GeometryError::from)?;
+    let mut result =
+        input_storage.with_storage(|| ctx.collection_vec(count, "Rhino Brep region records"))?;
     let mut range_storage = ctx.reserve_scoped(0, "Rhino Brep region record ranges")?;
     let mut children = range_storage
         .with_storage(|| ctx.collection_vec(count, "Rhino Brep region record ranges"))?;
@@ -2917,7 +3014,7 @@ fn read_region_records<'a>(
         let index = child.i32()?;
         index_mismatch |= usize::try_from(index).ok() != Some(position);
         let region_type = child.i32()?;
-        let sides = indexes(ctx, &mut child)?;
+        let sides = input_storage.with_storage(|| indexes(ctx, &mut child))?;
         let bounds = bbox(ctx, &mut child)?;
         child.skip_remaining()?;
         result.push(RawBrepRegion {
@@ -3017,7 +3114,8 @@ fn validate_rings(
     }
     let mut loop_record_source = raw.loops.iter().enumerate();
     for _ in 0..loop_record_source.len() {
-        let (loop_index, loop_record) = ctx.next_charged(&mut loop_record_source, "Rhino Brep ring loop traversal")?
+        let (loop_index, loop_record) = ctx
+            .next_charged(&mut loop_record_source, "Rhino Brep ring loop traversal")?
             .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
         let ring = &resolved.loops[loop_index].trims;
         let Some(first_trim) = ring.first() else {
@@ -3043,8 +3141,14 @@ fn validate_rings(
         }
         let mut adjacent_trims = ring.windows(2);
         for _ in 0..adjacent_trims.len() {
-            let pair = ctx.next_charged(&mut adjacent_trims, "Rhino Brep ring adjacency traversal")?
-                .ok_or_else(|| error(loop_record.source_range.start, "Brep ring source ended early"))?;
+            let pair = ctx
+                .next_charged(&mut adjacent_trims, "Rhino Brep ring adjacency traversal")?
+                .ok_or_else(|| {
+                    error(
+                        loop_record.source_range.start,
+                        "Brep ring source ended early",
+                    )
+                })?;
             let left = &resolved.trims[pair[0]];
             let right = &resolved.trims[pair[1]];
             let left_end = left.vertices[1];
@@ -3094,7 +3198,8 @@ fn validate_regions(
     })?;
     let mut side_source = raw.face_sides[..].iter().enumerate();
     for _ in 0..side_source.len() {
-        let (index, side) = ctx.next_charged(&mut side_source, "Rhino validate regions traversal")?
+        let (index, side) = ctx
+            .next_charged(&mut side_source, "Rhino validate regions traversal")?
             .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
         let Some(face) = position(Some(side.face)).filter(|face| *face < raw.faces.len()) else {
             return Err(error(
@@ -3136,7 +3241,8 @@ fn validate_regions(
         .with_storage(|| ctx.alloc_filled(sides.len(), false, "Rhino Brep listed region sides"))?;
     let mut region_source = raw.regions[..].iter().enumerate();
     for _ in 0..region_source.len() {
-        let (index, region) = ctx.next_charged(&mut region_source, "Rhino validate regions traversal")?
+        let (index, region) = ctx
+            .next_charged(&mut region_source, "Rhino validate regions traversal")?
             .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
         if !matches!(region.region_type, 0 | 1) {
             return Err(error(region.source_range.start, "region record is invalid"));
@@ -3146,9 +3252,10 @@ fn validate_regions(
         }
         let mut side_source = region.sides.iter();
         for _ in 0..side_source.len() {
-            let side = ctx.next_charged(&mut side_source, "Rhino validate regions traversal")?
+            let side = ctx
+                .next_charged(&mut side_source, "Rhino validate regions traversal")?
                 .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
-            let side = slot(ctx, *side, raw.face_sides.len(), "region side")?;
+            let side = slot(*side, raw.face_sides.len(), "region side")?;
             if std::mem::replace(&mut listed_sides[side], true) || sides[side].region != Some(index)
             {
                 return Err(error(
@@ -3178,7 +3285,6 @@ fn validate_regions(
 }
 
 fn raw_array_start(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     label: &str,
     minimum_record_bytes: usize,
@@ -3187,10 +3293,7 @@ fn raw_array_start(
     if version >> 4 != 1 {
         return Err(GeometryError::unsupported(
             reader.position() - 1,
-            ctx.format_retained(
-                format_args!("unsupported {label} array version"),
-                "Rhino raw_array_start text",
-            )?,
+            format!("unsupported {label} array version"),
         ));
     }
     let count = count(reader, MAX_BREP_ITEMS)?;
@@ -3200,10 +3303,7 @@ fn raw_array_start(
     {
         return Err(error(
             reader.position(),
-            ctx.format_retained(
-                format_args!("{label} count exhausts payload before allocation"),
-                "Rhino raw_array_start text",
-            )?,
+            format!("{label} count exhausts payload before allocation"),
         ));
     }
     Ok(count)
@@ -3260,20 +3360,14 @@ fn position(value: Option<i32>) -> Option<usize> {
 }
 
 /// Resolves one stored reference against an array of `len` records.
-fn slot(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    value: i32,
-    len: usize,
-    label: &str,
-) -> Result<usize, GeometryError> {
+fn slot(value: i32, len: usize, label: &str) -> Result<usize, GeometryError> {
     position(Some(value))
         .filter(|slot| *slot < len)
         .map_or_else(
             || {
-                Err(GeometryError::unpositioned(ctx.format_retained(
-                    format_args!("{label} reference is out of range"),
-                    "Rhino slot text",
-                )?))
+                Err(GeometryError::unpositioned(format!(
+                    "{label} reference is out of range"
+                )))
             },
             Ok,
         )
@@ -3291,24 +3385,17 @@ fn slots(
         .map_err(crate::curves::GeometryError::from)?;
     let mut value_source = values.iter();
     for _ in 0..value_source.len() {
-        let value = ctx.next_charged(&mut value_source, "Rhino slots traversal")?
+        let value = ctx
+            .next_charged(&mut value_source, "Rhino slots traversal")?
             .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
-        result.push(slot(ctx, *value, len, label)?);
+        result.push(slot(*value, len, label)?);
     }
     Ok(result)
 }
 
 /// Resolves an endpoint pair against an array of `len` records.
-fn slot_pair(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    values: [i32; 2],
-    len: usize,
-    label: &str,
-) -> Result<[usize; 2], GeometryError> {
-    Ok([
-        slot(ctx, values[0], len, label)?,
-        slot(ctx, values[1], len, label)?,
-    ])
+fn slot_pair(values: [i32; 2], len: usize, label: &str) -> Result<[usize; 2], GeometryError> {
+    Ok([slot(values[0], len, label)?, slot(values[1], len, label)?])
 }
 
 /// Resolves one child slot reference, requiring the expected base type.
@@ -3350,7 +3437,8 @@ fn validate_edge_incidences(
     })?;
     let mut vertex_source = resolved.vertices[..].iter().enumerate();
     for _ in 0..vertex_source.len() {
-        let (vertex_index, vertex) = ctx.next_charged(&mut vertex_source, "Rhino Brep incidence vertex traversal")?
+        let (vertex_index, vertex) = ctx
+            .next_charged(&mut vertex_source, "Rhino Brep incidence vertex traversal")?
             .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
         for edge_index in ctx
             .admit_iter(&vertex.edges[..], "Rhino Brep vertex incidence traversal")
@@ -3366,11 +3454,16 @@ fn validate_edge_incidences(
     }
     let mut edge_source = resolved.edges.iter().enumerate();
     for _ in 0..edge_source.len() {
-        let (edge_index, edge) = ctx.next_charged(&mut edge_source, "Rhino Brep edge incidence traversal")?
+        let (edge_index, edge) = ctx
+            .next_charged(&mut edge_source, "Rhino Brep edge incidence traversal")?
             .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
         let mut trim_index_source = edge.trims.iter();
         for _ in 0..trim_index_source.len() {
-            let trim_index = ctx.next_charged(&mut trim_index_source, "Rhino Brep edge trim incidence traversal")?
+            let trim_index = ctx
+                .next_charged(
+                    &mut trim_index_source,
+                    "Rhino Brep edge trim incidence traversal",
+                )?
                 .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
             let trim = &resolved.trims[*trim_index];
             if trim.edge.is_some()
@@ -3411,52 +3504,36 @@ fn unique(ctx: &DecodeContext<'_>, values: &[i32], label: &str) -> Result<(), Ge
     let mut seen = HashSet::new();
     let mut value_source = values.iter();
     for _ in 0..value_source.len() {
-        let value = ctx.next_charged(&mut value_source, "Rhino unique traversal")?
+        let value = ctx
+            .next_charged(&mut value_source, "Rhino unique traversal")?
             .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
         if !storage.with_storage(|| {
             ctx.insert_hash_set(&mut seen, *value, "Rhino Brep unique references")
         })? {
-            return Err(GeometryError::unpositioned(ctx.format_retained(
-                format_args!("{label} reference is duplicated"),
-                "Rhino unique text",
-            )?));
+            return Err(GeometryError::unpositioned(format!(
+                "{label} reference is duplicated"
+            )));
         }
     }
     Ok(())
 }
 
 /// Refuses a decoded interval that is neither an `ON_UNSET` pair nor ordered.
-fn ordered_interval(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    value: Interval,
-    label: &str,
-) -> Result<(), GeometryError> {
+fn ordered_interval(value: Interval, label: &str) -> Result<(), GeometryError> {
     let [low, high] = value.0.get();
     let unset = (low == ON_UNSET_VALUE && high == ON_UNSET_VALUE)
         || (low == ON_UNSET_POSITIVE_VALUE && high == ON_UNSET_POSITIVE_VALUE);
     let empty = (low == ON_UNSET_VALUE && high == ON_UNSET_POSITIVE_VALUE)
         || (low == ON_UNSET_POSITIVE_VALUE && high == ON_UNSET_VALUE);
     if !(unset || empty || low < high) {
-        return Err(GeometryError::unpositioned(ctx.format_retained(
-            format_args!("{label} is invalid"),
-            "Rhino ordered_interval text",
-        )?));
+        return Err(GeometryError::unpositioned(format!("{label} is invalid")));
     }
     Ok(())
 }
 
-fn finite_tolerance(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    value: f64,
-    label: &str,
-) -> Result<BrepTolerance, GeometryError> {
+fn finite_tolerance(value: f64, label: &str) -> Result<BrepTolerance, GeometryError> {
     BrepTolerance::new(value).map_or_else(
-        || {
-            Err(GeometryError::unpositioned(ctx.format_retained(
-                format_args!("{label} is invalid"),
-                "Rhino finite_tolerance text",
-            )?))
-        },
+        || Err(GeometryError::unpositioned(format!("{label} is invalid"))),
         Ok,
     )
 }
