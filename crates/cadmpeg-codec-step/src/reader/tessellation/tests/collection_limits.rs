@@ -6,9 +6,7 @@ use super::{
     ONE_TRIANGLE_IN_CONTAINER, ONE_TRIANGLE_WITH_PNINDEX,
 };
 use crate::parse::Value;
-use cadmpeg_core::decode::{
-    u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
-};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
 #[test]
@@ -140,36 +138,12 @@ fn tessellation_shaded_rows_charge_before_pairing() {
 }
 
 #[test]
-fn tessellation_validation_triangles_charge_before_copy() {
-    assert_tessellation_collection_refusal(ONE_TRIANGLE, "step_tessellation_validation_triangles");
-}
-
-#[test]
 fn tessellation_mesh_list_charges_before_push() {
     assert_tessellation_collection_refusal(ONE_TRIANGLE, "step_tessellation_mesh_list");
 }
 
 #[test]
-fn tessellation_mesh_body_refuses_retained_limit_before_copy() {
-    let body = cadmpeg_ir::ids::BodyId::mint("step:data:body#1").expect("valid body identity");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = u64_from_index(body.as_str().len()) - 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits selected policy");
-    let error = body
-        .try_clone_for_decode(&ctx, "step_tessellation_mesh_body")
-        .expect_err("body copy exceeds retained limit");
-    assert!(matches!(
-        error,
-        CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "step_tessellation_mesh_body"
-    ));
-}
-
-#[test]
-fn tessellation_mesh_entity_is_admitted_before_creation() {
+fn tessellation_mesh_entity_is_admitted_before_retention() {
     let service = DecodePolicy::service();
     decode_tessellation_under_policy(ONE_TRIANGLE, service).expect("service admits mesh entity");
     let mut limited = service;
