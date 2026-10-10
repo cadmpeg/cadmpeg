@@ -234,12 +234,28 @@ pub(crate) fn double_xar_tables(
 }
 
 /// Section-local dictionary formed by distinct raw `0x46` token images.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default)]
 pub(crate) struct ScalarCache {
     entries: Vec<f64>,
     /// Unique leading payload byte for each paired-form tail. `None` marks a
     /// tail shared by distinct cache images.
     paired_byte_1_by_tail: HashMap<[u8; 6], Option<u8>>,
+}
+
+/// A checked dictionary with its live temporary backing reservation.
+#[derive(Debug)]
+pub(crate) struct CheckedScalarCache<'ctx> {
+    cache: ScalarCache,
+    // Fields drop in declaration order: backing must drop before its receipt.
+    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+impl std::ops::Deref for CheckedScalarCache<'_> {
+    type Target = ScalarCache;
+
+    fn deref(&self) -> &Self::Target {
+        &self.cache
+    }
 }
 
 impl ScalarCache {
@@ -283,10 +299,11 @@ impl ScalarCache {
     }
 
     /// Build a scalar dictionary under the caller's decode budget.
-    pub(crate) fn from_section_checked(
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    pub(crate) fn from_section_checked<'ctx>(
+        ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
         section: &[u8],
-    ) -> Result<Self, cadmpeg_core::CodecError> {
+    ) -> Result<CheckedScalarCache<'ctx>, cadmpeg_core::CodecError> {
+        let mut cache_storage = ctx.reserve_scoped(0, "creo scalar cache backing")?;
         let mut entries = Vec::<f64>::new();
         let mut image_storage = ctx.reserve_scoped(0, "creo scalar cache image scratch")?;
         let mut seen = HashSet::<[u8; 8]>::new();
@@ -315,11 +332,11 @@ impl ScalarCache {
             let mut ieee = raw;
             ieee[0] = 0x40;
             let tail = [raw[2], raw[3], raw[4], raw[5], raw[6], raw[7]];
-            match ctx.entry_hash_map(
+            match cache_storage.with_storage(|| ctx.entry_hash_map(
                 &mut paired_byte_1_by_tail,
                 tail,
                 "creo scalar cache paired tails",
-            )? {
+            ))? {
                 std::collections::hash_map::Entry::Vacant(entry) => {
                     entry.insert(Some(raw[1]));
                 }
@@ -329,13 +346,18 @@ impl ScalarCache {
                     }
                 }
             }
-            ctx.reserve_vec(&mut entries, 1, "creo scalar cache entries")?;
+            cache_storage.with_storage(|| {
+                ctx.reserve_vec(&mut entries, 1, "creo scalar cache entries")
+            })?;
             // endian-exception: reconstructed-scalar
             entries.push(f64::from_be_bytes(ieee));
         }
-        Ok(Self {
-            entries,
-            paired_byte_1_by_tail,
+        Ok(CheckedScalarCache {
+            cache: Self {
+                entries,
+                paired_byte_1_by_tail,
+            },
+            _storage: cache_storage,
         })
     }
 
@@ -2349,6 +2371,9 @@ fn ieee7_dict(data: &[u8], offset: usize, high: u16) -> Option<(f64, usize)> {
 }
 
 #[cfg(test)]
+mod cache_storage_tests;
+
+#[cfg(test)]
 mod tests {
     use super::{
         admitted_scalar_body, compact_inline_frame, decode, decode_explicit_local_system_slots,
@@ -2396,14 +2421,14 @@ mod tests {
                 "creo scalar cache discovery",
                 "creo scalar cache unique images",
             ],
-            |ctx| ScalarCache::from_section_checked(ctx, &images),
+            |ctx| ScalarCache::from_section_checked(ctx, &images).map(|cache| cache.entries.len()),
         );
-        assert_eq!(cache.entries.len(), 1, "equal images remain deduplicated");
+        assert_eq!(cache, 1, "equal images remain deduplicated");
         let error = crate::test_support::last_refusal_at(
             &[0; 16],
             cadmpeg_core::decode::ResourceDimension::WorkUnits,
             "creo scalar cache discovery",
-            |ctx| ScalarCache::from_section_checked(ctx, &[0; 16]),
+            |ctx| ScalarCache::from_section_checked(ctx, &[0; 16]).map(|_| ()),
         );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "creo scalar cache discovery")
@@ -2419,7 +2444,7 @@ mod tests {
             &images,
             cadmpeg_core::decode::ResourceDimension::WorkUnits,
             "creo scalar cache unique images",
-            |ctx| ScalarCache::from_section_checked(ctx, &images),
+            |ctx| ScalarCache::from_section_checked(ctx, &images).map(|_| ()),
         );
         let cadmpeg_core::CodecError::ResourceLimit(resource) = error else {
             panic!("hash work refusal");
@@ -2488,7 +2513,7 @@ mod tests {
 
     fn checked_cache_with_collection_limit(
         limit: u64,
-    ) -> Result<ScalarCache, cadmpeg_core::CodecError> {
+    ) -> Result<(usize, Option<u8>), cadmpeg_core::CodecError> {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
         let bytes = [0x46, 0x08, 1, 2, 3, 4, 5, 6];
@@ -2498,6 +2523,7 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
             .expect("the scalar image fits the root limit");
         ScalarCache::from_section_checked(&ctx, &bytes)
+            .map(|cache| (cache.entries.len(), cache.paired_byte_1(&[1, 2, 3, 4, 5, 6])))
     }
 
     fn with_context<T>(
@@ -2626,8 +2652,8 @@ mod tests {
             checked_cache_with_collection_limit,
         ))
         .expect("service-sized collection budget admits one scalar");
-        assert_eq!(cache.entries.len(), 1);
-        assert_eq!(cache.paired_byte_1(&[1, 2, 3, 4, 5, 6]), Some(0x08));
+        assert_eq!(cache.0, 1);
+        assert_eq!(cache.1, Some(0x08));
         let error = checked_cache_with_collection_limit(crate::test_support::allocation_limit_at(
             cadmpeg_core::decode::ResourceDimension::CollectionItems,
             Some("creo scalar cache unique images"),
