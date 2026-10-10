@@ -347,13 +347,15 @@ fn rational_surface_patches_with_budget<'ctx>(
             (None, None)
         }
         NurbsPoleGrid::Rational { rows } => {
-            let storage;
-            let mut weights = Vec::new();
-            storage = ctx.reserve_temporary_vec(
-                &mut weights,
-                control_count,
-                "IR surface control weights",
-            )?;
+            let (storage, mut weights) = {
+                let mut weights = Vec::new();
+                let storage = ctx.reserve_temporary_vec(
+                    &mut weights,
+                    control_count,
+                    "IR surface control weights",
+                )?;
+                (storage, weights)
+            };
             for row in ctx.admit_iter(rows, "IR surface control row visit")? {
                 for pole in ctx.admit_iter(row, "IR surface control point copy")? {
                     points.push(pole.point);
@@ -2928,14 +2930,7 @@ pub fn nurbs_pcurve_contains_point(
             return Ok(None);
         }
         let middle = start.midpoint(end);
-        let curve_uv = match nurbs_pcurve_uv(
-            ctx,
-            degree,
-            knots,
-            control_points,
-            weights,
-            middle,
-        ) {
+        let curve_uv = match nurbs_pcurve_uv(ctx, degree, knots, control_points, weights, middle) {
             Ok(value) => Point2::from(value),
             Err(EvaluationFailure::ResourceLimit(limit)) => return Err(limit),
             Err(EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_)) => return Ok(None),
@@ -3422,7 +3417,9 @@ pub fn nurbs_surface_isocurve<'ctx, 'arena: 'ctx>(
             {
                 return Ok(None);
             }
-            controls.0.push(FinitePoint3::from_coordinates(x, y, z).get());
+            controls
+                .0
+                .push(FinitePoint3::from_coordinates(x, y, z).get());
             if rational {
                 if scratch
                     .work(
@@ -3460,16 +3457,11 @@ pub fn nurbs_surface_isocurve<'ctx, 'arena: 'ctx>(
             None
         };
         let curve = match scratch.admission.context() {
-            Some(ctx) => NurbsCurve::from_lanes(
-                ctx,
-                degree,
-                admitted_knots,
-                controls.0,
-                weights,
-                periodic,
-            )
-            .map_err(crate::geometry::nurbs::NurbsError::from)
-            .and_then(|curve| curve),
+            Some(ctx) => {
+                NurbsCurve::from_lanes(ctx, degree, admitted_knots, controls.0, weights, periodic)
+                    .map_err(crate::geometry::nurbs::NurbsError::from)
+                    .and_then(|curve| curve)
+            }
             None => (|| {
                 use crate::geometry::nurbs::{
                     admit_weight, build_curve, pair_curve_lanes, StandardNurbsAdmission,
@@ -4766,7 +4758,8 @@ fn construction_curve_parameter(
                 directrix.as_str(),
                 "construction directrix identity comparison",
             )
-            .map_err(EvaluationFailure::ResourceLimit)? {
+            .map_err(EvaluationFailure::ResourceLimit)?
+            {
                 continue;
             }
             let Some(range) = edge.param_range() else {
@@ -9083,7 +9076,8 @@ fn pcurve_uv_unsettled(
                     .2
                     .ok()
                     .zip(v.2.ok())
-                    .map(|(u, v)| FinitePoint2::from_coordinates(u, v)).into(),
+                    .map(|(u, v)| FinitePoint2::from_coordinates(u, v))
+                    .into(),
                 resource: None,
             });
         }
@@ -9145,10 +9139,12 @@ fn pcurve_uv_unsettled(
             return Some(PcurveEvaluation {
                 point: Ok(FinitePoint2::from_coordinates(angle, finite_axial)),
                 tangent: planar_value(first, axial_lane(axial_derivative)),
-                acceleration: second.and_then(|second| {
-                    let axial = FiniteReal::new(-axial_cos * cosine - axial_sin * sine)?;
-                    Some(FinitePoint2::from_coordinates(second, axial))
-                }).into(),
+                acceleration: second
+                    .and_then(|second| {
+                        let axial = FiniteReal::new(-axial_cos * cosine - axial_sin * sine)?;
+                        Some(FinitePoint2::from_coordinates(second, axial))
+                    })
+                    .into(),
                 resource: None,
             });
         }
@@ -9272,9 +9268,12 @@ fn pcurve_uv_unsettled(
                     axial.point.coordinates()[0],
                 )),
                 tangent: planar_value(first, axial_lane(axial.tangent)),
-                acceleration: second.zip(axial.acceleration).map(|(second, axial)| {
-                    FinitePoint2::from_coordinates(second, axial.coordinates()[0])
-                }).into(),
+                acceleration: second
+                    .zip(axial.acceleration)
+                    .map(|(second, axial)| {
+                        FinitePoint2::from_coordinates(second, axial.coordinates()[0])
+                    })
+                    .into(),
                 resource: None,
             });
         }
