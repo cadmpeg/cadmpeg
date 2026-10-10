@@ -44,23 +44,28 @@ pub(crate) fn classify(
 
 /// Whether the prefix opens like a text stream: a first line of four ASCII
 /// integer fields (the four header words) followed by a counted-string line.
+///
+/// One pass reads the first line: each search stops at the byte it needs, so
+/// the bytes visited are at most the line and the byte after it.
 fn looks_like_text_stream(ctx: &DecodeContext<'_>, prefix: &[u8]) -> Result<bool, CodecError> {
-    if !sat::has_text_magic(prefix) {
+    // The text discriminant starts with at least three decimal digits. Its
+    // full first field is checked by the admitted field scan below.
+    if !prefix
+        .get(..3)
+        .is_some_and(|bytes| bytes.iter().all(u8::is_ascii_digit))
+    {
         return Ok(false);
     }
-    let Some(line_end) = ctx
-        .admit_iter(prefix, "SAT text header line")?
-        .position(|byte| *byte == b'\n')
-    else {
-        return Ok(false);
-    };
-    let mut fields = prefix[..line_end]
-        .split(|byte| matches!(byte, b' ' | b'\t' | b'\r'))
-        .filter(|field| !field.is_empty());
-    for _ in 0..4 {
-        let Some(field) = fields.next() else {
+    let mut rest = prefix;
+    for index in 0..4 {
+        let Some(field) = next_header_field(ctx, &mut rest)? else {
             return Ok(false);
         };
+        // Text magic requires a space immediately after the leading digit
+        // run. The integer parse rejects non-digit bytes in that field.
+        if index == 0 && rest.first() != Some(&b' ') {
+            return Ok(false);
+        }
         let Ok(field) = ctx.validate_utf8(field, "SAT header field UTF-8")? else {
             return Ok(false);
         };
@@ -68,7 +73,51 @@ fn looks_like_text_stream(ctx: &DecodeContext<'_>, prefix: &[u8]) -> Result<bool
             return Ok(false);
         }
     }
-    Ok(fields.next().is_none() && prefix.get(line_end + 1).is_some_and(u8::is_ascii_digit))
+    // Only separators may follow the fourth field on the first line.
+    let Some(end) = ctx.position_by(
+        rest,
+        |byte| Ok(!is_header_separator(*byte)),
+        "SAT text header line",
+    )?
+    else {
+        return Ok(false);
+    };
+    Ok(rest[end] == b'\n' && rest.get(end + 1).is_some_and(u8::is_ascii_digit))
+}
+
+/// Field separators within a text header line.
+const fn is_header_separator(byte: u8) -> bool {
+    matches!(byte, b' ' | b'\t' | b'\r')
+}
+
+/// Takes the next field of the first header line from `rest`. `None` when the
+/// line or the input ends first.
+fn next_header_field<'a>(
+    ctx: &DecodeContext<'_>,
+    rest: &mut &'a [u8],
+) -> Result<Option<&'a [u8]>, CodecError> {
+    let Some(start) = ctx.position_by(
+        *rest,
+        |byte| Ok(!is_header_separator(*byte)),
+        "SAT text header line",
+    )?
+    else {
+        return Ok(None);
+    };
+    let tail = &rest[start..];
+    if tail[0] == b'\n' {
+        return Ok(None);
+    }
+    let len = ctx
+        .position_by(
+            tail,
+            |byte| Ok(is_header_separator(*byte) || *byte == b'\n'),
+            "SAT text header line",
+        )?
+        .unwrap_or(tail.len());
+    let (field, after) = tail.split_at(len);
+    *rest = after;
+    Ok(Some(field))
 }
 
 pub(crate) fn confidence(ctx: &DecodeContext<'_>, prefix: &[u8]) -> Result<Confidence, CodecError> {
@@ -247,16 +296,7 @@ pub(crate) fn inspect(
         .into_iter()
         .collect();
     Ok(ContainerSummary::classified(
-        cadmpeg_core::dialect::DialectLayers::of(matched)
-            .with_for_decode(ctx, kernel, "collect SAT dialect layers")
-            .map_err(|rejected| match rejected {
-                cadmpeg_core::dialect::DialectLayerError::Duplicate(layer) => {
-                    CodecError::malformed(format_args!("SAT repeated dialect layer key: {layer:?}"))
-                }
-                cadmpeg_core::dialect::DialectLayerError::ResourceLimit(limit) => {
-                    CodecError::ResourceLimit(limit)
-                }
-            })?,
+        crate::dialect::dialect_layers(ctx, matched, kernel)?,
         cadmpeg_ir::ContainerKind::Stream,
         vec![ContainerEntry {
             name: "stream".to_string(),
