@@ -2416,38 +2416,6 @@ impl PcurveGeometry {
         }
     }
 
-    /// Scale chart coordinates atomically without changing the curve parameterization.
-    pub fn try_scale_coordinates(
-        &mut self,
-        scales: [f64; 2],
-    ) -> Result<(), PcurveCoordinateScaleError> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .map_err(PcurveCoordinateScaleError::from)?;
-        let (candidate, storage) = ctx
-            .with_scoped_storage("stage pcurve coordinate scale", || {
-                self.try_clone_for_decode(&ctx, "stage pcurve coordinate scale")
-            })
-            .map_err(PcurveCoordinateScaleError::from)?;
-        let candidate = match candidate
-            .scaled_coordinates_owned(&ctx, scales)
-            .map_err(PcurveCoordinateScaleError::from)?
-        {
-            Ok(candidate) => candidate,
-            Err(message) => {
-                return Err(PcurveCoordinateScaleError::Invalid(
-                    ctx.copy_retained_text(message, "pcurve coordinate scale refusal")
-                        .map_err(PcurveCoordinateScaleError::from)?,
-                ))
-            }
-        };
-        *self = storage
-            .commit_value(candidate)
-            .map_err(PcurveCoordinateScaleError::from)?;
-        Ok(())
-    }
-
     /// Returns the origin and direction of a line-valued pcurve.
     ///
     /// Trimming and affine replicas preserve a line's parameterization. An
