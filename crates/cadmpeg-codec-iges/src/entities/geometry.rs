@@ -223,7 +223,9 @@ pub(super) fn linear_nurbs_parameters<'ctx>(
     }
     let mut source_values = IntoIterator::into_iter(knots);
     while source_values.len() != 0 {
-        let Some(&knot) = ctx.next_charged(&mut source_values, "iges linear NURBS parameter knots")? else {
+        let Some(&knot) =
+            ctx.next_charged(&mut source_values, "iges linear NURBS parameter knots")?
+        else {
             break;
         };
         if knot > range[0] && knot < range[1] && previous != knot {
@@ -572,7 +574,11 @@ pub(super) fn type126_declared_control_points(
         ctx.collection_vec(control_count, "iges Type126 declared control intervals")?;
     let mut point_iter = 0..control_count;
     while !point_iter.is_empty() || ctx.resource_refusal().is_some() {
-        let Some(point) = ctx.next_charged(&mut point_iter, "iges Type126 declared control traversal")? else { break; };
+        let Some(point) =
+            ctx.next_charged(&mut point_iter, "iges Type126 declared control traversal")?
+        else {
+            break;
+        };
         let mut coordinates = [DeclaredInterval::around(0.0, 0.0); 3];
         for (coordinate, value) in coordinates.iter_mut().enumerate() {
             let Some(index) = point
@@ -630,11 +636,18 @@ pub(super) fn declared_affine_progression(
     let mut upper = f64::INFINITY;
     let mut first_iter = 0..values.len();
     while !first_iter.is_empty() || ctx.resource_refusal().is_some() {
-        let Some(first) = ctx.next_charged(&mut first_iter, "iges affine progression origins")? else { break; };
+        let Some(first) = ctx.next_charged(&mut first_iter, "iges affine progression origins")?
+        else {
+            break;
+        };
         let first_interval = DeclaredInterval::around(values[first], uncertainties[first]);
         let mut second_iter = first + 1..values.len();
         while !second_iter.is_empty() || ctx.resource_refusal().is_some() {
-            let Some(second) = ctx.next_charged(&mut second_iter, "iges affine progression pairs")? else { break; };
+            let Some(second) =
+                ctx.next_charged(&mut second_iter, "iges affine progression pairs")?
+            else {
+                break;
+            };
             let second_interval = DeclaredInterval::around(values[second], uncertainties[second]);
             let Some(span) = cadmpeg_core::convert::f64_from_index(second - first) else {
                 return Ok(false);
@@ -1015,9 +1028,12 @@ pub(crate) fn enforce_transform_depth(
     let mut entry_iter = directory.iter();
     while entry_iter.len() != 0 || ctx.resource_refusal().is_some() {
         let Some(entry) = ctx.next_charged(
-        &mut entry_iter,
-        "iges transform preflight directory traversal",
-    )? else { break; };
+            &mut entry_iter,
+            "iges transform preflight directory traversal",
+        )?
+        else {
+            break;
+        };
         let Some(mut sequence) = u32::try_from(entry.transform)
             .ok()
             .filter(|sequence| sequence % 2 == 1)
@@ -1128,7 +1144,11 @@ impl BoundaryVertexDerivation {
             }
             let mut source_values = IntoIterator::into_iter(members);
             while source_values.len() != 0 {
-                let Some(member) = ctx.next_charged(&mut source_values, "iges boundary derivation member traversal")? else {
+                let Some(member) = ctx.next_charged(
+                    &mut source_values,
+                    "iges boundary derivation member traversal",
+                )?
+                else {
                     break;
                 };
                 let endpoint = &endpoints[*member];
@@ -1180,7 +1200,9 @@ impl ProjectionOutcome<'_> {
         }
         let mut source_values = IntoIterator::into_iter(source_decoded);
         while source_values.len() != 0 {
-            let Some(sequence) = ctx.next_charged(&mut source_values, "iges merged decoded traversal")? else {
+            let Some(sequence) =
+                ctx.next_charged(&mut source_values, "iges merged decoded traversal")?
+            else {
                 break;
             };
             decoded_storage.with_storage(|| {
@@ -1220,7 +1242,9 @@ impl WireProjectionOutcome<'_> {
         }
         let mut source_values = IntoIterator::into_iter(self.decoded);
         while source_values.len() != 0 {
-            let Some(sequence) = ctx.next_charged(&mut source_values, "iges merged decoded traversal")? else {
+            let Some(sequence) =
+                ctx.next_charged(&mut source_values, "iges merged decoded traversal")?
+            else {
                 break;
             };
             decoded_storage.with_storage(|| {
@@ -1269,8 +1293,10 @@ fn consumed_support_sequences<'ctx>(
     let mut transform_sequences = BTreeSet::new();
     let mut directory_entries = directory.iter();
     while !directory_entries.as_slice().is_empty() {
-        let Some(entry) =
-            ctx.next_charged(&mut directory_entries, "iges consumed-support directory traversal")?
+        let Some(entry) = ctx.next_charged(
+            &mut directory_entries,
+            "iges consumed-support directory traversal",
+        )?
         else {
             break;
         };
@@ -1291,8 +1317,10 @@ fn consumed_support_sequences<'ctx>(
     }
     let mut directory_entries = directory.iter();
     while !directory_entries.as_slice().is_empty() {
-        let Some(entry) =
-            ctx.next_charged(&mut directory_entries, "iges consumed-support directory traversal")?
+        let Some(entry) = ctx.next_charged(
+            &mut directory_entries,
+            "iges consumed-support directory traversal",
+        )?
         else {
             break;
         };
@@ -1312,8 +1340,10 @@ fn consumed_support_sequences<'ctx>(
             return Err(refusal.into());
         }
         let mut source_values = IntoIterator::into_iter(0..count.min(record.parameter_end()));
-        while source_values.len() != 0 {
-            let Some(index) = ctx.next_charged(&mut source_values, "iges consumed-support assembly members")? else {
+        while !source_values.is_empty() {
+            let Some(index) =
+                ctx.next_charged(&mut source_values, "iges consumed-support assembly members")?
+            else {
                 break;
             };
             if let Some(sequence) = record
@@ -1339,12 +1369,16 @@ fn consumed_support_sequences<'ctx>(
     let mut direction_sequences = BTreeSet::new();
     let mut directory_entries = directory.iter();
     while !directory_entries.as_slice().is_empty() {
-        let Some(entry) =
-            ctx.next_charged(&mut directory_entries, "iges consumed-support directory traversal")?
+        let Some(entry) = ctx.next_charged(
+            &mut directory_entries,
+            "iges consumed-support directory traversal",
+        )?
         else {
             break;
         };
-        if !(matches!(entry.entity_type, 190 | 192 | 194 | 196 | 198) && matches!(entry.form, 0 | 1)) {
+        if !(matches!(entry.entity_type, 190 | 192 | 194 | 196 | 198)
+            && matches!(entry.form, 0 | 1))
+        {
             continue;
         }
         let Some(record) = ctx
@@ -1383,11 +1417,14 @@ fn consumed_support_sequences<'ctx>(
     let mut consumed = direction_sequences;
     while !transform_sequences.is_empty() || ctx.resource_refusal().is_some() {
         let Some(sequence) = ctx
-        .next_charged(
-            &mut transform_sequences.iter(),
-            "iges consumed-support closure traversal",
-        )?
-        .copied() else { break; };
+            .next_charged(
+                &mut transform_sequences.iter(),
+                "iges consumed-support closure traversal",
+            )?
+            .copied()
+        else {
+            break;
+        };
         ctx.remove_btree_set(
             &mut transform_sequences,
             &sequence,
@@ -1527,7 +1564,11 @@ pub(super) fn curve_geometry_coplanar(
             let mut valid = true;
             let mut segment_iter = segments.iter();
             while segment_iter.len() != 0 || ctx.resource_refusal().is_some() {
-                let Some(segment) = ctx.next_charged(&mut segment_iter, "iges coplanar composite segments")? else { break; };
+                let Some(segment) =
+                    ctx.next_charged(&mut segment_iter, "iges coplanar composite segments")?
+                else {
+                    break;
+                };
                 let Some(curve) = index.curves(segment.curve.as_str(), ctx)? else {
                     valid = false;
                     break;
@@ -1589,7 +1630,6 @@ pub(super) fn curve_geometry_coplanar(
     };
     Ok(valid)
 }
-
 
 /// The Directory sequence a source-object association names.
 ///
@@ -1954,8 +1994,10 @@ pub(crate) fn project_geometry<'ctx>(
     let mut records = BTreeMap::new();
     let mut source_index_entries = parameters.iter();
     while source_index_entries.len() != 0 {
-        let Some(record) =
-            ctx.next_charged(&mut source_index_entries, "iges geometry parameter traversal")?
+        let Some(record) = ctx.next_charged(
+            &mut source_index_entries,
+            "iges geometry parameter traversal",
+        )?
         else {
             break;
         };
@@ -1971,8 +2013,10 @@ pub(crate) fn project_geometry<'ctx>(
     let mut entries = BTreeMap::new();
     let mut directory_entries = directory.iter();
     while !directory_entries.as_slice().is_empty() {
-        let Some(entry) =
-            ctx.next_charged(&mut directory_entries, "iges geometry directory index traversal")?
+        let Some(entry) = ctx.next_charged(
+            &mut directory_entries,
+            "iges geometry directory index traversal",
+        )?
         else {
             break;
         };
@@ -2001,7 +2045,9 @@ pub(crate) fn project_geometry<'ctx>(
         else {
             break;
         };
-        if !(matches!(entry.entity_type, 190 | 192 | 194 | 196 | 198) && matches!(entry.form, 0 | 1)) {
+        if !(matches!(entry.entity_type, 190 | 192 | 194 | 196 | 198)
+            && matches!(entry.form, 0 | 1))
+        {
             continue;
         }
         if let Some(sequence) = ctx
@@ -2085,7 +2131,11 @@ pub(crate) fn project_geometry<'ctx>(
     }
     let mut primitive_entries = directory.iter();
     while primitive_entries.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some(entry) = ctx.next_charged(&mut primitive_entries, "iges geometry family traversal")? else { break; };
+        let Some(entry) =
+            ctx.next_charged(&mut primitive_entries, "iges geometry family traversal")?
+        else {
+            break;
+        };
         if !(entry.entity_type == 100 && entry.form == 0) {
             continue;
         }
@@ -2592,7 +2642,11 @@ pub(crate) fn project_geometry<'ctx>(
     }
     let mut primitive_entries = directory.iter();
     while primitive_entries.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some(entry) = ctx.next_charged(&mut primitive_entries, "iges geometry family traversal")? else { break; };
+        let Some(entry) =
+            ctx.next_charged(&mut primitive_entries, "iges geometry family traversal")?
+        else {
+            break;
+        };
         if !(entry.entity_type == 110 && (0..=2).contains(&entry.form)) {
             continue;
         }
@@ -2906,13 +2960,15 @@ pub(crate) fn project_geometry<'ctx>(
         };
         let domain_start = finite_knots[degree_usize];
         let domain_end = finite_knots[control_count];
-        let mut raw_knots = ctx.collection_vec(finite_knots.len(), "iges NURBS admitted knots")?;
+        let mut candidate_storage = ctx.reserve_scoped(0, "iges NURBS candidate storage")?;
+        let mut raw_knots = candidate_storage
+            .with_storage(|| ctx.collection_vec(finite_knots.len(), "iges NURBS admitted knots"))?;
         raw_knots.extend(
             ctx.admit_iter(finite_knots, "iges NURBS admitted knot traversal")?
                 .map(FiniteReal::get),
         );
         drop(knot_storage);
-        let Ok(knots) = KnotVector::new(ctx, raw_knots)? else {
+        let Ok(knots) = candidate_storage.with_storage(|| KnotVector::new(ctx, raw_knots))? else {
             super::push_entity_loss(
                 ctx,
                 &mut losses,
@@ -2923,10 +2979,12 @@ pub(crate) fn project_geometry<'ctx>(
         };
         let mut weight_storage = ctx.reserve_scoped(0, "iges NURBS source lane storage")?;
         let native_weights = {
-            let mut source_weight_storage = ctx.reserve_scoped(0, "iges NURBS source lane storage")?;
+            let mut source_weight_storage =
+                ctx.reserve_scoped(0, "iges NURBS source lane storage")?;
             let Some(finite_weights) = source_weight_storage.with_storage(|| {
                 collect_numbers(weight_start, control_count, "iges NURBS source weights")
-            })? else {
+            })?
+            else {
                 super::push_entity_loss(
                     ctx,
                     &mut losses,
@@ -2937,7 +2995,9 @@ pub(crate) fn project_geometry<'ctx>(
             };
             weight_storage.with_storage(|| {
                 ctx.collect_options(
-                    finite_weights.into_iter().map(|weight| PositiveReal::try_from(weight).ok()),
+                    finite_weights
+                        .into_iter()
+                        .map(|weight| PositiveReal::try_from(weight).ok()),
                     "iges NURBS positive weights",
                 )
             })?
@@ -3088,7 +3148,7 @@ pub(crate) fn project_geometry<'ctx>(
             )
         };
         let control_points = if polynomial {
-            collect_controls()?
+            candidate_storage.with_storage(collect_controls)?
         } else {
             pairing_storage.with_storage(collect_controls)?
         };
@@ -3206,14 +3266,9 @@ pub(crate) fn project_geometry<'ctx>(
         };
         // IGES PROP4 is informational; neutral evaluation uses the
         // serialized active carrier without periodic parameter wrapping.
-        let nurbs_result = NurbsCurve::from_checked_lanes(
-            ctx,
-            degree,
-            knots,
-            control_points,
-            weights,
-            false,
-        )?;
+        let nurbs_result = candidate_storage.with_storage(|| {
+            NurbsCurve::from_checked_lanes(ctx, degree, knots, control_points, weights, false)
+        })?;
         drop(pairing_storage);
         let nurbs = match nurbs_result {
             Ok(nurbs) => nurbs,
@@ -3266,6 +3321,7 @@ pub(crate) fn project_geometry<'ctx>(
             )?;
             continue;
         }
+        let nurbs = candidate_storage.commit_value(nurbs)?;
         let stem = crate::ids::Stem::directory(entry.sequence);
         let start_point = crate::ids::point_admitted(&stem.tail(crate::ids::Word::Start), ctx)?;
         sequences.record_point(&start_point, &stem, ctx)?;
@@ -3446,9 +3502,9 @@ pub(crate) fn project_geometry<'ctx>(
             kind: BodyKind::Wire,
             regions: body_regions,
             transform: None,
-            name: Some(ctx.copy_retained_text(
-                "IGES free geometry", "iges free geometry body name",
-            )?),
+            name: Some(
+                ctx.copy_retained_text("IGES free geometry", "iges free geometry body name")?,
+            ),
             color: None,
             visible: None,
         });

@@ -13,9 +13,9 @@ use cadmpeg_ir::math::Vector3;
 
 use super::{
     base_geometry_line_font_valid, base_geometry_use_flag_valid, consumed_support_sequences,
-    enforce_transform_depth, is_finite_nonzero_vector,
-    normal_matches_plane, plane_coordinates, source_object, validate_declared_transform_frame,
-    DeclaredInterval, DeclaredTransformFrameError, ProjectionOutcome, WireProjectionOutcome,
+    enforce_transform_depth, is_finite_nonzero_vector, normal_matches_plane, plane_coordinates,
+    source_object, validate_declared_transform_frame, DeclaredInterval,
+    DeclaredTransformFrameError, ProjectionOutcome, WireProjectionOutcome,
 };
 
 fn assert_geometry_collection_refusal(bytes: &[u8], operation: &str) {
@@ -255,13 +255,21 @@ fn projector_merges_refuse_decoded_loss_and_wire_growth() {
                         .merge_into(&mut decoded, &mut storage, &mut losses, &ctx),
                     "iges merged wire edge slots" => WireProjectionOutcome {
                         decoded: BTreeSet::new(),
-                        decoded_storage: ctx.reserve_scoped(0, "test wire decoded input backing").unwrap(),
+                        decoded_storage: ctx
+                            .reserve_scoped(0, "test wire decoded input backing")
+                            .unwrap(),
                         losses: Vec::new(),
-                        loss_slots_storage: ctx.reserve_scoped(0, "test wire loss input backing").unwrap(),
+                        loss_slots_storage: ctx
+                            .reserve_scoped(0, "test wire loss input backing")
+                            .unwrap(),
                         wire_edges: vec![crate::ids::edge(&crate::ids::Stem::directory(1_u32))],
-                        wire_slots_storage: ctx.reserve_scoped(
-                            u64::try_from(std::mem::size_of::<cadmpeg_ir::ids::EdgeId>()).unwrap(),
-                            "test wire edge input backing").unwrap(),
+                        wire_slots_storage: ctx
+                            .reserve_scoped(
+                                u64::try_from(std::mem::size_of::<cadmpeg_ir::ids::EdgeId>())
+                                    .unwrap(),
+                                "test wire edge input backing",
+                            )
+                            .unwrap(),
                     }
                     .merge_into(
                         &mut decoded,
@@ -1070,8 +1078,6 @@ fn type125_form0_without_defining_entity_reports_display_loss() {
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
-
-
 #[test]
 fn decode_preserves_rational_bspline_weights_and_multiplicities() {
     let result = IgesCodec
@@ -1188,7 +1194,6 @@ fn decode_uses_strict_global_resolution_for_type_126_closed_flag() {
         }
     }
 }
-
 
 #[test]
 fn type_123_accepts_a_finite_non_unit_direction() {
@@ -1477,10 +1482,6 @@ fn decode_projects_a_counterclockwise_circular_arc() {
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
-
-
-
-
 #[test]
 fn decode_accepts_arc_endpoints_within_model_resolution() {
     let result = IgesCodec
@@ -1597,12 +1598,6 @@ fn decode_preserves_semi_bounded_and_unbounded_line_domains_natively() {
     }
 }
 
-
-
-
-
-
-
 mod work_admission;
 
 mod boundary_storage;
@@ -1626,3 +1621,5 @@ mod parameter_index;
 mod entry_refusal;
 
 mod transform_semantics;
+
+mod candidate_lifetimes;

@@ -29,8 +29,8 @@ const EPS_OFFSET_ENDPOINT_MATCH: f64 = 1.0e-9;
 const EPS_SOURCE_PARAMETER_DOMAIN: f64 = 1.0e-12;
 const EPS_PLACED_OFFSET: f64 = 1.0e-12;
 
-mod raw_controls;
 mod index_sources;
+mod raw_controls;
 
 fn assert_offset_collection_refusal(bytes: &[u8], operation: &str) {
     cadmpeg_test_support::refusal::resource_limit_at(
@@ -144,7 +144,7 @@ fn offset_nurbs_pole_admission_refuses_before_copy() {
 fn offset_control_admission_stops_at_the_first_nonfinite_control() {
     const LARGE_TAIL: usize = 4096;
     let controls = std::iter::once(Point3::new(f64::INFINITY, 0.0, 0.0))
-        .chain(std::iter::repeat(Point3::new(1.0, 2.0, 3.0)).take(LARGE_TAIL))
+        .chain(std::iter::repeat_n(Point3::new(1.0, 2.0, 3.0), LARGE_TAIL))
         .collect();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 1;
