@@ -728,6 +728,9 @@ fn elevate_bezier_homogeneous<'ctx>(
     source_degree: usize,
     target_degree: usize,
 ) -> Result<Option<HomogeneousNet<'ctx>>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(source_count) = source_degree.checked_add(1) else {
         return Ok(None);
     };
@@ -838,6 +841,9 @@ fn reverse_nurbs(
     curve: NurbsCurve,
     interval: [f64; 2],
 ) -> Result<(NurbsCurve, [f64; 2]), CompositeCurveError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Ok(degree) = usize::try_from(curve.degree()) else {
         return Err(CompositeCurveError::ReversedChildDegree {
             degree: curve.degree(),
@@ -923,6 +929,9 @@ fn insert_homogeneous_knot<'ctx>(
     degree: usize,
     value: f64,
 ) -> Result<Option<InsertedKnotNet<'ctx>>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let control_count = control_points.len();
     let Some(last_control) = control_count.checked_sub(1) else {
         return Ok(None);
@@ -1071,6 +1080,9 @@ fn trim_nurbs_lanes<'ctx>(
     curve: &NurbsCurve,
     interval: [f64; 2],
 ) -> Result<Option<TrimmedLanes<'ctx>>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Ok(degree) = usize::try_from(curve.degree()) else {
         return Ok(None);
     };
@@ -1440,6 +1452,9 @@ fn elevate_nurbs_to_degree(
     target_degree: u32,
     join_tolerance: Option<f64>,
 ) -> Result<(), CompositeCurveError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Ok(source_degree) = usize::try_from(curve.degree()) else {
         return Err(DegreeElevationError::SourceDegree {
             degree: curve.degree(),
@@ -1516,9 +1531,6 @@ fn elevate_nurbs_to_degree(
         .map_err(DegreeElevationError::Allocation)?;
     let mut internal_storage = ctx.reserve_scoped(0, "iges composite internal knot storage")?;
     let mut internal_values = Vec::new();
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(&knots);
     while source_values.len() != 0 {
         let Some(&knot) = ctx.next_charged(&mut source_values, "iges composite internal knot traversal")? else {
@@ -1731,6 +1743,9 @@ fn concatenate_nurbs<'ctx, T>(
     children: Vec<(NurbsCurve, [f64; 2], T)>,
     join_tolerance: Option<f64>,
 ) -> Result<Option<ConcatenatedNurbs<'ctx, T>>, CompositeCurveError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(first) = children.first() else {
         return Err(CompositeCurveError::EmptyChildList);
     };
@@ -2434,6 +2449,9 @@ fn anchor_analytic_nurbs_endpoint_poles(
     edge: &CompositeEdge,
     tolerance: Option<f64>,
 ) -> Result<Option<NurbsCurve>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(tolerance) = tolerance else {
         return Ok(Some(nurbs));
     };
