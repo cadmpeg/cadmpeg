@@ -2,7 +2,6 @@
 //! Object-model, data-block, expression, and external-reference extractors and record types.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::fmt::Write;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -40,7 +39,9 @@ mod color_wire;
 pub(super) mod column_index;
 use column_index::ColumnIndexRows;
 
-use crate::native::segments::segment_om_links;
+use crate::native::features::FeatureHistory;
+use crate::native::segments::{segment_om_links, SegmentOmLink};
+use crate::om::discriminators::IndexRowMode;
 use crate::om::parameter_name::ParameterName;
 pub(super) mod roll_forward;
 use crate::om::IndexedStore;
@@ -168,6 +169,32 @@ pub(super) struct OmOperationStateMessage {
     pub(super) source_offset: u64,
 }
 
+type FramedSection<'c> = (
+    crate::container::entry_ref::EntryRef<'c>,
+    crate::om::Section<'c>,
+);
+
+/// The framed section whose absolute signature offset a segment link names.
+fn linked_section<'s, 'c>(
+    ctx: &DecodeContext<'_>,
+    sections: &'s [FramedSection<'c>],
+    link: &SegmentOmLink,
+) -> Result<Option<&'s FramedSection<'c>>, CodecError> {
+    ctx.find_by(
+        sections,
+        |(entry, section)| {
+            let section_offset = cadmpeg_core::decode::u64_from_index(section.offset);
+            let absolute = entry
+                .file_span()
+                .map_or(Some(section_offset), |(offset, _)| {
+                    offset.checked_add(section_offset)
+                });
+            Ok(absolute == Some(link.location.section_offset()))
+        },
+        "NX matching OM sections",
+    )
+}
+
 /// Decode internally pointed record areas from linked OM sections.
 pub(super) fn om_record_areas(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -176,13 +203,8 @@ pub(super) fn om_record_areas(
     let links = segment_om_links(ctx, container)?;
     let sections = container.om_sections(ctx)?;
     let mut areas = Vec::new();
-    for link in links {
-        let Some((_, section)) = sections.iter().find(|(entry, section)| {
-            entry.file_span().map_or(
-                cadmpeg_core::decode::u64_from_index(section.offset),
-                |(offset, _)| offset + cadmpeg_core::decode::u64_from_index(section.offset),
-            ) == link.location.section_offset()
-        }) else {
+    for link in ctx.admit_iter(links, "NX OM record area links")? {
+        let Some((_, section)) = linked_section(ctx, &sections, &link)? else {
             continue;
         };
         let Some(header) = section.record_area_header() else {
@@ -202,25 +224,13 @@ pub(super) fn om_record_areas(
         let source_offset = entry_offset
             .checked_add(cadmpeg_core::decode::u64_from_index(header.offset))
             .ok_or_else(|| ctx.refuse_codec_limit("NX OM record area source offset", 0, 1))?;
-        let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
-        let prefix = "nx:om-record-areas:area#";
-        let digits = header
-            .offset
-            .checked_ilog10()
-            .map_or(1, |count| cadmpeg_core::decode::index_from_u32(count) + 1);
-        let id_len = prefix
-            .len()
-            .checked_add(section_key.len())
-            .and_then(|length| length.checked_add(1))
-            .and_then(|length| length.checked_add(digits))
-            .ok_or_else(|| ctx.refuse_codec_limit("NX OM record area id", 0, 1))?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(id_len),
+        let section_key = ctx
+            .rsplit_once(&link.id, "#", "NX OM record area id")?
+            .map_or("unknown", |(_, key)| key);
+        let id = ctx.format_retained(
+            format_args!("nx:om-record-areas:area#{section_key}-{}", header.offset),
             "NX OM record area id",
         )?;
-        let mut id = ctx.retained_string(id_len, "NX OM record area id")?;
-        write!(&mut id, "{prefix}{section_key}-{}", header.offset)
-            .map_err(|_| ctx.refuse_codec_limit("write NX OM record area id", 0, 1))?;
         ctx.reserve_vec(&mut areas, 1, "NX OM record areas")?;
         areas.push(OmRecordArea {
             id,
@@ -248,20 +258,10 @@ fn retained_om_padded_state_id(
     ordinal: u32,
     operation: &'static str,
 ) -> Result<String, CodecError> {
-    let section_digits = section_ordinal
-        .checked_ilog10()
-        .map_or(1, |count| cadmpeg_core::decode::index_from_u32(count) + 1)
-        .max(10);
-    let length = prefix
-        .len()
-        .checked_add(section_digits)
-        .and_then(|length| length.checked_add(11))
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, 1))?;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(length), operation)?;
-    let mut id = ctx.retained_string(length, operation)?;
-    write!(&mut id, "{prefix}{section_ordinal:010}-{ordinal:010}")
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-    Ok(id)
+    ctx.format_retained(
+        format_args!("{prefix}{section_ordinal:010}-{ordinal:010}"),
+        operation,
+    )
 }
 
 /// Decode complete rows from audit-trail record areas.
@@ -271,28 +271,20 @@ pub(super) fn audit_trail_rows(
 ) -> Result<Vec<OmAuditTrailRow>, cadmpeg_core::CodecError> {
     let sections = container.om_sections(ctx)?;
     let mut out = Vec::new();
-    for (section_ordinal, link) in segment_om_links(ctx, container)?
-        .into_iter()
+    let links = segment_om_links(ctx, container)?;
+    for (section_ordinal, link) in ctx
+        .admit_iter(&links, "NX audit trail section links")?
         .filter(|link| link.schema_role == OmSchemaRole::AuditTrail)
         .enumerate()
     {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(sections.len()),
-            "match NX audit section",
-        )?;
-        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
-            entry.file_span().map_or(
-                cadmpeg_core::decode::u64_from_index(section.offset),
-                |(offset, _)| offset + cadmpeg_core::decode::u64_from_index(section.offset),
-            ) == link.location.section_offset()
-        }) else {
+        let Some((entry, section)) = linked_section(ctx, &sections, link)? else {
             continue;
         };
         let Some(rows) = section.audit_trail_rows(ctx)? else {
             continue;
         };
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-        for row in rows {
+        for row in ctx.admit_iter(rows, "NX audit trail rows")? {
             let record = row.record();
             let ordinal = record.ordinal.value();
             let Some(source_offset) =
@@ -331,34 +323,20 @@ pub(super) fn audit_trail_rows(
 /// Decode exact object state-counter rows from canonical feature-history areas.
 pub(super) fn operation_state_counters(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    container: &Container,
+    history: &FeatureHistory<'_, '_, '_>,
 ) -> Result<Vec<OmOperationStateCounter>, cadmpeg_core::CodecError> {
-    let sections = container.om_sections(ctx)?;
     let mut out = Vec::new();
-    for (section_ordinal, link) in crate::native::features::canonical_feature_history_links(
-        ctx,
-        segment_om_links(ctx, container)?,
-    )?
-    .into_iter()
-    .enumerate()
-    {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(sections.len()),
-            "match NX state counter section",
-        )?;
-        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
-            entry.file_span().map_or(
-                cadmpeg_core::decode::u64_from_index(section.offset),
-                |(offset, _)| offset + cadmpeg_core::decode::u64_from_index(section.offset),
-            ) == link.location.section_offset()
-        }) else {
-            continue;
-        };
+    for history_section in ctx.admit_iter(history.sections(), "NX canonical OM section links")? {
+        let section_ordinal = history_section.ordinal;
+        let link = &history_section.link;
+        let entry = history_section.entry;
+        let section = &history_section.section;
         let Some(map) = section.operation_state_counter_map(ctx)? else {
             continue;
         };
-        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
+        let entry_offset = history_section.entry_offset;
         for (ordinal, row) in map.into_rows().enumerate() {
+            ctx.charge_work(1, "NX operation state counters")?;
             let Ok(ordinal) = u32::try_from(ordinal) else {
                 continue;
             };
@@ -388,34 +366,22 @@ pub(super) fn operation_state_counters(
 /// Decode anchored state-journal groups from canonical feature-history areas.
 pub(super) fn operation_state_journal_groups(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    container: &Container,
+    history: &FeatureHistory<'_, '_, '_>,
 ) -> Result<Vec<OmOperationStateJournalGroup>, cadmpeg_core::CodecError> {
-    let sections = container.om_sections(ctx)?;
     let mut out = Vec::new();
-    for (section_ordinal, link) in crate::native::features::canonical_feature_history_links(
-        ctx,
-        segment_om_links(ctx, container)?,
-    )?
-    .into_iter()
-    .enumerate()
-    {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(sections.len()),
-            "match NX state journal section",
-        )?;
-        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
-            entry.file_span().map_or(
-                cadmpeg_core::decode::u64_from_index(section.offset),
-                |(offset, _)| offset + cadmpeg_core::decode::u64_from_index(section.offset),
-            ) == link.location.section_offset()
-        }) else {
-            continue;
-        };
+    for history_section in ctx.admit_iter(history.sections(), "NX canonical OM section links")? {
+        let section_ordinal = history_section.ordinal;
+        let link = &history_section.link;
+        let entry = history_section.entry;
+        let section = &history_section.section;
         let Some(groups) = section.operation_state_journal_groups(ctx)? else {
             continue;
         };
-        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-        for (ordinal, group) in groups.into_iter().enumerate() {
+        let entry_offset = history_section.entry_offset;
+        for (ordinal, group) in ctx
+            .admit_iter(groups, "NX operation state journal groups")?
+            .enumerate()
+        {
             let Some(ordinal) = u32::try_from(ordinal).ok() else {
                 continue;
             };
@@ -445,48 +411,35 @@ pub(super) fn operation_state_journal_groups(
 /// Decode field-declared roll-forward groups from canonical feature-history areas.
 pub(super) fn operation_state_groups(
     ctx: &DecodeContext<'_>,
-    container: &Container,
+    history: &FeatureHistory<'_, '_, '_>,
 ) -> Result<Vec<OmRollForwardStateTable>, CodecError> {
-    let sections = container.om_sections(ctx)?;
     let mut output = Vec::new();
-    for (section_ordinal, link) in crate::native::features::canonical_feature_history_links(
-        ctx,
-        segment_om_links(ctx, container)?,
-    )?
-    .into_iter()
-    .enumerate()
-    {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(sections.len()),
-            "match NX roll-forward section",
-        )?;
-        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
-            entry.file_span().map_or(
-                cadmpeg_core::decode::u64_from_index(section.offset),
-                |(offset, _)| offset + cadmpeg_core::decode::u64_from_index(section.offset),
-            ) == link.location.section_offset()
-        }) else {
-            continue;
-        };
+    for history_section in ctx.admit_iter(history.sections(), "NX canonical OM section links")? {
+        let section_ordinal = history_section.ordinal;
+        let link = &history_section.link;
+        let entry = history_section.entry;
+        let section = &history_section.section;
         let Some(table) = section.operation_state_group_table(ctx)? else {
             continue;
         };
-        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-        let table_end_offset =
-            entry_offset + cadmpeg_core::decode::u64_from_index(table.end_offset());
+        let entry_offset = history_section.entry_offset;
+        let table_end_offset = entry_offset
+            .checked_add(cadmpeg_core::decode::u64_from_index(table.end_offset()))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX roll-forward table end offset", 0, 1))?;
         let table_footer = table.footer();
-        let frames = table
-            .into_groups()
-            .into_iter()
-            .filter_map(|group| group.into_absolute(entry_offset));
-        let table = OmRollForwardStateTable::from_frames(
+        let groups = OmRollForwardStateTable::groups_from_frames(
             ctx,
             section_ordinal,
+            table.into_groups(),
+            |group| group.into_absolute(entry_offset),
+        )?;
+        let table = OmRollForwardStateTable::new(
+            ctx,
             &link.id,
             &entry.name,
             table_footer,
             table_end_offset,
-            frames,
+            groups,
         )?;
         ctx.reserve_vec(&mut output, 1, "NX roll-forward state tables")?;
         output.push(table);
@@ -497,34 +450,22 @@ pub(super) fn operation_state_groups(
 /// Decode standalone operation-state messages from canonical feature-history areas.
 pub(super) fn operation_state_messages(
     ctx: &DecodeContext<'_>,
-    container: &Container,
+    history: &FeatureHistory<'_, '_, '_>,
 ) -> Result<Vec<OmOperationStateMessage>, CodecError> {
-    let sections = container.om_sections(ctx)?;
     let mut output = Vec::new();
-    for (section_ordinal, link) in crate::native::features::canonical_feature_history_links(
-        ctx,
-        segment_om_links(ctx, container)?,
-    )?
-    .into_iter()
-    .enumerate()
-    {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(sections.len()),
-            "match NX state message section",
-        )?;
-        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
-            entry.file_span().map_or(
-                cadmpeg_core::decode::u64_from_index(section.offset),
-                |(offset, _)| offset + cadmpeg_core::decode::u64_from_index(section.offset),
-            ) == link.location.section_offset()
-        }) else {
-            continue;
-        };
+    for history_section in ctx.admit_iter(history.sections(), "NX canonical OM section links")? {
+        let section_ordinal = history_section.ordinal;
+        let link = &history_section.link;
+        let entry = history_section.entry;
+        let section = &history_section.section;
         let Some(messages) = section.operation_state_messages(ctx)? else {
             continue;
         };
-        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-        for (ordinal, message) in messages.into_iter().enumerate() {
+        let entry_offset = history_section.entry_offset;
+        for (ordinal, message) in ctx
+            .admit_iter(&messages, "NX operation state messages")?
+            .enumerate()
+        {
             let Ok(ordinal) = u32::try_from(ordinal) else {
                 continue;
             };
@@ -556,42 +497,29 @@ pub(super) fn operation_state_messages(
 /// Decode exact per-object operation-state status rows from feature-history areas.
 pub(super) fn operation_state_statuses(
     ctx: &DecodeContext<'_>,
-    container: &Container,
+    history: &FeatureHistory<'_, '_, '_>,
 ) -> Result<Vec<OmOperationStateStatus>, CodecError> {
-    let sections = container.om_sections(ctx)?;
     let mut output = Vec::new();
-    for (section_ordinal, link) in crate::native::features::canonical_feature_history_links(
-        ctx,
-        segment_om_links(ctx, container)?,
-    )?
-    .into_iter()
-    .enumerate()
-    {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(sections.len()),
-            "match NX state status section",
-        )?;
-        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
-            entry.file_span().map_or(
-                cadmpeg_core::decode::u64_from_index(section.offset),
-                |(offset, _)| offset + cadmpeg_core::decode::u64_from_index(section.offset),
-            ) == link.location.section_offset()
-        }) else {
-            continue;
-        };
+    for history_section in ctx.admit_iter(history.sections(), "NX canonical OM section links")? {
+        let section_ordinal = history_section.ordinal;
+        let link = &history_section.link;
+        let entry = history_section.entry;
+        let section = &history_section.section;
         let Some(table) = section.operation_state_status_table(ctx)? else {
             continue;
         };
-        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-        for (ordinal, (offset, row)) in table
-            .into_entries()
-            .filter_map(|(offset, entry)| match entry {
-                StateTableEntry::Status(row) => Some((offset, row)),
-                StateTableEntry::Slots(_) => None,
-            })
-            .enumerate()
-        {
-            let Ok(ordinal) = u32::try_from(ordinal) else {
+        let entry_offset = history_section.entry_offset;
+        let mut matched = 0_usize;
+        for (offset, entry_row) in table.into_entries() {
+            ctx.charge_work(1, "NX operation state statuses")?;
+            let StateTableEntry::Status(row) = entry_row else {
+                continue;
+            };
+            let position = matched;
+            matched = matched
+                .checked_add(1)
+                .ok_or_else(|| ctx.refuse_codec_limit("NX operation state table rows", 0, 1))?;
+            let Ok(row_ordinal) = u32::try_from(position) else {
                 continue;
             };
             let Some(source_offset) =
@@ -611,11 +539,11 @@ pub(super) fn operation_state_statuses(
                     ctx,
                     "nx:feature-history:operation-state-status#",
                     section_ordinal,
-                    ordinal,
+                    row_ordinal,
                     "NX operation state status id",
                 )?,
                 ctx.copy_retained_text(&link.id, "NX state status section link")?,
-                ordinal,
+                row_ordinal,
                 body,
                 ctx.copy_retained_text(&entry.name, "NX state status source entry")?,
                 source_offset,
@@ -632,42 +560,29 @@ pub(super) fn operation_state_statuses(
 /// Decode exact feature-record slot lanes from feature-history status blocks.
 pub(super) fn operation_state_slot_lanes(
     ctx: &DecodeContext<'_>,
-    container: &Container,
+    history: &FeatureHistory<'_, '_, '_>,
 ) -> Result<Vec<OmOperationStateSlotLane>, CodecError> {
-    let sections = container.om_sections(ctx)?;
     let mut output = Vec::new();
-    for (section_ordinal, link) in crate::native::features::canonical_feature_history_links(
-        ctx,
-        segment_om_links(ctx, container)?,
-    )?
-    .into_iter()
-    .enumerate()
-    {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(sections.len()),
-            "match NX state slot section",
-        )?;
-        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
-            entry.file_span().map_or(
-                cadmpeg_core::decode::u64_from_index(section.offset),
-                |(offset, _)| offset + cadmpeg_core::decode::u64_from_index(section.offset),
-            ) == link.location.section_offset()
-        }) else {
-            continue;
-        };
+    for history_section in ctx.admit_iter(history.sections(), "NX canonical OM section links")? {
+        let section_ordinal = history_section.ordinal;
+        let link = &history_section.link;
+        let entry = history_section.entry;
+        let section = &history_section.section;
         let Some(table) = section.operation_state_status_table(ctx)? else {
             continue;
         };
-        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-        for (ordinal, (offset, slots)) in table
-            .into_entries()
-            .filter_map(|(offset, entry)| match entry {
-                StateTableEntry::Status(_) => None,
-                StateTableEntry::Slots(slots) => Some((offset, slots)),
-            })
-            .enumerate()
-        {
-            let Ok(ordinal) = u32::try_from(ordinal) else {
+        let entry_offset = history_section.entry_offset;
+        let mut matched = 0_usize;
+        for (offset, entry_row) in table.into_entries() {
+            ctx.charge_work(1, "NX operation state slot lanes")?;
+            let StateTableEntry::Slots(slots) = entry_row else {
+                continue;
+            };
+            let position = matched;
+            matched = matched
+                .checked_add(1)
+                .ok_or_else(|| ctx.refuse_codec_limit("NX operation state table rows", 0, 1))?;
+            let Ok(lane_ordinal) = u32::try_from(position) else {
                 continue;
             };
             let Some(source_offset) =
@@ -685,11 +600,11 @@ pub(super) fn operation_state_slot_lanes(
                     ctx,
                     "nx:feature-history:operation-state-slot-lane#",
                     section_ordinal,
-                    ordinal,
+                    lane_ordinal,
                     "NX operation state slot lane id",
                 )?,
                 section_link: ctx.copy_retained_text(&link.id, "NX state slot section link")?,
-                ordinal,
+                ordinal: lane_ordinal,
                 frame,
                 source_entry: ctx.copy_retained_text(&entry.name, "NX state slot source entry")?,
             });
@@ -1057,27 +972,43 @@ impl TryFrom<ExpressionWire> for ParameterFormula {
 }
 
 /// Iterate exact `p<decimal>[_qualifier]` references in formula occurrence order.
-pub(crate) fn expression_parameter_names(expression: &str) -> impl Iterator<Item = &str> + '_ {
-    let bytes = expression.as_bytes();
+pub(crate) fn expression_parameter_names<'ctx, 'decode, 'expression>(
+    ctx: &'ctx DecodeContext<'decode>,
+    expression: &'expression str,
+) -> impl Iterator<Item = Result<&'expression str, CodecError>> + use<'ctx, 'decode, 'expression> {
     let mut at = 0usize;
+    let mut finished = false;
     std::iter::from_fn(move || {
-        while at < bytes.len() {
-            let Some(end) = expression_parameter_reference_end(bytes, at) else {
-                at += 1;
-                continue;
-            };
-            let name = &expression[at..end];
-            at = end;
-            return Some(name);
+        if finished {
+            return None;
         }
-        None
+        let next = (|| -> Result<Option<&'expression str>, CodecError> {
+            while at < expression.len() {
+                ctx.charge_work(1, "NX expression parameter scan")?;
+                let Some(end) = expression_parameter_reference_end(ctx, expression, at)? else {
+                    at += 1;
+                    continue;
+                };
+                let name = &expression[at..end];
+                at = end;
+                return Ok(Some(name));
+            }
+            Ok(None)
+        })();
+        match next {
+            Ok(name) => name.map(Ok),
+            Err(error) => {
+                finished = true;
+                Some(Err(error))
+            }
+        }
     })
 }
 
 pub(crate) fn evaluate_parameterized_expression(
     ctx: &DecodeContext<'_>,
     expression: &str,
-    mut parameter_value: impl FnMut(&str) -> Option<f64>,
+    mut parameter_value: impl FnMut(&str) -> Result<Option<f64>, CodecError>,
 ) -> Result<Option<FiniteReal>, CodecError> {
     struct NumberText {
         bytes: [u8; 400],
@@ -1094,17 +1025,15 @@ pub(crate) fn evaluate_parameterized_expression(
         }
     }
 
+    const OPERATION: &str = "NX expression substitution";
     let bytes = expression.as_bytes();
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(bytes.len()),
-        "NX expression substitution",
-    )?;
-    let mut reservation = ctx.reserve_scoped(0, "NX expression substitution")?;
+    let mut reservation = ctx.reserve_scoped(0, OPERATION)?;
     let mut substituted = String::new();
     let mut at = 0usize;
     while at < bytes.len() {
-        if let Some(end) = expression_parameter_reference_end(bytes, at) {
-            let Some(value) = parameter_value(&expression[at..end]) else {
+        ctx.charge_work(1, OPERATION)?;
+        if let Some(end) = expression_parameter_reference_end(ctx, expression, at)? {
+            let Some(value) = parameter_value(&expression[at..end])? else {
                 return Ok(None);
             };
             let mut number = NumberText {
@@ -1113,59 +1042,70 @@ pub(crate) fn evaluate_parameterized_expression(
             };
             std::fmt::Write::write_fmt(&mut number, format_args!("{value}"))
                 .map_err(|_| ctx.refuse_codec_limit("NX expression number formatting", 0, 400))?;
-            let value_text = std::str::from_utf8(&number.bytes[..number.len]).map_err(|_| {
-                ctx.refuse_codec_limit(
+            let value_text = ctx
+                .validate_utf8(
+                    &number.bytes[..number.len],
                     "NX expression number formatting",
-                    0,
-                    cadmpeg_core::decode::u64_from_index(number.len),
-                )
+                )?
+                .map_err(|_| {
+                    ctx.refuse_codec_limit(
+                        "NX expression number formatting",
+                        0,
+                        cadmpeg_core::decode::u64_from_index(number.len),
+                    )
+                })?;
+            reservation.with_storage(|| {
+                ctx.push_retained_char(&mut substituted, '(', OPERATION)?;
+                ctx.append_retained(&mut substituted, value_text, OPERATION)?;
+                ctx.push_retained_char(&mut substituted, ')', OPERATION)
             })?;
-            let added = value_text
-                .len()
-                .checked_add(2)
-                .ok_or_else(|| ctx.refuse_codec_limit("NX expression substitution", 0, u64::MAX))?;
-            ctx.reserve_scoped_string(
-                &mut reservation,
-                &mut substituted,
-                added,
-                "NX expression substitution",
-            )?;
-            substituted.push('(');
-            substituted.push_str(value_text);
-            substituted.push(')');
             at = end;
         } else {
-            ctx.reserve_scoped_string(
-                &mut reservation,
-                &mut substituted,
-                1,
-                "NX expression substitution",
-            )?;
-            substituted.push(char::from(bytes[at]));
+            reservation.with_storage(|| {
+                ctx.push_retained_char(&mut substituted, char::from(bytes[at]), OPERATION)
+            })?;
             at += 1;
         }
     }
     crate::om::evaluate_constant_expression(ctx, &substituted)
 }
 
-fn expression_parameter_reference_end(bytes: &[u8], at: usize) -> Option<usize> {
+/// End of a canonical `p<digits>[_qualifier]` parameter reference at `at`.
+fn expression_parameter_reference_end(
+    ctx: &DecodeContext<'_>,
+    expression: &str,
+    at: usize,
+) -> Result<Option<usize>, CodecError> {
+    let bytes = expression.as_bytes();
     if bytes.get(at) != Some(&b'p')
         || at
             .checked_sub(1)
             .and_then(|before| bytes.get(before))
             .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
     {
-        return None;
+        return Ok(None);
     }
     let mut end = at + 1;
-    while bytes
-        .get(end)
-        .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
-    {
-        end += 1;
+    loop {
+        ctx.charge_work(1, "NX expression parameter token scan")?;
+        let Some(byte) = bytes.get(end) else {
+            break;
+        };
+        if byte.is_ascii_alphanumeric() || *byte == b'_' {
+            end += 1;
+        } else {
+            break;
+        }
     }
-    let name = std::str::from_utf8(bytes.get(at..end)?).ok()?;
-    ParameterName::<_, u32>::parse(name).map(|_| end)
+    // The token is ASCII, so the slice falls on character boundaries.
+    let Some(name) = expression.get(at..end) else {
+        return Ok(None);
+    };
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(name.len()),
+        "NX expression parameter name parse",
+    )?;
+    Ok(ParameterName::<_, u32>::parse(name).map(|_| end))
 }
 
 /// Length-framed class definition from an NX OM type registry.
@@ -1634,19 +1574,17 @@ fn stable_object_record_identity(
     source_entry: &str,
     bytes: &[u8],
 ) -> Result<String, CodecError> {
-    let work = source_entry
-        .len()
-        .checked_add(bytes.len())
-        .and_then(|length| length.checked_add(b"nx:om:object-record\0".len() + 1))
-        .ok_or_else(|| ctx.refuse_codec_limit("NX object record identity digest", 0, 1))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(work),
-        "NX object record identity digest",
-    )?;
+    const OPERATION: &str = "NX object record identity digest";
     let mut digest = Sha256::new();
     digest.update(b"nx:om:object-record\0");
-    digest.update(source_entry.as_bytes());
+    let source_entry = source_entry.as_bytes();
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(source_entry.len()),
+        OPERATION,
+    )?;
+    digest.update(source_entry);
     digest.update([0]);
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), OPERATION)?;
     digest.update(bytes);
     let digest: [u8; 32] = digest.finalize().into();
     data_block_hex(
@@ -1676,7 +1614,7 @@ fn stable_object_record_identities(
 
     let mut reference_reservation = ctx.reserve_scoped(0, "NX object record graph references")?;
     let mut references = Vec::new();
-    for bytes in records {
+    for bytes in ctx.admit_iter(records, "NX object record identity inputs")? {
         ctx.reserve_scoped_vec(
             &mut reference_reservation,
             &mut references,
@@ -1687,22 +1625,21 @@ fn stable_object_record_identities(
             .with_scoped_storage("NX parsed graph references", || {
                 crate::om::counted_record_references(ctx, bytes, 0, records.len())
             })?;
-        let mut pairs = Vec::new();
-        ctx.reserve_scoped_vec(
-            &mut reference_reservation,
-            &mut pairs,
-            parsed.len(),
-            "NX object record graph references",
-        )?;
-        for reference in parsed {
-            pairs.push((reference.offset, usize::from(reference.value)));
-        }
+        let pairs = reference_reservation.with_storage(|| {
+            ctx.collect_vec(
+                parsed
+                    .into_iter()
+                    .map(|reference| (reference.offset, usize::from(reference.value))),
+                "NX object record graph references",
+            )
+        })?;
         references.push(pairs);
     }
     let mut graph_work = MAX_GRAPH_WORK;
 
-    let mut identities = ctx.collection_vec(records.len(), "NX object record identities")?;
-    for root in 0..records.len() {
+    let mut identities = ctx.vector_storage(records.len(), "NX object record identities")?;
+    for root in ctx.admit_iter(&(0..records.len()), "NX object record identity roots")? {
+        ctx.reserve_vec(&mut identities, 1, "NX object record identities")?;
         let identity = if references[root].is_empty() {
             Some(stable_object_record_identity(
                 ctx,
@@ -1724,34 +1661,21 @@ fn stable_object_record_identities(
     Ok(identities)
 }
 
-fn consume_stable_object_graph_work(
-    ctx: &DecodeContext<'_>,
-    work: &mut usize,
-    amount: usize,
-) -> Result<Option<()>, CodecError> {
-    let Some(remaining) = work.checked_sub(amount) else {
-        return Ok(None);
-    };
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(amount),
-        "NX object record graph identity",
-    )?;
-    *work = remaining;
-    Ok(Some(()))
+/// Spend the graph identity's local work cap; `None` when it is exhausted.
+fn consume_stable_object_graph_work(work: &mut usize, amount: usize) -> Option<()> {
+    *work = work.checked_sub(amount)?;
+    Some(())
 }
 
 fn append_stable_object_graph_node(
-    ctx: &DecodeContext<'_>,
     digest: &mut Sha256,
     graph_work: &mut usize,
     node_id: u64,
-) -> Result<Option<()>, CodecError> {
-    let Some(()) = consume_stable_object_graph_work(ctx, graph_work, 9)? else {
-        return Ok(None);
-    };
+) -> Option<()> {
+    consume_stable_object_graph_work(graph_work, 9)?;
     digest.update([STABLE_GRAPH_NODE_START]);
     digest.update(node_id.to_le_bytes());
-    Ok(Some(()))
+    Some(())
 }
 
 const STABLE_GRAPH_NODE_START: u8 = 0xf0;
@@ -1777,20 +1701,25 @@ fn stable_object_record_graph_identity(
     const REFERENCE_NEW: u8 = 0xf3;
     const REFERENCE_BACK: u8 = 0xf4;
 
+    const OPERATION: &str = "NX object record graph identity";
     let Some(seed_work) = source_entry.len().checked_add(32) else {
         return Ok(None);
     };
-    let Some(()) = consume_stable_object_graph_work(ctx, graph_work, seed_work)? else {
+    let Some(()) = consume_stable_object_graph_work(graph_work, seed_work) else {
         return Ok(None);
     };
     let mut digest = Sha256::new();
     digest.update(b"nx:om:object-record-graph\0");
     digest.update(cadmpeg_core::decode::u64_from_index(source_entry.len()).to_le_bytes());
-    digest.update(source_entry.as_bytes());
+    let source_entry = source_entry.as_bytes();
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(source_entry.len()),
+        OPERATION,
+    )?;
+    digest.update(source_entry);
 
     let mut next_node_id = 0_u64;
     let mut stack = Vec::new();
-    let mut stack_charged_len = 0usize;
     let mut map_reservation = ctx.reserve_scoped(0, "NX object record graph nodes")?;
     let mut stack_reservation = ctx.reserve_scoped(0, "NX object record graph stack")?;
     let mut node_ids = BTreeMap::<usize, u64>::new();
@@ -1803,19 +1732,19 @@ fn stable_object_record_graph_identity(
             "NX object record graph nodes",
         )
     })?;
-    let Some(()) = append_stable_object_graph_node(ctx, &mut digest, graph_work, next_node_id)?
-    else {
+    let Some(()) = append_stable_object_graph_node(&mut digest, graph_work, next_node_id) else {
         return Ok(None);
     };
     let Some(next) = next_node_id.checked_add(1) else {
         return Ok(None);
     };
     next_node_id = next;
-    ctx.charge_collection_items(1, "NX object record graph stack")?;
-    stack_charged_len += 1;
-    stack_reservation.with_storage(|| {
-        ctx.reserve_capacity(&mut stack, 1, "allocate NX object record graph stack")
-    })?;
+    ctx.reserve_scoped_vec(
+        &mut stack_reservation,
+        &mut stack,
+        1,
+        "NX object record graph stack",
+    )?;
     stack.push(Frame {
         record: root,
         next_reference: 0,
@@ -1823,6 +1752,7 @@ fn stable_object_record_graph_identity(
     });
 
     while let Some(frame_index) = stack.len().checked_sub(1) {
+        ctx.charge_work(1, "NX object record graph stack traversal")?;
         let (record, next_reference, raw_cursor) = {
             let Some(frame) = stack.get(frame_index) else {
                 return Ok(None);
@@ -1851,11 +1781,12 @@ fn stable_object_record_graph_identity(
             let Some(raw_work) = raw.len().checked_add(9) else {
                 return Ok(None);
             };
-            let Some(()) = consume_stable_object_graph_work(ctx, graph_work, raw_work)? else {
+            let Some(()) = consume_stable_object_graph_work(graph_work, raw_work) else {
                 return Ok(None);
             };
             digest.update([RAW]);
             digest.update(cadmpeg_core::decode::u64_from_index(raw.len()).to_le_bytes());
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(raw.len()), OPERATION)?;
             digest.update(raw);
 
             let Some(frame) = stack.get_mut(frame_index) else {
@@ -1867,8 +1798,10 @@ fn stable_object_record_graph_identity(
             frame.next_reference = next_reference;
             frame.raw_cursor = reference_end;
 
-            if let Some(&target_id) = node_ids.get(&target) {
-                let Some(()) = consume_stable_object_graph_work(ctx, graph_work, 9)? else {
+            if let Some(&target_id) =
+                ctx.get_btree_map(&node_ids, &target, "NX object record graph nodes")?
+            {
+                let Some(()) = consume_stable_object_graph_work(graph_work, 9) else {
                     return Ok(None);
                 };
                 digest.update([REFERENCE_BACK]);
@@ -1885,7 +1818,7 @@ fn stable_object_record_graph_identity(
                 digest.update([REFERENCE_NEW]);
                 digest.update(next_node_id.to_le_bytes());
                 let Some(()) =
-                    append_stable_object_graph_node(ctx, &mut digest, graph_work, next_node_id)?
+                    append_stable_object_graph_node(&mut digest, graph_work, next_node_id)
                 else {
                     return Ok(None);
                 };
@@ -1893,13 +1826,12 @@ fn stable_object_record_graph_identity(
                     return Ok(None);
                 };
                 next_node_id = next;
-                if stack.len() >= stack_charged_len {
-                    ctx.charge_collection_items(1, "NX object record graph stack")?;
-                    stack_charged_len += 1;
-                }
-                stack_reservation.with_storage(|| {
-                    ctx.reserve_capacity(&mut stack, 1, "allocate NX object record graph stack")
-                })?;
+                ctx.reserve_scoped_vec(
+                    &mut stack_reservation,
+                    &mut stack,
+                    1,
+                    "NX object record graph stack",
+                )?;
                 stack.push(Frame {
                     record: target,
                     next_reference: 0,
@@ -1916,11 +1848,12 @@ fn stable_object_record_graph_identity(
             let Some(raw_work) = raw.len().checked_add(1) else {
                 return Ok(None);
             };
-            let Some(()) = consume_stable_object_graph_work(ctx, graph_work, raw_work)? else {
+            let Some(()) = consume_stable_object_graph_work(graph_work, raw_work) else {
                 return Ok(None);
             };
             digest.update([RAW]);
             digest.update(cadmpeg_core::decode::u64_from_index(raw.len()).to_le_bytes());
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(raw.len()), OPERATION)?;
             digest.update(raw);
             digest.update([NODE_END]);
             stack.pop();
@@ -2642,18 +2575,15 @@ fn data_block_digest(
     role: DataBlockRole,
     bytes: &[u8],
 ) -> Result<[u8; 32], CodecError> {
-    let work = source_entry
-        .len()
-        .checked_add(bytes.len())
-        .and_then(|sum| sum.checked_add(18))
-        .ok_or_else(|| ctx.refuse_codec_limit("nx data block identity digest", 0, 1))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(work),
-        "nx data block identity digest",
-    )?;
+    const OPERATION: &str = "nx data block identity digest";
     let mut digest = Sha256::new();
     digest.update(b"nx:om:data-block\0");
-    digest.update(source_entry.as_bytes());
+    let source_entry = source_entry.as_bytes();
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(source_entry.len()),
+        OPERATION,
+    )?;
+    digest.update(source_entry);
     digest.update([
         0,
         match role {
@@ -2661,6 +2591,7 @@ fn data_block_digest(
             DataBlockRole::Column => 1,
         },
     ]);
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), OPERATION)?;
     digest.update(bytes);
     Ok(digest.finalize().into())
 }
@@ -3039,14 +2970,21 @@ pub(super) fn material_texture_catalog_entries(
     container: &Container,
     assets: &[MaterialTextureAsset],
 ) -> Result<Vec<MaterialTextureCatalogEntry>, CodecError> {
-    let Some((entry_index, entry)) = container
-        .entries
-        .iter()
-        .enumerate()
-        .find(|(_, entry)| entry.name == "/Root/qafmetadata")
+    let Some(entry_index) = ctx.position_by(
+        &container.entries,
+        |entry| {
+            ctx.equal(
+                entry.name.as_str(),
+                "/Root/qafmetadata",
+                "NX material catalog entry name",
+            )
+        },
+        "NX material catalog entry scan",
+    )?
     else {
         return Ok(Vec::new());
     };
+    let entry = &container.entries[entry_index];
     let Some((entry_offset, size)) = entry.file_span() else {
         return Ok(Vec::new());
     };
@@ -3084,11 +3022,7 @@ fn parse_material_texture_catalog(
     entry_offset: u64,
     assets: &[MaterialTextureAsset],
 ) -> Result<Option<Vec<MaterialTextureCatalogEntry>>, CodecError> {
-    let work = cadmpeg_core::decode::u64_from_index(payload.len())
-        .checked_mul(2)
-        .ok_or_else(|| ctx.refuse_codec_limit("validate NX XML text", u64::MAX, u64::MAX))?;
-    ctx.charge_work(work, "validate NX XML text")?;
-    let Some(xml) = xml_stream_text(payload) else {
+    let Some(xml) = xml_stream_text(ctx, payload)? else {
         return Ok(None);
     };
     let admitted_document = match ctx.parse_xml(xml, "decode XML tree") {
@@ -3099,13 +3033,15 @@ fn parse_material_texture_catalog(
         }
     };
     let document = admitted_document.document();
-    let root = document.root_element();
+    let Some(root) = xml_root_element(ctx, document)? else {
+        return Ok(None);
+    };
     if root.tag_name().name() != "folderContents" {
         return Ok(None);
     }
     let mut index_guard = ctx.reserve_scoped(0, "NX material catalog index")?;
     let mut assets_by_path = BTreeMap::new();
-    for asset in assets {
+    for asset in ctx.admit_iter(assets, "NX material catalog assets")? {
         index_guard.with_storage(|| {
             ctx.insert_btree_map(
                 &mut assets_by_path,
@@ -3117,20 +3053,34 @@ fn parse_material_texture_catalog(
     }
     let mut catalog = Vec::new();
     let mut seen_assets = BTreeSet::new();
-    for node in root.children().filter(roxmltree::Node::is_element) {
+    for node in root.children() {
+        ctx.charge_work(1, "NX material catalog records")?;
+        if !node.is_element() {
+            continue;
+        }
         if node.tag_name().name() != "folderProperties" {
             return Ok(None);
         }
-        let Some(storage_path) = node.attribute("location") else {
+        let Some(storage_path) = xml_attribute(ctx, node, &["location"])? else {
             return Ok(None);
         };
-        let Some(material_path) = node.attribute("unmappedLocation") else {
+        let Some(material_path) = xml_attribute(ctx, node, &["unmappedLocation"])? else {
             return Ok(None);
         };
-        let mut children = node.children().filter(roxmltree::Node::is_element);
-        let (Some(create), Some(modify), None) =
-            (children.next(), children.next(), children.next())
-        else {
+        let mut times = [None; 2];
+        let mut time_count = 0usize;
+        for child in node.children() {
+            ctx.charge_work(1, "NX material catalog record times")?;
+            if !child.is_element() {
+                continue;
+            }
+            let Some(slot) = times.get_mut(time_count) else {
+                return Ok(None);
+            };
+            *slot = Some(child);
+            time_count += 1;
+        }
+        let [Some(create), Some(modify)] = times else {
             return Ok(None);
         };
         if create.tag_name().name() != "createTime" || modify.tag_name().name() != "modifyTime" {
@@ -3142,28 +3092,32 @@ fn parse_material_texture_catalog(
         let Some(modify_time) = modify.text() else {
             return Ok(None);
         };
-        if !storage_path.starts_with("materialsTif/") {
+        if !ctx.starts_with(storage_path, "materialsTif/", "NX material catalog paths")? {
             continue;
         }
-        let Some(asset) = assets_by_path.get(storage_path) else {
+        let Some(asset) = ctx.get_btree_map(
+            &assets_by_path,
+            storage_path,
+            "NX material asset path index",
+        )?
+        else {
             return Ok(None);
         };
-        if material_path
-            .strip_prefix("materialsTif/")
+        if ctx
+            .strip_prefix(material_path, "materialsTif/", "NX material catalog paths")?
             .is_none_or(str::is_empty)
         {
             return Ok(None);
         }
-        if seen_assets.contains(asset.id.as_str()) {
-            return Ok(None);
-        }
-        index_guard.with_storage(|| {
+        if !index_guard.with_storage(|| {
             ctx.insert_btree_set(
                 &mut seen_assets,
                 asset.id.as_str(),
                 "NX material catalog seen assets",
             )
-        })?;
+        })? {
+            return Ok(None);
+        }
         let ordinal = catalog.len();
         let source_offset = entry_offset
             .checked_add(cadmpeg_core::decode::u64_from_index(node.range().start))
@@ -3204,63 +3158,51 @@ pub(super) fn external_references(
             container.external_reference_strings(ctx)
         })?;
     let count = strings.len();
-    let count_u64 = cadmpeg_core::decode::u64_from_index(count);
-
     let mut ordinal_reservation = ctx.reserve_scoped(0, "nx external reference ordinals")?;
-    ctx.charge_collection_items(count_u64, "nx external references")?;
-    let mut ordinals = BTreeMap::<String, u32>::new();
-    let mut references = Vec::new();
-    ctx.reserve_capacity(&mut references, count, "nx external references")?;
-    for (entry, relative, path) in strings {
-        let current = if let Some(ordinal) = ordinals.get_mut(entry.name.as_str()) {
-            let current = *ordinal;
-            *ordinal = ordinal.checked_add(1).ok_or_else(|| {
-                ctx.refuse_codec_limit("nx external reference ordinal", 0, count_u64)
-            })?;
-            current
-        } else {
-            let mut key = String::new();
-            ordinal_reservation.with_storage(|| {
-                ctx.try_reserve_retained_text(
-                    &mut key,
-                    entry.name.len(),
-                    "nx external reference ordinals",
-                )
-            })?;
-            key.push_str(&entry.name);
-            ordinal_reservation.with_storage(|| {
-                ctx.insert_btree_map(&mut ordinals, key, 1, "nx external reference ordinals")
-            })?;
-            0
+    let mut ordinals = BTreeMap::<&str, u32>::new();
+    let mut references = ctx.vector_storage(count, "nx external references")?;
+    for (entry, relative, path) in ctx.admit_iter(strings, "nx external references")? {
+        let current = match ctx.get_mut_btree_map(
+            &mut ordinals,
+            entry.name.as_str(),
+            "nx external reference ordinals",
+        )? {
+            Some(ordinal) => {
+                let current = *ordinal;
+                *ordinal = ordinal
+                    .checked_add(1)
+                    .ok_or_else(|| ctx.refuse_codec_limit("nx external reference ordinal", 0, 1))?;
+                current
+            }
+            None => {
+                ordinal_reservation.with_storage(|| {
+                    ctx.insert_btree_map(
+                        &mut ordinals,
+                        entry.name.as_str(),
+                        1,
+                        "nx external reference ordinals",
+                    )
+                })?;
+                0
+            }
         };
-        let digits = if current == 0 {
-            1
-        } else {
-            usize::try_from(current.ilog10()).map_err(|_| {
-                ctx.refuse_codec_limit("nx external reference identity", 0, count_u64)
-            })? + 1
-        };
-        let id_len = "nx:external-reference:"
-            .len()
-            .checked_add(entry.name.len())
-            .and_then(|len| len.checked_add(1))
-            .and_then(|len| len.checked_add(digits))
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("nx external reference identity", 0, count_u64)
-            })?;
-        let mut id = ctx.retained_string(id_len, "nx external reference identity")?;
-        write!(&mut id, "nx:external-reference:{}#{current}", entry.name)
-            .map_err(|_| ctx.refuse_codec_limit("nx external reference identity", 0, count_u64))?;
-        let mut source_entry =
-            ctx.retained_string(entry.name.len(), "nx external reference source entry")?;
-        source_entry.push_str(&entry.name);
+        let id = ctx.format_retained(
+            format_args!("nx:external-reference:{}#{current}", entry.name),
+            "nx external reference identity",
+        )?;
+        let source_entry =
+            ctx.copy_retained_text(&entry.name, "nx external reference source entry")?;
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
+        let source_offset = entry_offset
+            .checked_add(cadmpeg_core::decode::u64_from_index(relative))
+            .ok_or_else(|| ctx.refuse_codec_limit("nx external reference offset", 0, 1))?;
+        ctx.reserve_vec(&mut references, 1, "nx external references")?;
         references.push(ExternalReference {
             id,
             ordinal: current,
             path,
             source_entry,
-            source_offset: entry_offset + cadmpeg_core::decode::u64_from_index(relative),
+            source_offset,
         });
     }
     Ok(references)
@@ -3273,8 +3215,9 @@ pub(super) fn external_reference_records(
 ) -> Result<Vec<ExternalReferenceRecord>, cadmpeg_core::CodecError> {
     let parsed = container.external_reference_records(ctx)?;
     let count = parsed.len();
-    let mut output = ctx.collection_vec(count, "nx native external reference records")?;
-    for (entry, record) in parsed {
+    let mut output = ctx.vector_storage(count, "nx native external reference records")?;
+    for (entry, record) in ctx.admit_iter(parsed, "nx native external reference records")? {
+        ctx.reserve_vec(&mut output, 1, "nx native external reference records")?;
         let id = external_reference_record_id(
             ctx,
             "nx:external-reference-record:",
@@ -3310,17 +3253,7 @@ fn external_reference_record_id(
     record_id: u32,
     operation: &'static str,
 ) -> Result<String, CodecError> {
-    let digits = record_id.checked_ilog10().map_or(1, |n| n + 1);
-    let id_len = prefix
-        .len()
-        .checked_add(entry_name.len())
-        .and_then(|len| len.checked_add(1))
-        .and_then(|len| len.checked_add(usize::try_from(digits).ok()?))
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, 1))?;
-    let mut id = ctx.retained_string(id_len, operation)?;
-    write!(&mut id, "{prefix}{entry_name}#{record_id}")
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-    Ok(id)
+    ctx.format_retained(format_args!("{prefix}{entry_name}#{record_id}"), operation)
 }
 
 /// Retain all indexed records and link uniquely decoded handle-set records.
@@ -3331,9 +3264,13 @@ pub(super) fn external_reference_indexed_records(
 ) -> Result<Vec<ExternalReferenceIndexedRecord>, cadmpeg_core::CodecError> {
     let mut index_reservation = ctx.reserve_scoped(0, "nx external reference decoded index")?;
     let mut decoded_by_key = BTreeMap::<(&str, u32), Option<&ExternalReferenceRecord>>::new();
-    for record in decoded {
+    for record in ctx.admit_iter(decoded, "NX external reference decoded records")? {
         let key = (record.source_entry.as_str(), record.record_id);
-        if let Some(value) = decoded_by_key.get_mut(&key) {
+        if let Some(value) = ctx.get_mut_btree_map(
+            &mut decoded_by_key,
+            &key,
+            "nx external reference decoded index",
+        )? {
             *value = None;
         } else {
             index_reservation.with_storage(|| {
@@ -3348,7 +3285,7 @@ pub(super) fn external_reference_indexed_records(
     }
     let parsed = container.external_reference_indexed_records(ctx)?;
     let mut output = Vec::new();
-    for (entry, record) in parsed {
+    for (entry, record) in ctx.admit_iter(parsed, "NX OM parsed visits")? {
         let Some((entry_offset, _)) = entry.file_span() else {
             continue;
         };
@@ -3373,8 +3310,12 @@ pub(super) fn external_reference_indexed_records(
             record.record_id,
             "nx native external reference indexed record id",
         )?;
-        let handle_set_record = decoded_by_key
-            .get(&(entry.name.as_str(), record.record_id))
+        let handle_set_record = ctx
+            .get_btree_map(
+                &decoded_by_key,
+                &(entry.name.as_str(), record.record_id),
+                "nx external reference decoded index",
+            )?
             .and_then(|record| *record)
             .map(|record| {
                 ctx.copy_retained_text(&record.id, "nx external reference handle-set link")
@@ -3407,7 +3348,7 @@ pub(super) fn external_reference_empty_records(
     indexed: &[ExternalReferenceIndexedRecord],
 ) -> Result<Vec<ExternalReferenceEmptyRecord>, CodecError> {
     let mut output = Vec::new();
-    for record in indexed {
+    for record in ctx.admit_iter(indexed, "NX external reference indexed records")? {
         let Some(bytes) =
             container.bounded_entry_bytes(ctx, record.source_offset, record.byte_len)?
         else {
@@ -3417,26 +3358,19 @@ pub(super) fn external_reference_empty_records(
             continue;
         };
         ctx.reserve_vec(&mut output, 1, "nx native external reference empty records")?;
-        let replacement = record.id.split_once("indexed-record");
-        let id_len = if let Some((before, after)) = replacement {
-            before
-                .len()
-                .checked_add("empty-record".len())
-                .and_then(|len| len.checked_add(after.len()))
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("nx native external reference empty record id", 0, 1)
-                })?
-        } else {
-            record.id.len()
+        let id = match ctx.split_once(
+            &record.id,
+            "indexed-record",
+            "nx native external reference empty record id",
+        )? {
+            Some((before, after)) => ctx.format_retained(
+                format_args!("{before}empty-record{after}"),
+                "nx native external reference empty record id",
+            )?,
+            None => {
+                ctx.copy_retained_text(&record.id, "nx native external reference empty record id")?
+            }
         };
-        let mut id = ctx.retained_string(id_len, "nx native external reference empty record id")?;
-        if let Some((before, after)) = replacement {
-            id.push_str(before);
-            id.push_str("empty-record");
-            id.push_str(after);
-        } else {
-            id.push_str(&record.id);
-        }
         output.push(ExternalReferenceEmptyRecord {
             id,
             indexed_record: ctx
@@ -3454,7 +3388,7 @@ pub(super) fn external_reference_tail_reference_pairs(
     records: &[ExternalReferenceRecord],
 ) -> Result<Vec<ExternalReferenceTailReferencePair>, cadmpeg_core::CodecError> {
     let mut out = Vec::new();
-    for record in records {
+    for record in ctx.admit_iter(records, "NX external reference records")? {
         let Some(source_offset) =
             record
                 .source_offset
@@ -3469,31 +3403,19 @@ pub(super) fn external_reference_tail_reference_pairs(
         else {
             continue;
         };
-        for (ordinal, (offset, persistent_handle, tagged_reference)) in
-            crate::container::parse_extref_reference_pairs(ctx, bytes)?
-                .into_iter()
-                .enumerate()
+        let pairs = crate::container::parse_extref_reference_pairs(ctx, bytes)?;
+        let record_key = ctx
+            .split_once(&record.id, "#", "nx native external reference tail pair id")?
+            .map_or(record.id.as_str(), |(_, key)| key);
+        for (ordinal, &(offset, persistent_handle, tagged_reference)) in ctx
+            .admit_iter(&pairs, "nx native external reference tail pairs")?
+            .enumerate()
         {
             ctx.reserve_vec(&mut out, 1, "nx native external reference tail pairs")?;
-            let record_key = record
-                .id
-                .split_once('#')
-                .map_or(record.id.as_str(), |(_, key)| key);
-            let prefix = "nx:external-reference:tail-reference-pair#";
-            let digits = ordinal.checked_ilog10().map_or(1, |n| n + 1);
-            let id_len = prefix
-                .len()
-                .checked_add(record_key.len())
-                .and_then(|len| len.checked_add(1))
-                .and_then(|len| len.checked_add(usize::try_from(digits).ok()?))
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("nx native external reference tail pair id", 0, 1)
-                })?;
-            let mut id =
-                ctx.retained_string(id_len, "nx native external reference tail pair id")?;
-            write!(&mut id, "{prefix}{record_key}-{ordinal}").map_err(|_| {
-                ctx.refuse_codec_limit("nx native external reference tail pair id", 0, 1)
-            })?;
+            let id = ctx.format_retained(
+                format_args!("nx:external-reference:tail-reference-pair#{record_key}-{ordinal}"),
+                "nx native external reference tail pair id",
+            )?;
             let ordinal = u32::try_from(ordinal).map_err(|_| {
                 ctx.refuse_codec_limit("nx native external reference tail pair ordinal", 0, 1)
             })?;
@@ -3529,7 +3451,11 @@ pub(super) fn external_reference_record_string_uses(
     for reference in references {
         ctx.charge_work(1, "nx external reference slot index")?;
         let key = (reference.source_entry.as_str(), reference.ordinal);
-        if let Some(value) = references_by_key.get_mut(&key) {
+        if let Some(value) = ctx.get_mut_btree_map(
+            &mut references_by_key,
+            &key,
+            "nx external reference slot index",
+        )? {
             *value = None;
         } else {
             index_reservation.with_storage(|| {
@@ -3552,36 +3478,38 @@ pub(super) fn external_reference_record_string_uses(
         {
             continue;
         }
-        let resolved = record.id_slots.map(|index| {
-            references_by_key
-                .get(&(record.source_entry.as_str(), index))
-                .and_then(|reference| *reference)
-        });
+        let mut resolved = [None; 4];
+        for (slot, &index) in resolved.iter_mut().zip(&record.id_slots) {
+            *slot = ctx
+                .get_btree_map(
+                    &references_by_key,
+                    &(record.source_entry.as_str(), index),
+                    "nx external reference slot index",
+                )?
+                .and_then(|reference| *reference);
+        }
         let [Some(first), Some(second), Some(third), Some(fourth)] = resolved else {
             continue;
         };
+        let record_key = ctx
+            .split_once(
+                &record.id,
+                "#",
+                "nx native external reference string use id",
+            )?
+            .map_or(record.id.as_str(), |(_, key)| key);
         for (slot, reference) in ExtrefSlot::ALL
             .into_iter()
             .zip([first, second, third, fourth])
         {
             ctx.reserve_vec(&mut output, 1, "nx native external reference string uses")?;
-            let record_key = record
-                .id
-                .split_once('#')
-                .map_or(record.id.as_str(), |(_, key)| key);
-            let prefix = "nx:external-reference:record-string-use#";
-            let id_len = prefix
-                .len()
-                .checked_add(record_key.len())
-                .and_then(|len| len.checked_add(2))
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("nx native external reference string use id", 0, 1)
-                })?;
-            let mut id =
-                ctx.retained_string(id_len, "nx native external reference string use id")?;
-            write!(&mut id, "{prefix}{record_key}-{}", u8::from(slot)).map_err(|_| {
-                ctx.refuse_codec_limit("nx native external reference string use id", 0, 1)
-            })?;
+            let id = ctx.format_retained(
+                format_args!(
+                    "nx:external-reference:record-string-use#{record_key}-{}",
+                    u8::from(slot)
+                ),
+                "nx native external reference string use id",
+            )?;
             let source_offset =
                 record
                     .source_offset
@@ -3623,7 +3551,11 @@ pub(super) fn external_reference_record_children(
     let mut references_by_id = BTreeMap::<&str, Option<&ExternalReference>>::new();
     for reference in references {
         ctx.charge_work(1, "nx external reference child index")?;
-        if let Some(value) = references_by_id.get_mut(reference.id.as_str()) {
+        if let Some(value) = ctx.get_mut_btree_map(
+            &mut references_by_id,
+            reference.id.as_str(),
+            "nx external reference child index",
+        )? {
             *value = None;
         } else {
             index_reservation.with_storage(|| {
@@ -3636,17 +3568,31 @@ pub(super) fn external_reference_record_children(
             })?;
         }
     }
+    let mut uses_by_record = BTreeMap::<&str, Vec<&ExternalReferenceRecordStringUse>>::new();
+    for use_ in ctx.admit_iter(uses, "nx external reference child use index")? {
+        index_reservation.with_storage(|| {
+            ctx.push_btree_group(
+                &mut uses_by_record,
+                use_.external_record.as_str(),
+                use_,
+                "nx external reference child use index",
+                "nx external reference child uses",
+            )
+        })?;
+    }
     let mut output = Vec::new();
-    for record in records {
+    for record in ctx.admit_iter(records, "NX external reference records")? {
+        let Some(record_uses_list) = ctx.get_btree_map(
+            &uses_by_record,
+            record.id.as_str(),
+            "nx external reference child use index",
+        )?
+        else {
+            continue;
+        };
         let mut record_uses: [Option<&ExternalReferenceRecordStringUse>; 4] = [None; 4];
-        let mut count = 0usize;
         let mut duplicate = false;
-        for use_ in uses {
-            ctx.charge_work(1, "nx external reference child use scan")?;
-            if use_.external_record != record.id {
-                continue;
-            }
-            count += 1;
+        for &use_ in ctx.admit_iter(record_uses_list, "nx external reference child uses")? {
             let slot = &mut record_uses[use_.slot.index()];
             if slot.is_some() {
                 duplicate = true;
@@ -3657,22 +3603,30 @@ pub(super) fn external_reference_record_children(
         let [Some(slot0), Some(slot1), Some(slot2), Some(slot3)] = record_uses else {
             continue;
         };
-        if duplicate || count != 4 {
+        if duplicate || record_uses_list.len() != 4 {
             continue;
         }
         let slot_uses = [slot0, slot1, slot2, slot3];
         let mut resolved = [None; 4];
         let mut valid = true;
         for (slot, use_) in slot_uses.into_iter().enumerate() {
-            let Some(reference) = references_by_id
-                .get(use_.external_reference.as_str())
+            let Some(reference) = ctx
+                .get_btree_map(
+                    &references_by_id,
+                    use_.external_reference.as_str(),
+                    "nx external reference child index",
+                )?
                 .and_then(|reference| *reference)
             else {
                 valid = false;
                 break;
             };
             if use_.string_index != record.id_slots[slot]
-                || reference.source_entry != record.source_entry
+                || !ctx.equal(
+                    reference.source_entry.as_str(),
+                    record.source_entry.as_str(),
+                    "nx external reference child entry",
+                )?
                 || reference.ordinal != use_.string_index
             {
                 valid = false;
@@ -3686,23 +3640,17 @@ pub(super) fn external_reference_record_children(
         let (Some(name), Some(directory)) = (resolved[0], resolved[2]) else {
             continue;
         };
-        let Some(suffix_start) = name.path.len().checked_sub(4) else {
+        let Some(suffix) = name.path.as_bytes().last_chunk::<4>() else {
             continue;
         };
-        let Some(suffix) = name.path.get(suffix_start..) else {
-            continue;
-        };
-        if !suffix.eq_ignore_ascii_case(".prt") || directory.path.is_empty() {
+        if !suffix.eq_ignore_ascii_case(b".prt") || directory.path.is_empty() {
             continue;
         }
         ctx.reserve_vec(&mut output, 1, "nx native external reference children")?;
-        let id_len =
-            record.id.len().checked_add(":child".len()).ok_or_else(|| {
-                ctx.refuse_codec_limit("nx native external reference child id", 0, 1)
-            })?;
-        let mut id = ctx.retained_string(id_len, "nx native external reference child id")?;
-        write!(&mut id, "{}:child", record.id)
-            .map_err(|_| ctx.refuse_codec_limit("nx native external reference child id", 0, 1))?;
+        let id = ctx.format_retained(
+            format_args!("{}:child", record.id),
+            "nx native external reference child id",
+        )?;
         output.push(ExternalReferenceRecordChild {
             id,
             external_record: ctx
@@ -3720,34 +3668,18 @@ pub(super) fn configurations(
     ctx: &DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<Configuration>, CodecError> {
-    let mut matches = container
-        .entries
-        .iter()
-        .enumerate()
-        .filter(|(_, entry)| entry.name == "/Root/part/arrangements");
-    let Some((entry_index, entry)) = matches.next() else {
+    const OPERATION: &str = "nx arrangement records";
+    let Some((entry_index, entry)) = unique_named_entry(ctx, container, "/Root/part/arrangements")?
+    else {
         return Ok(Vec::new());
     };
-    if matches.next().is_some() {
-        return Ok(Vec::new());
-    }
-    let Some((offset, size)) = entry.file_span() else {
+    let Some(payload) = entry_payload(container, entry) else {
         return Ok(Vec::new());
     };
-    let (Ok(start), Ok(size)) = (usize::try_from(offset), usize::try_from(size)) else {
+    let Some((offset, _)) = entry.file_span() else {
         return Ok(Vec::new());
     };
-    let Some(end) = start.checked_add(size) else {
-        return Ok(Vec::new());
-    };
-    let Some(payload) = container.data.get(start..end) else {
-        return Ok(Vec::new());
-    };
-    let work = cadmpeg_core::decode::u64_from_index(payload.len())
-        .checked_mul(2)
-        .ok_or_else(|| ctx.refuse_codec_limit("nx arrangement XML scan", u64::MAX, u64::MAX))?;
-    ctx.charge_work(work, "nx arrangement XML scan")?;
-    let Some(xml) = xml_stream_text(payload) else {
+    let Some(xml) = xml_stream_text(ctx, payload)? else {
         return Ok(Vec::new());
     };
     let admitted_document = match ctx.parse_xml(xml, "decode XML tree") {
@@ -3758,50 +3690,56 @@ pub(super) fn configurations(
         }
     };
     let document = admitted_document.document();
-    let root = document.root_element();
+    let Some(root) = xml_root_element(ctx, document)? else {
+        return Ok(Vec::new());
+    };
     if root.tag_name().name() != "Arrangements" {
         return Ok(Vec::new());
     }
-    let node_count = root.children().filter(roxmltree::Node::is_element).count();
     let mut names_reservation = ctx.reserve_scoped(0, "nx arrangement names")?;
     let mut names = BTreeSet::new();
+    let mut arrangements = Vec::new();
+    let mut arrangements_reservation = ctx.reserve_scoped(0, OPERATION)?;
     let mut active_count = 0usize;
-    for node in root.children().filter(roxmltree::Node::is_element) {
-        ctx.charge_work(1, "nx arrangement records")?;
+    for node in root.children() {
+        ctx.charge_work(1, OPERATION)?;
+        if !node.is_element() {
+            continue;
+        }
         if node.tag_name().name() != "Arrangement" {
             return Ok(Vec::new());
         }
-        let Some(name) = node.attribute("Name") else {
+        let Some(name) = xml_attribute(ctx, node, &["Name"])? else {
             return Ok(Vec::new());
         };
-        if name.is_empty() || names.contains(name) {
+        if name.is_empty()
+            || !names_reservation
+                .with_storage(|| ctx.insert_btree_set(&mut names, name, "nx arrangement names"))?
+        {
             return Ok(Vec::new());
         }
-        names_reservation
-            .with_storage(|| ctx.insert_btree_set(&mut names, name, "nx arrangement names"))?;
-        let is_default = match node.attribute("Default") {
+        let is_default = match xml_attribute(ctx, node, &["Default"])? {
             Some("YES") => true,
             Some("NO") => false,
             _ => return Ok(Vec::new()),
         };
         active_count += usize::from(is_default);
+        arrangements_reservation.with_storage(|| {
+            ctx.push_vec(&mut arrangements, (node, name, is_default), OPERATION)
+        })?;
     }
-    if node_count == 0 || active_count > 1 {
+    if arrangements.is_empty() || active_count > 1 {
         return Ok(Vec::new());
     }
-    let mut output = ctx.collection_vec(node_count, "nx arrangement configurations")?;
-    for (ordinal, node) in root
-        .children()
-        .filter(roxmltree::Node::is_element)
+    let mut output = ctx.vector_storage(arrangements.len(), "nx arrangement configurations")?;
+    for (ordinal, &(node, name, is_default)) in ctx
+        .admit_iter(&arrangements, "nx arrangement configurations")?
         .enumerate()
     {
-        let Some(name) = node.attribute("Name") else {
-            return Ok(Vec::new());
-        };
-        let is_default = node.attribute("Default") == Some("YES");
         let source_offset = offset
             .checked_add(cadmpeg_core::decode::u64_from_index(node.range().start))
             .ok_or_else(|| ctx.refuse_codec_limit("nx arrangement source offset", 0, 1))?;
+        ctx.reserve_vec(&mut output, 1, "nx arrangement configurations")?;
         output.push(Configuration {
             id: retained_om_index_id(
                 ctx,
@@ -3818,6 +3756,37 @@ pub(super) fn configurations(
         });
     }
     Ok(output)
+}
+
+/// The only directory entry with `name`, with its directory index.
+fn unique_named_entry<'c>(
+    ctx: &DecodeContext<'_>,
+    container: &'c Container,
+    name: &str,
+) -> Result<Option<(usize, &'c crate::container::DirEntry)>, CodecError> {
+    const OPERATION: &str = "locate NX named entry";
+    let is_named = |entry: &crate::container::DirEntry| {
+        ctx.equal_bytes(entry.name.as_bytes(), name.as_bytes(), OPERATION)
+    };
+    let Some(first) = ctx.position_by(&container.entries, is_named, OPERATION)? else {
+        return Ok(None);
+    };
+    let (found, rest) = container.entries.split_at(first + 1);
+    if ctx.any_by(rest, is_named, OPERATION)? {
+        return Ok(None);
+    }
+    Ok(found.last().map(|entry| (first, entry)))
+}
+
+/// The bytes inside one directory entry's file span.
+fn entry_payload<'c>(
+    container: &'c Container,
+    entry: &crate::container::DirEntry,
+) -> Option<&'c [u8]> {
+    let (offset, size) = entry.file_span()?;
+    let start = usize::try_from(offset).ok()?;
+    let end = start.checked_add(usize::try_from(size).ok()?)?;
+    container.data.get(start..end)
 }
 
 /// Join the two independently framed active-arrangement declarations.
@@ -3847,7 +3816,11 @@ pub(super) fn configuration_attribute_uses(
     let (Some(configuration), Some(attribute)) = (active, declaration) else {
         return Ok(Vec::new());
     };
-    if configuration.name != attribute.value {
+    if !ctx.equal(
+        configuration.name.as_str(),
+        attribute.value.as_str(),
+        "nx active configuration join",
+    )? {
         return Ok(Vec::new());
     }
     let mut output = ctx.collection_vec(1, "nx active configuration attribute uses")?;
@@ -3868,30 +3841,26 @@ pub(super) fn part_attributes(
     ctx: &DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<PartAttribute>, CodecError> {
-    let mut matches = container
-        .entries
-        .iter()
-        .enumerate()
-        .filter(|(_, entry)| entry.name == "/Root/part/attrs");
-    let Some((entry_index, entry)) = matches.next() else {
+    let Some((entry_index, entry)) = unique_named_entry(ctx, container, "/Root/part/attrs")? else {
         return Ok(Vec::new());
     };
-    if matches.next().is_some() {
-        return Ok(Vec::new());
-    }
-    let Some((offset, size)) = entry.file_span() else {
-        return Ok(Vec::new());
-    };
-    let (Ok(start), Ok(size)) = (usize::try_from(offset), usize::try_from(size)) else {
-        return Ok(Vec::new());
-    };
-    let Some(end) = start.checked_add(size) else {
-        return Ok(Vec::new());
-    };
-    let Some(payload) = container.data.get(start..end) else {
+    let (Some(payload), Some((offset, _))) = (entry_payload(container, entry), entry.file_span())
+    else {
         return Ok(Vec::new());
     };
     Ok(parse_part_attributes(ctx, payload, entry_index, &entry.name, offset)?.unwrap_or_default())
+}
+
+/// One attribute element whose complete field set was validated.
+#[derive(Clone, Copy)]
+struct PartAttributeNode<'a> {
+    start: usize,
+    owner: &'a str,
+    title: &'a str,
+    value: &'a str,
+    value_type: &'a str,
+    pdm_based: bool,
+    version: u32,
 }
 
 fn parse_part_attributes(
@@ -3901,11 +3870,8 @@ fn parse_part_attributes(
     source_entry: &str,
     entry_offset: u64,
 ) -> Result<Option<Vec<PartAttribute>>, CodecError> {
-    let work = cadmpeg_core::decode::u64_from_index(payload.len())
-        .checked_mul(2)
-        .ok_or_else(|| ctx.refuse_codec_limit("nx part attribute XML scan", u64::MAX, u64::MAX))?;
-    ctx.charge_work(work, "nx part attribute XML scan")?;
-    let Some(xml) = xml_stream_text(payload) else {
+    const OPERATION: &str = "nx part attribute records";
+    let Some(xml) = xml_stream_text(ctx, payload)? else {
         return Ok(None);
     };
     let admitted_document = match ctx.parse_xml(xml, "decode XML tree") {
@@ -3916,62 +3882,75 @@ fn parse_part_attributes(
         }
     };
     let document = admitted_document.document();
-    let root = document.root_element();
-    let Some(version) = root
-        .attribute("version")
-        .and_then(|version| version.parse::<u32>().ok())
+    let Some(root) = xml_root_element(ctx, document)? else {
+        return Ok(None);
+    };
+    let Some(version_text) = xml_attribute(ctx, root, &["version"])? else {
+        return Ok(None);
+    };
+    let Ok(version) = ctx.parse_text::<u32>(version_text, "parse NX part attribute XML version")?
     else {
         return Ok(None);
     };
     if root.tag_name().name() != "UgAttributes" || version < 4 {
         return Ok(None);
     }
-    let count = root.children().filter(roxmltree::Node::is_element).count();
-    for node in root.children().filter(roxmltree::Node::is_element) {
-        ctx.charge_work(1, "nx part attribute records")?;
-        if node.tag_name().name() != "Attribute"
-            || node.attribute("owner").is_none()
-            || node
-                .attribute("utf8title")
-                .or_else(|| node.attribute("title"))
-                .is_none()
-            || node
-                .attribute("utf8value")
-                .or_else(|| node.attribute("value"))
-                .is_none()
-            || node.attribute("type").is_none()
-            || !matches!(node.attribute("pdmBased"), Some("true" | "false"))
-            || node
-                .attribute("version")
-                .and_then(|version| version.parse::<u32>().ok())
-                .is_none()
-        {
+    let mut nodes = Vec::new();
+    let mut nodes_reservation = ctx.reserve_scoped(0, OPERATION)?;
+    for node in root.children() {
+        ctx.charge_work(1, OPERATION)?;
+        if !node.is_element() {
+            continue;
+        }
+        if node.tag_name().name() != "Attribute" {
             return Ok(None);
         }
-    }
-    let mut output = ctx.collection_vec(count, "nx native part attributes")?;
-    for (ordinal, node) in root
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .enumerate()
-    {
-        let Some((owner, title, value, value_type, pdm_based, version)) = (|| {
-            Some((
-                node.attribute("owner")?,
-                node.attribute("utf8title")
-                    .or_else(|| node.attribute("title"))?,
-                node.attribute("utf8value")
-                    .or_else(|| node.attribute("value"))?,
-                node.attribute("type")?,
-                node.attribute("pdmBased")? == "true",
-                node.attribute("version")?.parse::<u32>().ok()?,
-            ))
-        })() else {
+        let (
+            Some(owner),
+            Some(title),
+            Some(value),
+            Some(value_type),
+            Some(pdm_based),
+            Some(version),
+        ) = (
+            xml_attribute(ctx, node, &["owner"])?,
+            xml_attribute(ctx, node, &["utf8title", "title"])?,
+            xml_attribute(ctx, node, &["utf8value", "value"])?,
+            xml_attribute(ctx, node, &["type"])?,
+            xml_attribute(ctx, node, &["pdmBased"])?,
+            xml_attribute(ctx, node, &["version"])?,
+        )
+        else {
             return Ok(None);
         };
+        let pdm_based = match pdm_based {
+            "true" => true,
+            "false" => false,
+            _ => return Ok(None),
+        };
+        let Ok(version) = ctx.parse_text::<u32>(version, "parse NX part attribute version")? else {
+            return Ok(None);
+        };
+        let attribute = PartAttributeNode {
+            start: node.range().start,
+            owner,
+            title,
+            value,
+            value_type,
+            pdm_based,
+            version,
+        };
+        nodes_reservation.with_storage(|| ctx.push_vec(&mut nodes, attribute, OPERATION))?;
+    }
+    let mut output = ctx.vector_storage(nodes.len(), "nx native part attributes")?;
+    for (ordinal, attribute) in ctx
+        .admit_iter(&nodes, "nx native part attributes")?
+        .enumerate()
+    {
         let source_offset = entry_offset
-            .checked_add(cadmpeg_core::decode::u64_from_index(node.range().start))
+            .checked_add(cadmpeg_core::decode::u64_from_index(attribute.start))
             .ok_or_else(|| ctx.refuse_codec_limit("nx part attribute source offset", 0, 1))?;
+        ctx.reserve_vec(&mut output, 1, "nx native part attributes")?;
         output.push(PartAttribute {
             id: retained_om_index_id(
                 ctx,
@@ -3981,12 +3960,12 @@ fn parse_part_attributes(
                 cadmpeg_core::decode::u64_from_index(ordinal),
                 "nx native part attribute id",
             )?,
-            owner: ctx.copy_retained_text(owner, "nx part attribute owner")?,
-            title: ctx.copy_retained_text(title, "nx part attribute title")?,
-            value: ctx.copy_retained_text(value, "nx part attribute value")?,
-            value_type: ctx.copy_retained_text(value_type, "nx part attribute type")?,
-            pdm_based,
-            version,
+            owner: ctx.copy_retained_text(attribute.owner, "nx part attribute owner")?,
+            title: ctx.copy_retained_text(attribute.title, "nx part attribute title")?,
+            value: ctx.copy_retained_text(attribute.value, "nx part attribute value")?,
+            value_type: ctx.copy_retained_text(attribute.value_type, "nx part attribute type")?,
+            pdm_based: attribute.pdm_based,
+            version: attribute.version,
             source_entry: ctx.copy_retained_text(source_entry, "nx part attribute source entry")?,
             source_offset,
         });
@@ -3994,18 +3973,59 @@ fn parse_part_attributes(
     Ok(Some(output))
 }
 
+fn xml_root_element<'document, 'input>(
+    ctx: &DecodeContext<'_>,
+    document: &'document roxmltree::Document<'input>,
+) -> Result<Option<roxmltree::Node<'document, 'input>>, CodecError> {
+    let mut children = document.root().children();
+    loop {
+        ctx.charge_work(1, "NX XML root element traversal")?;
+        let Some(node) = children.next() else {
+            return Ok(None);
+        };
+        if node.is_element() {
+            return Ok(Some(node));
+        }
+    }
+}
+
+fn xml_attribute<'document, const NAMES: usize>(
+    ctx: &DecodeContext<'_>,
+    node: roxmltree::Node<'document, '_>,
+    names: &[&str; NAMES],
+) -> Result<Option<&'document str>, CodecError> {
+    for name in names {
+        let mut attributes = node.attributes();
+        loop {
+            ctx.charge_work(1, "NX XML attribute lookup")?;
+            let Some(attribute) = attributes.next() else {
+                break;
+            };
+            if ctx.equal(attribute.name(), *name, "NX XML attribute name comparison")? {
+                return Ok(Some(attribute.value()));
+            }
+        }
+    }
+    Ok(None)
+}
+
 /// Return the exact XML document carried by an NX XML stream.
 ///
 /// NX permits one C-string terminator after the document. A terminator inside
 /// the document or more than one trailing terminator rejects the whole stream.
-fn xml_stream_text(payload: &[u8]) -> Option<&str> {
-    let document = if let Some(document) = payload.strip_suffix(&[0]) {
-        (!document.ends_with(&[0])).then_some(document)?
-    } else {
-        payload
+fn xml_stream_text<'a>(
+    ctx: &DecodeContext<'_>,
+    payload: &'a [u8],
+) -> Result<Option<&'a str>, CodecError> {
+    const OPERATION: &str = "validate NX XML text";
+    let document = match payload.split_last() {
+        Some((0, document)) => document,
+        _ => payload,
     };
-    (!document.contains(&0)).then_some(())?;
-    std::str::from_utf8(document).ok()
+    if ctx.any_by(document, |byte| Ok(*byte == 0), OPERATION)? {
+        return Ok(None);
+    }
+    Ok(ctx.validate_utf8(document, OPERATION)?.ok())
 }
 
 #[derive(Clone, Copy)]
@@ -4035,28 +4055,21 @@ fn registry_definitions<T>(
     let framed_sections = container.om_sections(ctx)?;
     let indexed_sections = container.indexed_om_sections(ctx)?;
     let mut index_reservation = ctx.reserve_scoped(0, "nx registry definition index")?;
-    let framed = framed_sections
-        .into_iter()
-        .map(|(entry, section)| (entry, section.offset, section.types, section.fields, true));
-    let indexed = indexed_sections.into_iter().map(|(entry, section)| {
-        (
-            entry,
-            section.base_offset(),
-            section.types,
-            section.fields,
-            false,
-        )
-    });
     let mut definitions = BTreeMap::new();
-    for (entry, section_offset, types, fields, replace) in framed.chain(indexed) {
+    // Framed definitions are visited first and take precedence over indexed ones.
+    let mut visit = |entry: &crate::container::entry_ref::EntryRef<'_>,
+                     section_offset: usize,
+                     types: &[crate::om::TypeDefinition<'_>],
+                     fields: &[crate::om::FieldDefinition<'_>],
+                     replace: bool|
+     -> Result<(), CodecError> {
         let entry_index = entry.index();
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
         let (marker, count) = match kind {
             RegistryKind::Class => (":class#", types.len()),
             RegistryKind::Field => (":field#", fields.len()),
         };
-        for ordinal in 0..count {
-            ctx.charge_work(1, "nx registry definitions")?;
+        for ordinal in ctx.admit_iter(&(0..count), "nx registry definitions")? {
             let (offset, name, tail) = match kind {
                 RegistryKind::Class => {
                     let declaration = &types[ordinal];
@@ -4076,7 +4089,9 @@ fn registry_definitions<T>(
                 }
             };
             let key = (entry_index, offset);
-            if !replace && definitions.contains_key(&key) {
+            if !replace
+                && ctx.contains_key_btree_map(&definitions, &key, "nx registry definition index")?
+            {
                 continue;
             }
             let Some((&trailing_code, registry_suffix)) = tail.split_first() else {
@@ -4090,35 +4105,53 @@ fn registry_definitions<T>(
             let source_offset = entry_offset
                 .checked_add(cadmpeg_core::decode::u64_from_index(offset))
                 .ok_or_else(|| ctx.refuse_codec_limit("nx registry definition offset", 0, 1))?;
+            let definition = project(RegistryDefinition {
+                id: retained_om_index_id(
+                    ctx,
+                    "nx:om-entry-",
+                    entry_index,
+                    marker,
+                    cadmpeg_core::decode::u64_from_index(offset),
+                    "nx registry definition id",
+                )?,
+                name: ctx.copy_retained_text(name, "nx registry definition name")?,
+                ordinal,
+                trailing_code,
+                registry_suffix: ctx.copy_retained(registry_suffix, "nx registry suffix")?,
+                section_offset,
+                source_entry: ctx.copy_retained_text(&entry.name, "nx registry source entry")?,
+                source_offset,
+            });
             index_reservation.with_storage(|| {
-                ctx.admit_btree_entry(&definitions, &key, "nx registry definition index")
+                ctx.insert_btree_map(
+                    &mut definitions,
+                    key,
+                    definition,
+                    "nx registry definition index",
+                )
             })?;
-            definitions.insert(
-                key,
-                project(RegistryDefinition {
-                    id: retained_om_index_id(
-                        ctx,
-                        "nx:om-entry-",
-                        entry_index,
-                        marker,
-                        cadmpeg_core::decode::u64_from_index(offset),
-                        "nx registry definition id",
-                    )?,
-                    name: ctx.copy_retained_text(name, "nx registry definition name")?,
-                    ordinal,
-                    trailing_code,
-                    registry_suffix: ctx.copy_retained(registry_suffix, "nx registry suffix")?,
-                    section_offset,
-                    source_entry: ctx
-                        .copy_retained_text(&entry.name, "nx registry source entry")?,
-                    source_offset,
-                }),
-            );
         }
+        Ok(())
+    };
+    for (entry, section) in ctx.admit_iter(&framed_sections, "NX framed registry input sections")? {
+        visit(entry, section.offset, &section.types, &section.fields, true)?;
     }
-    let count = definitions.len();
-    let mut output = ctx.collection_vec(count, "nx registry definition output")?;
-    output.extend(definitions.into_values());
+    for (entry, section) in
+        ctx.admit_iter(&indexed_sections, "NX indexed registry input sections")?
+    {
+        visit(
+            entry,
+            section.base_offset(),
+            &section.types,
+            &section.fields,
+            false,
+        )?;
+    }
+    let mut output = ctx.vector_storage(definitions.len(), "nx registry definition output")?;
+    for (_, definition) in ctx.admit_iter(definitions, "nx registry definition output")? {
+        ctx.reserve_vec(&mut output, 1, "nx registry definition output")?;
+        output.push(definition);
+    }
     Ok(output)
 }
 
@@ -4180,23 +4213,27 @@ pub(super) fn field_definitions(
 fn add_object_record_relation(
     ctx: &DecodeContext<'_>,
     relations: &mut BTreeMap<usize, Vec<usize>>,
+    seen: &mut BTreeSet<(usize, usize)>,
     reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     source: usize,
     target: usize,
 ) -> Result<(), CodecError> {
     reservation.with_storage(|| {
-        ctx.admit_btree_entry(relations, &source, "NX object record relation index")
-    })?;
-    let related = relations.entry(source).or_default();
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(related.len()),
-        "NX object record relation deduplication",
-    )?;
-    if !related.contains(&target) {
-        ctx.reserve_scoped_vec(reservation, related, 1, "NX object record relations")?;
-        related.push(target);
-    }
-    Ok(())
+        if ctx.insert_btree_set(
+            seen,
+            (source, target),
+            "NX object record relation deduplication",
+        )? {
+            ctx.push_btree_group(
+                relations,
+                source,
+                target,
+                "NX object record relation index",
+                "NX object record relations",
+            )?;
+        }
+        Ok(())
+    })
 }
 
 fn object_record_relation_ids(
@@ -4205,19 +4242,20 @@ fn object_record_relation_ids(
     section_ordinal: usize,
 ) -> Result<Vec<String>, CodecError> {
     let related = relations.map_or(&[][..], Vec::as_slice);
-
-    let mut ids = ctx.collection_vec(related.len(), "NX object record relation IDs")?;
-    for &ordinal in related {
-        ids.push(retained_om_index_id(
-            ctx,
-            "nx:om-record-directory-",
-            section_ordinal,
-            ":entry#",
-            cadmpeg_core::decode::u64_from_index(ordinal),
-            "NX object record relation ID",
-        )?);
-    }
-    Ok(ids)
+    ctx.try_collect_vec(
+        ctx.admit_iter(related, "NX object record relation ordinals")?
+            .map(|&ordinal| {
+                retained_om_index_id(
+                    ctx,
+                    "nx:om-record-directory-",
+                    section_ordinal,
+                    ":entry#",
+                    cadmpeg_core::decode::u64_from_index(ordinal),
+                    "NX object record relation ID",
+                )
+            }),
+        "NX object record relation IDs",
+    )
 }
 
 /// Catalog every externally bounded NX OM entity record.
@@ -4226,8 +4264,10 @@ pub(super) fn object_records(
     container: &Container,
 ) -> Result<Vec<ObjectRecord>, cadmpeg_core::CodecError> {
     let mut output = Vec::new();
-    for (section_ordinal, (entry, section)) in
-        container.indexed_om_sections(ctx)?.into_iter().enumerate()
+    let sections = container.indexed_om_sections(ctx)?;
+    for (section_ordinal, (entry, section)) in ctx
+        .admit_iter(&sections, "NX indexed OM section visits")?
+        .enumerate()
     {
         let Some(records) = section.as_fixed() else {
             continue;
@@ -4237,18 +4277,26 @@ pub(super) fn object_records(
             .checked_add(cadmpeg_core::decode::u64_from_index(section.base_offset()))
             .ok_or_else(|| ctx.refuse_codec_limit("NX object record section offset", 0, 1))?;
         let mut record_bytes_guard = ctx.reserve_scoped(0, "NX object record byte views")?;
-        let mut record_bytes = record_bytes_guard
-            .with_storage(|| ctx.collection_vec(records.len(), "NX object record byte views"))?;
-        for record in records {
-            record_bytes.push(record.bytes);
-        }
+        let record_bytes = record_bytes_guard.with_storage(|| {
+            ctx.collect_vec(
+                ctx.admit_iter(records, "NX object record byte views")?
+                    .map(|record| record.bytes),
+                "NX object record byte views",
+            )
+        })?;
         let stable_identities = stable_object_record_identities(ctx, &entry.name, &record_bytes)?;
         let mut dependencies = BTreeMap::<usize, Vec<usize>>::new();
         let mut dependents = BTreeMap::<usize, Vec<usize>>::new();
+        let mut dependency_seen = BTreeSet::new();
+        let mut dependent_seen = BTreeSet::new();
         let mut dependency_guard = ctx.reserve_scoped(0, "NX object record dependency index")?;
         let mut dependent_guard = ctx.reserve_scoped(0, "NX object record dependent index")?;
-        for (source, record) in records.iter().enumerate() {
-            for reference in record.references(ctx, records.len())? {
+        for (source, record) in ctx
+            .admit_iter(records, "NX indexed OM records")?
+            .enumerate()
+        {
+            let record_references = record.references(ctx, records.len())?;
+            for reference in ctx.admit_iter(record_references, "NX OM record references visits")? {
                 let RecordReference::RecordOrdinal16 { ordinal, .. } = reference.value else {
                     continue;
                 };
@@ -4256,6 +4304,7 @@ pub(super) fn object_records(
                 add_object_record_relation(
                     ctx,
                     &mut dependencies,
+                    &mut dependency_seen,
                     &mut dependency_guard,
                     source,
                     target,
@@ -4263,14 +4312,23 @@ pub(super) fn object_records(
                 add_object_record_relation(
                     ctx,
                     &mut dependents,
+                    &mut dependent_seen,
                     &mut dependent_guard,
                     target,
                     source,
                 )?;
             }
         }
-        for (record_ordinal, (record, stable_identity)) in
-            records.iter().zip(stable_identities).enumerate()
+        let record_count = records.len().min(stable_identities.len());
+        let mut stable_identities = stable_identities.into_iter();
+        for (record_ordinal, (record, stable_identity)) in ctx
+            .admit_iter(&(0..record_count), "NX object record stable identity joins")?
+            .filter_map(|index| {
+                stable_identities
+                    .next()
+                    .map(|identity| (&records[index], identity))
+            })
+            .enumerate()
         {
             let source_offset = entry_offset
                 .checked_add(cadmpeg_core::decode::u64_from_index(record.offset))
@@ -4305,12 +4363,20 @@ pub(super) fn object_records(
                 stable_identity,
                 dependencies: object_record_relation_ids(
                     ctx,
-                    dependencies.get(&record_ordinal),
+                    ctx.get_btree_map(
+                        &dependencies,
+                        &record_ordinal,
+                        "NX object record relation index",
+                    )?,
                     section_ordinal,
                 )?,
                 dependents: object_record_relation_ids(
                     ctx,
-                    dependents.get(&record_ordinal),
+                    ctx.get_btree_map(
+                        &dependents,
+                        &record_ordinal,
+                        "NX object record relation index",
+                    )?,
                     section_ordinal,
                 )?,
                 source_entry: ctx
@@ -4322,12 +4388,16 @@ pub(super) fn object_records(
 
     let mut identity_counts = BTreeMap::<(&str, &str), usize>::new();
     let mut count_guard = ctx.reserve_scoped(0, "NX object record identity counts")?;
-    for record in &output {
+    for record in ctx.admit_iter(&output, "NX object record identity uniqueness")? {
         let Some(identity) = record.stable_identity.as_deref() else {
             continue;
         };
         let key = (record.source_entry.as_str(), identity);
-        if let Some(count) = identity_counts.get_mut(&key) {
+        if let Some(count) = ctx.get_mut_btree_map(
+            &mut identity_counts,
+            &key,
+            "NX object record identity counts",
+        )? {
             *count = count
                 .checked_add(1)
                 .ok_or_else(|| ctx.refuse_codec_limit("NX object record identity count", 0, 1))?;
@@ -4344,17 +4414,27 @@ pub(super) fn object_records(
     }
     let mut flags_guard = ctx.reserve_scoped(0, "NX object record identity flags")?;
     let mut unique_flags = flags_guard
-        .with_storage(|| ctx.collection_vec(output.len(), "NX object record identity flags"))?;
-    for record in &output {
-        let unique = record.stable_identity.as_deref().is_some_and(|identity| {
-            identity_counts.get(&(record.source_entry.as_str(), identity)) == Some(&1)
-        });
+        .with_storage(|| ctx.vector_storage(output.len(), "NX object record identity flags"))?;
+    for record in ctx.admit_iter(&output, "NX object record identity uniqueness")? {
+        let unique = match record.stable_identity.as_deref() {
+            Some(identity) => matches!(
+                ctx.get_btree_map(
+                    &identity_counts,
+                    &(record.source_entry.as_str(), identity),
+                    "NX object record identity counts",
+                )?,
+                Some(1)
+            ),
+            None => false,
+        };
+        ctx.reserve_vec(&mut unique_flags, 1, "NX object record identity flags")?;
         unique_flags.push(unique);
     }
     drop(identity_counts);
-    for (record, unique) in output.iter_mut().zip(unique_flags) {
-        if !unique {
-            record.stable_identity = None;
+    let unique_count = output.len().min(unique_flags.len());
+    for index in ctx.admit_iter(&(0..unique_count), "NX object unique identity flags")? {
+        if !unique_flags[index] {
+            output[index].stable_identity = None;
         }
     }
     Ok(output)
@@ -4376,76 +4456,41 @@ pub(super) fn rmfastload_object_id_table(
     let count = values.len();
     let count_u64 = u64::try_from(count)
         .map_err(|_| CodecError::NotImplemented("FastLoad object ID count exceeds u64".into()))?;
-    let table_id_text = "nx:rmfastload:object-id-table#0";
-    let member_id_len = "nx:rmfastload:object-id#".len() + 10;
-
-    ctx.charge_work(
-        count_u64.checked_mul(2).ok_or_else(|| {
-            CodecError::NotImplemented("FastLoad identity work exceeds u64".into())
-        })?,
-        "count NX FastLoad identities",
-    )?;
-    let (mut counts, _map_reservation) =
+    let (mut counts, mut map_reservation) =
         ctx.with_scoped_storage("count NX FastLoad identities", || {
             let mut counts = HashMap::<u32, usize>::new();
             ctx.reserve_map(&mut counts, count, "admit NX FastLoad identity counts")?;
             Ok::<_, CodecError>(counts)
         })?;
-    for value in values {
-        *counts.entry(*value).or_default() += 1;
-    }
-    let mut stable_bytes = 0_u64;
-    for value in values {
-        if counts.get(value) == Some(&1) {
-            let digits = if *value == 0 { 1 } else { value.ilog10() + 1 };
-            stable_bytes = stable_bytes
-                .checked_add(
-                    u64::try_from(table_id_text.len() + ":value#".len()).map_err(|_| {
-                        CodecError::NotImplemented("FastLoad identity exceeds u64".into())
-                    })? + u64::from(digits),
-                )
-                .ok_or_else(|| {
-                    CodecError::NotImplemented("FastLoad identities exceed u64".into())
+    for value in ctx.admit_iter(values, "count NX FastLoad identities")? {
+        match ctx.get_mut_hash_map(&mut counts, value, "count NX FastLoad identities")? {
+            Some(occurrences) => {
+                *occurrences = occurrences.checked_add(1).ok_or_else(|| {
+                    CodecError::NotImplemented("FastLoad identity count exceeds usize".into())
                 })?;
+            }
+            None => {
+                map_reservation.with_storage(|| {
+                    ctx.insert_hash_map(&mut counts, *value, 1, "count NX FastLoad identities")
+                })?;
+            }
         }
     }
-
-    let native_items = count_u64
-        .checked_mul(2)
-        .and_then(|value| value.checked_add(1))
-        .ok_or_else(|| {
-            CodecError::NotImplemented("FastLoad native item count exceeds u64".into())
-        })?;
-    ctx.charge_collection_items(native_items, "admit NX FastLoad native collections")?;
-    ctx.charge_entities(count_u64 + 1, "admit NX FastLoad native entities")?;
-    let retained_bytes = count_u64
-        .checked_mul(
-            u64::try_from(2 * member_id_len + table_id_text.len()).map_err(|_| {
-                CodecError::NotImplemented("FastLoad native item exceeds u64".into())
-            })?,
-        )
-        .and_then(|bytes| {
-            bytes.checked_add(
-                u64::try_from(
-                    std::mem::size_of::<RmFastLoadObjectIdTable>()
-                        + table_id_text.len()
-                        + entry.name.len(),
-                )
-                .ok()?,
-            )
-        })
-        .and_then(|bytes| bytes.checked_add(stable_bytes))
-        .ok_or_else(|| CodecError::NotImplemented("FastLoad native copies exceed u64".into()))?;
-    ctx.charge_retained(retained_bytes, "retain NX FastLoad native copies")?;
-
-    let table_id = table_id_text.to_string();
-    let mut object_ids = Vec::new();
-    ctx.reserve_capacity(
-        &mut object_ids,
-        count,
-        "allocate NX FastLoad native records",
+    ctx.charge_entities(
+        count_u64.checked_add(1).ok_or_else(|| {
+            CodecError::NotImplemented("FastLoad native entity count exceeds u64".into())
+        })?,
+        "admit NX FastLoad native entities",
     )?;
-    for (ordinal, value) in values.iter().enumerate() {
+    let table_id = ctx.copy_retained_text(
+        "nx:rmfastload:object-id-table#0",
+        "retain NX FastLoad native copies",
+    )?;
+    let mut object_ids = ctx.vector_storage(count, "allocate NX FastLoad native records")?;
+    for (ordinal, value) in ctx
+        .admit_iter(values, "NX RMFastLoad object identity values")?
+        .enumerate()
+    {
         let source_offset = entry_offset
             .checked_add(u64::try_from(table.member_offset(ordinal)).map_err(|_| {
                 CodecError::NotImplemented("FastLoad member offset exceeds u64".into())
@@ -4456,24 +4501,32 @@ pub(super) fn rmfastload_object_id_table(
         let ordinal = u32::try_from(ordinal).map_err(|_| {
             CodecError::NotImplemented("FastLoad native ordinal exceeds u32".into())
         })?;
+        ctx.reserve_vec(&mut object_ids, 1, "allocate NX FastLoad native records")?;
         object_ids.push(RmFastLoadObjectId {
-            id: format!("nx:rmfastload:object-id#{ordinal:010}"),
-            table: table_id.clone(),
+            id: ctx.format_retained(
+                format_args!("nx:rmfastload:object-id#{ordinal:010}"),
+                "retain NX FastLoad native copies",
+            )?,
+            table: ctx.copy_retained_text(&table_id, "retain NX FastLoad native copies")?,
             ordinal,
             value: *value,
             stable_identity: None,
             source_offset,
         });
     }
-    assign_rmfastload_object_id_identities(&mut object_ids, &counts);
-    let mut member_ids = Vec::new();
-    ctx.reserve_capacity(&mut member_ids, count, "allocate NX FastLoad member links")?;
-    member_ids.extend(object_ids.iter().map(|object_id| object_id.id.clone()));
+    assign_rmfastload_object_id_identities(ctx, &mut object_ids, &counts)?;
+    drop((counts, map_reservation));
+    let member_ids = ctx.collect_retained_texts(
+        object_ids.iter().map(|object_id| object_id.id.as_str()),
+        "allocate NX FastLoad member links",
+    )?;
     let native_table = RmFastLoadObjectIdTable {
         id: table_id,
-        members: ObjectIdMembers::new(member_ids)
-            .map_err(|message| CodecError::Malformed(message.into()))?,
-        source_entry: entry.name.clone(),
+        members: match ObjectIdMembers::new(member_ids) {
+            Ok(members) => members,
+            Err(message) => return Err(CodecError::malformed(message)),
+        },
+        source_entry: ctx.copy_retained_text(&entry.name, "retain NX FastLoad native copies")?,
         registry_source_offset: entry_offset
             .checked_add(u64::try_from(table.registry_offset).map_err(|_| {
                 CodecError::NotImplemented("FastLoad registry offset exceeds u64".into())
@@ -4494,13 +4547,23 @@ pub(super) fn rmfastload_object_id_table(
 
 /// Give a value-backed identity only to a unique member of its table.
 fn assign_rmfastload_object_id_identities(
+    ctx: &DecodeContext<'_>,
     entries: &mut [RmFastLoadObjectId],
     counts: &HashMap<u32, usize>,
-) {
-    for entry in entries {
-        entry.stable_identity = (counts.get(&entry.value) == Some(&1))
-            .then(|| format!("{}:value#{}", entry.table, entry.value));
+) -> Result<(), CodecError> {
+    for index in ctx.admit_iter(&(0..entries.len()), "NX RMFastLoad identity members")? {
+        let entry = &mut entries[index];
+        if matches!(
+            ctx.get_hash_map(counts, &entry.value, "NX RMFastLoad identity members")?,
+            Some(1)
+        ) {
+            entry.stable_identity = Some(ctx.format_retained(
+                format_args!("{}:value#{}", entry.table, entry.value),
+                "retain NX FastLoad stable identity",
+            )?);
+        }
     }
+    Ok(())
 }
 
 /// Catalog every externally bounded block in offset-only NX OM storage.
@@ -4510,7 +4573,7 @@ pub(super) fn data_blocks(
 ) -> Result<Vec<DataBlock>, cadmpeg_core::CodecError> {
     let sections = container.indexed_om_sections(ctx)?;
     let mut count = 0usize;
-    for (_, section) in &sections {
+    for (_, section) in ctx.admit_iter(&sections, "NX data block section count")? {
         if let Some((_, _, records)) = section.as_offset_only() {
             count = count
                 .checked_add(records.len())
@@ -4520,26 +4583,49 @@ pub(super) fn data_blocks(
     }
     let mut map_guard = ctx.reserve_scoped(0, "reserve NX data block identities")?;
     let mut identity_counts = BTreeMap::<[u8; 32], usize>::new();
-    for (entry, section) in &sections {
+    let mut digests = Vec::new();
+    for (entry, section) in ctx.admit_iter(&sections, "NX data block record count")? {
         let Some((control, _, records)) = section.as_offset_only() else {
             continue;
         };
         for (role, block) in std::iter::once((DataBlockRole::Control, control))
             .chain(records.iter().map(|record| (DataBlockRole::Column, record)))
         {
+            ctx.charge_work(1, "NX data block identities")?;
             let digest = data_block_digest(ctx, &entry.name, role, block.bytes)?;
+            match ctx.get_mut_btree_map(
+                &mut identity_counts,
+                &digest,
+                "NX data block identities",
+            )? {
+                Some(count) => {
+                    *count = count.checked_add(1).ok_or_else(|| {
+                        ctx.refuse_codec_limit("count NX data block identities", 0, 1)
+                    })?;
+                }
+                None => {
+                    map_guard.with_storage(|| {
+                        ctx.insert_btree_map(
+                            &mut identity_counts,
+                            digest,
+                            1,
+                            "NX data block identities",
+                        )
+                    })?;
+                }
+            }
             map_guard.with_storage(|| {
-                ctx.admit_btree_entry(&identity_counts, &digest, "NX data block identities")
+                ctx.push_vec(&mut digests, digest, "NX data block identity digests")
             })?;
-            let count = identity_counts.entry(digest).or_default();
-            *count = count
-                .checked_add(1)
-                .ok_or_else(|| ctx.refuse_codec_limit("count NX data block identities", 0, 1))?;
         }
     }
 
-    let mut output = ctx.collection_vec(count, "NX data block records")?;
-    for (section_ordinal, (entry, section)) in sections.iter().enumerate() {
+    let mut digests = digests.into_iter();
+    let mut output = ctx.vector_storage(count, "NX data block records")?;
+    for (section_ordinal, (entry, section)) in ctx
+        .admit_iter(&sections, "NX data block input sections")?
+        .enumerate()
+    {
         let Some((control, _, records)) = section.as_offset_only() else {
             continue;
         };
@@ -4551,8 +4637,16 @@ pub(super) fn data_blocks(
             .chain(records.iter().map(|record| (DataBlockRole::Column, record)))
             .enumerate()
         {
-            let stable_digest = data_block_digest(ctx, &entry.name, role, block.bytes)?;
-            let stable_identity = if identity_counts.get(&stable_digest) == Some(&1) {
+            ctx.charge_work(1, "NX data block records")?;
+            let Some(stable_digest) = digests.next() else {
+                return Err(CodecError::malformed(
+                    "NX data block identity digests changed",
+                ));
+            };
+            let stable_identity = if matches!(
+                ctx.get_btree_map(&identity_counts, &stable_digest, "NX data block identities")?,
+                Some(1)
+            ) {
                 Some(data_block_hex(
                     ctx,
                     &stable_digest,
@@ -4562,45 +4656,18 @@ pub(super) fn data_blocks(
             } else {
                 None
             };
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(block.bytes.len()),
+            let sha256 = cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
+                ctx,
+                block.bytes,
                 "hash NX data block",
             )?;
-            let digest = cadmpeg_ir::hash::sha256(block.bytes);
-            let sha256 = cadmpeg_ir::hash::digest::Sha256Digest::try_from(data_block_hex(
-                ctx,
-                &digest,
-                "",
-                "retain NX data block digest",
-            )?)
-            .map_err(|message| CodecError::Malformed(message.to_string()))?;
-
-            let id_length = "nx:om-data-blocks-"
-                .len()
-                .checked_add(
-                    section_ordinal
-                        .checked_ilog10()
-                        .map_or(1, |digits| cadmpeg_core::decode::index_from_u32(digits) + 1),
-                )
-                .and_then(|length| length.checked_add(":block#".len()))
-                .and_then(|length| {
-                    length.checked_add(
-                        block_ordinal
-                            .checked_ilog10()
-                            .map_or(1, |digits| cadmpeg_core::decode::index_from_u32(digits) + 1),
-                    )
-                })
-                .ok_or_else(|| ctx.refuse_codec_limit("retain NX data block id", 0, 1))?;
-            let mut id = ctx.retained_string(id_length, "retain NX data block id")?;
-            write!(
-                &mut id,
-                "nx:om-data-blocks-{section_ordinal}:block#{block_ordinal}"
-            )
-            .map_err(|_| ctx.refuse_codec_limit("write NX data block id", 0, 1))?;
-
-            let mut source_entry =
-                ctx.retained_string(entry.name.len(), "retain NX data block source entry")?;
-            source_entry.push_str(&entry.name);
+            let id = ctx.format_retained(
+                format_args!("nx:om-data-blocks-{section_ordinal}:block#{block_ordinal}"),
+                "retain NX data block id",
+            )?;
+            let source_entry =
+                ctx.copy_retained_text(&entry.name, "retain NX data block source entry")?;
+            ctx.reserve_vec(&mut output, 1, "NX data block records")?;
             output.push(DataBlock {
                 id,
                 section_ordinal: u32::try_from(section_ordinal)
@@ -4628,8 +4695,10 @@ pub(super) fn data_block_control_forms(
     container: &Container,
 ) -> Result<Vec<DataBlockControlForm>, CodecError> {
     let mut forms = Vec::new();
-    for (section_ordinal, (entry, section)) in
-        container.indexed_om_sections(ctx)?.into_iter().enumerate()
+    let sections = container.indexed_om_sections(ctx)?;
+    for (section_ordinal, (entry, section)) in ctx
+        .admit_iter(&sections, "NX indexed OM section visits")?
+        .enumerate()
     {
         let Some((control, _, records)) = section.as_offset_only() else {
             continue;
@@ -4716,20 +4785,7 @@ fn retained_om_number_id(
     number: u64,
     operation: &'static str,
 ) -> Result<String, CodecError> {
-    use std::fmt::Write;
-
-    let length = prefix
-        .len()
-        .checked_add(
-            number
-                .checked_ilog10()
-                .map_or(1, |digits| cadmpeg_core::decode::index_from_u32(digits) + 1),
-        )
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, 1))?;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(length), operation)?;
-    let mut id = ctx.retained_string(length, operation)?;
-    write!(&mut id, "{prefix}{number}").map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-    Ok(id)
+    ctx.format_retained(format_args!("{prefix}{number}"), operation)
 }
 
 fn scoped_om_index_id<'a>(
@@ -4740,30 +4796,10 @@ fn scoped_om_index_id<'a>(
     ordinal: u32,
     operation: &'static str,
 ) -> Result<ScopedOmIndexId<'a>, CodecError> {
-    use std::fmt::Write;
-
-    let length = prefix
-        .len()
-        .checked_add(
-            section_ordinal
-                .checked_ilog10()
-                .map_or(1, |digits| cadmpeg_core::decode::index_from_u32(digits) + 1),
-        )
-        .and_then(|length| length.checked_add(marker.len()))
-        .and_then(|length| {
-            length.checked_add(
-                ordinal
-                    .checked_ilog10()
-                    .map_or(1, |digits| cadmpeg_core::decode::index_from_u32(digits) + 1),
-            )
-        })
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, 1))?;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(length), operation)?;
-    let mut reservation = ctx.reserve_scoped(0, operation)?;
-    let mut id = String::new();
-    reservation.with_storage(|| ctx.try_reserve_retained_text(&mut id, length, operation))?;
-    write!(&mut id, "{prefix}{section_ordinal}{marker}{ordinal}")
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    let (id, reservation) = ctx.format_scoped(
+        format_args!("{prefix}{section_ordinal}{marker}{ordinal}"),
+        operation,
+    )?;
     Ok(ScopedOmIndexId {
         id,
         _reservation: reservation,
@@ -4778,29 +4814,10 @@ fn retained_om_index_id(
     ordinal: u64,
     operation: &'static str,
 ) -> Result<String, CodecError> {
-    use std::fmt::Write;
-
-    let length = prefix
-        .len()
-        .checked_add(
-            section_ordinal
-                .checked_ilog10()
-                .map_or(1, |digits| cadmpeg_core::decode::index_from_u32(digits) + 1),
-        )
-        .and_then(|length| length.checked_add(marker.len()))
-        .and_then(|length| {
-            length.checked_add(
-                ordinal
-                    .checked_ilog10()
-                    .map_or(1, |digits| cadmpeg_core::decode::index_from_u32(digits) + 1),
-            )
-        })
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, 1))?;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(length), operation)?;
-    let mut id = ctx.retained_string(length, operation)?;
-    write!(&mut id, "{prefix}{section_ordinal}{marker}{ordinal}")
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-    Ok(id)
+    ctx.format_retained(
+        format_args!("{prefix}{section_ordinal}{marker}{ordinal}"),
+        operation,
+    )
 }
 
 fn retained_om_three_number_id(
@@ -4808,27 +4825,11 @@ fn retained_om_three_number_id(
     segments: [(&str, usize); 3],
     operation: &'static str,
 ) -> Result<String, CodecError> {
-    use std::fmt::Write;
-
-    let digits = |value: usize| {
-        value
-            .checked_ilog10()
-            .map_or(1, |count| cadmpeg_core::decode::index_from_u32(count) + 1)
-    };
-    let length = segments
-        .into_iter()
-        .try_fold(0usize, |length, (text, number)| {
-            length
-                .checked_add(text.len())
-                .and_then(|length| length.checked_add(digits(number)))
-        })
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, 1))?;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(length), operation)?;
-    let mut id = ctx.retained_string(length, operation)?;
     let [(prefix, first), (middle, second), (suffix, third)] = segments;
-    write!(&mut id, "{prefix}{first}{middle}{second}{suffix}{third}")
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-    Ok(id)
+    ctx.format_retained(
+        format_args!("{prefix}{first}{middle}{second}{suffix}{third}"),
+        operation,
+    )
 }
 
 /// Decode complete zero-prefixed control arrays from offset-only OM stores.
@@ -4837,8 +4838,10 @@ pub(super) fn data_block_control_values(
     container: &Container,
 ) -> Result<Vec<DataBlockControlValue>, CodecError> {
     let mut rows = Vec::new();
-    for (section_ordinal, (entry, section)) in
-        container.indexed_om_sections(ctx)?.into_iter().enumerate()
+    let sections = container.indexed_om_sections(ctx)?;
+    for (section_ordinal, (entry, section)) in ctx
+        .admit_iter(&sections, "NX indexed OM section visits")?
+        .enumerate()
     {
         let Some((control, _, records)) = section.as_offset_only() else {
             continue;
@@ -4902,7 +4905,10 @@ pub(super) fn data_block_control_class_references(
     let framed_sections = container.om_sections(ctx)?;
     let indexed_sections = container.indexed_om_sections(ctx)?;
     let mut rows = Vec::new();
-    for (section_ordinal, (entry, section)) in indexed_sections.iter().enumerate() {
+    for (section_ordinal, (entry, section)) in ctx
+        .admit_iter(&indexed_sections, "NX indexed control input sections")?
+        .enumerate()
+    {
         let Some((control, _, records)) = section.as_offset_only() else {
             continue;
         };
@@ -4918,45 +4924,55 @@ pub(super) fn data_block_control_class_references(
         }
         let mut registry_reservation = ctx.reserve_scoped(0, "NX control class registry")?;
         let mut registry = BTreeMap::new();
-        for definition in framed_sections
-            .iter()
+        let framed = ctx
+            .admit_iter(&framed_sections, "NX control framed registries")?
             .filter(|(candidate, _)| candidate.index() == entry.index())
-            .flat_map(|(_, section)| section.types.iter())
-            .chain(
-                indexed_sections
-                    .iter()
-                    .filter(|(candidate, _)| candidate.index() == entry.index())
-                    .flat_map(|(_, section)| section.types.iter()),
-            )
-        {
-            registry_reservation.with_storage(|| {
-                ctx.admit_btree_entry(
+            .map(|(_, section)| section.types.as_ref());
+        let indexed = ctx
+            .admit_iter(&indexed_sections, "NX control indexed registries")?
+            .filter(|(candidate, _)| candidate.index() == entry.index())
+            .map(|(_, section)| section.types.as_ref());
+        for definitions in framed.chain(indexed) {
+            for definition in ctx.admit_iter(definitions, "NX control registry definitions")? {
+                if !ctx.contains_key_btree_map(
                     &registry,
                     &definition.offset,
                     "NX control class registry entries",
-                )
-            })?;
-            if let std::collections::btree_map::Entry::Vacant(e) = registry.entry(definition.offset)
-            {
-                e.insert(definition);
+                )? {
+                    registry_reservation.with_storage(|| {
+                        ctx.insert_btree_map(
+                            &mut registry,
+                            definition.offset,
+                            definition,
+                            "NX control class registry entries",
+                        )
+                    })?;
+                }
             }
         }
+        // Class ordinals index the registry in offset order.
+        let registry = registry_reservation.with_storage(|| {
+            ctx.collect_vec(
+                ctx.admit_iter(&registry, "NX control class registry order")?
+                    .map(|(_, definition)| *definition),
+                "NX control class registry order",
+            )
+        })?;
         let Some(ordinals) = crate::om::offset_store_control_class_ordinals(ctx, control.bytes)?
         else {
             continue;
         };
         let entry_index = entry.index();
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-        for (ordinal, class_ordinal) in ordinals.into_iter().enumerate() {
+        for (ordinal, &class_ordinal) in ctx
+            .admit_iter(&ordinals, "NX control class references")?
+            .enumerate()
+        {
             let ordinal_u32 = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX control class ordinal", 0, 1))?;
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(registry.len()),
-                "search NX control class registry",
-            )?;
             let definition = usize::try_from(class_ordinal)
                 .ok()
-                .and_then(|ordinal| registry.values().nth(ordinal));
+                .and_then(|ordinal| registry.get(ordinal));
             ctx.reserve_vec(&mut rows, 1, "NX control class references")?;
             let class = definition
                 .map(|definition| -> Result<_, CodecError> {
@@ -5010,8 +5026,10 @@ pub(super) fn data_block_control_index_values(
     container: &Container,
 ) -> Result<Vec<DataBlockControlIndexValue>, CodecError> {
     let mut rows = Vec::new();
-    for (section_ordinal, (entry, section)) in
-        container.indexed_om_sections(ctx)?.into_iter().enumerate()
+    let sections = container.indexed_om_sections(ctx)?;
+    for (section_ordinal, (entry, section)) in ctx
+        .admit_iter(&sections, "NX indexed OM section visits")?
+        .enumerate()
     {
         let Some((control, _, records)) = section.as_offset_only() else {
             continue;
@@ -5117,17 +5135,28 @@ fn control_index_data_block(
 }
 
 fn column_storage_block_at(
+    ctx: &DecodeContext<'_>,
     records: &[crate::om::EntityRecord<'_>],
     offset: usize,
-) -> Option<(usize, u32)> {
-    records.iter().enumerate().find_map(|(ordinal, record)| {
-        let block_offset = offset.checked_sub(record.offset)?;
-        if block_offset >= record.bytes.len() {
-            return None;
-        }
-        let block_offset = u32::try_from(block_offset).ok()?;
-        Some((ordinal.checked_add(1)?, block_offset))
-    })
+) -> Result<Option<(usize, u32)>, CodecError> {
+    let Some(ordinal) = ctx.position_by(
+        records,
+        |record| {
+            Ok(offset
+                .checked_sub(record.offset)
+                .is_some_and(|block_offset| {
+                    block_offset < record.bytes.len() && u32::try_from(block_offset).is_ok()
+                }))
+        },
+        "locate NX column row opening",
+    )?
+    else {
+        return Ok(None);
+    };
+    Ok(ordinal.checked_add(1).and_then(|block_ordinal| {
+        let block_offset = offset.checked_sub(records[ordinal].offset)?;
+        Some((block_ordinal, u32::try_from(block_offset).ok()?))
+    }))
 }
 
 /// Decode persistent-handle and tagged-28 occurrences in bounded control blocks.
@@ -5136,8 +5165,10 @@ pub(super) fn data_block_control_references(
     container: &Container,
 ) -> Result<Vec<DataBlockControlReference>, cadmpeg_core::CodecError> {
     let mut output = Vec::new();
-    for (section_ordinal, (entry, section)) in
-        container.indexed_om_sections(ctx)?.into_iter().enumerate()
+    let sections = container.indexed_om_sections(ctx)?;
+    for (section_ordinal, (entry, section)) in ctx
+        .admit_iter(&sections, "NX indexed OM section visits")?
+        .enumerate()
     {
         let Some((control, _, _)) = section.as_offset_only() else {
             continue;
@@ -5151,8 +5182,10 @@ pub(super) fn data_block_control_references(
             0,
             "NX control reference block id",
         )?;
-        for (ordinal, reference) in crate::om::references(ctx, control.bytes, control.offset)?
-            .into_iter()
+        let references = crate::om::references(ctx, control.bytes, control.offset)?;
+
+        for (ordinal, reference) in ctx
+            .admit_iter(references, "NX OM references output visits")?
             .enumerate()
         {
             let ordinal = u32::try_from(ordinal)
@@ -5195,35 +5228,22 @@ pub(super) fn data_block_control_handle_pairs(
 ) -> Result<Vec<DataBlockControlHandlePair>, CodecError> {
     let mut temporary = ctx.reserve_scoped(0, "NX control handle pair index")?;
     let mut by_block = BTreeMap::<&str, Vec<(&DataBlockControlReference, u32)>>::new();
-    for reference in references {
+    for reference in ctx.admit_iter(references, "NX object references")? {
         let DirectReference::PersistentHandle(handle) = reference.reference else {
             continue;
         };
-        let key = reference.data_block.as_str();
-        ctx.charge_work(
-            u64::from(usize::BITS - by_block.len().leading_zeros()) + 1,
-            "index NX control handle pair references",
-        )?;
-        if !by_block.contains_key(key) {
-            ctx.charge_collection_items(1, "NX control handle pair blocks")?;
-            temporary.with_storage(|| {
-                ctx.admit_btree_node_storage::<&str, Vec<(&DataBlockControlReference, u32)>>(
-                    by_block.len(),
-                    "NX control handle pair index",
-                )
-            })?;
-        }
-        let entries = by_block.entry(key).or_default();
-        ctx.reserve_scoped_vec(
-            &mut temporary,
-            entries,
-            1,
-            "NX control handle pair references",
-        )?;
-        entries.push((reference, handle));
+        temporary.with_storage(|| {
+            ctx.push_btree_group(
+                &mut by_block,
+                reference.data_block.as_str(),
+                (reference, handle),
+                "NX control handle pair blocks",
+                "NX control handle pair references",
+            )
+        })?;
     }
     let mut pairs = Vec::new();
-    for (data_block, mut block_references) in by_block {
+    for (data_block, mut block_references) in ctx.admit_iter(by_block, "NX OM by block visits")? {
         ctx.stable_sort_by(
             &mut block_references,
             |value| &value.0.source_offset,
@@ -5232,16 +5252,21 @@ pub(super) fn data_block_control_handle_pairs(
         )?;
         let mut at = 0;
         while at < block_references.len() {
+            ctx.charge_work(1, "NX control handle pair outer run scan")?;
             let start = at;
-            while at
-                .checked_add(1)
-                .and_then(|next| block_references.get(next))
-                .is_some_and(|next| {
-                    block_references[at].0.source_offset.checked_add(5)
-                        == Some(next.0.source_offset)
-                })
-            {
-                at += 1;
+            loop {
+                ctx.charge_work(1, "NX control handle pair adjacent reference probe")?;
+                let Some(next_index) = at.checked_add(1) else {
+                    break;
+                };
+                let Some(next) = block_references.get(next_index) else {
+                    break;
+                };
+                if block_references[at].0.source_offset.checked_add(5) != Some(next.0.source_offset)
+                {
+                    break;
+                }
+                at = next_index;
             }
             let run = &block_references[start..=at];
             if let [(first, first_handle), (second, second_handle)] = run {
@@ -5283,11 +5308,13 @@ fn push_data_block_target<'a>(
     object: u32,
     id: &'a str,
 ) -> Result<(), CodecError> {
-    ctx.admit_btree_entry(index, &(source, object), "NX data block target index keys")?;
-    let candidates = index.entry((source, object)).or_default();
-    ctx.reserve_vec(candidates, 1, "NX data block target index members")?;
-    candidates.push(id);
-    Ok(())
+    ctx.push_btree_group(
+        index,
+        (source, object),
+        id,
+        "NX data block target index keys",
+        "NX data block target index members",
+    )
 }
 
 fn data_block_reference_id(
@@ -5296,31 +5323,10 @@ fn data_block_reference_id(
     block: usize,
     ordinal: usize,
 ) -> Result<String, CodecError> {
-    fn digits(mut value: usize) -> usize {
-        let mut count = 1;
-        while value >= 10 {
-            value /= 10;
-            count += 1;
-        }
-        count
-    }
-    let operation = "NX data block reference id";
-    let length = "nx:om-data-block-references-"
-        .len()
-        .checked_add(digits(section))
-        .and_then(|length| length.checked_add(1))
-        .and_then(|length| length.checked_add(digits(block)))
-        .and_then(|length| length.checked_add(":reference#".len()))
-        .and_then(|length| length.checked_add(digits(ordinal)))
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, 1))?;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(length), operation)?;
-    let mut id = ctx.retained_string(length, operation)?;
-    write!(
-        &mut id,
-        "nx:om-data-block-references-{section}-{block}:reference#{ordinal}"
+    ctx.format_retained(
+        format_args!("nx:om-data-block-references-{section}-{block}:reference#{ordinal}"),
+        "NX data block reference id",
     )
-    .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-    Ok(id)
 }
 
 /// Decode framed object references from offset-only OM data blocks.
@@ -5332,7 +5338,7 @@ pub(super) fn data_block_references(
 ) -> Result<Vec<DataBlockReference>, cadmpeg_core::CodecError> {
     let mut index_guard = ctx.reserve_scoped(0, "NX data block target index")?;
     let mut target_records = BTreeMap::<(&str, u32), Vec<&str>>::new();
-    for record in object_records {
+    for record in ctx.admit_iter(object_records, "NX data block object record targets")? {
         let (object_id, _) = record.object_id;
         index_guard.with_storage(|| {
             push_data_block_target(
@@ -5345,7 +5351,9 @@ pub(super) fn data_block_references(
         })?;
     }
     let mut declarations = BTreeMap::<(&str, u32), Vec<&str>>::new();
-    for declaration in expression_declarations {
+    for declaration in
+        ctx.admit_iter(expression_declarations, "NX data block expression targets")?
+    {
         index_guard.with_storage(|| {
             push_data_block_target(
                 ctx,
@@ -5357,16 +5365,21 @@ pub(super) fn data_block_references(
         })?;
     }
     let mut output = Vec::new();
-    for (section_ordinal, (entry, section)) in
-        container.indexed_om_sections(ctx)?.into_iter().enumerate()
+    let sections = container.indexed_om_sections(ctx)?;
+    for (section_ordinal, (entry, section)) in ctx
+        .admit_iter(&sections, "NX indexed OM section visits")?
+        .enumerate()
     {
         let Some((control, _, records)) = section.as_offset_only() else {
             continue;
         };
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
         for (block_ordinal, block) in std::iter::once(control).chain(records).enumerate() {
-            for (ordinal, reference) in crate::om::data_block_object_references(ctx, block.bytes)?
-                .into_iter()
+            ctx.charge_work(1, "NX data block reference blocks")?;
+            let references = crate::om::data_block_object_references(ctx, block.bytes)?;
+
+            for (ordinal, reference) in ctx
+                .admit_iter(references, "NX OM references output visits")?
                 .enumerate()
             {
                 let ordinal_u32 = u32::try_from(ordinal)
@@ -5401,8 +5414,16 @@ pub(super) fn data_block_references(
                     )?,
                     ordinal: ordinal_u32,
                     object: reference.object_index,
-                    target_record: unique(target_records.get(&key))?,
-                    target_expression_declaration: unique(declarations.get(&key))?,
+                    target_record: unique(ctx.get_btree_map(
+                        &target_records,
+                        &key,
+                        "NX data block target index keys",
+                    )?)?,
+                    target_expression_declaration: unique(ctx.get_btree_map(
+                        &declarations,
+                        &key,
+                        "NX data block target index keys",
+                    )?)?,
                     source_offset,
                 });
             }
@@ -5420,8 +5441,10 @@ pub(super) fn part_color_tables(
     let mut tables = Vec::new();
     let mut definitions = Vec::new();
 
-    for (section_ordinal, (entry, section)) in
-        container.indexed_om_sections(ctx)?.into_iter().enumerate()
+    let sections = container.indexed_om_sections(ctx)?;
+    for (section_ordinal, (entry, section)) in ctx
+        .admit_iter(&sections, "NX indexed OM section visits")?
+        .enumerate()
     {
         let Some((_, storage, records)) = section.as_offset_only() else {
             continue;
@@ -5429,10 +5452,11 @@ pub(super) fn part_color_tables(
         let Some(storage_offset) = records.first().map(|record| record.offset) else {
             continue;
         };
-        let Some(class) = section
-            .types
-            .iter()
-            .find(|definition| definition.name == CLASS_NAME)
+        let Some(class) = ctx.find_by(
+            &*section.types,
+            |definition| Ok(definition.name == CLASS_NAME),
+            "NX part color registry types",
+        )?
         else {
             continue;
         };
@@ -5451,12 +5475,8 @@ pub(super) fn part_color_tables(
             cadmpeg_core::decode::u64_from_index(section_ordinal),
             "NX part color table id",
         )?;
-        let definition_count = cadmpeg_core::decode::u64_from_index(PALETTE_SIZE);
-        ctx.charge_collection_items(definition_count, "NX part color definitions")?;
-        let (mut parsed_definitions, _definitions_guard) =
-            ctx.scoped_vector_storage(PALETTE_SIZE, "build NX part color definitions")?;
-        let (mut definition_ids, _ids_guard) =
-            ctx.scoped_vector_storage(PALETTE_SIZE, "build NX part color definition ids")?;
+        let mut definition_ids = Vec::new();
+        let mut ids_guard = ctx.reserve_scoped(0, "build NX part color definition ids")?;
         for color_index in PaletteIndex::all() {
             let definition = &table.definitions[usize::from(color_index.value()) - 1];
             let id = retained_om_index_id(
@@ -5467,8 +5487,15 @@ pub(super) fn part_color_tables(
                 u64::from(color_index.value()),
                 "NX part color definition id",
             )?;
-            definition_ids
-                .push(ctx.copy_retained_text(&id, "NX part color table definition link")?);
+            let definition_link =
+                ctx.copy_retained_text(&id, "NX part color table definition link")?;
+            ctx.reserve_scoped_vec(
+                &mut ids_guard,
+                &mut definition_ids,
+                1,
+                "build NX part color definition ids",
+            )?;
+            definition_ids.push(definition_link);
             let [a, b, c] = definition.components.map(|(component, offset)| {
                 source_base
                     .checked_add(cadmpeg_core::decode::u64_from_index(offset))
@@ -5479,7 +5506,8 @@ pub(super) fn part_color_tables(
             let source_offset = source_base
                 .checked_add(cadmpeg_core::decode::u64_from_index(definition.offset))
                 .ok_or_else(|| ctx.refuse_codec_limit("NX part color definition offset", 0, 1))?;
-            parsed_definitions.push(PartColorDefinition {
+            ctx.reserve_vec(&mut definitions, 1, "NX part color definitions")?;
+            definitions.push(PartColorDefinition {
                 id,
                 color_table: ctx
                     .copy_retained_text(&table_id, "NX part color definition table link")?,
@@ -5503,12 +5531,6 @@ pub(super) fn part_color_tables(
             .checked_add(cadmpeg_core::decode::u64_from_index(table.offset))
             .ok_or_else(|| ctx.refuse_codec_limit("NX part color table offset", 0, 1))?;
         ctx.reserve_vec(&mut tables, 1, "NX part color tables")?;
-        ctx.reserve_capacity(
-            &mut definitions,
-            PALETTE_SIZE,
-            "allocate NX part color definitions",
-        )?;
-        definitions.append(&mut parsed_definitions);
         tables.push(PartColorTable {
             id: table_id,
             class_definition: retained_om_index_id(
@@ -5540,9 +5562,8 @@ fn rmfastload_target_object_id(
     let Some(object_id) = object_ids.get(target) else {
         return Ok(None);
     };
-    let mut id = ctx.retained_string(object_id.id.len(), "retain NX RMFastLoad target identity")?;
-    id.push_str(&object_id.id);
-    Ok(Some(id))
+    ctx.copy_retained_text(&object_id.id, "retain NX RMFastLoad target identity")
+        .map(Some)
 }
 
 /// Resolve complete composite column-index tables atomically by section.
@@ -5553,34 +5574,39 @@ pub(super) fn data_block_column_index_tables(
 ) -> Result<Vec<DataBlockColumnIndexTable>, CodecError> {
     let mut lookup_guard = ctx.reserve_scoped(0, "NX column index table lookup")?;
     let mut linked_by_section = BTreeMap::<u32, Vec<&DataBlockLinkedIndexRow>>::new();
-    for row in linked_rows {
+    for row in ctx.admit_iter(linked_rows, "NX column index linked rows")? {
         lookup_guard.with_storage(|| {
-            ctx.admit_btree_entry(
-                &linked_by_section,
-                &row.section_ordinal,
+            ctx.push_btree_group(
+                &mut linked_by_section,
+                row.section_ordinal,
+                row,
                 "NX linked row section index",
+                "NX linked row section members",
             )
         })?;
-        let rows = linked_by_section.entry(row.section_ordinal).or_default();
-        lookup_guard.with_storage(|| ctx.reserve_vec(rows, 1, "NX linked row section members"))?;
-        rows.push(row);
     }
     let mut targets_by_section = BTreeMap::<u32, Vec<&DataBlockTargetIndexRow>>::new();
-    for row in target_rows {
+    for row in ctx.admit_iter(target_rows, "NX column index target rows")? {
         lookup_guard.with_storage(|| {
-            ctx.admit_btree_entry(
-                &targets_by_section,
-                &row.section_ordinal,
+            ctx.push_btree_group(
+                &mut targets_by_section,
+                row.section_ordinal,
+                row,
                 "NX target row section index",
+                "NX target row section members",
             )
         })?;
-        let rows = targets_by_section.entry(row.section_ordinal).or_default();
-        lookup_guard.with_storage(|| ctx.reserve_vec(rows, 1, "NX target row section members"))?;
-        rows.push(row);
     }
     let mut output = Vec::new();
-    for (section_ordinal, linked) in linked_by_section {
-        let Some(targets) = targets_by_section.remove(&section_ordinal) else {
+    for (section_ordinal, linked) in
+        ctx.admit_iter(linked_by_section, "NX column index linked sections")?
+    {
+        let Some(targets) = ctx.remove_btree_map(
+            &mut targets_by_section,
+            &section_ordinal,
+            "NX target row section index",
+        )?
+        else {
             continue;
         };
         let Some((opening, suffix)) = linked.split_first() else {
@@ -5589,66 +5615,83 @@ pub(super) fn data_block_column_index_tables(
         let Some((last_target, target_prefix)) = targets.split_last() else {
             continue;
         };
-        if opening.frame.mode() != crate::om::discriminators::IndexRowMode::Form07
+        if opening.frame.mode() != IndexRowMode::Form07
             || suffix.is_empty()
-            || suffix
-                .iter()
-                .any(|row| row.frame.mode() != crate::om::discriminators::IndexRowMode::Form04)
-            || last_target.frame.mode() != crate::om::discriminators::IndexRowMode::Form04
-            || target_prefix
-                .iter()
-                .any(|row| row.frame.mode() != crate::om::discriminators::IndexRowMode::Form07)
+            || ctx.any_by(
+                suffix,
+                |row| Ok(row.frame.mode() != IndexRowMode::Form04),
+                "check NX column index row forms",
+            )?
+            || last_target.frame.mode() != IndexRowMode::Form04
+            || ctx.any_by(
+                target_prefix,
+                |row| Ok(row.frame.mode() != IndexRowMode::Form07),
+                "check NX column index row forms",
+            )?
         {
             continue;
         }
-        let order_count = targets
-            .len()
-            .checked_add(suffix.len())
-            .and_then(|count| count.checked_add(1))
-            .ok_or_else(|| ctx.refuse_codec_limit("NX column index table order", 0, 1))?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(order_count),
-            "check NX column index table order",
-        )?;
-        let ordered = std::iter::once((
+        let mut previous = (
             opening.frame.target_index().atom.value(),
             opening.frame.offset(),
-        ))
-        .chain(
-            targets
-                .iter()
-                .map(|row| (row.frame.target_index().atom.value(), row.frame.offset())),
-        )
-        .chain(
-            suffix
-                .iter()
-                .map(|row| (row.frame.target_index().atom.value(), row.frame.offset())),
         );
-        let mut previous: Option<(u32, u64)> = None;
-        let valid_order = ordered.into_iter().all(|current| {
-            let valid = previous.is_none_or(|previous| {
-                previous.0.checked_sub(1) == Some(current.0) && previous.1 < current.1
-            });
-            previous = Some(current);
+        let mut ordered = |current: (u32, u64)| {
+            let valid = previous.0.checked_sub(1) == Some(current.0) && previous.1 < current.1;
+            previous = current;
             valid
-        });
+        };
+        let valid_order = ctx.all_by(
+            &targets,
+            |row| {
+                Ok(ordered((
+                    row.frame.target_index().atom.value(),
+                    row.frame.offset(),
+                )))
+            },
+            "check NX column index table order",
+        )? && ctx.all_by(
+            suffix,
+            |row| {
+                Ok(ordered((
+                    row.frame.target_index().atom.value(),
+                    row.frame.offset(),
+                )))
+            },
+            "check NX column index table order",
+        )?;
         if !valid_order
-            || linked
-                .iter()
-                .any(|row| row.source_entry != opening.source_entry)
-            || targets
-                .iter()
-                .any(|row| row.source_entry != opening.source_entry)
+            || ctx.any_by(
+                &linked,
+                |row| {
+                    Ok(!ctx.equal(
+                        row.source_entry.as_str(),
+                        opening.source_entry.as_str(),
+                        "NX column index source entry comparison",
+                    )?)
+                },
+                "NX column index row source entries",
+            )?
+            || ctx.any_by(
+                &targets,
+                |row| {
+                    Ok(!ctx.equal(
+                        row.source_entry.as_str(),
+                        opening.source_entry.as_str(),
+                        "NX column index source entry comparison",
+                    )?)
+                },
+                "NX column index row source entries",
+            )?
         {
             continue;
         }
         let mut target_ids = Vec::new();
-        for row in &targets {
+        for row in ctx.admit_iter(&targets, "NX column index targets")? {
             ctx.reserve_vec(&mut target_ids, 1, "NX column index target rows")?;
             target_ids.push(ctx.copy_retained_text(&row.id, "NX column index target row id")?);
         }
         let mut suffix_ids = Vec::new();
-        for row in suffix {
+        for row in ctx.admit_iter(suffix, "NX column index suffix targets")? {
             ctx.reserve_vec(&mut suffix_ids, 1, "NX column index linked rows")?;
             suffix_ids.push(ctx.copy_retained_text(&row.id, "NX column index linked row id")?);
         }
@@ -5685,22 +5728,33 @@ pub(super) fn store_headers(
     container: &Container,
 ) -> Result<Vec<StoreHeader>, cadmpeg_core::CodecError> {
     let mut output = Vec::new();
-    for (section_ordinal, (entry, section)) in
-        container.indexed_om_sections(ctx)?.into_iter().enumerate()
+    let sections = container.indexed_om_sections(ctx)?;
+    for (section_ordinal, (entry, section)) in ctx
+        .admit_iter(&sections, "NX indexed OM section visits")?
+        .enumerate()
     {
         let candidate = match &section.store {
-            IndexedStore::Fixed { records } => records.iter().find_map(|record| {
-                crate::om::store_version(record.bytes, record.offset)
-                    .map(|version| (Some(record.object_id.0), version))
-            }),
+            IndexedStore::Fixed { records } => ctx.find_map(
+                records.as_ref(),
+                |record| {
+                    Ok(crate::om::store_version(record.bytes, record.offset)
+                        .map(|version| (Some(record.object_id.0), version)))
+                },
+                "NX fixed store version records",
+            )?,
             IndexedStore::OffsetOnly {
                 control, records, ..
-            } => std::iter::once(control)
-                .chain(records.iter())
-                .find_map(|record| {
-                    crate::om::store_version(record.bytes, record.offset)
-                        .map(|version| (None, version))
-                }),
+            } => match crate::om::store_version(control.bytes, control.offset) {
+                Some(version) => Some((None, version)),
+                None => ctx.find_map(
+                    records.as_ref(),
+                    |record| {
+                        Ok(crate::om::store_version(record.bytes, record.offset)
+                            .map(|version| (None, version)))
+                    },
+                    "NX offset store version records",
+                )?,
+            },
         };
         let Some((object_id, version)) = candidate else {
             continue;
@@ -5738,15 +5792,24 @@ pub(super) fn string_values(
     container: &Container,
 ) -> Result<Vec<StringValue>, cadmpeg_core::CodecError> {
     let mut output = Vec::new();
-    for (section_ordinal, (entry, section)) in
-        container.indexed_om_sections(ctx)?.into_iter().enumerate()
+    let sections = container.indexed_om_sections(ctx)?;
+    for (section_ordinal, (entry, section)) in ctx
+        .admit_iter(&sections, "NX indexed OM section visits")?
+        .enumerate()
     {
         let Some(records) = section.as_fixed() else {
             continue;
         };
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-        for (record_ordinal, record) in records.iter().enumerate() {
-            for (value_ordinal, value) in record.string_values(ctx)?.into_iter().enumerate() {
+        for (record_ordinal, record) in ctx
+            .admit_iter(records, "NX indexed OM records")?
+            .enumerate()
+        {
+            let values = record.string_values(ctx)?;
+            for (value_ordinal, value) in ctx
+                .admit_iter(&values, "NX OM values output visits")?
+                .enumerate()
+            {
                 let record_id = retained_om_index_id(
                     ctx,
                     "nx:om-record-directory-",
@@ -5794,17 +5857,25 @@ pub(super) fn object_references(
     container: &Container,
 ) -> Result<Vec<ObjectReference>, cadmpeg_core::CodecError> {
     let mut output = Vec::new();
-    for (section_ordinal, (entry, section)) in
-        container.indexed_om_sections(ctx)?.into_iter().enumerate()
+    let sections = container.indexed_om_sections(ctx)?;
+    for (section_ordinal, (entry, section)) in ctx
+        .admit_iter(&sections, "NX indexed OM section visits")?
+        .enumerate()
     {
         let Some(records) = section.as_fixed() else {
             continue;
         };
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-        for (record_ordinal, record) in records.iter().enumerate() {
-            for (reference_ordinal, reference) in record
-                .references(ctx, records.len())?
-                .into_iter()
+        for (record_ordinal, record) in ctx
+            .admit_iter(records, "NX indexed OM records")?
+            .enumerate()
+        {
+            let references = record.references(ctx, records.len())?;
+            let references_count = references.len();
+            let mut references = references.into_iter();
+            for (reference_ordinal, reference) in ctx
+                .admit_iter(&(0..references_count), "NX OM references output visits")?
+                .filter_map(|_| references.next())
                 .enumerate()
             {
                 let record_id = retained_om_index_id(
@@ -5870,23 +5941,24 @@ pub(super) fn object_record_handle_pairs(
 ) -> Result<Vec<ObjectRecordHandlePair>, CodecError> {
     let mut index_guard = ctx.reserve_scoped(0, "NX record handle pair index")?;
     let mut by_record = BTreeMap::<&str, Vec<(&ObjectReference, u32)>>::new();
-    for reference in references {
+    for reference in ctx.admit_iter(references, "NX object references")? {
         let RecordReference::Direct(DirectReference::PersistentHandle(handle)) =
             reference.reference
         else {
             continue;
         };
-        let record_key = reference.record.as_str();
         index_guard.with_storage(|| {
-            ctx.admit_btree_entry(&by_record, &record_key, "NX record handle pair groups")
+            ctx.push_btree_group(
+                &mut by_record,
+                reference.record.as_str(),
+                (reference, handle),
+                "NX record handle pair groups",
+                "NX record handle pair references",
+            )
         })?;
-        let group = by_record.entry(record_key).or_default();
-        index_guard
-            .with_storage(|| ctx.reserve_vec(group, 1, "NX record handle pair references"))?;
-        group.push((reference, handle));
     }
     let mut pairs = Vec::new();
-    for (record, mut record_references) in by_record {
+    for (record, mut record_references) in ctx.admit_iter(by_record, "NX OM by record visits")? {
         ctx.stable_sort_by(
             &mut record_references,
             |value| &value.0.source_offset,
@@ -5895,11 +5967,22 @@ pub(super) fn object_record_handle_pairs(
         )?;
         let mut at = 0;
         while at < record_references.len() {
+            ctx.charge_work(1, "NX object record handle pair outer run scan")?;
             let start = at;
-            while record_references.get(at + 1).is_some_and(|next| {
-                record_references[at].0.source_offset.checked_add(5) == Some(next.0.source_offset)
-            }) {
-                at += 1;
+            loop {
+                ctx.charge_work(1, "NX object record handle pair adjacent reference probe")?;
+                let Some(next_index) = at.checked_add(1) else {
+                    break;
+                };
+                let Some(next) = record_references.get(next_index) else {
+                    break;
+                };
+                if record_references[at].0.source_offset.checked_add(5)
+                    != Some(next.0.source_offset)
+                {
+                    break;
+                }
+                at = next_index;
             }
             let run = &record_references[start..=at];
             if let [(first, first_handle), (second, second_handle)] = run {
@@ -5928,6 +6011,90 @@ pub(super) fn object_record_handle_pairs(
     Ok(pairs)
 }
 
+#[derive(Default)]
+struct PersistentHandleGroup<'a> {
+    records: Vec<&'a str>,
+    occurrence_count: u32,
+    external_records: Vec<&'a str>,
+    data_blocks: Vec<&'a str>,
+    external_occurrence_count: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum PersistentHandleMember {
+    Record,
+    DataBlock,
+    ExternalRecord,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for PersistentHandleMember {
+    const FIXED_BYTES: Option<u64> = Some(1);
+    fn decode_cost(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        Ok(1)
+    }
+}
+
+/// The group for one handle, and whether this member is new to it.
+fn persistent_handle_group<'g, 'a>(
+    ctx: &DecodeContext<'_>,
+    guard: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    groups: &'g mut BTreeMap<u32, PersistentHandleGroup<'a>>,
+    members: &mut BTreeSet<(u32, PersistentHandleMember, &'a str)>,
+    member: (u32, PersistentHandleMember, &'a str),
+) -> Result<(&'g mut PersistentHandleGroup<'a>, bool), CodecError> {
+    let handle = member.0;
+    if !ctx.contains_key_btree_map(groups, &handle, "NX persistent handle groups")? {
+        guard.with_storage(|| {
+            ctx.insert_btree_map(
+                groups,
+                handle,
+                PersistentHandleGroup::default(),
+                "NX persistent handle groups",
+            )
+        })?;
+    }
+    let first = guard
+        .with_storage(|| ctx.insert_btree_set(members, member, "NX persistent handle members"))?;
+    let group = ctx
+        .get_mut_btree_map(groups, &handle, "NX persistent handle groups")?
+        .ok_or_else(|| CodecError::malformed("NX persistent handle group was not retained"))?;
+    Ok((group, first))
+}
+
+/// Count one external occurrence and list its record once.
+fn add_external_occurrence<'a>(
+    ctx: &DecodeContext<'_>,
+    guard: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    groups: &mut BTreeMap<u32, PersistentHandleGroup<'a>>,
+    members: &mut BTreeSet<(u32, PersistentHandleMember, &'a str)>,
+    handle: u32,
+    record: &'a str,
+) -> Result<(), CodecError> {
+    let (group, first) = persistent_handle_group(
+        ctx,
+        guard,
+        groups,
+        members,
+        (handle, PersistentHandleMember::ExternalRecord, record),
+    )?;
+    group.external_occurrence_count = group
+        .external_occurrence_count
+        .checked_add(1)
+        .ok_or_else(|| ctx.refuse_codec_limit("NX external handle occurrence count", 0, 1))?;
+    if first {
+        ctx.push_vec(
+            &mut group.external_records,
+            record,
+            "NX persistent external record index",
+        )?;
+    }
+    Ok(())
+}
+
 /// Group persistent-handle occurrences into cross-record identities.
 pub(super) fn persistent_handles(
     ctx: &DecodeContext<'_>,
@@ -5936,146 +6103,102 @@ pub(super) fn persistent_handles(
     external: &[ExternalReferenceRecord],
     external_tail_pairs: &[ExternalReferenceTailReferencePair],
 ) -> Result<Vec<PersistentHandle>, CodecError> {
-    #[derive(Default)]
-    struct Group<'a> {
-        records: Vec<&'a str>,
-        occurrence_count: u32,
-        external_records: Vec<&'a str>,
-        data_blocks: Vec<&'a str>,
-        external_occurrence_count: u32,
-    }
-
-    let external_count = external
-        .iter()
-        .try_fold(0usize, |count, record| {
-            count.checked_add(record.handles.serialized().len())
-        })
-        .ok_or_else(|| ctx.refuse_codec_limit("NX persistent handle index size", 0, 1))?;
-    let occurrence_count = references
-        .len()
-        .checked_add(control_references.len())
-        .and_then(|count| count.checked_add(external_count))
-        .and_then(|count| count.checked_add(external_tail_pairs.len()))
-        .ok_or_else(|| ctx.refuse_codec_limit("NX persistent handle index size", 0, 1))?;
     let mut index_guard = ctx.reserve_scoped(0, "NX persistent handle index")?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(occurrence_count),
-        "index NX persistent handles",
-    )?;
-    let mut groups = BTreeMap::<u32, Group<'_>>::new();
-    for reference in references {
+    let mut groups = BTreeMap::<u32, PersistentHandleGroup<'_>>::new();
+    // Each group lists every distinct member once, in first-occurrence order.
+    let mut members = BTreeSet::<(u32, PersistentHandleMember, &str)>::new();
+    for reference in ctx.admit_iter(references, "NX object references")? {
         let RecordReference::Direct(DirectReference::PersistentHandle(handle)) =
             reference.reference
         else {
             continue;
         };
-        index_guard.with_storage(|| {
-            ctx.admit_btree_entry(&groups, &handle, "NX persistent handle groups")
-        })?;
-        let group = groups.entry(handle).or_default();
+        let (group, first) = persistent_handle_group(
+            ctx,
+            &mut index_guard,
+            &mut groups,
+            &mut members,
+            (
+                handle,
+                PersistentHandleMember::Record,
+                reference.record.as_str(),
+            ),
+        )?;
         group.occurrence_count = group
             .occurrence_count
             .checked_add(1)
             .ok_or_else(|| ctx.refuse_codec_limit("NX persistent handle occurrence count", 0, 1))?;
-        if group.records.last().copied() != Some(reference.record.as_str())
-            && !group.records.contains(&reference.record.as_str())
-        {
-            index_guard.with_storage(|| {
-                ctx.reserve_vec(&mut group.records, 1, "NX persistent handle record index")
-            })?;
-            group.records.push(reference.record.as_str());
+        if first {
+            ctx.push_vec(
+                &mut group.records,
+                reference.record.as_str(),
+                "NX persistent handle record index",
+            )?;
         }
     }
-    for reference in control_references {
+    for reference in ctx.admit_iter(
+        control_references,
+        "NX persistent handle control references",
+    )? {
         let DirectReference::PersistentHandle(handle) = reference.reference else {
             continue;
         };
-        index_guard.with_storage(|| {
-            ctx.admit_btree_entry(&groups, &handle, "NX persistent handle groups")
-        })?;
-        let group = groups.entry(handle).or_default();
+        let (group, first) = persistent_handle_group(
+            ctx,
+            &mut index_guard,
+            &mut groups,
+            &mut members,
+            (
+                handle,
+                PersistentHandleMember::DataBlock,
+                reference.data_block.as_str(),
+            ),
+        )?;
         group.occurrence_count = group
             .occurrence_count
             .checked_add(1)
             .ok_or_else(|| ctx.refuse_codec_limit("NX persistent handle occurrence count", 0, 1))?;
-        if !group.data_blocks.contains(&reference.data_block.as_str()) {
-            index_guard.with_storage(|| {
-                ctx.reserve_vec(
-                    &mut group.data_blocks,
-                    1,
-                    "NX persistent handle data block index",
-                )
-            })?;
-            group.data_blocks.push(reference.data_block.as_str());
+        if first {
+            ctx.push_vec(
+                &mut group.data_blocks,
+                reference.data_block.as_str(),
+                "NX persistent handle data block index",
+            )?;
         }
     }
-    for record in external {
-        for handle in record.handles.serialized() {
-            index_guard.with_storage(|| {
-                ctx.admit_btree_entry(&groups, handle, "NX persistent handle groups")
-            })?;
-            let group = groups.entry(*handle).or_default();
-            group.external_occurrence_count = group
-                .external_occurrence_count
-                .checked_add(1)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("NX external handle occurrence count", 0, 1)
-                })?;
-            if !group.external_records.contains(&record.id.as_str()) {
-                index_guard.with_storage(|| {
-                    ctx.reserve_vec(
-                        &mut group.external_records,
-                        1,
-                        "NX persistent external record index",
-                    )
-                })?;
-                group.external_records.push(record.id.as_str());
-            }
+    let external_occurrences = ctx
+        .admit_iter(external, "NX persistent handle external records")?
+        .map(|record| (record.handles.serialized(), record.id.as_str()));
+    for (handles, record) in external_occurrences {
+        for &handle in ctx.admit_iter(handles, "NX persistent handle external values")? {
+            add_external_occurrence(
+                ctx,
+                &mut index_guard,
+                &mut groups,
+                &mut members,
+                handle,
+                record,
+            )?;
         }
     }
-    for pair in external_tail_pairs {
-        index_guard.with_storage(|| {
-            ctx.admit_btree_entry(
-                &groups,
-                &pair.persistent_handle,
-                "NX persistent handle groups",
-            )
-        })?;
-        let group = groups.entry(pair.persistent_handle).or_default();
-        group.external_occurrence_count = group
-            .external_occurrence_count
-            .checked_add(1)
-            .ok_or_else(|| ctx.refuse_codec_limit("NX external handle occurrence count", 0, 1))?;
-        if !group
-            .external_records
-            .contains(&pair.handle_set_record.as_str())
-        {
-            index_guard.with_storage(|| {
-                ctx.reserve_vec(
-                    &mut group.external_records,
-                    1,
-                    "NX persistent external record index",
-                )
-            })?;
-            group.external_records.push(pair.handle_set_record.as_str());
-        }
+    for pair in ctx.admit_iter(external_tail_pairs, "NX persistent handle external pairs")? {
+        add_external_occurrence(
+            ctx,
+            &mut index_guard,
+            &mut groups,
+            &mut members,
+            pair.persistent_handle,
+            pair.handle_set_record.as_str(),
+        )?;
     }
+    drop(members);
     let mut handles = Vec::new();
-    for (value, group) in groups {
-        use std::fmt::Write;
+    for (value, group) in ctx.admit_iter(groups, "NX OM groups visits")? {
         ctx.reserve_vec(&mut handles, 1, "NX persistent handles")?;
-        let prefix = "nx:om-persistent-handles:handle#";
-        let id_length = prefix
-            .len()
-            .checked_add(8)
-            .ok_or_else(|| ctx.refuse_codec_limit("NX persistent handle id", 0, 1))?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(id_length),
+        let id = ctx.format_retained(
+            format_args!("nx:om-persistent-handles:handle#{value:08x}"),
             "NX persistent handle id",
         )?;
-        let mut id = ctx.retained_string(id_length, "NX persistent handle id")?;
-        write!(&mut id, "{prefix}{value:08x}")
-            .map_err(|_| ctx.refuse_codec_limit("NX persistent handle id", 0, 1))?;
         handles.push(PersistentHandle {
             id,
             value,
@@ -6104,21 +6227,26 @@ pub(super) fn expression_declarations(
     container: &Container,
 ) -> Result<Vec<ExpressionDeclaration>, CodecError> {
     let mut declarations = Vec::new();
-    for (section_ordinal, (entry, section)) in
-        container.indexed_om_sections(ctx)?.into_iter().enumerate()
+    let sections = container.indexed_om_sections(ctx)?;
+    for (section_ordinal, (entry, section)) in ctx
+        .admit_iter(&sections, "NX indexed OM section visits")?
+        .enumerate()
     {
-        if !section
-            .types
-            .iter()
-            .any(|definition| definition.name == "UGS::EXP_expression")
-        {
+        if !ctx.any_by(
+            &*section.types,
+            |definition| Ok(definition.name == "UGS::EXP_expression"),
+            "NX expression declaration registry types",
+        )? {
             continue;
         }
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
         let Some(records) = section.as_fixed() else {
             continue;
         };
-        for (record_ordinal, record) in records.iter().enumerate() {
+        for (record_ordinal, record) in ctx
+            .admit_iter(records, "NX indexed OM records")?
+            .enumerate()
+        {
             let Some(declaration) = crate::om::expression_declaration_name(ctx, record.bytes)?
             else {
                 continue;
@@ -6165,6 +6293,8 @@ pub(super) fn expression_declarations(
     Ok(declarations)
 }
 
+/// Table name preceding host global variable declarations.
+const TABLE_MARKER: &[u8] = b"hostglobalvariables";
 /// Decode explicit numeric expressions from all indexed OM sections.
 pub(super) fn expressions(
     ctx: &DecodeContext<'_>,
@@ -6173,24 +6303,32 @@ pub(super) fn expressions(
 ) -> Result<Vec<ParameterFormula>, CodecError> {
     let mut declaration_guard = ctx.reserve_scoped(0, "NX expression declaration index")?;
     let mut declarations_by_name = BTreeMap::<(&str, &str), Vec<&ExpressionDeclaration>>::new();
-    for declaration in declarations {
+    for declaration in ctx.admit_iter(declarations, "NX expression declarations")? {
         let key = (declaration.source_entry.as_str(), declaration.name.as_str());
         declaration_guard.with_storage(|| {
-            ctx.admit_btree_entry(&declarations_by_name, &key, "NX declaration name groups")
+            ctx.push_btree_group(
+                &mut declarations_by_name,
+                key,
+                declaration,
+                "NX declaration name groups",
+                "NX declaration name members",
+            )
         })?;
-        let group = declarations_by_name.entry(key).or_default();
-        declaration_guard
-            .with_storage(|| ctx.reserve_vec(group, 1, "NX declaration name members"))?;
-        group.push(declaration);
     }
     let sections = container.indexed_om_sections(ctx)?;
     let mut indexed_guard = ctx.reserve_scoped(0, "NX indexed expression lookup")?;
     let mut indexed = BTreeMap::<(&str, usize), (u32, usize, usize)>::new();
-    for (section_ordinal, (entry, section)) in sections.into_iter().enumerate() {
+    for (section_ordinal, (entry, section)) in ctx
+        .admit_iter(sections, "NX expression indexed input sections")?
+        .enumerate()
+    {
         let Some(directory_entry) = container.entries.get(entry.index()) else {
             continue;
         };
-        for (record_ordinal, expression) in section.numeric_expression_records(ctx)? {
+        let numeric_records = section.numeric_expression_records(ctx)?;
+        for (record_ordinal, expression) in
+            ctx.admit_iter(numeric_records, "NX OM numeric records visits")?
+        {
             let Some(object_id) = expression.object_id else {
                 continue;
             };
@@ -6205,7 +6343,10 @@ pub(super) fn expressions(
         }
     }
     let mut expressions = Vec::new();
-    for (entry_index, entry) in container.entries.iter().enumerate() {
+    for (entry_index, entry) in ctx
+        .admit_iter(&container.entries, "NX expression source entries")?
+        .enumerate()
+    {
         let Some((entry_offset, size)) = entry.file_span() else {
             continue;
         };
@@ -6218,34 +6359,96 @@ pub(super) fn expressions(
         let Some(payload) = container.data.get(offset..end) else {
             continue;
         };
-        for expression in crate::om::numeric_expressions(ctx, payload)? {
-            let Some(table_offset) = payload[..expression.offset]
-                .windows(b"hostglobalvariables".len())
-                .rposition(|window| window == b"hostglobalvariables")
+        let numeric_records = crate::om::numeric_expressions(ctx, payload)?;
+        if numeric_records.is_empty() {
+            continue;
+        }
+        // The marker has no proper border, so non-overlapping matches are all matches.
+        let mut table_reservation = ctx.reserve_scoped(0, "NX expression table markers")?;
+        let table_offsets = table_reservation.with_storage(|| {
+            ctx.collect_vec(
+                ctx.find_bytes_iter(payload, TABLE_MARKER, "NX expression table markers")?,
+                "NX expression table markers",
+            )
+        })?;
+        for expression in ctx.admit_iter(numeric_records, "NX OM numeric records visits")? {
+            // The table is the last marker that ends at or before the expression.
+            let preceding = ctx.partition_point(
+                &table_offsets,
+                |&offset| {
+                    Ok(offset
+                        .checked_add(TABLE_MARKER.len())
+                        .is_some_and(|end| end <= expression.offset))
+                },
+                "NX expression table lookup",
+            )?;
+            let Some(&table_offset) = preceding
+                .checked_sub(1)
+                .and_then(|index| table_offsets.get(index))
             else {
                 continue;
             };
-            let indexed_record = indexed
-                .get(&(entry.name.as_str(), expression.offset))
+            let indexed_record = ctx
+                .get_btree_map(
+                    &indexed,
+                    &(entry.name.as_str(), expression.offset),
+                    "NX indexed expression lookup entries",
+                )?
                 .copied();
-            let declaration = declarations_by_name
-                .get(&(entry.name.as_str(), expression.name.as_str()))
-                .and_then(|candidates| {
-                    let mut matches = candidates.iter().copied().filter(|declaration| {
-                        indexed_record.is_none_or(|(_, section_ordinal, _)| {
-                            declaration
-                                .record
-                                .split_once(":entry#")
-                                .and_then(|(prefix, _)| {
-                                    prefix.strip_prefix("nx:om-record-directory-")
-                                })
-                                .and_then(|ordinal| ordinal.parse::<usize>().ok())
-                                == Some(section_ordinal)
-                        })
-                    });
-                    let first = matches.next()?;
-                    matches.next().is_none().then_some(first)
-                });
+            let declaration = if let Some(candidates) = ctx.get_btree_map(
+                &declarations_by_name,
+                &(entry.name.as_str(), expression.name.as_str()),
+                "NX declaration name groups",
+            )? {
+                let matches_record =
+                    |declaration: &&ExpressionDeclaration| -> Result<bool, CodecError> {
+                        let Some((_, section_ordinal, _)) = indexed_record else {
+                            return Ok(true);
+                        };
+                        let Some((prefix, _)) = ctx.split_once(
+                            &declaration.record,
+                            ":entry#",
+                            "NX expression declaration record split",
+                        )?
+                        else {
+                            return Ok(false);
+                        };
+                        let Some(ordinal) = ctx.strip_prefix(
+                            prefix,
+                            "nx:om-record-directory-",
+                            "NX expression declaration record split",
+                        )?
+                        else {
+                            return Ok(false);
+                        };
+                        let Ok(ordinal) = ctx.parse_text::<usize>(
+                            ordinal,
+                            "parse NX expression record-directory ordinal",
+                        )?
+                        else {
+                            return Ok(false);
+                        };
+                        Ok(ordinal == section_ordinal)
+                    };
+                match ctx.position_by(
+                    candidates,
+                    &matches_record,
+                    "NX expression declaration candidates",
+                )? {
+                    Some(index)
+                        if !ctx.any_by(
+                            &candidates[index + 1..],
+                            matches_record,
+                            "NX expression declaration candidates",
+                        )? =>
+                    {
+                        Some(candidates[index])
+                    }
+                    _ => None,
+                }
+            } else {
+                None
+            };
             let value = expression.constant_value(ctx)?;
             let source_table_text = retained_om_index_id(
                 ctx,
@@ -6327,31 +6530,36 @@ fn evaluate_expression_graphs(
 
     let mut index_guard = ctx.reserve_scoped(0, "NX expression graph index")?;
     let mut groups = BTreeMap::<(&str, &str, &ExpressionUnit), Group>::new();
-    for expression in expressions.iter() {
+    for expression in ctx.admit_iter(&*expressions, "NX expression graph input records")? {
         let key = (
             expression.source_table.as_str(),
             expression.name.as_str(),
             &expression.unit,
         );
-        index_guard
-            .with_storage(|| ctx.admit_btree_entry(&groups, &key, "NX expression graph names"))?;
-        match groups.entry(key) {
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                entry.insert(Group {
-                    count: 1,
-                    value: expression.value,
-                });
-            }
-            std::collections::btree_map::Entry::Occupied(mut entry) => {
-                let group = entry.get_mut();
+        match ctx.get_mut_btree_map(&mut groups, &key, "NX expression graph names")? {
+            Some(group) => {
                 group.count = group.count.checked_add(1).ok_or_else(|| {
                     ctx.refuse_codec_limit("NX expression graph name count", 0, 1)
                 })?;
                 group.value = None;
             }
+            None => {
+                index_guard.with_storage(|| {
+                    ctx.insert_btree_map(
+                        &mut groups,
+                        key,
+                        Group {
+                            count: 1,
+                            value: expression.value,
+                        },
+                        "NX expression graph names",
+                    )
+                })?;
+            }
         }
     }
     loop {
+        ctx.charge_work(1, "NX expression graph pass")?;
         let mut changed = false;
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(expressions.len()),
@@ -6366,8 +6574,8 @@ fn evaluate_expression_graphs(
                 expression.name.as_str(),
                 &expression.unit,
             );
-            if !groups
-                .get(&key)
+            if !ctx
+                .get_btree_map(&groups, &key, "NX expression graph names")?
                 .is_some_and(|group| group.count == 1 && group.value.is_none())
             {
                 continue;
@@ -6375,14 +6583,16 @@ fn evaluate_expression_graphs(
             let evaluated =
                 evaluate_parameterized_expression(ctx, &expression.expression, |name| {
                     let dependency = (expression.source_table.as_str(), name, &expression.unit);
-                    groups
-                        .get(&dependency)
+                    Ok(ctx
+                        .get_btree_map(&groups, &dependency, "NX expression graph names")?
                         .filter(|group| group.count == 1)
                         .and_then(|group| group.value)
-                        .map(FiniteReal::get)
+                        .map(FiniteReal::get))
                 })?;
             if let Some(value) = evaluated {
-                if let Some(group) = groups.get_mut(&key) {
+                if let Some(group) =
+                    ctx.get_mut_btree_map(&mut groups, &key, "NX expression graph names")?
+                {
                     group.value = Some(value);
                 }
                 changed = true;
@@ -6394,23 +6604,33 @@ fn evaluate_expression_graphs(
     }
     let mut result_guard = ctx.reserve_scoped(0, "NX expression graph results")?;
     let mut results = result_guard
-        .with_storage(|| ctx.collection_vec(expressions.len(), "NX expression graph results"))?;
-    for expression in expressions.iter() {
+        .with_storage(|| ctx.vector_storage(expressions.len(), "NX expression graph results"))?;
+    for expression in ctx.admit_iter(&*expressions, "NX expression graph input records")? {
         let key = (
             expression.source_table.as_str(),
             expression.name.as_str(),
             &expression.unit,
         );
-        results.push(
-            groups
-                .get(&key)
-                .filter(|group| group.count == 1)
-                .and_then(|group| group.value),
-        );
+        let value = ctx
+            .get_btree_map(&groups, &key, "NX expression graph names")?
+            .filter(|group| group.count == 1)
+            .and_then(|group| group.value);
+        ctx.reserve_scoped_vec(
+            &mut result_guard,
+            &mut results,
+            1,
+            "NX expression graph results",
+        )?;
+        results.push(value);
     }
     drop(groups);
-    for (expression, value) in expressions.iter_mut().zip(results) {
-        expression.value = value;
+    let result_count = expressions.len().min(results.len());
+    let mut results = results.into_iter();
+    for index in ctx.admit_iter(&(0..result_count), "NX expression graph result records")? {
+        let Some(value) = results.next() else {
+            break;
+        };
+        expressions[index].value = value;
     }
     Ok(())
 }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{class_369_wrapper_two, class_412_path, path_locator};
 use crate::test_support::{indexed_header, lp_utf16};
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::ResourceDimension;
 
 fn scope() -> crate::records::feature::scope::DesignParameterScope {
     use crate::records::feature::scope::{
@@ -93,45 +93,45 @@ fn path_fixture() -> Vec<u8> {
     bytes
 }
 
+/// Validate the fixture's operand path and copy it into the output.
+fn operand_path(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    records: &crate::design::decode::sketch::IndexedRecordOffsets,
+    scope: &crate::records::feature::scope::DesignParameterScope,
+) -> Result<
+    Option<crate::records::feature::assembly::DesignAssemblyOperandPath>,
+    cadmpeg_core::CodecError,
+> {
+    let Some(envelope) =
+        super::exact_legacy_class_388_envelope(ctx, bytes, records, scope, (10, 1), 0)?
+    else {
+        return Ok(None);
+    };
+    super::legacy_class_388_operand_path(ctx, bytes, &envelope)
+}
+
 #[test]
 fn legacy_path_occurrence_guids_refuse_collection_limit() {
-    legacy_path_limit(
-        ResourceDimension::CollectionItems,
-        "f3d legacy occurrence GUIDs",
-    );
-}
-
-#[test]
-fn legacy_path_records_refuse_work_limit() {
-    legacy_path_limit(ResourceDimension::WorkUnits, "f3d legacy path records");
-}
-
-fn legacy_path_limit(dimension: ResourceDimension, operation: &str) {
     let bytes = path_fixture();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let scope = scope();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    match dimension {
-        // Two paths each admit four identity GUIDs before the two occurrence GUIDs.
-        ResourceDimension::CollectionItems => policy.limits.max_collection_items = 2 * 4 + 1,
-        ResourceDimension::WorkUnits => policy.limits.max_work_units = 1,
-        _ => panic!("unsupported test limit"),
-    }
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let operation = "f3d legacy occurrence GUIDs";
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::CollectionItems,
+        operation,
+        0,
+        |ctx| operand_path(ctx, &bytes, &records, &scope),
+    );
     assert!(
-        matches!(super::exact_legacy_class_388_operand_path_envelope(
-        &ctx, &bytes, &records, &scope, 10, 1, 0),
-        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
-            if failure.dimension == dimension && failure.operation == operation)
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+        if failure.dimension == ResourceDimension::CollectionItems
+            && failure.operation == operation)
     );
     crate::design::test_support::with_test_decode_context(|ctx| {
-        let path = super::exact_legacy_class_388_operand_path_envelope(
-            ctx, &bytes, &records, &scope, 10, 1, 0,
-        )
-        .unwrap()
-        .unwrap();
+        let path = operand_path(ctx, &bytes, &records, &scope)
+            .unwrap()
+            .unwrap();
         assert_eq!(path.occurrence_guids().len(), 2);
         assert_eq!(
             path.occurrence_guids()[0].value.as_str(),
@@ -142,4 +142,91 @@ fn legacy_path_limit(dimension: ResourceDimension, operation: &str) {
             "22222222-2222-2222-2222-222222222222"
         );
     });
+}
+
+#[test]
+fn legacy_path_validation_copies_no_guid() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let bytes = path_fixture();
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let scope = scope();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let envelope =
+        super::exact_legacy_class_388_envelope(&ctx, &bytes, &records, &scope, (10, 1), 0)
+            .unwrap()
+            .expect("valid legacy operand path");
+    assert_eq!(
+        envelope.paths,
+        [
+            Some(path_locator::LEN),
+            Some(path_locator::LEN + class_412_path::LEN)
+        ]
+    );
+}
+
+#[test]
+fn legacy_path_header_check_reads_no_further_than_the_expected_header() {
+    // No header closes the locator, and the stream runs on far past it. The
+    // check pays for the bytes up to the expected header and no more.
+    let mut bytes = Vec::new();
+    indexed_header(&mut bytes, *b"451", 10);
+    bytes.resize(4096, 0);
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = u64::try_from(path_locator::LEN + 11).unwrap();
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        assert!(!super::next_header_is(ctx, &bytes, 1, path_locator::LEN).unwrap());
+    });
+}
+
+#[test]
+fn legacy_class_412_identity_guid_push_refuses_each_collection_item() {
+    let bytes = path_fixture();
+    let start = path_locator::LEN;
+    assert!(super::legacy_class_412_path_layout(&bytes, start));
+    let identity_guids = crate::design::test_support::with_test_decode_context(|ctx| {
+        super::legacy_class_412_identity_guids(ctx, &bytes, start)
+            .expect("valid legacy class-412 path")
+    })
+    .expect("four class-412 identity GUIDs");
+    assert_eq!(identity_guids.len(), 4);
+
+    for skip in 0..4 {
+        let refusal = crate::test_support::resource_refusal_at(
+            ResourceDimension::CollectionItems,
+            "collect F3D legacy path identity GUIDs",
+            skip,
+            |ctx| super::legacy_class_412_identity_guids(ctx, &bytes, start).map(|_| ()),
+        );
+        assert!(matches!(
+            refusal,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "collect F3D legacy path identity GUIDs"
+                    && limit.additional == 1
+        ));
+    }
+}
+
+#[test]
+fn legacy_path_identity_guids_refuse_collection_limit() {
+    let bytes = path_fixture();
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let scope = scope();
+    let refusal = crate::test_support::resource_refusal_at(
+        ResourceDimension::CollectionItems,
+        "collect F3D legacy path identity GUIDs",
+        0,
+        |ctx| operand_path(ctx, &bytes, &records, &scope).map(|_| ()),
+    );
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "collect F3D legacy path identity GUIDs"
+                && limit.additional == 1
+    ));
 }

@@ -28,7 +28,7 @@ impl TryFrom<String> for ToggleId {
     type Error = &'static str;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        if !Self::is_valid(&value) {
+        if !is_lowercase_hex::<32>(&value) {
             return Err("SavedToggleEntry.toggle_id must be 32 lowercase hexadecimal digits");
         }
         Ok(Self(value))
@@ -36,8 +36,12 @@ impl TryFrom<String> for ToggleId {
 }
 
 impl ToggleId {
-    pub(super) fn is_valid(value: &str) -> bool {
-        is_lowercase_hex(value, 32)
+    /// Borrow 32 serialized digits as text when they are lowercase hexadecimal.
+    pub(super) fn digits_text(digits: &[u8; 32]) -> Option<&str> {
+        if !lowercase_hex_digits(digits) {
+            return None;
+        }
+        std::str::from_utf8(digits).ok()
     }
 
     pub(super) fn as_str(&self) -> &str {
@@ -57,11 +61,18 @@ impl std::fmt::Display for ToggleId {
     }
 }
 
-fn is_lowercase_hex(value: &str, digits: usize) -> bool {
-    value.len() == digits
+fn is_lowercase_hex<const DIGITS: usize>(value: &str) -> bool {
+    value.len() == DIGITS
         && value
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+            .as_bytes()
+            .first_chunk::<DIGITS>()
+            .is_some_and(lowercase_hex_digits)
+}
+
+fn lowercase_hex_digits<const DIGITS: usize>(digits: &[u8; DIGITS]) -> bool {
+    digits
+        .iter()
+        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(byte))
 }
 
 #[cfg(test)]

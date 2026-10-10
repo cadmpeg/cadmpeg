@@ -563,9 +563,9 @@ fn incomplete_hole_construction_does_not_change_its_body_identity_effect() {
     });
     ir.model.features.push(hole);
 
-    assert!(feature_completeness::hole_definition_is_incomplete(
-        &ir.model.features[1]
-    ));
+    assert!(crate::decode::feature_completeness::decode_check(|ctx| {
+        feature_completeness::hole_definition_is_incomplete(ctx, &ir.model.features[1])
+    }));
     assert_eq!(
         evaluate_saved_body_census(&ir),
         BodyCensusEvaluation::verified(vec![body]).unwrap()

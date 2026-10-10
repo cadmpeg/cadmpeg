@@ -26,10 +26,22 @@ fn sketch_record_refusal(
     .expect("composed feature-history container");
     let (labels, records, inputs, references) = crate::test_support::with_decode_context(|ctx| {
         Ok::<_, cadmpeg_core::CodecError>((
-            feature_operation_labels(ctx, &container)?,
-            feature_operation_records(ctx, &container)?,
-            feature_input_blocks(ctx, &container)?,
-            feature_sketch_references(ctx, &container)?,
+            feature_operation_labels(
+                ctx,
+                &crate::native::features::FeatureHistory::new(ctx, &container)?,
+            )?,
+            feature_operation_records(
+                ctx,
+                &crate::native::features::FeatureHistory::new(ctx, &container)?,
+            )?,
+            feature_input_blocks(
+                ctx,
+                &crate::native::features::FeatureHistory::new(ctx, &container)?,
+            )?,
+            feature_sketch_references(
+                ctx,
+                &crate::native::features::FeatureHistory::new(ctx, &container)?,
+            )?,
         ))
     })
     .expect("sketch record inputs");

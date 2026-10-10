@@ -13,7 +13,7 @@ use crate::native::om::compact_lane::DataBlockAbrReferenceLane;
 use crate::native::om::journal_group::OmOperationStateJournalGroup;
 use crate::native::om::material_texture::MaterialTextureAsset;
 use crate::native::om::object_uuid::ObjectUuidValue;
-use crate::native::om::roll_forward::{OmRollForwardStateGroup, OmRollForwardStateTable};
+use crate::native::om::roll_forward::OmRollForwardStateGroup;
 use crate::native::om::state_slot_lane::OmOperationStateSlotLane;
 use crate::native::om::state_status::OmOperationStateStatus;
 use cadmpeg_ir::annotations::StreamHandle;
@@ -131,7 +131,7 @@ fn note_container<T: ContainerNoted>(
         cadmpeg_ir::stream_name!("nx:container"),
         "allocate annotation stream handle",
     )?;
-    for record in records {
+    for record in ctx.admit_iter(records, "NX catalogue record notes")? {
         let (id, offset) = record.container_note();
         a.note(ctx, &id, &stream, offset, tag)?;
         a.exactness(ctx, id, catalogue_row.exactness)?;
@@ -149,7 +149,7 @@ fn note_per_stream<T: StreamNoted>(
     tag: Option<&'static str>,
     a: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    for record in records {
+    for record in ctx.admit_iter(records, "NX catalogue record notes")? {
         let (id, stream_ordinal, offset) = record.stream_note();
         let stream = StreamHandle::new(
             ctx,
@@ -768,7 +768,7 @@ fn note_display_jt_display_jt_indices(
         cadmpeg_ir::stream_name!("nx:container"),
         "allocate annotation stream handle",
     )?;
-    for index in &m.display_jt.indices {
+    for index in ctx.admit_iter(&m.display_jt.indices, "NX catalogue DisplayJT indices")? {
         a.note(
             ctx,
             &index.id,
@@ -778,6 +778,7 @@ fn note_display_jt_display_jt_indices(
         )?;
         a.exactness(ctx, &index.id, Exactness::ByteExact)?;
         for row in index.rows() {
+            ctx.charge_work(1, "NX catalogue DisplayJT index rows")?;
             a.note(
                 ctx,
                 &row.id,
@@ -803,7 +804,10 @@ fn note_display_jt_display_jt_documents(
         cadmpeg_ir::stream_name!("nx:container"),
         "allocate annotation stream handle",
     )?;
-    for document in m.display_jt.graph.documents() {
+    for document in ctx.admit_iter(
+        m.display_jt.graph.documents(),
+        "NX catalogue DisplayJT documents",
+    )? {
         a.note(
             ctx,
             &document.id,
@@ -812,7 +816,7 @@ fn note_display_jt_display_jt_documents(
             Some("DISPLAY_JT_DOCUMENT"),
         )?;
         a.exactness(ctx, &document.id, Exactness::ByteExact)?;
-        for entry in &document.toc_entries {
+        for entry in ctx.admit_iter(&document.toc_entries, "NX catalogue DisplayJT TOC entries")? {
             a.note(
                 ctx,
                 &entry.id,
@@ -833,7 +837,10 @@ fn note_parasolid_parasolid_intersection_records(
     _tag: Option<&'static str>,
     a: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    for record in &m.parasolid.intersection_records {
+    for record in ctx.admit_iter(
+        &m.parasolid.intersection_records,
+        "NX catalogue intersection records",
+    )? {
         let source_stream = StreamHandle::new(
             ctx,
             cadmpeg_ir::stream_name!("nx:s").with_suffix(
@@ -866,7 +873,10 @@ fn note_parasolid_parasolid_attribute_class_uses(
     _tag: Option<&'static str>,
     a: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    for class_use in &m.parasolid.attribute_class_uses {
+    for class_use in ctx.admit_iter(
+        &m.parasolid.attribute_class_uses,
+        "NX catalogue attribute class uses",
+    )? {
         let source_stream = StreamHandle::new(
             ctx,
             cadmpeg_ir::stream_name!("nx:s").with_suffix(
@@ -895,7 +905,10 @@ fn note_parasolid_parasolid_topology_attribute_class_uses(
     _tag: Option<&'static str>,
     a: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    for class_use in &m.parasolid.topology_attribute_class_uses {
+    for class_use in ctx.admit_iter(
+        &m.parasolid.topology_attribute_class_uses,
+        "NX catalogue topology attribute class uses",
+    )? {
         let source_stream = StreamHandle::new(
             ctx,
             cadmpeg_ir::stream_name!("nx:s").with_suffix(
@@ -929,7 +942,10 @@ fn note_features_feature_sketch_point_uses(
         cadmpeg_ir::stream_name!("nx:container"),
         "allocate annotation stream handle",
     )?;
-    for point_use in &m.features.feature_sketch_point_uses {
+    for point_use in ctx.admit_iter(
+        &m.features.feature_sketch_point_uses,
+        "NX catalogue sketch point uses",
+    )? {
         a.note(
             ctx,
             &point_use.id,
@@ -954,7 +970,10 @@ fn note_features_feature_input_block_identity_groups(
         cadmpeg_ir::stream_name!("nx:container"),
         "allocate annotation stream handle",
     )?;
-    for group in &m.features.feature_input_block_identity_groups {
+    for group in ctx.admit_iter(
+        &m.features.feature_input_block_identity_groups,
+        "NX catalogue input block identity groups",
+    )? {
         a.note(
             ctx,
             &group.id,
@@ -979,7 +998,10 @@ fn note_features_feature_parameter_uses(
         cadmpeg_ir::stream_name!("nx:container"),
         "allocate annotation stream handle",
     )?;
-    for parameter_use in &m.features.feature_parameter_uses {
+    for parameter_use in ctx.admit_iter(
+        &m.features.feature_parameter_uses,
+        "NX catalogue parameter uses",
+    )? {
         a.note(
             ctx,
             &parameter_use.id,
@@ -2150,30 +2172,39 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         phase: Phase::GroupA {
             tag: Some("OM_ROLL_FORWARD_STATE_GROUP"),
             note: |ctx, m, r, tag, a| {
-                for table in &m.om.operation_state_groups {
+                for table in ctx.admit_iter(
+                    &m.om.operation_state_groups,
+                    "NX roll-forward catalogue notes",
+                )? {
                     note_container(ctx, table.groups(), r, tag, a)?;
                 }
                 Ok(())
             },
         },
         emit: |ctx, m, r, ns| {
-            let count =
-                m.om.operation_state_groups
-                    .iter()
-                    .try_fold(0usize, |total, table| {
-                        total.checked_add(table.groups().len())
-                    })
-                    .ok_or_else(|| {
-                        ctx.refuse_codec_limit("NX roll-forward catalog group count", 0, 1)
+            let mut groups = Vec::new();
+            let mut groups_reservation =
+                ctx.reserve_scoped(0, "NX roll-forward catalog group references")?;
+            for table in ctx
+                .admit_iter(
+                    &m.om.operation_state_groups,
+                    "NX roll-forward catalog group references",
+                )
+                .map_err(cadmpeg_core::CodecError::from)?
+            {
+                for group in ctx
+                    .admit_iter(table.groups(), "NX roll-forward catalog group references")
+                    .map_err(cadmpeg_core::CodecError::from)?
+                {
+                    groups_reservation.with_storage(|| {
+                        ctx.push_vec(
+                            &mut groups,
+                            group,
+                            "NX roll-forward catalog group references",
+                        )
                     })?;
-
-            let (mut groups, _groups_reservation) =
-                ctx.temporary_vec(count, "NX roll-forward catalog group references")?;
-            groups.extend(
-                m.om.operation_state_groups
-                    .iter()
-                    .flat_map(OmRollForwardStateTable::groups),
-            );
+                }
+            }
             emit_arena(ctx, &groups, r, ns)
         },
         len: |m| {

@@ -530,25 +530,19 @@ fn xref_stream_scope_refuses_retained_limit() {
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (scan_ctx, root) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&archive, &arena, &policy).unwrap();
-    let scan = crate::container::scan(&scan_ctx, root).unwrap();
+    // The scan caches parsed MetaStreams, so every decode gets its own scan:
+    // a shared cache would make later runs cheaper than the first.
+    let fresh_scan = || crate::container::scan(&scan_ctx, root).unwrap();
     let table_bytes = redirections_json("root.f3d", &[("part.f3d", XREF_ROLE)]);
     let mut table = super::parse(&scan_ctx, table_bytes.as_bytes()).unwrap();
     let limit_arena = cadmpeg_core::decode::DecodeArena::new();
     let mut limit_policy = cadmpeg_core::decode::DecodePolicy::service();
-    // MetaStream parsing and serializer lookup retain their header fields.
-
-    // Both placement attempts retain one class tag and two copies of the role.
-
     limit_policy.limits.max_retained_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
         cadmpeg_core::decode::ResourceDimension::RetainedBytes,
         "retain F3D native scope",
         |cap| {
             let mut table = table.clone();
             let mut limit_policy = cadmpeg_core::decode::DecodePolicy::service();
-            // MetaStream parsing and serializer lookup retain their header fields.
-
-            // Both placement attempts retain one class tag and two copies of the role.
-
             limit_policy.limits.max_retained_bytes = cap;
             let limit_ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(
                 &[],
@@ -557,7 +551,7 @@ fn xref_stream_scope_refuses_retained_limit() {
             )
             .unwrap()
             .0;
-            super::bind_occurrences(&limit_ctx, &scan, &mut table, &[])
+            super::bind_occurrences(&limit_ctx, &fresh_scan(), &mut table, &[])
         },
     ) {
         cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
@@ -567,7 +561,7 @@ fn xref_stream_scope_refuses_retained_limit() {
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &limit_arena, &limit_policy)
             .unwrap()
             .0;
-    let error = super::bind_occurrences(&limit_ctx, &scan, &mut table, &[]).unwrap_err();
+    let error = super::bind_occurrences(&limit_ctx, &fresh_scan(), &mut table, &[]).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D native scope")
