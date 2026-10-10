@@ -143,3 +143,70 @@ fn surface_weight_lifetime_preserves_polynomial_and_rational_grids() {
         ctx.finish_session().unwrap();
     }
 }
+
+fn grid_row_collection_boundary(rational: bool, completed_rows: usize) {
+    let (entry, record, global) = inputs(rational);
+    let before = record.clone();
+    // Two singleton indexes, both knot vectors, all native weights and the
+    // outer row slots precede the two controls in each completed row.
+    let items = u64_from_index(2 + (U_COUNT + 2) + (V_COUNT + 2)
+        + U_COUNT * V_COUNT + U_COUNT + completed_rows * V_COUNT);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = items;
+    policy.limits.max_materialized_bytes = 16 * 1024 * 1024;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_entities = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut sequences = SourceSequences::new(&ctx).unwrap();
+    let mut ir = CadIr::empty();
+    let mut output = ctx.reserve_scoped(0, "test surface output").unwrap();
+    let error = output.with_storage(|| super::super::project(&mut ir,
+        std::slice::from_ref(&entry), std::slice::from_ref(&record),
+        &global, &ctx, &mut sequences).map(drop)).unwrap_err();
+    let CodecError::ResourceLimit(first) = error else { panic!("expected row admission refusal"); };
+    assert_eq!(first.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(first.operation, if rational {
+        "iges NURBS surface weighted row controls"
+    } else {
+        "iges NURBS surface pole row controls"
+    });
+    assert_eq!((first.limit, first.used, first.additional),
+        (items, items, u64_from_index(V_COUNT)));
+    assert_eq!(ir, CadIr::empty());
+    assert_eq!(record, before);
+    for _ in 0..64 {
+        for directory in [std::slice::from_ref(&entry), &[]] {
+            assert!(matches!(super::super::project(&mut ir, directory,
+                std::slice::from_ref(&record), &global, &ctx, &mut sequences),
+                Err(CodecError::ResourceLimit(last)) if last == first));
+            assert_eq!(ir, CadIr::empty());
+            assert_eq!(record, before);
+        }
+    }
+    drop(ir);
+    drop(sequences);
+    drop(output);
+    assert!(matches!(ctx.finish_session(),
+        Err(CodecError::ResourceLimit(last)) if last == first));
+}
+
+#[test]
+fn polynomial_surface_first_row_refuses_before_controls() {
+    grid_row_collection_boundary(false, 0);
+}
+
+#[test]
+fn polynomial_surface_last_row_refuses_after_completed_controls() {
+    grid_row_collection_boundary(false, U_COUNT - 1);
+}
+
+#[test]
+fn rational_surface_first_row_refuses_before_controls() {
+    grid_row_collection_boundary(true, 0);
+}
+
+#[test]
+fn rational_surface_last_row_refuses_after_completed_controls() {
+    grid_row_collection_boundary(true, U_COUNT - 1);
+}
