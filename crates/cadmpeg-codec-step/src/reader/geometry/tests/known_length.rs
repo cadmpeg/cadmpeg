@@ -102,9 +102,8 @@ fn empty_owned_carriers_preserve_original_sticky_refusal() {
         points: std::collections::HashMap::new(),
         surfaces: std::collections::HashMap::new(),
     };
-    let error = match topology_owned_carriers(&ir, &index, &ctx) {
-        Ok(_) => panic!("refused context"),
-        Err(error) => error,
+    let Err(error) = topology_owned_carriers(&ir, &index, &ctx) else {
+        panic!("refused context");
     };
     assert!(matches!(error, CodecError::ResourceLimit(sticky) if sticky == first));
     assert_eq!(ctx.resource_refusal(), Some(first));
