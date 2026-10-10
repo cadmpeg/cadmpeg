@@ -849,16 +849,17 @@ pub(crate) fn admit_subtype_references(
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
     }
+    let mut scratch = ctx.reserve_scoped(0, "walk ASM subtype references")?;
+    let mut visited = std::collections::BTreeSet::new();
     let mut source_values = IntoIterator::into_iter(records);
     while source_values.len() != 0 {
         let Some(record) = ctx.next_charged(&mut source_values, "walk ASM subtype records")? else {
             break;
         };
-        let mut scratch = ctx.reserve_scoped(0, "walk ASM subtype references")?;
-        let mut visited = std::collections::BTreeSet::new();
+        let mut stack_storage = ctx.reserve_scoped(0, "walk ASM subtype references")?;
         let mut pending = Vec::new();
         let root = (record.tokens.as_ref(), 0usize, None);
-        ctx.push_scoped_vec(&mut scratch, &mut pending, root, "walk ASM subtype stack")?;
+        ctx.push_scoped_vec(&mut stack_storage, &mut pending, root, "walk ASM subtype stack")?;
         while let Some((tokens, position, _guard)) = pending.last_mut() {
             if *position < tokens.len() {
                 ctx.charge_work(1, "scan ASM subtype references")?;
@@ -899,7 +900,7 @@ pub(crate) fn admit_subtype_references(
             };
             let guard = ctx.enter_nested("follow ASM subtype reference")?;
             let frame = (target.tokens(), 0usize, Some(guard));
-            ctx.push_scoped_vec(&mut scratch, &mut pending, frame, "walk ASM subtype stack")?;
+            ctx.push_scoped_vec(&mut stack_storage, &mut pending, frame, "walk ASM subtype stack")?;
         }
     }
     Ok(())

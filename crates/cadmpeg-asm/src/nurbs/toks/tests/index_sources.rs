@@ -105,3 +105,5 @@ vec![Token::False; count].into(),
         }
     }
 }
+
+mod shared_definitions;
