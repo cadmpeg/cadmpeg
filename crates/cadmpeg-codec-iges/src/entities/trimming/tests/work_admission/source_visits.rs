@@ -175,3 +175,62 @@ fn pcurve_split_empty_or_invalid_input_executes_no_work_or_allocation() {
     }
     ctx.finish_session().unwrap();
 }
+
+fn cluster_size_storage_boundary(count: usize, exact: bool) {
+    use std::mem::{align_of, size_of};
+    let points: Vec<_> = (0..count).map(|index| FinitePoint3::new(
+        Point3::new(f64::from(u32::try_from(index).unwrap()) * 2.0, 0.0, 0.0)).unwrap()).collect();
+    let before = points.clone();
+    let parent = u64::try_from(count * size_of::<usize>()).unwrap();
+    let node = u64::try_from(11 * (size_of::<usize>() + size_of::<Vec<usize>>())
+        + 16 * size_of::<usize>()
+        + 2 * align_of::<usize>().max(align_of::<Vec<usize>>())).unwrap();
+    let cap = parent + node - u64::from(!exact);
+    // At 1 and 21 points, the two initial index lanes fit below the
+    // first root node's legitimate peak. At 64 this witness is invalid:
+    // initial 1024 exceeds the later first-node peak 1008 on this target.
+    assert!(2 * parent < cap);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = cap;
+    policy.limits.max_retained_bytes = 0;
+    // Both initialized index lanes and the first root entry. Exact node
+    // backing then reaches the first member's independent slot admission.
+    policy.limits.max_collection_items = 2 * u64::try_from(count).unwrap() + 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = cluster_boundary_positions(&points, PositiveReal::ONE, &ctx)
+        .expect_err("expected root node or member slot refusal");
+    let first = match error {
+        BoundaryVertexCreationError::Resource(CodecError::ResourceLimit(first)) => first,
+        _ => panic!("expected original resource refusal"),
+    };
+    if exact {
+        let items = policy.limits.max_collection_items;
+        assert_eq!(first.dimension, ResourceDimension::CollectionItems);
+        assert_eq!(first.operation, "iges boundary cluster members");
+        assert_eq!((first.limit, first.used, first.additional), (items, items, 1));
+    } else {
+        assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
+        assert_eq!(first.operation, "iges boundary cluster roots");
+        assert_eq!((first.limit, first.used, first.additional), (cap, parent, node));
+    }
+    for _ in 0..64 {
+        for source in [points.as_slice(), &[]] {
+            assert!(matches!(cluster_boundary_positions(source, PositiveReal::ONE, &ctx),
+                Err(BoundaryVertexCreationError::Resource(CodecError::ResourceLimit(last)))
+                    if last == first));
+        }
+    }
+    assert_eq!(points, before);
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+}
+
+#[test]
+fn cluster_sizes_release_before_one_short_root_node_storage() {
+    for count in [1, 21] { cluster_size_storage_boundary(count, false); }
+}
+
+#[test]
+fn cluster_sizes_exact_root_node_peak_reaches_first_member_slot() {
+    for count in [1, 21] { cluster_size_storage_boundary(count, true); }
+}

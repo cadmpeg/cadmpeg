@@ -241,6 +241,8 @@ fn cluster_boundary_positions(
             }
         }
     }
+    drop(sizes);
+    drop(size_storage);
     let mut root_storage = ctx.reserve_scoped(0, "iges boundary cluster roots")?;
     let mut members_by_root = BTreeMap::<usize, Vec<usize>>::new();
     if let Some(refusal) = ctx.resource_refusal() {
@@ -259,6 +261,8 @@ fn cluster_boundary_positions(
         ctx.reserve_vec(members, 1, "iges boundary cluster members")?;
         members.push(index);
     }
+    drop(parents);
+    drop(_parent_storage);
     let mut clusters = ctx.collection_vec(members_by_root.len(), "iges boundary cluster slots")?;
     let mut groups = members_by_root.into_iter();
     while groups.len() != 0 || ctx.resource_refusal().is_some() {
