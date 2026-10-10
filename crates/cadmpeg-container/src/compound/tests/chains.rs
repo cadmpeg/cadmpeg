@@ -28,8 +28,7 @@ fn assert_chain_diagnostic(
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes =
         u64::try_from(materialized).expect("chain peak fits u64");
-    policy.limits.max_retained_bytes =
-        u64::try_from(retained).expect("chain output slots fit u64");
+    policy.limits.max_retained_bytes = u64::try_from(retained).expect("chain output slots fit u64");
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     let error = chain(&ctx, fat, sector_count, start, length, ChainRole::Directory)
@@ -262,8 +261,9 @@ fn nested_storage_receives_only_the_accepted_chain_output() {
     policy.limits.max_retained_bytes = 0;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    let mut caller_storage =
-        ctx.reserve_scoped(0, "enclose CFB chain output").expect("caller scope");
+    let mut caller_storage = ctx
+        .reserve_scoped(0, "enclose CFB chain output")
+        .expect("caller scope");
     let accepted = caller_storage
         .with_storage(|| {
             chain(
@@ -304,4 +304,3 @@ fn nested_storage_receives_only_the_accepted_chain_output() {
     );
     assert_eq!(ctx.resource_refusal(), Some(limit));
 }
-

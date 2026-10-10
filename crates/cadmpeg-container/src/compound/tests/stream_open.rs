@@ -44,7 +44,9 @@ fn stream_open_admits_only_needed_sector_view_storage() {
             let CodecError::ResourceLimit(first) = &error else {
                 panic!("remaining sector visits refuse under zero work");
             };
-            let repeated = snapshot.open(ctx, stream).expect_err("original tail refusal");
+            let repeated = snapshot
+                .open(ctx, stream)
+                .expect_err("original tail refusal");
             assert!(matches!(repeated, CodecError::ResourceLimit(limit) if limit == *first));
             assert_eq!(ctx.resource_refusal(), Some(*first));
             error
@@ -69,12 +71,8 @@ fn fragmented_stream_open_charges_concat_copy_once() {
     put_u32(fat, 3 * 4, 5);
 
     let arena = DecodeArena::new();
-    let (ctx, root) = DecodeContext::from_root_bytes(
-        &file,
-        &arena,
-        &DecodePolicy::service(),
-    )
-    .expect("fixture root");
+    let (ctx, root) = DecodeContext::from_root_bytes(&file, &arena, &DecodePolicy::service())
+        .expect("fixture root");
     let snapshot = CompoundSnapshot::new(&ctx, root).expect("valid allocation");
     let stream = snapshot
         .stream(&ctx, "Store/Large")
@@ -83,8 +81,8 @@ fn fragmented_stream_open_charges_concat_copy_once() {
 
     // Two seven-sector rest traversals, two eight-view concat passes,
     // and one 4096-byte copy.
-    let work_limit = u64::try_from(2 * (8 - 1) + 2 * 8 + 8 * SECTOR_SIZE)
-        .expect("work total fits u64");
+    let work_limit =
+        u64::try_from(2 * (8 - 1) + 2 * 8 + 8 * SECTOR_SIZE).expect("work total fits u64");
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = work_limit;
     with_context(&[], &policy, |ctx| {
@@ -167,8 +165,7 @@ fn stream_open_uses_absolute_coordinates_for_nonzero_root_views() {
             let cfb = root
                 .child(prefix_len, prefixed.len())
                 .expect("CFB child view");
-            let snapshot =
-                CompoundSnapshot::new(&ctx, cfb).expect("CFB parses within child view");
+            let snapshot = CompoundSnapshot::new(&ctx, cfb).expect("CFB parses within child view");
             let small = snapshot
                 .open(
                     &ctx,
@@ -229,8 +226,7 @@ fn snapshot_opens_a_stream_from_a_partial_final_sector() {
     assert!(stream.window().iter().all(|byte| *byte == 0x5a));
 
     let mut too_large = partial_regular_fixture();
-    sector_mut(&mut too_large, 0)[3 * 128 + 120..4 * 128]
-        .copy_from_slice(&4608_u64.to_le_bytes());
+    sector_mut(&mut too_large, 0)[3 * 128 + 120..4 * 128].copy_from_slice(&4608_u64.to_le_bytes());
     let arena = DecodeArena::new();
     let (ctx, root) = DecodeContext::from_root_bytes(&too_large, &arena, &policy)
         .expect("synthetic CFB fits the decode policy");
@@ -247,21 +243,23 @@ fn snapshot_opens_a_stream_from_a_partial_final_sector() {
 
     let mut limited_policy = DecodePolicy::service();
     // Available extent is checked before any view list or arena copy.
-    let diagnostic_bytes = u64::try_from(
-        "CFB stream Store/Large is shorter than declared".len(),
-    )
-    .expect("diagnostic length fits u64");
+    let diagnostic_bytes = u64::try_from("CFB stream Store/Large is shorter than declared".len())
+        .expect("diagnostic length fits u64");
     limited_policy.limits.max_retained_bytes = diagnostic_bytes;
     limited_policy.limits.max_materialized_bytes = 0;
     let error = with_context(&[], &limited_policy, |ctx| {
-        snapshot.open(ctx, stream).expect_err("actual extent is too short")
+        snapshot
+            .open(ctx, stream)
+            .expect_err("actual extent is too short")
     });
     assert!(matches!(error, CodecError::Malformed(detail)
         if detail == "CFB stream Store/Large is shorter than declared"));
 
     limited_policy.limits.max_retained_bytes -= 1;
     let refusal = with_context(&[], &limited_policy, |ctx| {
-        snapshot.open(ctx, stream).expect_err("the escaping diagnostic requires storage")
+        snapshot
+            .open(ctx, stream)
+            .expect_err("the escaping diagnostic requires storage")
     });
     assert!(matches!(
         refusal,
@@ -305,8 +303,17 @@ fn snapshot_rejects_stream_handles_from_another_snapshot() {
 #[test]
 fn fragmented_mini_stream_copies_only_logical_payload() {
     let mut file = fixture();
-    directory_entry(sector_mut(&mut file, 0), 1, "Small", 2,
-        NO_STREAM, 2, NO_STREAM, 0, 66);
+    directory_entry(
+        sector_mut(&mut file, 0),
+        1,
+        "Small",
+        2,
+        NO_STREAM,
+        2,
+        NO_STREAM,
+        0,
+        66,
+    );
     let mini_fat = sector_mut(&mut file, 10);
     put_u32(mini_fat, 0, 2);
     put_u32(mini_fat, 2 * 4, END_OF_CHAIN);
@@ -318,11 +325,16 @@ fn fragmented_mini_stream_copies_only_logical_payload() {
         let mut bytes = vec![0_u8; prefix];
         bytes.extend_from_slice(&file);
         let setup_arena = DecodeArena::new();
-        let (setup, root) = DecodeContext::from_root_bytes(&bytes, &setup_arena, &DecodePolicy::service())
-            .expect("prefixed fixture root");
+        let (setup, root) =
+            DecodeContext::from_root_bytes(&bytes, &setup_arena, &DecodePolicy::service())
+                .expect("prefixed fixture root");
         let source = root.child(prefix, bytes.len()).expect("CFB root");
-        let snapshot = CompoundSnapshot::new(&setup, source).expect("valid fragmented mini allocation");
-        let stream = snapshot.stream(&setup, "Small").expect("lookup").expect("small stream");
+        let snapshot =
+            CompoundSnapshot::new(&setup, source).expect("valid fragmented mini allocation");
+        let stream = snapshot
+            .stream(&setup, "Small")
+            .expect("lookup")
+            .expect("small stream");
         // Two one-sector tail visits, two two-view concat passes and exactly
         // 64+2 copied logical bytes. The second sector's 62 padding bytes
         // remain borrowed input and are absent from the derived output.
@@ -345,11 +357,18 @@ fn fragmented_mini_stream_copies_only_logical_payload() {
                     assert_eq!(ctx.resource_refusal(), None);
                 } else {
                     let error = result.expect_err("the final two payload bytes need admission");
-                    let CodecError::ResourceLimit(refusal) = error else { panic!("resource refusal") };
+                    let CodecError::ResourceLimit(refusal) = error else {
+                        panic!("resource refusal")
+                    };
                     assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
                     assert_eq!(refusal.operation, "concat_views");
-                    assert_eq!((refusal.used, refusal.additional),
-                        (u64::try_from(prior_copy_work + 64).expect("prior copy work"), 2));
+                    assert_eq!(
+                        (refusal.used, refusal.additional),
+                        (
+                            u64::try_from(prior_copy_work + 64).expect("prior copy work"),
+                            2
+                        )
+                    );
                     assert_eq!(ctx.resource_refusal(), Some(refusal));
                 }
             });
@@ -365,10 +384,15 @@ fn fragmented_regular_stream_excludes_final_sector_padding_from_copy() {
     put_u32(fat, 4 * 4, 3);
     put_u32(fat, 3 * 4, 5);
     let setup_arena = DecodeArena::new();
-    let (setup, root) = DecodeContext::from_root_bytes(&file, &setup_arena, &DecodePolicy::service())
-        .expect("partial fixture root");
-    let snapshot = CompoundSnapshot::new(&setup, root).expect("valid fragmented regular allocation");
-    let stream = snapshot.stream(&setup, "Store/Large").expect("lookup").expect("large stream");
+    let (setup, root) =
+        DecodeContext::from_root_bytes(&file, &setup_arena, &DecodePolicy::service())
+            .expect("partial fixture root");
+    let snapshot =
+        CompoundSnapshot::new(&setup, root).expect("valid fragmented regular allocation");
+    let stream = snapshot
+        .stream(&setup, "Store/Large")
+        .expect("lookup")
+        .expect("large stream");
     let views = 9;
     let logical_bytes = 4110;
     let prior_copy_work = 2 * (views - 1) + 2 * views;
@@ -384,11 +408,18 @@ fn fragmented_regular_stream_excludes_final_sector_padding_from_copy() {
                 assert_eq!(ctx.resource_refusal(), None);
             } else {
                 let error = result.expect_err("the final payload slice needs admission");
-                let CodecError::ResourceLimit(refusal) = error else { panic!("resource refusal") };
+                let CodecError::ResourceLimit(refusal) = error else {
+                    panic!("resource refusal")
+                };
                 assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
                 assert_eq!(refusal.operation, "concat_views");
-                assert_eq!((refusal.used, refusal.additional),
-                    (u64::try_from(prior_copy_work + 8 * SECTOR_SIZE).expect("prior copy work"), 14));
+                assert_eq!(
+                    (refusal.used, refusal.additional),
+                    (
+                        u64::try_from(prior_copy_work + 8 * SECTOR_SIZE).expect("prior copy work"),
+                        14
+                    )
+                );
                 assert_eq!(ctx.resource_refusal(), Some(refusal));
             }
         });

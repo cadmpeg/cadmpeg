@@ -30,12 +30,7 @@ fn malformed_directory_display_uses_only_structural_work() {
     // one directory-chain visit with three first-node passes and four
     // borrowed records. No structural sector copy remains.
     let record_visits = SECTOR_SIZE / 128;
-    let work_units = 1
-        + SECTOR_SIZE / 4
-        + 3
-        + 1
-        + 3 * id_node_bytes
-        + record_visits;
+    let work_units = 1 + SECTOR_SIZE / 4 + 3 + 1 + 3 * id_node_bytes + record_visits;
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units =
         u64::try_from(work_units).expect("structural work total fits u64");

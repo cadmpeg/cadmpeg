@@ -44,7 +44,11 @@ fn admitted_chain_yields_its_fixed_first_sector_at_zero_work() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let mut sectors = Vec::new();
-    chain.visit(&ctx, |sector| { sectors.push(sector); Ok(()) })
+    chain
+        .visit(&ctx, |sector| {
+            sectors.push(sector);
+            Ok(())
+        })
         .expect("the fixed first field and empty rest need no work");
     let mut sectors = sectors.iter();
     assert_eq!(sectors.next(), Some(&chain.first));
@@ -61,7 +65,11 @@ fn admitted_chain_still_refuses_for_a_nonempty_rest() {
     let policy = zero_work_policy();
     let (error, refusal) = with_context(&[], &policy, |ctx| {
         let mut reached = Vec::new();
-        let error = chain.visit(ctx, |sector| { reached.push(sector); Ok(()) })
+        let error = chain
+            .visit(ctx, |sector| {
+                reached.push(sector);
+                Ok(())
+            })
             .expect_err("the variable rest must be admitted before its callback");
         assert_eq!(reached, vec![chain.first]);
         (error, ctx.resource_refusal())
@@ -185,8 +193,7 @@ fn range_lock_sector_insertion_uses_core_tree_admission_once() {
 
     // A first core B-tree node pays three node passes. The final FAT walk
     // pays one u32 visit and one u32 membership comparison.
-    let node_bound = 11
-        * (std::mem::size_of::<u32>() + std::mem::size_of::<()>())
+    let node_bound = 11 * (std::mem::size_of::<u32>() + std::mem::size_of::<()>())
         + 16 * std::mem::size_of::<usize>()
         + 2 * std::mem::align_of::<u32>()
             .max(std::mem::align_of::<()>())
