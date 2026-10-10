@@ -1916,16 +1916,28 @@ fn build_wire_set<'ctx>(
             loops: Vec::new(),
             faces: Vec::new(),
             surfaces: Vec::new(),
-            shells: scratch.with_storage(|| ctx.collect_vec([shell_value], "step_wire_shells"))?,
+            shells: {
+                let mut values = Vec::new();
+                ctx.push_scoped_vec(&mut scratch, &mut values, shell_value, "step_wire_shells")?;
+                values
+            },
             region: Region {
                 id: region.try_clone_for_decode(ctx, "step_wire_region_id_copy")?,
                 body: body.try_clone_for_decode(ctx, "step_wire_body_id_copy")?,
-                shells: ctx.collect_vec([shell], "step_wire_region_shells")?,
+                shells: {
+                    let mut values = Vec::new();
+                    ctx.push_vec(&mut values, shell, "step_wire_region_shells")?;
+                    values
+                },
             },
             body: Body {
                 id: body.try_clone_for_decode(ctx, "step_wire_body_id_copy")?,
                 kind: BodyKind::Wire,
-                regions: ctx.collect_vec([region], "step_wire_body_regions")?,
+                regions: {
+                    let mut values = Vec::new();
+                    ctx.push_vec(&mut values, region, "step_wire_body_regions")?;
+                    values
+                },
                 transform: None,
                 name: None,
                 color: None,
@@ -2322,16 +2334,28 @@ fn build_shell_wire_set<'ctx>(
             loops: Vec::new(),
             faces: Vec::new(),
             surfaces: Vec::new(),
-            shells: scratch.with_storage(|| ctx.collect_vec([shell_value], "step_wire_shells"))?,
+            shells: {
+                let mut values = Vec::new();
+                ctx.push_scoped_vec(&mut scratch, &mut values, shell_value, "step_wire_shells")?;
+                values
+            },
             region: Region {
                 id: region.try_clone_for_decode(ctx, "step_wire_region_id_copy")?,
                 body: body.try_clone_for_decode(ctx, "step_wire_body_id_copy")?,
-                shells: ctx.collect_vec([shell], "step_wire_region_shells")?,
+                shells: {
+                    let mut values = Vec::new();
+                    ctx.push_vec(&mut values, shell, "step_wire_region_shells")?;
+                    values
+                },
             },
             body: Body {
                 id: body.try_clone_for_decode(ctx, "step_wire_body_id_copy")?,
                 kind: BodyKind::Wire,
-                regions: ctx.collect_vec([region], "step_wire_body_regions")?,
+                regions: {
+                    let mut values = Vec::new();
+                    ctx.push_vec(&mut values, region, "step_wire_body_regions")?;
+                    values
+                },
                 transform: None,
                 name: None,
                 color: None,
@@ -2551,17 +2575,33 @@ fn build_geometric_set<'ctx>(
             loops: Vec::new(),
             faces,
             surfaces: Vec::new(),
-            shells: scratch
-                .with_storage(|| ctx.collect_vec([shell], "step_geometric_set_shells"))?,
+            shells: {
+                let mut values = Vec::new();
+                ctx.push_scoped_vec(
+                    &mut scratch,
+                    &mut values,
+                    shell,
+                    "step_geometric_set_shells",
+                )?;
+                values
+            },
             region: Region {
                 id: region.try_clone_for_decode(ctx, "step_topology_identity_copy")?,
                 body: body.try_clone_for_decode(ctx, "step_topology_identity_copy")?,
-                shells: ctx.collect_vec([shell_id], "step_geometric_set_region_shells")?,
+                shells: {
+                    let mut values = Vec::new();
+                    ctx.push_vec(&mut values, shell_id, "step_geometric_set_region_shells")?;
+                    values
+                },
             },
             body: Body {
                 id: body,
                 kind: BodyKind::Sheet,
-                regions: ctx.collect_vec([region], "step_geometric_set_body_regions")?,
+                regions: {
+                    let mut values = Vec::new();
+                    ctx.push_vec(&mut values, region, "step_geometric_set_body_regions")?;
+                    values
+                },
                 transform: None,
                 name: None,
                 color: None,
@@ -3799,10 +3839,15 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
         } else {
             BodyKind::Sheet
         },
-        regions: ctx.collect_vec(
-            [rid.try_clone_for_decode(ctx, "step_topology_identity_copy")?],
-            "step_brep_body_regions",
-        )?,
+        regions: {
+            let mut values = Vec::new();
+            ctx.push_vec(
+                &mut values,
+                rid.try_clone_for_decode(ctx, "step_topology_identity_copy")?,
+                "step_brep_body_regions",
+            )?;
+            values
+        },
         transform: None,
         name: None,
         color: None,
@@ -6799,8 +6844,13 @@ fn pcurve_selection_seeds(
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<f64>, CodecError> {
     let mut seed_storage = ctx.reserve_scoped(0, "STEP pcurve seed scratch")?;
-    let mut seeds =
-        seed_storage.with_storage(|| ctx.collect_vec([0.0], "step_pcurve_selection_seeds"))?;
+    let mut seeds = Vec::new();
+    ctx.push_scoped_vec(
+        &mut seed_storage,
+        &mut seeds,
+        0.0,
+        "step_pcurve_selection_seeds",
+    )?;
     if let Some([start, end]) = pcurve_selection_parameter_domain(geometry, ctx)? {
         let at_fraction = |fraction: f64| {
             let ordinary = start + (end - start) * fraction;
