@@ -93,7 +93,9 @@ fn network_connect_points(
     let mut points = Vec::new();
     let mut input = 0..count;
     while !input.is_empty() || ctx.resource_refusal().is_some() {
-        let Some(index) = ctx.next_charged(&mut input, operation)? else { break; };
+        let Some(index) = ctx.next_charged(&mut input, operation)? else {
+            break;
+        };
         let value = if matches!(global_table, GlobalTable::V4_0) {
             record.integer(first_pointer_index + index)
         } else {
@@ -114,9 +116,9 @@ fn network_connect_points(
             else {
                 return Ok(None);
             };
-            if !ctx
+            if ctx
                 .get_btree_map(entries, &sequence, "iges network point directory lookup")?
-                .is_some_and(|entry| entry.entity_type == 132)
+                .is_none_or(|entry| entry.entity_type != 132)
             {
                 return Ok(None);
             }
@@ -235,7 +237,9 @@ fn single_target_cycle(
             }
             let mut source_values = IntoIterator::into_iter(path);
             while source_values.len() != 0 {
-                let Some(node) = ctx.next_charged(&mut source_values, "iges structure list traversal")? else {
+                let Some(node) =
+                    ctx.next_charged(&mut source_values, "iges structure list traversal")?
+                else {
                     break;
                 };
                 ctx.insert_btree_set(visited, node, "iges structure visited cycle nodes")?;
@@ -276,7 +280,8 @@ fn single_target_cycle(
     }
     let mut source_values = IntoIterator::into_iter(path);
     while source_values.len() != 0 {
-        let Some(node) = ctx.next_charged(&mut source_values, "iges structure cycle completion")? else {
+        let Some(node) = ctx.next_charged(&mut source_values, "iges structure cycle completion")?
+        else {
             break;
         };
         ctx.insert_btree_set(visited, node, "iges structure visited cycle nodes")?;
@@ -448,7 +453,9 @@ fn array_mask_valid(
     let mut positions = BTreeSet::new();
     let mut input = 0..count;
     while !input.is_empty() || ctx.resource_refusal().is_some() {
-        let Some(index) = ctx.next_charged(&mut input, "iges structure list traversal")? else { break; };
+        let Some(index) = ctx.next_charged(&mut input, "iges structure list traversal")? else {
+            break;
+        };
         let Some(position) = record
             .integer(first_position_index + index)
             .and_then(|value| usize::try_from(value).ok())
@@ -481,7 +488,8 @@ fn has_association_back_pointer(
         association_owners,
         &group_sequence,
         "iges association owner lookup",
-    )? else {
+    )?
+    else {
         return Ok(false);
     };
     ctx.contains_btree_set(
@@ -544,7 +552,8 @@ impl LegacyAssociativityContext<'_, '_> {
                     self.records,
                     &sequence,
                     "iges legacy associativity record lookup",
-                )? else {
+                )?
+                else {
                     return Ok(false);
                 };
                 has_association_back_pointer(
@@ -725,11 +734,7 @@ fn attribute_value_valid(
             .ok()
             .filter(|sequence| sequence % 2 == 1)
             .map(|sequence| {
-                ctx.contains_key_btree_map(
-                    entries,
-                    &sequence,
-                    "iges attribute directory lookup",
-                )
+                ctx.contains_key_btree_map(entries, &sequence, "iges attribute directory lookup")
             })
             .transpose()?
             .unwrap_or(false),
@@ -768,15 +773,16 @@ fn attribute_definition_valid_and_shape<'ctx>(
         return Err(refusal.into());
     }
     let mut source_values = IntoIterator::into_iter(0..attribute_count.unwrap_or_default());
-    while source_values.len() != 0 {
+    while !source_values.is_empty() {
         let Some(_) = ctx.next_charged(&mut source_values, "iges structure list traversal")? else {
             break;
         };
         let attribute_type_valid = match record.integer(cursor) {
-            Some(value) if (0..=9999).contains(&value) => attribute_type_storage
-                .with_storage(|| {
+            Some(value) if (0..=9999).contains(&value) => {
+                attribute_type_storage.with_storage(|| {
                     ctx.insert_btree_set(&mut attribute_types, value, "iges attribute type nodes")
-                })?,
+                })?
+            }
             _ => false,
         };
         let data_type = record
@@ -784,21 +790,18 @@ fn attribute_definition_valid_and_shape<'ctx>(
             .filter(|value| matches!(value, 0..=6));
         let value_count = match record.value(cursor + 2) {
             None | Some(TokenValue::Omitted) => record.integer_or(cursor + 2, 1).map(|_| 1),
-            Some(TokenValue::Integer(value)) => {
-                usize::try_from(*value).ok().and_then(|count| {
-                    (entry.form == 0
-                        || cursor
-                            .checked_add(3)
-                            .and_then(|start| record.parameter_end().checked_sub(start))
-                            .is_some_and(|available| count <= available))
-                    .then_some(count)
-                })
-            }
+            Some(TokenValue::Integer(value)) => usize::try_from(*value).ok().and_then(|count| {
+                (entry.form == 0
+                    || cursor
+                        .checked_add(3)
+                        .and_then(|start| record.parameter_end().checked_sub(start))
+                        .is_some_and(|available| count <= available))
+                .then_some(count)
+            }),
             Some(TokenValue::Real(_) | TokenValue::String(_)) => None,
         };
         cursor += 3;
-        attributes_valid &=
-            attribute_type_valid && data_type.is_some() && value_count.is_some();
+        attributes_valid &= attribute_type_valid && data_type.is_some() && value_count.is_some();
         if let Some(descriptor) = data_type
             .zip(value_count)
             .filter(|(_, count)| entry.form == 0 && *count > 0)
@@ -815,8 +818,10 @@ fn attribute_definition_valid_and_shape<'ctx>(
                 return Err(refusal.into());
             }
             let mut source_values = IntoIterator::into_iter(0..value_count.unwrap_or_default());
-            while source_values.len() != 0 {
-                let Some(_) = ctx.next_charged(&mut source_values, "iges structure list traversal")? else {
+            while !source_values.is_empty() {
+                let Some(_) =
+                    ctx.next_charged(&mut source_values, "iges structure list traversal")?
+                else {
                     break;
                 };
                 let value_valid = match data_type {
@@ -868,7 +873,10 @@ fn unit_values_valid(
     if let Some(count) = count.filter(|_| units_valid) {
         let mut input = 0..count;
         while !input.is_empty() || ctx.resource_refusal().is_some() {
-            let Some(offset) = ctx.next_charged(&mut input, "iges structure list traversal")? else { break; };
+            let Some(offset) = ctx.next_charged(&mut input, "iges structure list traversal")?
+            else {
+                break;
+            };
             let start = 2 + offset * 3;
             let valid = if let Some((unit_type, value)) =
                 record.string(start).zip(record.string(start + 1))
@@ -1196,7 +1204,11 @@ fn property_fields_valid(
             let mut counts = Some((0_usize, 1_usize));
             let mut offsets = 0..independent_count;
             while !offsets.is_empty() || ctx.resource_refusal().is_some() {
-                let Some(offset) = ctx.next_charged(&mut offsets, "iges property independent counts")? else { break; };
+                let Some(offset) =
+                    ctx.next_charged(&mut offsets, "iges property independent counts")?
+                else {
+                    break;
+                };
                 counts = counts.and_then(|(sum, product)| {
                     let count = record
                         .integer(5 + independent_count + offset)
@@ -1527,21 +1539,14 @@ fn predefined_associativity_valid(
             )
         }
         6 => {
-            if record.integer(1) != Some(1) {
-                return Ok(false);
-            }
             let Some(visible_count) = record.count(2) else {
                 return Ok(false);
             };
-            if end != 4 + visible_count {
-                return Ok(false);
-            }
             let view = existing_pointer(record, 3, entries, ctx)?;
             let visible_valid = ctx.all_by(
                 0..visible_count,
                 |offset| {
-                    let Some((sequence, _)) =
-                        existing_pointer(record, 4 + offset, entries, ctx)?
+                    let Some((sequence, _)) = existing_pointer(record, 4 + offset, entries, ctx)?
                     else {
                         return Ok(false);
                     };
@@ -1549,7 +1554,8 @@ fn predefined_associativity_valid(
                         records,
                         &sequence,
                         "iges predefined associativity record lookup",
-                    )? else {
+                    )?
+                    else {
                         return Ok(false);
                     };
                     has_association_back_pointer(owner, entry.sequence, association_owners, ctx)
@@ -1574,19 +1580,16 @@ fn predefined_associativity_valid(
                 }
                 _ => false,
             };
-            Ok(view_back_pointer_valid && visible_valid)
+            Ok(record.integer(1) == Some(1)
+                && end == 4 + visible_count
+                && view_back_pointer_valid
+                && visible_valid)
         }
         9 => {
-            if record.integer(1) != Some(1) {
-                return Ok(false);
-            }
             let Some(child_count) = record.count(2).filter(|count| *count > 0) else {
                 return Ok(false);
             };
-            if end != 4 + child_count {
-                return Ok(false);
-            }
-            ctx.all_by(
+            let members_valid = ctx.all_by(
                 3..4 + child_count,
                 |index| {
                     let Some((sequence, _)) = existing_pointer(record, index, entries, ctx)? else {
@@ -1596,13 +1599,15 @@ fn predefined_associativity_valid(
                         records,
                         &sequence,
                         "iges predefined associativity record lookup",
-                    )? else {
+                    )?
+                    else {
                         return Ok(false);
                     };
                     has_association_back_pointer(member, entry.sequence, association_owners, ctx)
                 },
                 "iges predefined associativity fields",
-            )
+            )?;
+            Ok(record.integer(1) == Some(1) && end == 4 + child_count && members_valid)
         }
         2 | 12 => {
             let count = record.count(1).filter(|count| *count > 0);
@@ -1651,7 +1656,8 @@ fn predefined_associativity_valid(
                 records,
                 &sequence,
                 "iges predefined associativity record lookup",
-            )? else {
+            )?
+            else {
                 return Ok(false);
             };
             has_association_back_pointer(member, entry.sequence, association_owners, ctx)
@@ -1702,15 +1708,14 @@ fn predefined_associativity_valid(
                 return Ok(false);
             }
             let dimension = existing_pointer(record, 3, entries, ctx)?;
-            let orientation_valid = dimension.is_some_and(|(_, dimension)| {
-                match dimension.entity_type {
+            let orientation_valid =
+                dimension.is_some_and(|(_, dimension)| match dimension.entity_type {
                     202 => matches!(orientation, 0..=3),
                     216 => matches!(orientation, 4..=7),
                     218 => matches!(orientation, 6..=7),
                     206 | 220 | 222 => orientation == 0,
                     _ => false,
-                }
-            });
+                });
             let geometry_valid = ctx.all_by(
                 0..geometry_count,
                 |offset| {
@@ -1724,8 +1729,7 @@ fn predefined_associativity_valid(
                         && record
                             .integer(start + 1)
                             .is_some_and(|location| matches!(location, 0..=5))
-                        && (start + 2..=start + 4)
-                            .all(|index| record.number(index).is_some()))
+                        && (start + 2..=start + 4).all(|index| record.number(index).is_some()))
                 },
                 "iges predefined associativity fields",
             )?;
@@ -1752,8 +1756,8 @@ fn predefined_associativity_valid(
                 }
                 _ => 0,
             };
-            let arrow_cardinality_valid = !dimension
-                .is_some_and(|(_, dimension)| dimension.entity_type == 216)
+            let arrow_cardinality_valid = dimension
+                .is_none_or(|(_, dimension)| dimension.entity_type != 216)
                 || arrow_count != 2
                 || geometry_count == 2;
             let back_pointer_owners = ctx.get_btree_map(
@@ -1896,7 +1900,9 @@ fn linear_nurbs_boundary_points(
     }
     let mut interior = knots.iter();
     while interior.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some(knot) = ctx.next_charged(&mut interior, "iges plane NURBS interior knots")? else { break; };
+        let Some(knot) = ctx.next_charged(&mut interior, "iges plane NURBS interior knots")? else {
+            break;
+        };
         if parameter_range[0] < *knot && *knot < parameter_range[1] && !append_sample(*knot)? {
             return Ok(None);
         }
@@ -1984,8 +1990,11 @@ fn bounded_plane_curve_is_simple(
             let mut input = segments.iter();
             while input.len() != 0 || context.ctx.resource_refusal().is_some() {
                 let Some(segment) = context
-                .ctx
-                .next_charged(&mut input, "iges plane boundary segment traversal")? else { break; };
+                    .ctx
+                    .next_charged(&mut input, "iges plane boundary segment traversal")?
+                else {
+                    break;
+                };
                 let Some(curve) = context.index.curves(segment.curve.as_str(), context.ctx)? else {
                     return Ok(false);
                 };
@@ -2020,7 +2029,8 @@ fn bounded_plane_curve_is_simple(
                         )?;
                         return Ok(false);
                     };
-                    let valid = bounded_plane_curve_is_simple(geometry, context, false, None, active);
+                    let valid =
+                        bounded_plane_curve_is_simple(geometry, context, false, None, active);
                     context.ctx.remove_btree_set(
                         active,
                         &segment.curve,
@@ -2194,11 +2204,12 @@ impl From<CodecError> for PlaneBoundaryError {
     }
 }
 
-type PlaneBoundaryKey = (u32, [u64; 7]);
+type PlaneBoundaryKey = (u32, super::CoplanarityPlaneKey);
+type PlaneBoundaryProof<'ir> = (super::CoplanarityProof<'ir, &'ir Edge>, bool);
 
 /// Successful boundary proofs for one immutable model.
 struct PlaneBoundaryProofs<'ir, 'ctx> {
-    proven: BTreeMap<PlaneBoundaryKey, &'ir Edge>,
+    proven: BTreeMap<PlaneBoundaryKey, PlaneBoundaryProof<'ir>>,
     storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
@@ -2211,24 +2222,29 @@ fn plane_boundary_edge<'ir>(
     ctx: &DecodeContext<'_>,
     proofs: &mut PlaneBoundaryProofs<'ir, '_>,
 ) -> Result<&'ir Edge, PlaneBoundaryError> {
-    let proof_key = (
-        boundary_sequence,
-        [
-            plane.0.x.to_bits(),
-            plane.0.y.to_bits(),
-            plane.0.z.to_bits(),
-            plane.1.x.to_bits(),
-            plane.1.y.to_bits(),
-            plane.1.z.to_bits(),
-            resolution.to_bits(),
-        ],
-    );
-    if let Some(edge) = ctx.get_btree_map(
+    let plane_key = super::coplanarity_plane_key(plane, resolution);
+    let mut proof_key = (boundary_sequence, plane_key);
+    if let Some((proof, simplicity_origin_invariant)) = ctx.get_btree_map(
         &proofs.proven,
         &proof_key,
         "iges plane boundary proof cache lookup",
     )? {
-        return Ok(*edge);
+        if (proof.origin == plane.0 || *simplicity_origin_invariant)
+            && proof.matches(plane_key, plane, resolution)
+        {
+            return Ok(proof.result);
+        }
+        proof_key = (
+            boundary_sequence,
+            super::coplanarity_placement_key(plane, resolution),
+        );
+        if let Some((proof, _)) = ctx.get_btree_map(
+            &proofs.proven,
+            &proof_key,
+            "iges plane boundary proof cache lookup",
+        )? {
+            return Ok(proof.result);
+        }
     }
     let mut key_storage = [0_u8; 64];
     let key =
@@ -2303,7 +2319,18 @@ fn plane_boundary_edge<'ir>(
         ctx.insert_btree_map(
             &mut proofs.proven,
             proof_key,
-            source_edge,
+            (
+                super::CoplanarityProof {
+                    origin: plane.0,
+                    geometry: Some(geometry),
+                    result: source_edge,
+                },
+                matches!(
+                    geometry,
+                    SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_)
+                ) || (source_is_certified_simple
+                    && matches!(geometry, SolvedCurveGeometry::Nurbs(_))),
+            ),
             "iges plane boundary proof cache",
         )
     })?;
@@ -2365,13 +2392,15 @@ fn plane_face_draft(
     sequences.record_face(&face_id, source_sequence, ctx)?;
     let mut candidate = ModelDraft::new();
     let mut outer_loop = None;
-    let mut loop_ids = ctx.collection_vec(
-        boundary.0.len().saturating_sub(1),
-        "iges legacy plane loop IDs",
-    )?;
+    let inner_loop_count = boundary.0.iter().skip(1).len();
+    let mut loop_ids = ctx.collection_vec(inner_loop_count, "iges legacy plane loop IDs")?;
     let mut input = boundary.0.into_iter().enumerate();
     while input.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some((boundary_index, edge)) = ctx.next_charged(&mut input, "iges structure list traversal")? else { break; };
+        let Some((boundary_index, edge)) =
+            ctx.next_charged(&mut input, "iges structure list traversal")?
+        else {
+            break;
+        };
         let edge_id = edge
             .id
             .try_clone_for_decode(ctx, "iges structure identity copy")?;
@@ -2534,8 +2563,10 @@ fn legacy_single_parent_face<'ir, 'ctx>(
     proof_context: (&ModelIndex<'ir>, &mut PlaneBoundaryProofs<'ir, '_>),
     source: LegacyPlaneSource<'_>,
     parent: (u32, &DirectoryEntry),
-    entries: &BTreeMap<u32, &DirectoryEntry>,
-    records: &BTreeMap<u32, &ParameterRecord>,
+    (entries, records): (
+        &BTreeMap<u32, &DirectoryEntry>,
+        &BTreeMap<u32, &ParameterRecord>,
+    ),
     global: &ProjectedGlobal,
     ctx: &'ctx DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences<'_>,
@@ -2564,7 +2595,9 @@ fn legacy_single_parent_face<'ir, 'ctx>(
     let mut children_have_negative_physical_status = true;
     let mut input = 0..child_count;
     while !input.is_empty() || ctx.resource_refusal().is_some() {
-        let Some(offset) = ctx.next_charged(&mut input, "iges structure list traversal")? else { break; };
+        let Some(offset) = ctx.next_charged(&mut input, "iges structure list traversal")? else {
+            break;
+        };
         let Some((child_sequence, child_entry)) =
             existing_pointer(record, 4 + offset, entries, ctx)?
         else {
@@ -2594,11 +2627,7 @@ fn legacy_single_parent_face<'ir, 'ctx>(
     let (mut boundary_sequences, result_boundary_storage) =
         ctx.temporary_vec(boundary_count, "iges legacy plane boundary pointers")?;
     _boundary_storage = result_boundary_storage;
-    for sequence in std::iter::once(parent_sequence).chain(
-        ctx.admit_iter(&children, "iges legacy plane children traversal")
-            .map_err(CodecError::from)?
-            .copied(),
-    ) {
+    let mut append_boundary = |sequence| -> Result<(), LegacyPlaneError> {
         let Some(plane) =
             ctx.get_btree_map(records, &sequence, "iges legacy plane record lookup")?
         else {
@@ -2608,6 +2637,19 @@ fn legacy_single_parent_face<'ir, 'ctx>(
             return Err("legacy single-parent plane has an invalid boundary pointer".into());
         };
         boundary_sequences.push(boundary);
+        Ok(())
+    };
+    append_boundary(parent_sequence)?;
+    let mut children_to_visit = children.iter().copied();
+    while children_to_visit.len() != 0 {
+        let Some(sequence) = ctx.next_charged(
+            &mut children_to_visit,
+            "iges legacy plane children traversal",
+        )?
+        else {
+            break;
+        };
+        append_boundary(sequence)?;
     }
     let parent_plane = plane_carrier(index, parent_sequence, ctx)?
         .ok_or("legacy single-parent parent plane was not projected")?;
@@ -2621,7 +2663,11 @@ fn legacy_single_parent_face<'ir, 'ctx>(
         .zip(boundary_sequences.iter().copied())
         .enumerate();
     while input.size_hint().0 != 0 || ctx.resource_refusal().is_some() {
-        let Some((boundary_index, (plane_sequence, boundary_sequence))) = ctx.next_charged(&mut input, "iges structure list traversal")? else { break; };
+        let Some((boundary_index, (plane_sequence, boundary_sequence))) =
+            ctx.next_charged(&mut input, "iges structure list traversal")?
+        else {
+            break;
+        };
         let plane = plane_carrier(index, plane_sequence, ctx)?
             .ok_or("legacy single-parent child plane was not projected")?;
         if !planes_are_coplanar(parent_plane, plane, resolution) {
@@ -2710,7 +2756,9 @@ fn read_flow_required_pointers(
 ) -> Result<Option<Vec<u32>>, CodecError> {
     let mut pointers = ctx.collection_vec(count, operation)?;
     let mut input = 0..count;
-    while (!input.is_empty() || ctx.resource_refusal().is_some()) && ctx.next_charged(&mut input, operation)?.is_some() {
+    while (!input.is_empty() || ctx.resource_refusal().is_some())
+        && ctx.next_charged(&mut input, operation)?.is_some()
+    {
         let Some(FlowPointer::Sequence(sequence)) =
             read_flow_pointer(record, entries, cursor, false, ctx)?
         else {
@@ -2730,9 +2778,11 @@ fn read_flow_optional_pointers(
 ) -> Result<Option<Vec<Option<u32>>>, CodecError> {
     let mut pointers = ctx.collection_vec(count, "iges flow continuation pointers")?;
     let mut input = 0..count;
-    while (!input.is_empty() || ctx.resource_refusal().is_some()) && ctx
-        .next_charged(&mut input, "iges structure list traversal")?
-        .is_some() {
+    while (!input.is_empty() || ctx.resource_refusal().is_some())
+        && ctx
+            .next_charged(&mut input, "iges structure list traversal")?
+            .is_some()
+    {
         let Some(pointer) = read_flow_pointer(record, entries, cursor, true, ctx)? else {
             return Ok(None);
         };
@@ -2754,7 +2804,9 @@ fn definition_members(
     let mut members = ctx.collection_vec(count, operation)?;
     let mut input = 0..count;
     while !input.is_empty() || ctx.resource_refusal().is_some() {
-        let Some(index) = ctx.next_charged(&mut input, operation)? else { break; };
+        let Some(index) = ctx.next_charged(&mut input, operation)? else {
+            break;
+        };
         let Some(sequence) = record
             .integer(4 + index)
             .and_then(|value| u32::try_from(value).ok())
@@ -2854,9 +2906,11 @@ fn flow_associativity(
         return Ok(None);
     };
     let mut input = 0..counts[3];
-    while (!input.is_empty() || ctx.resource_refusal().is_some()) && ctx
-        .next_charged(&mut input, "iges structure list traversal")?
-        .is_some() {
+    while (!input.is_empty() || ctx.resource_refusal().is_some())
+        && ctx
+            .next_charged(&mut input, "iges structure list traversal")?
+            .is_some()
+    {
         if record.string(cursor).is_none_or(<[u8]>::is_empty) {
             return Ok(None);
         }
@@ -2895,8 +2949,7 @@ fn flow_associativity(
     let connections_valid = ctx.all_by(
         connections.iter(),
         |sequence| {
-            let Some(target) =
-                ctx.get_btree_map(entries, sequence, "iges flow target lookup")?
+            let Some(target) = ctx.get_btree_map(entries, sequence, "iges flow target lookup")?
             else {
                 return Ok(false);
             };
@@ -2949,8 +3002,7 @@ fn flow_associativity(
             let Some(sequence) = slot else {
                 return Ok(true);
             };
-            let Some(target) =
-                ctx.get_btree_map(entries, sequence, "iges flow target lookup")?
+            let Some(target) = ctx.get_btree_map(entries, sequence, "iges flow target lookup")?
             else {
                 return Ok(false);
             };
@@ -3113,17 +3165,25 @@ pub(super) fn project<'ctx>(
     global: &ProjectedGlobal,
     ctx: &'ctx DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences<'_>,
-) -> Result<(ProjectionOutcome<'ctx>, BTreeMap<u32, PlacementRejection>), CodecError> {
+) -> Result<
+    (
+        ProjectionOutcome<'ctx>,
+        BTreeMap<u32, PlacementRejection>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    ),
+    CodecError,
+> {
     let (entries, records) = indexes;
     let mut scratch = ctx.reserve_scoped(0, "iges structure scratch")?;
     let mut decoded_storage = ctx.reserve_scoped(0, "iges structure decoded sequences")?;
     let mut decoded = BTreeSet::new();
     let mut loss_slots_storage = ctx.reserve_scoped(0, "iges entity loss slots")?;
     let mut losses = Vec::new();
+    let mut placement_rejections_storage =
+        ctx.reserve_scoped(0, "iges placement rejection nodes")?;
     let mut placement_rejections = BTreeMap::new();
     let mut assemblies = BTreeMap::new();
-    let mut attribute_shape_storage =
-        ctx.reserve_scoped(0, "iges attribute shape index nodes")?;
+    let mut attribute_shape_storage = ctx.reserve_scoped(0, "iges attribute shape index nodes")?;
     let mut attribute_shapes = BTreeMap::new();
     let mut legacy_face_candidates = Vec::<(&DirectoryEntry, ModelDraft)>::new();
     let mut legacy_plane_sequences = BTreeSet::new();
@@ -3132,24 +3192,27 @@ pub(super) fn project<'ctx>(
     let mut association_owners = BTreeMap::<u32, BTreeSet<u32>>::new();
     let mut source_index_entries = records.iter();
     while source_index_entries.len() != 0 {
-        let Some((owner, record)) =
-            ctx.next_charged(&mut source_index_entries, "iges structure ownership records")?
+        let Some((owner, record)) = ctx.next_charged(
+            &mut source_index_entries,
+            "iges structure ownership records",
+        )?
         else {
             break;
         };
-        let Some(TrailingPointerAnalysis::Unambiguous(groups)) =
-            ctx.get_btree_map(
-                trailing_pointer_analysis,
-                &record.directory_sequence,
-                "iges trailing pointer analysis lookup",
-            )?
+        let Some(TrailingPointerAnalysis::Unambiguous(groups)) = ctx.get_btree_map(
+            trailing_pointer_analysis,
+            &record.directory_sequence,
+            "iges trailing pointer analysis lookup",
+        )?
         else {
             continue;
         };
         let mut source_index_entries = groups.properties().iter();
         while source_index_entries.len() != 0 {
-            let Some(target) =
-                ctx.next_charged(&mut source_index_entries, "iges structure property references")?
+            let Some(target) = ctx.next_charged(
+                &mut source_index_entries,
+                "iges structure property references",
+            )?
             else {
                 break;
             };
@@ -3171,8 +3234,10 @@ pub(super) fn project<'ctx>(
         }
         let mut source_index_entries = groups.associations().iter();
         while source_index_entries.len() != 0 {
-            let Some(target) =
-                ctx.next_charged(&mut source_index_entries, "iges structure association references")?
+            let Some(target) = ctx.next_charged(
+                &mut source_index_entries,
+                "iges structure association references",
+            )?
             else {
                 break;
             };
@@ -3198,7 +3263,14 @@ pub(super) fn project<'ctx>(
         if !(entry.entity_type == 402 && matches!(entry.form, 18 | 20)) {
             continue;
         }
-        let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
+        let Some(record) = ctx
+            .get_btree_map(
+                records,
+                &entry.sequence,
+                "iges structure parameter record lookup",
+            )?
+            .copied()
+        else {
             continue;
         };
         let mut candidate_storage = ctx.reserve_scoped(0, "iges flow candidate scratch")?;
@@ -3230,7 +3302,14 @@ pub(super) fn project<'ctx>(
         if !(entry.entity_type == 406 && matches!(entry.form, 2..=15 | 18..=36)) {
             continue;
         }
-        let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
+        let Some(record) = ctx
+            .get_btree_map(
+                records,
+                &entry.sequence,
+                "iges structure parameter record lookup",
+            )?
+            .copied()
+        else {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -3283,9 +3362,16 @@ pub(super) fn project<'ctx>(
                     && ctx.all_by(
                         owners.iter(),
                         |owner| {
-                            Ok(ctx.get_btree_map(entries, owner, "iges property owner directory lookup")?.is_some_and(|owner| {
-                                owner.entity_type == 402 && matches!(owner.form, 1 | 7 | 14 | 15)
-                            }))
+                            Ok(ctx
+                                .get_btree_map(
+                                    entries,
+                                    owner,
+                                    "iges property owner directory lookup",
+                                )?
+                                .is_some_and(|owner| {
+                                    owner.entity_type == 402
+                                        && matches!(owner.form, 1 | 7 | 14 | 15)
+                                }))
                         },
                         "iges structure list validation",
                     )?
@@ -3335,7 +3421,8 @@ pub(super) fn project<'ctx>(
                                 entries,
                                 owner,
                                 "iges property owner directory lookup",
-                            )? else {
+                            )?
+                            else {
                                 return Ok(false);
                             };
                             if !dimension_entity_type(owner_entry.entity_type) {
@@ -3345,7 +3432,8 @@ pub(super) fn project<'ctx>(
                                 records,
                                 owner,
                                 "iges property owner record lookup",
-                            )? else {
+                            )?
+                            else {
                                 return Ok(false);
                             };
                             let groups = ctx
@@ -3381,9 +3469,14 @@ pub(super) fn project<'ctx>(
                                 if let Some(refusal) = ctx.resource_refusal() {
                                     return Err(refusal.into());
                                 }
-                                let mut source_values = IntoIterator::into_iter(groups.properties());
+                                let mut source_values =
+                                    IntoIterator::into_iter(groups.properties());
                                 while source_values.len() != 0 {
-                                    let Some(sequence) = ctx.next_charged(&mut source_values, "iges dimension display property references")? else {
+                                    let Some(sequence) = ctx.next_charged(
+                                        &mut source_values,
+                                        "iges dimension display property references",
+                                    )?
+                                    else {
                                         break;
                                     };
                                     if ctx
@@ -3400,8 +3493,7 @@ pub(super) fn project<'ctx>(
                                     }
                                 }
                             }
-                            let basic_consistent =
-                                (record.integer(2) == Some(2)) == has_basic;
+                            let basic_consistent = (record.integer(2) == Some(2)) == has_basic;
                             let notes_valid = if note_count == 0 {
                                 true
                             } else {
@@ -3412,22 +3504,18 @@ pub(super) fn project<'ctx>(
                                             &note,
                                             "iges note parameter record lookup",
                                         )? {
-                                            Some(note_record) => {
-                                                match note_record.integer(1) {
-                                                    Some(text_count) => ctx.all_by(
-                                                        0..note_count,
-                                                        |offset| {
-                                                            Ok(record
-                                                                .integer(16 + offset * 3)
-                                                                .is_some_and(|last| {
-                                                                    last <= text_count
-                                                                }))
-                                                        },
-                                                        "iges structure list validation",
-                                                    )?,
-                                                    None => false,
-                                                }
-                                            }
+                                            Some(note_record) => match note_record.integer(1) {
+                                                Some(text_count) => ctx.all_by(
+                                                    0..note_count,
+                                                    |offset| {
+                                                        Ok(record
+                                                            .integer(16 + offset * 3)
+                                                            .is_some_and(|last| last <= text_count))
+                                                    },
+                                                    "iges structure list validation",
+                                                )?,
+                                                None => false,
+                                            },
                                             None => false,
                                         }
                                     }
@@ -3444,11 +3532,7 @@ pub(super) fn project<'ctx>(
                 entry.status.is_physically_dependent()
                     && owners.len() == 1
                     && ctx
-                        .get_btree_map(
-                            entries,
-                            &owners[0],
-                            "iges property owner directory lookup",
-                        )?
+                        .get_btree_map(entries, &owners[0], "iges property owner directory lookup")?
                         .is_some_and(|owner| dimension_entity_type(owner.entity_type))
             }
             32 => {
@@ -3475,8 +3559,10 @@ pub(super) fn project<'ctx>(
                     let mut identities = HashMap::<(i64, &[u8]), Option<u32>>::new();
                     let mut directory_entries = directory.iter();
                     while !directory_entries.as_slice().is_empty() {
-                        let Some(candidate) =
-                            ctx.next_charged(&mut directory_entries, "iges sheet identity directory")?
+                        let Some(candidate) = ctx.next_charged(
+                            &mut directory_entries,
+                            "iges sheet identity directory",
+                        )?
                         else {
                             break;
                         };
@@ -3487,7 +3573,8 @@ pub(super) fn project<'ctx>(
                             records,
                             &candidate.sequence,
                             "iges sheet identity record lookup",
-                        )? else {
+                        )?
+                        else {
                             continue;
                         };
                         if let Some(identity) =
@@ -3545,9 +3632,14 @@ pub(super) fn project<'ctx>(
                                 if let Some(refusal) = ctx.resource_refusal() {
                                     return Err(refusal.into());
                                 }
-                                let mut source_values = IntoIterator::into_iter(groups.properties());
+                                let mut source_values =
+                                    IntoIterator::into_iter(groups.properties());
                                 while source_values.len() != 0 {
-                                    let Some(sequence) = ctx.next_charged(&mut source_values, "iges sheet owner property references")? else {
+                                    let Some(sequence) = ctx.next_charged(
+                                        &mut source_values,
+                                        "iges sheet owner property references",
+                                    )?
+                                    else {
                                         break;
                                     };
                                     if ctx
@@ -3573,11 +3665,7 @@ pub(super) fn project<'ctx>(
                 };
                 owners.len() == 1
                     && ctx
-                        .get_btree_map(
-                            entries,
-                            &owners[0],
-                            "iges property owner directory lookup",
-                        )?
+                        .get_btree_map(entries, &owners[0], "iges property owner directory lookup")?
                         .is_some_and(|owner| owner.entity_type == 404)
                     && unique_identity
                     && sole_sheet_id
@@ -3585,21 +3673,13 @@ pub(super) fn project<'ctx>(
             34 => {
                 owners.len() == 1
                     && ctx
-                        .get_btree_map(
-                            entries,
-                            &owners[0],
-                            "iges property owner directory lookup",
-                        )?
+                        .get_btree_map(entries, &owners[0], "iges property owner directory lookup")?
                         .is_some_and(|owner| owner.entity_type == 212)
             }
             35 => {
                 owners.len() == 1
                     && ctx
-                        .get_btree_map(
-                            entries,
-                            &owners[0],
-                            "iges property owner directory lookup",
-                        )?
+                        .get_btree_map(entries, &owners[0], "iges property owner directory lookup")?
                         .is_some_and(|owner| matches!(owner.entity_type, 212 | 312))
             }
             36 => {
@@ -3657,7 +3737,14 @@ pub(super) fn project<'ctx>(
         if !(entry.entity_type == 322 && matches!(entry.form, 0..=2)) {
             continue;
         }
-        let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
+        let Some(record) = ctx
+            .get_btree_map(
+                records,
+                &entry.sequence,
+                "iges structure parameter record lookup",
+            )?
+            .copied()
+        else {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -3708,7 +3795,14 @@ pub(super) fn project<'ctx>(
         if !(entry.entity_type == 422 && matches!(entry.form, 0..=1)) {
             continue;
         }
-        let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
+        let Some(record) = ctx
+            .get_btree_map(
+                records,
+                &entry.sequence,
+                "iges structure parameter record lookup",
+            )?
+            .copied()
+        else {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -3724,11 +3818,9 @@ pub(super) fn project<'ctx>(
             .and_then(|value| u32::try_from(value).ok())
             .filter(|sequence| sequence % 2 == 1);
         let shape = match definition {
-            Some(sequence) => ctx.get_btree_map(
-                &attribute_shapes,
-                &sequence,
-                "iges attribute shape lookup",
-            )?,
+            Some(sequence) => {
+                ctx.get_btree_map(&attribute_shapes, &sequence, "iges attribute shape lookup")?
+            }
             None => None,
         };
         let declared_row_count = if entry.form == 0 {
@@ -3741,7 +3833,11 @@ pub(super) fn project<'ctx>(
         if let Some(shape) = shape {
             let mut descriptors = shape.descriptors.iter();
             while descriptors.len() != 0 || ctx.resource_refusal().is_some() {
-                let Some((_, count)) = ctx.next_charged(&mut descriptors, "iges attribute row width")? else { break; };
+                let Some((_, count)) =
+                    ctx.next_charged(&mut descriptors, "iges attribute row width")?
+                else {
+                    break;
+                };
                 values_per_row = values_per_row.and_then(|total| total.checked_add(*count));
                 if values_per_row.is_none() {
                     break;
@@ -3762,27 +3858,35 @@ pub(super) fn project<'ctx>(
             return Err(refusal.into());
         }
         let mut source_values = IntoIterator::into_iter(0..row_count.unwrap_or_default());
-        while source_values.len() != 0 {
-            let Some(_) = ctx.next_charged(&mut source_values, "iges structure list traversal")? else {
+        while !source_values.is_empty() {
+            let Some(_) = ctx.next_charged(&mut source_values, "iges structure list traversal")?
+            else {
                 break;
             };
             if let Some(refusal) = ctx.resource_refusal() {
                 return Err(refusal.into());
             }
-            let mut source_values = IntoIterator::into_iter(shape.map_or(&[][..], |shape| shape.descriptors.as_slice()));
+            let mut source_values = IntoIterator::into_iter(
+                shape.map_or(&[][..], |shape| shape.descriptors.as_slice()),
+            );
             while source_values.len() != 0 {
-                let Some((data_type, count)) = ctx.next_charged(&mut source_values, "iges attribute shape traversal")? else {
+                let Some((data_type, count)) =
+                    ctx.next_charged(&mut source_values, "iges attribute shape traversal")?
+                else {
                     break;
                 };
                 if let Some(refusal) = ctx.resource_refusal() {
                     return Err(refusal.into());
                 }
                 let mut source_values = IntoIterator::into_iter(0..*count);
-                while source_values.len() != 0 {
-                    let Some(_) = ctx.next_charged(&mut source_values, "iges structure list traversal")? else {
+                while !source_values.is_empty() {
+                    let Some(_) =
+                        ctx.next_charged(&mut source_values, "iges structure list traversal")?
+                    else {
                         break;
                     };
-                    values_valid &= attribute_value_valid(record, cursor, *data_type, entries, ctx)?;
+                    values_valid &=
+                        attribute_value_valid(record, cursor, *data_type, entries, ctx)?;
                     cursor += 1;
                 }
             }
@@ -3821,7 +3925,14 @@ pub(super) fn project<'ctx>(
         if !(entry.entity_type == 316 && entry.form == 0) {
             continue;
         }
-        let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
+        let Some(record) = ctx
+            .get_btree_map(
+                records,
+                &entry.sequence,
+                "iges structure parameter record lookup",
+            )?
+            .copied()
+        else {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -3854,10 +3965,17 @@ pub(super) fn project<'ctx>(
         else {
             break;
         };
-        if !(entry.entity_type == 302) {
+        if entry.entity_type != 302 {
             continue;
         }
-        let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
+        let Some(record) = ctx
+            .get_btree_map(
+                records,
+                &entry.sequence,
+                "iges structure parameter record lookup",
+            )?
+            .copied()
+        else {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -3874,8 +3992,9 @@ pub(super) fn project<'ctx>(
             return Err(refusal.into());
         }
         let mut source_values = IntoIterator::into_iter(0..class_count.unwrap_or_default());
-        while source_values.len() != 0 {
-            let Some(_) = ctx.next_charged(&mut source_values, "iges structure list traversal")? else {
+        while !source_values.is_empty() {
+            let Some(_) = ctx.next_charged(&mut source_values, "iges structure list traversal")?
+            else {
                 break;
             };
             classes_valid &= record
@@ -3928,7 +4047,14 @@ pub(super) fn project<'ctx>(
         if !(entry.entity_type == 402 && matches!(entry.form, 1 | 7 | 14 | 15)) {
             continue;
         }
-        let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
+        let Some(record) = ctx
+            .get_btree_map(
+                records,
+                &entry.sequence,
+                "iges structure parameter record lookup",
+            )?
+            .copied()
+        else {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -3942,29 +4068,31 @@ pub(super) fn project<'ctx>(
         let members_valid = count
             .map(|count| -> Result<bool, CodecError> {
                 ctx.all_by(
-                0..count,
-                |index| {
-                    let Some((sequence, _)) = existing_pointer(record, 2 + index, entries, ctx)?
-                    else {
-                        return Ok(false);
-                    };
-                    if !matches!(entry.form, 1 | 14) {
-                        return Ok(true);
-                    }
-                    let Some(member_record) = ctx.get_btree_map(
-                        records,
-                        &sequence,
-                        "iges group member record lookup",
-                    )? else {
-                        return Ok(false);
-                    };
-                    has_association_back_pointer(
-                        member_record,
-                        entry.sequence,
-                        &association_owners,
-                        ctx,
-                    )
-                },
+                    0..count,
+                    |index| {
+                        let Some((sequence, _)) =
+                            existing_pointer(record, 2 + index, entries, ctx)?
+                        else {
+                            return Ok(false);
+                        };
+                        if !matches!(entry.form, 1 | 14) {
+                            return Ok(true);
+                        }
+                        let Some(member_record) = ctx.get_btree_map(
+                            records,
+                            &sequence,
+                            "iges group member record lookup",
+                        )?
+                        else {
+                            return Ok(false);
+                        };
+                        has_association_back_pointer(
+                            member_record,
+                            entry.sequence,
+                            &association_owners,
+                            ctx,
+                        )
+                    },
                     "iges structure list validation",
                 )
             })
@@ -3999,10 +4127,19 @@ pub(super) fn project<'ctx>(
         else {
             break;
         };
-        if !(entry.entity_type == 402 && matches!(entry.form, 2 | 5 | 6 | 8 | 9 | 10 | 11 | 12 | 13 | 16 | 21)) {
+        if !(entry.entity_type == 402
+            && matches!(entry.form, 2 | 5 | 6 | 8 | 9 | 10 | 11 | 12 | 13 | 16 | 21))
+        {
             continue;
         }
-        let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
+        let Some(record) = ctx
+            .get_btree_map(
+                records,
+                &entry.sequence,
+                "iges structure parameter record lookup",
+            )?
+            .copied()
+        else {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -4058,8 +4195,7 @@ pub(super) fn project<'ctx>(
                     (index, &mut plane_proofs),
                     LegacyPlaneSource { entry, record },
                     parent,
-                    entries,
-                    records,
+                    (entries, records),
                     global,
                     ctx,
                     sequences,
@@ -4073,7 +4209,11 @@ pub(super) fn project<'ctx>(
                         }
                         let mut source_values = IntoIterator::into_iter(plane_sequences);
                         while source_values.len() != 0 {
-                            let Some(sequence) = ctx.next_charged(&mut source_values, "iges structure list traversal")? else {
+                            let Some(sequence) = ctx.next_charged(
+                                &mut source_values,
+                                "iges structure list traversal",
+                            )?
+                            else {
                                 break;
                             };
                             scratch.with_storage(|| {
@@ -4125,7 +4265,14 @@ pub(super) fn project<'ctx>(
         )? {
             continue;
         }
-        let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
+        let Some(record) = ctx
+            .get_btree_map(
+                records,
+                &entry.sequence,
+                "iges structure parameter record lookup",
+            )?
+            .copied()
+        else {
             continue;
         };
         let index = match &mut plane_index {
@@ -4243,7 +4390,9 @@ pub(super) fn project<'ctx>(
     }
     let mut source_values = IntoIterator::into_iter(legacy_face_candidates);
     while source_values.len() != 0 {
-        let Some((entry, candidate)) = ctx.next_charged(&mut source_values, "iges structure list traversal")? else {
+        let Some((entry, candidate)) =
+            ctx.next_charged(&mut source_values, "iges structure list traversal")?
+        else {
             break;
         };
         if commit_session.commit_model(candidate)?.is_err() {
@@ -4266,22 +4415,24 @@ pub(super) fn project<'ctx>(
     }
     let mut source_values = IntoIterator::into_iter(&flows);
     while source_values.len() != 0 {
-        let Some((sequence, flow)) = ctx.next_charged(&mut source_values, "iges flow graph definitions")? else {
+        let Some((sequence, flow)) =
+            ctx.next_charged(&mut source_values, "iges flow graph definitions")?
+        else {
             break;
         };
         let targets = scratch.with_storage(|| -> Result<Vec<u32>, CodecError> {
             let mut targets = Vec::new();
             let mut input = flow.continuations.iter();
             while input.len() != 0 || ctx.resource_refusal().is_some() {
-                let Some(slot) = ctx.next_charged(&mut input, "iges flow graph continuation slots")? else { break; };
+                let Some(slot) =
+                    ctx.next_charged(&mut input, "iges flow graph continuation slots")?
+                else {
+                    break;
+                };
                 let Some(target) = slot else {
                     continue;
                 };
-                if ctx.contains_key_btree_map(
-                    &flows,
-                    target,
-                    "iges flow graph target lookup",
-                )? {
+                if ctx.contains_key_btree_map(&flows, target, "iges flow graph target lookup")? {
                     ctx.push_vec(&mut targets, *target, "iges flow graph targets")?;
                 }
             }
@@ -4302,11 +4453,7 @@ pub(super) fn project<'ctx>(
         if !(entry.entity_type == 402 && matches!(entry.form, 18 | 20)) {
             continue;
         }
-        let flow = ctx.get_btree_map(
-            &flows,
-            &entry.sequence,
-            "iges flow definition lookup",
-        )?;
+        let flow = ctx.get_btree_map(&flows, &entry.sequence, "iges flow definition lookup")?;
         let flow_targets_valid = flow
             .map(|flow| -> Result<bool, CodecError> {
                 Ok(flow.form == entry.form
@@ -4331,7 +4478,8 @@ pub(super) fn project<'ctx>(
                                 entries,
                                 target,
                                 "iges flow continuation directory lookup",
-                            )? else {
+                            )?
+                            else {
                                 return Ok(false);
                             };
                             Ok((flow.form == 18 && target_entry.form == 11)
@@ -4350,11 +4498,8 @@ pub(super) fn project<'ctx>(
             .unwrap_or(false);
         let cyclic = scratch.with_storage(|| {
             super::directed_cycle(entry.sequence, &mut visited_flows, ctx, |sequence| {
-                let adjacent = ctx.get_btree_map(
-                    &flow_graph,
-                    &sequence,
-                    "iges flow graph successor lookup",
-                )?;
+                let adjacent =
+                    ctx.get_btree_map(&flow_graph, &sequence, "iges flow graph successor lookup")?;
                 Ok(adjacent.map_or(&[][..], Vec::as_slice).iter().copied())
             })
         })?;
@@ -4381,7 +4526,14 @@ pub(super) fn project<'ctx>(
         if !(entry.entity_type == 416 && matches!(entry.form, 0..=4)) {
             continue;
         }
-        let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
+        let Some(record) = ctx
+            .get_btree_map(
+                records,
+                &entry.sequence,
+                "iges structure parameter record lookup",
+            )?
+            .copied()
+        else {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -4460,7 +4612,14 @@ pub(super) fn project<'ctx>(
         if !(matches!(entry.entity_type, 412 | 414) && entry.form == 0) {
             continue;
         }
-        let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
+        let Some(record) = ctx
+            .get_btree_map(
+                records,
+                &entry.sequence,
+                "iges structure parameter record lookup",
+            )?
+            .copied()
+        else {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -4470,16 +4629,13 @@ pub(super) fn project<'ctx>(
             )?;
             continue;
         };
-        let target_valid = match ctx.get_btree_map(
-            &array_targets,
-            &entry.sequence,
-            "iges array target lookup",
-        )? {
-            Some(target) if target % 2 == 1 => ctx
-                .get_btree_map(entries, target, "iges array base directory lookup")?
-                .is_some_and(|base| array_base_type(base.entity_type, base.form)),
-            _ => false,
-        };
+        let target_valid =
+            match ctx.get_btree_map(&array_targets, &entry.sequence, "iges array target lookup")? {
+                Some(target) if target % 2 == 1 => ctx
+                    .get_btree_map(entries, target, "iges array base directory lookup")?
+                    .is_some_and(|base| array_base_type(base.entity_type, base.form)),
+                _ => false,
+            };
         let cyclic = scratch.with_storage(|| {
             single_target_cycle(entry.sequence, &array_targets, &mut visited_arrays, ctx)
         })?;
@@ -4555,7 +4711,14 @@ pub(super) fn project<'ctx>(
         if !(entry.entity_type == 132 && entry.form == 0) {
             continue;
         }
-        let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
+        let Some(record) = ctx
+            .get_btree_map(
+                records,
+                &entry.sequence,
+                "iges structure parameter record lookup",
+            )?
+            .copied()
+        else {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -4581,15 +4744,11 @@ pub(super) fn project<'ctx>(
                     return Ok(false);
                 };
                 Ok(ctx
-                    .get_btree_map(
-                        entries,
-                        &sequence,
-                        "iges connect point directory lookup",
-                    )?
+                    .get_btree_map(entries, &sequence, "iges connect point directory lookup")?
                     .is_some_and(|target| {
                         entity_type.is_none_or(|expected| target.entity_type == expected)
                     }))
-        };
+            };
         let type_flag_valid =
             record
                 .integer_or(5, 0)
@@ -4673,7 +4832,14 @@ pub(super) fn project<'ctx>(
         if !(entry.entity_type == 430 && matches!(entry.form, 0 | 1)) {
             continue;
         }
-        let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
+        let Some(record) = ctx
+            .get_btree_map(
+                records,
+                &entry.sequence,
+                "iges structure parameter record lookup",
+            )?
+            .copied()
+        else {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -4713,7 +4879,9 @@ pub(super) fn project<'ctx>(
     }
     let mut source_values = IntoIterator::into_iter(&solid_instances);
     while source_values.len() != 0 {
-        let Some((sequence, target)) = ctx.next_charged(&mut source_values, "iges structure list traversal")? else {
+        let Some((sequence, target)) =
+            ctx.next_charged(&mut source_values, "iges structure list traversal")?
+        else {
             break;
         };
         let entry = ctx
@@ -4726,14 +4894,14 @@ pub(super) fn project<'ctx>(
         let target_valid = ctx
             .get_btree_map(entries, target, "iges solid instance target lookup")?
             .is_some_and(|target_entry| {
-            if entry.form == 1 {
-                target_entry.entity_type == 186
-            } else {
-                matches!(
-                    target_entry.entity_type,
-                    150 | 152 | 154 | 156 | 158 | 160 | 162 | 164 | 168 | 180 | 184 | 430
-                )
-            }
+                if entry.form == 1 {
+                    target_entry.entity_type == 186
+                } else {
+                    matches!(
+                        target_entry.entity_type,
+                        150 | 152 | 154 | 156 | 158 | 160 | 162 | 164 | 168 | 180 | 184 | 430
+                    )
+                }
             });
         let transform_valid =
             subfigure_definition_transform_valid(entry, entries, records, global, ctx)?;
@@ -4772,7 +4940,14 @@ pub(super) fn project<'ctx>(
         if !(entry.entity_type == 184 && matches!(entry.form, 0 | 1)) {
             continue;
         }
-        let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
+        let Some(record) = ctx
+            .get_btree_map(
+                records,
+                &entry.sequence,
+                "iges structure parameter record lookup",
+            )?
+            .copied()
+        else {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -4792,13 +4967,16 @@ pub(super) fn project<'ctx>(
             )?;
             continue;
         };
-        let mut candidate_storage = ctx.reserve_scoped(0, "iges solid assembly candidate scratch")?;
-        let mut items =
-            candidate_storage.with_storage(|| ctx.collection_vec(count, "iges solid assembly items"))?;
+        let mut candidate_storage =
+            ctx.reserve_scoped(0, "iges solid assembly candidate scratch")?;
+        let mut items = candidate_storage
+            .with_storage(|| ctx.collection_vec(count, "iges solid assembly items"))?;
         let mut items_valid = true;
         let mut input = 0..count;
         while !input.is_empty() || ctx.resource_refusal().is_some() {
-            let Some(index) = ctx.next_charged(&mut input, "iges structure list traversal")? else { break; };
+            let Some(index) = ctx.next_charged(&mut input, "iges structure list traversal")? else {
+                break;
+            };
             let Some(item) = (|| {
                 let item = record.integer(2 + index).and_then(|value| {
                     let sequence = u32::try_from(value).ok()?;
@@ -4846,14 +5024,19 @@ pub(super) fn project<'ctx>(
     }
     let mut source_values = IntoIterator::into_iter(&assemblies);
     while source_values.len() != 0 {
-        let Some((sequence, definition)) = ctx.next_charged(&mut source_values, "iges assembly graph definitions")? else {
+        let Some((sequence, definition)) =
+            ctx.next_charged(&mut source_values, "iges assembly graph definitions")?
+        else {
             break;
         };
         let targets = scratch.with_storage(|| -> Result<Vec<u32>, CodecError> {
             let mut targets = Vec::new();
             let mut input = definition.items.iter();
             while input.len() != 0 || ctx.resource_refusal().is_some() {
-                let Some((item, _)) = ctx.next_charged(&mut input, "iges assembly graph items")? else { break; };
+                let Some((item, _)) = ctx.next_charged(&mut input, "iges assembly graph items")?
+                else {
+                    break;
+                };
                 if ctx.contains_key_btree_map(
                     &assemblies,
                     item,
@@ -4876,7 +5059,11 @@ pub(super) fn project<'ctx>(
     let mut visited = BTreeSet::new();
     let mut input = assemblies.iter();
     while input.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some((sequence, assembly)) = ctx.next_charged(&mut input, "iges structure list traversal")? else { break; };
+        let Some((sequence, assembly)) =
+            ctx.next_charged(&mut input, "iges structure list traversal")?
+        else {
+            break;
+        };
         let entry = ctx
             .get_btree_map(entries, sequence, "iges assembly directory lookup")?
             .ok_or_else(|| {
@@ -4888,12 +5075,13 @@ pub(super) fn project<'ctx>(
         let mut items_valid = true;
         let mut input = assembly.items.iter();
         while input.len() != 0 || ctx.resource_refusal().is_some() {
-            let Some((item, transformation)) = ctx.next_charged(&mut input, "iges structure list traversal")? else { break; };
-            let item_entry = ctx.get_btree_map(
-                entries,
-                item,
-                "iges assembly item directory lookup",
-            )?;
+            let Some((item, transformation)) =
+                ctx.next_charged(&mut input, "iges structure list traversal")?
+            else {
+                break;
+            };
+            let item_entry =
+                ctx.get_btree_map(entries, item, "iges assembly item directory lookup")?;
             has_brep |= item_entry.is_some_and(|target| target.entity_type == 186);
             let item_valid = item_entry.is_some_and(|target| {
                 matches!(
@@ -4985,7 +5173,14 @@ pub(super) fn project<'ctx>(
         if !(entry.entity_type == 308 && entry.form == 0) {
             continue;
         }
-        let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
+        let Some(record) = ctx
+            .get_btree_map(
+                records,
+                &entry.sequence,
+                "iges structure parameter record lookup",
+            )?
+            .copied()
+        else {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -5063,13 +5258,22 @@ pub(super) fn project<'ctx>(
         if !(entry.entity_type == 408 && entry.form == 0) {
             continue;
         }
-        let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
-            ctx.insert_btree_map(
-                &mut placement_rejections,
-                entry.sequence,
-                PlacementRejection::MissingRecord,
-                "iges placement rejection nodes",
-            )?;
+        let Some(record) = ctx
+            .get_btree_map(
+                records,
+                &entry.sequence,
+                "iges structure parameter record lookup",
+            )?
+            .copied()
+        else {
+            placement_rejections_storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut placement_rejections,
+                    entry.sequence,
+                    PlacementRejection::MissingRecord,
+                    "iges placement rejection nodes",
+                )
+            })?;
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -5111,12 +5315,14 @@ pub(super) fn project<'ctx>(
             }
         };
         if !placement_valid {
-            ctx.insert_btree_map(
-                &mut placement_rejections,
-                entry.sequence,
-                PlacementRejection::InvalidPlacement,
-                "iges placement rejection nodes",
-            )?;
+            placement_rejections_storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut placement_rejections,
+                    entry.sequence,
+                    PlacementRejection::InvalidPlacement,
+                    "iges placement rejection nodes",
+                )
+            })?;
         }
         let Some(definition) = definition else {
             if !ctx.contains_key_btree_map(
@@ -5124,12 +5330,14 @@ pub(super) fn project<'ctx>(
                 &entry.sequence,
                 "iges placement rejection lookup",
             )? {
-                ctx.insert_btree_map(
-                    &mut placement_rejections,
-                    entry.sequence,
-                    PlacementRejection::InvalidDefinition,
-                    "iges placement rejection nodes",
-                )?;
+                placement_rejections_storage.with_storage(|| {
+                    ctx.insert_btree_map(
+                        &mut placement_rejections,
+                        entry.sequence,
+                        PlacementRejection::InvalidDefinition,
+                        "iges placement rejection nodes",
+                    )
+                })?;
             }
             super::push_entity_loss_with_scoped_slots(
                 ctx,
@@ -5171,7 +5379,14 @@ pub(super) fn project<'ctx>(
         if !(entry.entity_type == 320 && entry.form == 0) {
             continue;
         }
-        let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
+        let Some(record) = ctx
+            .get_btree_map(
+                records,
+                &entry.sequence,
+                "iges structure parameter record lookup",
+            )?
+            .copied()
+        else {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -5186,7 +5401,8 @@ pub(super) fn project<'ctx>(
             .and_then(|value| usize::try_from(value).ok());
         let name_valid = record.string(2).is_some_and(|name| !name.is_empty());
         let member_count = record.count(3);
-        let mut candidate_storage = ctx.reserve_scoped(0, "iges network definition candidate scratch")?;
+        let mut candidate_storage =
+            ctx.reserve_scoped(0, "iges network definition candidate scratch")?;
         let members = match member_count {
             Some(count) => candidate_storage.with_storage(|| {
                 definition_members(
@@ -5222,11 +5438,7 @@ pub(super) fn project<'ctx>(
             Some(0) => true,
             Some(value) => match u32::try_from(value).ok() {
                 Some(sequence) => ctx
-                    .get_btree_map(
-                        entries,
-                        &sequence,
-                        "iges network definition display lookup",
-                    )?
+                    .get_btree_map(entries, &sequence, "iges network definition display lookup")?
                     .is_some_and(|target| target.entity_type == 312),
                 None => false,
             },
@@ -5298,13 +5510,22 @@ pub(super) fn project<'ctx>(
         if !(entry.entity_type == 420 && entry.form == 0) {
             continue;
         }
-        let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
-            ctx.insert_btree_map(
-                &mut placement_rejections,
-                entry.sequence,
-                PlacementRejection::MissingRecord,
-                "iges placement rejection nodes",
-            )?;
+        let Some(record) = ctx
+            .get_btree_map(
+                records,
+                &entry.sequence,
+                "iges structure parameter record lookup",
+            )?
+            .copied()
+        else {
+            placement_rejections_storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut placement_rejections,
+                    entry.sequence,
+                    PlacementRejection::MissingRecord,
+                    "iges placement rejection nodes",
+                )
+            })?;
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -5337,17 +5558,14 @@ pub(super) fn project<'ctx>(
             Some(0) => true,
             Some(value) => match u32::try_from(value).ok() {
                 Some(sequence) => ctx
-                    .get_btree_map(
-                        entries,
-                        &sequence,
-                        "iges network instance display lookup",
-                    )?
+                    .get_btree_map(entries, &sequence, "iges network instance display lookup")?
                     .is_some_and(|target| target.entity_type == 312),
                 None => false,
             },
             None => false,
         };
-        let mut candidate_storage = ctx.reserve_scoped(0, "iges network instance candidate scratch")?;
+        let mut candidate_storage =
+            ctx.reserve_scoped(0, "iges network instance candidate scratch")?;
         let connect_points = candidate_storage.with_storage(|| {
             network_connect_points(
                 record,
@@ -5375,12 +5593,14 @@ pub(super) fn project<'ctx>(
             }
         };
         if !placement_valid {
-            ctx.insert_btree_map(
-                &mut placement_rejections,
-                entry.sequence,
-                PlacementRejection::InvalidPlacement,
-                "iges placement rejection nodes",
-            )?;
+            placement_rejections_storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut placement_rejections,
+                    entry.sequence,
+                    PlacementRejection::InvalidPlacement,
+                    "iges placement rejection nodes",
+                )
+            })?;
         }
         let Some((definition, connect_points)) = definition.zip(connect_points) else {
             drop(candidate_storage);
@@ -5393,12 +5613,14 @@ pub(super) fn project<'ctx>(
                     Some(definition) => PlacementRejection::InvalidMetadata { definition },
                     None => PlacementRejection::InvalidDefinition,
                 };
-                ctx.insert_btree_map(
-                    &mut placement_rejections,
-                    entry.sequence,
-                    rejection,
-                    "iges placement rejection nodes",
-                )?;
+                placement_rejections_storage.with_storage(|| {
+                    ctx.insert_btree_map(
+                        &mut placement_rejections,
+                        entry.sequence,
+                        rejection,
+                        "iges placement rejection nodes",
+                    )
+                })?;
             }
             super::push_entity_loss_with_scoped_slots(
                 ctx,
@@ -5434,9 +5656,17 @@ pub(super) fn project<'ctx>(
 
     let mut input = definitions.iter();
     while input.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some((sequence, definition)) = ctx.next_charged(&mut input, "iges structure list traversal")? else { break; };
+        let Some((sequence, definition)) =
+            ctx.next_charged(&mut input, "iges structure list traversal")?
+        else {
+            break;
+        };
         let entry = ctx
-            .get_btree_map(entries, sequence, "iges subfigure definition directory lookup")?
+            .get_btree_map(
+                entries,
+                sequence,
+                "iges subfigure definition directory lookup",
+            )?
             .ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "subfigure definition index refers to a missing directory entry"
@@ -5538,11 +5768,17 @@ pub(super) fn project<'ctx>(
     }
     let mut source_values = IntoIterator::into_iter(&instances);
     while source_values.len() != 0 {
-        let Some((sequence, definition_sequence)) = ctx.next_charged(&mut source_values, "iges structure list traversal")? else {
+        let Some((sequence, definition_sequence)) =
+            ctx.next_charged(&mut source_values, "iges structure list traversal")?
+        else {
             break;
         };
         let entry = ctx
-            .get_btree_map(entries, sequence, "iges subfigure instance directory lookup")?
+            .get_btree_map(
+                entries,
+                sequence,
+                "iges subfigure instance directory lookup",
+            )?
             .ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "subfigure instance index refers to a missing directory entry"
@@ -5560,8 +5796,7 @@ pub(super) fn project<'ctx>(
             &decoded,
             definition_sequence,
             "iges decoded subfigure definition lookup",
-        )?
-        {
+        )? {
             ctx.insert_scoped_btree_set(
                 &mut decoded_storage,
                 &mut decoded,
@@ -5575,12 +5810,14 @@ pub(super) fn project<'ctx>(
                 sequence,
                 "iges placement rejection lookup",
             )? {
-                ctx.insert_btree_map(
-                    &mut placement_rejections,
-                    *sequence,
-                    PlacementRejection::InvalidDefinition,
-                    "iges placement rejection nodes",
-                )?;
+                placement_rejections_storage.with_storage(|| {
+                    ctx.insert_btree_map(
+                        &mut placement_rejections,
+                        *sequence,
+                        PlacementRejection::InvalidDefinition,
+                        "iges placement rejection nodes",
+                    )
+                })?;
             }
             super::push_entity_loss_with_scoped_slots(
                 ctx,
@@ -5596,9 +5833,17 @@ pub(super) fn project<'ctx>(
     }
     let mut input = network_definitions.iter();
     while input.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some((sequence, definition)) = ctx.next_charged(&mut input, "iges structure list traversal")? else { break; };
+        let Some((sequence, definition)) =
+            ctx.next_charged(&mut input, "iges structure list traversal")?
+        else {
+            break;
+        };
         let entry = ctx
-            .get_btree_map(entries, sequence, "iges network definition directory lookup")?
+            .get_btree_map(
+                entries,
+                sequence,
+                "iges network definition directory lookup",
+            )?
             .ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "network definition index refers to a missing directory entry"
@@ -5697,7 +5942,9 @@ pub(super) fn project<'ctx>(
     }
     let mut source_values = IntoIterator::into_iter(&network_instances);
     while source_values.len() != 0 {
-        let Some((sequence, instance)) = ctx.next_charged(&mut source_values, "iges structure list traversal")? else {
+        let Some((sequence, instance)) =
+            ctx.next_charged(&mut source_values, "iges structure list traversal")?
+        else {
             break;
         };
         let entry = ctx
@@ -5756,18 +6003,20 @@ pub(super) fn project<'ctx>(
                         "iges decoded network definition lookup",
                     )?,
                 };
-                ctx.insert_btree_map(
-                    &mut placement_rejections,
-                    *sequence,
-                    if definition_decoded {
-                        PlacementRejection::InvalidMetadata {
-                            definition: instance.definition,
-                        }
-                    } else {
-                        PlacementRejection::InvalidDefinition
-                    },
-                    "iges placement rejection nodes",
-                )?;
+                placement_rejections_storage.with_storage(|| {
+                    ctx.insert_btree_map(
+                        &mut placement_rejections,
+                        *sequence,
+                        if definition_decoded {
+                            PlacementRejection::InvalidMetadata {
+                                definition: instance.definition,
+                            }
+                        } else {
+                            PlacementRejection::InvalidDefinition
+                        },
+                        "iges placement rejection nodes",
+                    )
+                })?;
             }
             super::push_entity_loss_with_scoped_slots(
                 ctx,
@@ -5782,7 +6031,16 @@ pub(super) fn project<'ctx>(
         }
     }
 
-    Ok((ProjectionOutcome { decoded, decoded_storage, losses, loss_slots_storage }, placement_rejections))
+    Ok((
+        ProjectionOutcome {
+            decoded,
+            decoded_storage,
+            losses,
+            loss_slots_storage,
+        },
+        placement_rejections,
+        placement_rejections_storage,
+    ))
 }
 
 #[cfg(test)]

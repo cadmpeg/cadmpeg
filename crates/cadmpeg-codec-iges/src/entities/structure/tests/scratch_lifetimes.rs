@@ -162,36 +162,56 @@ impl RejectedCandidate {
         };
         let pointer = if matches!(self, Self::SubfigureDepth | Self::NetworkDepth) {
             i64::from(sequence)
-        } else { 0 };
+        } else {
+            0
+        };
         values.extend(std::iter::repeat_n(pointer, CANDIDATE_ITEMS));
         if matches!(self, Self::Assembly) {
             values.extend(std::iter::repeat_n(0, CANDIDATE_ITEMS));
         }
-        if matches!(self, Self::NetworkPoint | Self::InstancePoint) { values.push(2); }
+        if matches!(self, Self::NetworkPoint | Self::InstancePoint) {
+            values.push(2);
+        }
         let mut entry = directory_entry(entity_type, form);
         entry.sequence = sequence;
         let parameter_end = values.len();
-        let mut input = record(values.into_iter().map(TokenValue::Integer).collect(), parameter_end);
+        let mut input = record(
+            values.into_iter().map(TokenValue::Integer).collect(),
+            parameter_end,
+        );
         input.directory_sequence = sequence;
-        (entry, input, reason, u64::try_from(first).unwrap(), u64::try_from(peak).unwrap())
+        (
+            entry,
+            input,
+            reason,
+            u64::try_from(first).unwrap(),
+            u64::try_from(peak).unwrap(),
+        )
     }
 }
 
 fn assert_rejected_candidate_storage(candidate: RejectedCandidate) {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, ResourceDimension};
     use cadmpeg_ir::report::loss::LossNote;
+    type Rejection = super::super::PlacementRejection;
     let bytes = crate::test_support::test_owned::owned_test_file(&[]);
     let global = crate::test_support::with_service_context(&bytes, |setup| {
         let scan = crate::card::scan_with_context(&bytes, setup).unwrap();
         let (global, _, _) = crate::global::parse(&scan, setup).unwrap();
         global.length_context().unwrap()
     });
-    let fixtures: Vec<_> = (0..REJECTED_CANDIDATES).map(|i| {
-        candidate.input(u32::try_from(2 * i + 1).unwrap())
-    }).collect();
-    let directory: Vec<_> = fixtures.iter().map(|(entry, _, _, _, _)| entry.clone()).collect();
-    let entries = directory.iter().map(|entry| (entry.sequence, entry)).collect();
-    let records = fixtures.iter().map(|(_, record, _, _, _)| (record.directory_sequence, record)).collect();
+    let fixtures: Vec<_> = (0..REJECTED_CANDIDATES)
+        .map(|i| candidate.input(u32::try_from(2 * i + 1).unwrap()))
+        .collect();
+    let directory: Vec<_> = fixtures.iter().map(|(entry, _, _, _, _)| *entry).collect();
+    let entries = directory
+        .iter()
+        .map(|entry| (entry.sequence, entry))
+        .collect();
+    let records = fixtures
+        .iter()
+        .map(|(_, record, _, _, _)| (record.directory_sequence, record))
+        .collect();
     let (_, _, reason, first, peak) = fixtures[0];
     // Exact list capacities, or the largest old/new overlap of doubling a
     // 4096-element optional-pointer vector, plus all surviving loss slots.
@@ -199,41 +219,104 @@ fn assert_rejected_candidate_storage(candidate: RejectedCandidate) {
     // 24 slots and is below this candidate-plus-16-slot bound.
     let slots = u64::try_from(REJECTED_CANDIDATES * std::mem::size_of::<LossNote>()).unwrap();
     assert!(peak > slots);
-    for cap in [first - 1, peak + slots] {
+    let rejection_nodes = if matches!(
+        candidate,
+        RejectedCandidate::InstanceDefinition | RejectedCandidate::InstancePoint
+    ) {
+        let nodes = (REJECTED_CANDIDATES - 1) / 5 + 1;
+        u64::try_from(
+            nodes
+                * (11 * (std::mem::size_of::<u32>() + std::mem::size_of::<Rejection>())
+                    + 16 * std::mem::size_of::<usize>()
+                    + 2 * std::mem::align_of::<u32>()
+                        .max(std::mem::align_of::<Rejection>())
+                        .max(std::mem::align_of::<usize>())),
+        )
+        .unwrap()
+    } else {
+        0
+    };
+    for cap in [first - 1, peak + slots + rejection_nodes] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_materialized_bytes = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut ir = cadmpeg_ir::CadIr::empty();
         let mut sequences = super::super::super::geometry::SourceSequences::new(&ctx).unwrap();
-        let result = super::super::project(&mut ir, &directory, (&entries, &records),
-            &BTreeMap::new(), &global, &ctx, &mut sequences);
+        let _retained_map_probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            ResourceDimension::RetainedBytes,
+            "iges placement rejection nodes",
+            None,
+        );
+        let result = super::super::project(
+            &mut ir,
+            &directory,
+            (&entries, &records),
+            &BTreeMap::new(),
+            &global,
+            &ctx,
+            &mut sequences,
+        );
         if cap == first - 1 {
-            let first_refusal = match result.err().expect("expected candidate refusal") {
-                CodecError::ResourceLimit(first) => first,
-                _ => panic!("expected the first candidate allocation to refuse"),
+            let CodecError::ResourceLimit(first_refusal) =
+                result.err().expect("expected candidate refusal")
+            else {
+                panic!("expected the first candidate allocation to refuse");
             };
-            assert_eq!(first_refusal.dimension, ResourceDimension::MaterializedBytes);
-            assert_eq!((first_refusal.limit, first_refusal.used, first_refusal.additional), (cap, 0, first));
+            assert_eq!(
+                first_refusal.dimension,
+                ResourceDimension::MaterializedBytes
+            );
+            assert_eq!(
+                (
+                    first_refusal.limit,
+                    first_refusal.used,
+                    first_refusal.additional
+                ),
+                (cap, 0, first)
+            );
             drop(sequences);
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first_refusal));
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first_refusal)
+            );
         } else {
-            let (outcome, rejections) = result.unwrap();
+            let (outcome, rejections, rejection_storage) = result.unwrap();
             assert!(outcome.decoded.is_empty());
             assert_eq!(outcome.losses.len(), REJECTED_CANDIDATES);
-            for loss in &outcome.losses { assert!(loss.message.ends_with(reason)); }
-            if matches!(candidate, RejectedCandidate::InstanceDefinition | RejectedCandidate::InstancePoint) {
+            for loss in &outcome.losses {
+                assert!(loss.message.ends_with(reason));
+            }
+            if matches!(
+                candidate,
+                RejectedCandidate::InstanceDefinition | RejectedCandidate::InstancePoint
+            ) {
                 assert_eq!(rejections.len(), REJECTED_CANDIDATES);
-                assert!(rejections.values().all(|value| *value == super::super::PlacementRejection::InvalidDefinition));
-            } else { assert!(rejections.is_empty()); }
+                assert!(rejections
+                    .values()
+                    .all(|value| *value == super::super::PlacementRejection::InvalidDefinition));
+            } else {
+                assert!(rejections.is_empty());
+            }
             assert_eq!(ir, cadmpeg_ir::CadIr::empty());
-            // Candidate backing is gone; only the returned loss slots remain.
-            let released = ctx.reserve_scoped(cap - slots, "test discarded structure candidate backing").unwrap();
+            // Loss slots and placement-rejection nodes remain live for their readers.
+            let released = ctx
+                .reserve_scoped(
+                    cap - slots - rejection_nodes,
+                    "test discarded structure candidate backing",
+                )
+                .unwrap();
+            drop(released);
+            drop(rejections);
+            drop(rejection_storage);
+            let released = ctx
+                .reserve_scoped(cap - slots, "test discarded placement rejection backing")
+                .unwrap();
             drop(released);
             drop(outcome);
-            drop(rejections);
             drop(sequences);
-            let released = ctx.reserve_scoped(cap, "test destroyed structure outcome backing").unwrap();
+            let released = ctx
+                .reserve_scoped(cap, "test destroyed structure outcome backing")
+                .unwrap();
             drop(released);
             ctx.finish_session().unwrap();
         }
@@ -287,15 +370,28 @@ fn sheet_identity_storage_refusal(at_table: bool, collection: bool) {
         let (global, _, _) = crate::global::parse(&scan, setup).unwrap();
         global.length_context().unwrap()
     });
-    let input = record(vec![TokenValue::Integer(406), TokenValue::Integer(2),
-        TokenValue::Integer(2), TokenValue::String(b"C".to_vec())], 4);
+    let input = record(
+        vec![
+            TokenValue::Integer(406),
+            TokenValue::Integer(2),
+            TokenValue::Integer(2),
+            TokenValue::String(b"C".to_vec()),
+        ],
+        4,
+    );
     let directory = [directory_entry(406, 33)];
     let entries = BTreeMap::from([(1, &directory[0])]);
     let records = BTreeMap::from([(1, &input)]);
     // A singleton borrowed identity table has four SwissTable buckets,
     // alignment padding, four bucket controls and sixteen trailing controls.
-    let table = u64::try_from(4 * size_of::<((i64, &[u8]), Option<u32>)>()
-        + align_of::<((i64, &[u8]), Option<u32>)>().max(16) - 1 + 4 + 16).unwrap();
+    let table = u64::try_from(
+        4 * size_of::<((i64, &[u8]), Option<u32>)>()
+            + align_of::<((i64, &[u8]), Option<u32>)>().max(16)
+            - 1
+            + 4
+            + 16,
+    )
+    .unwrap();
     let slots = if size_of::<LossNote>() <= 1024 { 4 } else { 1 };
     let loss_slots = u64::try_from(slots * size_of::<LossNote>()).unwrap();
     let arena = DecodeArena::new();
@@ -309,8 +405,15 @@ fn sheet_identity_storage_refusal(at_table: bool, collection: bool) {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
     let mut sequences = super::super::super::geometry::SourceSequences::default();
-    let result = super::super::project(&mut ir, &directory, (&entries, &records),
-        &BTreeMap::new(), &global, &ctx, &mut sequences);
+    let result = super::super::project(
+        &mut ir,
+        &directory,
+        (&entries, &records),
+        &BTreeMap::new(),
+        &global,
+        &ctx,
+        &mut sequences,
+    );
     let first = match result.as_ref() {
         Err(CodecError::ResourceLimit(first)) => *first,
         _ => panic!("sheet table or following loss slots must refuse"),
@@ -324,17 +427,25 @@ fn sheet_identity_storage_refusal(at_table: bool, collection: bool) {
         assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
         if at_table {
             assert_eq!(first.operation, "iges sheet identity index");
-            assert_eq!((first.limit, first.used, first.additional), (table - 1, 0, table));
+            assert_eq!(
+                (first.limit, first.used, first.additional),
+                (table - 1, 0, table)
+            );
         } else {
             assert_eq!(first.operation, "iges entity loss slots");
-            assert_eq!((first.limit, first.used, first.additional), (table, table, loss_slots));
+            assert_eq!(
+                (first.limit, first.used, first.additional),
+                (table, table, loss_slots)
+            );
         }
     }
     for _ in 0..64 {
         for replay in [&directory[..], &[]] {
-            assert!(matches!(super::super::project(&mut ir, replay, (&entries, &records),
+            assert!(
+                matches!(super::super::project(&mut ir, replay, (&entries, &records),
                 &BTreeMap::new(), &global, &ctx, &mut sequences),
-                Err(CodecError::ResourceLimit(last)) if last == first));
+                Err(CodecError::ResourceLimit(last)) if last == first)
+            );
             assert_eq!(ir, cadmpeg_ir::CadIr::empty());
         }
     }
@@ -367,35 +478,65 @@ fn sheet_identity_table_is_released_before_attribute_recovery() {
                 crate::directory::parse(&scan, global.global_table(), setup).unwrap();
             assert!(quarantined.is_empty());
             let assembly = crate::parameter::assemble_with_context(
-                &scan, &directory, &quarantined, &global, setup,
-            ).unwrap();
+                &scan,
+                &directory,
+                &quarantined,
+                &global,
+                setup,
+            )
+            .unwrap();
             assert!(assembly.quarantined.is_empty());
-            (directory, assembly.records, assembly.trailing_pointer_analysis,
-                global.length_context().unwrap())
+            (
+                directory,
+                assembly.records,
+                assembly.trailing_pointer_analysis,
+                global.length_context().unwrap(),
+            )
         });
     let mut attribute = directory_entry(322, 0);
     attribute.sequence = 13;
     directory.push(attribute);
     // The invalid type skips its type set. A valid descriptor still allocates
     // its temporary vector before the definition recovers as a loss.
-    let mut attribute = record(vec![TokenValue::Integer(322), TokenValue::Omitted,
-        TokenValue::Integer(0), TokenValue::Integer(1), TokenValue::Integer(-1),
-        TokenValue::Integer(1), TokenValue::Integer(100)], 7);
+    let mut attribute = record(
+        vec![
+            TokenValue::Integer(322),
+            TokenValue::Omitted,
+            TokenValue::Integer(0),
+            TokenValue::Integer(1),
+            TokenValue::Integer(-1),
+            TokenValue::Integer(1),
+            TokenValue::Integer(100),
+        ],
+        7,
+    );
     attribute.directory_sequence = 13;
     inputs.push(attribute);
-    let entries = directory.iter().map(|entry| (entry.sequence, entry)).collect();
-    let records = inputs.iter().map(|record| (record.directory_sequence, record)).collect();
+    let entries = directory
+        .iter()
+        .map(|entry| (entry.sequence, entry))
+        .collect();
+    let records = inputs
+        .iter()
+        .map(|record| (record.directory_sequence, record))
+        .collect();
     // Each ordered tree has one backing node: eleven key/value lanes,
     // sixteen pointer slots and two alignment paddings. Two group values
     // each contain one exact-capacity u32 vector.
     let owners = 11 * (size_of::<u32>() + size_of::<Vec<u32>>())
         + 16 * size_of::<usize>()
-        + 2 * align_of::<u32>().max(align_of::<Vec<u32>>()).max(align_of::<usize>())
+        + 2 * align_of::<u32>()
+            .max(align_of::<Vec<u32>>())
+            .max(align_of::<usize>())
         + 2 * size_of::<u32>();
-    let decoded = 11 * size_of::<u32>() + 16 * size_of::<usize>()
+    let decoded = 11 * size_of::<u32>()
+        + 16 * size_of::<usize>()
         + 2 * align_of::<u32>().max(align_of::<usize>());
     let table = 4 * size_of::<((i64, &[u8]), Option<u32>)>()
-        + align_of::<((i64, &[u8]), Option<u32>)>().max(16) - 1 + 4 + 16;
+        + align_of::<((i64, &[u8]), Option<u32>)>().max(16)
+        - 1
+        + 4
+        + 16;
     let slots = if size_of::<LossNote>() <= 1024 { 4 } else { 1 };
     let loss_slots = slots * size_of::<LossNote>();
     let live = u64::try_from(owners + decoded).unwrap();
@@ -410,8 +551,15 @@ fn sheet_identity_table_is_released_before_attribute_recovery() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut ir = cadmpeg_ir::CadIr::empty();
         let mut sequences = super::super::super::geometry::SourceSequences::default();
-        let result = super::super::project(&mut ir, &directory, (&entries, &records),
-            &analysis, &global, &ctx, &mut sequences);
+        let result = super::super::project(
+            &mut ir,
+            &directory,
+            (&entries, &records),
+            &analysis,
+            &global,
+            &ctx,
+            &mut sequences,
+        );
         let first = match result.as_ref() {
             Err(CodecError::ResourceLimit(first)) => *first,
             _ => panic!("decoded index or following attribute loss must refuse"),
@@ -420,18 +568,28 @@ fn sheet_identity_table_is_released_before_attribute_recovery() {
         assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
         if cap == peak {
             assert_eq!(first.operation, "iges entity loss slots");
-            assert_eq!((first.limit, first.used, first.additional),
-                (cap, live, u64::try_from(loss_slots).unwrap()));
+            assert_eq!(
+                (first.limit, first.used, first.additional),
+                (cap, live, u64::try_from(loss_slots).unwrap())
+            );
         } else {
             assert_eq!(first.operation, "iges structure decoded sequences");
-            assert_eq!((first.limit, first.used, first.additional),
-                (cap, u64::try_from(owners + table).unwrap(), u64::try_from(decoded).unwrap()));
+            assert_eq!(
+                (first.limit, first.used, first.additional),
+                (
+                    cap,
+                    u64::try_from(owners + table).unwrap(),
+                    u64::try_from(decoded).unwrap()
+                )
+            );
         }
         for _ in 0..64 {
             for replay in [&directory[..], &[]] {
-                assert!(matches!(super::super::project(&mut ir, replay, (&entries, &records),
+                assert!(
+                    matches!(super::super::project(&mut ir, replay, (&entries, &records),
                     &analysis, &global, &ctx, &mut sequences),
-                    Err(CodecError::ResourceLimit(last)) if last == first));
+                    Err(CodecError::ResourceLimit(last)) if last == first)
+                );
                 assert_eq!(ir, cadmpeg_ir::CadIr::empty());
             }
         }

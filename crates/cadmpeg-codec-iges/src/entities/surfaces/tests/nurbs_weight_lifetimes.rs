@@ -3,7 +3,9 @@
 use crate::entities::geometry::SourceSequences;
 use crate::global::ProjectedGlobal;
 use crate::parameter::{ParameterRecord, Token, TokenValue};
-use cadmpeg_core::decode::{u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{
+    u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
+};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
@@ -13,21 +15,57 @@ use std::mem::{align_of, size_of};
 const U_COUNT: usize = 512;
 const V_COUNT: usize = 2;
 
-fn inputs(rational: bool) -> (crate::directory::DirectoryEntry, ParameterRecord, ProjectedGlobal) {
+fn inputs(
+    rational: bool,
+) -> (
+    crate::directory::DirectoryEntry,
+    ParameterRecord,
+    ProjectedGlobal,
+) {
     let entry = crate::test_support::directory_target(1, 128);
-    let mut values = vec![128, i64::try_from(U_COUNT - 1).unwrap(), 1, 1, 1,
-        0, 0, i64::from(!rational), 0, 0];
+    let mut values = vec![
+        128,
+        i64::try_from(U_COUNT - 1).unwrap(),
+        1,
+        1,
+        1,
+        0,
+        0,
+        i64::from(!rational),
+        0,
+        0,
+    ];
     values.extend([0, 0]);
     values.extend((1..U_COUNT).map(|index| i64::try_from(index).unwrap()));
     values.push(i64::try_from(U_COUNT - 1).unwrap());
     values.extend([0, 0, 1, 1]);
-    values.extend((0..U_COUNT * V_COUNT).map(|index| if rational { 1 + i64::try_from(index % 2).unwrap() } else { 1 }));
+    values.extend((0..U_COUNT * V_COUNT).map(|index| {
+        if rational {
+            1 + i64::try_from(index % 2).unwrap()
+        } else {
+            1
+        }
+    }));
     for v in 0..V_COUNT {
-        for u in 0..U_COUNT { values.extend([i64::try_from(u).unwrap(), i64::try_from(v).unwrap(), 0]); }
+        for u in 0..U_COUNT {
+            values.extend([i64::try_from(u).unwrap(), i64::try_from(v).unwrap(), 0]);
+        }
     }
     values.extend([0, i64::try_from(U_COUNT - 1).unwrap(), 0, 1]);
-    let record = ParameterRecord::from_test_tokens(1, 1..2, Vec::new(), values.len(),
-        values.into_iter().map(|value| Token { value: TokenValue::Integer(value), span: 0..0 }).collect(), Vec::new());
+    let record = ParameterRecord::from_test_tokens(
+        1,
+        1..2,
+        Vec::new(),
+        values.len(),
+        values
+            .into_iter()
+            .map(|value| Token {
+                value: TokenValue::Integer(value),
+                span: 0..0,
+            })
+            .collect(),
+        Vec::new(),
+    );
     let bytes = crate::test_support::test_owned::owned_test_file(&[]);
     let global = crate::test_support::with_service_context(&bytes, |ctx| {
         let scan = crate::card::scan_with_context(&bytes, ctx).unwrap();
@@ -42,7 +80,9 @@ fn prefix_bytes() -> u64 {
     // vectors. The equal polynomial weights have no later reader.
     let node = 11 * (size_of::<u32>() + size_of::<&ParameterRecord>())
         + 16 * size_of::<usize>()
-        + 2 * align_of::<u32>().max(align_of::<&ParameterRecord>()).max(align_of::<usize>());
+        + 2 * align_of::<u32>()
+            .max(align_of::<&ParameterRecord>())
+            .max(align_of::<usize>());
     u64_from_index(2 * node + (U_COUNT + 2 + V_COUNT + 2) * size_of::<f64>())
 }
 
@@ -58,31 +98,51 @@ fn polynomial_boundary(exact_phase: bool) {
     if exact_phase {
         // Two index entries, both knot vectors, all native weights and
         // the outer grid slots. The first two-control row is the next item.
-        policy.limits.max_collection_items = u64_from_index(
-            2 + (U_COUNT + 2) + (V_COUNT + 2) + U_COUNT * V_COUNT + U_COUNT);
+        policy.limits.max_collection_items =
+            u64_from_index(2 + (U_COUNT + 2) + (V_COUNT + 2) + U_COUNT * V_COUNT + U_COUNT);
     }
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut sequences = SourceSequences::new(&ctx).unwrap();
     let mut ir = CadIr::empty();
     let mut output = ctx.reserve_scoped(0, "test surface output").unwrap();
-    let error = output.with_storage(|| super::super::project(&mut ir,
-        std::slice::from_ref(&entry), std::slice::from_ref(&record), &global, &ctx, &mut sequences)
-        .map(drop)).unwrap_err();
-    let CodecError::ResourceLimit(first) = error else { panic!("expected actual phase refusal"); };
+    let error = output
+        .with_storage(|| {
+            super::super::project(
+                &mut ir,
+                std::slice::from_ref(&entry),
+                std::slice::from_ref(&record),
+                &global,
+                &ctx,
+                &mut sequences,
+            )
+            .map(drop)
+        })
+        .unwrap_err();
+    let CodecError::ResourceLimit(first) = error else {
+        panic!("expected actual phase refusal");
+    };
     if exact_phase {
         let items = policy.limits.max_collection_items;
         assert_eq!(first.dimension, ResourceDimension::CollectionItems);
         assert_eq!(first.operation, "iges NURBS surface pole row controls");
-        assert_eq!((first.limit, first.used, first.additional), (items, items, u64_from_index(V_COUNT)));
+        assert_eq!(
+            (first.limit, first.used, first.additional),
+            (items, items, u64_from_index(V_COUNT))
+        );
     } else {
         assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
         assert_eq!(first.operation, "iges NURBS surface pole rows");
-        assert_eq!((first.limit, first.used, first.additional), (cap, prefix_bytes(), outer));
+        assert_eq!(
+            (first.limit, first.used, first.additional),
+            (cap, prefix_bytes(), outer)
+        );
     }
     for _ in 0..64 {
         for directory in [std::slice::from_ref(&entry), &[]] {
-            assert!(matches!(super::super::project(&mut ir, directory, std::slice::from_ref(&record),
-                &global, &ctx, &mut sequences), Err(CodecError::ResourceLimit(last)) if last == first));
+            assert!(
+                matches!(super::super::project(&mut ir, directory, std::slice::from_ref(&record),
+                &global, &ctx, &mut sequences), Err(CodecError::ResourceLimit(last)) if last == first)
+            );
         }
     }
     assert_eq!(ir, CadIr::empty());
@@ -115,22 +175,45 @@ fn surface_weight_lifetime_preserves_polynomial_and_rational_grids() {
         let mut sequences = SourceSequences::new(&ctx).unwrap();
         let mut ir = CadIr::empty();
         let mut output = ctx.reserve_scoped(0, "test surface output").unwrap();
-        let projection = output.with_storage(|| super::super::project(&mut ir,
-            std::slice::from_ref(&entry), std::slice::from_ref(&record), &global, &ctx, &mut sequences)).unwrap();
+        let projection = output
+            .with_storage(|| {
+                super::super::project(
+                    &mut ir,
+                    std::slice::from_ref(&entry),
+                    std::slice::from_ref(&record),
+                    &global,
+                    &ctx,
+                    &mut sequences,
+                )
+            })
+            .unwrap();
         assert!(projection.losses.is_empty());
         assert!(projection.decoded.contains(&1));
         assert_eq!(ir.model.surfaces.len(), 1);
         let surface = &ir.model.surfaces[0];
         assert_eq!(surface.id.as_str(), "iges:model:surface#D1");
-        assert!(matches!(surface.geometry, SurfaceGeometry::Procedural { cache: Some(_), .. }));
-        let Some(SolvedSurfaceGeometry::Nurbs(grid)) = surface.geometry.solved_cache() else { panic!("expected spline grid cache"); };
+        assert!(matches!(
+            surface.geometry,
+            SurfaceGeometry::Procedural { cache: Some(_), .. }
+        ));
+        let Some(SolvedSurfaceGeometry::Nurbs(grid)) = surface.geometry.solved_cache() else {
+            panic!("expected spline grid cache");
+        };
         assert_eq!((grid.u_count(), grid.v_count()), (U_COUNT, V_COUNT));
         for u in 0..U_COUNT {
             for v in 0..V_COUNT {
-                assert_eq!(grid.pole(u, v).unwrap().get(), cadmpeg_ir::math::Point3::new(
-                    f64::from(u32::try_from(u).unwrap()), f64::from(u32::try_from(v).unwrap()), 0.0));
-                assert_eq!(grid.weight(u, v).map(|weight| weight.get()), rational.then(||
-                    f64::from(u32::try_from(1 + (v * U_COUNT + u) % 2).unwrap())));
+                assert_eq!(
+                    grid.pole(u, v).unwrap().get(),
+                    cadmpeg_ir::math::Point3::new(
+                        f64::from(u32::try_from(u).unwrap()),
+                        f64::from(u32::try_from(v).unwrap()),
+                        0.0
+                    )
+                );
+                assert_eq!(
+                    grid.weight(u, v).map(cadmpeg_ir::scalar::NonZeroReal::get),
+                    rational.then(|| f64::from(u32::try_from(1 + (v * U_COUNT + u) % 2).unwrap()))
+                );
             }
         }
         assert_eq!(record, before);
@@ -138,7 +221,12 @@ fn surface_weight_lifetime_preserves_polynomial_and_rational_grids() {
         drop(ir);
         drop(sequences);
         drop(output);
-        let free = ctx.reserve_scoped(policy.limits.max_materialized_bytes, "test all scratch released").unwrap();
+        let free = ctx
+            .reserve_scoped(
+                policy.limits.max_materialized_bytes,
+                "test all scratch released",
+            )
+            .unwrap();
         drop(free);
         ctx.finish_session().unwrap();
     }
@@ -149,8 +237,9 @@ fn grid_row_collection_boundary(rational: bool, completed_rows: usize) {
     let before = record.clone();
     // Two singleton indexes, both knot vectors, all native weights and the
     // outer row slots precede the two controls in each completed row.
-    let items = u64_from_index(2 + (U_COUNT + 2) + (V_COUNT + 2)
-        + U_COUNT * V_COUNT + U_COUNT + completed_rows * V_COUNT);
+    let items = u64_from_index(
+        2 + (U_COUNT + 2) + (V_COUNT + 2) + U_COUNT * V_COUNT + U_COUNT + completed_rows * V_COUNT,
+    );
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = items;
@@ -161,18 +250,35 @@ fn grid_row_collection_boundary(rational: bool, completed_rows: usize) {
     let mut sequences = SourceSequences::new(&ctx).unwrap();
     let mut ir = CadIr::empty();
     let mut output = ctx.reserve_scoped(0, "test surface output").unwrap();
-    let error = output.with_storage(|| super::super::project(&mut ir,
-        std::slice::from_ref(&entry), std::slice::from_ref(&record),
-        &global, &ctx, &mut sequences).map(drop)).unwrap_err();
-    let CodecError::ResourceLimit(first) = error else { panic!("expected row admission refusal"); };
+    let error = output
+        .with_storage(|| {
+            super::super::project(
+                &mut ir,
+                std::slice::from_ref(&entry),
+                std::slice::from_ref(&record),
+                &global,
+                &ctx,
+                &mut sequences,
+            )
+            .map(drop)
+        })
+        .unwrap_err();
+    let CodecError::ResourceLimit(first) = error else {
+        panic!("expected row admission refusal");
+    };
     assert_eq!(first.dimension, ResourceDimension::CollectionItems);
-    assert_eq!(first.operation, if rational {
-        "iges NURBS surface weighted row controls"
-    } else {
-        "iges NURBS surface pole row controls"
-    });
-    assert_eq!((first.limit, first.used, first.additional),
-        (items, items, u64_from_index(V_COUNT)));
+    assert_eq!(
+        first.operation,
+        if rational {
+            "iges NURBS surface weighted row controls"
+        } else {
+            "iges NURBS surface pole row controls"
+        }
+    );
+    assert_eq!(
+        (first.limit, first.used, first.additional),
+        (items, items, u64_from_index(V_COUNT))
+    );
     assert_eq!(ir, CadIr::empty());
     assert_eq!(record, before);
     for _ in 0..64 {

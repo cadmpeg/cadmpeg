@@ -1,32 +1,37 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::super::{admit_surface_pole_count, angular_basis, bernstein_binomial,
-    equal_arc_length_parameterization, homogeneous_curve_boundary_matches,
-    homogeneous_product_control, interval_certified_linear_bezier,
-    pair_admitted_surface_poles, projectively_shared_weights, ruled_surface_span_lanes,
-    source_parameter_interval, split_homogeneous_bezier_span, SurfaceGridWeight,
-    MAX_SURFACE_POLES};
+use super::super::{
+    admit_surface_pole_count, angular_basis, bernstein_binomial, equal_arc_length_parameterization,
+    homogeneous_curve_boundary_matches, homogeneous_product_control,
+    interval_certified_linear_bezier, pair_admitted_surface_poles, projectively_shared_weights,
+    ruled_surface_span_lanes, source_parameter_interval, split_homogeneous_bezier_span,
+    SurfaceGridWeight, MAX_SURFACE_POLES,
+};
+use crate::global::ProjectedGlobal;
+use crate::parameter::ParameterRecord;
+use cadmpeg_core::decode::ResourceLimit;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::geometry::analytic::LineCurve;
 use cadmpeg_ir::geometry::nurbs::bezier::HomogeneousBezierSpan;
 use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsPoleGrid};
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::NonZeroReal;
-use crate::global::ProjectedGlobal;
-use crate::parameter::ParameterRecord;
-use cadmpeg_core::decode::ResourceLimit;
-use cadmpeg_ir::geometry::analytic::LineCurve;
 
 fn rail(degree: u32, knots: Vec<f64>, poles: Vec<Point3>) -> NurbsCurve {
     crate::test_support::with_service_context(&[], |ctx| {
         NurbsCurve::from_lanes(ctx, degree, knots, poles, None, false)
-            .expect("fixture admission").expect("valid fixture")
+            .expect("fixture admission")
+            .expect("valid fixture")
     })
 }
 
 fn linear_rail() -> NurbsCurve {
-    rail(1, vec![0.0, 0.0, 1.0, 1.0],
-        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)])
+    rail(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+    )
 }
 
 fn line() -> CurveGeometry {
@@ -79,7 +84,13 @@ fn surface_valid_raw_weight_preserves_original_refusal() {
 #[test]
 fn surface_polynomial_grid_preserves_original_refusal() {
     crate::test_support::with_entry_context(|ctx, original| {
-        let result = pair_admitted_surface_poles::<NonZeroReal>(ctx, Vec::new(), None, "test row", "test pole");
+        let result = pair_admitted_surface_poles::<NonZeroReal>(
+            ctx,
+            Vec::new(),
+            None,
+            "test row",
+            "test pole",
+        );
         if let Some(value) = fixed_result(result, original) {
             assert!(matches!(value, Ok(NurbsPoleGrid::Polynomial { rows }) if rows.is_empty()));
         }
@@ -104,7 +115,14 @@ fn surface_invalid_arc_length_interval_preserves_original_refusal() {
     let geometry = line();
     let global = global();
     crate::test_support::with_entry_context(|ctx, original| {
-        let result = equal_arc_length_parameterization([(&geometry, 1), (&geometry, 3)], [0.0, 0.0], [0.0, 1.0], &[], &global, ctx);
+        let result = equal_arc_length_parameterization(
+            [(&geometry, 1), (&geometry, 3)],
+            [0.0, 0.0],
+            [0.0, 1.0],
+            &[],
+            &global,
+            ctx,
+        );
         if let Some(value) = fixed_result(result, original) {
             assert!(!value);
         }
@@ -116,7 +134,14 @@ fn surface_constant_speed_rails_preserve_original_refusal() {
     let geometry = line();
     let global = global();
     crate::test_support::with_entry_context(|ctx, original| {
-        let result = equal_arc_length_parameterization([(&geometry, 1), (&geometry, 3)], [0.0, 1.0], [0.0, 1.0], &[], &global, ctx);
+        let result = equal_arc_length_parameterization(
+            [(&geometry, 1), (&geometry, 3)],
+            [0.0, 1.0],
+            [0.0, 1.0],
+            &[],
+            &global,
+            ctx,
+        );
         if let Some(value) = fixed_result(result, original) {
             assert!(value);
         }
@@ -156,7 +181,10 @@ fn surface_empty_product_controls_preserve_original_refusal() {
 
 #[test]
 fn surface_invalid_span_cut_preserves_original_refusal() {
-    let span = HomogeneousBezierSpan { domain: [0.0, 1.0], controls: Vec::new() };
+    let span = HomogeneousBezierSpan {
+        domain: [0.0, 1.0],
+        controls: Vec::new(),
+    };
     crate::test_support::with_entry_context(|ctx, original| {
         let result = split_homogeneous_bezier_span(&span, 0.0, ctx);
         if let Some(value) = fixed_result(result, original) {
@@ -168,8 +196,15 @@ fn surface_invalid_span_cut_preserves_original_refusal() {
 #[test]
 fn surface_mismatched_weight_counts_preserve_original_refusal() {
     let first = linear_rail();
-    let second = rail(1, vec![0.0, 0.0, 0.5, 1.0, 1.0],
-        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.5, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)]);
+    let second = rail(
+        1,
+        vec![0.0, 0.0, 0.5, 1.0, 1.0],
+        vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(0.5, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+        ],
+    );
     crate::test_support::with_entry_context(|ctx, original| {
         let result = projectively_shared_weights(&first, &second, ctx);
         if let Some(value) = fixed_result(result, original) {
@@ -201,7 +236,8 @@ fn surface_constant_rail_spans_preserve_original_refusal() {
 fn surface_invalid_boundary_resolution_preserves_original_refusal() {
     let geometry = linear_rail();
     crate::test_support::with_entry_context(|ctx, original| {
-        let result = homogeneous_curve_boundary_matches(ctx, &geometry, &geometry, [0.0, 1.0], -1.0);
+        let result =
+            homogeneous_curve_boundary_matches(ctx, &geometry, &geometry, [0.0, 1.0], -1.0);
         if let Some(value) = fixed_result(result, original) {
             assert_eq!(value, None);
         }
@@ -220,22 +256,35 @@ fn surface_invalid_angular_span_preserves_original_refusal() {
 
 fn cubic_interval_inputs(adjacent_only: bool) -> (NurbsCurve, ParameterRecord) {
     use crate::parameter::{Token, TokenValue};
-    let middle = if adjacent_only { 1.000006 } else { 1.0 };
-    let curve = rail(3, vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
-        [0.0, middle, 2.0, 3.0].map(|x| Point3::new(x, 0.0, 0.0)).to_vec());
+    let middle = if adjacent_only { 1.000_006 } else { 1.0 };
+    let curve = rail(
+        3,
+        vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+        [0.0, middle, 2.0, 3.0]
+            .map(|x| Point3::new(x, 0.0, 0.0))
+            .to_vec(),
+    );
     let mut values = [126, 3, 3, 0, 0, 1, 0].map(TokenValue::Integer).to_vec();
     values.extend([0, 0, 0, 0, 1, 1, 1, 1].map(TokenValue::Integer));
     values.extend([1, 1, 1, 1].map(TokenValue::Integer));
     for (control, x) in [0, 1, 2, 3].into_iter().enumerate() {
         values.push(if adjacent_only && (control == 1 || control == 2) {
             TokenValue::real(if control == 1 { middle } else { 2.0 })
-        } else { TokenValue::Integer(x) });
+        } else {
+            TokenValue::Integer(x)
+        });
         values.extend([TokenValue::Integer(0), TokenValue::Integer(0)]);
     }
     values.extend([TokenValue::Integer(0), TokenValue::Integer(1)]);
     let count = values.len();
-    let tokens = values.into_iter().map(|value| Token { value, span: 0..0 }).collect();
-    (curve, ParameterRecord::from_test_tokens(1, 1..2, Vec::new(), count, tokens, Vec::new()))
+    let tokens = values
+        .into_iter()
+        .map(|value| Token { value, span: 0..0 })
+        .collect();
+    (
+        curve,
+        ParameterRecord::from_test_tokens(1, 1..2, Vec::new(), count, tokens, Vec::new()),
+    )
 }
 
 #[test]
@@ -248,7 +297,10 @@ fn cubic_interval_proof_rejects_an_adjacent_only_false_certificate() {
     // Adjacent differences can share a slope that conflicts with the endpoint slope.
     let intervals = [19, 22, 25, 28].map(|index| {
         let value = record.number(index).unwrap();
-        DeclaredInterval::around(value, record.number_uncertainty(index, value, global.real_precision()))
+        DeclaredInterval::around(
+            value,
+            record.number_uncertainty(index, value, global.real_precision()),
+        )
     });
     let mut lower = f64::NEG_INFINITY;
     let mut upper = f64::INFINITY;
@@ -269,7 +321,8 @@ fn cubic_interval_proof_accepts_exact_scratch_and_releases_it() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let (curve, record) = cubic_interval_inputs(false);
     let global = global();
-    let bytes = u64::try_from(4 * std::mem::size_of::<[super::super::DeclaredInterval; 3]>()).unwrap();
+    let bytes =
+        u64::try_from(4 * std::mem::size_of::<[super::super::DeclaredInterval; 3]>()).unwrap();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = bytes;
     policy.limits.max_retained_bytes = 0;
@@ -278,7 +331,9 @@ fn cubic_interval_proof_accepts_exact_scratch_and_releases_it() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(interval_certified_linear_bezier(&curve, &record, &global, &ctx).unwrap());
     // The complete returned bool retains no interval-vector backing.
-    let storage = ctx.reserve_scoped(bytes, "test interval scratch released").unwrap();
+    let storage = ctx
+        .reserve_scoped(bytes, "test interval scratch released")
+        .unwrap();
     drop(storage);
     ctx.finish_session().unwrap();
 }
@@ -288,7 +343,8 @@ fn cubic_interval_proof_refuses_one_short_before_source_controls_and_fuses() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     let (curve, record) = cubic_interval_inputs(false);
     let global = global();
-    let bytes = u64::try_from(4 * std::mem::size_of::<[super::super::DeclaredInterval; 3]>()).unwrap();
+    let bytes =
+        u64::try_from(4 * std::mem::size_of::<[super::super::DeclaredInterval; 3]>()).unwrap();
     for (dimension, limit, additional) in [
         (ResourceDimension::MaterializedBytes, bytes - 1, bytes),
         (ResourceDimension::CollectionItems, 3, 4),
@@ -303,14 +359,24 @@ fn cubic_interval_proof_refuses_one_short_before_source_controls_and_fuses() {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let Err(CodecError::ResourceLimit(first)) =
-            interval_certified_linear_bezier(&curve, &record, &global, &ctx) else { panic!("scratch refuses"); };
+            interval_certified_linear_bezier(&curve, &record, &global, &ctx)
+        else {
+            panic!("scratch refuses");
+        };
         assert_eq!(first.dimension, dimension);
         assert_eq!(first.operation, "iges ruled linear interval controls");
-        assert_eq!((first.limit, first.used, first.additional), (limit, 0, additional));
+        assert_eq!(
+            (first.limit, first.used, first.additional),
+            (limit, 0, additional)
+        );
         for _ in 0..64 {
-            assert!(matches!(interval_certified_linear_bezier(&curve, &record, &global, &ctx),
-                Err(CodecError::ResourceLimit(last)) if last == first));
+            assert!(
+                matches!(interval_certified_linear_bezier(&curve, &record, &global, &ctx),
+                Err(CodecError::ResourceLimit(last)) if last == first)
+            );
         }
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
+        );
     }
 }

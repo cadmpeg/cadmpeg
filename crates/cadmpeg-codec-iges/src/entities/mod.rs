@@ -15,6 +15,143 @@ use crate::directory::DirectoryEntry;
 use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
 
+/// Plane equation identity, with a placement fallback for indeterminate equations.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum CoplanarityPlaneKey {
+    Equation([u64; 5]),
+    Placement([u64; 7]),
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for CoplanarityPlaneKey {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        let coefficients = match self {
+            Self::Equation(values) => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(values, ctx, operation)?
+            }
+            Self::Placement(values) => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(values, ctx, operation)?
+            }
+        };
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u64>()) + coefficients)
+    }
+}
+
+fn coplanarity_plane_key(
+    (point, normal): (cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3),
+    resolution: f64,
+) -> CoplanarityPlaneKey {
+    let bits = |value: f64| if value == 0.0 { 0 } else { value.to_bits() };
+    let canonical_normal = if [normal.x, normal.y, normal.z]
+        .into_iter()
+        .find(|component| *component != 0.0)
+        .is_some_and(f64::is_sign_negative)
+    {
+        normal.scale(-1.0)
+    } else {
+        normal
+    };
+    let offset = point
+        .vector_from(cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0))
+        .dot(canonical_normal);
+    if point.is_finite() && canonical_normal.is_finite() && !offset.is_nan() {
+        CoplanarityPlaneKey::Equation([
+            bits(offset),
+            bits(canonical_normal.x),
+            bits(canonical_normal.y),
+            bits(canonical_normal.z),
+            bits(resolution),
+        ])
+    } else {
+        coplanarity_placement_key((point, normal), resolution)
+    }
+}
+
+fn coplanarity_placement_key(
+    (point, normal): (cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3),
+    resolution: f64,
+) -> CoplanarityPlaneKey {
+    CoplanarityPlaneKey::Placement([
+        point.x.to_bits(),
+        point.y.to_bits(),
+        point.z.to_bits(),
+        normal.x.to_bits(),
+        normal.y.to_bits(),
+        normal.z.to_bits(),
+        resolution.to_bits(),
+    ])
+}
+
+// This is below the smallest overflow-rounding margin at either finite f64 endpoint.
+const MAX_COPLANAR_TANGENTIAL_ORIGIN: f64 = f64::MAX * f64::EPSILON / 16.0;
+
+/// A proof with the geometry needed to check origin-sensitive floating-point distances.
+struct CoplanarityProof<'ir, T> {
+    origin: cadmpeg_ir::math::Point3,
+    geometry: Option<&'ir SolvedCurveGeometry>,
+    result: T,
+}
+
+impl<T> CoplanarityProof<'_, T> {
+    fn matches(
+        &self,
+        key: CoplanarityPlaneKey,
+        (origin, normal): (cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3),
+        resolution: f64,
+    ) -> bool {
+        if matches!(key, CoplanarityPlaneKey::Placement(_)) || self.origin == origin {
+            return true;
+        }
+        if origin.vector_from(self.origin).dot(normal) != 0.0 {
+            return false;
+        }
+        let Some(geometry) = self.geometry else {
+            return true;
+        };
+        let point = match geometry {
+            SolvedCurveGeometry::Line(curve) => Some(curve.origin().get()),
+            SolvedCurveGeometry::Circle(curve) => Some(curve.center().get()),
+            SolvedCurveGeometry::Ellipse(curve) => Some(curve.center().get()),
+            SolvedCurveGeometry::Parabola(curve) => Some(curve.vertex().get()),
+            SolvedCurveGeometry::Hyperbola(curve) => Some(curve.center().get()),
+            SolvedCurveGeometry::Degenerate(curve) => Some(curve.point().get()),
+            SolvedCurveGeometry::Unknown { .. } => return true,
+            SolvedCurveGeometry::Composite { .. }
+            | SolvedCurveGeometry::Nurbs(_)
+            | SolvedCurveGeometry::Polyline(_)
+            | SolvedCurveGeometry::Transformed(_) => None,
+        };
+        if let Some(point) = point {
+            let fits = |origin| {
+                let distance = point.vector_from(origin).dot(normal).abs();
+                distance.is_finite() && distance <= resolution
+            };
+            return fits(self.origin) == fits(origin);
+        }
+        // For an exact coordinate-axis normal, only its coordinate affects distance.
+        // Bound the other origins so subtraction cannot overflow at any finite point.
+        let components = [normal.x, normal.y, normal.z];
+        let Some(axis) = components
+            .iter()
+            .position(|component| component.abs() == 1.0)
+        else {
+            return false;
+        };
+        let previous = [self.origin.x, self.origin.y, self.origin.z];
+        let current = [origin.x, origin.y, origin.z];
+        previous[axis] == current[axis]
+            && [0, 1, 2].into_iter().all(|coordinate| {
+                coordinate == axis
+                    || (components[coordinate] == 0.0
+                        && previous[coordinate].abs() <= MAX_COPLANAR_TANGENTIAL_ORIGIN
+                        && current[coordinate].abs() <= MAX_COPLANAR_TANGENTIAL_ORIGIN)
+            })
+    }
+}
+
 /// Equality identity for property text within one projection.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct PropertyTextId(usize);
@@ -43,11 +180,9 @@ impl<'text, 'budget> PropertyTextIndex<'text, 'budget> {
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<PropertyTextId, CodecError> {
-        if let Some(id) = ctx.get_btree_map(
-            &self.records,
-            &sequence,
-            "iges property text record lookup",
-        )? {
+        if let Some(id) =
+            ctx.get_btree_map(&self.records, &sequence, "iges property text record lookup")?
+        {
             return Ok(*id);
         }
         let id = if let Some(id) = ctx.get_btree_map(&self.values, text, operation)? {
@@ -179,7 +314,13 @@ fn admit_with_scoped_loss_slots<T>(
     match result {
         Ok(value) => Ok(Some(value)),
         Err(message) => {
-            push_entity_loss_with_scoped_slots(ctx, slots, losses, entry, format_args!("{message}"))?;
+            push_entity_loss_with_scoped_slots(
+                ctx,
+                slots,
+                losses,
+                entry,
+                format_args!("{message}"),
+            )?;
             Ok(None)
         }
     }
@@ -210,7 +351,11 @@ fn directed_cycle<I: DoubleEndedIterator<Item = u32> + ExactSizeIterator>(
     search_storage.with_storage(|| ctx.reserve_vec(&mut stack, 1, "iges cycle stack"))?;
     stack.push((sequence, false));
     while !stack.is_empty() || ctx.resource_refusal().is_some() {
-        let Some((current, expanded)) = ctx.next_charged(&mut std::iter::from_fn(|| stack.pop()), "iges cycle work")? else { break; };
+        let Some((current, expanded)) =
+            ctx.next_charged(&mut std::iter::from_fn(|| stack.pop()), "iges cycle work")?
+        else {
+            break;
+        };
         if expanded {
             ctx.remove_btree_set(&mut active, &current, "iges cycle active removal")?;
             ctx.insert_btree_set(visited, current, "iges cycle visited")?;
@@ -228,7 +373,9 @@ fn directed_cycle<I: DoubleEndedIterator<Item = u32> + ExactSizeIterator>(
         stack.push((current, true));
         let mut targets = successors(current)?.rev();
         while targets.len() != 0 || ctx.resource_refusal().is_some() {
-            let Some(target) = ctx.next_charged(&mut targets, "iges cycle work")? else { break; };
+            let Some(target) = ctx.next_charged(&mut targets, "iges cycle work")? else {
+                break;
+            };
             if ctx.contains_btree_set(&active, &target, "iges cycle active lookup")? {
                 return Ok(true);
             }

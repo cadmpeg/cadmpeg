@@ -1264,6 +1264,7 @@ impl WireProjectionOutcome<'_> {
 #[derive(Default)]
 pub(crate) struct Projection<'ctx> {
     pub(crate) placement_rejections: BTreeMap<u32, super::structure::PlacementRejection>,
+    pub(crate) placement_rejections_storage: Option<cadmpeg_core::decode::ScopedReservation<'ctx>>,
     pub(crate) decoded: BTreeSet<u32>,
     /// Source records consumed as construction data without a standalone
     /// neutral entity. The generic retention pass suppresses its loss for
@@ -3565,15 +3566,16 @@ pub(crate) fn project_geometry<'ctx>(
         ctx,
     )?;
 
-    let (structure_projection, placement_rejections) = super::structure::project(
-        ir,
-        directory,
-        (&entries, &records),
-        trailing_pointer_analysis,
-        global,
-        ctx,
-        &mut sequences,
-    )?;
+    let (structure_projection, placement_rejections, placement_rejections_storage) =
+        super::structure::project(
+            ir,
+            directory,
+            (&entries, &records),
+            trailing_pointer_analysis,
+            global,
+            ctx,
+            &mut sequences,
+        )?;
     structure_projection.merge_into(&mut decoded, &mut decoded_storage, &mut losses, ctx)?;
 
     super::presentation::project(
@@ -3646,6 +3648,7 @@ pub(crate) fn project_geometry<'ctx>(
         _consumed_storage: Some(consumed_storage),
         _boundary_storage: Some(boundary_storage),
         placement_rejections,
+        placement_rejections_storage: Some(placement_rejections_storage),
         decoded,
         consumed,
         losses,

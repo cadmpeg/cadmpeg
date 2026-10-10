@@ -253,7 +253,9 @@ fn text_font_definition(
     global_table: GlobalTable,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<TextFontDefinition>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() { return Err(refusal.into()); }
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let parameter_end = record.parameter_end();
     let directory_valid = entry.status.subordinate() == Some(Subordinate::Independent)
         && entry.status.use_flag(global_table) == Some(UseFlag::Definition);
@@ -275,13 +277,9 @@ fn text_font_definition(
             else {
                 return Ok(None);
             };
-            ctx.get_btree_map(
-                entries,
-                &sequence,
-                "iges presentation font pointer lookup",
-            )?
-            .filter(|target| target.entity_type == 310 && target.form == 0)
-            .map(|_| sequence)
+            ctx.get_btree_map(entries, &sequence, "iges presentation font pointer lookup")?
+                .filter(|target| target.entity_type == 310 && target.form == 0)
+                .map(|_| sequence)
         }
         Some(TokenValue::Real(_) | TokenValue::String(_)) => return Ok(None),
     };
@@ -294,9 +292,10 @@ fn text_font_definition(
     let mut cursor = 6;
     let mut character_codes = 0_u128;
     let mut characters = 0..count;
-    while characters.len() != 0 && ctx
-        .next_charged(&mut characters, "iges text font character traversal")?
-        .is_some()
+    while !characters.is_empty()
+        && ctx
+            .next_charged(&mut characters, "iges text font character traversal")?
+            .is_some()
     {
         let Some(code) = record
             .integer(cursor)
@@ -322,9 +321,10 @@ fn text_font_definition(
         };
         cursor += 4;
         let mut motions = 0..count;
-        while motions.len() != 0 && ctx
-            .next_charged(&mut motions, "iges text font motion traversal")?
-            .is_some()
+        while !motions.is_empty()
+            && ctx
+                .next_charged(&mut motions, "iges text font motion traversal")?
+                .is_some()
         {
             if record
                 .integer_or(cursor, 0)
@@ -362,8 +362,10 @@ pub(super) fn project<'ctx>(
     let mut text_fonts = BTreeMap::new();
     let mut directory_entries = directory.iter();
     while !directory_entries.as_slice().is_empty() {
-        let Some(entry) =
-            ctx.next_charged(&mut directory_entries, "iges presentation directory traversal")?
+        let Some(entry) = ctx.next_charged(
+            &mut directory_entries,
+            "iges presentation directory traversal",
+        )?
         else {
             break;
         };
@@ -395,8 +397,10 @@ pub(super) fn project<'ctx>(
 
     let mut directory_entries = directory.iter();
     while !directory_entries.as_slice().is_empty() {
-        let Some(entry) =
-            ctx.next_charged(&mut directory_entries, "iges presentation directory traversal")?
+        let Some(entry) = ctx.next_charged(
+            &mut directory_entries,
+            "iges presentation directory traversal",
+        )?
         else {
             break;
         };
@@ -407,16 +411,17 @@ pub(super) fn project<'ctx>(
         let mut active = BTreeSet::new();
         let mut next_sequence = Some(entry.sequence);
         let cyclic = loop {
-            if next_sequence.is_none() && ctx.resource_refusal().is_none() { break false; }
+            if next_sequence.is_none() && ctx.resource_refusal().is_none() {
+                break false;
+            }
             let mut current = next_sequence.into_iter();
-            let Some(sequence) = ctx.next_charged(&mut current, "iges font cycle traversal")? else {
+            let Some(sequence) = ctx.next_charged(&mut current, "iges font cycle traversal")?
+            else {
                 break false;
             };
-            if let Some(cyclic) = ctx.get_btree_map(
-                &cyclic_fonts,
-                &sequence,
-                "iges font cycle result lookup",
-            )? {
+            if let Some(cyclic) =
+                ctx.get_btree_map(&cyclic_fonts, &sequence, "iges font cycle result lookup")?
+            {
                 break *cyclic;
             }
             if !cycle_storage.with_storage(|| {
@@ -425,11 +430,7 @@ pub(super) fn project<'ctx>(
                 break true;
             }
             next_sequence = ctx
-                .get_btree_map(
-                    &text_fonts,
-                    &sequence,
-                    "iges text font chain lookup",
-                )?
+                .get_btree_map(&text_fonts, &sequence, "iges text font chain lookup")?
                 .and_then(|font| font.supersedes);
         };
         if let Some(refusal) = ctx.resource_refusal() {
@@ -437,7 +438,9 @@ pub(super) fn project<'ctx>(
         }
         let mut source_values = IntoIterator::into_iter(active);
         while source_values.len() != 0 {
-            let Some(sequence) = ctx.next_charged(&mut source_values, "iges font cycle result traversal")? else {
+            let Some(sequence) =
+                ctx.next_charged(&mut source_values, "iges font cycle result traversal")?
+            else {
                 break;
             };
             scratch.with_storage(|| {
@@ -479,8 +482,10 @@ pub(super) fn project<'ctx>(
 
     let mut directory_entries = directory.iter();
     while !directory_entries.as_slice().is_empty() {
-        let Some(entry) =
-            ctx.next_charged(&mut directory_entries, "iges presentation directory traversal")?
+        let Some(entry) = ctx.next_charged(
+            &mut directory_entries,
+            "iges presentation directory traversal",
+        )?
         else {
             break;
         };
@@ -495,19 +500,20 @@ pub(super) fn project<'ctx>(
             )?
             .copied()
         else {
-            push_presentation_loss(ctx, &mut loss_slots_storage, &mut losses, entry, "Parameter Data record is missing")?;
+            push_presentation_loss(
+                ctx,
+                &mut loss_slots_storage,
+                &mut losses,
+                entry,
+                "Parameter Data record is missing",
+            )?;
             continue;
         };
         let parameter_end = record.parameter_end();
         let font = record.integer_or(3, 1);
         let font_valid = match font {
             Some(font) => {
-                general_note_font_valid_for_global_table(
-                    font,
-                    entries,
-                    global.global_table(),
-                    ctx,
-                )?
+                general_note_font_valid_for_global_table(font, entries, global.global_table(), ctx)?
             }
             None => false,
         };
@@ -541,8 +547,10 @@ pub(super) fn project<'ctx>(
 
     let mut directory_entries = directory.iter();
     while !directory_entries.as_slice().is_empty() {
-        let Some(entry) =
-            ctx.next_charged(&mut directory_entries, "iges presentation directory traversal")?
+        let Some(entry) = ctx.next_charged(
+            &mut directory_entries,
+            "iges presentation directory traversal",
+        )?
         else {
             break;
         };
@@ -557,7 +565,13 @@ pub(super) fn project<'ctx>(
             )?
             .copied()
         else {
-            push_presentation_loss(ctx, &mut loss_slots_storage, &mut losses, entry, "Parameter Data record is missing")?;
+            push_presentation_loss(
+                ctx,
+                &mut loss_slots_storage,
+                &mut losses,
+                entry,
+                "Parameter Data record is missing",
+            )?;
             continue;
         };
         let levels_valid = if let Some(count) = record.count(1).filter(|count| *count > 0) {
@@ -603,8 +617,10 @@ pub(super) fn project<'ctx>(
 
     let mut directory_entries = directory.iter();
     while !directory_entries.as_slice().is_empty() {
-        let Some(entry) =
-            ctx.next_charged(&mut directory_entries, "iges presentation directory traversal")?
+        let Some(entry) = ctx.next_charged(
+            &mut directory_entries,
+            "iges presentation directory traversal",
+        )?
         else {
             break;
         };
@@ -619,7 +635,13 @@ pub(super) fn project<'ctx>(
             )?
             .copied()
         else {
-            push_presentation_loss(ctx, &mut loss_slots_storage, &mut losses, entry, "Parameter Data record is missing")?;
+            push_presentation_loss(
+                ctx,
+                &mut loss_slots_storage,
+                &mut losses,
+                entry,
+                "Parameter Data record is missing",
+            )?;
             continue;
         };
         if !line_font_definition_directory_valid(entry, global.global_table()) {
@@ -709,8 +731,10 @@ pub(super) fn project<'ctx>(
 
     let mut directory_entries = directory.iter();
     while !directory_entries.as_slice().is_empty() {
-        let Some(entry) =
-            ctx.next_charged(&mut directory_entries, "iges presentation directory traversal")?
+        let Some(entry) = ctx.next_charged(
+            &mut directory_entries,
+            "iges presentation directory traversal",
+        )?
         else {
             break;
         };
@@ -725,7 +749,13 @@ pub(super) fn project<'ctx>(
             )?
             .copied()
         else {
-            push_presentation_loss(ctx, &mut loss_slots_storage, &mut losses, entry, "Parameter Data record is missing")?;
+            push_presentation_loss(
+                ctx,
+                &mut loss_slots_storage,
+                &mut losses,
+                entry,
+                "Parameter Data record is missing",
+            )?;
             continue;
         };
         let components = [1, 2, 3].map(|index| {
@@ -834,7 +864,8 @@ pub(super) fn project<'ctx>(
                     entries,
                     &sequence,
                     "iges presentation color definition lookup",
-                )? else {
+                )?
+                else {
                     return Ok(None);
                 };
                 if entry.entity_type != 314 || entry.form != 0 {
@@ -870,8 +901,10 @@ pub(super) fn project<'ctx>(
 
     let mut directory_entries = directory.iter();
     while !directory_entries.as_slice().is_empty() {
-        let Some(entry) =
-            ctx.next_charged(&mut directory_entries, "iges presentation directory traversal")?
+        let Some(entry) = ctx.next_charged(
+            &mut directory_entries,
+            "iges presentation directory traversal",
+        )?
         else {
             break;
         };
@@ -890,12 +923,14 @@ pub(super) fn project<'ctx>(
     }
     let mut directory_entries = directory.iter();
     while !directory_entries.as_slice().is_empty() {
-        let Some(entry) =
-            ctx.next_charged(&mut directory_entries, "iges presentation directory traversal")?
+        let Some(entry) = ctx.next_charged(
+            &mut directory_entries,
+            "iges presentation directory traversal",
+        )?
         else {
             break;
         };
-        if !(entry.level < 0) {
+        if entry.level >= 0 {
             continue;
         }
         let sequence = entry.level.unsigned_abs();
@@ -924,12 +959,16 @@ pub(super) fn project<'ctx>(
     }
     let mut directory_entries = directory.iter();
     while !directory_entries.as_slice().is_empty() {
-        let Some(entry) =
-            ctx.next_charged(&mut directory_entries, "iges presentation directory traversal")?
+        let Some(entry) = ctx.next_charged(
+            &mut directory_entries,
+            "iges presentation directory traversal",
+        )?
         else {
             break;
         };
-        if !(entry.line_weight != 0 && directory_line_weight_is_semantic(entry, global.global_table())) {
+        if !(entry.line_weight != 0
+            && directory_line_weight_is_semantic(entry, global.global_table()))
+        {
             continue;
         }
         if !global.line_weight_number_is_valid(entry.line_weight) {
@@ -948,7 +987,8 @@ pub(super) fn project<'ctx>(
     }
     let mut source_values = IntoIterator::into_iter(&mut ir.model.curves);
     while source_values.len() != 0 {
-        let Some(curve) = ctx.next_charged(&mut source_values, "iges curve display traversal")? else {
+        let Some(curve) = ctx.next_charged(&mut source_values, "iges curve display traversal")?
+        else {
             break;
         };
         if let Some(source) = &mut curve.source_object {
@@ -970,7 +1010,9 @@ pub(super) fn project<'ctx>(
     }
     let mut source_values = IntoIterator::into_iter(&mut ir.model.surfaces);
     while source_values.len() != 0 {
-        let Some(surface) = ctx.next_charged(&mut source_values, "iges surface display traversal")? else {
+        let Some(surface) =
+            ctx.next_charged(&mut source_values, "iges surface display traversal")?
+        else {
             break;
         };
         if let Some(source) = &mut surface.source_object {
@@ -992,8 +1034,9 @@ pub(super) fn project<'ctx>(
         return Err(refusal.into());
     }
     let mut source_values = IntoIterator::into_iter(0..ir.model.bodies.len());
-    while source_values.len() != 0 {
-        let Some(index) = ctx.next_charged(&mut source_values, "iges body display traversal")? else {
+    while !source_values.is_empty() {
+        let Some(index) = ctx.next_charged(&mut source_values, "iges body display traversal")?
+        else {
             break;
         };
         let body = &ir.model.bodies[index];
@@ -1085,22 +1128,22 @@ pub(super) fn project<'ctx>(
         let mut conflicting = false;
         let mut properties = groups.properties().iter();
         while properties.len() != 0 || ctx.resource_refusal().is_some() {
-            let Some(pointer) = ctx.next_charged(&mut properties, "iges body property traversal")? else { break; };
-            let Some(entry) = ctx.get_btree_map(
-                entries,
-                pointer,
-                "iges body property Directory lookup",
-            )? else {
+            let Some(pointer) =
+                ctx.next_charged(&mut properties, "iges body property traversal")?
+            else {
+                break;
+            };
+            let Some(entry) =
+                ctx.get_btree_map(entries, pointer, "iges body property Directory lookup")?
+            else {
                 continue;
             };
             if entry.entity_type != 406 || entry.form != 15 {
                 continue;
             }
-            let Some(record) = ctx.get_btree_map(
-                records,
-                pointer,
-                "iges body property Parameter Data lookup",
-            )? else {
+            let Some(record) =
+                ctx.get_btree_map(records, pointer, "iges body property Parameter Data lookup")?
+            else {
                 continue;
             };
             if record.integer(1) != Some(1) {
@@ -1109,11 +1152,9 @@ pub(super) fn project<'ctx>(
             let Some(name) = record.string(2).filter(|name| !name.is_empty()) else {
                 continue;
             };
-            let name = if let Some(name) = ctx.get_btree_map(
-                &body_names,
-                pointer,
-                "iges body property name cache lookup",
-            )? {
+            let name = if let Some(name) =
+                ctx.get_btree_map(&body_names, pointer, "iges body property name cache lookup")?
+            {
                 *name
             } else {
                 let name = if ctx.all_by(
@@ -1163,11 +1204,9 @@ pub(super) fn project<'ctx>(
             }
         }
         if conflicting {
-            if let Some(entry) = ctx.get_btree_map(
-                entries,
-                &sequence,
-                "iges body name owner lookup",
-            )? {
+            if let Some(entry) =
+                ctx.get_btree_map(entries, &sequence, "iges body name owner lookup")?
+            {
                 super::push_attributed_loss_with_scoped_slots(
                     ctx,
                     &mut loss_slots_storage,
@@ -1191,8 +1230,9 @@ pub(super) fn project<'ctx>(
         return Err(refusal.into());
     }
     let mut source_values = IntoIterator::into_iter(0..ir.model.faces.len());
-    while source_values.len() != 0 {
-        let Some(index) = ctx.next_charged(&mut source_values, "iges face display traversal")? else {
+    while !source_values.is_empty() {
+        let Some(index) = ctx.next_charged(&mut source_values, "iges face display traversal")?
+        else {
             break;
         };
         let face = &ir.model.faces[index];
@@ -1247,7 +1287,12 @@ pub(super) fn project<'ctx>(
         });
     }
 
-    Ok(ProjectionOutcome { decoded, decoded_storage, losses, loss_slots_storage })
+    Ok(ProjectionOutcome {
+        decoded,
+        decoded_storage,
+        losses,
+        loss_slots_storage,
+    })
 }
 
 #[cfg(test)]

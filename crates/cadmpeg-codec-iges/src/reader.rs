@@ -361,9 +361,9 @@ fn annotate_representation(
     Ok(())
 }
 
-fn mark_quarantined_placements(
-    ctx: &DecodeContext<'_>,
-    projection: &mut entities::geometry::Projection<'_>,
+fn mark_quarantined_placements<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    projection: &mut entities::geometry::Projection<'ctx>,
     directory: &[directory::DirectoryEntry],
     quarantined: &BTreeSet<u32>,
 ) -> Result<(), CodecError> {
@@ -375,12 +375,18 @@ fn mark_quarantined_placements(
         else {
             continue;
         };
-        ctx.insert_btree_map(
-            &mut projection.placement_rejections,
-            entry.sequence,
-            entities::structure::PlacementRejection::MissingRecord,
-            "iges quarantined placement rejections",
-        )?;
+        let storage = match &mut projection.placement_rejections_storage {
+            Some(storage) => storage,
+            empty @ None => empty.insert(ctx.reserve_scoped(0, "iges placement rejection nodes")?),
+        };
+        storage.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut projection.placement_rejections,
+                entry.sequence,
+                entities::structure::PlacementRejection::MissingRecord,
+                "iges quarantined placement rejections",
+            )
+        })?;
     }
     Ok(())
 }
