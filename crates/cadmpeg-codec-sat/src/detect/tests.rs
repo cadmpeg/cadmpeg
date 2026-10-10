@@ -217,7 +217,7 @@ fn text_header_magic_uses_the_admitted_first_field_scan() {
     assert_eq!(limit.operation, "SAT text header line");
     assert_eq!(limit.used, 0);
     assert_eq!(limit.additional, 1);
-    assert_eq!(ctx.resource_refusal(), Some(limit.clone()));
+    assert_eq!(ctx.resource_refusal(), Some(limit));
     assert!(matches!(super::looks_like_text_stream(&ctx, &bytes),
         Err(CodecError::ResourceLimit(original)) if original == limit));
     let service = cadmpeg_test_support::service_decode_context();
@@ -238,13 +238,13 @@ fn text_header_detection_has_an_exact_first_line_work_boundary() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
-    let mut bytes = b"700 0 6 0\n3".to_vec();
-    bytes.resize(1 << 20, b'7');
     // First field: one separator probe, four extent probes, three UTF-8
     // bytes, three integer bytes. Each later field: two separator probes,
     // two extent probes, one UTF-8 byte and one integer byte. Final newline:
     // one probe. The fixed three-digit discriminant requires no scan charge.
     const WORK: u64 = (1 + 4 + 3 + 3) + 3 * (2 + 2 + 1 + 1) + 1;
+    let mut bytes = b"700 0 6 0\n3".to_vec();
+    bytes.resize(1 << 20, b'7');
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = WORK;

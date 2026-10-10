@@ -662,10 +662,10 @@ mod tests {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_core::CodecError;
 
-        let bytes = [0_u8; 12];
         // Nine four-byte windows and one end probe; the marker comparison has
         // a fixed four-byte extent and needs no input-sized child charge.
         const WORK: u64 = 12 - 4 + 1 + 1;
+        let bytes = [0_u8; 12];
         for prefixed in [false, true] {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
@@ -802,7 +802,7 @@ mod tests {
                 panic!("work refusal");
             };
             assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(ctx.resource_refusal(), Some(limit.clone()));
+            assert_eq!(ctx.resource_refusal(), Some(limit));
             let original = classify_layer(
                 &ctx,
                 token(schema),
@@ -855,7 +855,7 @@ mod tests {
                 panic!("work refusal");
             };
             assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(ctx.resource_refusal(), Some(limit.clone()));
+            assert_eq!(ctx.resource_refusal(), Some(limit));
             assert!(
                 matches!(classify_layer(&ctx, token("SCH_SW_33103_11000"), carrier("stream@12"),
                 LayerInstance::Sole, verified), Err(CodecError::ResourceLimit(original)) if original == limit)
@@ -873,7 +873,10 @@ mod tests {
             work(&[PARASOLID_SCH_SW_32001], Admission::Residual),
             baseline + 1
         );
-        assert_eq!(work(&[long.clone()], Admission::Residual), baseline + 1);
+        assert_eq!(
+            work(std::slice::from_ref(&long), Admission::Residual),
+            baseline + 1
+        );
         assert_eq!(
             work(&[long, PARASOLID_SCH_SW_33103], Admission::Admitted),
             baseline + 1
