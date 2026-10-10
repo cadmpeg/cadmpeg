@@ -409,9 +409,8 @@ pub(in crate::validate) fn check_shell_connectivity(
             }
         }
     }
-    let mut visited_groups = incidence_storage.with_storage(|| {
-        ctx.alloc_filled(groups.len(), None, "shell incidence visited slots")
-    })?;
+    let mut visited_groups = incidence_storage
+        .with_storage(|| ctx.alloc_filled(groups.len(), None, "shell incidence visited slots"))?;
     for (shell_index, shell) in ir.model.shells.iter().enumerate() {
         ctx.charge_work(1, "shell connectivity owner scan")?;
         if shell.faces().len() < 2 {
@@ -448,12 +447,18 @@ pub(in crate::validate) fn check_shell_connectivity(
             if let Some(face_groups) = groups_by_face.get(ctx, face)? {
                 let mut group_visits = face_groups.iter();
                 while !group_visits.as_slice().is_empty() {
-                    let Some(&group_index) = ctx.next_charged(&mut group_visits, "shell connectivity incidence scan")? else { break; };
+                    let Some(&group_index) =
+                        ctx.next_charged(&mut group_visits, "shell connectivity incidence scan")?
+                    else {
+                        break;
+                    };
                     if visited_groups[group_index] == Some(shell_index) {
                         continue;
                     }
                     visited_groups[group_index] = Some(shell_index);
-                    for neighbor in groups[group_index].identities("shell connectivity neighbor scan")? {
+                    for neighbor in
+                        groups[group_index].identities("shell connectivity neighbor scan")?
+                    {
                         if owned.contains(ctx, neighbor)? && reached.insert_unique(neighbor, ())? {
                             pending_storage.with_storage(|| {
                                 ctx.push_vec(&mut pending, neighbor, "shell pending slots")

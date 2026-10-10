@@ -1551,8 +1551,14 @@ fn native_finalize_admits_namespace_and_arena_traversals() {
     for operation in ["finalize native namespaces", "finalize native arenas"] {
         let run = |cap| {
             let mut native = super::Native::default();
-            native.namespace_mut("a").arenas.insert("empty".into(), Vec::new());
-            native.namespace_mut("b").arenas.insert("empty".into(), Vec::new());
+            native
+                .namespace_mut("a")
+                .arenas
+                .insert("empty".into(), Vec::new());
+            native
+                .namespace_mut("b")
+                .arenas
+                .insert("empty".into(), Vec::new());
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
@@ -1560,11 +1566,22 @@ fn native_finalize_admits_namespace_and_arena_traversals() {
             native.finalize(&ctx)
         };
         let error = cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::WorkUnits, operation, run,
+            ResourceDimension::WorkUnits,
+            operation,
+            run,
         );
-        let CodecError::ResourceLimit(limit) = error else { panic!("traversal refusal"); };
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("traversal refusal");
+        };
         // The namespace traversal visits two slots; the first namespace has one arena.
-        assert_eq!(limit.additional, if operation == "finalize native namespaces" { 2 } else { 1 });
+        assert_eq!(
+            limit.additional,
+            if operation == "finalize native namespaces" {
+                2
+            } else {
+                1
+            }
+        );
         run(4).unwrap();
     }
 }
@@ -1582,9 +1599,13 @@ fn canonical_record_identity_removal_admits_the_search_path() {
             .map_err(CodecError::from)
     };
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::WorkUnits, "remove native record identity", run,
+        ResourceDimension::WorkUnits,
+        "remove native record identity",
+        run,
     );
-    let CodecError::ResourceLimit(limit) = error else { panic!("identity removal refusal"); };
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("identity removal refusal");
+    };
     assert_eq!(limit.additional, 2); // One comparison of the two-byte key.
     assert_eq!(run(u64::MAX).unwrap().id(), "test:native:record#0");
 }

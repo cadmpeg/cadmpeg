@@ -186,24 +186,37 @@ fn compound_curve_decode_admits_each_parameter_and_component() {
         parameter: -2.0,
         component: "test:model:curve#0".try_into().unwrap(),
     };
-    for operation in ["compound curve parameter admission", "compound curve component admission"] {
+    for operation in [
+        "compound curve parameter admission",
+        "compound curve component admission",
+    ] {
         let run = |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
             let result = CompoundCurveConstruction::try_new_for_decode(
-                &ctx, vec![2.0, -1.0], vec![component()], None,
+                &ctx,
+                vec![2.0, -1.0],
+                vec![component()],
+                None,
             )?;
             ctx.finish_session()?;
             result.map_err(CodecError::malformed)
         };
-        let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation, run);
-        let CodecError::ResourceLimit(limit) = error else { panic!("compound visit refusal"); };
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            run,
+        );
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("compound visit refusal");
+        };
         assert_eq!(limit.additional, 1); // One source element at each boundary.
-        assert_eq!(run(u64::MAX).unwrap(), CompoundCurveConstruction::try_new(
-            vec![2.0, -1.0], vec![component()], None,
-        ).unwrap());
+        assert_eq!(
+            run(u64::MAX).unwrap(),
+            CompoundCurveConstruction::try_new(vec![2.0, -1.0], vec![component()], None,).unwrap()
+        );
     }
     // A first invalid parameter stops before both its suffix and the component list.
     // A first invalid component stops before its suffix. Each case visits exactly one element.
@@ -219,15 +232,21 @@ fn compound_curve_decode_admits_each_parameter_and_component() {
         } else {
             (Vec::new(), vec![invalid_component; 128])
         };
-        assert_eq!(CompoundCurveConstruction::try_new_for_decode(&ctx, parameters, components, None).unwrap(),
-            Err("compound curve parameters must be finite"));
+        assert_eq!(
+            CompoundCurveConstruction::try_new_for_decode(&ctx, parameters, components, None)
+                .unwrap(),
+            Err("compound curve parameters must be finite")
+        );
         ctx.finish_session().unwrap();
     }
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert_eq!(CompoundCurveConstruction::try_new_for_decode(&ctx, vec![0.0; 128], Vec::new(), None).unwrap(),
-        Err("compound curve components must not be empty"));
+    assert_eq!(
+        CompoundCurveConstruction::try_new_for_decode(&ctx, vec![0.0; 128], Vec::new(), None)
+            .unwrap(),
+        Err("compound curve components must not be empty")
+    );
     ctx.finish_session().unwrap();
 }

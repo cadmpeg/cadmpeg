@@ -29,8 +29,16 @@ pub(super) fn emit<S: ser::Serializer>(
     ctx: &DecodeContext<'_>,
 ) -> Result<S::Ok, S::Error> {
     let mut deserializer = serde_json::Deserializer::from_str(json);
-    let emitted = de::Deserializer::deserialize_any(&mut deserializer, Emit { serializer, depth, ctx, bytes: json.len() })
-        .map_err(de_to_ser)?;
+    let emitted = de::Deserializer::deserialize_any(
+        &mut deserializer,
+        Emit {
+            serializer,
+            depth,
+            ctx,
+            bytes: json.len(),
+        },
+    )
+    .map_err(de_to_ser)?;
     deserializer.end().map_err(de_to_ser)?;
     Ok(emitted)
 }
@@ -101,7 +109,11 @@ impl<'de, S: ser::Serializer> de::Visitor<'de> for Emit<'_, S> {
         let Some(depth) = self.depth.checked_sub(1) else {
             return Err(nests_too_deep());
         };
-        self.ctx.charge_work(u64_from_index(self.bytes), "construct canonical native value")
+        self.ctx
+            .charge_work(
+                u64_from_index(self.bytes),
+                "construct canonical native value",
+            )
             .map_err(de::Error::custom)?;
         let mut sequence = self
             .serializer
@@ -122,7 +134,11 @@ impl<'de, S: ser::Serializer> de::Visitor<'de> for Emit<'_, S> {
         let Some(depth) = self.depth.checked_sub(1) else {
             return Err(nests_too_deep());
         };
-        self.ctx.charge_work(u64_from_index(self.bytes), "construct canonical native value")
+        self.ctx
+            .charge_work(
+                u64_from_index(self.bytes),
+                "construct canonical native value",
+            )
             .map_err(de::Error::custom)?;
         let mut map = self
             .serializer
@@ -209,25 +225,38 @@ mod tests {
 
     #[test]
     fn raw_replay_charges_only_text_passes_that_run() {
+        use super::u64_from_index;
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_core::CodecError;
-        use super::u64_from_index;
         for (json, work) in [("7", 1), ("[[7]]", 5 + 5 + 3)] {
             let run = |cap| {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_work_units = cap;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-                ctx.charge_work(u64_from_index(json.len()), "construct canonical native value")?;
-                let result = emit(json, serde_json::value::Serializer, MAX_NATIVE_NESTING_DEPTH, &ctx);
+                ctx.charge_work(
+                    u64_from_index(json.len()),
+                    "construct canonical native value",
+                )?;
+                let result = emit(
+                    json,
+                    serde_json::value::Serializer,
+                    MAX_NATIVE_NESTING_DEPTH,
+                    &ctx,
+                );
                 ctx.finish_session()?;
                 result.map_err(|error| CodecError::malformed(error.to_string()))
             };
             cadmpeg_test_support::refusal::resource_limit_at(
-                ResourceDimension::WorkUnits, "construct canonical native value", run,
+                ResourceDimension::WorkUnits,
+                "construct canonical native value",
+                run,
             );
             // One text pass, plus each entered container: 1 byte, or 5 + 5 + 3 bytes.
-            assert_eq!(run(work).unwrap(), serde_json::from_str::<Value>(json).unwrap());
+            assert_eq!(
+                run(work).unwrap(),
+                serde_json::from_str::<Value>(json).unwrap()
+            );
         }
     }
 

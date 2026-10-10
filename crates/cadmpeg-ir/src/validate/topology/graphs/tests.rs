@@ -130,13 +130,26 @@ fn shell_connectivity_preserves_incidence_and_shell_ownership() {
     ir.model.loops.push(bridge);
     let original = ir.model.shells[0].clone();
     for (members, disconnected) in [
-        (vec![ir.model.faces[0].id.clone(), ir.model.faces[2].id.clone()], true),
-        (vec![ir.model.faces[0].id.clone(), ir.model.faces[1].id.clone(), ir.model.faces[2].id.clone()], false),
+        (
+            vec![ir.model.faces[0].id.clone(), ir.model.faces[2].id.clone()],
+            true,
+        ),
+        (
+            vec![
+                ir.model.faces[0].id.clone(),
+                ir.model.faces[1].id.clone(),
+                ir.model.faces[2].id.clone(),
+            ],
+            false,
+        ),
         (original.faces().to_vec(), false),
     ] {
         ir.model.shells[0] = crate::topology::Shell::with_faces(
-            original.id.clone(), original.region.clone(), members,
-        ).unwrap();
+            original.id.clone(),
+            original.region.clone(),
+            members,
+        )
+        .unwrap();
         let ctx = cadmpeg_test_support::service_decode_context();
         let mut findings = Vec::new();
         super::check_shell_connectivity(&ctx, &ir, &mut findings).unwrap();
@@ -145,7 +158,10 @@ fn shell_connectivity_preserves_incidence_and_shell_ownership() {
             assert_eq!(findings[0].check, Check::ShellTopology);
             assert_eq!(findings[0].severity, Severity::Error);
             assert_eq!(findings[0].entity.as_deref(), Some(original.id.as_str()));
-            assert_eq!(findings[0].message, "shell faces are disconnected through shared edges or vertices");
+            assert_eq!(
+                findings[0].message,
+                "shell faces are disconnected through shared edges or vertices"
+            );
         }
     }
 }
@@ -159,7 +175,14 @@ fn shell_connectivity_uses_shared_edges_without_endpoint_records() {
     for (index, face) in ir.model.faces.iter().enumerate() {
         let mut coedge = template.clone();
         coedge.id = format!("test:model:coedge#{index}").try_into().unwrap();
-        coedge.owner_loop = ir.model.loops.iter().find(|loop_| loop_.face == face.id).unwrap().id.clone();
+        coedge.owner_loop = ir
+            .model
+            .loops
+            .iter()
+            .find(|loop_| loop_.face == face.id)
+            .unwrap()
+            .id
+            .clone();
         ir.model.coedges.push(coedge);
     }
     let ctx = cadmpeg_test_support::service_decode_context();
@@ -197,7 +220,8 @@ fn shell_connectivity_keeps_shared_vertex_storage_proportional_to_faces() {
         shell.id.clone(),
         shell.region.clone(),
         ir.model.faces.iter().map(|face| face.id.clone()).collect(),
-    ).unwrap();
+    )
+    .unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     // One KiB per face covers the borrowed indexes, incidence slots,
@@ -210,7 +234,10 @@ fn shell_connectivity_keeps_shared_vertex_storage_proportional_to_faces() {
     let mut findings = Vec::new();
     super::check_shell_connectivity(&ctx, &ir, &mut findings).unwrap();
     assert!(findings.is_empty());
-    drop(ctx.reserve_scoped(scratch_bound, "shell incidence scopes released").unwrap());
+    drop(
+        ctx.reserve_scoped(scratch_bound, "shell incidence scopes released")
+            .unwrap(),
+    );
     ctx.finish_session().unwrap();
 }
 
@@ -228,9 +255,13 @@ fn shell_connectivity_admits_one_incidence_before_child_work() {
         result
     };
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::WorkUnits, "shell connectivity incidence scan", run,
+        ResourceDimension::WorkUnits,
+        "shell connectivity incidence scan",
+        run,
     );
-    let CodecError::ResourceLimit(limit) = error else { panic!("incidence traversal refusal"); };
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("incidence traversal refusal");
+    };
     assert_eq!(limit.additional, 1); // Only the first incidence precedes its child work.
     run(u64::MAX).unwrap();
 }
