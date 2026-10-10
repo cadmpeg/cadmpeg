@@ -568,7 +568,6 @@ pub(crate) fn patch_nurbs_surface(
     {
         return Ok(None);
     }
-    let descriptors = scan_surface_descriptors(ctx, bytes)?;
     let mut p = wrapper_offset.checked_add(2).ok_or_else(|| {
         cadmpeg_core::CodecError::malformed("Parasolid patch wrapper offset overflow")
     })?;
@@ -581,6 +580,7 @@ pub(crate) fn patch_nurbs_surface(
     let Some(descriptor_attr) = View::u16_be_at(bytes, descriptor_at) else {
         return Ok(None);
     };
+    let descriptors = scan_surface_descriptors(ctx, bytes)?;
     let Some(descriptor) = ctx.get_btree_map(
         &descriptors, &descriptor_attr, "find Parasolid patch surface descriptor",
     )? else {

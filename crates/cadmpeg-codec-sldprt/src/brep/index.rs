@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #[cfg(test)]
-use super::{blend, offset, spline, subset, sweep, Carrier, SurfaceCarrier};
+use super::{blend, offset, sweep, Carrier, SurfaceCarrier};
 use super::{intersection, CurveCarrier};
 #[cfg(test)]
 use cadmpeg_core::decode::DecodeContext;
@@ -142,137 +142,14 @@ impl CarrierIndex {
         )
     }
 
-    fn insert_intersection(
-        &mut self,
-        ctx: &DecodeContext<'_>,
-        intersection: intersection::IntersectionCarrier,
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        ctx.entry_btree_map(
-            &mut self.curves,
-            intersection.carrier.attr,
-            "index SLDPRT intersection carriers",
-        )?
-        .or_insert(IndexedCurve::Derived(intersection));
-        Ok(())
-    }
-
-    #[cfg(test)]
-    fn insert_blend_support_pair(&mut self, attr: u16, carrier: blend::SupportPairCarrier) {
-        self.blend_support_pairs.insert(attr, carrier);
-    }
-
-    pub(super) fn merge_missing(
-        &mut self,
-        ctx: &DecodeContext<'_>,
-        other: Self,
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        merge_missing_map(
-            ctx,
-            &mut self.curves,
-            other.curves,
-            "merge SLDPRT curve carriers",
-        )?;
-        merge_missing_map(
-            ctx,
-            &mut self.surfaces,
-            other.surfaces,
-            "merge SLDPRT surface carriers",
-        )?;
-        merge_missing_map(
-            ctx,
-            &mut self.sweeps,
-            other.sweeps,
-            "merge SLDPRT sweep carriers",
-        )?;
-        merge_missing_map(
-            ctx,
-            &mut self.blends,
-            other.blends,
-            "merge SLDPRT blend carriers",
-        )?;
-        merge_missing_map(
-            ctx,
-            &mut self.offsets,
-            other.offsets,
-            "merge SLDPRT offset carriers",
-        )?;
-        merge_missing_map(
-            ctx,
-            &mut self.blend_support_pairs,
-            other.blend_support_pairs,
-            "merge SLDPRT blend support pairs",
-        )?;
-        let mut lane_refusals = other.lane_refusals;
-        ctx.append_vec(
-            &mut self.lane_refusals,
-            &mut lane_refusals,
-            "merge SLDPRT lane refusals",
-        )?;
-        Ok(())
-    }
 }
 
-#[cfg(test)]
-fn merge_missing_map<K: Ord + cadmpeg_core::decode::cost::DecodeCost, V>(
-    ctx: &DecodeContext<'_>,
-    target: &mut BTreeMap<K, V>,
-    source: BTreeMap<K, V>,
-    operation: &'static str,
-) -> Result<(), cadmpeg_core::CodecError> {
-    for (key, value) in ctx.admit_iter(source, operation)? {
-        if let std::collections::btree_map::Entry::Vacant(entry) =
-            ctx.entry_btree_map(target, key, operation)?
-        {
-            entry.insert(value);
-        }
-    }
-    Ok(())
-}
-
-/// Scan the whole stream body for compact analytic carriers, keyed by attribute
-/// id. A later occurrence in one stream replaces an earlier occurrence at the
-/// same identity. Cross-stream precedence is applied by [`CarrierIndex::merge_missing`]:
-/// the partition carrier remains authoritative and a deltas carrier fills only
-/// an absent identity.
+/// Retained fixture adapter over the production stream scanner.
 #[cfg(test)]
 pub(super) fn scan_carriers(
-    ctx: &DecodeContext<'_>,
-    body: &[u8],
+    ctx: &DecodeContext<'_>, body: &[u8],
 ) -> Result<CarrierIndex, cadmpeg_core::CodecError> {
-    let mut out = CarrierIndex::default();
-    scan::scan_analytic_carriers(ctx, body, &mut scan::AnalyticSink::Retained(&mut out))?;
-    let mut lane_refusals = Vec::new();
-    for (_, carrier) in ctx.admit_iter(
-        spline::scan_curve_carriers(ctx, body, &mut lane_refusals)?,
-        "index SLDPRT spline curve carriers",
-    )? {
-        out.insert(ctx, Carrier::Curve(carrier))?;
-    }
-    for (_, carrier) in ctx.admit_iter(
-        spline::scan_surface_carriers(ctx, body, &mut lane_refusals)?,
-        "index SLDPRT spline surface carriers",
-    )? {
-        out.insert(ctx, Carrier::Surface(carrier))?;
-    }
-    for carrier in ctx.admit_iter(
-        subset::scan(ctx, body, &out)?,
-        "index SLDPRT subset carriers",
-    )? {
-        out.insert(ctx, Carrier::Curve(carrier))?;
-    }
-    out.sweeps = sweep::scan_sweep_carriers(ctx, body)?;
-    let blend::BlendCarriers { blends, pairs } = blend::scan(ctx, body)?;
-    out.blends = blends;
-    out.blend_support_pairs = pairs;
-    out.offsets = offset::scan(ctx, body)?;
-    for (_, intersection) in ctx.admit_iter(
-        intersection::scan_intersection_carriers(ctx, body, &mut lane_refusals)?,
-        "index SLDPRT intersection carriers",
-    )? {
-        out.insert_intersection(ctx, intersection)?;
-    }
-    out.lane_refusals = lane_refusals;
-    Ok(out)
+    scan::scan_stream_carriers(ctx, body)?.into_retained(ctx)
 }
 
 #[cfg(test)]
@@ -397,16 +274,6 @@ mod tests {
 
     #[test]
     fn merge_retains_zero_offset_blend_support_pairs() {
-        let mut base = CarrierIndex::default();
-        let mut delta = CarrierIndex::default();
-        delta.insert_blend_support_pair(
-            9,
-            blend::SupportPairCarrier {
-                supports: [11, 12],
-                intersection: 13,
-            },
-        );
-
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
             &[],
@@ -414,10 +281,16 @@ mod tests {
             &cadmpeg_core::decode::DecodePolicy::service(),
         )
         .expect("test merge fits service policy");
+        let mut base = super::stream::StreamCarrierIndex::empty(&ctx).unwrap();
+        let mut delta = super::stream::StreamCarrierIndex::empty(&ctx).unwrap();
+        delta.blend_support_pairs.replace(&ctx, 9, blend::SupportPairCarrier {
+            supports: [11, 12], intersection: 13,
+        }, "test blend support pair").unwrap();
         base.merge_missing(&ctx, delta)
             .expect("test merge fits service policy");
 
-        let pair = base
+        let view = super::view::CarrierView::Stream(&base);
+        let pair = view
             .blend_support_pair(&ctx, 9)
             .expect("support lookup")
             .expect("support pair");
