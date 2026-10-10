@@ -3595,7 +3595,7 @@ fn project_draft(
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
-    let mut scratch_storage = ctx.reserve_scoped(0, "F3D feature projection scratch")?;
+    ctx.charge_work(0, "F3D feature projection scratch")?;
 
     let construction = or_none!(scope.draft_operation());
     let faces = or_none!(single_operand_group(
@@ -3604,40 +3604,51 @@ fn project_draft(
         scope,
         DesignOperandRole::ROLE_0X10
     )?);
-    let mut role_groups = Vec::new();
-    for group in groups.iter().filter(|group| {
-        native_stream(&group.id) == native_stream(&scope.id)
-            && group.scope_record_index == scope.record_index
-            && group.role() == DesignOperandRole::ROLE_0X21
-            && !group.members().is_empty()
-    }) {
-        scratch_storage
-            .with_storage(|| ctx.push_vec(&mut role_groups, group, "f3d Draft role group"))?;
+    let stream = ids::native_stream_charged(
+        ctx, &scope.id, "resolve F3D Draft role scope stream",
+    )?;
+    let mut role_groups = [None; 2];
+    let mut source = groups.iter();
+    while let Some(group) = ctx.next_charged(&mut source, "visit F3D Draft role group")? {
+        if !feature_stream_matches(ctx, &group.id, stream, "match F3D Draft role group stream")?
+            || group.scope_record_index != scope.record_index
+            || group.role() != DesignOperandRole::ROLE_0X21
+            || group.members().is_empty()
+        {
+            continue;
+        }
+        if role_groups[0].is_none() {
+            role_groups[0] = Some(group);
+        } else if role_groups[1].is_none() {
+            role_groups[1] = Some(group);
+        } else {
+            return Ok(None);
+        }
     }
-    let member_of_scope = |group: &DesignConstructionOperandGroup| {
-        group
-            .members()
-            .iter()
-            .map(|member| &member.value)
-            .all(|member| {
-                scope
-                    .reference_members()
-                    .values()
-                    .any(|value| value == member)
-            })
-    };
-    if !scope
-        .reference_members()
-        .values()
-        .any(|value| value == &faces.record_index)
-        || !member_of_scope(faces)
-    {
+    if role_groups[0].is_none() {
         return Ok(None);
     }
-    Ok(match role_groups.as_slice() {
-        [neutral_plane]
-            if member_of_scope(neutral_plane)
-                && group_has_entity_selection(ctx, scope, neutral_plane, entity_selection_operands)? =>
+    let member_of_scope = |group: &DesignConstructionOperandGroup| {
+        ctx.all_by(
+            group.members(),
+            |member| ctx.any_by(
+                scope.reference_members().values(),
+                |value| Ok(*value == member.value),
+                "visit F3D Draft scope member",
+            ),
+            "visit F3D Draft group member",
+        )
+    };
+    if !ctx.any_by(
+        scope.reference_members().values(),
+        |value| Ok(*value == faces.record_index),
+        "visit F3D Draft face group reference",
+    )? || !member_of_scope(faces)? {
+        return Ok(None);
+    }
+    Ok(match role_groups {
+        [Some(neutral_plane), None] if member_of_scope(neutral_plane)? => {
+            if group_has_entity_selection(ctx, scope, neutral_plane, entity_selection_operands)?
         {
             if let Some(neutral_plane) =
                 selected_work_plane(ctx, scope, neutral_plane, entity_selection_operands, scopes)?
@@ -3696,8 +3707,7 @@ fn project_draft(
                 ))),
                 outward: Some(draft_outward(construction.angle.get())),
             }))
-        }
-        [neutral_plane] if member_of_scope(neutral_plane) => {
+        } else {
             Some(FeatureDefinition::Operation(FeatureOperation::Draft {
                 faces: project_draft_face_selection(ctx, scope, faces, face_operands, histories)?,
                 anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
@@ -3716,7 +3726,8 @@ fn project_draft(
                 outward: Some(draft_outward(construction.angle.get())),
             }))
         }
-        [first, second] if member_of_scope(first) && member_of_scope(second) => {
+        }
+        [Some(first), Some(second)] if member_of_scope(first)? && member_of_scope(second)? => {
             let first_plane =
                 selected_work_plane(ctx, scope, first, entity_selection_operands, scopes)?;
             let second_plane =
