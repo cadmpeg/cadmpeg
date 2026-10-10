@@ -101,13 +101,28 @@ fn product_owner_index_visits_and_storage_refuse_at_core_boundaries() {
         "App::PropertyString",
         "<Property><String value=\"test\"/></Property>",
     );
+    let object = crate::native::ObjectRecord {
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            "fcstd:native:object#Owner".into(),
+            "Owner".into(),
+        )
+        .expect("object identity"),
+        type_name: "App::Part".into(),
+        persistent_id: None,
+        view_type: None,
+        attributes: BTreeMap::new(),
+        dependencies: Vec::new(),
+        dependency_allow_partial: None,
+        order: 0,
+        data: None,
+    };
     for dimension in [
         ResourceDimension::WorkUnits,
         ResourceDimension::CollectionItems,
         ResourceDimension::MaterializedBytes,
     ] {
         refusal_at(dimension, &[], "fcstd product owner index", |ctx| {
-            transfer(ctx, &[], std::slice::from_ref(&item), &BTreeMap::new())
+            transfer(ctx, std::slice::from_ref(&object), std::slice::from_ref(&item), &BTreeMap::new())
         });
     }
 }
