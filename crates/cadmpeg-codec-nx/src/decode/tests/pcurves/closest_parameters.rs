@@ -9,6 +9,8 @@ use cadmpeg_ir::geometry::nurbs::{bezier::homogeneous_spans, NurbsCurve};
 use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
 use cadmpeg_ir::math::{Point2, Point3};
 
+const EPS_QUARTIC_ROOT_VALUE: f64 = 1.0e-10;
+
 #[test]
 fn rational_pcurve_incidence_isolates_close_branches() {
     crate::test_support::with_decode_context(|geometry_ctx| {
@@ -214,7 +216,6 @@ fn periodic_nurbs_inversion_lifts_the_continuation_phase() {
 
 #[test]
 fn polynomial_root_isolation_retains_repeated_real_roots() {
-    const EPS_QUARTIC_ROOT_VALUE: f64 = 1.0e-10;
     let roots = real_polynomial_roots(
         &[-1.0, 3.5, -3.0, -0.5, 1.0],
     )

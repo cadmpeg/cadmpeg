@@ -47,7 +47,7 @@ pub(super) fn same_text(
 pub(super) struct GeometryWorkBudget<'a> {
     work: WorkBudget<'a>,
     pub(super) charges: &'a DecodeContext<'a>,
-    blend_frame_cache: Rc<RefCell<super::blend::BlendSurfaceFrameCache>>,
+    blend_frame_cache: Rc<RefCell<super::blend::BlendSurfaceFrameCache<'a>>>,
 }
 
 impl<'a> GeometryWorkBudget<'a> {
@@ -78,7 +78,7 @@ impl<'a> GeometryWorkBudget<'a> {
         self.resource_refusal().is_some()
     }
 
-    pub(super) fn child_slice(&self, limit: usize) -> GeometryWorkBudget<'_> {
+    pub(super) fn child_slice(&self, limit: usize) -> GeometryWorkBudget<'a> {
         GeometryWorkBudget {
             work: self.work.session_child_slice(limit),
             charges: self.charges,
@@ -90,7 +90,7 @@ impl<'a> GeometryWorkBudget<'a> {
         self.blend_frame_cache.borrow_mut().clear();
     }
 
-    pub(super) fn blend_frame_cache(&self) -> &RefCell<super::blend::BlendSurfaceFrameCache> {
+    pub(super) fn blend_frame_cache(&self) -> &RefCell<super::blend::BlendSurfaceFrameCache<'a>> {
         self.blend_frame_cache.as_ref()
     }
 }

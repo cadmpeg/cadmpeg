@@ -3,7 +3,7 @@
 
 use super::emit::{
     annotate_node, canonical_trim_range, curve_tag, decoded_tolerance, emit_topology, keep_marks,
-    procedural_curve_owners, retain_marked, retain_unknown_stream_data,
+    procedural_curve_owners, retain_marked, EndpointWitnessSink, retain_unknown_stream_data,
     retain_unresolved_topology_carriers, source_meta, surface_tag, unknown_stream_metadata,
 };
 use super::geometry_work::{
@@ -1317,7 +1317,7 @@ pub(super) fn try_decode_geometry(
         };
         adaptive_geometry_budget.clear_blend_frame_cache();
         completion_geometry_budget.clear_blend_frame_cache();
-        let initial_endpoint_witnesses = emit_topology(
+        emit_topology(
             ctx,
             &mut ir,
             &crate::decode::emit::TopologyStream {
@@ -1333,7 +1333,7 @@ pub(super) fn try_decode_geometry(
                 intersection_starts,
                 procedural_start,
             },
-            &mut annotations,
+            (&mut annotations, &mut topology_losses),
             &mut intersection_index,
             &crate::decode::emit::TopologyBudgets {
                 exact_transfer: &exact_transfer_budget,
@@ -1341,8 +1341,13 @@ pub(super) fn try_decode_geometry(
                 adaptive_geometry: &adaptive_geometry_budget,
                 completion_geometry: &completion_geometry_budget,
             },
-            &mut topology_losses,
+            &mut EndpointWitnessSink::new(&mut model_endpoint_witnesses, &mut witness_storage),
         )?;
+        // Serialized validated lanes are already complete. Insert their proofs
+        // before computed validation and completion to preserve search order.
+        validated_support_uv_endpoint_witnesses(ctx, &ir, &pending_ext11_support_uv,
+            &validated_support_uv_lanes,
+            &mut EndpointWitnessSink::new(&mut model_endpoint_witnesses, &mut witness_storage))?;
         // Topology completion adds incidence and pcurve carriers, but does
         // not change surface or model-curve geometry. Keep its successful
         // blend-geometry certificates for support validation and attachment.
@@ -1352,18 +1357,16 @@ pub(super) fn try_decode_geometry(
         // starving every later attachment candidate.
         let isolate_validation_lanes =
             completion_geometry_budget.remaining() <= MAX_PCURVE_COMPLETION_GEOMETRY_WORK / 2;
-        let support_uv_validation =
+        support_uv_lane_geometry_exhausted |=
             invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
                 ctx,
                 &mut ir,
                 &pending_ext11_support_uv,
                 &validated_support_uv_lanes,
-                &support_uv_validation_budget,
-                &completion_geometry_budget,
+                (&support_uv_validation_budget, &completion_geometry_budget),
                 isolate_validation_lanes,
+                &mut EndpointWitnessSink::new(&mut model_endpoint_witnesses, &mut witness_storage),
             )?;
-        support_uv_lane_geometry_exhausted |= support_uv_validation.lane_geometry_exhausted;
-        let newly_validated_endpoint_witnesses = support_uv_validation.endpoint_witnesses;
         serialized_support_uv_geometry_budget.clear_blend_frame_cache();
         complete_ext11_support_uv_with_budget(
             ctx,
@@ -1374,7 +1377,6 @@ pub(super) fn try_decode_geometry(
         support_uv_geometry_budget.clear_blend_frame_cache();
         coupled_support_uv_geometry_budget.clear_blend_frame_cache();
         complete_parameterization_equivalent_support_uv(ctx, &mut ir)?;
-        let mut completed_endpoint_witnesses = BTreeMap::new();
         support_uv_lane_geometry_exhausted |=
             complete_support_uv_with_budget_and_endpoint_witnesses(
                 ctx,
@@ -1382,29 +1384,10 @@ pub(super) fn try_decode_geometry(
                 &pending_ext11_support_uv,
                 (&support_budget, &support_uv_geometry_budget),
                 (&coupled_support_budget, &coupled_support_uv_geometry_budget),
-                &mut completed_endpoint_witnesses,
+                &mut EndpointWitnessSink::new(&mut model_endpoint_witnesses, &mut witness_storage),
             )?;
-        let mut validated_endpoint_witnesses = initial_endpoint_witnesses;
-        extend_endpoint_witnesses(
-            ctx,
-            &mut validated_endpoint_witnesses,
-            validated_support_uv_endpoint_witnesses(
-                ctx,
-                &ir,
-                &pending_ext11_support_uv,
-                &validated_support_uv_lanes,
-            )?,
-        )?;
-        extend_endpoint_witnesses(
-            ctx,
-            &mut validated_endpoint_witnesses,
-            newly_validated_endpoint_witnesses,
-        )?;
-        extend_endpoint_witnesses(
-            ctx,
-            &mut validated_endpoint_witnesses,
-            completed_endpoint_witnesses,
-        )?;
+        // Carrier identities are stream-scoped, so a proof from another
+        // stream cannot match this stream's exact curve/support key.
         attach_completed_intersection_pcurves_for_stream_with_budget(
             ctx,
             &mut ir,
@@ -1414,18 +1397,11 @@ pub(super) fn try_decode_geometry(
                 coedge_start: intersection_starts.coedges,
                 procedural_start: intersection_starts.procedural_curves,
                 source_stream: source_stream.clone(),
-                validated_endpoint_witnesses: &validated_endpoint_witnesses,
+                validated_endpoint_witnesses: &model_endpoint_witnesses,
             },
             &mut annotations,
             &completion_geometry_budget,
         )?;
-        witness_storage.with_storage(|| {
-            extend_endpoint_witnesses(
-                ctx,
-                &mut model_endpoint_witnesses,
-                validated_endpoint_witnesses,
-            )
-        })?;
         // Preserve the whole inflated stream verbatim so nothing is dropped.
         let unknown_index = unknowns.len();
         let mut unknown = unknown_stream_metadata(ctx, si, stream)?;
@@ -1923,23 +1899,6 @@ fn selected_hit_count(
     Ok(hits)
 }
 
-fn extend_endpoint_witnesses(
-    ctx: &DecodeContext<'_>,
-    target: &mut EndpointWitnesses,
-    source: EndpointWitnesses,
-) -> Result<(), CodecError> {
-    for (key, witnesses) in ctx.admit_iter(source, "nx endpoint witness merge")? {
-        match ctx.get_mut_btree_map(target, &key, "nx endpoint witness index")? {
-            Some(target_witnesses) => {
-                ctx.extend_vec(target_witnesses, witnesses, "nx endpoint witness merge")?;
-            }
-            None => {
-                ctx.insert_btree_map(target, key, witnesses, "nx endpoint witness index")?;
-            }
-        }
-    }
-    Ok(())
-}
 
 /// Add every surface and curve reachable from the used carriers through
 /// procedural constructions: offset and blend supports, blend spines, and
