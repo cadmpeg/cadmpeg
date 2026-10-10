@@ -37,31 +37,29 @@ impl Cage {
     }
 }
 
-fn positive(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    view: &mut View<'_>,
-    label: &str,
-) -> Result<usize, GeometryError> {
+fn req_i32(view: &mut View<'_>) -> Result<i32, GeometryError> {
     let offset = view.position();
-    let value = view.req_i32_le()?;
+    view.req_i32_le()
+        .map_err(|_| GeometryError::malformed(offset, "NURBS cage record truncated"))
+}
+
+fn req_f64(view: &mut View<'_>) -> Result<f64, GeometryError> {
+    let offset = view.position();
+    view.req_f64_le()
+        .map_err(|_| GeometryError::malformed(offset, "NURBS cage record truncated"))
+}
+
+fn positive(view: &mut View<'_>, label: &str) -> Result<usize, GeometryError> {
+    let offset = view.position();
+    let value = req_i32(view)?;
     if value <= 0 {
         return Err(GeometryError::malformed(
             offset,
-            ctx.format_retained(
-                format_args!("NURBS cage {label} is not positive"),
-                "Rhino positive text",
-            )?,
+            format!("NURBS cage {label} is not positive"),
         ));
     }
-    usize::try_from(value).or_else(|_| {
-        Err(GeometryError::malformed(
-            offset,
-            ctx.format_retained(
-                format_args!("NURBS cage {label} overflows"),
-                "Rhino positive text",
-            )?,
-        ))
-    })
+    usize::try_from(value)
+        .map_err(|_| GeometryError::malformed(offset, format!("NURBS cage {label} overflows")))
 }
 
 pub(crate) fn decode(
@@ -103,22 +101,22 @@ pub(crate) fn decode_at(
             GeometryError::malformed(chunk.body().start, "NURBS cage body out of range")
         })?;
 
-    let major = body.req_i32_le()?;
-    let minor = body.req_i32_le()?;
+    let major = req_i32(&mut body)?;
+    let minor = req_i32(&mut body)?;
     if major != 1 || minor < 0 {
         return Err(GeometryError::UnsupportedVersion {
             offset: chunk.body().start,
             message: format!("unsupported NURBS cage version {major}.{minor}"),
         });
     }
-    let dimension = positive(expand.ctx(), &mut body, "dimension")?;
+    let dimension = positive(&mut body, "dimension")?;
     if dimension > MAX_DIMENSION {
         return Err(GeometryError::malformed(
             body.position() - 4,
             "NURBS cage dimension exceeds cap",
         ));
     }
-    let rational = match body.req_i32_le()? {
+    let rational = match req_i32(&mut body)? {
         0 => false,
         1 => true,
         _ => {
@@ -129,14 +127,14 @@ pub(crate) fn decode_at(
         }
     };
     let orders = [
-        positive(expand.ctx(), &mut body, "U order")?,
-        positive(expand.ctx(), &mut body, "V order")?,
-        positive(expand.ctx(), &mut body, "W order")?,
+        positive(&mut body, "U order")?,
+        positive(&mut body, "V order")?,
+        positive(&mut body, "W order")?,
     ];
     let counts = [
-        positive(expand.ctx(), &mut body, "U count")?,
-        positive(expand.ctx(), &mut body, "V count")?,
-        positive(expand.ctx(), &mut body, "W count")?,
+        positive(&mut body, "U count")?,
+        positive(&mut body, "V count")?,
+        positive(&mut body, "W count")?,
     ];
     let orders_offset = body.position() - 24;
     for axis in 0..3 {
@@ -174,7 +172,7 @@ pub(crate) fn decode_at(
         let mut previous: Option<FiniteReal> = None;
         for _ in 0..knot_count {
             expand.ctx().charge_work(1, "Rhino cage knot values")?;
-            let knot = body.req_f64_le()?;
+            let knot = req_f64(&mut body)?;
             let Some(knot) = FiniteReal::new(knot) else {
                 return Err(GeometryError::malformed(
                     body.position() - 8,
@@ -221,7 +219,7 @@ pub(crate) fn decode_at(
             .collection_vec(dimension, "Rhino cage coordinate tuple")?;
         for _ in 0..dimension {
             expand.ctx().charge_work(1, "Rhino cage coordinate tuple")?;
-            let value = body.req_f64_le()?;
+            let value = req_f64(&mut body)?;
             let Some(value) = FiniteReal::new(value) else {
                 return Err(GeometryError::malformed(
                     body.position() - 8,
@@ -231,7 +229,7 @@ pub(crate) fn decode_at(
             stored.push(value);
         }
         let weight = if let Some(weights) = &mut weights {
-            let weight = body.req_f64_le()?;
+            let weight = req_f64(&mut body)?;
             let Some(weight) = FiniteReal::new(weight) else {
                 return Err(GeometryError::malformed(
                     body.position() - 8,
@@ -287,7 +285,7 @@ mod tests {
     mod prefix;
 
     #[test]
-    fn cage_dimension_message_propagates_work_refusal() {
+    fn cage_dimension_keeps_structural_diagnostic_without_work() {
         let bytes = 0_i32.to_le_bytes();
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
@@ -295,15 +293,27 @@ mod tests {
         let (ctx, mut view) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
                 .expect("context");
-        let error =
-            super::positive(&ctx, &mut view, "dimension").expect_err("message work refuses");
-        let GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) = error else {
-            panic!("resource refusal");
-        };
-        assert_eq!(limit.operation, "Rhino positive text");
-        assert!(
-            matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == limit)
-        );
+        let error = super::positive(&mut view, "dimension").expect_err("nonpositive dimension");
+        assert!(matches!(error,
+            GeometryError::Malformed(FramingError::Structural { offset: 0, ref message })
+            if message == "NURBS cage dimension is not positive"));
+        ctx.finish_session()
+            .expect("bounded diagnostic needs no work");
+    }
+
+    #[test]
+    fn cage_truncation_keeps_record_diagnostic() {
+        for bytes in [&[][..], &[1, 0, 0][..]] {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let policy = cadmpeg_core::decode::DecodePolicy::service();
+            let (_ctx, mut view) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
+                    .expect("context");
+            let error = super::req_i32(&mut view).expect_err("truncated cage scalar");
+            assert!(matches!(error,
+                GeometryError::Malformed(FramingError::Structural { offset: 0, ref message })
+                if message == "NURBS cage record truncated"));
+        }
     }
 
     use super::{decode, ANONYMOUS};

@@ -87,6 +87,14 @@ fn cage_header_truncation_preserves_required_scalar_width() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
     let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
+    let mut body = root.child(body_start, body_start).expect("empty body");
+    assert!(matches!(
+        body.req_i32_le(),
+        Err(cadmpeg_core::decode::ParseError {
+            kind: cadmpeg_core::decode::ParseErrorKind::UnexpectedEof { needed: 4 },
+            ..
+        })
+    ));
     let error = decode(
         MeshExpand::new(&ctx, root),
         0..bytes.len(),
@@ -95,7 +103,32 @@ fn cage_header_truncation_preserves_required_scalar_width() {
     )
     .expect_err("major i32 is absent");
     assert!(
-        matches!(error, GeometryError::Malformed(crate::chunks::FramingError::Truncated { offset, needed: 4 }) if offset == body_start)
+        matches!(error, GeometryError::Malformed(crate::chunks::FramingError::Structural { offset, ref message }) if offset == body_start && message == "NURBS cage record truncated")
+    );
+    ctx.finish_session()
+        .expect("fixed header reads do not charge work");
+}
+
+#[test]
+fn cage_header_i32_read_advances_four_bytes_before_minor_truncation() {
+    let bytes = crc_chunk(ArchiveVersion::V8, ANONYMOUS, &1_i32.to_le_bytes());
+    let body_start = crate::chunks::chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V8, false)
+        .expect("fixture framing")
+        .body()
+        .start;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
+    let error = decode(
+        MeshExpand::new(&ctx, root),
+        0..bytes.len(),
+        crate::settings::MillimeterScale::IDENTITY,
+        ArchiveVersion::V8,
+    )
+    .expect_err("minor i32 is absent after one complete major i32");
+    assert!(
+        matches!(error, GeometryError::Malformed(crate::chunks::FramingError::Structural { offset, ref message }) if offset == body_start + 4 && message == "NURBS cage record truncated")
     );
     ctx.finish_session()
         .expect("fixed header reads do not charge work");

@@ -47,17 +47,75 @@ pub(crate) fn decode(
     archive: ArchiveVersion,
     depth: usize,
 ) -> Result<CurveOnSurface, GeometryError> {
+    decode_components(ctx, data, range, scale, archive, depth, None)
+}
+
+/// Decodes the model carrier with temporary parameter and support components.
+pub(crate) fn decode_model_curve(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    range: Range<usize>,
+    scale: MillimeterScale,
+    archive: ArchiveVersion,
+    depth: usize,
+) -> Result<DecodedCurve, GeometryError> {
+    let mut discarded_storage =
+        ctx.reserve_scoped(0, "Rhino curve-on-surface discarded components")?;
+    let construction = decode_components(
+        ctx,
+        data,
+        range,
+        scale,
+        archive,
+        depth,
+        Some(&mut discarded_storage),
+    )?;
+    let CurveOnSurface {
+        source_range,
+        parameter_curve,
+        model_curve,
+        surface,
+        warnings,
+    } = construction;
+    drop(parameter_curve);
+    drop(surface);
+    drop(discarded_storage);
+    let Some(mut curve) = model_curve else {
+        return Err(GeometryError::unsupported(
+            source_range.start,
+            "curve-on-surface has no stored model-space carrier",
+        ));
+    };
+    curve.warnings_mut().prepend_admitted(ctx, warnings)?;
+    Ok(curve)
+}
+
+fn decode_components(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    range: Range<usize>,
+    scale: MillimeterScale,
+    archive: ArchiveVersion,
+    depth: usize,
+    mut discarded_storage: Option<&mut cadmpeg_core::decode::ScopedReservation<'_>>,
+) -> Result<CurveOnSurface, GeometryError> {
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let mut warnings = Diagnostics::new();
     let c2 = class(ctx, data, &mut reader, archive, &mut warnings)?;
-    let decoded = crate::curves::decode_inner_2d(
-        ctx,
-        data,
-        c2.class_uuid,
-        c2.class_data_range,
-        archive,
-        depth,
-    )?;
+    let decode_parameter = || {
+        crate::curves::decode_inner_2d(
+            ctx,
+            data,
+            c2.class_uuid,
+            c2.class_data_range,
+            archive,
+            depth,
+        )
+    };
+    let decoded = match discarded_storage.as_deref_mut() {
+        Some(storage) => storage.with_storage(decode_parameter)?,
+        None => decode_parameter()?,
+    };
     let DecodedGeometry::Curve {
         curve: parameter_curve,
     } = decoded
@@ -111,15 +169,21 @@ pub(crate) fn decode(
             "curve-on-surface support is not a surface",
         ));
     }
-    let surface = crate::surfaces::decode(
-        ctx,
-        data,
-        support.class_uuid,
-        support.class_data_range,
-        scale,
-        archive,
-        depth,
-    )?;
+    let decode_support = || {
+        crate::surfaces::decode(
+            ctx,
+            data,
+            support.class_uuid,
+            support.class_data_range,
+            scale,
+            archive,
+            depth,
+        )
+    };
+    let surface = match discarded_storage {
+        Some(storage) => storage.with_storage(decode_support)?,
+        None => decode_support()?,
+    };
     reader.skip_remaining()?;
     Ok(CurveOnSurface {
         source_range: range,
@@ -228,5 +292,112 @@ mod tests {
         assert_eq!(origin.x, 10.0);
         assert_eq!(origin.y, 20.0);
         assert_eq!(origin.z, 30.0);
+    }
+    fn large_carrier_payload() -> Vec<u8> {
+        let points: Vec<_> = (0..32).map(|i| [f64::from(i), 0.0, 0.0]).collect();
+        let parameters: Vec<_> = (0..32).map(f64::from).collect();
+        let mut c2 = polyline_payload(&points, &parameters);
+        let end = c2.len();
+        c2[end - 4..].copy_from_slice(&2_i32.to_le_bytes());
+        let mut bytes = class_wrapper(POLYLINE_CLASS, &c2);
+        bytes.extend(1_i32.to_le_bytes());
+        bytes.extend(class_wrapper(
+            LINE_CLASS,
+            &line_payload([0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [0.0, 1.0]),
+        ));
+        let mut support = vec![0x10];
+        for value in [3_i32, 0, 2, 2, 2, 16, 0, 0] {
+            support.extend(value.to_le_bytes());
+        }
+        support.extend([0; 48]);
+        for count in [2_i32, 16] {
+            support.extend(count.to_le_bytes());
+            for i in 0..count {
+                support.extend(f64::from(i).to_le_bytes());
+            }
+        }
+        support.extend(32_i32.to_le_bytes());
+        for i in 0..2 {
+            for j in 0..16 {
+                for value in [f64::from(i), f64::from(j), 0.0] {
+                    support.extend(value.to_le_bytes());
+                }
+            }
+        }
+        bytes.extend(class_wrapper(
+            crate::surfaces::NURBS_SURFACE.to_wire(),
+            &support,
+        ));
+        bytes
+    }
+
+    #[test]
+    fn carrier_selection_keeps_only_model_storage() {
+        let bytes = large_carrier_payload();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 64 * 1024;
+        // The C3 line retains four knots and two finite control points.
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+            4 * std::mem::size_of::<f64>()
+                + 2 * std::mem::size_of::<cadmpeg_ir::features::FinitePoint3>(),
+        );
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("root");
+        let decoded = crate::curves::decode_inner(
+            &ctx,
+            &bytes,
+            super::CLASS,
+            0..bytes.len(),
+            crate::settings::MillimeterScale::IDENTITY,
+            ArchiveVersion::V8,
+            0,
+        )
+        .expect("carrier fits its exact retained storage");
+        let crate::curves::DecodedGeometry::Curve {
+            curve:
+                crate::curves::DecodedCurve::Leaf {
+                    geometry:
+                        cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
+                    ..
+                },
+        } = decoded
+        else {
+            panic!("model line");
+        };
+        assert_eq!(curve.control_points()[1].x, 2.0);
+        let scratch = ctx
+            .reserve_scoped(
+                policy.limits.max_materialized_bytes,
+                "carrier scratch reuse",
+            )
+            .expect("all discarded component storage is released");
+        drop(scratch);
+        ctx.finish_session().expect("no refusal");
+    }
+
+    #[test]
+    fn full_construction_keeps_parameter_and_support_storage() {
+        let bytes = large_carrier_payload();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 64 * 1024;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("root");
+        let error = super::decode(
+            &ctx,
+            &bytes,
+            0..bytes.len(),
+            crate::settings::MillimeterScale::IDENTITY,
+            ArchiveVersion::V8,
+            0,
+        )
+        .expect_err("full construction retains C2");
+        assert!(matches!(error, crate::curves::GeometryError::Codec(
+            cadmpeg_core::CodecError::ResourceLimit(ref limit))
+            if limit.operation == "Rhino polyline points"));
     }
 }

@@ -36,20 +36,33 @@ fn incompatible_knots(knots: Vec<f64>, max_work: u64) {
         .map(|_| Point3::new(0.0, 0.0, 0.0))
         .collect();
     let end = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(), 1, knots, points, None, false,
-    ).expect("fixture admission").expect("valid degree-one curve");
+        &cadmpeg_test_support::service_decode_context(),
+        1,
+        knots,
+        points,
+        None,
+        false,
+    )
+    .expect("fixture admission")
+    .expect("valid degree-one curve");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = max_work;
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
     let error = super::super::extrusion_nurbs(
-        &ctx, &start, &end,
-        cadmpeg_ir::units::FiniteVector::new([0.0, 1.0]).unwrap(), false, 0,
-    ).expect_err("incompatible profile knots");
+        &ctx,
+        &start,
+        &end,
+        cadmpeg_ir::units::FiniteVector::new([0.0, 1.0]).unwrap(),
+        false,
+        0,
+    )
+    .expect_err("incompatible profile knots");
     assert!(matches!(error,
         GeometryError::Malformed(crate::chunks::FramingError::Structural { ref message, .. })
         if message == "extrusion tensor inputs are incompatible"));
-    ctx.finish_session().expect("unvisited knots consume no work");
+    ctx.finish_session()
+        .expect("unvisited knots consume no work");
 }
 
 #[test]

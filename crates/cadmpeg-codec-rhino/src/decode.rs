@@ -5050,12 +5050,7 @@ impl<'a> DecodeContext<'a> {
                             &mut *arena_storage,
                         )
                     },
-                    |error| {
-                        Ok(CandidateError::Admission(ctx.format_retained(
-                            format_args!("{error}"),
-                            "Rhino commit_procedural_surface text",
-                        )?))
-                    },
+                    |error| CandidateError::Admission(error.to_string()),
                 )?;
                 let mut key_text_storage =
                     ctx.reserve_scoped(0, "Rhino commit_procedural_surface text copy")?;
@@ -8131,14 +8126,7 @@ fn stage_brep_procedural_surface(
                 context.unknown,
             )
         },
-        |error| {
-            Ok(crate::curves::GeometryError::unpositioned(
-                context.ctx.format_retained(
-                    format_args!("{error}"),
-                    "Rhino stage_brep_procedural_surface text",
-                )?,
-            ))
-        },
+        |error| crate::curves::GeometryError::unpositioned(error.to_string()),
     )?;
     let surface_id = {
         let mut copied_storage = context
@@ -8750,13 +8738,9 @@ fn c2_curve_to_nurbs_join_scoped(
             end_parameter,
             ..
         } => {
-            let (segments_buffer, segment_storage) = ctx
+            let (segments_buffer, mut segment_storage) = ctx
                 .temporary_vec(children.len(), "Rhino C2 joined segments")
                 .map_err(crate::curves::GeometryError::from)?;
-            let (child_result_storages_buffer, child_result_storages_storage) = ctx
-                .temporary_vec(children.len(), "Rhino C2 child result reservations")
-                .map_err(crate::curves::GeometryError::from)?;
-            let mut child_result_storages = child_result_storages_buffer;
             let mut segments = segments_buffer;
             let mut children = children.into_iter();
             for _ in 0..children.len() {
@@ -8782,12 +8766,11 @@ fn c2_curve_to_nurbs_join_scoped(
                         "C2 polycurve segment domain is invalid",
                     ));
                 }
-                let mut child_storage = ctx.reserve_scoped(0, "Rhino temporary C2 child result")?;
                 let joined = c2_curve_to_nurbs_join_scoped(
                     ctx,
                     child,
                     offset,
-                    &mut child_storage,
+                    &mut segment_storage,
                     warnings,
                 )?;
                 segments.push(crate::curves::remap_nurbs_domain(
@@ -8796,19 +8779,14 @@ fn c2_curve_to_nurbs_join_scoped(
                     target,
                     offset,
                 )?);
-                child_result_storages.push(child_storage);
             }
-            let joined = crate::curves::join_nurbs_segments_scoped(
+            let joined = crate::curves::join_nurbs_curves(
                 ctx,
+                Some(segment_storage),
                 segments,
-                crate::curves::ScopedJoinInputs {
-                    _segment_storage: segment_storage,
-                    _child_result_storages: child_result_storages,
-                    _child_result_storages_storage: child_result_storages_storage,
-                },
                 offset,
-                result_storage,
-                warnings,
+                Some(result_storage),
+                Some(warnings),
             )?;
             Ok(joined)
         }
