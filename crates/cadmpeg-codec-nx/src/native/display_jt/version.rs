@@ -111,7 +111,9 @@ mod tests {
                     let mut retained = ctx.retained_string(80, "retain DisplayJT version text")?;
                     retained.push_str(source);
                     Ok::<_, cadmpeg_core::CodecError>(retained)
-                }).unwrap().unwrap();
+                })
+                .unwrap()
+                .unwrap();
                 assert_eq!((version.major(), version.minor()), (9, 10));
                 assert_eq!(version.as_str(), text);
                 assert!(ctx.resource_refusal().is_none());

@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use cadmpeg_ir::hash::digest::Sha256Digest;
 
 use super::{
-    DisplayJtCompressedElement, DisplayJtCompressedElementSequence,
+    retain_jt_literal, DisplayJtCompressedElement, DisplayJtCompressedElementSequence,
     DisplayJtCompressedElementSequenceWire, DisplayJtDocument, DisplayJtSegment,
     DisplayJtShapeLodElement,
 };
@@ -105,7 +105,7 @@ impl DisplayJtGraph {
         let mut visits = wire.documents.iter();
         while let Some(document) = ctx.next_charged(&mut visits, "index DisplayJT TOC entries")? {
             let mut visits = document.toc_entries.iter();
-        while let Some(entry) = ctx.next_charged(&mut visits, "index DisplayJT TOC entries")? {
+            while let Some(entry) = ctx.next_charged(&mut visits, "index DisplayJT TOC entries")? {
                 if storage
                     .with_storage(|| {
                         ctx.insert_hash_map(
@@ -194,7 +194,9 @@ impl DisplayJtGraph {
             }
         }
         let mut visits = wire.compressed_elements.iter();
-        while let Some(element) = ctx.next_charged(&mut visits, "admit DisplayJT compressed elements")? {
+        while let Some(element) =
+            ctx.next_charged(&mut visits, "admit DisplayJT compressed elements")?
+        {
             admit_compressed_owner(
                 ctx,
                 &segments,
@@ -205,7 +207,9 @@ impl DisplayJtGraph {
             )?;
         }
         let mut visits = wire.compressed_element_sequences.iter();
-        while let Some(sequence) = ctx.next_charged(&mut visits, "admit DisplayJT compressed element sequences")? {
+        while let Some(sequence) =
+            ctx.next_charged(&mut visits, "admit DisplayJT compressed element sequences")?
+        {
             admit_compressed_owner(
                 ctx,
                 &segments,
@@ -216,7 +220,9 @@ impl DisplayJtGraph {
             )?;
             let mut next_offset = 0u64;
             let mut visits = sequence.elements().iter().enumerate();
-        while let Some((ordinal, id)) = ctx.next_charged(&mut visits, "admit DisplayJT sequence elements")? {
+            while let Some((ordinal, id)) =
+                ctx.next_charged(&mut visits, "admit DisplayJT sequence elements")?
+            {
                 let element = ctx
                     .get_hash_map(&elements, id.as_str(), "match DisplayJT sequence elements")?
                     .ok_or_else(|| {
@@ -325,7 +331,7 @@ fn sequences_for_decode(
         namespace.arena_iter_as_for_decode::<DisplayJtCompressedElementSequenceWire>(ctx, ARENA);
     let mut sequences = ctx.vector_storage(records.len(), OPERATION)?;
     let mut visits = records.iter();
-        while let Some(record) = ctx.next_charged(&mut visits, OPERATION)? {
+    while let Some(record) = ctx.next_charged(&mut visits, OPERATION)? {
         let Some(wire) = wires.next() else {
             break;
         };
@@ -339,9 +345,9 @@ fn sequences_for_decode(
             Err(message) => {
                 let source = NativeConvertError::ReadRecordMessage {
                     id: record.identity_for_decode(ctx, "retain native record error identity")?,
-                    message: ctx.copy_retained_text(message, "retain DisplayJT graph rejection")?,
+                    message: retain_jt_literal(ctx, message, "retain DisplayJT graph rejection")?,
                 };
-                let arena = ctx.copy_retained_text(ARENA, "retain native arena error name")?;
+                let arena = retain_jt_literal(ctx, ARENA, "retain native arena error name")?;
                 ctx.charge_retained(
                     cadmpeg_core::decode::u64_from_index(std::mem::size_of::<NativeConvertError>()),
                     "retain native arena error",
@@ -390,7 +396,7 @@ fn by_id<'a, T>(
 ) -> Result<HashMap<&'a str, &'a T>, NativeConvertError> {
     let mut index = HashMap::new();
     let mut visits = records.iter();
-        while let Some(record) = ctx.next_charged(&mut visits, "index DisplayJT graph records")? {
+    while let Some(record) = ctx.next_charged(&mut visits, "index DisplayJT graph records")? {
         let id = id(record);
         if storage
             .with_storage(|| {
