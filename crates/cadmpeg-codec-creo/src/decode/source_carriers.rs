@@ -1170,7 +1170,7 @@ impl<'ctx, 'input> SourceUnitCarriers<'ctx, 'input> {
             })?),
         }
         if self.surfaces.is_empty() {
-            drop(std::mem::replace(&mut self.surfaces, BTreeMap::new()));
+            drop(std::mem::take(&mut self.surfaces));
             drop(self.surface_nodes_storage.take());
         }
         Ok(())

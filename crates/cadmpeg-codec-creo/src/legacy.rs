@@ -44,6 +44,7 @@ const MILLIMETER_NEWTON_SECOND: &str = "millimeter Newton Second (mmNs)";
 const INCH_POUND_MASS_SECOND: &str = "Inch lbm Second (Pro/E Default)";
 const LEGACY_INCH_TO_MM: f64 = 25.4;
 const LEGACY_LENGTH_UNIT_TYPE: i32 = 0;
+const MAX_OFFSET_DIGITS: u32 = usize::MAX.ilog10() + 1;
 
 /// Active coordinate-unit system selected by a model-level persistence field.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -886,7 +887,9 @@ impl Persistence {
             };
             let offset = element_id
                 .strip_prefix("creo:legacy_ascii:object#")
-                .filter(|digits| digits.len() <= usize::MAX.ilog10() as usize + 1)
+                .filter(|digits| {
+                    u32::try_from(digits.len()).is_ok_and(|length| length <= MAX_OFFSET_DIGITS)
+                })
                 .and_then(|digits| digits.parse::<usize>().ok());
             let Some(element) = offset
                 .and_then(|offset| objects.get(&offset))
