@@ -4491,7 +4491,9 @@ pub(crate) fn parameter_records(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<Vec<SurfaceParameterRecord>, CodecError> {
-    parameter_records_for_rows(ctx, payload, &rows(ctx, payload)?)
+    let rows = rows(ctx, payload)?;
+    let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
+    parameter_records_for_rows(ctx, payload, &rows, &cache)
 }
 
 /// Decode bounded positional parameter bodies from a DEPDB cross-section
@@ -4500,7 +4502,9 @@ pub(crate) fn cross_section_parameter_records(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<Vec<SurfaceParameterRecord>, CodecError> {
-    parameter_records_for_rows(ctx, payload, &cross_section_rows(ctx, payload)?)
+    let rows = cross_section_rows(ctx, payload)?;
+    let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
+    parameter_records_for_rows(ctx, payload, &rows, &cache)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -5515,8 +5519,8 @@ fn parameter_records_for_rows(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
     rows: &[SurfaceRow],
+    cache: &scalar::ScalarCache,
 ) -> Result<Vec<SurfaceParameterRecord>, CodecError> {
-    let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
     let mut headers = Vec::<(SurfaceRow, usize)>::new();
     for row in rows {
         let Some(body_start) = positional_body_start(payload, row) else {
@@ -5550,13 +5554,13 @@ fn parameter_records_for_rows(
                 row,
                 *body_start,
                 body_end,
-                &cache,
+                cache,
             )?
         } else {
             None
         };
         let inline = if positional_spline_close.is_none() {
-            inline_surface_body(ctx, row.kind, &payload[*body_start..body_end], &cache)?
+            inline_surface_body(ctx, row.kind, &payload[*body_start..body_end], cache)?
         } else {
             None
         };
@@ -5568,13 +5572,13 @@ fn parameter_records_for_rows(
             boundary = SurfaceBodyBoundary::CompoundClose;
         } else {
             if let Some(relative) =
-                surface_body_compound_close(ctx, row.kind, &payload[*body_start..body_end], &cache)?
+                surface_body_compound_close(ctx, row.kind, &payload[*body_start..body_end], cache)?
             {
                 body_end = body_start + relative;
                 boundary = SurfaceBodyBoundary::CompoundClose;
             }
             if let Some(relative) =
-                named_record_boundary(ctx, row.kind, &payload[*body_start..body_end], &cache)?
+                named_record_boundary(ctx, row.kind, &payload[*body_start..body_end], cache)?
             {
                 body_end = body_start + relative;
                 boundary = SurfaceBodyBoundary::NamedRecord;
@@ -5584,7 +5588,7 @@ fn parameter_records_for_rows(
             &payload[*body_start..body_end],
             "creo surface parameter body",
         )?;
-        let scalar_tokens = scalar_tokens(ctx, row.kind, &body, &cache)?;
+        let scalar_tokens = scalar_tokens(ctx, row.kind, &body, cache)?;
         let opaque_spans = opaque_spans(ctx, &body, &scalar_tokens)?;
         let scalar_frames = scalar_frames(ctx, &scalar_tokens)?;
         let mut record = SurfaceParameterRecord {
@@ -5605,9 +5609,9 @@ fn parameter_records_for_rows(
                     Some(InlineSurfaceCarrier::Cylinder { frame, .. }) => Some(frame),
                     _ => cylinder_frame_readers::decode_positional_cylinder_frame(
                         &record.body,
-                        &cache,
+                        cache,
                     )
-                    .or_else(|| record.type24_round_frame(&cache)),
+                    .or_else(|| record.type24_round_frame(cache)),
                 };
                 let split_bounds =
                     split_cylinder_outline_bounds(&record.body, &record.scalar_tokens);
@@ -5622,18 +5626,18 @@ fn parameter_records_for_rows(
             }
             SurfaceKind::Cone => match inline_carrier {
                 Some(InlineSurfaceCarrier::Cone(frame)) => Some(InlineSurfaceCarrier::Cone(frame)),
-                _ => decode_positional_cone_frame(&record.body, &cache)
+                _ => decode_positional_cone_frame(&record.body, cache)
                     .map(InlineSurfaceCarrier::Cone),
             },
             SurfaceKind::TorusOrSphere => match inline_carrier {
                 Some(InlineSurfaceCarrier::Torus(frame)) => {
                     Some(InlineSurfaceCarrier::Torus(frame))
                 }
-                _ => decode_positional_torus_frame(&record.body, &cache)
+                _ => decode_positional_torus_frame(&record.body, cache)
                     .map(InlineSurfaceCarrier::Torus),
             },
             SurfaceKind::Extrusion(variant) => {
-                decode_tabulated_cylinder_frame(ctx, &record.body, &cache)?
+                decode_tabulated_cylinder_frame(ctx, &record.body, cache)?
                     .map(|(frame, _)| InlineSurfaceCarrier::Tabulated { variant, frame })
             }
             SurfaceKind::Plane | SurfaceKind::Spline | SurfaceKind::Fillet => None,
@@ -7626,7 +7630,7 @@ fn plane_local_systems_for_rows(
     let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
     let parameters = SurfaceParameters::new(
         ctx,
-        parameter_records_for_rows(ctx, payload, rows)?,
+        parameter_records_for_rows(ctx, payload, rows, &cache)?,
         "creo plane local system parameter index",
     )?;
     let headers = rows

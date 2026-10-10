@@ -22,6 +22,15 @@ fn frames_with_checked_cache<'a>(
     super::named_prototype_frames(ctx, payload, &cache)
 }
 
+fn parameters_with_checked_cache(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    payload: &[u8],
+    rows: &[super::SurfaceRow],
+) -> Result<Vec<super::SurfaceParameterRecord>, cadmpeg_core::CodecError> {
+    let cache = crate::scalar::ScalarCache::from_section_checked(ctx, payload)?;
+    super::parameter_records_for_rows(ctx, payload, rows, &cache)
+}
+
 fn with_decode_ctx<T>(
     bytes: &[u8],
     run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,

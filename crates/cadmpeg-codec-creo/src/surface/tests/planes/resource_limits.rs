@@ -117,12 +117,12 @@ fn surface_parameter_refuses_header_vector() {
         offset: 0,
     }];
     let service = with_surface_limits(&payload, u64::MAX, u64::MAX, |ctx| {
-        crate::surface::parameter_records_for_rows(ctx, &payload, &rows)
+        super::super::parameters_with_checked_cache(ctx, &payload, &rows)
     })
     .expect("one parameter record fits service limits");
     assert_eq!(service.len(), 1);
     let error = with_surface_limits(&payload, 0, u64::MAX, |ctx| {
-        crate::surface::parameter_records_for_rows(ctx, &payload, &rows)
+        super::super::parameters_with_checked_cache(ctx, &payload, &rows)
     })
     .expect_err("one header exceeds zero collection items");
     assert_surface_limit(
@@ -149,7 +149,7 @@ fn surface_parameter_refuses_body_copy() {
         &payload,
         cadmpeg_core::decode::ResourceDimension::RetainedBytes,
         "creo surface parameter body",
-        |ctx| crate::surface::parameter_records_for_rows(ctx, &payload, &rows),
+        |ctx| super::super::parameters_with_checked_cache(ctx, &payload, &rows),
     );
     assert_surface_limit(
         &error,
@@ -172,7 +172,7 @@ fn surface_parameter_refuses_record_vector() {
         offset: 0,
     }];
     let error = with_surface_limits(&payload, 4, u64::MAX, |ctx| {
-        crate::surface::parameter_records_for_rows(ctx, &payload, &rows)
+        super::super::parameters_with_checked_cache(ctx, &payload, &rows)
     })
     .expect_err("the record follows four earlier item admissions");
     assert_surface_limit(
