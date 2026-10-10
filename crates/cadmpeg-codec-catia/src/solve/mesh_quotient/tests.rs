@@ -58,7 +58,6 @@ fn a_face_the_work_counter_cannot_estimate_exhausts_the_search() {
         let mut search = MeshSelectionSearch {
             ctx: &ctx,
             assignments: &assignments,
-            possible_face_equations: vec![Vec::new()],
             possible_face_choices: vec![Vec::new()],
             face_work: vec![Some(1)],
             edge_candidates: &edge_candidates,
@@ -171,3 +170,5 @@ fn quotient_merge_releases_child_members_and_unused_domain() {
     assert!(quotient.domains[child].is_empty());
     assert!(child_domain.upgrade().is_none());
 }
+
+mod budget_repairs;

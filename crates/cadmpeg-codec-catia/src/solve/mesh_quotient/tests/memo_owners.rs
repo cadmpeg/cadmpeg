@@ -1,11 +1,10 @@
 //! Actual mesh parser memo admission.
 
-use cadmpeg_core::decode::refusal_probe::RefusalProbe;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 #[test]
-fn mesh_endpoint_memo_insertion_refuses_at_actual_candidate_boundary() {
+fn fixed_mesh_candidates_skip_unused_memo_entries() {
     let run = |ctx: &DecodeContext<'_>,
                bytes: &[u8],
                candidates: &[Vec<[usize; 2]>],
@@ -86,35 +85,19 @@ fn mesh_endpoint_memo_insertion_refuses_at_actual_candidate_boundary() {
     assert_eq!(topology.logical_vertex_count, 3);
     assert_eq!(points, vec![0, 1, 2]);
 
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    let service_items = policy.limits.max_collection_items;
-    // The probe uses this sentinel to select its budget. Replay the discovered
-    // boundary below with a finite cap below the unchanged service ceiling.
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = u64::MAX;
-    let (ctx, _) = DecodeContext::from_root_bytes(&memo_bytes, &arena, &policy)
-        .expect("synthetic two-face triangle input");
-    let probe = RefusalProbe::arm(
-        ResourceDimension::CollectionItems,
+    let (ctx, _) = DecodeContext::from_root_bytes(&memo_bytes, &arena, &policy).expect("fixture");
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
         "catia_endpoint_memo_entries",
         Some(1),
     );
-    let CodecError::ResourceLimit(limit) =
-        run(&ctx, &memo_bytes, &candidates, &memo_faces).expect_err("actual memo entry admission")
-    else {
-        panic!("resource refusal");
-    };
-    drop(probe);
-    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-    assert_eq!(limit.operation, "catia_endpoint_memo_entries");
-    assert_eq!(limit.additional, 1);
-    assert!(limit.limit < service_items);
-    assert_eq!(ctx.resource_refusal(), Some(limit));
-    assert!(
-        matches!(run(&ctx, &memo_bytes, &candidates, &memo_faces), Err(CodecError::ResourceLimit(later)) if later == limit)
-    );
-    let finite = crate::test_support::with_collection_limit(limit.limit, |finite_ctx| {
-        run(finite_ctx, &memo_bytes, &candidates, &memo_faces)
-    });
-    assert!(matches!(finite, Err(CodecError::ResourceLimit(actual)) if actual == limit));
+    assert!(matches!(
+        run(&ctx, &memo_bytes, &candidates, &memo_faces)
+            .expect("fixed solve requires no memo entry"),
+        super::super::MeshSolve::Solved(_)
+    ));
+    assert!(ctx.resource_refusal().is_none());
 }
