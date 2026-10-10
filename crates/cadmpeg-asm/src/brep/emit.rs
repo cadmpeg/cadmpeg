@@ -2885,67 +2885,72 @@ fn emit_rolling_ball_side(
 
     out: &mut AsmBrep,
     format: IdFormat,
-    prefix: cadmpeg_ir::ids::IdentityKey,
+    prefix: impl FnOnce() -> Result<cadmpeg_ir::ids::IdentityKey, cadmpeg_core::CodecError>,
     side: RollingBallSide<SurfaceGeometry, CurveGeometry, PcurveNurbs>,
 ) -> Result<RollingBallSide, cadmpeg_core::CodecError> {
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
     }
-    let surface = side
-        .surface
-        .map(|support| -> Result<_, cadmpeg_core::CodecError> {
-            let id = {
-                let mut copied_storage = ctx.reserve_scoped(0, "ASM temporary identity key")?;
-                copied_storage.with_storage(|| {
-                    Ok::<_, cadmpeg_core::CodecError>(brep_id!(
-                        format,
-                        SurfaceId,
-                        "procedural_surface",
-                        prefix
-                            .try_clone_for_decode(ctx, "ASM temporary identity key")?
-                            .then(cadmpeg_ir::identity_key!(":surface"))
-                    ))
+    let (surface, curve) = match (side.surface, side.curve) {
+        (None, None) => (None, None),
+        (surface, curve) => {
+            let prefix = prefix()?;
+            let surface = surface
+                .map(|support| -> Result<_, cadmpeg_core::CodecError> {
+                    let id = {
+                        let mut copied_storage = ctx.reserve_scoped(0, "ASM temporary identity key")?;
+                        copied_storage.with_storage(|| {
+                            Ok::<_, cadmpeg_core::CodecError>(brep_id!(
+                                format,
+                                SurfaceId,
+                                "procedural_surface",
+                                prefix
+                                    .try_clone_for_decode(ctx, "ASM temporary identity key")?
+                                    .then(cadmpeg_ir::identity_key!(":surface"))
+                            ))
+                        })
+                    }?;
+                    charged_push!(
+                        ctx,
+                        out.surfaces,
+                        Surface {
+                            id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
+                            geometry: support.surface,
+                            source_object: None,
+                        }
+                    );
+                    Ok(RollingBallSupportSurface {
+                        surface: id,
+                        parameter_ranges: support.parameter_ranges,
+                    })
                 })
-            }?;
-            charged_push!(
-                ctx,
-                out.surfaces,
-                Surface {
-                    id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
-                    geometry: support.surface,
-                    source_object: None,
-                }
-            );
-            Ok(RollingBallSupportSurface {
-                surface: id,
-                parameter_ranges: support.parameter_ranges,
-            })
-        })
-        .transpose()?;
-    let curve = side
-        .curve
-        .map(|support| -> Result<_, cadmpeg_core::CodecError> {
-            let id = brep_id!(
-                format,
-                CurveId,
-                "procedural_surface",
-                prefix.then(cadmpeg_ir::identity_key!(":curve"))
-            );
-            charged_push!(
-                ctx,
-                out.curves,
-                Curve {
-                    id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
-                    geometry: support.curve,
-                    source_object: None,
-                }
-            );
-            Ok(RollingBallSupportCurve {
-                curve: id,
-                parameter_range: support.parameter_range,
-            })
-        })
-        .transpose()?;
+                .transpose()?;
+            let curve = curve
+                .map(|support| -> Result<_, cadmpeg_core::CodecError> {
+                    let id = brep_id!(
+                        format,
+                        CurveId,
+                        "procedural_surface",
+                        prefix.then(cadmpeg_ir::identity_key!(":curve"))
+                    );
+                    charged_push!(
+                        ctx,
+                        out.curves,
+                        Curve {
+                            id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
+                            geometry: support.curve,
+                            source_object: None,
+                        }
+                    );
+                    Ok(RollingBallSupportCurve {
+                        curve: id,
+                        parameter_range: support.parameter_range,
+                    })
+                })
+                .transpose()?;
+            (surface, curve)
+        }
+    };
     Ok(RollingBallSide {
         support_kind: side.support_kind,
         surface,
@@ -2974,14 +2979,8 @@ fn emit_variable_blend_surface(
 ) -> Result<ProceduralSurfaceDefinition, cadmpeg_core::CodecError> {
     let [first_side, second_side] = *construction.sides;
     let sides = [
-        {
-            let prefix = brep_key!(i, ":variable_side0");
-            emit_rolling_ball_side(ctx, out, format, prefix, first_side)?
-        },
-        {
-            let prefix = brep_key!(i, ":variable_side1");
-            emit_rolling_ball_side(ctx, out, format, prefix, second_side)?
-        },
+        emit_rolling_ball_side(ctx, out, format, || Ok(brep_key!(i, ":variable_side0")), first_side)?,
+        emit_rolling_ball_side(ctx, out, format, || Ok(brep_key!(i, ":variable_side1")), second_side)?,
     ];
     let mut add_curve = |suffix: cadmpeg_ir::ids::IdentityKey,
                          geometry: CurveGeometry|
@@ -3311,14 +3310,8 @@ fn emit_revision_g2_blend_surface(
 ) -> Result<ProceduralSurfaceDefinition, cadmpeg_core::CodecError> {
     let [first_side, second_side] = *construction.sides;
     let sides = [
-        {
-            let prefix = brep_key!(i, ":g2_side0");
-            emit_rolling_ball_side(ctx, out, format, prefix, first_side)?
-        },
-        {
-            let prefix = brep_key!(i, ":g2_side1");
-            emit_rolling_ball_side(ctx, out, format, prefix, second_side)?
-        },
+        emit_rolling_ball_side(ctx, out, format, || Ok(brep_key!(i, ":g2_side0")), first_side)?,
+        emit_rolling_ball_side(ctx, out, format, || Ok(brep_key!(i, ":g2_side1")), second_side)?,
     ];
     let center_id = brep_id!(
         format,
@@ -3590,14 +3583,8 @@ fn emit_blend_surface(
             Ok({
                 let [first_native, second_native] = *native.sides;
                 let resolved_sides = [
-                    {
-                        let prefix = brep_key!(i, ":native_side0");
-                        emit_rolling_ball_side(ctx, out, format, prefix, first_native)?
-                    },
-                    {
-                        let prefix = brep_key!(i, ":native_side1");
-                        emit_rolling_ball_side(ctx, out, format, prefix, second_native)?
-                    },
+                    emit_rolling_ball_side(ctx, out, format, || Ok(brep_key!(i, ":native_side0")), first_native)?,
+                    emit_rolling_ball_side(ctx, out, format, || Ok(brep_key!(i, ":native_side1")), second_native)?,
                 ];
                 for (side_index, side) in resolved_sides.iter().enumerate() {
                     if resolved_supports[side_index].is_none() {

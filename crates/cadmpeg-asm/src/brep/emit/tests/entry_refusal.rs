@@ -188,7 +188,7 @@ fn asm_absent_rolling_ball_side_preserves_original_refusal() {
             surface: None, curve: None, pcurve: None, location: Point3::new(0.0, 0.0, 0.0),
             secondary_pcurve: None, extension: None };
         let result = super::super::emit_rolling_ball_side(ctx, &mut out, crate::asm_format!("sat"),
-            cadmpeg_ir::identity_key!("7"), side);
+            || panic!("absent or refused rolling side skips identity"), side);
         match original {
             Some(first) => assert!(matches!(result, Err(CodecError::ResourceLimit(last)) if last == first)),
             None => {
