@@ -806,6 +806,17 @@ impl<'a> DecodeContext<'a> {
         }
         Ok(())
     }
+
+    /// Closes the session with the result its work produced. A recorded
+    /// refusal replaces that result, an `Ok` included: speculative or
+    /// dialect-probing code may turn a refusal into "try the next reading",
+    /// and work after a refusal is itself refused, so the session's first
+    /// refusal is its outcome. Session owners hand their result through
+    /// here; code inside the session needs no refusal check of its own.
+    pub fn finish<T, E: From<CodecError>>(self, result: Result<T, E>) -> Result<T, E> {
+        self.finish_session()?;
+        result
+    }
 }
 
 fn root_limit(reason: ResourceFailure, limit: u64, used: u64) -> ResourceLimit {
