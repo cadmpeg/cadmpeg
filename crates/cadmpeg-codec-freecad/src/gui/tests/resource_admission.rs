@@ -773,7 +773,14 @@ fn gui_material_list_refuses_at_caller_limit() {
     let mut bytes = 1_u32.to_le_bytes().to_vec();
     bytes.extend([0_u8; 24]);
     crate::test_support::assert_collection_refusal_at(&[], "FCStd GUI material entries", |ctx| {
-        super::super::parse_material_list(ctx, cadmpeg_core::decode::View::over_retained(&bytes), 2, "material", false).map(|_| ())
+        super::super::parse_material_list(
+            ctx,
+            cadmpeg_core::decode::View::over_retained(&bytes),
+            2,
+            "material",
+            false,
+        )
+        .map(|_| ())
     });
 }
 
