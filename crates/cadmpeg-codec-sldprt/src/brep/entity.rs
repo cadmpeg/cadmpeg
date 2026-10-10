@@ -96,10 +96,6 @@ impl<'ctx> FactsSource<'ctx> {
         drop(source);
         Ok(())
     }
-
-    pub(crate) fn into_parts(self) -> (Facts<'ctx>, ScopedReservation<'ctx>) {
-        (self.facts, self.storage)
-    }
 }
 
 impl<'ctx> std::ops::Deref for FactsSource<'ctx> {
@@ -580,7 +576,9 @@ fn scan_metadata_inner<'ctx>(
     body: &[u8],
     prefixed: bool,
 ) -> Result<Facts<'ctx>, cadmpeg_core::CodecError> {
-    let (entities, _entity_storage) = scan_entities(ctx, body, prefixed)?;
+    let _entity_storage;
+    let entities;
+    (entities, _entity_storage) = scan_entities(ctx, body, prefixed)?;
     let dictionary = super::attrib::dictionary(ctx, body)?;
     let mut request_storage = ctx.reserve_scoped(0, "hold Parasolid color requests")?;
     let mut requested = ColorRequests::new();
@@ -597,7 +595,9 @@ fn scan_metadata_inner<'ctx>(
             })?;
         }
     }
-    let (linked_colors, _color_storage) = linked_colors(ctx, body, &entities, &requested)?;
+    let _color_storage;
+    let color_index;
+    (color_index, _color_storage) = linked_colors(ctx, body, &entities, &requested)?;
     let mut face_colors = Vec::new();
     let mut face_color_versions = Vec::new();
     let mut unresolved_face_colors = 0;
@@ -607,7 +607,7 @@ fn scan_metadata_inner<'ctx>(
         let linked = match linked_attr {
             Some(color_attr) => ctx
                 .get_hash_map(
-                    &linked_colors,
+                    &color_index,
                     &(face.attr, color_attr),
                     "look up Parasolid linked colors",
                 )?
@@ -819,7 +819,9 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-        let (colors, _storage) =
+        let _storage;
+        let colors;
+        (colors, _storage) =
             linked_colors(&ctx, &bytes, &parents, &requested_colors([(700, 800)])).unwrap();
         let linked = colors.get(&(700, 800)).unwrap();
         assert!(linked.agreed);
@@ -850,13 +852,17 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-        let (colors, _storage) =
+        let _storage;
+        let colors;
+        (colors, _storage) =
             linked_colors(&ctx, &bytes, &parents, &requested_colors([(700, 800)])).unwrap();
         let linked = colors.get(&(700, 800)).unwrap();
         assert!(linked.agreed);
         assert_eq!(linked.current.offset, suffix);
         bytes[suffix..].copy_from_slice(&color(800, [0.5, 0.25, 0.75], false));
-        let (colors, _storage) =
+        let _storage;
+        let colors;
+        (colors, _storage) =
             linked_colors(&ctx, &bytes, &parents, &requested_colors([(700, 800)])).unwrap();
         assert!(!colors.get(&(700, 800)).unwrap().agreed);
         assert_eq!(colors.get(&(700, 800)).unwrap().current.offset, suffix);
@@ -887,7 +893,9 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-        let (colors, _storage) = linked_colors(
+        let _storage;
+        let colors;
+        (colors, _storage) = linked_colors(
             &ctx,
             &bytes,
             &parents,
@@ -922,7 +930,14 @@ mod tests {
                         .chain([(100, 800)]),
                 ),
             )
-            .map(|(colors, _)| colors.len())
+            .map(|parts| {
+                let storage;
+                let colors;
+                (colors, storage) = parts;
+                let count = colors.len();
+                drop((colors, storage));
+                count
+            })
         });
     }
 
@@ -944,12 +959,11 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(
-            linked_colors(&ctx, &bytes, &parents, &super::ColorRequests::new())
-                .unwrap()
-                .0
-                .is_empty()
-        );
+        let storage;
+        let colors;
+        (colors, storage) = linked_colors(&ctx, &bytes, &parents, &super::ColorRequests::new()).unwrap();
+        assert!(colors.is_empty());
+        drop((colors, storage));
         ctx.finish_session().unwrap();
     }
 
@@ -982,7 +996,9 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-        let (colors, _storage) = linked_colors(&ctx, &bytes, &parents, &requested).unwrap();
+        let _storage;
+        let colors;
+        (colors, _storage) = linked_colors(&ctx, &bytes, &parents, &requested).unwrap();
         assert_eq!(colors.len(), 64);
         for parent in &parents {
             let linked = colors.get(&(parent.attr, parent.attr + 600)).unwrap();
@@ -1018,7 +1034,9 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-        let (colors, _storage) = linked_colors(
+        let _storage;
+        let colors;
+        (colors, _storage) = linked_colors(
             &ctx,
             &bytes,
             &parents,
@@ -1043,7 +1061,14 @@ mod tests {
                 &parents,
                 &requested_colors(parents.iter().map(|parent| (parent.attr, 800))),
             )
-            .map(|(colors, _)| colors.len())
+            .map(|parts| {
+                let storage;
+                let colors;
+                (colors, storage) = parts;
+                let count = colors.len();
+                drop((colors, storage));
+                count
+            })
         });
     }
 
@@ -1095,7 +1120,14 @@ mod tests {
     fn parasolid_entity_records_refuse_collection_limit_before_insertion() {
         let bytes = bare_entity_slots(700, 1, 16, 1, &[0; 6]);
         collection_refusal("collect Parasolid entity records", &bytes, |ctx| {
-            scan_entities(ctx, &bytes, false).map(|(records, _)| records.len())
+            scan_entities(ctx, &bytes, false).map(|parts| {
+                let storage;
+                let records;
+                (records, storage) = parts;
+                let count = records.len();
+                drop((records, storage));
+                count
+            })
         });
     }
 
@@ -1161,10 +1193,10 @@ mod tests {
             );
         }
 
-        let mut probe = Vec::<RawFaceAtom<'_>>::new();
         let mut probe_storage = ctx
             .reserve_scoped(0, "probe released Parasolid fact slots")
             .expect("probe storage");
+        let mut probe = Vec::<RawFaceAtom<'_>>::new();
         probe_storage
             .with_storage(|| {
                 ctx.reserve_capacity(
@@ -1216,7 +1248,14 @@ mod tests {
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_materialized_bytes = cap;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-                scan_entities(&ctx, &bytes, false).map(|(records, _)| records.len())
+                scan_entities(&ctx, &bytes, false).map(|parts| {
+                    let storage;
+                    let records;
+                    (records, storage) = parts;
+                    let count = records.len();
+                    drop((records, storage));
+                    count
+                })
             },
         );
     }
@@ -1265,7 +1304,14 @@ mod tests {
                 &entities,
                 &requested_colors([(700, 900), (900, 900)]),
             )
-            .map(|(colors, _)| colors.len())
+            .map(|parts| {
+                let storage;
+                let colors;
+                (colors, storage) = parts;
+                let count = colors.len();
+                drop((colors, storage));
+                count
+            })
         });
     }
 
@@ -1489,7 +1535,10 @@ mod tests {
         bytes.extend([0; 16]);
 
         let records = scan_entities(&ctx, &bytes, false).expect("entity scan");
-        let (records, _storage) = records;
+        let _storage;
+        let records_value;
+        (records_value, _storage) = records;
+        let records = records_value;
         assert_eq!(records.len(), 4);
         assert_eq!(records[0].refs.count, 7);
         assert_eq!(records[0].end, seven.len());
