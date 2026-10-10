@@ -2125,7 +2125,9 @@ fn project_ufrx_external_reference(
         if !has_path {
             return admit_ufrx_record(
                 ctx,
-                Err(CodecError::malformed("path or a nonzero document_id is required")),
+                Err(CodecError::malformed(
+                    "path or a nonzero document_id is required",
+                )),
                 format_args!("ufrx-external-reference-{ordinal}"),
                 issues,
             );

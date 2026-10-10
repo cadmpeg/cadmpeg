@@ -92,8 +92,8 @@ impl CodecBackend for InventorCodec {
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         let mut container_storage = ctx.reserve_scoped(0, "hold parsed Inventor container")?;
-        let container = container_storage
-            .with_storage(|| container::InventorContainer::open(ctx, root))?;
+        let container =
+            container_storage.with_storage(|| container::InventorContainer::open(ctx, root))?;
         container.summary(ctx)
     }
 

@@ -148,8 +148,10 @@ fn open_line_component_admits_only_the_next_member() {
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.operation == "visit Inventor line component"
             && limit.additional == 1));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit))
-        if matches!(&error, CodecError::ResourceLimit(original) if original == &limit)));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit))
+        if matches!(&error, CodecError::ResourceLimit(original) if original == &limit))
+    );
 
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("service context");

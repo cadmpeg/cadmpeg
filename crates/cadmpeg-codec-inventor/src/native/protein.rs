@@ -422,15 +422,23 @@ mod tests {
         assert_eq!(storage_refusal.dimension, ResourceDimension::RetainedBytes);
         assert_eq!(storage_refusal.operation, "load typed native record");
         assert_eq!(storage_refusal.used, 0);
-        assert_eq!(storage_refusal.additional,
-            cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<super::ProteinRecordWire>()));
+        assert_eq!(
+            storage_refusal.additional,
+            cadmpeg_core::decode::u64_from_index(
+                4 * std::mem::size_of::<super::ProteinRecordWire>()
+            )
+        );
         assert_eq!(ctx.resource_refusal(), Some(storage_refusal));
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit))
-            if limit == storage_refusal));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit))
+            if limit == storage_refusal)
+        );
 
-        assert!(matches!(ProteinRecord::read(&crate::native::test_ctx(), &namespace),
+        assert!(
+            matches!(ProteinRecord::read(&crate::native::test_ctx(), &namespace),
             Err(NativeConvertError::ConversionMessage(detail))
-                if detail == "Inventor native data has 2 Protein state records"));
+                if detail == "Inventor native data has 2 Protein state records")
+        );
 
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -441,10 +449,7 @@ mod tests {
             other => panic!("typed native copy should refuse work: {other:?}"),
         };
         assert_eq!(first_refusal.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(
-            first_refusal.operation,
-            "construct canonical native value"
-        );
+        assert_eq!(first_refusal.operation, "construct canonical native value");
         assert_eq!(ctx.resource_refusal(), Some(first_refusal));
         assert!(matches!(
             ProteinRecord::read(&ctx, &namespace),
@@ -462,7 +467,9 @@ mod tests {
         ];
         let ctx = crate::native::test_ctx();
         let mut namespace = NativeNamespace::default();
-        namespace.set_arena(&ctx, "protein", &records).expect("raw Protein records");
+        namespace
+            .set_arena(&ctx, "protein", &records)
+            .expect("raw Protein records");
         assert_eq!(ProteinRecord::read(&ctx, &namespace)
             .expect_err("the invalid first Protein wire is checked before cardinality")
             .to_string(),

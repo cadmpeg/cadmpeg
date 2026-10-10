@@ -915,18 +915,17 @@ fn decode_code_page(
         let output_room = decoder
             .max_utf8_buffer_length_without_replacement(input.len())
             .unwrap_or(3 * input.len() + 4);
-        ctx.try_reserve_retained_text(
-            &mut decoded,
-            output_room,
-            "retain OLE property string",
-        )?;
+        ctx.try_reserve_retained_text(&mut decoded, output_room, "retain OLE property string")?;
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(input.len() + output_room),
             "decode OLE code-page string",
         )?;
         let written_before = decoded.len();
-        let (result, consumed) =
-            decoder.decode_to_string_without_replacement(input, &mut decoded, input.len() == unread.len());
+        let (result, consumed) = decoder.decode_to_string_without_replacement(
+            input,
+            &mut decoded,
+            input.len() == unread.len(),
+        );
         read = read.checked_add(consumed).ok_or_else(|| {
             ctx.refuse_codec_limit("decode OLE code-page string", u64::MAX, u64::MAX)
         })?;
@@ -1552,12 +1551,16 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("service context");
-        assert_eq!(super::decode_code_page(&ctx, &bytes, Some(65001)).expect("split UTF-8"),
-            format!("{}€", "a".repeat(super::CODE_PAGE_INPUT_CHUNK_BYTES - 1)));
+        assert_eq!(
+            super::decode_code_page(&ctx, &bytes, Some(65001)).expect("split UTF-8"),
+            format!("{}€", "a".repeat(super::CODE_PAGE_INPUT_CHUNK_BYTES - 1))
+        );
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("service context");
-        assert!(matches!(super::decode_code_page(&ctx, &[0xe2, 0], Some(65001)),
-            Err(CodecError::Malformed(detail)) if detail == "OLE code-page 65001 string is malformed"));
+        assert!(
+            matches!(super::decode_code_page(&ctx, &[0xe2, 0], Some(65001)),
+            Err(CodecError::Malformed(detail)) if detail == "OLE code-page 65001 string is malformed")
+        );
     }
 
     #[test]
