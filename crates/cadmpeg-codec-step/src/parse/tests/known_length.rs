@@ -87,7 +87,6 @@ fn empty_schema_matching_names_have_no_terminal_visit_or_storage() {
         let names = schema_names_for_matching(&[], ctx)
             .expect("no schema identifiers need no visits or backing");
         assert!(names.is_empty());
-        assert_eq!(names.capacity(), 0);
         assert!(ctx.resource_refusal().is_none());
     });
 }

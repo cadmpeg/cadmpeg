@@ -157,17 +157,12 @@ fn binary_lexeme_charges_packed_bytes_before_retention() {
 }
 
 #[test]
-fn uri_lexeme_reserves_temporary_bytes_before_allocation() {
-    let input = b"<part/path>";
-    let service = DecodePolicy::service();
-    assert!(lex_under_policy(input, service, false).is_ok());
-    let mut limited = service;
-    limited.limits.max_materialized_bytes = 8;
-    let error = lex_under_policy(input, limited, false)
-        .expect_err("nine URI bytes exceed eight temporary bytes");
-    assert!(
-        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "step_uri_lexeme_bytes")
-    );
+fn retained_uri_lexeme_reuses_its_byte_buffer_without_temporary_storage() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 9;
+    assert_eq!(lex_under_policy(b"<part/path>", policy, false).expect("one retained buffer"),
+        super::TokenKind::Resource("part/path".into()));
 }
 
 #[test]
@@ -180,7 +175,7 @@ fn uri_lexeme_charges_bytes_before_retention() {
     let error = lex_under_policy(input, limited, false)
         .expect_err("nine URI bytes exceed eight retained bytes");
     assert!(
-        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "step_uri_lexeme_retained")
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "step_uri_lexeme_bytes")
     );
 }
 
@@ -542,27 +537,6 @@ fn integer_number_parse_preserves_refusal() {
     );
 }
 
-#[test]
-fn token_tag_cost_is_exact_and_excludes_payloads() {
-    use cadmpeg_core::decode::cost::DecodeCost;
-    let ctx = cadmpeg_test_support::service_decode_context();
-    let first = super::TokenKind::Name(String::from("FIRST")).tag();
-    let second = super::TokenKind::Name(String::from("different payload")).tag();
-    let width = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-        std::mem::Discriminant<super::TokenKind>,
-    >());
-    assert_eq!(<super::TokenTag as DecodeCost>::FIXED_BYTES, Some(width));
-    assert_eq!(
-        first.decode_cost(&ctx, "test token category").unwrap(),
-        width
-    );
-    assert_eq!(
-        second.decode_cost(&ctx, "test token category").unwrap(),
-        width
-    );
-    assert_eq!(first, second);
-    assert_ne!(first, super::TokenKind::Comma.tag());
-}
 
 #[test]
 fn normalized_retained_character_preserves_refusal() {
@@ -622,7 +596,6 @@ fn lexer_cursor_and_control_lookahead_preserve_refusal() {
             "STEP lexer comment traversal",
         ),
         (b"\\\x01N\\".as_slice(), "STEP lexer control lookahead"),
-        (b"<name>".as_slice(), "STEP resource UTF-8 validation"),
     ] {
         cadmpeg_test_support::refusal::resource_limit_at(
             ResourceDimension::WorkUnits,

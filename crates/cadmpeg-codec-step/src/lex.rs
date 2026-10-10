@@ -74,31 +74,6 @@ pub(crate) enum TokenKind {
     Colon,
 }
 
-/// Fixed token-category key. Token payloads do not participate in category matching.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct TokenTag(std::mem::Discriminant<TokenKind>);
-
-impl cadmpeg_core::decode::cost::DecodeCost for TokenTag {
-    const FIXED_BYTES: Option<u64> = Some(u64_from_index(std::mem::size_of::<
-        std::mem::Discriminant<TokenKind>,
-    >()));
-    fn decode_cost(
-        &self,
-        _ctx: &DecodeContext<'_>,
-        _operation: &'static str,
-    ) -> Result<u64, CodecError> {
-        Ok(u64_from_index(std::mem::size_of::<
-            std::mem::Discriminant<TokenKind>,
-        >()))
-    }
-}
-
-impl TokenKind {
-    pub(crate) fn tag(&self) -> TokenTag {
-        TokenTag(std::mem::discriminant(self))
-    }
-}
-
 /// Binary literal payload packed most-significant nibble first.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct BinaryValue {
@@ -889,13 +864,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         if self.input.get(self.at) != Some(&b'>') {
             return Err(self.error(start, "unterminated resource token")?);
         }
-        let (_temporary, mut value) =
-            self.budget
-                .with_scoped_storage("step_uri_lexeme_temp", || {
-                    self.budget
-                        .alloc_filled(value_len, 0_u8, "step_uri_lexeme_bytes")
-                })
-                .map(|(value, reservation)| (reservation, value))?;
+        let mut value = self.budget.alloc_filled(value_len, 0_u8, "step_uri_lexeme_bytes")?;
         let mut written = 0usize;
         for &byte in self
             .budget
@@ -910,13 +879,8 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
                 written += 1;
             }
         }
-        let text = self
-            .budget
-            .validate_utf8(&value, "STEP resource UTF-8 validation")?
+        let value = String::from_utf8(value)
             .or_else(|_| Err(self.error(content, "resource token is not UTF-8")?))?;
-        let value = self
-            .budget
-            .copy_retained_text(text, "step_uri_lexeme_retained")?;
         self.at += 1;
         Ok(TokenKind::Resource(value))
     }

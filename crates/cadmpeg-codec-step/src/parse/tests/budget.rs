@@ -100,7 +100,7 @@ fn section_language_string_validation_refuses_materialized_limit() {
         super::super::validate_header_sections(
             super::super::ImplementationLevel::Edition3Class2,
             exchange.header(),
-            &[String::from("AP242")],
+            &std::collections::BTreeSet::from([String::from("AP242")]),
             &ctx,
         ),
         Err(super::super::ValidationError::Resource(CodecError::ResourceLimit(refusal)))
@@ -124,7 +124,7 @@ fn data_section_name_validation_refuses_retained_limit() {
     assert!(matches!(
         super::super::valid_data_parameters(
             &parameters,
-            &[String::from("AP242")],
+            &std::collections::BTreeSet::from([String::from("AP242")]),
             super::super::ImplementationLevel::LegacyEdition1,
             &mut section_names,
             &ctx,
@@ -189,7 +189,7 @@ fn header_section_validation_refuses(operation: &str, dimension: ResourceDimensi
             super::super::validate_header_sections(
                 super::super::ImplementationLevel::Edition3Class2,
                 exchange.header(),
-                &[String::from("AP242")],
+                &std::collections::BTreeSet::from([String::from("AP242")]),
                 ctx,
             )
             .map(|_| ())
@@ -305,7 +305,7 @@ fn schema_name_matching_refuses_retained_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(b"AP242", &arena, &policy)
         .expect("root fits retained policy");
     assert!(matches!(
-        super::super::schema_identifier_matches(&[String::from("AP242")], "AP242", &ctx),
+        super::super::schema_identifier_matches(&std::collections::BTreeSet::from([String::from("AP242")]), "AP242", &ctx),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::MaterializedBytes
                 && refusal.operation == "step_schema_name_matching"
@@ -367,7 +367,7 @@ fn data_section_name_set_refuses_collection_limit() {
     assert!(matches!(
         super::super::valid_data_parameters(
             &parameters,
-            &[String::from("AP242")],
+            &std::collections::BTreeSet::from([String::from("AP242")]),
             super::super::ImplementationLevel::LegacyEdition1,
             &mut section_names,
             &ctx,
@@ -602,16 +602,22 @@ fn anchor_list_slots_are_admitted_before_vector_allocation() {
         value
     );
     let mut limited = service;
-    limited.limits.max_collection_items = 8;
+    limited.limits.max_collection_items = 7;
     let (ctx, _) = DecodeContext::from_root_bytes(b"anchor", &arena, &limited)
         .expect("root fits selected profile");
     let error = AnchorResolver::new(&anchors, &ctx)
         .expect("empty resolver scope fits")
         .resolve_root(&value)
-        .expect_err("one list node plus eight slots exceed eight items");
+        .expect_err("eight slots exceed seven items");
     assert!(
         matches!(error, ResolveError::Resource(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "step_anchor_list_items")
     );
+    limited.limits.max_collection_items = 8;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"anchor", &arena, &limited)
+        .expect("root fits exact slot allowance");
+    assert_eq!(AnchorResolver::new(&anchors, &ctx).expect("resolver")
+        .resolve_root(&value).expect("each of the eight child slots is admitted once"), value);
+
 }
 
 #[test]
@@ -1183,7 +1189,7 @@ fn schema_name_match_trim_preserves_refusal() {
             policy.limits.max_work_units = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
             let result = super::super::schema_identifier_matches(
-                &[String::from(" AP242 ")],
+                &std::collections::BTreeSet::from([String::from("AP242")]),
                 " AP242 ",
                 &ctx,
             )
@@ -1198,24 +1204,24 @@ fn schema_name_match_trim_preserves_refusal() {
 
 #[test]
 fn matching_schema_identifier_trim_preserves_refusal() {
+    let service = cadmpeg_test_support::service_decode_context();
+    let admitted = super::super::AdmittedSchemaIdentifier::admit(&service, " AP242 ".into())
+        .expect("admission").expect("schema name");
     cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::WorkUnits,
         "STEP matching schema identifier trim",
         |cap| {
-            let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-            let result = super::super::schema_identifier_matches(
-                &[String::from(" AP242 ")],
-                " AP242 ",
-                &ctx,
-            )
-            .map(|_| ());
-            if let Err(CodecError::ResourceLimit(refusal)) = &result {
-                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
-            }
-            result
+            crate::test_support::with_policy_context(&[], &policy, |_, ctx| {
+                let result = super::super::schema_names_for_matching(std::slice::from_ref(&admitted), ctx)
+                    .map(|_| ())
+                    .or_else(|error| Err(error.into_codec_error(ctx)?));
+                if let Err(CodecError::ResourceLimit(refusal)) = &result {
+                    assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
+                }
+                result
+            })
         },
     );
 }
