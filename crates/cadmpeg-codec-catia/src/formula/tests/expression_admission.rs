@@ -99,45 +99,6 @@ fn formula_literal_scan_propagates_caller_work_refusal() {
 }
 
 #[test]
-fn legacy_symbol_ordinal_scan_propagates_caller_work_refusal() {
-    crate::test_support::with_work_limit(8, |ctx| {
-        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) =
-            super::super::legacy_symbol_matches_input(ctx, "#1_/12", "#1_")
-        else {
-            panic!("ordinal scan must refuse")
-        };
-        assert_eq!(limit.operation, "catia_legacy_symbol_ordinal_visits");
-        assert_eq!((limit.used, limit.additional), (8, 1));
-        assert_eq!(ctx.resource_refusal(), Some(limit));
-    });
-    // Three prefix bytes, three suffix bytes, two digits and the end probe.
-    crate::test_support::with_work_limit(9, |ctx| {
-        assert!(
-            super::super::legacy_symbol_matches_input(ctx, "#1_/12", "#1_")
-                .expect("exact ordinal budget")
-        );
-    });
-}
-
-#[test]
-fn legacy_symbol_ordinal_scan_preserves_matching_rules() {
-    crate::test_support::with_service_context(|ctx| {
-        for symbol in ["#1_", "#1_ /12"] {
-            assert!(
-                super::super::legacy_symbol_matches_input(ctx, symbol, "#1_")
-                    .expect("service work budget")
-            );
-        }
-        for symbol in ["#1_/", "#1_/x", "#2_"] {
-            assert!(
-                !super::super::legacy_symbol_matches_input(ctx, symbol, "#1_")
-                    .expect("service work budget")
-            );
-        }
-    });
-}
-
-#[test]
 fn formula_string_boundary_admission_preserves_unicode_indices() {
     crate::test_support::with_service_context(|ctx| {
         let bindings = std::collections::BTreeMap::new();

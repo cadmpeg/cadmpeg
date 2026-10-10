@@ -41,6 +41,20 @@ fn legacy_rejected_relation_signatures_release_candidate_storage() {
 }
 
 #[test]
+fn legacy_duplicate_output_rejects_before_later_owned_copies() {
+    let source = format!(
+        "(#1_ : #Out Real,{} : #Out {}) : VoidType",
+        "#".repeat(512),
+        "T".repeat(512),
+    );
+    assert!(crate::test_support::with_materialized_limit(256, |ctx| {
+        parse_relation_signature(ctx, &source)
+    })
+    .expect("only the first output's name, type, and membership backing are allocated")
+    .is_none());
+}
+
+#[test]
 fn legacy_relation_signatures_promote_only_accepted_storage() {
     for (source, child_bytes, output) in [
         ("(#1_ : #In Real) : Real", 11, None),
