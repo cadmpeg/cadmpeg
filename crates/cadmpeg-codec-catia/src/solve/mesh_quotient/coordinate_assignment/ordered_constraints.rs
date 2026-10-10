@@ -386,8 +386,7 @@ mod tests {
                         let value = |root: usize| {
                             candidate
                                 .filter(|&(other, _)| other == root)
-                                .map(|(_, point)| point)
-                                .unwrap_or(assigned[root].expect("assigned"))
+                                .map_or(assigned[root].expect("assigned"), |(_, point)| point)
                         };
                         (0..8).any(|directions| {
                             if fixed.is_some_and(|fixed| fixed != (directions & 2 != 0)) {
