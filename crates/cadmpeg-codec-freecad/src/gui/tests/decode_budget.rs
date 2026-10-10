@@ -130,12 +130,16 @@ fn gui_attribute_lookup_refuses_before_provider_record_copy() {
 }
 
 #[test]
-fn gui_validator_buffers_use_materialized_admission() {
-    let xml = roxmltree::Document::parse("<StringList count='1'><String value='x'/></StringList>")
-        .expect("list XML");
-    crate::test_support::materialized_refusal_at("FCStd GUI StringList child nodes", |ctx| {
-        super::super::validate_gui_string_list(ctx, xml.root_element(), "names")
-    });
+fn gui_string_list_validation_needs_no_child_storage() {
+    let xml = roxmltree::Document::parse("<StringList count='2'><String value='x'/><String value='y'/></StringList>").expect("list XML");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    super::super::validate_gui_string_list(&ctx, xml.root_element(), "names").expect("borrowed validation");
+    assert_eq!(ctx.resource_refusal(), None);
 }
 
 #[test]
