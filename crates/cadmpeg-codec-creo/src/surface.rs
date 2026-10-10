@@ -599,6 +599,9 @@ fn take_spline_scalars(
     name: &str,
     cache: &scalar::ScalarCache,
 ) -> Result<Option<Vec<f64>>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(remaining) = body.len().checked_sub(*cursor) else {
         return Ok(None);
     };
@@ -606,7 +609,14 @@ fn take_spline_scalars(
         return Ok(None);
     }
     let mut values = Vec::new();
-    for _ in 0..count {
+    let mut slots = 0..count;
+    while !slots.is_empty() {
+        if *cursor >= body.len() {
+            return Ok(None);
+        }
+        let Some(_) = ctx.next_charged(&mut slots, "creo spline replay scalar dispatch")? else {
+            break;
+        };
         let Some((value, next)) = named_spline_scalar_slot(
             &SurfacePrototypeFamily::Spline(SplineLabel::Spline),
             name,
@@ -633,12 +643,19 @@ fn spline_vectors(
     ctx: &DecodeContext<'_>,
     values: &[f64],
 ) -> Result<Option<Vec<[f64; 3]>>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if !values.len().is_multiple_of(3) {
         return Ok(None);
     }
     let mut vectors = Vec::new();
     ctx.reserve_vec(&mut vectors, values.len() / 3, "creo spline replay vectors")?;
-    for chunk in values.chunks_exact(3) {
+    let mut chunks = values.chunks_exact(3);
+    while chunks.len() != 0 {
+        let Some(chunk) = ctx.next_charged(&mut chunks, "creo spline replay vector tuples")? else {
+            break;
+        };
         vectors.push([chunk[0], chunk[1], chunk[2]]);
     }
     Ok(Some(vectors))
@@ -6549,18 +6566,25 @@ fn named_spline_scalar_slots(
     cache: &scalar::ScalarCache,
     refusal: &mut ScalarBodyRefusal,
 ) -> Result<Option<Vec<ScalarTokenSlot>>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut slots = Vec::new();
     ctx.reserve_vec(&mut slots, count, "creo named spline scalar slots")?;
     let mut cursor = psb::Cursor::new(body);
     let mut continued_tuple = false;
-    while slots.len() < count {
+    let mut positions = 0..body.len();
+    while slots.len() < count && !positions.is_empty() {
+        let Some(start) = ctx.next_charged(&mut positions, "creo named spline scalar dispatch")? else {
+            break;
+        };
         if matches!(name, "i_pnts" | "i_points")
             && cursor.take_slice_if(&[psb::token::SCALAR_BODY, 0x00])
         {
             continued_tuple = true;
+            positions.start = cursor.pos();
             continue;
         }
-        let start = cursor.pos();
         let Some(value) =
             cursor.take_with(|data, pos| named_spline_scalar_slot(family, name, data, pos, cache))
         else {
@@ -6570,6 +6594,7 @@ fn named_spline_scalar_slots(
             value,
             ctx.copy_retained(&body[start..cursor.pos()], "creo named spline scalar token")?,
         ));
+        positions.start = cursor.pos();
     }
     if matches!(name, "i_pnts" | "i_points")
         && continued_tuple
@@ -7022,16 +7047,27 @@ fn scalar_slots(
     cache: &scalar::ScalarCache,
     refusal: &mut ScalarBodyRefusal,
 ) -> Result<Option<Vec<Option<f64>>>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut slots = Vec::new();
     ctx.reserve_vec(&mut slots, count, "creo scalar body slots")?;
-    let mut cursor = 0;
-    while slots.len() < count {
+    let mut positions = 0..body.len();
+    while slots.len() < count && !positions.is_empty() {
+        let Some(cursor) = ctx.next_charged(&mut positions, "creo scalar body dispatch")? else {
+            break;
+        };
         let Some((value, next)) = scalar::decode_in_lane(body, cursor, cache) else {
             refusal.state(scalar_body_refusal(ctx, body, count, slots.len(), cursor)?);
             return Ok(None);
         };
         slots.push(Some(value));
-        cursor = next;
+        positions.start = next;
+    }
+    let cursor = positions.start;
+    if slots.len() != count {
+        refusal.state(scalar_body_refusal(ctx, body, count, slots.len(), cursor)?);
+        return Ok(None);
     }
     if cursor != body.len() {
         refusal.state(trailing_scalar_body_refusal(ctx, body, count, cursor)?);
@@ -7345,10 +7381,16 @@ fn sequential_named_local_system_slots(
     cache: &scalar::ScalarCache,
     refusal: &mut ScalarBodyRefusal,
 ) -> Result<Option<Vec<Option<f64>>>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut slots = Vec::new();
     ctx.reserve_vec(&mut slots, count, "creo local-system scalar slots")?;
-    let mut cursor = 0;
-    while cursor < body.len() && slots.len() < count {
+    let mut positions = 0..body.len();
+    while !positions.is_empty() && slots.len() < count {
+        let Some(cursor) = ctx.next_charged(&mut positions, "creo local-system scalar dispatch")? else {
+            break;
+        };
         if body.get(cursor) == Some(&0xe7) {
             let (inherited_count, next) = compact_int(body, cursor + 1);
             let Ok(inherited_count) = usize::try_from(inherited_count) else {
@@ -7363,13 +7405,16 @@ fn sequential_named_local_system_slots(
             {
                 return Ok(None);
             }
-            slots.extend(std::iter::repeat_n(None, inherited_count));
-            cursor = next;
+            slots.extend(ctx.admit_iter(
+                0..inherited_count,
+                "creo local-system inherited slots",
+            )?.map(|_| None));
+            positions.start = next;
             continue;
         }
         if body[cursor] == 0x18 && cursor + 1 == body.len() {
             slots.push(Some(0.0));
-            cursor += 1;
+            positions.start = cursor + 1;
             continue;
         }
         if body.get(cursor..cursor + 2) == Some(&[0x18, 0xe5]) {
@@ -7377,7 +7422,7 @@ fn sequential_named_local_system_slots(
                 return Ok(None);
             }
             slots.extend([Some(0.0), Some(1.0), Some(0.0)]);
-            cursor += 2;
+            positions.start = cursor + 2;
             continue;
         }
         if body.get(cursor) == Some(&0x18)
@@ -7396,19 +7441,19 @@ fn sequential_named_local_system_slots(
                     .is_some()))
         {
             slots.push(Some(0.0));
-            cursor += 1;
+            positions.start = cursor + 1;
             continue;
         }
         if body.get(cursor) == Some(&0x10) {
             slots.push(Some(0.0));
-            cursor += 1;
+            positions.start = cursor + 1;
             continue;
         }
         if let Some((value, next)) =
             scalar::decode_named_local_system_coordinate(body, cursor, slots.len(), cache)
         {
             slots.push(Some(value));
-            cursor = next;
+            positions.start = next;
         } else {
             refusal.state(scalar_body_refusal(ctx, body, count, slots.len(), cursor)?);
             return Ok(None);
@@ -7424,6 +7469,7 @@ fn sequential_named_local_system_slots(
         )?);
         return Ok(None);
     }
+    let cursor = positions.start;
     if cursor != body.len() {
         refusal.state(trailing_scalar_body_refusal(ctx, body, count, cursor)?);
         return Ok(None);
