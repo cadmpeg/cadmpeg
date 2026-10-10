@@ -2127,7 +2127,7 @@ fn bounded_face_candidate_by_boundary_cardinality(
         for boundary in boundaries {
             edge_count = edge_count.and_then(|count| {
                 boundary.loops.iter().try_fold(count, |total, loop_| {
-                    let edges = loop_.boundary.coedges().count();
+                    let edges = loop_.boundary.coedge_count();
                     (edges != 0).then(|| total.checked_add(edges)).flatten()
                 })
             });
@@ -2227,7 +2227,7 @@ fn boundary_edge_count<'a>(
 ) -> Option<usize> {
     boundaries.into_iter().try_fold(0usize, |total, boundary| {
         boundary.loops.iter().try_fold(total, |total, loop_| {
-            let count = loop_.boundary.coedges().count();
+            let count = loop_.boundary.coedge_count();
             (count != 0).then(|| total.checked_add(count)).flatten()
         })
     })

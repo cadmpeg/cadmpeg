@@ -292,6 +292,15 @@ impl cadmpeg_core::decode::cost::DecodeCost for DesignHistoricalLoopPosition {
 }
 
 impl DesignHistoricalLoopBoundary {
+    pub(crate) fn coedge_count(&self) -> usize {
+        match self {
+            Self::Coedges(rows) => rows.len(),
+            Self::Vertices(rows) => rows.len(),
+            Self::Points(rows) => rows.len(),
+            Self::Positions(rows) => rows.len(),
+        }
+    }
+
     pub(crate) fn coedges(&self) -> impl Iterator<Item = &DesignHistoricalLoopCoedge> {
         let (mut coedges, mut vertices, mut points, mut positions): (&[_], &[_], &[_], &[_]) =
             (&[], &[], &[], &[]);
