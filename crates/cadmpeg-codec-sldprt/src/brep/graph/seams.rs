@@ -28,7 +28,6 @@ use cadmpeg_ir::topology::Sense;
 use cadmpeg_ir::topology::Vertex;
 use cadmpeg_ir::Exactness;
 use std::collections::HashMap;
-use std::collections::HashSet;
 
 /// The position of each identity in `ids`; a repeated identity keeps its first
 /// position.
@@ -51,7 +50,7 @@ fn first_positions<'a, K: Eq + std::hash::Hash + cadmpeg_core::decode::cost::Dec
 
 /// One cylinder face whose two circle loops become one ring through a
 /// generated seam edge.
-struct CylinderSeam {
+struct CylinderSeam<'ctx> {
     face: usize,
     loop_a: usize,
     loop_a_id: LoopId,
@@ -64,6 +63,8 @@ struct CylinderSeam {
     point_b: Option<usize>,
     seam_a: cadmpeg_ir::math::Point3,
     seam_b: cadmpeg_ir::math::Point3,
+    identity_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+    removal_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
 pub(super) fn synthesize_cylinder_seams(
@@ -76,60 +77,28 @@ pub(super) fn synthesize_cylinder_seams(
     const LOOK_UP: &str = "look up Parasolid cylinder seam topology";
     let mut scratch = ctx.reserve_scoped(0, "select Parasolid cylinder seams")?;
     let candidates = {
-        let surfaces = scratch.with_storage(|| {
+        let mut selection = ctx.reserve_scoped(0, "hold cylinder seam selection indexes")?;
+        if out.faces.is_empty()
+            || !ctx.any_by(
+                &out.surfaces,
+                |surface| {
+                    Ok(matches!(
+                        surface.geometry.solved(),
+                        Some(SolvedSurfaceGeometry::Cylinder(_))
+                    ))
+                },
+                "find cylinder seam surfaces",
+            )?
+        {
+            return Ok(());
+        }
+        let surfaces = selection.with_storage(|| {
             ctx.collect_hash_map(
                 out.surfaces.iter().map(|surface| (&surface.id, surface)),
                 "index Parasolid seam surfaces",
             )
         })?;
-        let loops = scratch.with_storage(|| {
-            first_positions(
-                ctx,
-                out.loops.iter().map(|lp| &lp.id),
-                "index Parasolid seam loops",
-            )
-        })?;
-        let coedges = scratch.with_storage(|| {
-            first_positions(
-                ctx,
-                out.coedges.iter().map(|coedge| &coedge.id),
-                "index Parasolid seam coedges",
-            )
-        })?;
-        let edges = scratch.with_storage(|| {
-            ctx.collect_hash_map(
-                out.edges.iter().map(|edge| (&edge.id, edge)),
-                "index Parasolid seam edges",
-            )
-        })?;
-        let curves = scratch.with_storage(|| {
-            ctx.collect_hash_map(
-                out.curves.iter().map(|curve| (&curve.id, curve)),
-                "index Parasolid seam curves",
-            )
-        })?;
-        let vertices = scratch.with_storage(|| {
-            first_positions(
-                ctx,
-                out.vertices.iter().map(|vertex| &vertex.id),
-                "index Parasolid seam vertices",
-            )
-        })?;
-        let points = scratch.with_storage(|| {
-            first_positions(
-                ctx,
-                out.points.iter().map(|point| &point.id),
-                "index Parasolid seam points",
-            )
-        })?;
-        let point_of = |vertex: &VertexId| -> Result<Option<usize>, cadmpeg_core::CodecError> {
-            let Some(&vertex) = ctx.get_hash_map(&vertices, vertex, LOOK_UP)? else {
-                return Ok(None);
-            };
-            Ok(ctx
-                .get_hash_map(&points, &out.vertices[vertex].point, LOOK_UP)?
-                .copied())
-        };
+        let mut topology = None;
         let mut candidates = Vec::new();
         for (face_index, face) in ctx
             .admit_iter(&out.faces, "select Parasolid cylinder seams")?
@@ -146,16 +115,70 @@ pub(super) fn synthesize_cylinder_seams(
             if face.loops.len() != 2 {
                 continue;
             }
+            let (loops, coedges, edges, curves, vertices, points) = match topology {
+                Some(ref indexes) => indexes,
+                None => topology.insert({
+                    let loops = selection.with_storage(|| {
+                        first_positions(
+                            ctx,
+                            out.loops.iter().map(|lp| &lp.id),
+                            "index Parasolid seam loops",
+                        )
+                    })?;
+                    let coedges = selection.with_storage(|| {
+                        first_positions(
+                            ctx,
+                            out.coedges.iter().map(|coedge| &coedge.id),
+                            "index Parasolid seam coedges",
+                        )
+                    })?;
+                    let edges = selection.with_storage(|| {
+                        ctx.collect_hash_map(
+                            out.edges.iter().map(|edge| (&edge.id, edge)),
+                            "index Parasolid seam edges",
+                        )
+                    })?;
+                    let curves = selection.with_storage(|| {
+                        ctx.collect_hash_map(
+                            out.curves.iter().map(|curve| (&curve.id, curve)),
+                            "index Parasolid seam curves",
+                        )
+                    })?;
+                    let vertices = selection.with_storage(|| {
+                        first_positions(
+                            ctx,
+                            out.vertices.iter().map(|vertex| &vertex.id),
+                            "index Parasolid seam vertices",
+                        )
+                    })?;
+                    let points = selection.with_storage(|| {
+                        first_positions(
+                            ctx,
+                            out.points.iter().map(|point| &point.id),
+                            "index Parasolid seam points",
+                        )
+                    })?;
+                    (loops, coedges, edges, curves, vertices, points)
+                }),
+            };
+            let point_of = |vertex: &VertexId| -> Result<Option<usize>, cadmpeg_core::CodecError> {
+                let Some(&vertex) = ctx.get_hash_map(vertices, vertex, LOOK_UP)? else {
+                    return Ok(None);
+                };
+                Ok(ctx
+                    .get_hash_map(points, &out.vertices[vertex].point, LOOK_UP)?
+                    .copied())
+            };
             let mut members = face.loops.iter();
             let (Some(&a_index), Some(&b_index)) = (
                 members
                     .next()
-                    .map(|id| ctx.get_hash_map(&loops, id, LOOK_UP))
+                    .map(|id| ctx.get_hash_map(loops, id, LOOK_UP))
                     .transpose()?
                     .flatten(),
                 members
                     .next()
-                    .map(|id| ctx.get_hash_map(&loops, id, LOOK_UP))
+                    .map(|id| ctx.get_hash_map(loops, id, LOOK_UP))
                     .transpose()?
                     .flatten(),
             ) else {
@@ -165,16 +188,16 @@ pub(super) fn synthesize_cylinder_seams(
             let ([a_coedge], [b_coedge]) = (a.coedges(), b.coedges()) else {
                 continue;
             };
-            let Some(&ca) = ctx.get_hash_map(&coedges, a_coedge, LOOK_UP)? else {
+            let Some(&ca) = ctx.get_hash_map(coedges, a_coedge, LOOK_UP)? else {
                 continue;
             };
-            let Some(&cb) = ctx.get_hash_map(&coedges, b_coedge, LOOK_UP)? else {
+            let Some(&cb) = ctx.get_hash_map(coedges, b_coedge, LOOK_UP)? else {
                 continue;
             };
-            let Some(ea) = ctx.get_hash_map(&edges, &out.coedges[ca].edge, LOOK_UP)? else {
+            let Some(ea) = ctx.get_hash_map(edges, &out.coedges[ca].edge, LOOK_UP)? else {
                 continue;
             };
-            let Some(eb) = ctx.get_hash_map(&edges, &out.coedges[cb].edge, LOOK_UP)? else {
+            let Some(eb) = ctx.get_hash_map(edges, &out.coedges[cb].edge, LOOK_UP)? else {
                 continue;
             };
             let seam_point = |edge: &Edge| -> Result<_, cadmpeg_core::CodecError> {
@@ -184,7 +207,7 @@ pub(super) fn synthesize_cylinder_seams(
                 let Some(curve) = edge.curve() else {
                     return Ok(None);
                 };
-                let Some(curve) = ctx.get_hash_map(&curves, curve, LOOK_UP)? else {
+                let Some(curve) = ctx.get_hash_map(curves, curve, LOOK_UP)? else {
                     return Ok(None);
                 };
                 let Some(SolvedCurveGeometry::Circle(circle_curve)) = curve.geometry.solved()
@@ -204,17 +227,30 @@ pub(super) fn synthesize_cylinder_seams(
             };
             // The replaced loop identity only steers the removal below; the
             // other identities move into the emitted seam.
-            let loop_b_id = scratch
+            let mut removal_storage =
+                ctx.reserve_scoped(0, "hold cylinder seam removal identity")?;
+            let loop_b_id = removal_storage
                 .with_storage(|| b.id.try_clone_for_decode(ctx, "SLDPRT seam loop identity"))?;
+            let mut identity_storage =
+                ctx.reserve_scoped(0, "hold cylinder seam candidate identities")?;
+            let (loop_a_id, vertex_a, vertex_b) = identity_storage.with_storage(|| {
+                Ok::<_, cadmpeg_core::CodecError>((
+                    a.id.try_clone_for_decode(ctx, COPY)?,
+                    ea.start.try_clone_for_decode(ctx, COPY)?,
+                    eb.start.try_clone_for_decode(ctx, COPY)?,
+                ))
+            })?;
             let candidate = CylinderSeam {
+                identity_storage,
+                removal_storage,
                 face: face_index,
                 loop_a: a_index,
-                loop_a_id: a.id.try_clone_for_decode(ctx, COPY)?,
+                loop_a_id,
                 loop_b_id,
                 circle_a: ca,
                 circle_b: cb,
-                vertex_a: ea.start.try_clone_for_decode(ctx, COPY)?,
-                vertex_b: eb.start.try_clone_for_decode(ctx, COPY)?,
+                vertex_a,
+                vertex_b,
                 point_a: point_of(&ea.start)?,
                 point_b: point_of(&eb.start)?,
                 seam_a,
@@ -231,9 +267,12 @@ pub(super) fn synthesize_cylinder_seams(
         candidates
     };
 
-    let mut removed = HashSet::new();
+    let mut removed_storage = ctx.reserve_scoped(0, "hold cylinder seam removal index")?;
+    let mut removed = HashMap::new();
     for candidate in ctx.admit_iter(candidates, "emit Parasolid cylinder seams")? {
         let CylinderSeam {
+            mut identity_storage,
+            removal_storage,
             face,
             loop_a,
             loop_a_id,
@@ -290,15 +329,17 @@ pub(super) fn synthesize_cylinder_seams(
         }
         admit_brep_entity(ctx)?;
         ctx.reserve_vec(&mut out.curves, 1, "collect Parasolid cylinder seam curves")?;
+        let id = identity_storage.with_storage(|| curve_id.try_clone_for_decode(ctx, COPY))?;
+        let line = match cadmpeg_ir::geometry::analytic::LineCurve::try_new(pa, direction) {
+            Ok(payload) => payload,
+            Err(_) => continue,
+        };
+        let (id, loop_a_id, vertex_a, vertex_b) =
+            identity_storage.commit_value((id, loop_a_id, vertex_a, vertex_b))?;
         out.curves.push(Curve {
-            id: curve_id.try_clone_for_decode(ctx, COPY)?,
+            id,
             source_object: None,
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                match cadmpeg_ir::geometry::analytic::LineCurve::try_new(pa, direction) {
-                    Ok(payload) => payload,
-                    Err(_) => continue,
-                },
-            )),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(line)),
         });
         admit_brep_entity(ctx)?;
         ctx.reserve_vec(&mut out.edges, 1, "collect Parasolid cylinder seam edges")?;
@@ -361,17 +402,22 @@ pub(super) fn synthesize_cylinder_seams(
         out.faces[face].loops = cadmpeg_ir::topology::FaceLoops::unspecified(
             ctx.collect_retained_vec([loop_a_id], "bind Parasolid cylinder seam loop")?,
         );
-        scratch.with_storage(|| {
-            ctx.insert_hash_set(
-                &mut removed,
-                loop_b_id,
-                "track replaced Parasolid seam loops",
-            )
-        })?;
+        if let std::collections::hash_map::Entry::Vacant(entry) =
+            removed_storage.with_storage(|| {
+                ctx.entry_hash_map(
+                    &mut removed,
+                    loop_b_id,
+                    "track replaced Parasolid seam loops",
+                )
+            })?
+        {
+            entry.insert(removal_storage);
+        }
     }
+    drop(scratch);
     ctx.retain_vec(
         &mut out.loops,
-        |lp| Ok(!ctx.contains_hash_set(&removed, &lp.id, "test SLDPRT hashed identity")?),
+        |lp| Ok(!ctx.contains_key_hash_map(&removed, &lp.id, "test SLDPRT hashed identity")?),
         "remove replaced Parasolid seam loops",
     )?;
     Ok(())
@@ -388,13 +434,14 @@ struct SphereSeamRepair {
 
 /// A sphere face bounded by three circles, whose loop gains a generated pole
 /// seam.
-struct SphereSeam {
+struct SphereSeam<'ctx> {
     face: usize,
     loop_index: usize,
     loop_id: LoopId,
     ring: Vec<CoedgeId>,
     pole: cadmpeg_ir::math::Point3,
     pole_vertex: Option<VertexId>,
+    identity_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
 pub(super) fn synthesize_sphere_seams(
@@ -405,9 +452,25 @@ pub(super) fn synthesize_sphere_seams(
 ) -> Result<(), cadmpeg_core::CodecError> {
     const COPY: &str = "SLDPRT decoded identity copy";
     const LOOK_UP: &str = "look up Parasolid sphere seam topology";
-    let mut scratch = ctx.reserve_scoped(0, "select Parasolid sphere seams")?;
+    let mut repair_storage = ctx.reserve_scoped(0, "hold sphere seam repair candidates")?;
+    let mut seam_storage = ctx.reserve_scoped(0, "hold sphere seam candidates")?;
     let (repairs, seams) = {
-        let surfaces = scratch.with_storage(|| {
+        let mut selection = ctx.reserve_scoped(0, "hold sphere seam selection indexes")?;
+        if out.faces.is_empty()
+            || !ctx.any_by(
+                &out.surfaces,
+                |surface| {
+                    Ok(matches!(
+                        surface.geometry.solved(),
+                        Some(SolvedSurfaceGeometry::Sphere(_))
+                    ))
+                },
+                "find sphere seam surfaces",
+            )?
+        {
+            return Ok(());
+        }
+        let surfaces = selection.with_storage(|| {
             ctx.collect_hash_map(
                 out.surfaces
                     .iter()
@@ -415,89 +478,7 @@ pub(super) fn synthesize_sphere_seams(
                 "index Parasolid sphere geometry",
             )
         })?;
-        let loops = scratch.with_storage(|| {
-            first_positions(
-                ctx,
-                out.loops.iter().map(|lp| &lp.id),
-                "index Parasolid sphere loops",
-            )
-        })?;
-        let coedge_edges = scratch.with_storage(|| {
-            ctx.collect_hash_map(
-                out.coedges.iter().map(|coedge| (&coedge.id, &coedge.edge)),
-                "index Parasolid sphere coedge edges",
-            )
-        })?;
-        let edge_indices = scratch.with_storage(|| {
-            ctx.collect_hash_map(
-                out.edges
-                    .iter()
-                    .enumerate()
-                    .map(|(index, edge)| (&edge.id, index)),
-                "index Parasolid sphere edges",
-            )
-        })?;
-        let curve_geometry = scratch.with_storage(|| {
-            ctx.collect_hash_map(
-                out.curves.iter().map(|curve| (&curve.id, &curve.geometry)),
-                "index Parasolid sphere curves",
-            )
-        })?;
-        let vertices = scratch.with_storage(|| {
-            first_positions(
-                ctx,
-                out.vertices.iter().map(|vertex| &vertex.id),
-                "index Parasolid sphere vertices",
-            )
-        })?;
-        let points = scratch.with_storage(|| {
-            first_positions(
-                ctx,
-                out.points.iter().map(|point| &point.id),
-                "index Parasolid sphere points",
-            )
-        })?;
-        let vertex_points = scratch.with_storage(|| {
-            let mut vertex_points = HashMap::new();
-            for vertex in ctx.admit_iter(&out.vertices, "index Parasolid sphere vertex points")? {
-                if let Some(&point) = ctx.get_hash_map(&points, &vertex.point, LOOK_UP)? {
-                    ctx.insert_hash_map(
-                        &mut vertex_points,
-                        &vertex.id,
-                        out.points[point].position().get(),
-                        "index Parasolid sphere vertex points",
-                    )?;
-                }
-            }
-            Ok::<_, cadmpeg_core::CodecError>(vertex_points)
-        })?;
-        let point_of = |vertex: &VertexId| -> Result<Option<usize>, cadmpeg_core::CodecError> {
-            let Some(&vertex) = ctx.get_hash_map(&vertices, vertex, LOOK_UP)? else {
-                return Ok(None);
-            };
-            Ok(ctx
-                .get_hash_map(&points, &out.vertices[vertex].point, LOOK_UP)?
-                .copied())
-        };
-        let edge_of = |coedge: &CoedgeId| -> Result<Option<usize>, cadmpeg_core::CodecError> {
-            let Some(edge) = ctx.get_hash_map(&coedge_edges, coedge, LOOK_UP)? else {
-                return Ok(None);
-            };
-            Ok(ctx.get_hash_map(&edge_indices, *edge, LOOK_UP)?.copied())
-        };
-        let is_circle = |edge: usize| -> Result<bool, cadmpeg_core::CodecError> {
-            let Some(curve) = out.edges[edge].curve() else {
-                return Ok(false);
-            };
-            Ok(ctx
-                .get_hash_map(&curve_geometry, curve, LOOK_UP)?
-                .is_some_and(|geometry| {
-                    matches!(
-                        geometry,
-                        CurveGeometry::Solved(SolvedCurveGeometry::Circle(_))
-                    )
-                }))
-        };
+        let mut topology = None;
         let mut repairs = Vec::new();
         let mut seams = Vec::new();
         for (face_index, face) in ctx
@@ -523,7 +504,116 @@ pub(super) fn synthesize_sphere_seams(
             let (Some(loop_id), None) = (face_loops.next(), face_loops.next()) else {
                 continue;
             };
-            let Some(&loop_index) = ctx.get_hash_map(&loops, loop_id, LOOK_UP)? else {
+            let (
+                loops,
+                coedge_edges,
+                edge_indices,
+                curve_geometry,
+                vertices,
+                points,
+                vertex_points,
+            ) = match topology {
+                Some(ref indexes) => indexes,
+                None => topology.insert({
+                    let loops = selection.with_storage(|| {
+                        first_positions(
+                            ctx,
+                            out.loops.iter().map(|lp| &lp.id),
+                            "index Parasolid sphere loops",
+                        )
+                    })?;
+                    let coedge_edges = selection.with_storage(|| {
+                        ctx.collect_hash_map(
+                            out.coedges.iter().map(|coedge| (&coedge.id, &coedge.edge)),
+                            "index Parasolid sphere coedge edges",
+                        )
+                    })?;
+                    let edge_indices = selection.with_storage(|| {
+                        ctx.collect_hash_map(
+                            out.edges
+                                .iter()
+                                .enumerate()
+                                .map(|(index, edge)| (&edge.id, index)),
+                            "index Parasolid sphere edges",
+                        )
+                    })?;
+                    let curve_geometry = selection.with_storage(|| {
+                        ctx.collect_hash_map(
+                            out.curves.iter().map(|curve| (&curve.id, &curve.geometry)),
+                            "index Parasolid sphere curves",
+                        )
+                    })?;
+                    let vertices = selection.with_storage(|| {
+                        first_positions(
+                            ctx,
+                            out.vertices.iter().map(|vertex| &vertex.id),
+                            "index Parasolid sphere vertices",
+                        )
+                    })?;
+                    let points = selection.with_storage(|| {
+                        first_positions(
+                            ctx,
+                            out.points.iter().map(|point| &point.id),
+                            "index Parasolid sphere points",
+                        )
+                    })?;
+                    let vertex_points = selection.with_storage(|| {
+                        let mut vertex_points = HashMap::new();
+                        for vertex in
+                            ctx.admit_iter(&out.vertices, "index Parasolid sphere vertex points")?
+                        {
+                            if let Some(&point) =
+                                ctx.get_hash_map(&points, &vertex.point, LOOK_UP)?
+                            {
+                                ctx.insert_hash_map(
+                                    &mut vertex_points,
+                                    &vertex.id,
+                                    out.points[point].position().get(),
+                                    "index Parasolid sphere vertex points",
+                                )?;
+                            }
+                        }
+                        Ok::<_, cadmpeg_core::CodecError>(vertex_points)
+                    })?;
+                    (
+                        loops,
+                        coedge_edges,
+                        edge_indices,
+                        curve_geometry,
+                        vertices,
+                        points,
+                        vertex_points,
+                    )
+                }),
+            };
+            let point_of = |vertex: &VertexId| -> Result<Option<usize>, cadmpeg_core::CodecError> {
+                let Some(&vertex) = ctx.get_hash_map(vertices, vertex, LOOK_UP)? else {
+                    return Ok(None);
+                };
+                Ok(ctx
+                    .get_hash_map(points, &out.vertices[vertex].point, LOOK_UP)?
+                    .copied())
+            };
+            let edge_of = |coedge: &CoedgeId| -> Result<Option<usize>, cadmpeg_core::CodecError> {
+                let Some(edge) = ctx.get_hash_map(coedge_edges, coedge, LOOK_UP)? else {
+                    return Ok(None);
+                };
+                Ok(ctx.get_hash_map(edge_indices, *edge, LOOK_UP)?.copied())
+            };
+            let is_circle = |edge: usize| -> Result<bool, cadmpeg_core::CodecError> {
+                let Some(curve) = out.edges[edge].curve() else {
+                    return Ok(false);
+                };
+                Ok(ctx
+                    .get_hash_map(curve_geometry, curve, LOOK_UP)?
+                    .is_some_and(|geometry| {
+                        matches!(
+                            geometry,
+                            CurveGeometry::Solved(SolvedCurveGeometry::Circle(_))
+                        )
+                    }))
+            };
+            let Some(&loop_index) = ctx.get_hash_map(loops, loop_id, LOOK_UP)? else {
                 continue;
             };
             let lp = &out.loops[loop_index];
@@ -555,7 +645,7 @@ pub(super) fn synthesize_sphere_seams(
                         point_of(&out.edges[edge].start)?,
                         point_of(&out.edges[edge].end)?,
                     ];
-                    scratch.with_storage(|| {
+                    repair_storage.with_storage(|| {
                         ctx.push_vec(
                             &mut repairs,
                             SphereSeamRepair { edge, pole, points },
@@ -586,7 +676,7 @@ pub(super) fn synthesize_sphere_seams(
                         };
                         let edge = &out.edges[edge];
                         for vertex in [&edge.start, &edge.end] {
-                            let Some(point) = ctx.get_hash_map(&vertex_points, vertex, LOOK_UP)?
+                            let Some(point) = ctx.get_hash_map(vertex_points, vertex, LOOK_UP)?
                             else {
                                 continue;
                             };
@@ -611,24 +701,34 @@ pub(super) fn synthesize_sphere_seams(
                             };
                         }
                     }
+                    let mut identity_storage =
+                        ctx.reserve_scoped(0, "hold sphere seam candidate identities")?;
+                    let (loop_id, ring, pole_vertex) = identity_storage.with_storage(|| {
+                        Ok::<_, cadmpeg_core::CodecError>((
+                            lp.id.try_clone_for_decode(ctx, COPY)?,
+                            ctx.try_collect_vec(
+                                lp.coedges().iter().map(|id| {
+                                    id.try_clone_for_decode(ctx, "SLDPRT sphere ring identity")
+                                }),
+                                "copy Parasolid sphere seam ring",
+                            )?,
+                            pole_vertex
+                                .map(|vertex| {
+                                    vertex.try_clone_for_decode(ctx, "SLDPRT sphere pole identity")
+                                })
+                                .transpose()?,
+                        ))
+                    })?;
                     let seam = SphereSeam {
                         face: face_index,
                         loop_index,
-                        loop_id: lp.id.try_clone_for_decode(ctx, COPY)?,
-                        ring: ctx.try_collect_vec(
-                            lp.coedges().iter().map(|id| {
-                                id.try_clone_for_decode(ctx, "SLDPRT sphere ring identity")
-                            }),
-                            "copy Parasolid sphere seam ring",
-                        )?,
+                        loop_id,
+                        ring,
                         pole,
-                        pole_vertex: pole_vertex
-                            .map(|vertex| {
-                                vertex.try_clone_for_decode(ctx, "SLDPRT sphere pole identity")
-                            })
-                            .transpose()?,
+                        pole_vertex,
+                        identity_storage,
                     };
-                    scratch.with_storage(|| {
+                    seam_storage.with_storage(|| {
                         ctx.push_vec(&mut seams, seam, "collect Parasolid sphere seam candidates")
                     })?;
                 }
@@ -677,14 +777,16 @@ pub(super) fn synthesize_sphere_seams(
             .map_err(cadmpeg_core::CodecError::malformed)?;
     }
 
+    drop(repair_storage);
     for seam in ctx.admit_iter(seams, "emit Parasolid sphere seams")? {
         let SphereSeam {
             face: face_index,
             loop_index,
             loop_id,
-            mut ring,
+            ring,
             pole,
             pole_vertex,
+            identity_storage,
         } = seam;
         let Ok(degenerate) = cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(pole) else {
             continue;
@@ -696,6 +798,8 @@ pub(super) fn synthesize_sphere_seams(
             continue;
         };
 
+        let (loop_id, mut ring, pole_vertex) =
+            identity_storage.commit_value((loop_id, ring, pole_vertex))?;
         // Seam identities name the face by its position, one usize.
         let seam_face_key = cadmpeg_ir::identity_key!("sphere-seam-face:").then(face_index);
         let curve_id = CurveId::compose(
@@ -827,3 +931,6 @@ pub(super) fn synthesize_sphere_seams(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

@@ -271,3 +271,95 @@ fn cache_conversion_retains_only_knots_and_finite_poles() {
     assert_eq!((limit.used, limit.additional), (output, 1));
     assert_eq!(ctx.resource_refusal(), Some(limit));
 }
+
+#[test]
+fn strict_isocurve_first_knot_mismatch_needs_no_tail_work() {
+    use crate::brep::graph::inverse::InverseResolution;
+    use crate::brep::graph::nurbs_pcurves::nurbs_strict_isocurve_pcurve;
+    use cadmpeg_ir::math::Point3;
+    let (surface, _) = projection_source();
+    let curve = crate::brep::graph::test_support::test_nurbs_curve(
+        1,
+        vec![-1.0, -1.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+        None,
+    );
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 1;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        nurbs_strict_isocurve_pcurve(&ctx, &surface, &curve).unwrap(),
+        InverseResolution::NoMatch
+    ));
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn boundary_isocurve_knot_comparison_refuses_one_visited_pair() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis;
+    let (surface, curve) = projection_source();
+    let error =
+        crate::test_support::work_refusal_at("compare Parasolid boundary curve knots", |ctx| {
+            super::super::nurbs_boundary_pcurve(ctx, &surface, &curve, SurfaceParameterAxis::U)
+        });
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("knot comparison refusal");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(limit.additional, 1);
+}
+
+#[test]
+fn extended_isocurve_comparison_releases_every_clamped_curve() {
+    use cadmpeg_ir::math::Point3;
+    let surface = crate::brep::graph::test_support::test_nurbs_surface(
+        1,
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![0.0, 0.0, 1.0, 1.0],
+        2,
+        2,
+        &[
+            Point3::new(0., 0., 0.),
+            Point3::new(0., 1., 0.),
+            Point3::new(1., 0., 0.),
+            Point3::new(1., 1., 0.),
+        ],
+        None,
+    );
+    let curve = crate::brep::graph::test_support::test_nurbs_curve(
+        1,
+        vec![-1.0, -1.0, 2.0, 2.0],
+        vec![Point3::new(0.5, -1., 0.), Point3::new(0.5, 2., 0.)],
+        None,
+    );
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = SCRATCH_BYTES;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    for _ in 0..4 {
+        let result = super::super::extended_nurbs_isocurve_pcurve(&ctx, &surface, &curve).unwrap();
+        let super::super::InverseResolution::Unique(
+            cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line),
+        ) = result
+        else {
+            panic!("exact clamped isocurve line");
+        };
+        assert_eq!(
+            line.origin().as_raw(),
+            &cadmpeg_ir::math::Point2::new(0.5, 0.0)
+        );
+        assert_eq!(
+            line.direction().as_raw(),
+            &cadmpeg_ir::math::Point2::new(0.0, 1.0)
+        );
+        drop(
+            ctx.reserve_scoped(SCRATCH_BYTES, "test released extended clamp")
+                .unwrap(),
+        );
+    }
+    ctx.finish_session().unwrap();
+}

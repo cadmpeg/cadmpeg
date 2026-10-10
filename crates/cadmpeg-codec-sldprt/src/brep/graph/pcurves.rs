@@ -59,8 +59,7 @@ struct PcurveSupports<'a, 'ctx> {
     /// The support of each coedge, in coedge order; `None` when its loop,
     /// face, surface, edge or curve does not resolve.
     coedges: Vec<Option<CoedgeSupport<'a>>>,
-    /// The position of each vertex whose point resolves.
-    vertex_positions: HashMap<&'a VertexId, cadmpeg_ir::math::Point3>,
+    vertex_positions: PcurveVertexPositions<'a, 'ctx>,
     _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
@@ -155,42 +154,74 @@ impl<'a, 'ctx> PcurveSupports<'a, 'ctx> {
                             "resolve Parasolid pcurve supports",
                         )
                     })?;
-                let mut supports = Self {
+                let supports = Self {
                     coedges: coedge_supports,
-                    vertex_positions: HashMap::new(),
+                    vertex_positions: PcurveVertexPositions {
+                        vertices,
+                        points,
+                        values: None,
+                        storage: ctx.reserve_scoped(0, "hold Parasolid pcurve vertex positions")?,
+                    },
                     _storage: storage,
                 };
-                let points = ctx.collect_hash_map(
-                    points
-                        .iter()
-                        .map(|point| (&point.id, point.position().get())),
-                    "index Parasolid pcurve points",
-                )?;
-                for vertex in ctx.admit_iter(vertices, "index Parasolid pcurve vertex points")? {
-                    if let Some(&position) = ctx.get_hash_map(&points, &vertex.point, LOOK_UP)? {
-                        supports._storage.with_storage(|| {
-                            ctx.insert_hash_map(
-                                &mut supports.vertex_positions,
-                                &vertex.id,
-                                position,
-                                "index Parasolid pcurve vertex points",
-                            )
-                        })?;
-                    }
-                }
                 Ok::<_, cadmpeg_core::CodecError>(supports)
             })?;
         drop(workspace);
         Ok(supports)
     }
+}
 
+/// Build resolved vertex positions at the first geometry pass that reads them.
+struct PcurveVertexPositions<'a, 'ctx> {
+    vertices: &'a [cadmpeg_ir::topology::Vertex],
+    points: &'a [cadmpeg_ir::topology::Point],
+    values: Option<HashMap<&'a VertexId, cadmpeg_ir::math::Point3>>,
+    storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+impl PcurveVertexPositions<'_, '_> {
     fn position(
-        &self,
+        &mut self,
         ctx: &DecodeContext<'_>,
         vertex: &VertexId,
     ) -> Result<Option<cadmpeg_ir::math::Point3>, cadmpeg_core::CodecError> {
+        const LOOK_UP: &str = "look up Parasolid pcurve supports";
+        let values = match self.values {
+            Some(ref values) => values,
+            None => {
+                let (positions, workspace) =
+                    ctx.with_scoped_storage("index Parasolid pcurve points", || {
+                        let points = ctx.collect_hash_map(
+                            self.points
+                                .iter()
+                                .map(|point| (&point.id, point.position().get())),
+                            "index Parasolid pcurve points",
+                        )?;
+                        self.storage.with_storage(|| {
+                            let mut positions = HashMap::new();
+                            for vertex in ctx
+                                .admit_iter(self.vertices, "index Parasolid pcurve vertex points")?
+                            {
+                                if let Some(&position) =
+                                    ctx.get_hash_map(&points, &vertex.point, LOOK_UP)?
+                                {
+                                    ctx.insert_hash_map(
+                                        &mut positions,
+                                        &vertex.id,
+                                        position,
+                                        "index Parasolid pcurve vertex points",
+                                    )?;
+                                }
+                            }
+                            Ok::<_, cadmpeg_core::CodecError>(positions)
+                        })
+                    })?;
+                drop(workspace);
+                self.values.insert(positions)
+            }
+        };
         Ok(ctx
-            .get_hash_map(&self.vertex_positions, vertex, "look up SLDPRT hash key")?
+            .get_hash_map(values, vertex, "look up SLDPRT hash key")?
             .copied())
     }
 }
@@ -270,7 +301,7 @@ pub(super) fn derive_pcurves(
         &**vertices,
         &**points,
     );
-    let supports = PcurveSupports::new(
+    let mut supports = PcurveSupports::new(
         ctx,
         PcurveArenas {
             loops,
@@ -290,10 +321,10 @@ pub(super) fn derive_pcurves(
         stats,
     };
     derive_planar_pcurves(ctx, &supports, &mut sink, annotations, source_stream)?;
-    derive_cylindrical_pcurves(ctx, &supports, &mut sink, annotations, source_stream)?;
+    derive_cylindrical_pcurves(ctx, &mut supports, &mut sink, annotations, source_stream)?;
     derive_revolved_circle_pcurves(ctx, &supports, &mut sink, annotations, source_stream)?;
     derive_spherical_pcurves(ctx, &supports, &mut sink, annotations, source_stream)?;
-    derive_nurbs_isoparametric_pcurves(ctx, &supports, &mut sink, annotations, source_stream)
+    derive_nurbs_isoparametric_pcurves(ctx, &mut supports, &mut sink, annotations, source_stream)
 }
 
 fn derive_planar_pcurves(
@@ -303,6 +334,7 @@ fn derive_planar_pcurves(
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let mut staging = ctx.reserve_scoped(0, "hold derived Parasolid pcurve staging")?;
     let mut derived = Vec::new();
     for (index, (coedge, support)) in ctx
         .admit_iter(&*sink.coedges, "derive Parasolid planar pcurves")?
@@ -446,11 +478,13 @@ fn derive_planar_pcurves(
             geometry,
             metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
         };
-        ctx.push_vec(
-            &mut derived,
-            (index, id, pcurve),
-            "collect derived Parasolid pcurves",
-        )?;
+        staging.with_storage(|| {
+            ctx.push_vec(
+                &mut derived,
+                (index, id, pcurve),
+                "collect derived Parasolid pcurves",
+            )
+        })?;
     }
     for (index, id, pcurve) in ctx.admit_iter(derived, "bind derived Parasolid pcurves")? {
         annotations.note(
@@ -470,13 +504,15 @@ fn derive_planar_pcurves(
 
 fn derive_cylindrical_pcurves(
     ctx: &DecodeContext<'_>,
-    supports: &PcurveSupports<'_, '_>,
+    supports: &mut PcurveSupports<'_, '_>,
     sink: &mut PcurveSink<'_>,
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let mut refusal_staging = ctx.reserve_scoped(0, "hold cylindrical pcurve refusal staging")?;
     let mut refusals = Vec::new();
-    let position = |vertex_id: &VertexId| supports.position(ctx, vertex_id);
+    let mut position = |vertex_id: &VertexId| supports.vertex_positions.position(ctx, vertex_id);
+    let mut staging = ctx.reserve_scoped(0, "hold derived Parasolid pcurve staging")?;
     let mut derived = Vec::new();
     for (index, (coedge, support)) in ctx
         .admit_iter(&*sink.coedges, "derive Parasolid cylindrical pcurves")?
@@ -653,6 +689,12 @@ fn derive_cylindrical_pcurves(
                 )
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
+                if nurbs.pole_count() < 3
+                    || nurbs.pole_count().is_multiple_of(2)
+                    || nurbs.knots().len() != nurbs.pole_count() + 3
+                {
+                    continue;
+                }
                 let project = |point: cadmpeg_ir::math::Point3| {
                     let relative = [point.x - origin.x, point.y - origin.y, point.z - origin.z];
                     cadmpeg_ir::math::Point2::new(dot(relative, *u_reference), dot(relative, cross))
@@ -698,7 +740,9 @@ fn derive_cylindrical_pcurves(
                 )? {
                     Ok(polar) => polar,
                     Err(note) => {
-                        ctx.push_vec(&mut refusals, note, "collect cylindrical pcurve losses")?;
+                        refusal_staging.with_storage(|| {
+                            ctx.push_vec(&mut refusals, note, "collect cylindrical pcurve losses")
+                        })?;
                         continue;
                     }
                 };
@@ -724,11 +768,13 @@ fn derive_cylindrical_pcurves(
                 None,
             ),
         };
-        ctx.push_vec(
-            &mut derived,
-            (index, id, pcurve),
-            "collect derived Parasolid pcurves",
-        )?;
+        staging.with_storage(|| {
+            ctx.push_vec(
+                &mut derived,
+                (index, id, pcurve),
+                "collect derived Parasolid pcurves",
+            )
+        })?;
     }
     for (index, id, pcurve) in ctx.admit_iter(derived, "bind derived Parasolid pcurves")? {
         annotations.note(
@@ -765,7 +811,10 @@ pub(super) fn quadratic_nurbs_has_constant_radius(
     let mut runs = 0usize;
     let mut previous = 0.0;
     let mut count = 0usize;
-    for knot in ctx.admit_iter(knots, "scan Parasolid constant radius knot runs")? {
+    let mut knots = knots.iter();
+    while let Some(knot) =
+        ctx.next_charged(&mut knots, "scan Parasolid constant radius knot runs")?
+    {
         if !knot.is_finite() {
             return Ok(false);
         }
@@ -792,12 +841,9 @@ pub(super) fn quadratic_nurbs_has_constant_radius(
     let choose_4 = [1.0, 4.0, 6.0, 4.0, 1.0];
     let tolerance = EPS_RADIUS_ABSOLUTE.max(radius * radius * EPS_RADIUS_RELATIVE);
     // Each quadratic segment checks a constant number of coefficients.
-    for start in ctx
-        .admit_iter(
-            0..radial_control_points.len() - 1,
-            "check Parasolid constant radius segments",
-        )?
-        .step_by(2)
+    let mut starts = (0..radial_control_points.len() - 1).step_by(2);
+    while let Some(start) =
+        ctx.next_charged(&mut starts, "check Parasolid constant radius segments")?
     {
         let homogeneous = [0, 1, 2].map(|offset| {
             let weight = weight(start + offset);
@@ -862,6 +908,7 @@ fn derive_revolved_circle_pcurves(
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let dot = |a: [f64; 3], b: cadmpeg_ir::math::Vector3| a[0] * b.x + a[1] * b.y + a[2] * b.z;
+    let mut staging = ctx.reserve_scoped(0, "hold derived Parasolid pcurve staging")?;
     let mut derived = Vec::new();
     for (index, (coedge, support)) in ctx
         .admit_iter(&*sink.coedges, "derive Parasolid revolved circle pcurves")?
@@ -977,11 +1024,13 @@ fn derive_revolved_circle_pcurves(
             geometry,
             metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
         };
-        ctx.push_vec(
-            &mut derived,
-            (index, id, pcurve),
-            "collect derived Parasolid pcurves",
-        )?;
+        staging.with_storage(|| {
+            ctx.push_vec(
+                &mut derived,
+                (index, id, pcurve),
+                "collect derived Parasolid pcurves",
+            )
+        })?;
     }
     for (index, id, pcurve) in ctx.admit_iter(derived, "bind derived Parasolid pcurves")? {
         annotations.note(
@@ -1032,6 +1081,7 @@ fn derive_spherical_pcurves(
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let mut staging = ctx.reserve_scoped(0, "hold derived Parasolid pcurve staging")?;
     let mut derived = Vec::new();
     for (index, (coedge, support)) in ctx
         .admit_iter(&*sink.coedges, "derive Parasolid spherical pcurves")?
@@ -1166,11 +1216,13 @@ fn derive_spherical_pcurves(
             geometry,
             metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
         };
-        ctx.push_vec(
-            &mut derived,
-            (index, id, pcurve),
-            "collect derived Parasolid pcurves",
-        )?;
+        staging.with_storage(|| {
+            ctx.push_vec(
+                &mut derived,
+                (index, id, pcurve),
+                "collect derived Parasolid pcurves",
+            )
+        })?;
     }
     for (index, id, pcurve) in ctx.admit_iter(derived, "bind derived Parasolid pcurves")? {
         annotations.note(
@@ -1190,12 +1242,13 @@ fn derive_spherical_pcurves(
 
 fn derive_nurbs_isoparametric_pcurves(
     ctx: &DecodeContext<'_>,
-    supports: &PcurveSupports<'_, '_>,
+    supports: &mut PcurveSupports<'_, '_>,
     sink: &mut PcurveSink<'_>,
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut lane_refusals = crate::lane_refusal::scoped::ScopedLaneRefusals::new(ctx)?;
+    let mut staging = ctx.reserve_scoped(0, "hold derived Parasolid pcurve staging")?;
     let mut derived = Vec::new();
     for (index, (coedge, support)) in ctx
         .admit_iter(&*sink.coedges, "derive Parasolid NURBS pcurves")?
@@ -1219,8 +1272,8 @@ fn derive_nurbs_isoparametric_pcurves(
         };
         let curve = &curve.geometry;
         let endpoints = match (
-            supports.position(ctx, &edge.start)?,
-            supports.position(ctx, &edge.end)?,
+            supports.vertex_positions.position(ctx, &edge.start)?,
+            supports.vertex_positions.position(ctx, &edge.end)?,
         ) {
             (Some(start), Some(end)) => Some([start, end]),
             _ => None,
@@ -1327,11 +1380,13 @@ fn derive_nurbs_isoparametric_pcurves(
                 fit_tolerance,
             ),
         };
-        ctx.push_vec(
-            &mut derived,
-            (index, id, pcurve, cache),
-            "collect derived Parasolid pcurves",
-        )?;
+        staging.with_storage(|| {
+            ctx.push_vec(
+                &mut derived,
+                (index, id, pcurve, cache),
+                "collect derived Parasolid pcurves",
+            )
+        })?;
     }
     // The sink is drained before the `?` below: an error on that route must
     // not drop a refusal the walk above already pushed.
@@ -1503,7 +1558,8 @@ pub(super) fn intersection_support_pcurve<'ctx>(
                     control_storage.with_storage(|| ctx.reserve_capacity(
                         &mut control_points, chart_points.len(), "solve intersection support UV controls",
                     ))?;
-                    for point in ctx.admit_iter(chart_points, "scan SLDPRT chart_points values")? {
+                    let mut points = chart_points.iter();
+                    while let Some(point) = ctx.next_charged(&mut points, "scan SLDPRT chart_points values")? {
                         let parameters = match nurbs_surface_parameter_within_tolerance(
                             ctx,
                             surface,
@@ -1525,7 +1581,8 @@ pub(super) fn intersection_support_pcurve<'ctx>(
                     control_storage.with_storage(|| ctx.reserve_capacity(
                         &mut control_points, chart_points.len(), "project intersection analytic controls",
                     ))?;
-                    for point in ctx.admit_iter(chart_points, "scan SLDPRT chart_points values")? {
+                    let mut points = chart_points.iter();
+                    while let Some(point) = ctx.next_charged(&mut points, "scan SLDPRT chart_points values")? {
                         let parameters = some_or_none!(analytic_surface_parameters(surface, point.get()));
                         control_storage.with_storage(|| ctx.push_vec(
                             &mut control_points, cadmpeg_ir::math::Point2::from(parameters), "project intersection analytic controls",
@@ -1644,7 +1701,8 @@ pub(super) fn intersection_support_pcurve<'ctx>(
         let mut mapped_points_storage = ctx.reserve_scoped(0, "SLDPRT temporary vector storage")?;
         let mut mapped_points = Vec::new();
         mapped_points_storage.with_storage(|| ctx.reserve_capacity(&mut mapped_points, control_points.len(), "map intersection support controls"))?;
-        for parameters in ctx.admit_iter(&control_points, "scan SLDPRT intersection_support_pcurve values")? {
+        let mut parameters = control_points.iter();
+        while let Some(parameters) = ctx.next_charged(&mut parameters, "scan SLDPRT intersection_support_pcurve values")? {
             let Some(point) = crate::brep::evaluation::surface_point(ctx, surface, parameters.u, parameters.v)? else { return Ok(None); };
             let point = point.get();
             mapped_points_storage.with_storage(|| ctx.push_vec(&mut (mapped_points), point, "map intersection support controls"))?;
@@ -1668,11 +1726,10 @@ pub(super) fn intersection_support_pcurve<'ctx>(
         )? {
             return Ok(None);
         }
-        for ((parameters, chord), endpoint_errors) in ctx.admit_iter(&control_points, "scan Parasolid intersection parameter segments")?
-            .windows(const { crate::nonzero(2) })
+        let mut segments = control_points.windows(2)
             .zip(chart_points.windows(2))
-            .zip(control_errors.windows(2))
-        {
+            .zip(control_errors.windows(2));
+        while let Some(((parameters, chord), endpoint_errors)) = ctx.next_charged(&mut segments, "scan Parasolid intersection parameter segments")? {
             let exceeds = match surface {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) => {
                     let error = nurbs_surface_parameter_segment_chord_bound(

@@ -204,3 +204,50 @@ fn ambiguous_cylindrical_endpoint_withholds_the_derived_pcurve() {
     assert!(brep.pcurves.is_empty());
     assert_eq!(brep.stats.ambiguous_pcurve_parameters, 1);
 }
+
+#[test]
+fn constant_radius_knot_rejection_does_not_charge_the_tail() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_ir::math::Point2;
+    let radius = cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap();
+    let controls = vec![Point2::new(0.0, 0.0); 101];
+    // The second distinct interior value rejects the preceding single knot.
+    let mut knots = vec![0.0, 0.0, 0.0, 1.0, 2.0];
+    knots.resize(104, 3.0);
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 5;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(
+        !crate::brep::graph::pcurves::quadratic_nurbs_has_constant_radius(
+            &ctx, &controls, None, &knots, radius,
+        )
+        .unwrap()
+    );
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn constant_radius_segment_rejection_charges_only_the_first_start() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_ir::math::Point2;
+    let radius = cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap();
+    let controls = vec![Point2::new(0.0, 0.0); 101];
+    let mut knots = vec![0.0; 3];
+    for value in 1..50 {
+        knots.extend([f64::from(value); 2]);
+    }
+    knots.extend([50.0; 3]);
+    let mut policy = DecodePolicy::service();
+    // One visit per knot, one terminal request, and one failed segment.
+    policy.limits.max_work_units = u64::try_from(knots.len() + 2).unwrap();
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(
+        !crate::brep::graph::pcurves::quadratic_nurbs_has_constant_radius(
+            &ctx, &controls, None, &knots, radius,
+        )
+        .unwrap()
+    );
+    ctx.finish_session().unwrap();
+}

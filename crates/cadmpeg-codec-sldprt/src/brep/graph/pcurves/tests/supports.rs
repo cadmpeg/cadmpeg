@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::super::{CoedgeSupport, PcurveArenas, PcurveSupports};
+use super::super::{CoedgeSupport, PcurveArenas, PcurveSupports, PcurveVertexPositions};
 use crate::brep::graph::Brep;
 use cadmpeg_core::decode::refusal_probe::RefusalProbe;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -138,13 +138,16 @@ fn pcurve_supports_keep_only_the_output_vector_and_vertex_map_live() {
     let out = support_fixture();
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &support_policy()).unwrap();
-    let supports = PcurveSupports::new(&ctx, arenas(&out), &out.coedges).unwrap();
+    let mut supports = PcurveSupports::new(&ctx, arenas(&out), &out.coedges).unwrap();
     let support = supports.coedges[0].as_ref().unwrap();
     assert!(std::ptr::eq(support.surface, &out.surfaces[0]));
     assert!(std::ptr::eq(support.edge, &out.edges[0]));
     assert!(std::ptr::eq(support.curve, &out.curves[0]));
     assert_eq!(
-        supports.position(&ctx, &out.vertices[0].id).unwrap(),
+        supports
+            .vertex_positions
+            .position(&ctx, &out.vertices[0].id)
+            .unwrap(),
         Some(Point3::new(2., 0., 0.))
     );
     drop(
@@ -218,28 +221,44 @@ fn pcurve_support_build_refuses_before_its_first_allocation() {
 #[test]
 fn pcurve_vertex_support_refuses_at_the_source_derived_peak() {
     let out = support_fixture();
-    let arena = DecodeArena::new();
-    let mut policy = support_policy();
-    policy.limits.max_materialized_bytes -= 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let result = PcurveSupports::new(&ctx, arenas(&out), &out.coedges);
-    let Err(CodecError::ResourceLimit(limit)) = &result else {
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        "index Parasolid pcurve vertex points",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = support_policy();
+            policy.limits.max_materialized_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut positions = PcurveVertexPositions {
+                vertices: &out.vertices,
+                points: &out.points,
+                values: None,
+                storage: ctx.reserve_scoped(0, "hold test vertex positions")?,
+            };
+            let result = positions.position(&ctx, &out.vertices[0].id);
+            if let Err(CodecError::ResourceLimit(limit)) = &result {
+                let limit = *limit;
+                assert_eq!(ctx.resource_refusal(), Some(limit));
+                drop(positions);
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit)
+                );
+            }
+            result
+        },
+    );
+    let CodecError::ResourceLimit(limit) = error else {
         panic!("vertex support peak");
     };
-    let limit = *limit;
     let vertex_map = one_entry_map_bytes::<(&VertexId, Point3)>();
+    let point_map = one_entry_map_bytes::<(&PointId, Point3)>();
     assert_eq!(limit.operation, "index Parasolid pcurve vertex points");
     assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
     assert_eq!(
         (limit.used, limit.additional, limit.limit),
-        (support_peak() - vertex_map, vertex_map, support_peak() - 1)
+        (point_map, vertex_map, point_map + vertex_map - 1)
     );
-    drop(result);
     assert!(out.coedges[0].pcurves.is_empty());
-    assert_eq!(ctx.resource_refusal(), Some(limit));
-    assert!(
-        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit)
-    );
 }
 
 #[test]
@@ -249,7 +268,7 @@ fn pcurve_support_lookup_preserves_prior_refusal_without_allocation() {
     let mut policy = support_policy();
     policy.limits.max_work_units = u64::MAX;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let supports = PcurveSupports::new(&ctx, arenas(&out), &out.coedges).unwrap();
+    let mut supports = PcurveSupports::new(&ctx, arenas(&out), &out.coedges).unwrap();
     let probe = RefusalProbe::arm(
         ResourceDimension::WorkUnits,
         "test original support refusal",
@@ -261,7 +280,9 @@ fn pcurve_support_lookup_preserves_prior_refusal_without_allocation() {
     };
     drop(probe);
     let (result, allocations) = crate::test_support::allocation::count_allocations(|| {
-        supports.position(&ctx, &out.vertices[0].id)
+        supports
+            .vertex_positions
+            .position(&ctx, &out.vertices[0].id)
     });
     assert!(matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == limit));
     assert_eq!(allocations, 0);
@@ -270,4 +291,118 @@ fn pcurve_support_lookup_preserves_prior_refusal_without_allocation() {
     assert!(
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit)
     );
+}
+
+#[test]
+fn planar_staging_refuses_at_output_backing_without_retaining_tuple_storage() {
+    use cadmpeg_ir::annotations::{AnnotationBuilder, StreamHandle};
+    use cadmpeg_ir::geometry::pcurve::Pcurve;
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "collect derived Parasolid pcurves",
+        |cap| {
+            let mut out = support_fixture();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let stream = StreamHandle::new(
+                &cadmpeg_test_support::service_decode_context(),
+                cadmpeg_ir::stream_name!("test"),
+                "fixture stream",
+            )
+            .unwrap();
+            super::super::derive_pcurves(&ctx, &mut out, &mut AnnotationBuilder::new(), &stream)
+        },
+    );
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("pcurve output refusal");
+    };
+    assert_eq!(
+        limit.additional,
+        u64::try_from(4 * std::mem::size_of::<Pcurve>()).unwrap()
+    );
+}
+
+#[test]
+fn planar_support_resolution_needs_no_vertex_map_storage() {
+    let out = support_fixture();
+    let mut policy = support_policy();
+    policy.limits.max_materialized_bytes = support_peak()
+        - one_entry_map_bytes::<(&VertexId, Point3)>()
+        - one_entry_map_bytes::<(&PointId, Point3)>();
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let supports = PcurveSupports::new(&ctx, arenas(&out), &out.coedges).unwrap();
+    let support = supports.coedges[0].as_ref().unwrap();
+    assert!(std::ptr::eq(support.surface, &out.surfaces[0]));
+    assert!(std::ptr::eq(support.curve, &out.curves[0]));
+    drop(supports);
+    drop(
+        ctx.reserve_scoped(
+            policy.limits.max_materialized_bytes,
+            "test unused vertex maps",
+        )
+        .unwrap(),
+    );
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn cylindrical_shape_rejection_precedes_radial_and_weight_allocation() {
+    use super::super::{derive_cylindrical_pcurves, PcurveSink};
+    use cadmpeg_ir::geometry::analytic::CylinderSurface;
+    let mut out = support_fixture();
+    out.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+        CylinderSurface::try_new(
+            Point3::new(0., 0., 0.),
+            Vector3::new(0., 0., 1.),
+            Vector3::new(1., 0., 0.),
+            1.,
+        )
+        .unwrap(),
+    ));
+    out.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+        crate::brep::graph::test_support::test_nurbs_curve(
+            3,
+            vec![0., 0., 0., 0., 1., 1., 1., 1.],
+            vec![
+                Point3::new(1., 0., 0.),
+                Point3::new(1., 0., 1.),
+                Point3::new(1., 0., 2.),
+                Point3::new(1., 0., 3.),
+            ],
+            Some(vec![1.; 4]),
+        ),
+    ));
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let mut coedges = std::mem::take(&mut out.coedges);
+    let mut supports = PcurveSupports::new(&ctx, arenas(&out), &coedges).unwrap();
+    let mut pcurves = Vec::new();
+    let mut losses = Vec::new();
+    let mut stats = crate::brep::graph::Stats::default();
+    let mut sink = PcurveSink {
+        coedges: &mut coedges,
+        pcurves: &mut pcurves,
+        losses: &mut losses,
+        stats: &mut stats,
+    };
+    let stream = cadmpeg_ir::annotations::StreamHandle::new(
+        &cadmpeg_test_support::service_decode_context(),
+        cadmpeg_ir::stream_name!("test"),
+        "fixture stream",
+    )
+    .unwrap();
+    let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
+    let (result, allocations) = crate::test_support::allocation::count_allocations(|| {
+        derive_cylindrical_pcurves(&ctx, &mut supports, &mut sink, &mut annotations, &stream)
+    });
+    result.unwrap();
+    assert_eq!(allocations, 0);
+    assert!(pcurves.is_empty());
+    assert!(losses.is_empty());
+    assert!(coedges[0].pcurves.is_empty());
+    drop(supports);
+    ctx.finish_session().unwrap();
 }
