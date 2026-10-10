@@ -1505,7 +1505,11 @@ impl CodecBackend for FcstdCodec {
         }
         if container::has_document_markers(ctx, prefix)? {
             Ok(Confidence::High)
-        } else if ctx.contains_bytes(prefix, b"Document.xml", "detect FreeCAD document marker")? {
+        } else if ctx.position_by(
+            prefix.windows(b"Document.xml".len()),
+            |window| Ok(window == b"Document.xml"),
+            "detect FreeCAD document marker",
+        )?.is_some() {
             Ok(Confidence::Medium)
         } else {
             Ok(Confidence::Low)

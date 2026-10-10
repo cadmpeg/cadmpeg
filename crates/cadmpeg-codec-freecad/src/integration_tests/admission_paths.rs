@@ -626,3 +626,51 @@ fn decode_native_populations_use_scoped_storage_and_keep_serialized_output() {
         assert_eq!(reread[0].values()[0].attributes["value"], value);
     });
 }
+
+#[test]
+fn medium_detection_does_not_charge_unvisited_marker_suffixes() {
+    // The fallback visits five windows before the marker at offset four.
+    assert_detection_suffix_work(
+        b"PK\x03\x04Document.xml".to_vec(),
+        cadmpeg_ir::codec::Confidence::Medium,
+        5,
+    );
+}
+
+#[test]
+fn high_detection_does_not_charge_unvisited_marker_suffixes() {
+    // XML markers start at offsets zero and ten: one plus eleven visits.
+    assert_detection_suffix_work(
+        crate::test_support::test_archive::archive(
+            "<Document SchemaVersion=\"4\" FileVersion=\"1\"/>",
+        ),
+        cadmpeg_ir::codec::Confidence::High,
+        12,
+    );
+}
+
+fn assert_detection_suffix_work(
+    prefix: Vec<u8>,
+    expected: cadmpeg_ir::codec::Confidence,
+    work: u64,
+) {
+    use cadmpeg_ir::codec::Codec;
+    for suffix in [0, 64 * 1024] {
+        let mut bytes = prefix.clone();
+        bytes.resize(bytes.len() + suffix, 0);
+        for below in [false, true] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = work - u64::from(below);
+            let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+            let result = crate::FcstdCodec.detect(&ctx, root);
+            if below {
+                assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+            } else {
+                assert_eq!(result.unwrap(), expected);
+                assert_eq!(ctx.resource_refusal(), None);
+            }
+        }
+    }
+}

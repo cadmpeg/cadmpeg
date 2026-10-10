@@ -9,12 +9,12 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 use cadmpeg_core::CodecError;
 
 #[test]
-fn archive_span_decimal_ordinal_is_admitted_and_preserves_zero_based_identity() {
+fn archive_span_identity_is_admitted_and_preserves_zero_based_identity() {
     let bytes = super::archive("<Document SchemaVersion=\"4\" FileVersion=\"1\"/>");
     refusal_at(
         ResourceDimension::WorkUnits,
         &bytes,
-        "FCStd archive span ordinal",
+        "FCStd archive span identity",
         |ctx| scan(ctx, View::over_retained(&bytes)).map(|_| ()),
     );
     with_service_context(&bytes, |ctx| {
@@ -28,7 +28,7 @@ fn archive_span_decimal_ordinal_is_admitted_and_preserves_zero_based_identity() 
 }
 
 #[test]
-fn logical_span_decimal_ordinal_refuses_before_identity_and_keeps_original_fuse() {
+fn logical_span_identity_refuses_and_keeps_original_fuse() {
     let entry = entry_record(
         "fcstd:native:entry#extra".into(),
         "extra".into(),
@@ -38,23 +38,26 @@ fn logical_span_decimal_ordinal_refuses_before_identity_and_keeps_original_fuse(
     );
     for dimension in [
         ResourceDimension::WorkUnits,
+        ResourceDimension::RetainedBytes,
         ResourceDimension::MaterializedBytes,
     ] {
-        refusal_at(dimension, &[], "FCStd logical span ordinal", |ctx| {
+        refusal_at(dimension, &[], "FCStd logical span identity", |ctx| {
             let mut output = Vec::new();
-            let error = push_logical_span(
-                ctx,
-                &mut output,
-                &entry,
-                0,
-                1,
-                LogicalClassification::Structural,
-            )
-            .unwrap_err();
+            let result = if dimension == ResourceDimension::MaterializedBytes {
+                ctx.with_scoped_storage("logical span test output", || {
+                    push_logical_span(ctx, &mut output, &entry, 0, 1,
+                        LogicalClassification::Structural)
+                }).map(|_| ())
+            } else {
+                push_logical_span(ctx, &mut output, &entry, 0, 1,
+                    LogicalClassification::Structural)
+            };
+            let error = result.unwrap_err();
             assert!(output.is_empty());
             let CodecError::ResourceLimit(original) = error else {
-                panic!("ordinal admission must refuse")
+                panic!("identity admission must refuse")
             };
+            assert_eq!(original.dimension, dimension);
             assert_eq!(ctx.resource_refusal(), Some(original));
             assert!(matches!(push_logical_span(ctx, &mut output, &entry, 0, 1,
                 LogicalClassification::Structural), Err(CodecError::ResourceLimit(actual))
