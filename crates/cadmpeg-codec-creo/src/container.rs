@@ -840,6 +840,7 @@ fn toc_sections<'a>(
     data: &'a [u8],
     header_base: usize,
 ) -> Result<Vec<ScannedSection<'a>>, CodecError> {
+    const VIEW_PREFIX: &[u8] = b"ModelView#";
     let mut sections = Vec::new();
     let mut offset_storage = ctx.reserve_scoped(0, "creo TOC section offsets")?;
     let mut offsets = std::collections::HashSet::new();
@@ -946,7 +947,6 @@ fn toc_sections<'a>(
             let Some(offset) = header_base.checked_add(relative_offset) else {
                 continue;
             };
-            const VIEW_PREFIX: &[u8] = b"ModelView#";
             let raw_name_len = match view_id {
                 Some(id) => VIEW_PREFIX.len().checked_add(id.len()),
                 None => Some(name.len()),

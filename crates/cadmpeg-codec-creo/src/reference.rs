@@ -1057,10 +1057,10 @@ fn positional_conic_local_system(
     local_start: usize,
     cache: &ScalarCache,
 ) -> Result<Option<(usize, cadmpeg_ir::units::FiniteVector<12>)>, CodecError> {
+    const MAX_FRAME_BYTES: usize = 12 * 9;
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
     }
-    const MAX_FRAME_BYTES: usize = 12 * 9;
     let Some(first_end) = local_start.checked_add(1) else {
         return Ok(None);
     };

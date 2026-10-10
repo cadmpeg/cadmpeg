@@ -25,14 +25,14 @@ use super::curve_expressions::curve_expression_record_id;
 use super::expanded::{affected_kind, extent_source, half_edge_ref};
 use super::feature_history::round::replayed_torus_minor_radius;
 use super::native_records::{
-    serialize_sketch_equations, CreoConeHalfAngleOverride, CreoCurveExpressionAssignment,
-    CreoCurveExpressionEquation, CreoCurveExpressionLine, CreoCurveExpressionLocalSystem,
-    CreoCurveExpressionSolveBlock, CreoFeatureFieldValue, CreoFeatureOperationState,
-    CreoFeatureOutline, CreoFeatureParameterFrame, CreoHalfEdgeRef, CreoOperationNameRecord,
-    CreoPlaneEnvelope, CreoPositionalConeFrame, CreoPositionalCylinderFrame,
-    CreoPositionalTorusFrame, CreoSketchBoundedCurveSegment, CreoSketchCenteredLineSegment,
-    CreoSketchCircleSegment, CreoSketchConicSegment, CreoSketchDimension,
-    CreoSketchDimensionReference, CreoSketchDimensionReferenceTable, CreoSketchOpaqueSegment,
+    CreoConeHalfAngleOverride, CreoCurveExpressionAssignment, CreoCurveExpressionEquation,
+    CreoCurveExpressionLine, CreoCurveExpressionLocalSystem, CreoCurveExpressionSolveBlock,
+    CreoFeatureFieldValue, CreoFeatureOperationState, CreoFeatureOutline,
+    CreoFeatureParameterFrame, CreoHalfEdgeRef, CreoOperationNameRecord, CreoPlaneEnvelope,
+    CreoPositionalConeFrame, CreoPositionalCylinderFrame, CreoPositionalTorusFrame,
+    CreoSketchBoundedCurveSegment, CreoSketchCenteredLineSegment, CreoSketchCircleSegment,
+    CreoSketchConicSegment, CreoSketchDimension, CreoSketchDimensionReference,
+    CreoSketchDimensionReferenceTable, CreoSketchEquations, CreoSketchOpaqueSegment,
     CreoSketchOrderRow, CreoSketchPointSegment, CreoSketchPointState,
     CreoSketchReferenceLineSegment, CreoSketchRelation, CreoSketchRelationTriple,
     CreoSketchSavedEntity, CreoSketchSection3d, CreoSketchSectionOrientation,
@@ -60,8 +60,7 @@ pub(super) struct CreoSketchRecord<'a> {
     section_points: Vec<CreoSketchSectionPoint>,
     solved_external_ids: Vec<u32>,
     variables: Vec<CreoSketchVariable>,
-    #[serde(serialize_with = "serialize_sketch_equations")]
-    equations: Option<crate::feature::definitions::FeatureEquationTable>,
+    equations: CreoSketchEquations,
     segments: Vec<CreoSketchSegment>,
     circle_segments: Vec<CreoSketchCircleSegment>,
     point_segments: Vec<CreoSketchPointSegment>,
@@ -3714,11 +3713,8 @@ pub(super) fn sketch_records<'a, 'ctx>(
                                                 || resolved_section_coordinates(ctx, definition),
                                             )?),
                                         };
-                                    let coordinate = if row.variable_type == VariableType::U {
-                                        0
-                                    } else {
-                                        1
-                                    };
+                                    let coordinate =
+                                        usize::from(row.variable_type != VariableType::U);
                                     ctx.get_btree_map(
                                         coordinates,
                                         &row.key,
@@ -4102,7 +4098,7 @@ pub(super) fn sketch_records<'a, 'ctx>(
                 section_points,
                 solved_external_ids,
                 variables,
-                equations,
+                equations: CreoSketchEquations(equations),
                 segments,
                 circle_segments,
                 point_segments,
