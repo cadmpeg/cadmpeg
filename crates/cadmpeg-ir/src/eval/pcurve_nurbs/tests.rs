@@ -99,3 +99,5 @@ fn raw_differential_admits_only_reached_points_and_keeps_missing_weight_default(
 mod higher;
 
 mod quadratic;
+
+mod rational;

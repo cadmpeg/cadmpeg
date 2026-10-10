@@ -61,7 +61,7 @@ fn fixed_quadratic_pcurve_owner_is_free_and_keeps_original_fuse() {
             // This is the actual fixed owner over stored source rows, without
             // a dummy seed. The old lower operation owns its separate costs.
             let actual = super::super::higher::quadratic(&scratch, curve.knots(),
-                DifferentialPoles::Stored(curve.pole_rows()), FiniteReal::ZERO, max_order);
+                DifferentialPoles::Stored(curve.pole_rows()), FiniteReal::ZERO, max_order).expect("actual fixed quadratic carrier");
             for (at, (value, expected)) in actual.into_iter().zip([6.0, -24.0, 120.0]).enumerate() {
                 if at + 3 > max_order { assert_eq!(value, Err(EvaluationFailure::NoValue)); }
                 else {
@@ -76,7 +76,7 @@ fn fixed_quadratic_pcurve_owner_is_free_and_keeps_original_fuse() {
     let scratch = decode::Scratch::new(&ctx);
     for max_order in [3, 4, 5] {
         let actual = super::super::higher::quadratic(&scratch, curve.knots(),
-            DifferentialPoles::Stored(curve.pole_rows()), FiniteReal::ZERO, max_order);
+            DifferentialPoles::Stored(curve.pole_rows()), FiniteReal::ZERO, max_order).expect("actual fixed quadratic carrier");
         for (at, value) in actual.into_iter().enumerate() {
             assert_eq!(value, if at + 3 <= max_order { Err(EvaluationFailure::ResourceLimit(original)) }
                 else { Err(EvaluationFailure::NoValue) });
@@ -105,7 +105,14 @@ fn other_rational_pcurve_shapes_keep_lower_results_and_missing_higher() {
         let old = differential(&scratch, curve.degree(), curve.knots(), poles, parameter).unwrap();
         let actual = differential_requested(&scratch, curve.degree(), curve.knots(), poles, parameter, 5).unwrap();
         assert_eq!(actual.point, old.point); assert_eq!(actual.tangent, old.tangent); assert_eq!(actual.acceleration, old.acceleration);
-        assert_eq!(actual.higher, [Err(EvaluationFailure::NoValue); 3]);
+        // On this original first span H=4t-2t², W=1+2t-1.5t².
+        // Differentiating W*C=H at t=.5 gives these exact rational controls.
+        for (value, expected) in actual.higher.into_iter()
+            .zip([185088.0 / 28561.0, -8472576.0 / 371293.0, 746926080.0 / 4826809.0]) {
+            let value = value.unwrap().get();
+            assert!((value.u - expected).abs() <= EPS_QUADRATIC_PCURVE);
+            assert_eq!(value.v, 0.0);
+        }
     }
     ctx.finish_session().unwrap();
 }

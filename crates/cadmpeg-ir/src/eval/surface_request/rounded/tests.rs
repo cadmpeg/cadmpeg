@@ -234,3 +234,32 @@ fn rounded_current_cache_selects_its_actual_complete_orders() {
     }
     ctx.finish_session().unwrap();
 }
+
+#[test]
+fn rounded_rational_cubic_contact_uses_real_requested_pcurve_orders() {
+    let (mut ir, base) = fixture();
+    let policy = DecodePolicy::service(); let setup_arena = DecodeArena::new();
+    let (setup, _) = DecodeContext::from_root_bytes(&[], &setup_arena, &policy).unwrap();
+    let nurbs = PcurveNurbs::from_lanes(&setup, 3,
+        vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+        vec![Point2::new(0.0, 0.0), Point2::new(0.0, 0.0),
+            Point2::new(0.0, 0.0), Point2::new(0.5, 0.0)],
+        Some(vec![1.0, 1.0, 1.0, 2.0]), false).unwrap().unwrap();
+    setup.finish_session().unwrap(); pcurve(&mut ir, PcurveGeometry::Nurbs { nurbs });
+    let index = ModelIndex::build(&ir, StandardIndex);
+    let arena = DecodeArena::new(); let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let zero = Vector3::new(0.0, 0.0, 0.0);
+    for admission in [EvaluationAdmission::Standard, EvaluationAdmission::Decode(&ctx)] {
+        let second = model_requested_jet(admission, &index, &base, 0.5, 0.0, SurfaceRequest::Second).unwrap();
+        let fifth = model_requested_jet(admission, &index, &base, 0.5, 0.0, SurfaceRequest::Fifth).unwrap();
+        assert_eq!(fifth.jet.point, second.jet.point); assert_eq!(fifth.jet.first, second.jet.first);
+        assert_eq!(fifth.jet.second, second.jet.second);
+        // q=v³/(1+v³), A=(2cos q,2sin q,0), D=(0,v,2),
+        // B=(1-u)A+uD. Atv0 A3=(0,12,0),A4=A5=0.
+        close(fifth.jet.second.unwrap(), [zero, Vector3::new(0.0, 1.0, 0.0), zero]);
+        close(fifth.higher.third().unwrap(), [zero, zero, zero, Vector3::new(0.0, 6.0, 0.0)]);
+        close(fifth.higher.fourth().unwrap(), [zero, zero, zero, Vector3::new(0.0, -12.0, 0.0), zero]);
+        close(fifth.higher.fifth().unwrap(), [zero, zero, zero, zero, zero, zero]);
+    }
+    ctx.finish_session().unwrap();
+}
