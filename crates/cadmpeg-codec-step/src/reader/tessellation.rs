@@ -23,40 +23,19 @@ use super::topology::TopologyData;
 use super::StageOutcome;
 use super::{RecordExt, ValueExt};
 
-pub(super) fn decode(
+pub(super) fn decode<'ctx>(
     exchange: &Exchange,
     geometry: &GeometryData,
     topology: &TopologyData,
     ir: &mut CadIr,
-    ctx: &DecodeContext<'_>,
-) -> Result<StageOutcome<()>, CodecError> {
+    ctx: &'ctx DecodeContext<'_>,
+    admitted_ir_entities: &mut u64,
+) -> Result<StageOutcome<(ScopedReservation<'ctx>, ScopedReservation<'ctx>)>, CodecError> {
     let mut surface_index_storage = ctx.reserve_scoped(0, "step tessellation surface index")?;
     let mut surface_index = BTreeMap::new();
-    let mut source_items = ir.model.surfaces.iter().enumerate();
-    for _ in 0..source_items.len() {
-        let Some((position, surface)) =
-            ctx.next_charged(&mut source_items, "STEP tessellation surface indexing")?
-        else {
-            break;
-        };
-        if !ctx.contains_key_btree_map(
-            &surface_index,
-            surface.id.as_str(),
-            "step tessellation surface index",
-        )? {
-            surface_index_storage.with_storage(|| {
-                let key =
-                    ctx.copy_retained_text(surface.id.as_str(), "step tessellation surface index")?;
-                ctx.insert_btree_map(
-                    &mut surface_index,
-                    key,
-                    position,
-                    "step tessellation surface index",
-                )
-            })?;
-        }
-    }
-    let mut admitted_meshes = u64_from_index(ir.model.tessellations.len());
+    let mut surface_index_built = false;
+    let mut claim_storage = ctx.reserve_scoped(0, "step_tessellation_claims")?;
+    let slot_storage = std::cell::RefCell::new(ctx.reserve_scoped(0, "step_tessellation_loss_notes")?);
     let mut coordinate_map_bytes = ctx.reserve_scoped(0, "step_tessellation_coordinate_lists")?;
     let mut coordinates = BTreeMap::new();
     let mut source_items = exchange.records().iter();
@@ -106,7 +85,8 @@ pub(super) fn decode(
                 StepLossCode::DecodeWarning,
                 format_args!("{kind} #{id} has no structured items"),
                 ctx,
-            )?;
+                &slot_storage,
+)?;
             continue;
         };
         let (item_ids_buffer, _container_item_bytes) = container_item_ids(items, kind, id, ctx)?;
@@ -150,12 +130,16 @@ pub(super) fn decode(
             declared_items: &mut declared_items,
             unresolved_containers: &mut unresolved_containers,
             typed: &mut typed,
+            claim_storage: &mut claim_storage,
             geometry,
             placements: &mut item_placements,
             unresolved_placements: &mut unresolved_placements,
             body_context_items: &mut body_context_items,
             mode: AssociationMode::BodyItems,
             active: HashSet::new(),
+            completed: HashSet::new(),
+            completed_storage: ctx.reserve_scoped(0, "step_tessellation_completed_items")?,
+            cycle_count: 0,
             active_storage: ctx.reserve_scoped(0, "step_tessellation_active_items")?,
             reservations: &mut reservations,
             ctx,
@@ -170,7 +154,7 @@ pub(super) fn decode(
             "STEP tessellation item traversal",
         )?;
         drop(item_ids);
-        ctx.insert_btree_set(&mut typed, id, "step_tessellation_claims")?;
+        ctx.insert_scoped_btree_value(&mut claim_storage, &mut typed, id, "step_tessellation_claims")?;
     }
     let mut representation_storage =
         ctx.reserve_scoped(0, "step tessellation representation storage")?;
@@ -234,12 +218,16 @@ pub(super) fn decode(
             declared_items: &mut declared_items,
             unresolved_containers: &mut unresolved_containers,
             typed: &mut typed,
+            claim_storage: &mut claim_storage,
             geometry,
             placements: &mut item_placements,
             unresolved_placements: &mut unresolved_placements,
             body_context_items: &mut body_context_items,
             mode: AssociationMode::Placements,
             active: HashSet::new(),
+            completed: HashSet::new(),
+            completed_storage: ctx.reserve_scoped(0, "step_tessellation_completed_items")?,
+            cycle_count: 0,
             active_storage: ctx.reserve_scoped(0, "step_tessellation_active_items")?,
             reservations: &mut reservations,
             ctx,
@@ -276,7 +264,8 @@ pub(super) fn decode(
                 StepLossCode::DecodeWarning,
                 format_args!("TESSELLATED_ANNOTATION_OCCURRENCE #{id} has no tessellated item"),
                 ctx,
-            )?;
+                &slot_storage,
+)?;
             continue;
         };
         let mut associator = TessellationItemAssociator {
@@ -286,12 +275,16 @@ pub(super) fn decode(
             declared_items: &mut declared_items,
             unresolved_containers: &mut unresolved_containers,
             typed: &mut typed,
+            claim_storage: &mut claim_storage,
             geometry,
             placements: &mut item_placements,
             unresolved_placements: &mut unresolved_placements,
             body_context_items: &mut body_context_items,
             mode: AssociationMode::DetachedAnnotation,
             active: HashSet::new(),
+            completed: HashSet::new(),
+            completed_storage: ctx.reserve_scoped(0, "step_tessellation_completed_items")?,
+            cycle_count: 0,
             active_storage: ctx.reserve_scoped(0, "step_tessellation_active_items")?,
             reservations: &mut reservations,
             ctx,
@@ -310,7 +303,8 @@ pub(super) fn decode(
             StepLossCode::TessellationPlacementUnresolved,
             format_args!("repositioned tessellated item #{id} has no valid AXIS2_PLACEMENT_3D; unresolved placement is not applied"),
             ctx,
-        )?;
+                &slot_storage,
+)?;
     }
     drop(source_items);
     reservations.unresolved_placements =
@@ -336,7 +330,8 @@ pub(super) fn decode(
             StepLossCode::DecodeWarning,
             format_args!("{kind} #{id} has no decoded exact body link"),
             ctx,
-        )?;
+                &slot_storage,
+)?;
     }
     drop(source_items);
     reservations.unresolved_containers =
@@ -361,7 +356,8 @@ pub(super) fn decode(
                 StepLossCode::TessellationPlacementAmbiguous,
                 format_args!("tessellation item #{item} has {distinct_count} distinct repositioning placements; mesh retained in source coordinates"),
                 ctx,
-            )?;
+                &slot_storage,
+)?;
         }
     }
     let mut source_items = item_bodies.iter();
@@ -386,7 +382,8 @@ pub(super) fn decode(
                 StepLossCode::TessellationItemBodyUnresolved,
                 format_args!("tessellation item #{item} has {detail}; mesh retained as detached"),
                 ctx,
-            )?;
+                &slot_storage,
+)?;
         }
     }
     let mut source_items = exchange.records().iter();
@@ -408,7 +405,8 @@ pub(super) fn decode(
                 StepLossCode::DecodeWarning,
                 format_args!("{kind} #{id} has no COORDINATES_LIST reference"),
                 ctx,
-            )?;
+                &slot_storage,
+)?;
             continue;
         };
         let Some((vertices, _coordinate_bytes)) =
@@ -419,7 +417,8 @@ pub(super) fn decode(
                 StepLossCode::DecodeWarning,
                 format_args!("{kind} #{id} has no resolved COORDINATES_LIST"),
                 ctx,
-            )?;
+                &slot_storage,
+)?;
             continue;
         };
         let offset = entity.own_parameter_offset();
@@ -450,7 +449,8 @@ pub(super) fn decode(
                 StepLossCode::DecodeWarning,
                 format_args!("{kind} #{id} has no triangle indices"),
                 ctx,
-            )?;
+                &slot_storage,
+)?;
             continue;
         };
         let triangles = triangle_buffer;
@@ -464,7 +464,8 @@ pub(super) fn decode(
                         StepLossCode::DecodeWarning,
                         format_args!("{kind} #{id} has an invalid pnindex"),
                         ctx,
-                    )?;
+                &slot_storage,
+)?;
                     continue;
                 };
                 (indices, Some(bytes))
@@ -493,19 +494,14 @@ pub(super) fn decode(
                     StepLossCode::DecodeWarning,
                     format_args!("{kind} #{id} has an out-of-range one-based coordinate index"),
                     ctx,
-                )?;
+                &slot_storage,
+)?;
                 continue;
             }
             let mut coordinate_index_bytes =
                 ctx.reserve_scoped(0, "step_tessellation_coordinate_indices")?;
             let mut coordinate_indices = BTreeSet::new();
-            let mut source_items = triangles.iter();
-            for _ in 0..source_items.len() {
-                let Some(triangle) =
-                    ctx.next_charged(&mut source_items, "STEP triangle index traversal")?
-                else {
-                    break;
-                };
+            ctx.fold(&triangles[..], (), |(), triangle| {
                 for &index in triangle {
                     if !ctx.contains_btree_set(
                         &coordinate_indices,
@@ -521,7 +517,9 @@ pub(super) fn decode(
                         })?;
                     }
                 }
-            }
+
+                Ok(())
+            }, "STEP triangle index traversal")?;
             let mut local_index_bytes = ctx.reserve_scoped(0, "step_tessellation_local_index")?;
             let mut local_index = BTreeMap::new();
             let mut source_items = coordinate_indices.iter().enumerate();
@@ -608,7 +606,8 @@ pub(super) fn decode(
                     StepLossCode::DecodeWarning,
                     format_args!("{kind} #{id} has an out-of-range one-based tessellation index"),
                     ctx,
-                )?;
+                &slot_storage,
+)?;
                 continue;
             }
             let mut local_vertex_bytes =
@@ -655,7 +654,8 @@ pub(super) fn decode(
                             StepLossCode::DecodeWarning,
                             format_args!("{kind} #{id} has invalid normal rows; normals omitted"),
                             ctx,
-                        )?;
+                &slot_storage,
+)?;
                         (Vec::new(), None)
                     }
                 },
@@ -703,7 +703,8 @@ pub(super) fn decode(
                             local_vertices.len()
                         ),
                         ctx,
-                    )?;
+                &slot_storage,
+)?;
                     drop(source_normals);
                     drop(source_normal_bytes);
                     (None, None)
@@ -759,15 +760,32 @@ pub(super) fn decode(
                             push_loss(
                                 &mut losses, StepLossCode::DecodeWarning,
                                 format_args!("{kind} #{id} normal placement could not produce finite unit normals; normals omitted"), ctx,
-                            )?;
+                &slot_storage,
+)?;
                         }
                     }
                 }
             }
         }
         if let Some(surface_step) = complex_triangulated_face_surface(ctx, record)? {
-            let (surface_id_buffer, _surface_id_bytes) = admitted_surface_id(surface_step, ctx)?;
-            let surface_id = surface_id_buffer;
+            let surface_id = ids::data(kind!("surface"), surface_step);
+            if !surface_index_built {
+                ctx.fold(
+                    &ir.model.surfaces,
+                    0,
+                    |position, surface| {
+                        if !ctx.contains_key_btree_map(&surface_index, surface.id.as_str(), "step tessellation surface index")? {
+                            surface_index_storage.with_storage(|| {
+                                let key = ctx.copy_retained_text(surface.id.as_str(), "step tessellation surface index")?;
+                                ctx.insert_btree_map(&mut surface_index, key, position, "step tessellation surface index")
+                            })?;
+                        }
+                        Ok(position + 1)
+                    },
+                    "STEP tessellation surface indexing",
+                )?;
+                surface_index_built = true;
+            }
             if let Some(&position) = ctx.get_btree_map(
                 &surface_index,
                 surface_id.as_str(),
@@ -779,7 +797,6 @@ pub(super) fn decode(
                 }
             }
         }
-        let triangle_count = local_triangles.len();
         let triangles = ctx.copy_slice(&local_triangles, "step_tessellation_ir_triangles")?;
         let rows = if let Some(normals) = normals {
             TessellationMesh::ShadedList {
@@ -803,19 +820,7 @@ pub(super) fn decode(
         drop(local_triangle_bytes);
         drop(local_vertex_bytes);
         drop(normal_bytes);
-        let validation_triangle_bytes = ctx.reserve_scoped_collection::<[u32; 3]>(
-            triangle_count,
-            "step_tessellation_validation_triangles",
-        )?;
-        let next_mesh_count = admitted_meshes + 1;
-        let mut pending_meshes = admitted_meshes;
-        ctx.admit_entities(
-            next_mesh_count,
-            &mut pending_meshes,
-            "step_tessellation_mesh_entity",
-        )?;
-        let mesh = Tessellation::from_parts(admitted_mesh_id(id, ctx)?, rows, Vec::new());
-        drop(validation_triangle_bytes);
+        let mesh = Tessellation::from_parts(ids::tessellation(kind!("mesh"), id).into(), rows, Vec::new());
         let mesh = match mesh {
             Ok(mesh) => mesh,
             Err(error) => {
@@ -824,11 +829,16 @@ pub(super) fn decode(
                     StepLossCode::TessellationInvalidPayload,
                     format_args!("{kind} #{id}: {error}"),
                     ctx,
-                )?;
+                &slot_storage,
+)?;
                 continue;
             }
         };
-        admitted_meshes = pending_meshes;
+        ctx.admit_entities(
+            u64_from_index(ir.model.entity_count()) + 1,
+            admitted_ir_entities,
+            "step_tessellation_mesh_entity",
+        )?;
         let declared = ctx.contains_btree_set(&declared_items, &id, "step_tessellation_lookup")?;
         if !declared {
             push_loss(
@@ -836,7 +846,8 @@ pub(super) fn decode(
                 StepLossCode::TessellationItemUndeclared,
                 format_args!("tessellation item #{id} is not declared by an exact body container; mesh retained as detached"),
                 ctx,
-            )?;
+                &slot_storage,
+)?;
         }
 
         ctx.reserve_vec(
@@ -859,8 +870,8 @@ pub(super) fn decode(
         ir.model
             .tessellations
             .push(mesh.with_body(body).with_source_object(source_object));
-        ctx.insert_btree_set(&mut typed, id, "step_tessellation_claims")?;
-        ctx.insert_btree_set(&mut typed, coordinate_id, "step_tessellation_claims")?;
+        ctx.insert_scoped_btree_value(&mut claim_storage, &mut typed, id, "step_tessellation_claims")?;
+        ctx.insert_scoped_btree_value(&mut claim_storage, &mut typed, coordinate_id, "step_tessellation_claims")?;
     }
     if !ir.model.tessellations.is_empty() {
         let mut source_items = exchange.records().iter();
@@ -874,12 +885,12 @@ pub(super) fn decode(
                 || has_entity(ctx, record, "TESSELLATED_SOLID")?
                 || has_entity(ctx, record, "TESSELLATED_SHELL")?
             {
-                ctx.insert_btree_set(&mut typed, id, "step_tessellation_claims")?;
+                ctx.insert_scoped_btree_value(&mut claim_storage, &mut typed, id, "step_tessellation_claims")?;
             }
         }
     }
     Ok(StageOutcome {
-        value: (),
+        value: (claim_storage, slot_storage.into_inner()),
         claims: typed,
         losses,
         notes: Vec::new(),
@@ -955,12 +966,16 @@ struct TessellationItemAssociator<'a, 'ctx, 'arena> {
     declared_items: &'a mut BTreeSet<u64>,
     unresolved_containers: &'a mut BTreeSet<u64>,
     typed: &'a mut BTreeSet<u64>,
+    claim_storage: &'a mut ScopedReservation<'ctx>,
     geometry: &'a GeometryData<'a>,
     placements: &'a mut BTreeMap<u64, Vec<Transform>>,
     unresolved_placements: &'a mut BTreeSet<u64>,
     body_context_items: &'a mut BTreeSet<u64>,
     mode: AssociationMode,
     active: HashSet<u64>,
+    completed: HashSet<(u64, Option<[[u64; 4]; 4]>)>,
+    completed_storage: ScopedReservation<'ctx>,
+    cycle_count: u64,
     reservations: &'a mut AssociationReservations<'ctx>,
     ctx: &'ctx DecodeContext<'arena>,
     active_storage: ScopedReservation<'ctx>,
@@ -968,11 +983,18 @@ struct TessellationItemAssociator<'a, 'ctx, 'arena> {
 
 impl TessellationItemAssociator<'_, '_, '_> {
     fn visit(&mut self, id: u64, inherited_placement: Option<Transform>) -> Result<(), CodecError> {
+        let key = (id, inherited_placement.map(|placement| placement.rows().map(|row| row.map(|value| if value == 0.0 { 0 } else { value.to_bits() }))));
+        if self.ctx.contains_hash_set(&self.completed, &key, "step_tessellation_lookup")? {
+            return Ok(());
+        }
         let _depth_guard = self.ctx.enter_nested("step_tessellation_association")?;
+        let cycle_count = self.cycle_count;
+        let mut associated = false;
         if self
             .ctx
             .contains_hash_set(&self.active, &id, "step_tessellation_lookup")?
         {
+            self.cycle_count += 1;
             return Ok(());
         }
         self.active_storage.with_storage(|| {
@@ -1022,6 +1044,7 @@ impl TessellationItemAssociator<'_, '_, '_> {
         )?
         .is_some()
         {
+            associated = true;
             if self.mode != AssociationMode::DetachedAnnotation {
                 self.ctx.insert_scoped_btree_value(
                     &mut self.reservations.body_context,
@@ -1063,6 +1086,7 @@ impl TessellationItemAssociator<'_, '_, '_> {
                 "TESSELLATED_GEOMETRIC_SET",
             ],
         )? {
+            associated = true;
             if self.mode == AssociationMode::BodyItems {
                 self.ctx.insert_scoped_btree_value(
                     &mut self.reservations.declared,
@@ -1079,8 +1103,7 @@ impl TessellationItemAssociator<'_, '_, '_> {
                 )?;
             }
             if self.mode != AssociationMode::DetachedAnnotation {
-                self.ctx
-                    .insert_btree_set(self.typed, id, "step_tessellation_claims")?;
+                self.ctx.insert_scoped_btree_value(self.claim_storage, self.typed, id, "step_tessellation_claims")?;
             }
             if !self.bodies.is_empty() && matches!(kind, "TESSELLATED_SOLID" | "TESSELLATED_SHELL")
             {
@@ -1100,18 +1123,9 @@ impl TessellationItemAssociator<'_, '_, '_> {
                     ),
                 };
             let item_ids = item_ids_buffer;
-            let mut source_items = item_ids.into_iter();
-            for _ in 0..source_items.len() {
-                let Some(item) = self
-                    .ctx
-                    .next_charged(&mut source_items, "STEP tessellation item traversal")?
-                else {
-                    break;
-                };
-                self.visit(item, placement)?;
-            }
-            drop(source_items);
+            self.ctx.fold(&item_ids, (), |(), &item| self.visit(item, placement), "STEP tessellation item traversal")?;
         } else if self.mode == AssociationMode::BodyItems {
+            associated = true;
             self.ctx.insert_scoped_btree_value(
                 &mut self.reservations.declared,
                 self.declared_items,
@@ -1128,6 +1142,10 @@ impl TessellationItemAssociator<'_, '_, '_> {
         }
         self.ctx
             .remove_hash_set(&mut self.active, &id, "step_tessellation_lookup")?;
+        // Cycle-cut visits depend on the active path and cannot be memoized.
+        if associated && self.cycle_count == cycle_count {
+            self.completed_storage.with_storage(|| self.ctx.insert_hash_set(&mut self.completed, key, "step_tessellation_completed_items"))?;
+        }
         Ok(())
     }
 }
@@ -1458,21 +1476,15 @@ fn admitted_representation_items<'a>(
     };
     let mut bytes = ctx.reserve_scoped(0, "step_tessellation_representation_items")?;
     let mut items = Vec::new();
-    let mut source_items = values.iter();
-    for _ in 0..source_items.len() {
-        let Some(value) = ctx.next_charged(
-            &mut source_items,
-            "STEP admitted representation items traversal",
-        )?
-        else {
-            break;
-        };
+    ctx.fold(values, (), |(), value| {
         if let Some(id) = value.reference() {
             bytes.with_storage(|| {
                 ctx.push_vec(&mut items, id, "step_tessellation_representation_items")
             })?;
         }
-    }
+
+        Ok(())
+    }, "STEP admitted representation items traversal")?;
     Ok(Some((items, bytes)))
 }
 
@@ -1702,46 +1714,14 @@ fn inherited_parameter<'a>(
     }
 }
 
-fn decimal_digits(id: u64) -> u64 {
-    if id == 0 {
-        1
-    } else {
-        u64::from(id.ilog10()) + 1
-    }
-}
-
-fn admitted_mesh_id(
-    id: u64,
-    ctx: &DecodeContext<'_>,
-) -> Result<cadmpeg_ir::tessellation::TessellationId, CodecError> {
-    let digits = decimal_digits(id);
-    let _key_bytes = ctx.reserve_scoped(digits, "step_tessellation_mesh_key")?;
-    ctx.charge_retained(
-        u64_from_index("step:tessellation:mesh#".len()) + digits,
-        "step_tessellation_mesh_id",
-    )?;
-    Ok(ids::tessellation(kind!("mesh"), id).into())
-}
-
-fn admitted_surface_id<'a>(
-    id: u64,
-    ctx: &'a DecodeContext<'_>,
-) -> Result<(cadmpeg_ir::ids::Identity, ScopedReservation<'a>), CodecError> {
-    let digits = decimal_digits(id);
-    let bytes = u64_from_index("step:data:surface#".len()) + digits * 2;
-    let reservation = ctx.reserve_scoped(bytes, "step_tessellation_surface_id")?;
-    Ok((ids::data(kind!("surface"), id), reservation))
-}
-
 fn push_loss(
     losses: &mut Vec<LossNote>,
     code: StepLossCode,
     message: std::fmt::Arguments<'_>,
     ctx: &DecodeContext<'_>,
+    slot_storage: &std::cell::RefCell<ScopedReservation<'_>>,
 ) -> Result<(), CodecError> {
-    ctx.reserve_vec(losses, 1, "step_tessellation_loss_notes")?;
-    let vocabulary_bytes = u64_from_index(code.code().len()) + u64_from_index("step".len());
-    ctx.charge_retained(vocabulary_bytes, "step_tessellation_loss_notes")?;
+    slot_storage.borrow_mut().with_storage(|| ctx.reserve_vec(losses, 1, "step_tessellation_loss_notes"))?;
     let text = ctx.format_retained(message, "step_tessellation_loss_notes")?;
     losses.push(code.note(text));
     Ok(())
@@ -1832,56 +1812,25 @@ fn complex_triangles<'a>(
     let fans = fans_buffer;
     let mut bytes = ctx.reserve_scoped(0, "step_complex_tessellation_triangles")?;
     let mut triangles = Vec::new();
-    let mut source_items = strips.iter();
-    for _ in 0..source_items.len() {
-        let Some(strip) =
-            ctx.next_charged(&mut source_items, "STEP complex triangles traversal")?
-        else {
-            break;
-        };
-        let mut source_items = 0..strip.len() - 2;
-        for _ in 0..source_items.len() {
-            let Some(index) =
-                ctx.next_charged(&mut source_items, "STEP strip triangle traversal")?
-            else {
-                break;
-            };
+    ctx.fold(&strips, (), |(), strip| {
+        ctx.fold(&strip[2..], 0, |index, _| {
             let triangle = if index % 2 == 0 {
                 [strip[index], strip[index + 1], strip[index + 2]]
             } else {
                 [strip[index + 1], strip[index], strip[index + 2]]
             };
-            bytes.with_storage(|| {
-                ctx.push_vec(
-                    &mut triangles,
-                    triangle,
-                    "step_complex_tessellation_triangles",
-                )
-            })?;
-        }
-    }
-    let mut source_items = fans.iter();
-    for _ in 0..source_items.len() {
-        let Some(fan) =
-            ctx.next_charged(&mut source_items, "STEP complex triangle fan traversal")?
-        else {
-            break;
-        };
-        let mut source_items = 1..fan.len() - 1;
-        for _ in 0..source_items.len() {
-            let Some(index) = ctx.next_charged(&mut source_items, "STEP fan triangle traversal")?
-            else {
-                break;
-            };
-            bytes.with_storage(|| {
-                ctx.push_vec(
-                    &mut triangles,
-                    [fan[0], fan[index], fan[index + 1]],
-                    "step_complex_tessellation_triangles",
-                )
-            })?;
-        }
-    }
+            bytes.with_storage(|| ctx.push_vec(&mut triangles, triangle, "step_complex_tessellation_triangles"))?;
+            Ok(index + 1)
+        }, "STEP strip triangle traversal")?;
+        Ok(())
+    }, "STEP complex triangles traversal")?;
+    ctx.fold(&fans, (), |(), fan| {
+        ctx.fold(&fan[2..], 1, |index, _| {
+            bytes.with_storage(|| ctx.push_vec(&mut triangles, [fan[0], fan[index], fan[index + 1]], "step_complex_tessellation_triangles"))?;
+            Ok(index + 1)
+        }, "STEP fan triangle traversal")?;
+        Ok(())
+    }, "STEP complex triangle fan traversal")?;
     Ok((!triangles.is_empty()).then_some(AdmittedTriangles { triangles, bytes }))
 }
 

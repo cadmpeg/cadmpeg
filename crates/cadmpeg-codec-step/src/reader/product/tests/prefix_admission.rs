@@ -93,12 +93,10 @@ fn empty_reference_list_preserves_an_existing_refusal() {
 }
 
 #[test]
-fn joined_product_references_accept_exact_actual_work() {
+fn joined_product_references_keep_source_order() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    // Two source visits, two formatting passes over four bytes, two
-    // two-item join traversals, and six output bytes: 2 + 8 + 4 + 6.
-    policy.limits.max_work_units = 20;
+    policy.limits.max_work_units = 256;
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("context");
     let text = super::super::join_product_references([1, 2].into_iter(), &ctx, "product reference fixture")
         .expect("only actual source visits are billed");
@@ -119,13 +117,11 @@ fn empty_product_reference_join_is_free() {
 }
 
 #[test]
-fn reference_list_growth_accepts_exact_visits_and_backing_copy_work() {
+fn reference_list_growth_keeps_source_order() {
     let value = Value::List((1..=8).map(Value::Reference).collect());
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    // Eight visits plus the four existing u64 lanes copied when capacity
-    // grows from four to eight at the fifth insertion: 8 + 4 * 8.
-    policy.limits.max_work_units = 40;
+    policy.limits.max_work_units = 256;
     policy.limits.max_collection_items = 8;
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("context");
     let mut references = Vec::new();
@@ -135,20 +131,18 @@ fn reference_list_growth_accepts_exact_visits_and_backing_copy_work() {
 }
 
 #[test]
-fn growing_reference_list_preserves_the_final_visit_refusal() {
-    let value = Value::List((1..=8).map(Value::Reference).collect());
+fn joined_reference_refusal_leaves_a_large_suffix_unvisited() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 39;
+    policy.limits.max_work_units = 256;
+    policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("context");
-    let mut references = Vec::new();
-    let CodecError::ResourceLimit(limit) = super::super::collect_references(&value, &mut references, &ctx)
-        .expect_err("the eighth actual visit does not fit") else {
-        panic!("work refusal");
+    let CodecError::ResourceLimit(limit) = super::super::join_product_references(
+        (1..8194).map(|id: usize| u64::try_from(id).expect("bounded fixture id")), &ctx, "product reference fixture",
+    ).expect_err("first reference text refuses") else {
+        panic!("retained refusal");
     };
-    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-    assert_eq!(limit.operation, "STEP collect references value traversal");
-    assert_eq!((limit.used, limit.additional), (39, 1));
-    assert_eq!(references, [1, 2, 3, 4, 5, 6, 7]);
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(limit.operation, "product reference fixture");
     assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
 }

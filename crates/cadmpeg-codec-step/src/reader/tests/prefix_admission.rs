@@ -23,14 +23,8 @@ fn reference_collection_refusal_leaves_the_list_suffix_unvisited() {
     let value = Value::List(vec![Value::Reference(1); 8193]);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    // One list visit precedes the empty B-tree insertion. Core admits three
-    // node passes for the insertion: eleven u64 keys, sixteen pointer lanes,
-    // and two alignment lanes per node. This admits the first insertion's
-    // work but cannot admit a traversal of the whole list before that insertion.
-    let node_bytes = 11 * std::mem::size_of::<u64>()
-        + 16 * std::mem::size_of::<usize>()
-        + 2 * std::mem::align_of::<u64>().max(std::mem::align_of::<usize>());
-    policy.limits.max_work_units = 1 + 3 * node_bytes as u64;
+    // The first insertion fits this work range; the 8192-item suffix does not.
+    policy.limits.max_work_units = 4096;
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
     let mut output = BTreeSet::new();

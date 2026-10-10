@@ -230,7 +230,7 @@ fn tessellation_index_rows_hold_and_release_actual_nested_capacity() {
 }
 
 #[test]
-fn tessellation_decode_indexes_first_surface_before_large_suffix() {
+fn tessellation_decode_skips_surface_index_without_support_lookup() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT('',(0.,0.,0.));#2=AXIS2_PLACEMENT_3D('',#1,$,$);#3=PLANE('',#2);ENDSEC;END-ISO-10303-21;";
     let (exchange, _) = with_service_context(source, parse_inner).expect("exchange");
     with_service_context(source, |_, owner_ctx| {
@@ -247,28 +247,25 @@ fn tessellation_decode_indexes_first_surface_before_large_suffix() {
         limited.limits.max_work_units = PREFIX_WORK;
         limited.limits.max_collection_items = 0;
         with_policy_context(&[], &limited, |_, ctx| {
-            let error =
-                super::super::decode(&exchange, &geometry.value, &topology.value, &mut ir, ctx)
-                    .err()
-                    .expect("first surface-index entry refuses");
-            assert!(matches!(&error, CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "step tessellation surface index"));
-            let CodecError::ResourceLimit(limit) = error else {
-                unreachable!()
-            };
-            assert_eq!(ctx.resource_refusal(), Some(limit));
+            let mut admitted = u64_from_index(ir.model.entity_count());
+            let stage = super::super::decode(&exchange, &geometry.value, &topology.value, &mut ir, ctx, &mut admitted)
+                .expect("no support lookup builds no surface index");
+            assert!(stage.claims.is_empty());
+            assert!(stage.losses.is_empty());
             assert!(ir.model.tessellations.is_empty());
+            assert_eq!(ctx.resource_refusal(), None);
         });
         let mut allowed = DecodePolicy::service();
         allowed.limits.max_materialized_bytes = 1024;
         with_policy_context(&[], &allowed, |_, ctx| {
+            let mut admitted = u64_from_index(ir.model.entity_count());
             let stage =
-                super::super::decode(&exchange, &geometry.value, &topology.value, &mut ir, ctx)
-                    .expect("all surface-index visits admitted");
+                super::super::decode(&exchange, &geometry.value, &topology.value, &mut ir, ctx, &mut admitted)
+                    .expect("no surface-index work required");
             assert!(stage.claims.is_empty());
             assert!(stage.losses.is_empty());
             assert!(ir.model.tessellations.is_empty());
+            drop(stage);
             let _all_storage = ctx
                 .reserve_scoped(
                     ctx.policy().limits.max_materialized_bytes,
