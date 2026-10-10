@@ -3106,13 +3106,14 @@ pub(super) fn project<'ctx>(
     global: &ProjectedGlobal,
     ctx: &'ctx DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences<'_>,
-) -> Result<(ProjectionOutcome<'ctx>, BTreeMap<u32, PlacementRejection>), CodecError> {
+) -> Result<(ProjectionOutcome<'ctx>, BTreeMap<u32, PlacementRejection>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
     let (entries, records) = indexes;
     let mut scratch = ctx.reserve_scoped(0, "iges structure scratch")?;
     let mut decoded_storage = ctx.reserve_scoped(0, "iges structure decoded sequences")?;
     let mut decoded = BTreeSet::new();
     let mut loss_slots_storage = ctx.reserve_scoped(0, "iges entity loss slots")?;
     let mut losses = Vec::new();
+    let mut placement_rejections_storage = ctx.reserve_scoped(0, "iges placement rejection nodes")?;
     let mut placement_rejections = BTreeMap::new();
     let mut assemblies = BTreeMap::new();
     let mut attribute_shape_storage =
@@ -5057,12 +5058,12 @@ pub(super) fn project<'ctx>(
             continue;
         }
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
-            ctx.insert_btree_map(
+            placement_rejections_storage.with_storage(|| ctx.insert_btree_map(
                 &mut placement_rejections,
                 entry.sequence,
                 PlacementRejection::MissingRecord,
                 "iges placement rejection nodes",
-            )?;
+            ))?;
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -5104,12 +5105,12 @@ pub(super) fn project<'ctx>(
             }
         };
         if !placement_valid {
-            ctx.insert_btree_map(
+            placement_rejections_storage.with_storage(|| ctx.insert_btree_map(
                 &mut placement_rejections,
                 entry.sequence,
                 PlacementRejection::InvalidPlacement,
                 "iges placement rejection nodes",
-            )?;
+            ))?;
         }
         let Some(definition) = definition else {
             if !ctx.contains_key_btree_map(
@@ -5117,12 +5118,12 @@ pub(super) fn project<'ctx>(
                 &entry.sequence,
                 "iges placement rejection lookup",
             )? {
-                ctx.insert_btree_map(
+                placement_rejections_storage.with_storage(|| ctx.insert_btree_map(
                     &mut placement_rejections,
                     entry.sequence,
                     PlacementRejection::InvalidDefinition,
                     "iges placement rejection nodes",
-                )?;
+                ))?;
             }
             super::push_entity_loss_with_scoped_slots(
                 ctx,
@@ -5292,12 +5293,12 @@ pub(super) fn project<'ctx>(
             continue;
         }
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
-            ctx.insert_btree_map(
+            placement_rejections_storage.with_storage(|| ctx.insert_btree_map(
                 &mut placement_rejections,
                 entry.sequence,
                 PlacementRejection::MissingRecord,
                 "iges placement rejection nodes",
-            )?;
+            ))?;
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -5368,12 +5369,12 @@ pub(super) fn project<'ctx>(
             }
         };
         if !placement_valid {
-            ctx.insert_btree_map(
+            placement_rejections_storage.with_storage(|| ctx.insert_btree_map(
                 &mut placement_rejections,
                 entry.sequence,
                 PlacementRejection::InvalidPlacement,
                 "iges placement rejection nodes",
-            )?;
+            ))?;
         }
         let Some((definition, connect_points)) = definition.zip(connect_points) else {
             drop(candidate_storage);
@@ -5386,12 +5387,12 @@ pub(super) fn project<'ctx>(
                     Some(definition) => PlacementRejection::InvalidMetadata { definition },
                     None => PlacementRejection::InvalidDefinition,
                 };
-                ctx.insert_btree_map(
+                placement_rejections_storage.with_storage(|| ctx.insert_btree_map(
                     &mut placement_rejections,
                     entry.sequence,
                     rejection,
                     "iges placement rejection nodes",
-                )?;
+                ))?;
             }
             super::push_entity_loss_with_scoped_slots(
                 ctx,
@@ -5568,12 +5569,12 @@ pub(super) fn project<'ctx>(
                 sequence,
                 "iges placement rejection lookup",
             )? {
-                ctx.insert_btree_map(
+                placement_rejections_storage.with_storage(|| ctx.insert_btree_map(
                     &mut placement_rejections,
                     *sequence,
                     PlacementRejection::InvalidDefinition,
                     "iges placement rejection nodes",
-                )?;
+                ))?;
             }
             super::push_entity_loss_with_scoped_slots(
                 ctx,
@@ -5749,7 +5750,7 @@ pub(super) fn project<'ctx>(
                         "iges decoded network definition lookup",
                     )?,
                 };
-                ctx.insert_btree_map(
+                placement_rejections_storage.with_storage(|| ctx.insert_btree_map(
                     &mut placement_rejections,
                     *sequence,
                     if definition_decoded {
@@ -5760,7 +5761,7 @@ pub(super) fn project<'ctx>(
                         PlacementRejection::InvalidDefinition
                     },
                     "iges placement rejection nodes",
-                )?;
+                ))?;
             }
             super::push_entity_loss_with_scoped_slots(
                 ctx,
@@ -5775,7 +5776,7 @@ pub(super) fn project<'ctx>(
         }
     }
 
-    Ok((ProjectionOutcome { decoded, decoded_storage, losses, loss_slots_storage }, placement_rejections))
+    Ok((ProjectionOutcome { decoded, decoded_storage, losses, loss_slots_storage }, placement_rejections, placement_rejections_storage))
 }
 
 #[cfg(test)]
