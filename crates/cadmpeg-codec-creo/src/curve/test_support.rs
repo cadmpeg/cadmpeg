@@ -91,19 +91,6 @@ pub(super) fn solve_phase_inputs(
     (block, values, evaluation)
 }
 
-pub(super) fn with_policy<T>(
-    policy: DecodePolicy,
-    run: impl FnOnce(&DecodeContext<'_>) -> Result<T, CodecError>,
-) -> Result<T, CodecError> {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test root");
-    let result = run(&ctx);
-    if let Err(CodecError::ResourceLimit(limit)) = &result {
-        assert_eq!(ctx.resource_refusal(), Some(*limit));
-    }
-    result
-}
-
 pub(super) fn evaluate_expression_program(
     lines: &[CurveExpressionLine],
     model_name: Option<&str>,

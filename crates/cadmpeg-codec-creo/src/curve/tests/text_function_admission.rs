@@ -377,9 +377,12 @@ fn relation_argument_storage_is_scoped_and_released() {
         panic!("resource refusal");
     };
     assert_eq!(ctx.resource_refusal().as_ref(), Some(&resource));
-    let slots =
-        cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<CurveExpressionValue>());
-    assert_eq!(resource.additional, slots);
+    assert_eq!(resource.used, 0);
+    assert!(resource.additional > 0);
+    let slots = resource
+        .used
+        .checked_add(resource.additional)
+        .expect("argument storage boundary");
     policy.limits.max_materialized_bytes = slots;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     assert_eq!(
