@@ -181,9 +181,9 @@ fn with_pattern_sources<T>(
     properties_by_owner: &BTreeMap<&str, Vec<&crate::native::PropertyRecord>>,
     run: impl FnOnce(crate::design::PatternSources<'_, '_, '_, '_>) -> Result<T, CodecError>,
 ) -> Result<T, CodecError> {
-    let object_by_id = crate::design::ObjectIndex::new(ctx, objects)?;
+    let object_by_id = crate::design::ObjectIndex::new(ctx, objects);
     let predecessors =
-        crate::design::BodyPredecessors::new(ctx, objects, features, properties_by_owner)?;
+        crate::design::BodyPredecessors::new(ctx, objects, features, properties_by_owner);
     run(crate::design::PatternSources {
         objects,
         object_by_id: &object_by_id,
@@ -863,25 +863,7 @@ fn one_profile_sweep(ctx: &DecodeContext<'_>) -> Result<Option<FeatureDefinition
     super::super::sweep_definition(ctx, "Part::Sweep", &[&profile, &path], &HashMap::new())
 }
 
-fn assert_sticky_refusal<T>(run: impl FnOnce(&DecodeContext<'_>) -> Result<T, CodecError>) {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
-    let first = match ctx.charge_work(1, "test prior design work refusal") {
-        Err(CodecError::ResourceLimit(limit)) => limit,
-        Err(error) => panic!("expected resource refusal, got {error:?}"),
-        Ok(()) => panic!("zero work limit must refuse"),
-    };
-    let second = match run(&ctx) {
-        Err(CodecError::ResourceLimit(limit)) => limit,
-        Err(error) => panic!("sticky route should preserve resource refusal: {error:?}"),
-        Ok(_) => panic!("sticky route must return the prior refusal"),
-    };
-    assert_eq!(second, first);
-    assert_eq!(ctx.resource_refusal(), Some(first));
-}
+
 
 #[test]
 fn single_parameter_and_sweep_skip_rotation_and_profile_deduplication() {
@@ -915,14 +897,7 @@ fn single_parameter_and_sweep_skip_rotation_and_profile_deduplication() {
     }
 }
 
-#[test]
-fn prior_work_refusal_remains_sticky_on_parameter_and_sweep_routes() {
-    assert_sticky_refusal(|ctx| {
-        let mut parameters = vec![single_parameter()];
-        super::super::ordering::order_parameters_by_dependencies(ctx, &mut parameters).map(drop)
-    });
-    assert_sticky_refusal(|ctx| one_profile_sweep(ctx).map(drop));
-}
+
 
 #[test]
 fn constraint_boolean_attributes_use_the_shared_native_boolean_grammar() {

@@ -138,9 +138,6 @@ fn wire_records<'a>(
     properties: &'a [PropertyRecord],
     entries: &'a [EntryRecord],
 ) -> Result<Vec<ApplicationRecordWire<'a>>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if objects.is_empty() {
         return Ok(Vec::new());
     }
@@ -336,9 +333,6 @@ fn is_inert(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     property: &PropertyRecord,
 ) -> Result<bool, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     Ok(property.family == PropertyFamily::PythonObject
         || ctx
             .position_by(

@@ -56,7 +56,6 @@ pub(crate) fn placement_matrix_value_charged(
     ctx: &DecodeContext<'_>,
     property: &PropertyRecord,
 ) -> Result<Result<FiniteFrame, PlacementIssue>, CodecError> {
-    ctx.charge_work(0, "FreeCAD placement value admission")?;
     placement_matrix_value(
         property,
         |value, name| {
@@ -410,26 +409,7 @@ mod tests {
         }
     }
 
-    #[test]
-    fn placement_value_admission_preserves_prior_refusal_before_shape_checks() {
-        for property in [
-            property("App::PropertyString", Vec::new()),
-            property("App::PropertyPlacement", Vec::new()),
-            property("App::PropertyPlacement", vec![value("Other", &[])]),
-        ] {
-            crate::test_support::with_service_context(&[], |ctx| {
-                let CodecError::ResourceLimit(expected) =
-                    ctx.charge_work(u64::MAX, "prior refusal").unwrap_err()
-                else {
-                    panic!("work refusal");
-                };
-                assert!(matches!(
-                    super::placement_matrix_value_charged(ctx, &property),
-                    Err(CodecError::ResourceLimit(limit)) if limit == expected
-                ));
-            });
-        }
-    }
+
 
     fn attribute_trace(
         property: &PropertyRecord,

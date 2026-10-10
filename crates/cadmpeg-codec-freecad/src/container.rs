@@ -467,9 +467,6 @@ pub(crate) fn xml_object_count(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Option<u64>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut offset = 0;
     let mut depth = 0_usize;
     let mut objects = 0_u64;
@@ -1077,7 +1074,6 @@ pub(crate) fn chain_is_exact<'a>(
     let mut empty = true;
     loop {
         if spans.size_hint().1 == Some(0) {
-            ctx.charge_work(0, operation)?;
             break;
         }
         let Some(span) = ctx.next_charged(&mut spans, operation)? else {

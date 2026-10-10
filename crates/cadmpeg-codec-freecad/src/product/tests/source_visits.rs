@@ -116,7 +116,7 @@ fn product_subelement_copy_refusal_does_not_prepay_long_suffix() {
 }
 
 #[test]
-fn product_empty_source_helpers_preserve_original_fused_refusal() {
+fn product_empty_source_helpers_need_no_work() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_work_units = 0;
@@ -130,23 +130,6 @@ fn product_empty_source_helpers_preserve_original_fused_refusal() {
     assert!(nonempty_subelements(&ctx, &[])
         .expect("empty subelements")
         .is_empty());
-    let CodecError::ResourceLimit(original) = ctx
-        .charge_work(1, "original source refusal")
-        .expect_err("original refusal")
-    else {
-        panic!("resource refusal")
-    };
-    for error in [
-        product_record_index(&ctx, &[]).expect_err("fused index"),
-        linked_object_names(&ctx, &[]).expect_err("fused links"),
-        nonempty_subelements(&ctx, &[]).expect_err("fused subelements"),
-        transfer(&ctx, &[], &[], &BTreeMap::new()).expect_err("fused transfer"),
-        super::super::transfer_neutral(&ctx, &[], &[], &[], &[], &[], &[])
-            .expect_err("fused empty projection"),
-        super::super::product_cycle_nodes(&ctx, &[]).expect_err("fused empty graph"),
-    ] {
-        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit == original));
-    }
 }
 
 #[test]

@@ -285,9 +285,6 @@ fn referenced_pcurve_ids<'a>(
     ctx: &DecodeContext<'_>,
     coedges: &'a [Coedge],
 ) -> Result<HashSet<&'a PcurveId>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut referenced = HashSet::new();
     let mut coedges = coedges.iter();
     while coedges.len() != 0 {
@@ -469,9 +466,6 @@ impl<'c> GeometryIndexes<'c> {
         ctx: &'c DecodeContext<'_>,
         ir: &CadIr,
     ) -> Result<(), CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         if self.procedural.is_some() {
             return Ok(());
         }
@@ -725,9 +719,6 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
     }
 
     fn emit_pcurves(&mut self) -> Result<(), CodecError> {
-        if let Some(refusal) = self.ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let tables = self.tables;
         let mut shapes = tables.tshapes.iter().enumerate();
         while shapes.len() != 0 {
@@ -898,9 +889,6 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
     }
 
     fn emit_unowned_triangulations(&self, ir: &mut CadIr) -> Result<(), CodecError> {
-        if let Some(refusal) = self.ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let mut triangulations = self.tables.triangulations.iter().enumerate();
         while triangulations.len() != 0 {
             let Some((offset, triangulation)) = self
@@ -3498,9 +3486,6 @@ fn source_topology_indices(
     ctx: &DecodeContext<'_>,
     tables: Tables<'_>,
 ) -> Result<HashMap<(TextShapeKind, SourceOccurrenceKey), usize>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut indices = HashMap::new();
     for target in [
         TextShapeKind::Vertex,
@@ -3698,9 +3683,6 @@ fn edge_endpoint_uses<'a>(
     edge: usize,
     children: &'a [TextShapeUse],
 ) -> Result<(&'a TextShapeUse, &'a TextShapeUse), CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut start = None;
     let mut end = None;
     let mut children = children.iter();
@@ -3741,9 +3723,6 @@ fn select_pcurve_representation<'a>(
     surface: usize,
     surface_transform: Transform,
 ) -> Result<Option<(usize, &'a TextEdgeRepresentation)>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut matched = None;
     let mut representations = representations.iter().enumerate();
     while representations.len() != 0 {

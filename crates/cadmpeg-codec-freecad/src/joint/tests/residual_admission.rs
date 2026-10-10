@@ -110,7 +110,7 @@ fn occurrence(suffix: &str, native: Option<&str>) -> Occurrence {
 }
 
 #[test]
-fn joint_empty_objects_need_no_owner_index_and_keep_fuse() {
+fn joint_empty_objects_need_no_owner_index() {
     let property = carrier("App::PropertyLink");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -125,12 +125,6 @@ fn joint_empty_objects_need_no_owner_index_and_keep_fuse() {
             .is_empty()
     );
     assert_eq!(ctx.resource_refusal(), None);
-    let CodecError::ResourceLimit(first) = ctx.charge_work(1, "prior refusal").unwrap_err() else {
-        panic!("fuse");
-    };
-    assert!(
-        matches!(super::super::transfer(&ctx, &[], &[property]), Err(CodecError::ResourceLimit(limit)) if limit == first)
-    );
 }
 
 #[test]
@@ -253,7 +247,7 @@ fn joint_first_malformed_parameter_does_not_precharge_parameter_suffix() {
 }
 
 #[test]
-fn joint_empty_records_need_no_occurrence_work_or_storage_and_keep_fuse() {
+fn joint_empty_records_need_no_occurrence_work_or_storage() {
     let occurrences = vec![occurrence("Unused", Some("fcstd:native:object#Unused")); 1025];
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -266,13 +260,6 @@ fn joint_empty_records_need_no_occurrence_work_or_storage_and_keep_fuse() {
         .unwrap()
         .is_empty());
     assert_eq!(ctx.resource_refusal(), None);
-    let CodecError::ResourceLimit(first) = ctx.charge_work(1, "prior refusal").unwrap_err() else {
-        panic!("fuse");
-    };
-    assert!(
-        matches!(super::super::transfer_neutral(&ctx, &[], &occurrences),
-        Err(CodecError::ResourceLimit(limit)) if limit == first)
-    );
 }
 
 #[test]

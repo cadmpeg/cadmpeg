@@ -44,7 +44,7 @@ pub(super) fn object() -> ObjectRecord {
 }
 
 #[test]
-fn attachment_empty_objects_need_no_property_work_or_storage_and_keep_fuse() {
+fn attachment_empty_objects_need_no_property_work_or_storage() {
     let property = super::diagnostic_property("App::PropertyEnumeration", Vec::new());
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -59,11 +59,6 @@ fn attachment_empty_objects_need_no_property_work_or_storage_and_keep_fuse() {
             .is_empty()
     );
     assert_eq!(ctx.resource_refusal(), None);
-    let CodecError::ResourceLimit(first) = ctx.charge_work(1, "prior refusal").unwrap_err() else {
-        panic!("work refusal");
-    };
-    assert!(matches!(super::super::transfer(&ctx, &[], &[property]),
-        Err(CodecError::ResourceLimit(limit)) if limit == first));
 }
 
 #[test]

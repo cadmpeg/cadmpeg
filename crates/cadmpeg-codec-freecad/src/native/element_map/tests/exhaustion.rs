@@ -89,25 +89,6 @@ fn binding_refusal_precedes_unvisited_adapter_suffix() {
         assert_eq!(original.operation, "FreeCAD element topology binding scan");
         assert_eq!((original.used, original.additional), (1, 1));
         assert_eq!(visits.get(), 1);
-        assert!(matches!(input.bind_root_topology(ctx, []),
-            Err(CodecError::ResourceLimit(actual)) if actual == original));
-        assert_eq!(ctx.resource_refusal(), Some(original));
-    });
-}
-
-#[test]
-fn empty_native_binding_returns_original_refusal_without_advancing() {
-    with_work(0, |ctx| {
-        ctx.charge_work(1, "test original native fuse").unwrap_err();
-        let original = ctx.resource_refusal().unwrap();
-        let visits = Cell::new(0);
-        let bindings = std::iter::from_fn(|| {
-            visits.set(visits.get() + 1);
-            Some(("Edge", 1, "unvisited"))
-        });
-        assert!(matches!(nodes().bind_root_topology(ctx, bindings),
-            Err(CodecError::ResourceLimit(actual)) if actual == original));
-        assert_eq!(visits.get(), 0);
         assert_eq!(ctx.resource_refusal(), Some(original));
     });
 }

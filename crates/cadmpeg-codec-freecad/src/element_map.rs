@@ -323,9 +323,6 @@ pub(crate) fn bind_topology(
     maps: &mut [ElementMapRecord],
     occurrences: &[TopologyOccurrence],
 ) -> Result<(), CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if maps.is_empty() || occurrences.is_empty() {
         return Ok(());
     }
@@ -676,9 +673,6 @@ fn direct_element_map<'a, 'input>(
 }
 
 fn element_map_size(ctx: &DecodeContext<'_>, parsed: &ParsedMap) -> Result<usize, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut total = 0_usize;
     let mut groups = parsed.maps.root().groups.iter();
     while groups.len() != 0 {
@@ -715,9 +709,6 @@ fn element_map_size(ctx: &DecodeContext<'_>, parsed: &ParsedMap) -> Result<usize
 }
 
 fn mapped_name_count(ctx: &DecodeContext<'_>, parsed: &ParsedMap) -> Result<usize, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut total = 0_usize;
     let mut nodes = parsed.maps.iter();
     while nodes.len() != 0 {
@@ -1336,9 +1327,6 @@ impl<'a> TextScanner<'a> {
     }
 
     fn skip_whitespace(&mut self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         while self.position < self.text.len() {
             let Some(character) = ctx.next_charged(
                 &mut self.text[self.position..].chars(),
@@ -1388,9 +1376,6 @@ impl<'a> TextScanner<'a> {
     }
 
     fn next_field(&mut self, ctx: &DecodeContext<'_>) -> Result<Option<&'a str>, CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         if self.fields_done {
             return Ok(None);
         }
@@ -1413,9 +1398,6 @@ impl<'a> TextScanner<'a> {
     }
 
     fn next_legacy_id(&mut self, ctx: &DecodeContext<'_>) -> Result<Option<&'a str>, CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         while self.position < self.text.len() {
             let Some(character) = ctx.next_charged(
                 &mut self.text[self.position..].chars(),

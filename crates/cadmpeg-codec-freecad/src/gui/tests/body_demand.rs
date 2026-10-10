@@ -228,7 +228,7 @@ fn body_group_refusal_uses_a_cached_source_index() {
 }
 
 #[test]
-fn cached_body_prefixes_keep_their_guards_live_and_fuse_empty_selection() {
+fn cached_body_prefixes_keep_their_storage_live() {
     let ir = ir_with_bodies(&["a:b:0"]);
     crate::test_support::with_service_context(&[], |ctx| {
         let mut topology = TopologyIndex::new(&ir);
@@ -238,16 +238,5 @@ fn cached_body_prefixes_keep_their_guards_live_and_fuse_empty_selection() {
         assert!(topology.body_candidate_storage.is_some());
         assert!(topology.body_storage.is_some());
         assert_eq!(topology.bodies["a"].len(), 1);
-
-        ctx.charge_work(u64::MAX, "test fused body refusal")
-            .expect_err("test must fuse the decode budget");
-        assert!(matches!(
-            topology.ensure_bodies(ctx, std::iter::empty::<&str>()),
-            Err(cadmpeg_core::CodecError::ResourceLimit(_))
-        ));
-        assert!(matches!(
-            select_shape_bodies(ctx, &topology.bodies, std::iter::empty::<&str>()),
-            Err(cadmpeg_core::CodecError::ResourceLimit(_))
-        ));
     });
 }

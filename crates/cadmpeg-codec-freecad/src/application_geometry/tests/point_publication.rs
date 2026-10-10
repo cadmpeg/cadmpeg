@@ -102,8 +102,6 @@ fn point_source_refusal_keeps_original_limit() {
                 assert_eq!(original.dimension, ResourceDimension::RetainedBytes);
                 assert!(points.is_empty());
                 assert_eq!(ctx.resource_refusal(), Some(*original));
-                assert!(matches!(ctx.charge_retained(0, "later point publication"),
-                    Err(CodecError::ResourceLimit(repeated)) if repeated == *original));
             }
             result
         },

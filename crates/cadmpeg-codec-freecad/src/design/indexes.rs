@@ -26,13 +26,12 @@ impl<'ctx, 'arena, 'objects> ObjectIndex<'ctx, 'arena, 'objects> {
     pub(super) fn new(
         ctx: &'ctx DecodeContext<'arena>,
         objects: &'objects [ObjectRecord],
-    ) -> Result<Self, CodecError> {
-        ctx.charge_work(0, "fcstd design object index initialization")?;
-        Ok(Self {
+    ) -> Self {
+        Self {
             ctx,
             objects,
             entries: RefCell::new(None),
-        })
+        }
     }
 
     pub(super) fn get(
@@ -79,15 +78,14 @@ impl<'ctx, 'arena, 'data> BodyPredecessors<'ctx, 'arena, 'data> {
         objects: &'data [ObjectRecord],
         features: &'data HashMap<&'data str, FeatureId>,
         properties_by_owner: &'data BTreeMap<&'data str, Vec<&'data PropertyRecord>>,
-    ) -> Result<Self, CodecError> {
-        ctx.charge_work(0, "fcstd body predecessor index initialization")?;
-        Ok(Self {
+    ) -> Self {
+        Self {
             ctx,
             objects,
             features,
             properties_by_owner,
             entries: RefCell::new(None),
-        })
+        }
     }
 
     fn build(

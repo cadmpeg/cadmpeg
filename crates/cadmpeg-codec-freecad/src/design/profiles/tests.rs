@@ -667,74 +667,7 @@ fn explicit_profile_locus_failure_does_not_precharge_locus_suffix() {
     assert_eq!(ctx.resource_refusal(), Some(limit));
 }
 
-#[test]
-fn empty_profile_routes_preserve_prior_resource_refusal() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("profile test context");
-    let chain_storage = ctx
-        .reserve_scoped(0, "FCStd profile uses")
-        .expect("empty profile storage");
-    let cadmpeg_core::CodecError::ResourceLimit(first) = ctx
-        .charge_work(1, "test prior profile work refusal")
-        .expect_err("work cap fuses the context")
-    else {
-        panic!("work refusal required")
-    };
 
-    assert!(matches!(
-        super::build_profiles(&ctx, &[], &[]),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == first
-    ));
-    assert!(matches!(
-        super::EndpointIndex::new(
-            &ctx,
-            &std::collections::BTreeSet::new(),
-            &[],
-        ),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == first
-    ));
-    let source = super::EndpointLocus {
-        entity: 0,
-        start: true,
-    };
-    let explicit = std::collections::BTreeMap::from([(source, std::collections::BTreeSet::new())]);
-    let endpoint_index = super::EndpointIndex {
-        by_scale: std::collections::BTreeMap::new(),
-    };
-    assert!(matches!(
-        super::endpoint_candidates(
-            &ctx,
-            source,
-            &std::collections::BTreeSet::new(),
-            &explicit,
-            &[],
-            &endpoint_index,
-        ),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == first
-    ));
-    assert!(matches!(
-        super::explicit_endpoint_relations(
-            &ctx,
-            &std::collections::BTreeSet::new(),
-            &[],
-            &[],
-        ),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == first
-    ));
-    assert!(matches!(
-        super::finish_profile_chain(
-            &ctx,
-            chain_storage,
-            std::collections::VecDeque::new(),
-            &[],
-        ),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == first
-    ));
-    assert_eq!(ctx.resource_refusal(), Some(first));
-}
 
 #[test]
 fn explicit_profile_relations_skip_unused_entity_index() {

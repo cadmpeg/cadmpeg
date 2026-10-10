@@ -2450,9 +2450,6 @@ pub(crate) fn parse_payloads(
     properties: &[PropertyRecord],
     entries: &[EntryRecord],
 ) -> Result<Vec<ShapePayloadRecord>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut index_storage = None;
     let mut entries_by_name: Option<BTreeMap<&str, &EntryRecord>> = None;
     let mut payloads = Vec::new();
@@ -2584,9 +2581,6 @@ pub(crate) fn carrier_census(
     ctx: &DecodeContext<'_>,
     payloads: &[ShapePayloadRecord],
 ) -> Result<Vec<crate::native::CarrierCensusRecord>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut census = Vec::new();
     let mut payload_iter = payloads.iter();
     while payload_iter.len() != 0 {
@@ -3899,9 +3893,6 @@ fn checked_binary_reference(
     allow_zero: bool,
     label: &str,
 ) -> Result<usize, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let value = usize::try_from(value).map_err(|_| {
         crate::resource::malformed_charged(
             ctx,
@@ -3920,9 +3911,6 @@ fn checked_binary_reference(
 }
 
 fn binary_orientation(ctx: &DecodeContext<'_>, value: i32) -> Result<TextOrientation, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     match value {
         0 => Ok(TextOrientation::Forward),
         1 => Ok(TextOrientation::Reversed),
@@ -6162,9 +6150,6 @@ fn normalize_periodic_knots(
     let (knots, source_storage) = knots;
     let _source_storage = source_storage;
     let knots = knots;
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if !periodic {
         return Ok((knots, 0));
     }
@@ -6265,9 +6250,6 @@ fn append_periodic_curve_poles<T: Copy>(
     weights: Option<&mut Vec<FiniteReal>>,
     padding: usize,
 ) -> Result<(), CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if padding == 0 {
         return Ok(());
     }
@@ -6643,9 +6625,6 @@ fn grid_rows<T>(
     let (values, source_storage) = values;
     let _source_storage = source_storage;
     let values = values;
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if width == 0 || !values.len().is_multiple_of(width) {
         return Err(CodecError::malformed(
             "surface grid dimensions do not match pole count",
@@ -6779,9 +6758,6 @@ impl<'a, 'c, 'r> TokenCursor<'a, 'c, 'r> {
     /// Takes the next token, charging the step; readers of its bytes charge
     /// them.
     fn next(&mut self, label: &str) -> Result<&'a str, CodecError> {
-        if let Some(refusal) = self.ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let mut tokens = self.tokens.get(self.index..).unwrap_or(&[]).iter().copied();
         let token = if tokens.len() == 0 {
             None
@@ -6828,9 +6804,6 @@ pub(crate) fn transfer_text_geometry(
     properties: &[PropertyRecord],
 ) -> Result<(CurveTransfer, SurfaceTransfer), CodecError> {
     const OPERATION: &str = "FreeCAD geometry source objects";
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut owner_storage = None;
     let mut owners: Option<HashMap<&str, Option<&str>>> = None;
     let mut curves = CurveTransfer::default();

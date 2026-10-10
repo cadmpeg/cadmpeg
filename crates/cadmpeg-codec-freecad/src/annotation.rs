@@ -1472,7 +1472,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn annotation_empty_neutral_transfer_is_zero_work_and_preserves_sticky_refusal() {
+    fn annotation_empty_neutral_transfer_is_zero_work() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
         policy.limits.max_work_units = 0;
@@ -1486,24 +1486,10 @@ pub(crate) mod tests {
         super::transfer_neutral(&ctx, &mut model, &[], &[], &unused_drawings)
             .expect("empty annotations do no positive work");
         assert!(model.semantic_annotations.is_empty());
-
-        let prior = ctx
-            .charge_work(1, "prior annotation refusal")
-            .expect_err("work limit");
-        let error = super::transfer_neutral(&ctx, &mut model, &[], &[], &unused_drawings)
-            .expect_err("empty annotation transfer preserves sticky refusal");
-        let (
-            cadmpeg_core::CodecError::ResourceLimit(prior),
-            cadmpeg_core::CodecError::ResourceLimit(error),
-        ) = (prior, error)
-        else {
-            panic!("resource refusal")
-        };
-        assert_eq!(error, prior);
     }
 
     #[test]
-    fn annotation_empty_object_transfer_is_zero_work_and_preserves_sticky_refusal() {
+    fn annotation_empty_object_transfer_is_zero_work() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
         policy.limits.max_work_units = 0;
@@ -1515,20 +1501,6 @@ pub(crate) mod tests {
         assert!(super::transfer(&ctx, &[], &[])
             .expect("empty annotation object scan does no positive work")
             .is_empty());
-
-        let prior = ctx
-            .charge_work(1, "prior annotation object refusal")
-            .expect_err("work limit");
-        let error = super::transfer(&ctx, &[], &[])
-            .expect_err("empty annotation object scan preserves sticky refusal");
-        let (
-            cadmpeg_core::CodecError::ResourceLimit(prior),
-            cadmpeg_core::CodecError::ResourceLimit(error),
-        ) = (prior, error)
-        else {
-            panic!("resource refusal")
-        };
-        assert_eq!(error, prior);
     }
 
     #[test]
@@ -1643,9 +1615,6 @@ pub(crate) mod tests {
             };
             assert_eq!(limit.dimension, dimension);
             assert_eq!(ctx.resource_refusal(), Some(limit));
-            assert!(
-                matches!(ctx.charge_work(0, "annotation sticky probe"), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-            );
             limit
         };
         for dimension in [
