@@ -235,7 +235,7 @@ fn range_lod_candidate_releases_children_and_lanes_after_center_rejection() {
     body.extend_from_slice(&1_f32.to_le_bytes());
     body.extend_from_slice(&[0; 12]);
     crate::test_support::with_decode_context(|ctx| {
-        assert!(parse_jt9_range_lod_node_body(ctx, &body).unwrap().is_some())
+        assert!(parse_jt9_range_lod_node_body(ctx, &body).unwrap().is_some());
     });
     body.push(1);
     assert_released(|ctx| {
@@ -340,7 +340,7 @@ fn tri_strip_header_candidate_releases_valid_header_before_invalid_element() {
                 .unwrap()
                 .len(),
             1
-        )
+        );
     });
     assert_released(|ctx| {
         assert!(display_jt_tri_strip_lod_headers(ctx, &container, &elements)?.is_empty());
@@ -356,7 +356,7 @@ fn face_degree_candidate_releases_valid_record_before_invalid_element() {
             display_jt_initial_face_degree_symbols(ctx, &container, &elements[..1]).unwrap()[0]
                 .degrees,
             [0]
-        )
+        );
     });
     assert_released(|ctx| {
         assert!(display_jt_initial_face_degree_symbols(ctx, &container, &elements)?.is_empty());
@@ -377,7 +377,7 @@ fn topology_candidate_releases_valid_packets_before_invalid_element() {
                 .sequences
                 .len(),
             1
-        )
+        );
     });
     assert_released(|ctx| {
         let result = display_jt_topology_packet_sequences(ctx, &container, &elements)?;
@@ -448,7 +448,7 @@ fn coordinate_candidate_releases_valid_array_before_invalid_component() {
                 .unwrap()
                 .len(),
             1
-        )
+        );
     });
     assert_released(|ctx| {
         assert!(
@@ -485,7 +485,7 @@ fn normal_candidate_releases_valid_array_before_missing_owner() {
             .unwrap()
             .len(),
             1
-        )
+        );
     });
     assert_released(|ctx| {
         assert!(display_jt_vertex_normals(
@@ -531,7 +531,7 @@ fn color_candidate_releases_valid_array_before_missing_normal() {
             .unwrap()
             .len(),
             1
-        )
+        );
     });
     assert_released(|ctx| {
         assert!(display_jt_vertex_colors(
@@ -575,7 +575,7 @@ fn texture_candidate_releases_valid_array_before_zero_attribute_count() {
             .unwrap()
             .len(),
             1
-        )
+        );
     });
     assert_released(|ctx| {
         assert!(display_jt_vertex_texture_coordinates(
@@ -617,7 +617,7 @@ fn flag_candidate_releases_valid_array_before_missing_texture() {
         )
     };
     crate::test_support::with_decode_context(|ctx| {
-        assert_eq!(decode(ctx, std::slice::from_ref(&first)).unwrap().len(), 1)
+        assert_eq!(decode(ctx, std::slice::from_ref(&first)).unwrap().len(), 1);
     });
     let vertex_headers = [first.clone(), second.clone()];
     assert_released(|ctx| {
@@ -647,7 +647,7 @@ fn compressed_sequence_candidate_releases_prefix_before_failed_inflation() {
                 .1
                 .len(),
             1
-        )
+        );
     });
     assert_released(|ctx| {
         let (elements, sequences) = display_jt_compressed_element_sequences(
@@ -683,7 +683,7 @@ fn string_property_candidate_releases_atom_before_wrong_type() {
                 .unwrap()
                 .len(),
             1
-        )
+        );
     });
     expanded.extend_from_slice(&framed_element([0; 16], 5, &string_body("y")));
     end_marker(&mut expanded);
@@ -708,7 +708,7 @@ fn topology_sequence() -> DisplayJtTopologyPacketSequence {
             sha256: Sha256Digest::digest(&[]),
             representation_offset: 0,
             values: Some(values.to_vec()),
-        })
+        });
     };
     for context in TopologyContext::ALL {
         add(
@@ -760,7 +760,7 @@ fn polygon_mesh_candidate_releases_valid_mesh_before_missing_lane() {
             .unwrap()
             .len(),
             1
-        )
+        );
     });
     assert_released(|ctx| {
         assert!(display_jt_polygon_meshes(
@@ -809,7 +809,7 @@ fn binding_candidate_releases_valid_binding_before_trailing_property_bytes() {
                 .unwrap()
                 .len(),
             1
-        )
+        );
     });
     expanded.push(1);
     let (container, source) = compressed_fixture(&expanded, 1);
@@ -968,6 +968,7 @@ fn invalid_first_toc_extent_does_not_visit_the_remaining_entries() {
 
 #[test]
 fn topology_predictor_scratch_is_released_while_values_remain_retained() {
+    const ALLOWANCE: u64 = 1 << 20;
     let mut representation = Vec::new();
     let mut packet = zero_packet();
     packet[..4].copy_from_slice(&2_u32.to_le_bytes());
@@ -981,7 +982,6 @@ fn topology_predictor_scratch_is_released_while_values_remain_retained() {
     representation.extend_from_slice(&0x1234_5678_u32.to_le_bytes());
     representation.extend_from_slice(&[0; 16]);
     let (container, elements) = shape_fixture(&tri_strip_body(&representation));
-    const ALLOWANCE: u64 = 1 << 20;
     crate::test_support::with_decode_context_over(
         &[],
         |policy| policy.limits.max_retained_bytes = ALLOWANCE,
