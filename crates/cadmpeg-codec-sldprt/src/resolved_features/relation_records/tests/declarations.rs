@@ -299,7 +299,7 @@ fn declaration_class_workspace_ends_before_scalar_sort_scratch() {
 }
 
 #[test]
-fn sketch_literal_case_fold_keeps_relation_identity_and_probe() {
+fn sketch_case_fold_keeps_relation_identity_and_admits_comparison() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     for tag in ["Sketch", "sKeTcH", "SKETCH"] {
@@ -309,13 +309,8 @@ fn sketch_literal_case_fold_keeps_relation_identity_and_probe() {
         let input = lane(vec![class(10, "sgPntPntHorDist")], vec![driving]);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = u64::MAX; // mark the budget searched by the probe
+        policy.limits.max_work_units = u64::MAX;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-            ResourceDimension::WorkUnits,
-            "match SLDPRT sketch feature tags",
-            None,
-        );
         let instances = relation_instances(&ctx, &history, &input).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one declared relation");
@@ -327,16 +322,13 @@ fn sketch_literal_case_fold_keeps_relation_identity_and_probe() {
         assert_eq!(relation.scalar_refs(), ["scalar-20"]);
         assert_eq!(relation.feature_ref, "sketch");
         assert_eq!(ctx.resource_refusal(), None);
-        let CodecError::ResourceLimit(limit) = ctx
-            .charge_work(1, "match SLDPRT sketch feature tags")
-            .unwrap_err()
-        else {
-            panic!("fixed case folding must leave its probe armed");
-        };
+        let CodecError::ResourceLimit(limit) = crate::test_support::work_refusal_at(
+            "match SLDPRT sketch feature tags",
+            |ctx| relation_instances(ctx, &history, &input),
+        ) else { panic!("case-fold comparison must refuse"); };
         assert_eq!(limit.operation, "match SLDPRT sketch feature tags");
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(limit.additional, 1);
-        assert_eq!(ctx.resource_refusal(), Some(limit));
+        assert_eq!(limit.additional, 6);
     }
 }
 
