@@ -182,8 +182,7 @@ impl SubdCage {
         if let Err(error) = self.validate_vertices(&vertices, ctx)? {
             return Ok(Err(error));
         }
-        storage.commit()?;
-        self.vertices = vertices;
+        self.vertices = storage.commit_value(vertices)?;
         Ok(Ok(()))
     }
 

@@ -176,6 +176,27 @@ fn resource_refused_append_restores_neutral_native_and_parent_state() {
 }
 
 #[test]
+fn append_parent_handoff_observes_callback_fuse_after_returned_success() {
+    let mut ir = crate::examples::unit_cube().unwrap();
+    let before = ir.clone();
+    let staged = staged_document();
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut refusal = None;
+    let result = ir.try_append(&ctx, staged.model, staged.native, |combined| {
+        assert!(combined.model.feature_regeneration_parent(
+            &"test:append:feature#child".try_into().unwrap()
+        ).is_some());
+        refusal = Some(ctx.charge_work(u64::MAX / 2, "test append handoff refusal")
+            .expect_err("callback fuses the original session"));
+        Ok(Ok::<(), ()>(()))
+    });
+    let refusal = refusal.expect("callback reached the real combined state");
+    assert_eq!(result.unwrap_err().to_string(), refusal.to_string());
+    assert_eq!(ctx.finish_session().unwrap_err().to_string(), refusal.to_string());
+    assert_eq!(ir, before);
+}
+
+#[test]
 fn append_storage_refusal_precedes_visible_mutation() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     for dimension in [

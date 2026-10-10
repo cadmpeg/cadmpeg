@@ -62,8 +62,7 @@ impl AnnotationTransaction<'_> {
 
     /// Admit the final owned tables before transferring them to the document.
     pub fn into_retained(self) -> Result<Annotations, CodecError> {
-        self.storage.commit()?;
-        Ok(self.annotations)
+        self.storage.commit_value(self.annotations)
     }
 }
 
@@ -591,8 +590,8 @@ impl<Storage: AnnotationStorage> AnnotationBuilder<Storage> {
 impl AnnotationBuilder<ScopedReservation<'_>> {
     /// Admit retained storage before transferring a transaction's tables.
     pub fn into_retained(self) -> Result<AnnotationBuilder, CodecError> {
-        self.storage.commit()?;
-        Ok(AnnotationBuilder::resume(self.state.annotations))
+        let annotations = self.storage.commit_value(self.state.annotations)?;
+        Ok(AnnotationBuilder::resume(annotations))
     }
 }
 

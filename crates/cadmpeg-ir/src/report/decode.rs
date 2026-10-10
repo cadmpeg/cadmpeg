@@ -389,17 +389,17 @@ impl Coverage {
         index: u32,
         count: usize,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        let (name, bytes) = ctx.format_scoped(
+        let name = ctx.format_scoped(
             format_args!("{}{index}{}", key.prefix, key.suffix),
             "decode indexed coverage name",
         )?;
         if let Some(value) =
-            ctx.get_mut_btree_map(&mut self.entries, name.as_str(), "decode coverage lookup")?
+            ctx.get_mut_btree_map(&mut self.entries, name.0.as_str(), "decode coverage lookup")?
         {
             *value = count;
             return Ok(());
         }
-        bytes.commit()?;
+        let name = name.1.commit_value(name.0)?;
         self.insert_name(ctx, name, count)
     }
 
@@ -411,17 +411,17 @@ impl Coverage {
         value: u8,
         count: usize,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        let (name, bytes) = ctx.format_scoped(
+        let name = ctx.format_scoped(
             format_args!("{}{:02x}{}", key.prefix, value, key.suffix),
             "decode hexadecimal coverage name",
         )?;
         if let Some(existing) =
-            ctx.get_mut_btree_map(&mut self.entries, name.as_str(), "decode coverage lookup")?
+            ctx.get_mut_btree_map(&mut self.entries, name.0.as_str(), "decode coverage lookup")?
         {
             *existing = count;
             return Ok(());
         }
-        bytes.commit()?;
+        let name = name.1.commit_value(name.0)?;
         self.insert_name(ctx, name, count)
     }
 
