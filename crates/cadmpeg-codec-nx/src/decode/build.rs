@@ -1290,7 +1290,7 @@ pub(super) fn try_decode_geometry(
                 },
                 "nx invalid pcurves",
             )?;
-            retain_marked(&mut ir.model.pcurves, marks);
+            retain_marked(ctx, &mut ir.model.pcurves, marks, "nx compact invalid pcurves")?;
             intersection_index.reindex_pcurves_after_prune(ctx, &ir)?;
         }
         retain_unresolved_topology_carriers(
@@ -1902,7 +1902,7 @@ fn retain_referenced_pcurves(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<
         "nx referenced pcurves",
     )?;
     drop(referenced_pcurves);
-    retain_marked(&mut ir.model.pcurves, marks);
+    retain_marked(ctx, &mut ir.model.pcurves, marks, "nx compact referenced pcurves")?;
     Ok(())
 }
 
@@ -2078,8 +2078,8 @@ fn prune_unreferenced_unknown_carriers(
         CURVES,
     )?;
     drop((used_surfaces, used_curves));
-    retain_marked(&mut ir.model.surfaces, surface_marks);
-    retain_marked(&mut ir.model.curves, curve_marks);
+    retain_marked(ctx, &mut ir.model.surfaces, surface_marks, "nx compact known surfaces")?;
+    retain_marked(ctx, &mut ir.model.curves, curve_marks, "nx compact known curves")?;
     Ok(())
 }
 
@@ -2583,7 +2583,7 @@ fn prune_inactive_topology(
         |body| ctx.contains_btree_set(selected, &body.id, "nx active bodies"),
         "nx active bodies",
     )?;
-    retain_marked(&mut ir.model.bodies, marks);
+    retain_marked(ctx, &mut ir.model.bodies, marks, "nx compact active topology bodies")?;
     let marks = keep_marks(
         ctx,
         &mut storage,
@@ -2591,7 +2591,7 @@ fn prune_inactive_topology(
         |region| ctx.contains_btree_set(selected, &region.body, "nx active regions"),
         "nx active regions",
     )?;
-    retain_marked(&mut ir.model.regions, marks);
+    retain_marked(ctx, &mut ir.model.regions, marks, "nx compact active topology regions")?;
     let mut regions = BTreeSet::new();
     for region in ctx.admit_iter(&ir.model.regions, "nx active regions")? {
         storage
@@ -2605,7 +2605,7 @@ fn prune_inactive_topology(
         "nx active shells",
     )?;
     drop(regions);
-    retain_marked(&mut ir.model.shells, marks);
+    retain_marked(ctx, &mut ir.model.shells, marks, "nx compact active topology shells")?;
     let mut shells = BTreeSet::new();
     for shell in ctx.admit_iter(&ir.model.shells, "nx active shells")? {
         storage
@@ -2619,7 +2619,7 @@ fn prune_inactive_topology(
         "nx active faces",
     )?;
     drop(shells);
-    retain_marked(&mut ir.model.faces, marks);
+    retain_marked(ctx, &mut ir.model.faces, marks, "nx compact active topology faces")?;
     let mut faces = BTreeSet::new();
     for face in ctx.admit_iter(&ir.model.faces, "nx active faces")? {
         storage.with_storage(|| ctx.insert_btree_set(&mut faces, &face.id, "nx active faces"))?;
@@ -2632,7 +2632,7 @@ fn prune_inactive_topology(
         "nx active loops",
     )?;
     drop(faces);
-    retain_marked(&mut ir.model.loops, marks);
+    retain_marked(ctx, &mut ir.model.loops, marks, "nx compact active topology loops")?;
     let mut loops = BTreeSet::new();
     for loop_ in ctx.admit_iter(&ir.model.loops, "nx active loops")? {
         storage.with_storage(|| ctx.insert_btree_set(&mut loops, &loop_.id, "nx active loops"))?;
@@ -2645,7 +2645,7 @@ fn prune_inactive_topology(
         "nx active coedges",
     )?;
     drop(loops);
-    retain_marked(&mut ir.model.coedges, marks);
+    retain_marked(ctx, &mut ir.model.coedges, marks, "nx compact active topology coedges")?;
     let mut edges = BTreeSet::new();
     for coedge in ctx.admit_iter(&ir.model.coedges, "nx active edges")? {
         storage
@@ -2664,7 +2664,7 @@ fn prune_inactive_topology(
         "nx active edges",
     )?;
     drop(edges);
-    retain_marked(&mut ir.model.edges, marks);
+    retain_marked(ctx, &mut ir.model.edges, marks, "nx compact active topology edges")?;
     let mut vertices = BTreeSet::new();
     for edge in ctx.admit_iter(&ir.model.edges, "nx active vertices")? {
         storage.with_storage(|| {
@@ -2687,7 +2687,7 @@ fn prune_inactive_topology(
         "nx active vertices",
     )?;
     drop(vertices);
-    retain_marked(&mut ir.model.vertices, marks);
+    retain_marked(ctx, &mut ir.model.vertices, marks, "nx compact active topology vertices")?;
     let mut points = BTreeSet::new();
     for vertex in ctx.admit_iter(&ir.model.vertices, "nx active points")? {
         storage.with_storage(|| {
@@ -2702,7 +2702,7 @@ fn prune_inactive_topology(
         "nx active points",
     )?;
     drop(points);
-    retain_marked(&mut ir.model.points, marks);
+    retain_marked(ctx, &mut ir.model.points, marks, "nx compact active topology points")?;
     drop(storage);
     prune_inactive_geometry(ctx, ir)?;
     Ok(())
@@ -2823,11 +2823,11 @@ fn prune_inactive_geometry(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<()
         surface_constructions,
         curve_constructions,
     ));
-    retain_marked(&mut ir.model.procedural_surfaces, procedural_surface_marks);
-    retain_marked(&mut ir.model.procedural_curves, procedural_curve_marks);
-    retain_marked(&mut ir.model.surfaces, surface_marks);
-    retain_marked(&mut ir.model.curves, curve_marks);
-    retain_marked(&mut ir.model.pcurves, pcurve_marks);
+    retain_marked(ctx, &mut ir.model.procedural_surfaces, procedural_surface_marks, "nx compact active geometry procedural surfaces")?;
+    retain_marked(ctx, &mut ir.model.procedural_curves, procedural_curve_marks, "nx compact active geometry procedural curves")?;
+    retain_marked(ctx, &mut ir.model.surfaces, surface_marks, "nx compact active geometry surfaces")?;
+    retain_marked(ctx, &mut ir.model.curves, curve_marks, "nx compact active geometry curves")?;
+    retain_marked(ctx, &mut ir.model.pcurves, pcurve_marks, "nx compact active geometry pcurves")?;
     Ok(())
 }
 
@@ -2856,7 +2856,7 @@ fn finalize_point_topology(
             "nx referenced points",
         )?;
         drop(referenced_points);
-        retain_marked(&mut ir.model.points, marks);
+        retain_marked(ctx, &mut ir.model.points, marks, "nx compact referenced points")?;
         return Ok(());
     }
 

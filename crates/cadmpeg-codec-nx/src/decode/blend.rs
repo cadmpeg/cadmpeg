@@ -475,34 +475,52 @@ mod tests {
     }
 
     #[test]
-    fn polynomial_root_sorts_refuse_work_before_returning_roots() {
-        use cadmpeg_core::decode::ResourceDimension;
-
-        for (dimension, operation) in [
-            (
-                ResourceDimension::WorkUnits,
-                "nx polynomial critical roots sort",
-            ),
-            (ResourceDimension::WorkUnits, "nx polynomial roots sort"),
-        ] {
-            crate::test_support::resource_refusal_at(&[], dimension, operation, |ctx| {
-                super::real_polynomial_roots(ctx, &[-1.0, 3.5, -3.0, -0.5, 1.0]).map(|_| ())
-            });
-        }
+    fn polynomial_roots_need_no_work_for_a_quartic() {
+        crate::test_support::with_decode_context_over(&[], |policy| {
+            policy.limits.max_work_units = 0;
+        }, |ctx| {
+            let roots = super::real_polynomial_roots(&[-1.0, 3.5, -3.0, -0.5, 1.0])
+                .expect("finite quartic roots");
+            assert_eq!(roots.len(), 3);
+            for (actual, expected) in roots.iter().zip([-2.0, 0.5, 1.0]) {
+                assert!((actual - expected).abs() <= 1024.0 * f64::EPSILON);
+            }
+            assert_eq!(ctx.resource_refusal(), None);
+        });
     }
 
     #[test]
     fn polynomial_root_sorts_need_no_scratch_for_a_quartic() {
-        crate::test_support::with_decode_context_over(
-            &[],
-            |policy| policy.limits.max_materialized_bytes = 0,
-            |ctx| {
-                let roots = super::real_polynomial_roots(ctx, &[-1.0, 3.5, -3.0, -0.5, 1.0])
-                    .expect("fixed-degree sorts need no scratch")
-                    .expect("finite quartic roots");
-                assert_eq!(roots.len(), 3);
-            },
-        );
+        crate::test_support::with_decode_context_over(&[], |policy| {
+            policy.limits.max_materialized_bytes = 0;
+        }, |ctx| {
+            let roots = super::real_polynomial_roots(&[-1.0, 3.5, -3.0, -0.5, 1.0])
+                .expect("finite quartic roots");
+            assert_eq!(roots.len(), 3);
+            assert_eq!(ctx.resource_refusal(), None);
+        });
+    }
+
+    #[test]
+    fn ellipse_inverse_keeps_seeded_minimum_without_input_work() {
+        let ellipse = cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0), 3.0, 1.0,
+        ).unwrap();
+        let geometry = cadmpeg_ir::geometry::SolvedCurveGeometry::Ellipse(ellipse);
+        crate::test_support::with_decode_context_over(&[], |policy| {
+            policy.limits.max_work_units = 0;
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_materialized_bytes = 0;
+        }, |ctx| {
+            let parameter = super::closest_periodic_analytic_curve_parameter(
+                &geometry, Point3::new(0.0, 0.0, 0.0), Some(std::f64::consts::FRAC_PI_2),
+            ).unwrap();
+            assert!((parameter - std::f64::consts::FRAC_PI_2).abs() <= 1024.0 * f64::EPSILON);
+            assert_eq!(super::closest_periodic_analytic_curve_parameter(
+                &geometry, Point3::new(3.0, 0.0, 0.0), Some(0.0)), Some(0.0));
+            assert_eq!(ctx.resource_refusal(), None);
+        });
     }
 
     #[test]
@@ -5355,20 +5373,10 @@ pub(super) fn closest_spine_parameter_with_index_and_budget(
             ))
         }
         Some(geometry @ SolvedCurveGeometry::Circle(_)) => {
-            closest_periodic_analytic_curve_parameter_with_budget(
-                geometry,
-                point,
-                seed,
-                geometry_budget,
-            )
+            Ok(closest_periodic_analytic_curve_parameter(geometry, point, seed))
         }
         Some(geometry @ SolvedCurveGeometry::Ellipse(_)) => {
-            closest_periodic_analytic_curve_parameter_with_budget(
-                geometry,
-                point,
-                seed,
-                geometry_budget,
-            )
+            Ok(closest_periodic_analytic_curve_parameter(geometry, point, seed))
         }
         Some(SolvedCurveGeometry::Nurbs(nurbs)) => {
             closest_nurbs_curve_parameter_with_budget(nurbs, point, seed, geometry_budget)
@@ -5377,14 +5385,13 @@ pub(super) fn closest_spine_parameter_with_index_and_budget(
     }
 }
 
-fn closest_periodic_analytic_curve_parameter_with_budget(
+fn closest_periodic_analytic_curve_parameter(
     geometry: &SolvedCurveGeometry,
     point: Point3,
     seed: Option<f64>,
-    geometry_budget: &GeometryWorkBudget<'_>,
-) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
+) -> Option<f64> {
     if seed.is_some_and(|seed| !seed.is_finite()) {
-        return Ok(None);
+        return None;
     }
     let (center, axis, reference, ellipse) = match geometry {
         SolvedCurveGeometry::Circle(circle_curve) => {
@@ -5399,22 +5406,22 @@ fn closest_periodic_analytic_curve_parameter_with_budget(
             let major_direction = ellipse_curve.frame().reference().as_raw();
             (center, *axis, *major_direction, Some(ellipse_curve))
         }
-        _ => return Ok(None),
+        _ => return None,
     };
     let transverse = axis.cross(reference);
     let delta = Vector3::new(point.x - center.x, point.y - center.y, point.z - center.z);
     let phase = delta.dot(transverse).atan2(delta.dot(reference));
     if !phase.is_finite() {
-        return Ok(None);
+        return None;
     }
     let circle_parameter = seed.map_or(phase, |seed| {
         phase + ((seed - phase) / std::f64::consts::TAU).round() * std::f64::consts::TAU
     });
     if !circle_parameter.is_finite() {
-        return Ok(None);
+        return None;
     }
     let Some(ellipse_curve) = ellipse else {
-        return Ok(Some(circle_parameter));
+        return Some(circle_parameter);
     };
     let anchor = seed.unwrap_or(phase);
     let major_radius = ellipse_curve.major_radius().get();
@@ -5439,12 +5446,7 @@ fn closest_periodic_analytic_curve_parameter_with_budget(
         minor_radius * y,
     ];
     let constant_distance = coefficients.iter().all(|coefficient| *coefficient == 0.0);
-    let Ok(roots) = real_polynomial_roots(geometry_budget.charges, &coefficients) else {
-        return geometry_budget.resource_refusal().map_or(Ok(None), Err);
-    };
-    let Some(roots) = roots else {
-        return Ok(None);
-    };
+    let roots = real_polynomial_roots(&coefficients)?;
     let parameters = roots
         .into_iter()
         .map(|root| 2.0 * root.atan())
@@ -5458,66 +5460,56 @@ fn closest_periodic_analytic_curve_parameter_with_budget(
     // the candidates, with the two ends and the anchor, have a fixed bound.
     let mut candidates = Vec::new();
     for parameter in parameters {
-        if !geometry_budget.charge() {
-            return geometry_budget.resource_refusal().map_or(Ok(None), Err);
-        }
         candidates.push((
             parameter,
             (major_radius * parameter.cos() - x).hypot(minor_radius * parameter.sin() - y),
         ));
     }
-    Ok(
-        closest_parameter_candidates(&candidates, Some(anchor), geometry_budget)?
-            .and_then(|parameters| parameters.first().copied()),
-    )
+    let minimum_distance = candidates.iter().map(|candidate| candidate.1).min_by(f64::total_cmp)?;
+    candidates.iter().filter(|candidate| {
+        let scale = candidate.1.abs().max(minimum_distance.abs()).max(f64::MIN_POSITIVE);
+        (candidate.1 - minimum_distance).abs() <= 128.0 * f64::EPSILON * scale
+    }).map(|candidate| candidate.0).min_by(|first, second| {
+        (first - anchor).abs().total_cmp(&(second - anchor).abs())
+            .then_with(|| first.total_cmp(second))
+    })
 }
 
 /// The real roots of the quartic `coefficients`, lowest power first. A
 /// quartic states a fixed amount of work: its roots, the roots of its
 /// derivatives and their bisection steps are bounded by its degree. The
-/// context admits the root sorts.
+/// root sorts need no input-sized admission.
 pub(super) fn real_polynomial_roots(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     coefficients: &[f64; 5],
-) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
+) -> Option<Vec<f64>> {
     if coefficients
         .iter()
         .any(|coefficient| !coefficient.is_finite())
     {
-        return Ok(None);
+        return None;
     }
-    let Some(mut roots) = polynomial_roots_in_unit_interval(ctx, coefficients)? else {
-        return Ok(None);
-    };
+    let mut roots = polynomial_roots_in_unit_interval(coefficients)?;
     let mut reversed = *coefficients;
     reversed.reverse();
-    let Some(reversed_roots) = polynomial_roots_in_unit_interval(ctx, &reversed)? else {
-        return Ok(None);
-    };
+    let reversed_roots = polynomial_roots_in_unit_interval(&reversed)?;
     roots.extend(
         reversed_roots
             .into_iter()
             .filter(|root| *root != 0.0)
             .map(f64::recip),
     );
-    ctx.stable_sort_by(
-        &mut roots,
-        |value| value,
-        f64::total_cmp,
-        "nx polynomial roots sort",
-    )?;
+    roots.sort_by(f64::total_cmp);
     roots.dedup_by(|first, second| {
         (*first - *second).abs() <= 256.0 * f64::EPSILON * first.abs().max(second.abs()).max(1.0)
     });
-    Ok(Some(roots))
+    Some(roots)
 }
 
 /// The roots in `[-1, 1]` of a polynomial of at most degree four, lowest
 /// power first.
 fn polynomial_roots_in_unit_interval(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     coefficients: &[f64],
-) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
+) -> Option<Vec<f64>> {
     let mut coefficients = coefficients.to_vec();
     while coefficients
         .last()
@@ -5526,53 +5518,41 @@ fn polynomial_roots_in_unit_interval(
         coefficients.pop();
     }
     if coefficients.is_empty() {
-        return Ok(Some(Vec::new()));
+        return Some(Vec::new());
     }
-    let Some(degree) = coefficients.len().checked_sub(1) else {
-        return Ok(None);
-    };
+    let degree = coefficients.len().checked_sub(1)?;
     if degree == 0 {
-        return Ok(Some(Vec::new()));
+        return Some(Vec::new());
     }
     let scale = coefficients
         .iter()
         .fold(0.0_f64, |scale, coefficient| scale.max(coefficient.abs()));
     if !scale.is_finite() || scale == 0.0 {
-        return Ok(Some(Vec::new()));
+        return Some(Vec::new());
     }
     for coefficient in &mut coefficients {
         *coefficient /= scale;
     }
     if degree == 1 {
         let root = -coefficients[0] / coefficients[1];
-        return Ok(root.is_finite().then(|| {
+        return root.is_finite().then(|| {
             if (-1.0..=1.0).contains(&root) {
                 vec![root]
             } else {
                 Vec::new()
             }
-        }));
+        });
     }
-    let Some(derivative) = coefficients
+    let derivative = coefficients
         .iter()
         .enumerate()
         .skip(1)
         .map(|(degree, coefficient)| {
             Some(*coefficient * cadmpeg_core::convert::f64_from_index(degree)?)
         })
-        .collect::<Option<Vec<_>>>()
-    else {
-        return Ok(None);
-    };
-    let Some(mut critical) = polynomial_roots_in_unit_interval(ctx, &derivative)? else {
-        return Ok(None);
-    };
-    ctx.stable_sort_by(
-        &mut critical,
-        |value| value,
-        f64::total_cmp,
-        "nx polynomial critical roots sort",
-    )?;
+        .collect::<Option<Vec<_>>>()?;
+    let mut critical = polynomial_roots_in_unit_interval(&derivative)?;
+    critical.sort_by(f64::total_cmp);
     critical.dedup_by(|first, second| {
         (*first - *second).abs() <= 64.0 * f64::EPSILON * first.abs().max(second.abs()).max(1.0)
     });
@@ -5629,16 +5609,11 @@ fn polynomial_roots_in_unit_interval(
         }
         roots.push(lower + (upper - lower) * 0.5);
     }
-    ctx.stable_sort_by(
-        &mut roots,
-        |value| value,
-        f64::total_cmp,
-        "nx polynomial roots sort",
-    )?;
+    roots.sort_by(f64::total_cmp);
     roots.dedup_by(|first, second| {
         (*first - *second).abs() <= 256.0 * f64::EPSILON * first.abs().max(second.abs()).max(1.0)
     });
-    Ok(Some(roots))
+    Some(roots)
 }
 
 fn polynomial_value(coefficients: &[f64], parameter: f64) -> f64 {
