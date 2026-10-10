@@ -1245,6 +1245,54 @@ fn ufrx_external_path_validation_runs_once() {
 }
 
 #[test]
+fn ufrx_external_reference_retains_only_nonzero_document_ids() {
+    for document_id in [[0; 16], [1; 16]] {
+        let reference = InventorExternalReference {
+            path: "part.ipt".into(),
+            library_id: 0,
+            library_name: String::new(),
+            display_name: String::new(),
+            state_groups: Vec::new(),
+            state: [0; 2],
+            document_id,
+            database_id: [0; 16],
+            reference_id: 7,
+            occurrence_count: 1,
+            version: 0,
+            flags: 0,
+        };
+        // Record id + path + database id: 34 + 8 + 32 = 74 bytes.
+        // Only a nonzero document id adds another 32 bytes: 106 total.
+        let retained_needed = 74 + if document_id == [0; 16] { 0 } else { 32 };
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = retained_needed - 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("short context");
+        assert!(matches!(
+            project_ufrx_external_reference(&ctx, 0, &reference, &mut Vec::new()),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "retain Inventor UFRx database id"
+                    && limit.used == retained_needed - 32
+                    && limit.additional == 32
+        ));
+
+        policy.limits.max_retained_bytes = retained_needed;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("exact context");
+        let mut issues = Vec::new();
+        let record = project_ufrx_external_reference(&ctx, 0, &reference, &mut issues)
+            .expect("only retained identity bytes fit")
+            .expect("path identity");
+        assert!(issues.is_empty());
+        let value = serde_json::to_value(record).expect("record");
+        assert_eq!(value["path"], reference.path);
+        assert_eq!(value["database_id"], "00000000000000000000000000000000");
+        assert_eq!(value["document_id"].as_str(),
+            (document_id != [0; 16]).then_some("01010101010101010101010101010101"));
+    }
+}
+
+#[test]
 fn ufrx_external_conversion_issue_refuses_before_failure_text_creation() {
     let arena = DecodeArena::new();
     let reference = InventorExternalReference {
