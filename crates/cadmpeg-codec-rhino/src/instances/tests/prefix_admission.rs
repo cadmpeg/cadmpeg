@@ -1,50 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 
 use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
 use crate::loss::Diagnostics;
 
 #[test]
-fn hex_character_refusal_precedes_unvisited_byte_suffix() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-    let CodecError::ResourceLimit(limit) = crate::instances::hex(&ctx, &[0xab; 8193], "instance hex character")
-        .expect_err("first character cannot execute") else {
-        panic!("original character refusal");
-    };
-    assert_eq!(limit.operation, "instance hex character");
-    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-    assert_eq!((limit.used, limit.additional), (1, 1));
-    assert_eq!(ctx.resource_refusal(), Some(limit));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
-}
-
-#[test]
-fn hex_admits_only_actual_bytes_and_characters() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    // Two byte visits and four emitted ASCII characters.
-    policy.limits.max_work_units = 6;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-    assert_eq!(crate::instances::hex(&ctx, &[0xab, 0x01], "instance hex character").unwrap(), "ab01");
-    ctx.finish_session().expect("exact executed work fits");
-}
-
-#[test]
-fn empty_hex_has_no_visits_and_preserves_original_fuse() {
+fn sha1_hex_is_fixed_work_and_preserves_original_fuse() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
+    policy.limits.max_retained_bytes = 40;
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-    assert_eq!(crate::instances::hex(&ctx, &[], "instance hex character").unwrap(), "");
+    assert_eq!(crate::instances::hex(&ctx, &[0xab; 20], "instance SHA-1").unwrap(), "ab".repeat(20));
     let CodecError::ResourceLimit(original) = ctx.charge_work(1, "instance original fuse").unwrap_err() else {
         panic!("original work refusal");
     };
-    assert!(matches!(crate::instances::hex(&ctx, &[], "instance hex character"), Err(CodecError::ResourceLimit(limit)) if limit == original));
+    assert!(matches!(crate::instances::hex(&ctx, &[0xab; 20], "instance SHA-1"), Err(CodecError::ResourceLimit(limit)) if limit == original));
     assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original));
 }
 

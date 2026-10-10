@@ -50,17 +50,6 @@ pub(crate) enum DefinitionKind {
     Unset,
 }
 
-impl cadmpeg_core::decode::cost::DecodeCost for DefinitionKind {
-    const FIXED_BYTES: Option<u64> = Some(1);
-    fn decode_cost(
-        &self,
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        _operation: &'static str,
-    ) -> Result<u64, cadmpeg_core::CodecError> {
-        Ok(1)
-    }
-}
-
 /// Source unit metadata. The stored scale defines a physical unit only for custom units.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct UnitDetail {
@@ -69,42 +58,10 @@ pub(crate) struct UnitDetail {
     custom_name: String,
 }
 
-impl cadmpeg_core::decode::cost::DecodeCost for UnitDetail {
-    fn decode_cost(
-        &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<u64, cadmpeg_core::CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
-            &(&self.unit, &self.meters_per_unit, &self.custom_name),
-            ctx,
-            operation,
-        )
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum UnitScale {
     Custom(PositiveReal),
     OtherBits(u64),
-}
-
-impl cadmpeg_core::decode::cost::DecodeCost for UnitScale {
-    const FIXED_BYTES: Option<u64> = Some(9);
-    fn decode_cost(
-        &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<u64, cadmpeg_core::CodecError> {
-        match self {
-            Self::Custom(value) => {
-                cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(1_u8, value), ctx, operation)
-            }
-            Self::OtherBits(value) => {
-                cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(1_u8, value), ctx, operation)
-            }
-        }
-    }
 }
 
 impl UnitDetail {
@@ -169,27 +126,6 @@ pub(crate) struct ContentHash {
     pub(crate) content_sha1: [u8; 20],
 }
 
-impl cadmpeg_core::decode::cost::DecodeCost for ContentHash {
-    const FIXED_BYTES: Option<u64> = Some(64);
-    fn decode_cost(
-        &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<u64, cadmpeg_core::CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
-            &(
-                &self.byte_count,
-                &self.hash_time,
-                &self.content_time,
-                &self.name_sha1,
-                &self.content_sha1,
-            ),
-            ctx,
-            operation,
-        )
-    }
-}
-
 /// Structured external file reference.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FileReference {
@@ -207,27 +143,6 @@ pub(crate) struct FileReference {
     pub(crate) embedded_file_id: Option<Uuid>,
 }
 
-impl cadmpeg_core::decode::cost::DecodeCost for FileReference {
-    fn decode_cost(
-        &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<u64, cadmpeg_core::CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
-            &(
-                (&self.source_range.start, &self.source_range.end),
-                &self.full_path,
-                &self.relative_path,
-                &self.content_hash,
-                &self.path_status,
-                &self.embedded_file_id,
-            ),
-            ctx,
-            operation,
-        )
-    }
-}
-
 /// Source of an instance-definition external link.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum LinkSource {
@@ -242,32 +157,6 @@ pub(crate) enum LinkSource {
     },
     /// Structured `ON_FileReference` payload.
     Structured(FileReference),
-}
-
-impl cadmpeg_core::decode::cost::DecodeCost for LinkSource {
-    fn decode_cost(
-        &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<u64, cadmpeg_core::CodecError> {
-        match self {
-            Self::None => Ok(1),
-            Self::LegacyFull(value) => {
-                cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(1_u8, value), ctx, operation)
-            }
-            Self::LegacyRelative {
-                relative_path,
-                full_path,
-            } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
-                &(1_u8, relative_path, full_path),
-                ctx,
-                operation,
-            ),
-            Self::Structured(value) => {
-                cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(1_u8, value), ctx, operation)
-            }
-        }
-    }
 }
 
 impl LinkSource {
@@ -321,41 +210,6 @@ pub(crate) struct InstanceDefinition {
     pub(crate) linked_appearance: u32,
     /// Exclusive linked-file source.
     pub(crate) link: LinkSource,
-}
-
-impl cadmpeg_core::decode::cost::DecodeCost for InstanceDefinition {
-    fn decode_cost(
-        &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<u64, cadmpeg_core::CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
-            &(
-                (
-                    &self.source_range.start,
-                    &self.source_range.end,
-                    &self.id,
-                    &self.members,
-                    &self.index,
-                ),
-                (
-                    &self.name,
-                    &self.description,
-                    &self.url,
-                    &self.url_tag,
-                    &self.kind,
-                ),
-                (
-                    &self.units,
-                    &self.linked_depth,
-                    &self.linked_appearance,
-                    &self.link,
-                ),
-            ),
-            ctx,
-            operation,
-        )
-    }
 }
 
 impl InstanceDefinition {
@@ -527,29 +381,14 @@ impl DefinitionDiagnostic {
 /// Renders digest bytes as retained lowercase hexadecimal.
 pub(crate) fn hex(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    bytes: &[u8],
+    bytes: &[u8; 20],
     operation: &'static str,
 ) -> Result<String, cadmpeg_core::CodecError> {
     const DIGITS: &[u8; 16] = b"0123456789abcdef";
-    let byte_len = bytes
-        .len()
-        .checked_mul(2)
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
-    let mut value = ctx.retained_string(byte_len, operation)?;
-    let mut source_bytes = bytes.iter();
-    for _ in 0..source_bytes.len() {
-        let byte = ctx.next_charged(&mut source_bytes, "Rhino hex traversal")?
-            .ok_or_else(|| cadmpeg_core::CodecError::malformed("Rhino hex source ended early"))?;
-        ctx.push_retained_char(
-            &mut value,
-            char::from(DIGITS[usize::from(byte >> 4)]),
-            operation,
-        )?;
-        ctx.push_retained_char(
-            &mut value,
-            char::from(DIGITS[usize::from(byte & 0x0f)]),
-            operation,
-        )?;
+    let mut value = ctx.retained_string(40, operation)?;
+    for byte in bytes {
+        value.push(char::from(DIGITS[usize::from(byte >> 4)]));
+        value.push(char::from(DIGITS[usize::from(byte & 0x0f)]));
     }
     Ok(value)
 }
@@ -1429,7 +1268,19 @@ fn apply_idef_alternative_path<D: DiagnosticSink>(
                 continue;
             }
         };
-        let path = ctx.trim_text(path.as_str(), "Rhino instance alternative path trim")?;
+        let Some((start, _)) = ctx.find_by(
+            path.char_indices(),
+            |(_, character)| Ok(!character.is_whitespace()),
+            "Rhino instance alternative path trim",
+        )? else {
+            continue;
+        };
+        let end = ctx.find_by(
+            path[start..].char_indices().rev(),
+            |(_, character)| Ok(!character.is_whitespace()),
+            "Rhino instance alternative path trim",
+        )?.map_or(start, |(last, character)| start + last + character.len_utf8());
+        let path = &path[start..end];
         if path.is_empty() {
             continue;
         }
