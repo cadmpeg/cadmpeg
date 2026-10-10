@@ -2869,9 +2869,9 @@ fn project_with_type_130_policy(
         let procedural = ProceduralCurve::new(
             crate::ids::procedural_curve_admitted(&stem, ctx)?,
             ProceduralCurveDefinition::Compound(
-                cadmpeg_ir::geometry::CompoundCurveConstruction::try_new(
-                    boundaries, components, None,
-                )
+                cadmpeg_ir::geometry::CompoundCurveConstruction::try_new_for_decode(
+                    ctx, boundaries, components, None,
+                )?
                 .map_err(cadmpeg_core::CodecError::malformed)?,
             ),
         );

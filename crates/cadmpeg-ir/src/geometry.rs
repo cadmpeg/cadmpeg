@@ -1050,7 +1050,11 @@ impl CompoundCurveConstruction {
         if components.is_empty() {
             return Err("compound curve components must not be empty");
         }
-        let [parameters] = FiniteReal::lanes([parameters]).ok_or(INVALID)?;
+        let parameters = parameters
+            .into_iter()
+            .map(FiniteReal::new)
+            .collect::<Option<Vec<_>>>()
+            .ok_or(INVALID)?;
         let components = components
             .into_iter()
             .map(CompoundComponent::admit)
@@ -1061,6 +1065,58 @@ impl CompoundCurveConstruction {
             components,
             cache,
         })
+    }
+
+    /// Admit visited parameters and components within the decode budget.
+    pub fn try_new_for_decode(
+        ctx: &DecodeContext<'_>,
+        parameters: Vec<f64>,
+        components: Vec<CompoundComponent<CurveId>>,
+        cache: Option<LegacyCache>,
+    ) -> Result<Result<Self, &'static str>, CodecError> {
+        const INVALID: &str = "compound curve parameters must be finite";
+        if components.is_empty() {
+            return Ok(Err("compound curve components must not be empty"));
+        }
+        let mut parameters = parameters.into_iter();
+        let mut admitted_parameters = Vec::new();
+        while !parameters.as_slice().is_empty() {
+            let Some(parameter) =
+                ctx.next_charged(&mut parameters, "compound curve parameter admission")?
+            else {
+                break;
+            };
+            let Some(parameter) = FiniteReal::new(parameter) else {
+                return Ok(Err(INVALID));
+            };
+            ctx.push_vec(
+                &mut admitted_parameters,
+                parameter,
+                "compound curve parameter storage",
+            )?;
+        }
+        let mut components = components.into_iter();
+        let mut admitted_components = Vec::new();
+        while !components.as_slice().is_empty() {
+            let Some(component) =
+                ctx.next_charged(&mut components, "compound curve component admission")?
+            else {
+                break;
+            };
+            let Some(component) = component.admit() else {
+                return Ok(Err(INVALID));
+            };
+            ctx.push_vec(
+                &mut admitted_components,
+                component,
+                "compound curve component storage",
+            )?;
+        }
+        Ok(Ok(Self {
+            parameters: admitted_parameters,
+            components: admitted_components,
+            cache,
+        }))
     }
 
     /// Return the parameters.
