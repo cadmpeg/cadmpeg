@@ -133,3 +133,41 @@ fn trim_last_unmatched_row_keeps_its_unique_segment_without_an_empty_visit() {
         assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original));
     }
 }
+
+#[test]
+fn repeated_point_axis_reads_one_held_coordinate() {
+    use crate::feature::definitions::{FeatureRelationTable, FeatureSkamp, FeatureSkampItem,
+        FeatureSolverTableHeader, SolverSubtable, FeatureSegmentKind};
+    use super::super::{section_axis_reference_line_geometry, axis_reference_line, SectionAxis};
+    let mut definition = super::arc_radius_definition([3.0, 3.0]);
+    let mut segment = super::arc_carrier_segment();
+    segment.kind = FeatureSegmentKind::Point(7);
+    let entity_id = segment.external_id;
+    let item = || FeatureSkampItem { entity_id, sense: 0 };
+    for axis in SectionAxis::ALL {
+        segment.vertical_horizontal = Some(u32::try_from(axis.index()).expect("axis index"));
+        definition.relations = Some(FeatureRelationTable {
+            declared_count: 0, entity_ref: None, rows: Vec::new(),
+            skamps: Some(SolverSubtable::Declared {
+                header: FeatureSolverTableHeader { declared_count: 2, entity_ref: 0, offset: 0 },
+                rows: vec![
+                    FeatureSkamp { id: 1, kind: if axis == SectionAxis::U { 2 } else { 1 },
+                        flags: 0, status: 1, items: vec![item()], offset: 0 },
+                    FeatureSkamp { id: 2, kind: 14, flags: 0, status: 1,
+                        items: vec![item(), item(), item()], offset: 0 },
+                ],
+            }), triples: None, offset: 0,
+        });
+        for held in [Some(3.0), None, Some(f64::INFINITY)] {
+            let mut coordinates = [None; 2];
+            coordinates[axis.index()] = held;
+            let points = std::collections::BTreeMap::from([(7, coordinates)]);
+            let geometry = crate::test_support::assert_work_boundaries(
+                &["creo section variable point lookup"],
+                |ctx| section_axis_reference_line_geometry(ctx, &definition, &points, &segment),
+            );
+            assert_eq!(geometry, held.filter(|value| value.is_finite())
+                .and_then(|value| axis_reference_line(value, axis)));
+        }
+    }
+}
