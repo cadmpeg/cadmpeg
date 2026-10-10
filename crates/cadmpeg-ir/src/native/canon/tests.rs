@@ -937,3 +937,48 @@ fn raw_scalar_does_not_pay_for_unused_container_depth() {
         ctx.finish_session().unwrap();
     }
 }
+
+#[test]
+fn raw_replay_duplicate_does_not_admit_unread_object_or_array_members() {
+    use cadmpeg_core::decode::{u64_from_index, DecodeArena, DecodeContext, DecodePolicy};
+    use serde_json::Value;
+
+    let node_bytes = 11 * (std::mem::size_of::<String>() + std::mem::size_of::<Value>())
+        + 16 * std::mem::size_of::<usize>()
+        + 2 * std::mem::align_of::<String>()
+            .max(std::mem::align_of::<Value>())
+            .max(std::mem::align_of::<usize>());
+    // One map visit, two key copies, one scalar visit, the first insertion's
+    // three node passes, one duplicate comparison and one duplicate-key scan,
+    // then two text passes to format the duplicate message.
+    let native_work = 1 + 2 + 1 + 3 * node_bytes + 1 + 1 + 2 * "duplicate key a".len();
+    // Two three-byte raw-key scans; only the first one-byte value is replayed.
+    // The duplicate refuses before its value's Replay serializer is called.
+    let member_work = 2 * 3 + 1;
+    for tail in ["7".to_owned(), "[7]".repeat(1024).replace("][", "],[")] {
+        for array in [false, true] {
+            let (json, parent_work) = if array {
+                (format!(r#"[{{"a":7,"a":8}},[{tail}]]"#), r#"{"a":7,"a":8}"#.len() + 1 + 1)
+            } else {
+                (format!(r#"{{"a":7,"a":8,"tail":[{tail}]}}"#), 0)
+            };
+            // The root text pass pays the initial parser. Additional replay
+            // charges cover only members read before the duplicate refuses.
+            let work = u64_from_index(json.len() + native_work + member_work + parent_work);
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = work;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            ctx.charge_work(u64_from_index(json.len()), super::WORK).unwrap();
+            let error = super::super::replay::emit(
+                &json,
+                super::CanonValue::for_record(&ctx),
+                super::MAX_NATIVE_NESTING_DEPTH,
+                &ctx,
+            ).err().expect("duplicate key must refuse");
+            assert!(error.to_string().contains("duplicate key a"), "{error}");
+            drop(error);
+            ctx.finish_session().unwrap();
+        }
+    }
+}

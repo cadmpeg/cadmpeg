@@ -43,6 +43,18 @@ pub(crate) fn test_ctx() -> DecodeContext<'static> {
 /// field a CADIR document can state is read back.
 const MAX_NATIVE_NESTING_DEPTH: usize = 256;
 
+/// Search-path levels and key comparisons for serde_json's private B-tree.
+fn map_search_bound(len: usize) -> (u64, u64) {
+    let length = u64_from_index(len);
+    let half = length / 2 + length % 2;
+    let height = if half == 0 {
+        0
+    } else {
+        u64::from(half.ilog(6)) + 1
+    };
+    (height, (11 * height).min(length))
+}
+
 /// The text every refusal of [`MAX_NATIVE_NESTING_DEPTH`] carries.
 ///
 /// The write path, the replay path and the constructor all answer to one
@@ -338,17 +350,20 @@ impl NativeRecord {
         let canon::Node::Object(mut fields) = serialized else {
             return Err(NativeConvertError::NonObject);
         };
-        // serde_json::Map does not expose its B-tree to remove_btree_map.
-        // A search visits at most eleven keys per level and no more than the stored keys.
-        let length = u64_from_index(fields.len());
-        let half = length / 2 + length % 2;
-        let comparisons = if half == 0 {
-            0
-        } else {
-            11 * (u64::from(half.ilog(6)) + 1)
-        }
-        .min(length);
+        // Map keeps its B-tree private. Admit the search and the shift,
+        // steal and per-level merge passes before removing the identity.
+        let (height, comparisons) = map_search_bound(fields.len());
         ctx.charge_work(comparisons * 2, "remove native record identity")?;
+        let passes = if height <= 1 { 1 } else { 4 * height + 3 };
+        let node_bytes = 11 * (std::mem::size_of::<String>() + std::mem::size_of::<Value>())
+            + 16 * std::mem::size_of::<usize>()
+            + 2 * std::mem::align_of::<String>()
+                .max(std::mem::align_of::<Value>())
+                .max(std::mem::align_of::<usize>());
+        ctx.charge_work(
+            u64_from_index(node_bytes) * passes,
+            "remove native record identity",
+        )?;
         let Some(Value::String(id)) = fields.remove("id") else {
             return Err(NativeConvertError::MissingId);
         };

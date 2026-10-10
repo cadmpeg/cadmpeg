@@ -6,10 +6,9 @@
 //! limit never accumulates; the descent is counted here instead, against the
 //! one bound every native record field answers to.
 
-use std::borrow::Cow;
 use std::fmt;
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
 
 use serde::{de, ser};
 use serde_json::value::RawValue;
@@ -21,13 +20,15 @@ use super::nests_too_deep_message;
 ///
 /// The counter bounds this function's own recursion, whatever serializer it
 /// drives. A serializer that counts as well is handed the same remainder, so
-/// the two refuse at the same container.
+/// the two refuse at the same container. The caller admits the root text pass;
+/// each child parse admits its own pass when its serializer is called.
 pub(super) fn emit<S: ser::Serializer>(
     json: &str,
     serializer: S,
     depth: usize,
     ctx: &DecodeContext<'_>,
 ) -> Result<S::Ok, S::Error> {
+    let mut scratch = ctx.reserve_scoped(0, "serialize native record").map_err(ser::Error::custom)?;
     let mut deserializer = serde_json::Deserializer::from_str(json);
     let emitted = de::Deserializer::deserialize_any(
         &mut deserializer,
@@ -35,7 +36,8 @@ pub(super) fn emit<S: ser::Serializer>(
             serializer,
             depth,
             ctx,
-            bytes: json.len(),
+            json,
+            scratch: &mut scratch,
         },
     )
     .map_err(de_to_ser)?;
@@ -57,16 +59,17 @@ fn de_to_ser<D: de::Error, S: ser::Error>(error: D) -> S {
 }
 
 /// Writes whatever it is handed straight into a serializer.
-struct Emit<'a, S> {
+struct Emit<'a, 'scratch, S> {
     /// Where the value is written.
     serializer: S,
     /// Containers this value may still enter.
     depth: usize,
     ctx: &'a DecodeContext<'a>,
-    bytes: usize,
+    json: &'a str,
+    scratch: &'scratch mut ScopedReservation<'a>,
 }
 
-impl<'de, S: ser::Serializer> de::Visitor<'de> for Emit<'_, S> {
+impl<'de, S: ser::Serializer> de::Visitor<'de> for Emit<'_, '_, S> {
     type Value = S::Ok;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
@@ -109,12 +112,6 @@ impl<'de, S: ser::Serializer> de::Visitor<'de> for Emit<'_, S> {
         let Some(depth) = self.depth.checked_sub(1) else {
             return Err(nests_too_deep());
         };
-        self.ctx
-            .charge_work(
-                u64_from_index(self.bytes),
-                "construct canonical native value",
-            )
-            .map_err(de::Error::custom)?;
         let mut sequence = self
             .serializer
             .serialize_seq(access.size_hint())
@@ -134,19 +131,80 @@ impl<'de, S: ser::Serializer> de::Visitor<'de> for Emit<'_, S> {
         let Some(depth) = self.depth.checked_sub(1) else {
             return Err(nests_too_deep());
         };
-        self.ctx
-            .charge_work(
-                u64_from_index(self.bytes),
-                "construct canonical native value",
-            )
-            .map_err(de::Error::custom)?;
         let mut map = self
             .serializer
             .serialize_map(access.size_hint())
             .map_err(ser_to_de)?;
-        while let Some(key) = access.next_key_seed(Key)? {
-            ser::SerializeMap::serialize_key(&mut map, key.as_ref()).map_err(ser_to_de)?;
+        let bytes = self.json.as_bytes();
+        let mut offset = 0;
+        while bytes.get(offset).is_some_and(u8::is_ascii_whitespace) {
+            self.ctx.charge_work(1, "construct canonical native value")
+                .map_err(de::Error::custom)?;
+            offset += 1;
+        }
+        offset += 1; // The opening brace was consumed before visit_map.
+        let mut scratch_bytes = 0;
+        loop {
+            while bytes.get(offset).is_some_and(u8::is_ascii_whitespace) {
+                self.ctx.charge_work(1, "construct canonical native value")
+                    .map_err(de::Error::custom)?;
+                offset += 1;
+            }
+            if bytes.get(offset) == Some(&b',') {
+                offset += 1;
+                while bytes.get(offset).is_some_and(u8::is_ascii_whitespace) {
+                    self.ctx.charge_work(1, "construct canonical native value")
+                        .map_err(de::Error::custom)?;
+                    offset += 1;
+                }
+            }
+            // Bound this key before serde decodes into its reusable scratch.
+            // The container parser preserves key-error positions.
+            if bytes.get(offset) == Some(&b'"') {
+                let start = offset;
+                self.ctx.charge_work(1, "construct canonical native value")
+                    .map_err(de::Error::custom)?;
+                offset += 1;
+                let mut escaped = false;
+                let mut has_escape = false;
+                while let Some(&byte) = bytes.get(offset) {
+                    self.ctx.charge_work(1, "construct canonical native value")
+                        .map_err(de::Error::custom)?;
+                    offset += 1;
+                    if escaped {
+                        escaped = false;
+                    } else if byte == b'\\' {
+                        escaped = true;
+                        has_escape = true;
+                    } else if byte == b'"' {
+                        break;
+                    }
+                }
+                if has_escape {
+                    // One raw-key length bounds the old allocation; two bound
+                    // the growing allocation. Both can overlap during growth.
+                    let needed = u64_from_index(offset - start).checked_mul(3)
+                        .ok_or_else(|| de::Error::custom(self.ctx.refuse_codec_limit(
+                            "serialize native record", u64::MAX - 1, u64::MAX,
+                        )))?.max(8);
+                    if needed > scratch_bytes {
+                        self.scratch.grow(needed - scratch_bytes).map_err(de::Error::custom)?;
+                        scratch_bytes = needed;
+                    }
+                }
+            }
+            let Some(()) = access.next_key_seed(Key { map: &mut map })? else {
+                break;
+            };
             let value = access.next_value::<&RawValue>()?;
+            // RawValue borrows this parser's source, so the end of the read
+            // member is the next key's delimiter and whitespace boundary.
+            offset = (value.get().as_ptr() as usize)
+                .checked_sub(self.json.as_ptr() as usize)
+                .and_then(|offset| offset.checked_add(value.get().len()))
+                .ok_or_else(|| de::Error::custom(self.ctx.refuse_codec_limit(
+                    "construct canonical native value", u64::MAX - 1, u64::MAX,
+                )))?;
             let child = Replay {
                 json: value.get(),
                 depth,
@@ -176,42 +234,34 @@ struct Replay<'a> {
 
 impl ser::Serialize for Replay<'_> {
     fn serialize<S: ser::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.ctx.charge_work(u64_from_index(self.json.len()), "construct canonical native value")
+            .map_err(ser::Error::custom)?;
         emit(self.json, serializer, self.depth, self.ctx)
     }
 }
 
-/// Reads a JSON object key, borrowing from the source text when it has no
-/// escapes.
-struct Key;
+/// Serializes a decoded object key while serde's borrowed or scratch view is live.
+struct Key<'a, M> {
+    map: &'a mut M,
+}
 
-impl<'de> de::DeserializeSeed<'de> for Key {
-    type Value = Cow<'de, str>;
+impl<'de, M: ser::SerializeMap> de::DeserializeSeed<'de> for Key<'_, M> {
+    type Value = ();
 
-    fn deserialize<D: de::Deserializer<'de>>(
-        self,
-        deserializer: D,
-    ) -> Result<Self::Value, D::Error> {
-        deserializer.deserialize_str(Key)
+    fn deserialize<D: de::Deserializer<'de>>(self, deserializer: D) -> Result<(), D::Error> {
+        deserializer.deserialize_str(self)
     }
 }
 
-impl<'de> de::Visitor<'de> for Key {
-    type Value = Cow<'de, str>;
+impl<'de, M: ser::SerializeMap> de::Visitor<'de> for Key<'_, M> {
+    type Value = ();
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         formatter.write_str("a JSON object key")
     }
 
     fn visit_str<E: de::Error>(self, value: &str) -> Result<Self::Value, E> {
-        Ok(Cow::Owned(value.to_owned()))
-    }
-
-    fn visit_borrowed_str<E: de::Error>(self, value: &'de str) -> Result<Self::Value, E> {
-        Ok(Cow::Borrowed(value))
-    }
-
-    fn visit_string<E: de::Error>(self, value: String) -> Result<Self::Value, E> {
-        Ok(Cow::Owned(value))
+        self.map.serialize_key(value).map_err(ser_to_de)
     }
 }
 
@@ -228,7 +278,7 @@ mod tests {
         use super::u64_from_index;
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_core::CodecError;
-        for (json, work) in [("7", 1), ("[[7]]", 5 + 5 + 3)] {
+        for (json, work) in [("7", 1), ("[[7]]", 5 + 3 + 1)] {
             let run = |cap| {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
@@ -252,7 +302,7 @@ mod tests {
                 "construct canonical native value",
                 run,
             );
-            // One text pass, plus each entered container: 1 byte, or 5 + 5 + 3 bytes.
+            // One root text pass, then each read child: 1 byte, or 5 + 3 + 1 bytes.
             assert_eq!(
                 run(work).unwrap(),
                 serde_json::from_str::<Value>(json).unwrap()
@@ -322,5 +372,132 @@ mod tests {
             )),
             "{error}"
         );
+    }
+
+    #[test]
+    fn raw_replay_escaped_key_scratch_is_scoped_and_has_no_owned_copy() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let json = r#"{"a\u0062":7,"c\td":8}"#;
+        let key_bytes = r#""a\u0062""#.len();
+        // Old and growing scratch allocations overlap, with an eight-byte minimum.
+        let scratch_bytes = super::u64_from_index(key_bytes * 3).max(8);
+        let run = |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            policy.limits.max_retained_bytes = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            ctx.charge_work(super::u64_from_index(json.len()), "construct canonical native value")?;
+            let emitted = emit(json, serde_json::value::Serializer, MAX_NATIVE_NESTING_DEPTH, &ctx);
+            ctx.charge_work(0, "construct canonical native value")?;
+            let emitted = emitted.map_err(|error| CodecError::malformed(error.to_string()))?;
+            assert_eq!(emitted, serde_json::json!({"ab":7,"c\td":8}));
+            let released = ctx.reserve_scoped(cap, "released raw key scratch")?;
+            drop(released);
+            ctx.finish_session()?;
+            Ok(emitted)
+        };
+        let CodecError::ResourceLimit(limit) = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::MaterializedBytes,
+            "serialize native record",
+            run,
+        ) else {
+            panic!("escaped key scratch refusal");
+        };
+        assert_eq!(limit.additional, scratch_bytes);
+        assert_eq!(limit.used, 0);
+        run(scratch_bytes).unwrap();
+    }
+
+    #[test]
+    fn raw_replay_borrowed_keys_need_no_scratch_or_owned_copy() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let json = r#"{"é key":7,"":8}"#;
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        ctx.charge_work(super::u64_from_index(json.len()), "construct canonical native value").unwrap();
+        assert_eq!(
+            emit(json, serde_json::value::Serializer, MAX_NATIVE_NESTING_DEPTH, &ctx).unwrap(),
+            serde_json::json!({"é key":7,"":8})
+        );
+        ctx.finish_session().unwrap();
+    }
+
+    #[test]
+    fn raw_replay_long_escaped_key_scratch_admits_reallocation_overlap() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let prefix = "a".repeat(1024);
+        let key = format!("{prefix}\t");
+        let raw_key = format!(r#""{prefix}\t""#);
+        let json = format!("{{{raw_key}:7}}");
+        // The 1024-byte prefix fills the first scratch allocation; decoding
+        // the final escape can double it while the old allocation is live.
+        let scratch_bytes = super::u64_from_index(3 * raw_key.len());
+        let run = |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            policy.limits.max_retained_bytes = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            ctx.charge_work(super::u64_from_index(json.len()), "construct canonical native value")?;
+            let value = emit(&json, serde_json::value::Serializer, MAX_NATIVE_NESTING_DEPTH, &ctx);
+            ctx.charge_work(0, "construct canonical native value")?;
+            let value = value.map_err(|error| CodecError::malformed(error.to_string()))?;
+            assert_eq!(value.get(&key), Some(&Value::from(7)));
+            let released = ctx.reserve_scoped(cap, "released long raw key scratch")?;
+            drop(released);
+            ctx.finish_session()?;
+            Ok(value)
+        };
+        let CodecError::ResourceLimit(limit) = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::MaterializedBytes,
+            "serialize native record",
+            run,
+        ) else {
+            panic!("key growth must be admitted");
+        };
+        assert_eq!(limit.additional, scratch_bytes);
+        assert_eq!(limit.used, 0);
+        run(scratch_bytes).unwrap();
+    }
+
+    #[test]
+    fn raw_replay_each_repeated_child_read_is_admitted() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 1 + 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let child = super::Replay { json: "7", depth: MAX_NATIVE_NESTING_DEPTH, ctx: &ctx };
+        assert_eq!(serde_json::to_value(&child).unwrap(), Value::from(7));
+        assert_eq!(serde_json::to_value(&child).unwrap(), Value::from(7));
+        assert!(serde_json::to_value(&child).is_err());
+        let limit = ctx.resource_refusal().unwrap();
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "construct canonical native value");
+        assert_eq!(limit.used, 2); // Two one-byte scalar reads have run.
+        assert_eq!(limit.additional, 1); // A third one-byte scalar read is refused.
+        assert!(ctx.finish_session().is_err());
+    }
+
+    #[test]
+    fn raw_replay_key_refusals_preserve_parser_messages() {
+        for json in [
+            r#"{"\uD800":0}"#,
+            r#"{"\uDC00":0}"#,
+            "{\n\"ok\":0,\n\"\\uD800\":1\n}",
+        ] {
+            let expected = serde_json::from_str::<Value>(json).unwrap_err().to_string();
+            let error = emit_field(json, serde_json::value::Serializer).unwrap_err();
+            assert_eq!(error.to_string(), expected);
+        }
     }
 }

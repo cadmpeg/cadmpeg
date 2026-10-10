@@ -690,14 +690,7 @@ impl<'a> CanonMap<'a> {
         // Map keeps its B-tree private. Admit its entry search with the core
         // search-path bound; admit backing nodes only for a vacant entry.
         let len = self.entries.len();
-        let length = u64_from_index(len);
-        let half = length / 2 + length % 2;
-        let comparisons = if half == 0 {
-            0
-        } else {
-            11 * (u64::from(half.ilog(6)) + 1)
-        }
-        .min(length);
+        let (_, comparisons) = super::map_search_bound(len);
         let work = u64_from_index(key.len())
             .checked_mul(comparisons)
             .ok_or_else(|| self.ctx.refuse_codec_limit(WORK, u64::MAX - 1, u64::MAX))?;
@@ -809,7 +802,7 @@ impl<'a> ser::SerializeStruct for CanonStruct<'a> {
                 // The replay counts the text's containers and this serializer
                 // counts the containers it is driven through, from the same
                 // remaining budget, so both refuse at the same container.
-                // Admit one text pass; replay admits each entered container separately.
+                // Admit one text pass; replay admits each member before its next parse.
                 ctx.charge_work(u64_from_index(json.len()), WORK)?;
                 let replayed =
                     super::replay::emit(json, CanonValue::within(ctx, *depth), *depth, ctx);
