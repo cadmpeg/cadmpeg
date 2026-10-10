@@ -680,6 +680,9 @@ fn procedural_pcurve_parameter_map(
     procedural: &ProceduralSurface,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<(f64, f64, f64, f64)>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some([Some(carrier_start), Some(carrier_end), _, _]) =
         procedural.record_bounds().map(RecordBounds::get)
     else {
@@ -765,6 +768,9 @@ fn native_sequence_from_id(
     prefix: &str,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<u32>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(suffix) = id.strip_prefix(prefix) else {
         return Ok(None);
     };
@@ -818,6 +824,9 @@ fn surface_parameter_bound_intervals(
     precision: RealPrecision,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<[Option<DeclaredInterval>; 4]>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(bounds) = bounds else {
         return Ok(None);
     };
@@ -1195,6 +1204,9 @@ fn linear_pcurve_points(
     range: [f64; 2],
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<[f64; 2]>>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let PcurveGeometry::Nurbs { nurbs } = geometry else {
         return Ok(None);
     };
@@ -1249,6 +1261,9 @@ fn append_path<T: Copy + PartialEq>(
     path: &[T],
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(first) = path.first().copied() else {
         return Ok(false);
     };
@@ -1444,6 +1459,9 @@ impl SimpleRing {
         points: Vec<[f64; 2]>,
         ctx: &DecodeContext<'_>,
     ) -> Result<Result<Self, NonSimpleRing>, CodecError> {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
         if points.len() < 4 || points.first() != points.last() {
             return Ok(Err(NonSimpleRing));
         }
@@ -1613,6 +1631,9 @@ fn linear_boundary_relationship_is_valid(
     periodic_parameters: [bool; 2],
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<bool>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let rings = match rings {
         Ok(rings) => rings,
         Err(NonSimpleRing) => return Ok(Some(false)),
@@ -1687,6 +1708,9 @@ fn insert_homogeneous_pcurve_knot(
     insertion: (f64, usize, usize),
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<()>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let (knot, span, multiplicity) = insertion;
     let Some((left_end, tail_start)) = span.checked_sub(degree).zip(span.checked_sub(multiplicity))
     else {
@@ -1720,6 +1744,9 @@ fn homogeneous_pcurve_spans(
     controls: Vec<[f64; 4]>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<HomogeneousPcurveSpan>>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(expected_knots) = controls
         .len()
         .checked_add(degree)
@@ -2194,6 +2221,9 @@ fn edge_range_matches_curve(
     end: Point3,
     tolerance: f64,
 ) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal);
+    }
     let Some(curve_id) = edge.curve() else {
         return Ok(false);
     };
