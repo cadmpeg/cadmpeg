@@ -1393,7 +1393,10 @@ fn validate_logical_ledger(
         let Some((name, group)) = ctx.next_charged(&mut name_sources, OPERATION)? else {
             break;
         };
-        let ScopedData { _storage: storage, data: mut spans } = group;
+        let ScopedData {
+            _storage: storage,
+            data: mut spans,
+        } = group;
         ctx.stable_sort_by_key(
             &mut spans,
             |value| value.span.start(),
@@ -1505,11 +1508,14 @@ impl CodecBackend for FcstdCodec {
         }
         if container::has_document_markers(ctx, prefix)? {
             Ok(Confidence::High)
-        } else if ctx.position_by(
-            prefix.windows(b"Document.xml".len()),
-            |window| Ok(window == b"Document.xml"),
-            "detect FreeCAD document marker",
-        )?.is_some() {
+        } else if ctx
+            .position_by(
+                prefix.windows(b"Document.xml".len()),
+                |window| Ok(window == b"Document.xml"),
+                "detect FreeCAD document marker",
+            )?
+            .is_some()
+        {
             Ok(Confidence::Medium)
         } else {
             Ok(Confidence::Low)
@@ -1585,12 +1591,14 @@ impl CodecBackend for FcstdCodec {
                 CodecError::Malformed("Document.xml disappeared after scan".into())
             })?;
             let mut graph_storage = ctx.reserve_scoped(0, "FCStd persistence graph")?;
-            let graph = graph_storage.with_storage(|| persistence::parse_document(
-                document_xml.text,
-                document_xml.xml.document(),
-                dialect::FcstdDialect::from_schema_version(&scan.schema_version),
-                ctx,
-            ))?;
+            let graph = graph_storage.with_storage(|| {
+                persistence::parse_document(
+                    document_xml.text,
+                    document_xml.xml.document(),
+                    dialect::FcstdDialect::from_schema_version(&scan.schema_version),
+                    ctx,
+                )
+            })?;
             let mut property_sources = graph.properties.iter();
             while property_sources.len() != 0 {
                 let Some(property) =
@@ -1621,22 +1629,22 @@ impl CodecBackend for FcstdCodec {
                 }
             }
             let mut entry_storage = ctx.reserve_scoped(0, "FCStd decode entry records")?;
-            let mut entry_records = entry_storage.with_storage(|| {
-                container::entry_records(ctx, &scan, &graph.properties)
-            })?;
+            let mut entry_records = entry_storage
+                .with_storage(|| container::entry_records(ctx, &scan, &graph.properties))?;
             let mut element_storage = ctx.reserve_scoped(0, "FCStd decode element records")?;
-            let (string_tables, mut element_maps) = element_storage.with_storage(|| element_map::parse(
-                ctx,
-                document_xml.xml.document(),
-                scan.document.file_version.value(),
-                &graph.properties,
-                &entry_records,
-            ))?;
+            let (string_tables, mut element_maps) = element_storage.with_storage(|| {
+                element_map::parse(
+                    ctx,
+                    document_xml.xml.document(),
+                    scan.document.file_version.value(),
+                    &graph.properties,
+                    &entry_records,
+                )
+            })?;
             drop(document_xml);
             let mut shape_storage = ctx.reserve_scoped(0, "FCStd decode shape payloads")?;
-            let shape_payloads = shape_storage.with_storage(|| {
-                brep::parse_payloads(ctx, &graph.properties, &entry_records)
-            })?;
+            let shape_payloads = shape_storage
+                .with_storage(|| brep::parse_payloads(ctx, &graph.properties, &entry_records))?;
             namespace.set_arena(ctx, "objects", &graph.objects)?;
             namespace.set_arena(ctx, "extensions", &graph.extensions)?;
             namespace.set_arena(ctx, "properties", &graph.properties)?;
@@ -1656,20 +1664,17 @@ impl CodecBackend for FcstdCodec {
             })?;
             namespace.set_arena(ctx, "product_nodes", &product_nodes)?;
             let mut joint_storage = ctx.reserve_scoped(0, "FCStd decode joints")?;
-            let joint_records = joint_storage.with_storage(|| {
-                joint::transfer(ctx, &graph.objects, &graph.properties)
-            })?;
+            let joint_records = joint_storage
+                .with_storage(|| joint::transfer(ctx, &graph.objects, &graph.properties))?;
             namespace.set_arena(ctx, "joints", &joint_records)?;
             let mut drawing_storage = ctx.reserve_scoped(0, "FCStd decode drawings")?;
-            let drawings = drawing_storage.with_storage(|| {
-                drawing::transfer(ctx, &graph.objects, &graph.properties)
-            })?;
+            let drawings = drawing_storage
+                .with_storage(|| drawing::transfer(ctx, &graph.objects, &graph.properties))?;
             drawing::transfer_neutral(ctx, &mut ir.model, &drawings, &graph.properties)?;
             namespace.set_arena(ctx, "drawings", &drawings)?;
             let mut annotation_storage = ctx.reserve_scoped(0, "FCStd decode annotations")?;
-            let annotations = annotation_storage.with_storage(|| {
-                annotation::transfer(ctx, &graph.objects, &graph.properties)
-            })?;
+            let annotations = annotation_storage
+                .with_storage(|| annotation::transfer(ctx, &graph.objects, &graph.properties))?;
             annotation::transfer_neutral(
                 ctx,
                 &mut ir.model,
@@ -1785,7 +1790,9 @@ impl CodecBackend for FcstdCodec {
                 })?;
                 let _census_storage = census.1;
                 let census = census.0;
-                ir.native.namespace_mut("fcstd").set_arena(ctx, "design_census", &census)?;
+                ir.native
+                    .namespace_mut("fcstd")
+                    .set_arena(ctx, "design_census", &census)?;
             }
             element_storage.with_storage(|| {
                 element_map::bind_topology(ctx, &mut element_maps, &topology_occurrences.records)
@@ -1818,9 +1825,8 @@ impl CodecBackend for FcstdCodec {
                 &mut admitted_entities,
                 "admit FCStd entities",
             )?;
-            entry_storage.with_storage(|| {
-                bind_gui_entry_references(ctx, &mut entry_records, &gui_graph)
-            })?;
+            entry_storage
+                .with_storage(|| bind_gui_entry_references(ctx, &mut entry_records, &gui_graph))?;
             ir.native
                 .namespace_mut("fcstd")
                 .set_arena(ctx, "entries", &entry_records)?;
@@ -1840,15 +1846,17 @@ impl CodecBackend for FcstdCodec {
                 &gui_graph.properties,
             )?;
             let mut logical_storage = ctx.reserve_scoped(0, "FCStd decode logical ledger")?;
-            let logical_ledger = logical_storage.with_storage(|| container::logical_ledger(
-                ctx,
-                &entry_records,
-                &graph.properties,
-                &gui_graph,
-                &shape_payloads,
-                string_tables.as_slice(),
-                &element_maps,
-            ))?;
+            let logical_ledger = logical_storage.with_storage(|| {
+                container::logical_ledger(
+                    ctx,
+                    &entry_records,
+                    &graph.properties,
+                    &gui_graph,
+                    &shape_payloads,
+                    string_tables.as_slice(),
+                    &element_maps,
+                )
+            })?;
             ir.native
                 .namespace_mut("fcstd")
                 .set_arena(ctx, "logical_ledger", &logical_ledger)?;

@@ -45,12 +45,25 @@ fn logical_span_identity_refuses_and_keeps_original_fuse() {
             let mut output = Vec::new();
             let result = if dimension == ResourceDimension::MaterializedBytes {
                 ctx.with_scoped_storage("logical span test output", || {
-                    push_logical_span(ctx, &mut output, &entry, 0, 1,
-                        LogicalClassification::Structural)
-                }).map(|_| ())
+                    push_logical_span(
+                        ctx,
+                        &mut output,
+                        &entry,
+                        0,
+                        1,
+                        LogicalClassification::Structural,
+                    )
+                })
+                .map(|_| ())
             } else {
-                push_logical_span(ctx, &mut output, &entry, 0, 1,
-                    LogicalClassification::Structural)
+                push_logical_span(
+                    ctx,
+                    &mut output,
+                    &entry,
+                    0,
+                    1,
+                    LogicalClassification::Structural,
+                )
             };
             let error = result.unwrap_err();
             assert!(output.is_empty());

@@ -1157,12 +1157,17 @@ fn source_attributes_admit_document_domain_classification() {
         scan.document.object_count = 1;
         scan.document.domains = (0..128).map(|index| format!("D{index}")).collect();
         crate::test_support::refusal_at(
-            ResourceDimension::WorkUnits, &[], "FreeCAD document domain visits",
+            ResourceDimension::WorkUnits,
+            &[],
+            "FreeCAD document domain visits",
             |ctx| super::source_attributes(ctx, scan),
         );
         crate::test_support::with_service_context(&[], |ctx| {
             let attributes = super::source_attributes(ctx, scan).unwrap();
-            assert_eq!(attributes.get("document_kind").unwrap(), "application-document");
+            assert_eq!(
+                attributes.get("document_kind").unwrap(),
+                "application-document"
+            );
         });
     });
 }
@@ -1173,12 +1178,16 @@ fn summary_notes_admit_document_domain_classification() {
         scan.document.object_count = 1;
         scan.document.domains = (0..128).map(|index| format!("D{index}")).collect();
         crate::test_support::refusal_at(
-            ResourceDimension::WorkUnits, &[], "FreeCAD document domain visits",
+            ResourceDimension::WorkUnits,
+            &[],
+            "FreeCAD document domain visits",
             |ctx| super::summary_notes(ctx, scan),
         );
         crate::test_support::with_service_context(&[], |ctx| {
             let notes = super::summary_notes(ctx, scan).unwrap();
-            assert!(notes.iter().any(|note| note == "document kind=application-document"));
+            assert!(notes
+                .iter()
+                .any(|note| note == "document kind=application-document"));
         });
     });
 }

@@ -12,11 +12,16 @@ fn materialized_peak(control: impl FnOnce(&DecodeContext<'_>)) -> u64 {
     policy.limits.max_materialized_bytes = u64::MAX;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-        cadmpeg_core::decode::ResourceDimension::MaterializedBytes, "storage peak", None,
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "storage peak",
+        None,
     );
     control(&ctx);
-    let CodecError::ResourceLimit(limit) = ctx.reserve_scoped(u64::MAX, "storage peak").unwrap_err()
-    else { panic!("peak probe must refuse") };
+    let CodecError::ResourceLimit(limit) =
+        ctx.reserve_scoped(u64::MAX, "storage peak").unwrap_err()
+    else {
+        panic!("peak probe must refuse")
+    };
     drop(probe);
     limit.limit
 }
@@ -234,21 +239,38 @@ fn logical_ledger_releases_a_consumed_group_before_the_larger_sort() {
                 })
         })
         .collect();
-    let control_entries = [crate::test_support::entry_record(
-        "fcstd:native:entry#A.bin".into(), "A.bin".into(),
-        cadmpeg_core::container::ContainerRole::Auxiliary, Vec::new(), vec![0],
-    ), entries[1].clone()];
+    let control_entries = [
+        crate::test_support::entry_record(
+            "fcstd:native:entry#A.bin".into(),
+            "A.bin".into(),
+            cadmpeg_core::container::ContainerRole::Auxiliary,
+            Vec::new(),
+            vec![0],
+        ),
+        entries[1].clone(),
+    ];
     let mut control_spans: Vec<_> = std::iter::once(spans[0].clone())
-        .chain(spans[counts[0]..].iter().cloned()).collect();
+        .chain(spans[counts[0]..].iter().cloned())
+        .collect();
     control_spans[0].span = crate::native::ByteSpan::try_new(0, 1).unwrap();
     let cap = materialized_peak(|ctx| {
         let control_owners = crate::LedgerOwners {
-            entries: &control_entries, gui_properties: &[], gui_documents: &[],
-            shape_payloads: &[], string_tables: &[], element_maps: &[],
+            entries: &control_entries,
+            gui_properties: &[],
+            gui_documents: &[],
+            shape_payloads: &[],
+            string_tables: &[],
+            element_maps: &[],
         };
         let mut findings = Vec::new();
-        crate::validate_logical_ledger(ctx, &control_spans, &control_owners, &HashSet::new(), &mut findings)
-            .unwrap();
+        crate::validate_logical_ledger(
+            ctx,
+            &control_spans,
+            &control_owners,
+            &HashSet::new(),
+            &mut findings,
+        )
+        .unwrap();
         assert!(findings.is_empty());
     });
     let owners = crate::LedgerOwners {
@@ -585,10 +607,14 @@ fn logical_ledger_validates_gui_and_string_table_owners_on_demand() {
 fn decode_native_populations_use_scoped_storage_and_keep_serialized_output() {
     use cadmpeg_ir::codec::CodecBackend;
     let value = "x".repeat(16 * 1024);
-    let document = format!(r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A"><Properties Count="1"><Property name="P" type="App::PropertyString"><String value="{value}"/></Property></Properties></Object></ObjectData></Document>"#);
+    let document = format!(
+        r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A"><Properties Count="1"><Property name="P" type="App::PropertyString"><String value="{value}"/></Property></Properties></Object></ObjectData></Document>"#
+    );
     let bytes = crate::test_support::test_archive::archive(&document);
     let cap = materialized_peak(|ctx| {
-        crate::FcstdCodec.decode_impl(ctx, cadmpeg_core::decode::View::over_retained(&bytes)).unwrap();
+        crate::FcstdCodec
+            .decode_impl(ctx, cadmpeg_core::decode::View::over_retained(&bytes))
+            .unwrap();
     });
     for below in [false, true] {
         let arena = DecodeArena::new();
@@ -601,15 +627,23 @@ fn decode_native_populations_use_scoped_storage_and_keep_serialized_output() {
                 if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
         } else {
             let decoded = result.unwrap();
-            let properties: Vec<crate::native::PropertyRecord> = decoded.ir.native
-                .namespace("fcstd").unwrap().arena_as("properties").unwrap();
+            let properties: Vec<crate::native::PropertyRecord> = decoded
+                .ir
+                .native
+                .namespace("fcstd")
+                .unwrap()
+                .arena_as("properties")
+                .unwrap();
             assert_eq!(properties[0].values()[0].attributes["value"], value);
         }
     }
     crate::test_support::with_service_context(&bytes, |ctx| {
-        let decoded = crate::FcstdCodec.decode_impl(ctx, cadmpeg_core::decode::View::over_retained(&bytes)).unwrap();
+        let decoded = crate::FcstdCodec
+            .decode_impl(ctx, cadmpeg_core::decode::View::over_retained(&bytes))
+            .unwrap();
         let namespace = decoded.ir.native.namespace("fcstd").unwrap();
-        let properties: Vec<crate::native::PropertyRecord> = namespace.arena_as("properties").unwrap();
+        let properties: Vec<crate::native::PropertyRecord> =
+            namespace.arena_as("properties").unwrap();
         assert_eq!(properties.len(), 1);
         assert_eq!(properties[0].name, "P");
         assert_eq!(properties[0].values()[0].attributes["value"], value);
@@ -617,9 +651,16 @@ fn decode_native_populations_use_scoped_storage_and_keep_serialized_output() {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].name(), "Document.xml");
         assert_eq!(entries[0].data(), document.as_bytes());
-        let CodecError::ResourceLimit(limit) = ctx.reserve_scoped(u64::MAX, "returned decode scratch").unwrap_err()
-        else { panic!("scratch query must refuse") };
-        assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::MaterializedBytes);
+        let CodecError::ResourceLimit(limit) = ctx
+            .reserve_scoped(u64::MAX, "returned decode scratch")
+            .unwrap_err()
+        else {
+            panic!("scratch query must refuse")
+        };
+        assert_eq!(
+            limit.dimension,
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+        );
         assert_eq!(limit.used, 0);
         // Retiring typed scratch leaves the serialized output readable.
         let reread: Vec<crate::native::PropertyRecord> = namespace.arena_as("properties").unwrap();

@@ -66,18 +66,20 @@ pub(crate) fn has_document_markers(
         }
         _ => return Ok(false),
     };
-    Ok(
-        ctx.position_by(
+    Ok(ctx
+        .position_by(
             document.windows(b"<Document".len()),
             |window| Ok(window == b"<Document"),
             "scan FreeCAD probe XML",
-        )?.is_some()
-            && ctx.position_by(
+        )?
+        .is_some()
+        && ctx
+            .position_by(
                 document.windows(b"SchemaVersion".len()),
                 |window| Ok(window == b"SchemaVersion"),
                 "scan FreeCAD probe XML",
-            )?.is_some(),
-    )
+            )?
+            .is_some())
 }
 
 /// Fully scanned container used by inspection and decode.
@@ -292,7 +294,10 @@ pub(crate) fn source_attributes(
     )?;
     insert(
         cadmpeg_core::nonblank_literal!("document_kind"),
-        ctx.copy_retained_text(scan.document.document_kind_with_admission(ctx)?.as_str(), "FCStd source kind")?,
+        ctx.copy_retained_text(
+            scan.document.document_kind_with_admission(ctx)?.as_str(),
+            "FCStd source kind",
+        )?,
     )?;
     insert(
         cadmpeg_core::nonblank_literal!("application_domains"),
@@ -373,7 +378,10 @@ pub(crate) fn summary_notes(
             "FCStd document root note",
         )?,
         ctx.format_retained(
-            format_args!("document kind={}", scan.document.document_kind_with_admission(ctx)?.as_str()),
+            format_args!(
+                "document kind={}",
+                scan.document.document_kind_with_admission(ctx)?.as_str()
+            ),
             "FCStd document kind note",
         )?,
         ctx.format_retained(
