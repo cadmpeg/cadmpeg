@@ -4,6 +4,7 @@ use crate::parameter::{ParameterRecord, Token, TokenValue};
 use cadmpeg_core::decode::{u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::geometry::nurbs::WeightedPole3;
 use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 use std::mem::{align_of, size_of};
 
@@ -43,15 +44,22 @@ fn rational_nurbs_source_lanes_release_consumed_buffers_at_their_phase_boundary(
     // Core amortized growth doubles from four slots. The 1,536 scalar
     // coordinates occupy 2,048 slots. At the final control-vector growth,
     // its new 512-slot buffer overlaps its old 256-slot buffer. Consumed
-    // knot and finite-weight vectors are already dead at this phase.
+    // source knot and finite-weight vectors are already dead at this phase.
+    // Admitted output knots stay live until the curve is accepted.
     let scalar_capacity = (3 * CONTROLS).next_power_of_two();
     let poles = scalar_capacity * size_of::<FiniteReal>();
     let weights = CONTROLS * size_of::<PositiveReal>();
     let controls = CONTROLS * size_of::<FinitePoint3>();
     let overlap = (CONTROLS / 2) * size_of::<FinitePoint3>();
-    let used = u64_from_index(lookup + poles + weights + controls);
+    let knots = (CONTROLS + 2) * size_of::<f64>();
+    let used = u64_from_index(lookup + knots + poles + weights + controls);
     let peak = used + u64_from_index(overlap);
-    for cap in [peak - 1, peak] {
+    let paired = CONTROLS * size_of::<WeightedPole3<FinitePoint3>>();
+    let paired_overlap = (CONTROLS / 2) * size_of::<WeightedPole3<FinitePoint3>>();
+    let success_peak = peak.max(u64_from_index(
+        lookup + knots + controls + weights + paired + paired_overlap,
+    ));
+    for cap in [peak - 1, success_peak] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_materialized_bytes = cap;

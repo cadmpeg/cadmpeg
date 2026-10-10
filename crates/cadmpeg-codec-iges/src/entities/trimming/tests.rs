@@ -1754,3 +1754,5 @@ mod pcurve_storage;
 mod source_visits;
 
 mod proximity_grid;
+
+mod candidate_lifetimes;

@@ -2906,13 +2906,16 @@ pub(crate) fn project_geometry<'ctx>(
         };
         let domain_start = finite_knots[degree_usize];
         let domain_end = finite_knots[control_count];
-        let mut raw_knots = ctx.collection_vec(finite_knots.len(), "iges NURBS admitted knots")?;
+        let mut candidate_storage = ctx.reserve_scoped(0, "iges NURBS candidate storage")?;
+        let mut raw_knots = candidate_storage.with_storage(|| {
+            ctx.collection_vec(finite_knots.len(), "iges NURBS admitted knots")
+        })?;
         raw_knots.extend(
             ctx.admit_iter(finite_knots, "iges NURBS admitted knot traversal")?
                 .map(FiniteReal::get),
         );
         drop(knot_storage);
-        let Ok(knots) = KnotVector::new(ctx, raw_knots)? else {
+        let Ok(knots) = candidate_storage.with_storage(|| KnotVector::new(ctx, raw_knots))? else {
             super::push_entity_loss(
                 ctx,
                 &mut losses,
@@ -3088,7 +3091,7 @@ pub(crate) fn project_geometry<'ctx>(
             )
         };
         let control_points = if polynomial {
-            collect_controls()?
+            candidate_storage.with_storage(collect_controls)?
         } else {
             pairing_storage.with_storage(collect_controls)?
         };
@@ -3206,14 +3209,9 @@ pub(crate) fn project_geometry<'ctx>(
         };
         // IGES PROP4 is informational; neutral evaluation uses the
         // serialized active carrier without periodic parameter wrapping.
-        let nurbs_result = NurbsCurve::from_checked_lanes(
-            ctx,
-            degree,
-            knots,
-            control_points,
-            weights,
-            false,
-        )?;
+        let nurbs_result = candidate_storage.with_storage(|| {
+            NurbsCurve::from_checked_lanes(ctx, degree, knots, control_points, weights, false)
+        })?;
         drop(pairing_storage);
         let nurbs = match nurbs_result {
             Ok(nurbs) => nurbs,
@@ -3266,6 +3264,7 @@ pub(crate) fn project_geometry<'ctx>(
             )?;
             continue;
         }
+        let nurbs = candidate_storage.commit_value(nurbs)?;
         let stem = crate::ids::Stem::directory(entry.sequence);
         let start_point = crate::ids::point_admitted(&stem.tail(crate::ids::Word::Start), ctx)?;
         sequences.record_point(&start_point, &stem, ctx)?;
