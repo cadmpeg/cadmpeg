@@ -275,16 +275,38 @@ fn shape_payload_record_refuses_on_collection_limit() {
 
 #[test]
 fn shape_entry_index_refuses_on_collection_limit() {
+    let property = PropertyRecord {
+        id: crate::native::native_id("property", "Shape"),
+        owner: crate::native::native_id("object", "Shape"),
+        name: "Shape".into(),
+        type_name: "Part::PropertyPartShape".into(),
+        family: crate::native::PropertyFamily::Geometry,
+        status: None,
+        body: crate::native::PropertyBody::Persisted {
+            values: Vec::new(),
+            links: Vec::new(),
+            side_entries: vec!["empty.brp".into()],
+            dynamic: None,
+        },
+        order: 0,
+        xml: crate::native::RetainedXml::from_text(
+            "<Property><Part file=\"empty.brp\"/></Property>".into(),
+            0,
+        )
+        .expect("valid test XML"),
+    };
     let entry = crate::test_support::entry_record(
         crate::native::native_id("entry", "empty.brp"),
         "empty.brp".into(),
         cadmpeg_core::container::ContainerRole::Brep,
-        Vec::new(),
+        vec![property.id.clone()],
         Vec::new(),
     );
-    let result = with_collection_limit(&[], 0, |ctx| parse_payloads(ctx, &[], &[entry]));
-    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD shape entry index"));
+    crate::test_support::assert_collection_refusal_at(
+        &[],
+        "FreeCAD shape entry index",
+        |ctx| parse_payloads(ctx, std::slice::from_ref(&property), std::slice::from_ref(&entry)),
+    );
 }
 
 #[test]
