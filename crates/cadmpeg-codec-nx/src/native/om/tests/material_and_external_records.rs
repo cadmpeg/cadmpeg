@@ -347,7 +347,7 @@ fn external_reference_extraction_refuses_record_collection_limit() {
 
     let file = assembly_with_external_paths();
     let container =
-        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, file))
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
             .expect("external reference container");
 
     // Two strings enter both the parsed table and the container result before
@@ -1434,8 +1434,10 @@ fn record_handle_pair_route_refuses_work_limit() {
 
 #[test]
 fn native_retains_rmfastload_table_and_member_words() {
+    let source_bytes_1 = rmfastload_prt();
+
     let (entry_offset, table, object_ids) = crate::test_support::with_decode_context(|ctx| {
-        let container = container::scan_bytes(ctx, rmfastload_prt()).expect("required invariant");
+        let container = container::scan_bytes(ctx, &source_bytes_1).expect("required invariant");
         let entry_offset = container
             .entries
             .iter()

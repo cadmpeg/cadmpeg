@@ -36,33 +36,28 @@ use crate::native::features::FeatureExtrudeProfileReference;
 
 /// A container whose feature-history links exceed what the stable sort sorts
 /// without scratch, so a scoped limit of zero refuses at the link sort.
-fn reference_container(
-    label: &'static str,
-    payload: Vec<u8>,
-) -> crate::container::Container<'static> {
+fn reference_file(label: &'static str, payload: Vec<u8>) -> Vec<u8> {
     let part = crate::test_support::test_om::composed_feature_history_payload_over_sort_scratch(
         &[(&[0xff; 4], label, payload)],
         &[],
     );
-    let file =
-        crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)]);
-    crate::test_support::with_decode_context(move |ctx| crate::container::scan_bytes(ctx, file))
-        .expect("synthetic feature reference container")
+
+    crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)])
 }
 
-fn projected_curve_container() -> crate::container::Container<'static> {
+fn projected_curve_file() -> Vec<u8> {
     let payload =
         b"\0\x01\x02\xf1\x02\xc8\xf1\x02\xc9\x80\x57\x00\x02\x01\xf1\x02\xca\xff\x01\x02\x02\x7d\0"
             .to_vec();
-    reference_container("CPROJ", payload)
+    reference_file("CPROJ", payload)
 }
 
-fn point_header_container() -> crate::container::Container<'static> {
-    reference_container("POINT",
+fn point_header_file() -> Vec<u8> {
+    reference_file("POINT",
         b"\x72\x00\x00\x01\x00\x00\x00\xf1\x1c\x8f\x00\xff\xff\xff\xff\xff\xff\xff\xff\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x0d\x01\x02\x01\x00\x00\x00\x89\x02\x01\x01\x01\x00\xa5\x57\x95\x01\x00\x00\xff\x02\xc0\x1f\xff\xfd\x01\x00\x00\x01\x01\x01\x03\x02\x01\x01\x01\x00\x00\x00\x00\x00\xaa".to_vec())
 }
 
-fn point_lane_container() -> crate::container::Container<'static> {
+fn point_lane_file() -> Vec<u8> {
     let mut store = vec![vec![b'A']; 7311];
     let mut encoded = Vec::new();
     for value in [1.0_f64, -2.0, 3.5, 4.0, 5.25, -6.0] {
@@ -83,13 +78,11 @@ fn point_lane_container() -> crate::container::Container<'static> {
         &[(&[0xff; 4], "POINT", payload)],
         &blocks,
     );
-    let file =
-        crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)]);
-    crate::test_support::with_decode_context(move |ctx| crate::container::scan_bytes(ctx, file))
-        .expect("synthetic point scalar lane container")
+
+    crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)])
 }
 
-fn swp104_container() -> crate::container::Container<'static> {
+fn swp104_file() -> Vec<u8> {
     let mut payload = vec![33, 0, 0, 1, 0];
     for _ in 0..4 {
         payload.extend([47, 164, 122, 225, 71, 174, 20, 123]);
@@ -97,7 +90,7 @@ fn swp104_container() -> crate::container::Container<'static> {
     payload.extend([35, 1, 2, 240, 1]);
     payload.extend([0; 5]);
     payload.extend([255, 1, 2, 241, 1, 0, 0]);
-    reference_container("SWP104", payload)
+    reference_file("SWP104", payload)
 }
 
 #[derive(Clone, Copy)]
@@ -149,7 +142,10 @@ fn extrude_32_branch_route_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
     let bytes = b"\x01\x02\x10\x73\xff\x32\x00\x00\x30\x77\x7e\x14\x7a\xe1\x47\xb3\x01\x03\x3d\x82\x56\x00\x3d\x82\x57\x00\x01\x04\x80\x2b\x80\x2d\x80\x2c\x01\x03\x80\x2e\x80\x77\x00\x01\x73\x00\x00";
-    let container = reference_container("EXTRUDE", bytes.to_vec());
+    let file = reference_file("EXTRUDE", bytes.to_vec());
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .expect("synthetic container");
     let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
         feature_extrude_payload_32_branches(
             ctx,
@@ -182,7 +178,10 @@ fn block_reference_refusal(
     payload.extend([0x01, 0xf1, 0x01, 0x00]);
     payload.extend([0xff; 11]);
     payload.extend([0; 4]);
-    let container = reference_container("BLOCK", payload);
+    let file = reference_file("BLOCK", payload);
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .expect("synthetic container");
     let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
         feature_block_construction_references(
             ctx,
@@ -341,7 +340,10 @@ fn operation_lane_refusal(
         OperationLaneRoute::ObjectReferences => ("OFFSET",
             b"\x01\x02\x10\x70\xff\x1c\x00\x00\x00\x01\x03\xf1\x02\x9e\xf0\x44\x00\x00\x0b\x00".as_slice(), 1),
     };
-    let container = reference_container(label, bytes.to_vec());
+    let file = reference_file(label, bytes.to_vec());
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .expect("synthetic container");
     let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| match route {
         OperationLaneRoute::Terminal => feature_operation_terminal_discriminators(
             ctx,
@@ -472,7 +474,10 @@ fn extrude_route_refusal(
         ExtrudeRoute::Header =>
             b"\x0f\x00\x00\x01\x00\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\x2f\xa3\x74\xbc\x6a\x7e\xf9\xdb".to_vec(),
     };
-    let container = reference_container("EXTRUDE", payload);
+    let file = reference_file("EXTRUDE", payload);
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .expect("synthetic container");
     let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| match route {
         ExtrudeRoute::Profile => feature_extrude_profile_references(
             ctx,
@@ -555,7 +560,10 @@ extrude_route_limit_tests!(
 fn swp104_branch_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
-    let container = swp104_container();
+    let file = swp104_file();
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .expect("synthetic container");
     let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
         feature_swp104_leading_branches(
             ctx,
@@ -617,7 +625,10 @@ fn swp104_branch_route_refuses_work_limit() {
 fn point_lane_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
-    let container = point_lane_container();
+    let file = point_lane_file();
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .expect("synthetic container");
     let headers = crate::test_support::with_decode_context(|ctx| {
         feature_point_construction_headers(
             ctx,
@@ -675,7 +686,10 @@ fn point_lane_refuses_work_limit() {
 fn point_lane_ordinal_text_parsing_propagates_work_refusal() {
     use cadmpeg_core::decode::ResourceDimension;
 
-    let container = point_lane_container();
+    let file = point_lane_file();
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .expect("synthetic container");
     let headers = crate::test_support::with_decode_context(|ctx| {
         feature_point_construction_headers(
             ctx,
@@ -705,7 +719,10 @@ fn point_lane_ordinal_text_parsing_propagates_work_refusal() {
 fn point_header_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
-    let container = point_header_container();
+    let file = point_header_file();
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .expect("synthetic container");
     let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
         feature_point_construction_headers(
             ctx,
@@ -764,7 +781,7 @@ fn point_header_refuses_work_limit() {
     );
 }
 
-fn projected_curve_payload_container() -> crate::container::Container<'static> {
+fn projected_curve_payload_file() -> Vec<u8> {
     let payload =
         b"\0\x01\x02\xf1\x02\xc8\xf1\x02\xc9\x80\x57\x00\x02\x01\xf1\x02\xca\xff\x01\x02\x02\x7d\0"
             .to_vec();
@@ -774,16 +791,17 @@ fn projected_curve_payload_container() -> crate::container::Container<'static> {
         &[(&[0xff; 4], "CPROJ", payload)],
         &store,
     );
-    let file =
-        crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)]);
-    crate::test_support::with_decode_context(move |ctx| crate::container::scan_bytes(ctx, file))
-        .expect("synthetic projected curve payload container")
+
+    crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)])
 }
 
 fn projected_curve_payload_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
-    let container = projected_curve_payload_container();
+    let file = projected_curve_payload_file();
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .expect("synthetic container");
     let (labels, references) = crate::test_support::with_decode_context(|ctx| {
         Ok::<_, cadmpeg_core::CodecError>((
             feature_operation_labels(
@@ -819,7 +837,10 @@ fn projected_curve_payload_refusal(
 fn projected_curve_string_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
-    let container = projected_curve_payload_container();
+    let file = projected_curve_payload_file();
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .expect("synthetic container");
     let payloads = crate::test_support::with_decode_context(|ctx| {
         let labels = feature_operation_labels(
             ctx,
@@ -923,28 +944,26 @@ fn projected_curve_payload_refuses_work_limit() {
     );
 }
 
-fn surface_container() -> crate::container::Container<'static> {
-    reference_container("SKIN", surface_payload_bytes())
+fn surface_file() -> Vec<u8> {
+    reference_file("SKIN", surface_payload_bytes())
 }
 
 pub(super) fn surface_payload_bytes() -> Vec<u8> {
     b"\x3f\x00\x00\x01\x00\xf1\x02\x46\xf1\x02\x47\xf1\x02\x48\x01\x09\x03\x03\x04\x05\x02\x01\x01\x01\x01\x09\xf1\x02\x49\xf1\x02\x4a\xf1\x02\x4b\xf1\x02\x4c\xf1\x02\x4d\xf1\x02\x4e\xf1\x02\x4f\xf1\x02\x50\x00\x03\x03\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xf1\x02\x56\xf1\x02\x57\xf1\x02\x58\x01\x01\xff\xff\xff\xff\xff\xff\xff\xff\xff\x00\x00\x00\x00\x01\x02".to_vec()
 }
 
-fn surface_payload_container() -> crate::container::Container<'static> {
+fn surface_payload_file() -> Vec<u8> {
     let store = (0..600).map(|_| b"A".as_slice()).collect::<Vec<_>>();
     let part = crate::test_support::test_om::composed_feature_history_payload(
         &[(&[0xff; 4], "SKIN", surface_payload_bytes())],
         &store,
     );
-    let file =
-        crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)]);
-    crate::test_support::with_decode_context(move |ctx| crate::container::scan_bytes(ctx, file))
-        .expect("synthetic surface payload container")
+
+    crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)])
 }
 
-fn draft_container() -> crate::container::Container<'static> {
-    reference_container("DRAFT", draft_payload_bytes())
+fn draft_file() -> Vec<u8> {
+    reference_file("DRAFT", draft_payload_bytes())
 }
 
 fn draft_payload_bytes() -> Vec<u8> {
@@ -956,26 +975,27 @@ fn draft_payload_bytes() -> Vec<u8> {
     payload
 }
 
-fn draft_index_container() -> crate::container::Container<'static> {
+fn draft_index_file() -> Vec<u8> {
     let store = (0..7039).map(|_| b"A".as_slice()).collect::<Vec<_>>();
     let part = crate::test_support::test_om::composed_feature_history_payload(
         &[(&[0xff; 4], "DRAFT", draft_payload_bytes())],
         &store,
     );
-    let file =
-        crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)]);
-    crate::test_support::with_decode_context(move |ctx| crate::container::scan_bytes(ctx, file))
-        .expect("synthetic draft index container")
+
+    crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)])
 }
 
-fn thru_curve_container() -> crate::container::Container<'static> {
-    reference_container("THRU_CURVE", b"\x13\x00\x00\x01\x00\xf1\x01\x21\xf1\x01\x22\xf1\x01\x23\x01\x08\x02\x03\x03\x04\x01\x01\x01\x01\x07\xf1\x01\x24\xf1\x01\x25\xf1\x01\x26\xf1\x01\x27\xf1\x01\x28\xf1\x01\x29\x04\x01\xa0\x5e\x38\x13\x01\x03".to_vec())
+fn thru_curve_file() -> Vec<u8> {
+    reference_file("THRU_CURVE", b"\x13\x00\x00\x01\x00\xf1\x01\x21\xf1\x01\x22\xf1\x01\x23\x01\x08\x02\x03\x03\x04\x01\x01\x01\x01\x07\xf1\x01\x24\xf1\x01\x25\xf1\x01\x26\xf1\x01\x27\xf1\x01\x28\xf1\x01\x29\x04\x01\xa0\x5e\x38\x13\x01\x03".to_vec())
 }
 
 fn projected_curve_route_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
-    let container = projected_curve_container();
+    let file = projected_curve_file();
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .expect("synthetic container");
     let records = crate::test_support::with_decode_context(|ctx| {
         feature_projected_curve_references(
             ctx,
@@ -1006,7 +1026,7 @@ enum ReferenceRoute {
 }
 
 fn reference_route_refusal(
-    container: &crate::container::Container<'static>,
+    container: &crate::container::Container<'_>,
     expected_count: usize,
     route: ReferenceRoute,
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
@@ -1043,8 +1063,13 @@ fn reference_route_refusal(
 
 #[test]
 fn surface_reference_route_refuses_collection_limit() {
+    let fixture_bytes_1 = surface_file();
+    let fixture_container_1 = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, &fixture_bytes_1)
+    })
+    .expect("synthetic container");
     let error = reference_route_refusal(
-        &surface_container(),
+        &fixture_container_1,
         14,
         ReferenceRoute::Surface,
         |policy| policy.limits.max_collection_items = 0,
@@ -1057,8 +1082,13 @@ fn surface_reference_route_refuses_collection_limit() {
 
 #[test]
 fn surface_reference_route_refuses_retained_limit() {
+    let fixture_bytes_2 = surface_file();
+    let fixture_container_2 = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, &fixture_bytes_2)
+    })
+    .expect("synthetic container");
     let error = reference_route_refusal(
-        &surface_container(),
+        &fixture_container_2,
         14,
         ReferenceRoute::Surface,
         |policy| policy.limits.max_retained_bytes = 0,
@@ -1071,8 +1101,13 @@ fn surface_reference_route_refuses_retained_limit() {
 
 #[test]
 fn surface_reference_route_refuses_scoped_limit() {
+    let fixture_bytes_3 = surface_file();
+    let fixture_container_3 = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, &fixture_bytes_3)
+    })
+    .expect("synthetic container");
     let error = reference_route_refusal(
-        &surface_container(),
+        &fixture_container_3,
         14,
         ReferenceRoute::Surface,
         |policy| policy.limits.max_materialized_bytes = 0,
@@ -1085,8 +1120,13 @@ fn surface_reference_route_refuses_scoped_limit() {
 
 #[test]
 fn surface_reference_route_refuses_work_limit() {
+    let fixture_bytes_4 = surface_file();
+    let fixture_container_4 = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, &fixture_bytes_4)
+    })
+    .expect("synthetic container");
     let error = reference_route_refusal(
-        &surface_container(),
+        &fixture_container_4,
         14,
         ReferenceRoute::Surface,
         |policy| policy.limits.max_work_units = 0,
@@ -1099,7 +1139,12 @@ fn surface_reference_route_refuses_work_limit() {
 
 #[test]
 fn draft_reference_route_refuses_collection_limit() {
-    let error = reference_route_refusal(&draft_container(), 4, ReferenceRoute::Draft, |policy| {
+    let fixture_bytes_5 = draft_file();
+    let fixture_container_5 = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, &fixture_bytes_5)
+    })
+    .expect("synthetic container");
+    let error = reference_route_refusal(&fixture_container_5, 4, ReferenceRoute::Draft, |policy| {
         policy.limits.max_collection_items = 0;
     });
     assert!(
@@ -1110,7 +1155,12 @@ fn draft_reference_route_refuses_collection_limit() {
 
 #[test]
 fn draft_reference_route_refuses_retained_limit() {
-    let error = reference_route_refusal(&draft_container(), 4, ReferenceRoute::Draft, |policy| {
+    let fixture_bytes_6 = draft_file();
+    let fixture_container_6 = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, &fixture_bytes_6)
+    })
+    .expect("synthetic container");
+    let error = reference_route_refusal(&fixture_container_6, 4, ReferenceRoute::Draft, |policy| {
         policy.limits.max_retained_bytes = 0;
     });
     assert!(
@@ -1121,7 +1171,12 @@ fn draft_reference_route_refuses_retained_limit() {
 
 #[test]
 fn draft_reference_route_refuses_scoped_limit() {
-    let error = reference_route_refusal(&draft_container(), 4, ReferenceRoute::Draft, |policy| {
+    let fixture_bytes_7 = draft_file();
+    let fixture_container_7 = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, &fixture_bytes_7)
+    })
+    .expect("synthetic container");
+    let error = reference_route_refusal(&fixture_container_7, 4, ReferenceRoute::Draft, |policy| {
         policy.limits.max_materialized_bytes = 0;
     });
     assert!(
@@ -1132,7 +1187,12 @@ fn draft_reference_route_refuses_scoped_limit() {
 
 #[test]
 fn draft_reference_route_refuses_work_limit() {
-    let error = reference_route_refusal(&draft_container(), 4, ReferenceRoute::Draft, |policy| {
+    let fixture_bytes_8 = draft_file();
+    let fixture_container_8 = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, &fixture_bytes_8)
+    })
+    .expect("synthetic container");
+    let error = reference_route_refusal(&fixture_container_8, 4, ReferenceRoute::Draft, |policy| {
         policy.limits.max_work_units = 0;
     });
     assert!(
@@ -1143,8 +1203,13 @@ fn draft_reference_route_refuses_work_limit() {
 
 #[test]
 fn thru_curve_envelope_route_refuses_collection_limit() {
+    let fixture_bytes_9 = thru_curve_file();
+    let fixture_container_9 = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, &fixture_bytes_9)
+    })
+    .expect("synthetic container");
     let error = reference_route_refusal(
-        &thru_curve_container(),
+        &fixture_container_9,
         1,
         ReferenceRoute::ThruCurveEnvelope,
         |policy| policy.limits.max_collection_items = 0,
@@ -1157,8 +1222,13 @@ fn thru_curve_envelope_route_refuses_collection_limit() {
 
 #[test]
 fn thru_curve_envelope_route_refuses_retained_limit() {
+    let fixture_bytes_10 = thru_curve_file();
+    let fixture_container_10 = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, &fixture_bytes_10)
+    })
+    .expect("synthetic container");
     let error = reference_route_refusal(
-        &thru_curve_container(),
+        &fixture_container_10,
         1,
         ReferenceRoute::ThruCurveEnvelope,
         |policy| policy.limits.max_retained_bytes = 0,
@@ -1171,8 +1241,13 @@ fn thru_curve_envelope_route_refuses_retained_limit() {
 
 #[test]
 fn thru_curve_envelope_route_refuses_scoped_limit() {
+    let fixture_bytes_11 = thru_curve_file();
+    let fixture_container_11 = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, &fixture_bytes_11)
+    })
+    .expect("synthetic container");
     let error = reference_route_refusal(
-        &thru_curve_container(),
+        &fixture_container_11,
         1,
         ReferenceRoute::ThruCurveEnvelope,
         |policy| policy.limits.max_materialized_bytes = 0,
@@ -1185,8 +1260,13 @@ fn thru_curve_envelope_route_refuses_scoped_limit() {
 
 #[test]
 fn thru_curve_envelope_route_refuses_work_limit() {
+    let fixture_bytes_12 = thru_curve_file();
+    let fixture_container_12 = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, &fixture_bytes_12)
+    })
+    .expect("synthetic container");
     let error = reference_route_refusal(
-        &thru_curve_container(),
+        &fixture_container_12,
         1,
         ReferenceRoute::ThruCurveEnvelope,
         |policy| policy.limits.max_work_units = 0,
@@ -1200,7 +1280,10 @@ fn thru_curve_envelope_route_refuses_work_limit() {
 fn surface_payload_route_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
-    let container = surface_payload_container();
+    let file = surface_payload_file();
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .expect("synthetic container");
     let references = crate::test_support::with_decode_context(|ctx| {
         feature_surface_construction_references(
             ctx,
@@ -1233,19 +1316,20 @@ fn draft_resolved_lane() -> FeatureDraftConstructionIndexLane {
     ).expect("resolved draft lane")
 }
 
-fn draft_small_store_container() -> crate::container::Container<'static> {
+fn draft_small_store_file() -> Vec<u8> {
     let part = crate::test_support::test_om::composed_feature_history_payload(&[], &[b"A", b"B"]);
-    let file =
-        crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)]);
-    crate::test_support::with_decode_context(move |ctx| crate::container::scan_bytes(ctx, file))
-        .expect("synthetic draft payload container")
+
+    crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)])
 }
 
 fn draft_payload_route_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
     let lane = draft_resolved_lane();
-    let container = draft_small_store_container();
+    let file = draft_small_store_file();
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .expect("synthetic container");
     let payloads = crate::test_support::with_decode_context(|ctx| {
         feature_draft_construction_payloads(ctx, &container, std::slice::from_ref(&lane))
     })
@@ -1317,17 +1401,13 @@ fn draft_graph_references() -> Vec<FeatureDraftConstructionReference> {
 
 fn draft_graph_fixture_with_content(
     bytes: &[u8],
-) -> (
-    crate::container::Container<'static>,
-    FeatureDraftConstructionGraphPayload,
-) {
+) -> (Vec<u8>, FeatureDraftConstructionGraphPayload) {
     let part = crate::test_support::test_om::composed_feature_history_payload(&[], &[bytes, b""]);
     let file =
         crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)]);
-    let container = crate::test_support::with_decode_context(move |ctx| {
-        crate::container::scan_bytes(ctx, file)
-    })
-    .expect("synthetic draft graph content container");
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .expect("synthetic draft graph content container");
     let lane = draft_resolved_lane();
     let references = draft_graph_references();
     let mut payloads = crate::test_support::with_decode_context(|ctx| {
@@ -1335,7 +1415,7 @@ fn draft_graph_fixture_with_content(
     })
     .expect("admitted draft graph content");
     assert_eq!(payloads.len(), 1);
-    (container, payloads.remove(0))
+    (file, payloads.remove(0))
 }
 
 fn draft_fixed_bytes() -> Vec<u8> {
@@ -1354,7 +1434,10 @@ fn draft_fixed_bytes() -> Vec<u8> {
 fn draft_fixed_route_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
-    let (container, payload) = draft_graph_fixture_with_content(&draft_fixed_bytes());
+    let (file, payload) = draft_graph_fixture_with_content(&draft_fixed_bytes());
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .expect("synthetic container");
     let lanes = crate::test_support::with_decode_context(|ctx| {
         feature_draft_construction_fixed_lanes(ctx, &container, std::slice::from_ref(&payload))
     })
@@ -1425,7 +1508,10 @@ fn draft_binary32_bytes() -> Vec<u8> {
 fn draft_binary32_route_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
-    let (container, payload) = draft_graph_fixture_with_content(&draft_binary32_bytes());
+    let (file, payload) = draft_graph_fixture_with_content(&draft_binary32_bytes());
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .expect("synthetic container");
     let lanes = crate::test_support::with_decode_context(|ctx| {
         feature_draft_construction_binary32_lanes(ctx, &container, std::slice::from_ref(&payload))
     })
@@ -1483,7 +1569,10 @@ fn draft_binary32_route_refuses_work_limit() {
 fn draft_string_route_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
-    let (container, payload) = draft_graph_fixture_with_content(b"\x66\x32\x03\x03A\0");
+    let (file, payload) = draft_graph_fixture_with_content(b"\x66\x32\x03\x03A\0");
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .expect("synthetic container");
     let strings = crate::test_support::with_decode_context(|ctx| {
         feature_draft_construction_graph_strings(ctx, &container, std::slice::from_ref(&payload))
     })
@@ -1545,10 +1634,9 @@ fn draft_identity_route_refusal(
     let part = crate::test_support::test_om::composed_feature_history_payload(&[], &[bytes, b""]);
     let file =
         crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)]);
-    let container = crate::test_support::with_decode_context(move |ctx| {
-        crate::container::scan_bytes(ctx, file)
-    })
-    .expect("synthetic draft identity container");
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .expect("synthetic draft identity container");
     let lane = draft_resolved_lane();
     let mut payloads = crate::test_support::with_decode_context(|ctx| {
         feature_draft_construction_payloads(ctx, &container, &[lane])
@@ -1613,7 +1701,10 @@ fn draft_identity_route_refuses_work_limit() {
 fn draft_terminal_route_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
-    let container = draft_container();
+    let file = draft_file();
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .expect("synthetic container");
     let lanes = crate::test_support::with_decode_context(|ctx| {
         feature_draft_construction_terminal_lanes(
             ctx,
@@ -1675,7 +1766,10 @@ fn draft_terminal_route_refuses_work_limit() {
 fn draft_index_route_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
-    let container = draft_index_container();
+    let file = draft_index_file();
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .expect("synthetic container");
     // This direct native-reader test reconstructs a container in memory.
     // Its JSON byte envelope funds both conservative offset indexes.
     let input_envelope =
@@ -1751,7 +1845,10 @@ fn draft_index_route_refuses_retained_limit() {
 
 #[test]
 fn draft_index_route_refuses_scoped_limit() {
-    let container = draft_index_container();
+    let file = draft_index_file();
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .expect("synthetic container");
     // The history is built under its own context, so the refusal comes from
     // the route's own scoped storage rather than from building the history.
     let error = crate::test_support::with_decode_context(|history_ctx| {
@@ -1786,7 +1883,10 @@ fn draft_graph_payload_route_refusal(
 ) -> cadmpeg_core::CodecError {
     let lane = draft_resolved_lane();
     let references = draft_graph_references();
-    let container = draft_small_store_container();
+    let file = draft_small_store_file();
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .expect("synthetic container");
     let payloads = crate::test_support::with_decode_context(|ctx| {
         feature_draft_construction_graph_payloads(
             ctx,

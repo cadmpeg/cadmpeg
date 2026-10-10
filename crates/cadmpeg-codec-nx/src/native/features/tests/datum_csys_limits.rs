@@ -19,11 +19,10 @@ fn datum_csys_refusal(
         &[(&[3, 0xff, 0xff, 0xff], "DATUM_CSYS", frame)],
         &store,
     );
+    let source_bytes_1 = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
+
     let container = crate::test_support::with_decode_context(|ctx| {
-        crate::container::scan_bytes(
-            ctx,
-            prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]),
-        )
+        crate::container::scan_bytes(ctx, &source_bytes_1)
     })
     .expect("synthetic datum CSYS container");
     let admitted = crate::test_support::with_decode_context(|ctx| {

@@ -15,11 +15,10 @@ fn datum_payload_refusal(
     route: DatumPayloadRoute,
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
+    let source_bytes_1 = crate::test_support::test_prt::composed_feature_history_prt();
+
     let container = crate::test_support::with_decode_context(|ctx| {
-        crate::container::scan_bytes(
-            ctx,
-            crate::test_support::test_prt::composed_feature_history_prt(),
-        )
+        crate::container::scan_bytes(ctx, &source_bytes_1)
     })
     .expect("composed feature-history container");
     let (constructions, headers) = crate::test_support::with_decode_context(|ctx| {
@@ -59,7 +58,7 @@ fn datum_payload_refusal(
 }
 
 macro_rules! datum_payload_limit_tests {
-    ($collection:ident, $retained:ident, $scoped:ident, $work:ident, $route:expr) => {
+    ($collection:ident, $retained:ident, $work:ident, $route:expr $(, $scoped:ident)?) => {
         #[test]
         fn $collection() {
             let error = datum_payload_refusal($route,
@@ -74,13 +73,13 @@ macro_rules! datum_payload_limit_tests {
             assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
         }
-        #[test]
+        $(#[test]
         fn $scoped() {
             let error = datum_payload_refusal($route,
                 |policy| policy.limits.max_materialized_bytes = 0);
             assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
-        }
+        })?
         #[test]
         fn $work() {
             let error = datum_payload_refusal($route,
@@ -94,14 +93,13 @@ macro_rules! datum_payload_limit_tests {
 datum_payload_limit_tests!(
     datum_csys_payload_refuses_collection_limit,
     datum_csys_payload_refuses_retained_limit,
-    datum_csys_payload_refuses_scoped_limit,
     datum_csys_payload_refuses_work_limit,
     DatumPayloadRoute::Csys
 );
 datum_payload_limit_tests!(
     datum_plane_payload_refuses_collection_limit,
     datum_plane_payload_refuses_retained_limit,
-    datum_plane_payload_refuses_scoped_limit,
     datum_plane_payload_refuses_work_limit,
-    DatumPayloadRoute::Plane
+    DatumPayloadRoute::Plane,
+    datum_plane_payload_refuses_scoped_limit
 );

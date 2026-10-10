@@ -231,7 +231,7 @@ pub(in crate::native) fn feature_projected_curve_construction_payloads(
         {
             continue;
         }
-        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
+        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, blocks)? else {
             continue;
         };
         drop(block_reservation);
@@ -287,7 +287,7 @@ pub(in crate::native) fn feature_projected_curve_construction_strings(
             ctx,
             payload.content.block_ids(),
             payload.content.blocks().len(),
-            &blocks,
+            blocks,
         )?
         else {
             continue;
@@ -733,7 +733,7 @@ pub(in crate::native) fn feature_surface_construction_payloads(
         {
             continue;
         }
-        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
+        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, blocks)? else {
             continue;
         };
         let Some(operation_key) = operation_key(
@@ -842,7 +842,7 @@ pub(in crate::native) fn feature_surface_construction_strings(
             ctx,
             payload.content.block_ids(),
             payload.content.blocks().len(),
-            &blocks,
+            blocks,
         )?
         else {
             continue;
@@ -2011,7 +2011,7 @@ pub(in crate::native) fn feature_block_construction_payloads(
                 )
             })?;
         }
-        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
+        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, blocks)? else {
             continue;
         };
         drop(reservation);
@@ -2054,7 +2054,7 @@ pub(in crate::native) fn feature_block_payload_scalars(
             ctx,
             payload.content.block_ids(),
             payload.content.blocks().len(),
-            &blocks,
+            blocks,
         )?
         else {
             continue;
@@ -2113,7 +2113,7 @@ pub(in crate::native) fn feature_block_payload_names(
             ctx,
             payload.content.block_ids(),
             payload.content.blocks().len(),
-            &blocks,
+            blocks,
         )?
         else {
             continue;

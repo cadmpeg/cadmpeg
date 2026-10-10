@@ -116,7 +116,7 @@ fn compressed_jt_container(data: &[u8]) -> crate::container::Container<'_> {
     use crate::container::{Container, DirEntry, Region};
 
     Container {
-        data: data.into(),
+        data: (&data[..]).into(),
         physical_size: cadmpeg_core::decode::u64_from_index(data.len()),
         layout: crate::container::test_modern_layout(6),
         entries: vec![DirEntry {
