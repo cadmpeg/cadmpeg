@@ -1104,12 +1104,12 @@ fn rendering_attributes_reject_negative_version_minors_at_each_nested_gate() {
     }
 }
 
+mod deferred_utf16;
 mod embedded_records;
+mod fallible_prefix;
 mod layer_tables;
 mod layers;
 mod rendering_checksums;
-mod deferred_utf16;
-mod fallible_prefix;
 
 #[test]
 fn every_standard_unit_reads_its_scale_from_the_admitted_table() {

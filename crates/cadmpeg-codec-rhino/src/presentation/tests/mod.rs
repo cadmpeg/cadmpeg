@@ -1298,13 +1298,8 @@ fn group_preserves_component_identity() {
     bytes.extend([0x44; 16]);
     bytes.extend([0xaa, 0xbb]);
     let ctx = cadmpeg_test_support::service_decode_context();
-    let (group, _group_storage) = parse_group(
-        &ctx,
-        &bytes,
-        0..bytes.len(),
-        120,
-    )
-    .expect("required invariant");
+    let (group, _group_storage) =
+        parse_group(&ctx, &bytes, 0..bytes.len(), 120).expect("required invariant");
     assert_eq!(group.archive_index, 7);
     assert_eq!(group.name, "fixtures");
     assert_eq!(
@@ -1321,20 +1316,10 @@ fn duplicate_group_source_ids_are_disambiguated_without_rewriting_source_fields(
     bytes.extend(utf16_bytes("fixtures"));
     bytes.extend([0x44; 16]);
     let ctx = cadmpeg_test_support::service_decode_context();
-    let (first, first_storage) = parse_group(
-        &ctx,
-        &bytes,
-        0..bytes.len(),
-        120,
-    )
-    .expect("first group");
-    let (second, second_storage) = parse_group(
-        &ctx,
-        &bytes,
-        0..bytes.len(),
-        240,
-    )
-    .expect("second group");
+    let (first, first_storage) =
+        parse_group(&ctx, &bytes, 0..bytes.len(), 120).expect("first group");
+    let (second, second_storage) =
+        parse_group(&ctx, &bytes, 0..bytes.len(), 240).expect("second group");
     let mut staging = ctx.reserve_scoped(0, "group test IDs").unwrap();
     let _group_storages = [first_storage, second_storage];
     let mut groups = vec![first, second];
@@ -1350,7 +1335,6 @@ fn duplicate_group_source_ids_are_disambiguated_without_rewriting_source_fields(
     assert!(groups[0].id.contains("source-offset-0000000000000078"));
     assert!(groups[1].id.contains("source-offset-00000000000000f0"));
 }
-
 
 fn light_payload(packed: u8, hotspot: f64) -> Vec<u8> {
     let mut bytes = vec![packed];
@@ -1901,8 +1885,8 @@ mod case_equality;
 
 mod searches;
 
-mod uuid_prefix;
 mod userdata_search;
+mod uuid_prefix;
 
 mod known_searches;
 
