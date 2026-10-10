@@ -19,8 +19,7 @@ fn patch_shape_counts_do_not_narrow_to_the_native_multiplicity_width() {
 }
 
 /// A rational pole whose coordinate times its weight overflows declines
-/// the patch, where its homogeneous coordinate was written as an
-/// infinity.
+/// the patch before any non-finite coordinate is written.
 #[test]
 fn a_pole_whose_weighted_coordinate_overflows_declines_the_patch() {
     let point = FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0e300, 0.0, 0.0)).unwrap();
