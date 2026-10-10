@@ -50,12 +50,16 @@ pub(in super::super) fn link_feature_sketch_history(
             continue;
         };
         let mut sketch_storage = ctx.reserve_scoped(0, "creo history sketch lookup")?;
-        let Some(sketch) = sketch_storage.with_storage(|| model_sketch_id(ctx, scan, definition))? else {
+        let Some(sketch) =
+            sketch_storage.with_storage(|| model_sketch_id(ctx, scan, definition))?
+        else {
             continue;
         };
-        let mut dependency_storage = ctx.reserve_scoped(0, "creo sketch history dependency candidate")?;
-        let Some(sketch_feature) =
-            dependency_storage.with_storage(|| section_owner_feature_id(ctx, scan, transform.definition_id, &sketch))?
+        let mut dependency_storage =
+            ctx.reserve_scoped(0, "creo sketch history dependency candidate")?;
+        let Some(sketch_feature) = dependency_storage.with_storage(|| {
+            section_owner_feature_id(ctx, scan, transform.definition_id, &sketch)
+        })?
         else {
             continue;
         };
@@ -500,7 +504,9 @@ pub(in super::super) fn ordered_family_surface_bindings_for_feature(
     let mut bound_surfaces = BTreeSet::new();
     let mut external_ids = external_ids.into_iter();
     while external_ids.size_hint().1 != Some(0) {
-        let Some(external_id) = ctx.next_charged(&mut external_ids, "creo ordered binding external IDs")? else {
+        let Some(external_id) =
+            ctx.next_charged(&mut external_ids, "creo ordered binding external IDs")?
+        else {
             break;
         };
         if !insert_ordered_family_surface_binding(
@@ -532,7 +538,10 @@ pub(in super::super) fn profile_segment_ids(
     let mut external_ids = std::collections::HashSet::new();
     for profile in ctx.admit_iter(profiles, "creo sketch profiles")? {
         for entity_use in ctx.admit_iter(profile, "creo sketch profile entities")? {
-            let Some(suffix) = entity_use.entity.as_str().strip_prefix("creo:featdefs:sketch_entity#")
+            let Some(suffix) = entity_use
+                .entity
+                .as_str()
+                .strip_prefix("creo:featdefs:sketch_entity#")
             else {
                 continue;
             };

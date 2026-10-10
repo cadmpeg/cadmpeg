@@ -194,7 +194,10 @@ pub(in super::super) fn feature_output_surface_dependencies(
         if table.feature_id != feature_id || table.table_class_id != 67 {
             continue;
         }
-        for entry in ctx.admit_iter(table.entries.as_slice(), "creo output surface ownership entries")? {
+        for entry in ctx.admit_iter(
+            table.entries.as_slice(),
+            "creo output surface ownership entries",
+        )? {
             if entry.source_entity_id() != Some(feature_id) {
                 continue;
             }
@@ -212,7 +215,10 @@ pub(in super::super) fn feature_output_surface_dependencies(
         if table.feature_id != feature_id || table.table_class_id != 100 {
             continue;
         }
-        for entry in ctx.admit_iter(table.entries.as_slice(), "creo output surface dependency entries")? {
+        for entry in ctx.admit_iter(
+            table.entries.as_slice(),
+            "creo output surface dependency entries",
+        )? {
             if !ctx.contains_btree_set(
                 &owned_entities,
                 &entry.entity_id,
@@ -259,7 +265,10 @@ fn feature_entity_dependencies_from_producers<'ctx>(
         if table.feature_id != feature_id || table.table_class_id != 100 {
             continue;
         }
-        for entry in ctx.admit_iter(table.entries.as_slice(), "creo feature entity dependency entries")? {
+        for entry in ctx.admit_iter(
+            table.entries.as_slice(),
+            "creo feature entity dependency entries",
+        )? {
             if producers.is_none() {
                 *producers = Some(super::producers::ProducerRows::new(ctx, tables)?);
             }
@@ -668,8 +677,7 @@ pub(in super::super) fn reconcile_feature_links(
         )?
         .enumerate()
     {
-        let Some(suffix) = feature.id.as_str().strip_prefix("creo:model:feature#")
-        else {
+        let Some(suffix) = feature.id.as_str().strip_prefix("creo:model:feature#") else {
             continue;
         };
         let Ok(feature_id) =
@@ -761,7 +769,8 @@ pub(in super::super) fn reconcile_feature_links(
                     &id,
                     &feature.id,
                     "creo reconciled feature identity comparison",
-                )? && !ctx.contains(
+                )?
+                && !ctx.contains(
                     feature.dependencies.as_slice(),
                     &id,
                     "creo reconciled established dependency membership",
@@ -827,9 +836,12 @@ pub(in super::super) fn reconcile_feature_links(
                 &parent,
                 "creo regeneration parent identity lookup",
             )? {
-                let (child, child_storage) = ctx.with_scoped_storage("creo regeneration child IDs", || feature
-                    .id
-                    .try_clone_for_decode(ctx, "creo regeneration child IDs"))?;
+                let (child, child_storage) =
+                    ctx.with_scoped_storage("creo regeneration child IDs", || {
+                        feature
+                            .id
+                            .try_clone_for_decode(ctx, "creo regeneration child IDs")
+                    })?;
                 regeneration_storage.with_storage(|| {
                     ctx.reserve_vec(&mut regeneration_edges, 1, "creo regeneration edges")
                 })?;
@@ -837,7 +849,9 @@ pub(in super::super) fn reconcile_feature_links(
             }
         }
     }
-    for (child, parent, _, _) in ctx.admit_iter(&regeneration_edges, "creo feature regeneration edges")? {
+    for (child, parent, _, _) in
+        ctx.admit_iter(&regeneration_edges, "creo feature regeneration edges")?
+    {
         ir.model
             .set_feature_regeneration_parent(ctx, child, parent)?;
     }
@@ -850,20 +864,25 @@ pub(in super::super) fn reconcile_feature_links(
             continue;
         };
         for child in ctx.admit_iter(&children[..], "creo feature tree children")? {
-            lookup_storage.with_storage(|| {
-                ctx.entry_btree_map(&mut tree_parents, child, "creo feature tree parent index")
-            })?.or_insert(&feature.id);
+            lookup_storage
+                .with_storage(|| {
+                    ctx.entry_btree_map(&mut tree_parents, child, "creo feature tree parent index")
+                })?
+                .or_insert(&feature.id);
         }
     }
     let mut parents = lookup_storage.with_storage(|| {
         ctx.collection_vec(ir.model.features.len(), "creo feature ordering parent rows")
     })?;
     for feature in ctx.admit_iter(&ir.model.features, "creo feature ordering parent features")? {
-        let parent = ctx.get_btree_map(
-            &tree_parents,
-            &feature.id,
-            "creo feature tree parent lookup",
-        )?.copied().or_else(|| ir.model.feature_regeneration_parent(&feature.id));
+        let parent = ctx
+            .get_btree_map(
+                &tree_parents,
+                &feature.id,
+                "creo feature tree parent lookup",
+            )?
+            .copied()
+            .or_else(|| ir.model.feature_regeneration_parent(&feature.id));
         parents.push(parent);
     }
     let mut remaining = lookup_storage.with_storage(|| {
@@ -1047,7 +1066,9 @@ pub(in super::super) fn reconciled_dependencies(
     }
     let mut native = native.into_iter();
     while native.size_hint().1 != Some(0) {
-        let Some(dependency) = ctx.next_charged(&mut native, "creo native dependency references")? else {
+        let Some(dependency) =
+            ctx.next_charged(&mut native, "creo native dependency references")?
+        else {
             break;
         };
         if ctx.contains_btree_set(

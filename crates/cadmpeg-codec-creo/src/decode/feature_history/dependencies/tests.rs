@@ -1065,11 +1065,17 @@ fn feature_order_preserves_first_tree_owner_and_existing_regeneration_parent() {
     let parent = original.model.features[0].id.clone();
     let child = original.model.features[1].id.clone();
     crate::decode::with_test_decode_ctx(|ctx| {
-        original.model.set_feature_regeneration_parent(ctx, &child, &parent)
-    }).expect("fixture regeneration edge");
+        original
+            .model
+            .set_feature_regeneration_parent(ctx, &child, &parent)
+    })
+    .expect("fixture regeneration edge");
     original.model.features.reverse();
     let ordered = crate::test_support::assert_work_boundaries(
-        &["creo feature tree owners", "creo feature ordering parent features"],
+        &[
+            "creo feature tree owners",
+            "creo feature ordering parent features",
+        ],
         |ctx| {
             let mut ir = original.clone();
             super::reconcile_feature_links(ctx, &scan, &mut ir, &BTreeMap::new())?;
@@ -1087,7 +1093,8 @@ fn feature_order_preserves_first_tree_owner_and_existing_regeneration_parent() {
         vec![child.clone()],
         Some(child.clone()),
         &cadmpeg_test_support::service_decode_context(),
-    ).expect("fixture child list admission");
+    )
+    .expect("fixture child list admission");
     ir.model.features[0].evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
         IrFeatureDefinition::Operation(IrFeatureOperation::TreeNode {
             role: cadmpeg_ir::features::FeatureTreeNodeRole::History,
@@ -1097,7 +1104,8 @@ fn feature_order_preserves_first_tree_owner_and_existing_regeneration_parent() {
     ir.model.features[0].dependencies = cadmpeg_ir::features::DistinctMembers::try_from(
         vec![second_owner.id.clone()],
         &cadmpeg_test_support::service_decode_context(),
-    ).expect("fixture dependency admission");
+    )
+    .expect("fixture dependency admission");
     second_owner.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
         IrFeatureDefinition::Operation(IrFeatureOperation::TreeNode {
             role: cadmpeg_ir::features::FeatureTreeNodeRole::History,
@@ -1107,7 +1115,11 @@ fn feature_order_preserves_first_tree_owner_and_existing_regeneration_parent() {
     ir.model.features.reverse();
     ir.model.features.push(second_owner);
     let ordered = crate::test_support::assert_work_boundaries(
-        &["creo feature tree children", "creo feature tree parent index", "creo feature tree parent lookup"],
+        &[
+            "creo feature tree children",
+            "creo feature tree parent index",
+            "creo feature tree parent lookup",
+        ],
         |ctx| {
             let mut ir = ir.clone();
             super::reconcile_feature_links(ctx, &scan, &mut ir, &BTreeMap::new())?;
@@ -1115,9 +1127,16 @@ fn feature_order_preserves_first_tree_owner_and_existing_regeneration_parent() {
         },
     );
     assert_eq!(ordered.model.feature_tree_parent(&child), Some(&parent));
-    assert_eq!(ordered.model.features.iter().map(|feature| feature.ordinal).collect::<Vec<_>>(), vec![2, 1, 0]);
+    assert_eq!(
+        ordered
+            .model
+            .features
+            .iter()
+            .map(|feature| feature.ordinal)
+            .collect::<Vec<_>>(),
+        vec![2, 1, 0]
+    );
 }
-
 
 #[test]
 fn regeneration_reconciliation_retains_only_installed_edge_storage() {
@@ -1130,9 +1149,14 @@ fn regeneration_reconciliation_retains_only_installed_edge_storage() {
         if staged {
             super::reconcile_feature_links(ctx, &scan, &mut ir, &BTreeMap::new())?;
         } else {
-            super::reconcile_feature_links(ctx, &empty_scan, &mut ir,
-                &BTreeMap::from([(10, vec![3])]))?;
-            ir.model.set_feature_regeneration_parent(ctx, &child, &parent)?;
+            super::reconcile_feature_links(
+                ctx,
+                &empty_scan,
+                &mut ir,
+                &BTreeMap::from([(10, vec![3])]),
+            )?;
+            ir.model
+                .set_feature_regeneration_parent(ctx, &child, &parent)?;
         }
         Ok::<_, CodecError>(ir)
     };
@@ -1141,16 +1165,22 @@ fn regeneration_reconciliation_retains_only_installed_edge_storage() {
     let staged = crate::decode::with_test_decode_ctx(|ctx| reconcile(ctx, true))
         .expect("history edge reconciliation");
     assert_eq!(staged, direct);
-    assert_eq!(staged.model.feature_regeneration_parent(&child), Some(&parent));
-    let retained_limit = |staged| crate::test_support::allocation_limit_at(
-        ResourceDimension::RetainedBytes, None, |cap| {
+    assert_eq!(
+        staged.model.feature_regeneration_parent(&child),
+        Some(&parent)
+    );
+    let retained_limit = |staged| {
+        crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, None, |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
             reconcile(&ctx, staged)
-        },
+        })
+    };
+    assert_eq!(
+        retained_limit(true),
+        retained_limit(false),
+        "reconciliation retains the same output as direct edge installation"
     );
-    assert_eq!(retained_limit(true), retained_limit(false),
-        "reconciliation retains the same output as direct edge installation");
 }

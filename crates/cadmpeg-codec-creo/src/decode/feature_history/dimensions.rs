@@ -203,7 +203,9 @@ pub(in super::super) fn planned_feature_dimension_parameter_ids(
             continue;
         };
         let mut sketch_storage = ctx.reserve_scoped(0, "creo history sketch lookup")?;
-        let Some(sketch) = sketch_storage.with_storage(|| model_sketch_id(ctx, scan, definition))? else {
+        let Some(sketch) =
+            sketch_storage.with_storage(|| model_sketch_id(ctx, scan, definition))?
+        else {
             continue;
         };
         if !feature_dimension_table_complete(table) {
@@ -326,7 +328,9 @@ pub(in super::super) fn feature_dimension_parameter_layout<'ctx>(
     })?;
     let mut items = keys.iter();
     while items.len() != 0 {
-        let Some((sketch, external_id)) = ctx.next_charged(&mut items, "creo dimension layout entries")? else {
+        let Some((sketch, external_id)) =
+            ctx.next_charged(&mut items, "creo dimension layout entries")?
+        else {
             break;
         };
         let ordinal = scratch
@@ -425,10 +429,14 @@ pub(in super::super) fn transfer_feature_dimensions(
         "creo dimension source definitions",
     )? {
         let mut sketch_storage = ctx.reserve_scoped(0, "creo history sketch lookup")?;
-        let Some(sketch) = sketch_storage.with_storage(|| model_sketch_id(ctx, scan, definition))? else {
+        let Some(sketch) =
+            sketch_storage.with_storage(|| model_sketch_id(ctx, scan, definition))?
+        else {
             continue;
         };
-        let Some(owner) = sketch_storage.with_storage(|| section_owner_feature_id(ctx, scan, definition.identity.id(), &sketch))?
+        let Some(owner) = sketch_storage.with_storage(|| {
+            section_owner_feature_id(ctx, scan, definition.identity.id(), &sketch)
+        })?
         else {
             continue;
         };
@@ -498,8 +506,9 @@ pub(in super::super) fn transfer_feature_dimensions(
         .zip(ctx.admit_iter(layout.rows, "creo dimension layout transfer")?)
     {
         let mut owner_storage = ctx.reserve_scoped(0, "creo dimension owner lookup")?;
-        let Some(owner_id) =
-            owner_storage.with_storage(|| section_owner_feature_id(ctx, scan, definition.identity.id(), &sketch))?
+        let Some(owner_id) = owner_storage.with_storage(|| {
+            section_owner_feature_id(ctx, scan, definition.identity.id(), &sketch)
+        })?
         else {
             continue;
         };
@@ -658,7 +667,9 @@ pub(in super::super) fn transfer_feature_dimensions(
         let mut owner_index = None;
         let mut items = ir.model.features.iter().enumerate();
         while items.len() != 0 {
-            let Some((index, feature)) = ctx.next_charged(&mut items, "creo dimension owner feature lookup")? else {
+            let Some((index, feature)) =
+                ctx.next_charged(&mut items, "creo dimension owner feature lookup")?
+            else {
                 break;
             };
             if !ctx.equal(
