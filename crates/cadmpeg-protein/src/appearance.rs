@@ -38,8 +38,11 @@ impl TextureAsset {
         {
             return Ok(false);
         }
-        if !ctx.equal_bytes(self.asset_guid.as_bytes(), other.asset_guid.as_bytes(), operation)?
-            || !ctx.equal_bytes(self.schema.as_bytes(), other.schema.as_bytes(), operation)?
+        if !ctx.equal_bytes(
+            self.asset_guid.as_bytes(),
+            other.asset_guid.as_bytes(),
+            operation,
+        )? || !ctx.equal_bytes(self.schema.as_bytes(), other.schema.as_bytes(), operation)?
         {
             return Ok(false);
         }
@@ -106,6 +109,26 @@ pub fn texture_asset(
     ctx: &DecodeContext<'_>,
     record: &crate::DecodedRecord,
 ) -> Result<TextureAssetResult, CodecError> {
+    // The grammar has thirteen bitmap fields and three additional bump fields.
+    // Each suffix comparison visits at most the length of its fixed literal.
+    const SUFFIXES: [&str; 16] = [
+        "RealWorldOffsetX",
+        "RealWorldOffsetY",
+        "RealWorldScaleX",
+        "RealWorldScaleY",
+        "MapChannel",
+        "MapChannel_UVWSource_Advanced",
+        "UOffset",
+        "VOffset",
+        "UScale",
+        "VScale",
+        "WAngle",
+        "URepeat",
+        "VRepeat",
+        "bumpmap_Depth",
+        "bumpmap_Type",
+        "bumpmap_NormalScale",
+    ];
     ctx.charge_work(0, "Protein texture property selection")?;
     if !matches!(
         record.schema.as_str(),
@@ -113,22 +136,21 @@ pub fn texture_asset(
     ) {
         return Ok(TextureAssetResult::NotTexture);
     }
-    // The grammar has thirteen bitmap fields and three additional bump fields.
-    // Each suffix comparison visits at most the length of its fixed literal.
-    const SUFFIXES: [&str; 16] = [
-        "RealWorldOffsetX", "RealWorldOffsetY", "RealWorldScaleX", "RealWorldScaleY",
-        "MapChannel", "MapChannel_UVWSource_Advanced", "UOffset", "VOffset",
-        "UScale", "VScale", "WAngle", "URepeat", "VRepeat",
-        "bumpmap_Depth", "bumpmap_Type", "bumpmap_NormalScale",
-    ];
-    let field_count = if record.schema == "BumpMapSchema" { 16 } else { 13 };
+    let field_count = if record.schema == "BumpMapSchema" {
+        16
+    } else {
+        13
+    };
     let mut selected: [Option<&DecodedProperty>; 16] = [None; 16];
     let mut source_paths = None;
     let mut source_urn = None;
-    for (id, property) in ctx.admit_iter(&record.properties, "Protein texture property selection")? {
+    for (id, property) in
+        ctx.admit_iter(&record.properties, "Protein texture property selection")?
+    {
         for (index, suffix) in SUFFIXES[..field_count].iter().enumerate() {
             if selected[index].is_none()
-                && id.strip_suffix(*suffix)
+                && id
+                    .strip_suffix(*suffix)
                     .is_some_and(|prefix| prefix.is_empty() || prefix.ends_with('_'))
             {
                 // A named property wins even when its carrier is not the
@@ -149,9 +171,8 @@ pub fn texture_asset(
             }
         }
     }
-    let [offset_x, offset_y, scale_x, scale_y, map_channel, uvw_source,
-        u_offset, v_offset, u_scale, v_scale, w_angle, repeat_u, repeat_v,
-        bump_depth, bump_type, normal_scale] = selected.map(|property| property.and_then(DecodedProperty::value));
+    let [offset_x, offset_y, scale_x, scale_y, map_channel, uvw_source, u_offset, v_offset, u_scale, v_scale, w_angle, repeat_u, repeat_v, bump_depth, bump_type, normal_scale] =
+        selected.map(|property| property.and_then(DecodedProperty::value));
     let mut distances = [Length::ZERO; 5];
     let mut unknown_count = 0_usize;
     for (index, (suffix, property)) in [
@@ -160,7 +181,10 @@ pub fn texture_asset(
         ("RealWorldScaleX", scale_x),
         ("RealWorldScaleY", scale_y),
         ("bumpmap_Depth", bump_depth),
-    ].into_iter().enumerate() {
+    ]
+    .into_iter()
+    .enumerate()
+    {
         if index == 4 && record.schema != "BumpMapSchema" {
             break;
         }
@@ -180,7 +204,9 @@ pub fn texture_asset(
         }
     }
     if unknown_count != 0 {
-        return Ok(TextureAssetResult::UnknownDistanceUnit { count: unknown_count });
+        return Ok(TextureAssetResult::UnknownDistanceUnit {
+            count: unknown_count,
+        });
     }
     let paths = match source_paths {
         Some(paths) => ctx.try_collect_vec(
@@ -207,15 +233,7 @@ pub fn texture_asset(
                 .get()
                 .to_radians(),
         )
-        .ok_or_else(|| {
-            ctx.format_retained(
-                format_args!(
-                    "Protein asset {} property WAngle is non-finite in radians",
-                    record.guid
-                ),
-                "Protein malformed detail",
-            ).map(CodecError::Malformed).unwrap_or_else(|error| error)
-        })?,
+        .ok_or_else(|| CodecError::Malformed("Protein WAngle is non-finite in radians".into()))?,
         repeat_u: boolean_property(repeat_u).unwrap_or(true),
         repeat_v: boolean_property(repeat_v).unwrap_or(true),
         real_world_offset_x: distances[0],
