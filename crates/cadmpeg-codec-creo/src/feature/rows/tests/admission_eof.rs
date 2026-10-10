@@ -129,3 +129,22 @@ fn affected_id_eof_has_one_present_value_and_the_same_search_extent_as_complete_
         });
     }
 }
+
+#[test]
+fn replay_scalar_fallback_token_has_one_psb_visit() {
+    crate::test_support::assert_refusal_order(
+        ResourceDimension::WorkUnits,
+        &["creo PSB token traversal"],
+        |work| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = work;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            assert!(super::super::round_replay_short_scalar(&ctx, &[0xf7, 1], 0, 2)?.is_none());
+            let limit = ctx.charge_work_limit(u64::MAX, "measure replay scalar visits")
+                .expect_err("measure completed traversal");
+            assert_eq!(limit.used, 1);
+            Ok::<_, CodecError>(())
+        },
+    );
+}

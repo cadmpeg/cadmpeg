@@ -32,6 +32,7 @@ pub(super) fn decode_exact_scalars(
     let mut cursor = psb::Cursor::new(payload);
     let mut slots = 0..slot_count;
     while slots.len() != 0
+        && cursor.pos() < payload.len()
         && ctx.next_charged(&mut slots, "creo exact scalar scan")?.is_some()
     {
         let Some(value) = cursor.take_with(|data, pos| scalar::decode_in_lane(data, pos, cache))
@@ -40,7 +41,7 @@ pub(super) fn decode_exact_scalars(
         };
         storage.with_storage(|| ctx.push_vec(&mut values, value, "creo feature scalar values"))?;
     }
-    if cursor.pos() != payload.len() {
+    if !slots.is_empty() || cursor.pos() != payload.len() {
         return Ok(None);
     }
     storage.commit_value(values).map(Some)
@@ -89,6 +90,22 @@ mod tests {
                 assert_eq!((limit.used, limit.additional), (visits, 1));
             });
         }
+    }
+
+    #[test]
+    fn exact_scalar_variable_width_eof_does_not_visit_an_absent_slot() {
+        let cache = ScalarCache::from_section(&[]);
+        crate::test_support::assert_refusal_order(
+            ResourceDimension::WorkUnits,
+            &["creo exact scalar scan"],
+            |work| with_limits(work, SCALAR_VECTOR_BYTES, 0, 2, |ctx| {
+                assert_eq!(decode_exact_scalars(ctx, &[0x29, 0, 0], 2, &cache)?, None);
+                let limit = ctx.charge_work_limit(u64::MAX, "measure exact scalar visits")
+                    .expect_err("measure completed traversal");
+                assert_eq!(limit.used, 1);
+                Ok::<_, CodecError>(())
+            }),
+        );
     }
 
     #[test]

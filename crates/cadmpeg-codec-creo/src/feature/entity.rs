@@ -374,11 +374,11 @@ pub(crate) fn entity_graph(
     let mut source = None;
     let mut offset = 0;
     while offset < payload.len() {
-        ctx.next_charged(
-            &mut (offset..payload.len()),
-            "creo feature entity token traversal",
-        )?;
         if payload[offset] == psb::token::NAMED_RECORD {
+            ctx.next_charged(
+                &mut (offset..payload.len()),
+                "creo feature entity token traversal",
+            )?;
             let Some(rest) = payload.get(offset + 2..) else {
                 break;
             };
@@ -657,6 +657,36 @@ mod tests {
     use cadmpeg_core::CodecError;
 
     const GRAPH: &[u8] = b"\xe0\0Sld_Features\0\xe0\0N\xff\0\xf7\0";
+
+    #[test]
+    fn entity_graph_fallback_token_has_one_psb_visit() {
+        const PAYLOAD: &[u8] = b"\xe0\0Sld_Features\0\xf7\x01";
+        let needed = |payload| crate::test_support::allocation_limit_at(
+            ResourceDimension::WorkUnits, None, |work| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = work;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                entity_graph(&ctx, payload)
+            },
+        );
+        assert_eq!(needed(PAYLOAD), needed(&PAYLOAD[..PAYLOAD.len() - 2]) + 1);
+        crate::test_support::assert_refusal_order(
+            ResourceDimension::WorkUnits,
+            &["creo feature entity token traversal", "creo PSB token traversal"],
+            |work| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = work;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                let (entities, references) = entity_graph(&ctx, PAYLOAD)?;
+                assert_eq!(entities.len(), 1);
+                assert_eq!(references.len(), 1);
+                assert_eq!(references[0].target_entity_id, 1);
+                Ok::<_, CodecError>(())
+            },
+        );
+    }
 
     #[test]
     fn related_payload_enforces_class_state_domain() {
