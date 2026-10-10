@@ -1642,13 +1642,7 @@ fn parse_element_map(
     Ok(ParsedMap {
         map_id,
         postfixes,
-        maps: ElementMapNodes::from_nodes(
-            maps,
-            |count, operation| {
-                ctx.charge_work(cadmpeg_core::decode::u64_from_index(count), operation)
-            },
-            |message| ctx.format_retained(message, "FreeCAD element-map validation diagnostic"),
-        )?
+        maps: ElementMapNodes::from_nodes(maps, ctx)?
         .map_err(CodecError::Malformed)?,
     })
 }
