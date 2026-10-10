@@ -143,7 +143,7 @@ impl DecodedCurve {
         }
     }
 
-    fn warnings_mut(&mut self) -> &mut Diagnostics {
+    pub(crate) fn warnings_mut(&mut self) -> &mut Diagnostics {
         match self {
             Self::Leaf { warnings, .. } | Self::Compound { warnings, .. } => warnings,
         }
@@ -459,17 +459,14 @@ pub(crate) fn decode_inner(
             .into());
     }
     if class_uuid == CURVE_ON_SURFACE {
-        let construction =
-            crate::curve_on_surface::decode(ctx, data, range, scale, archive, depth + 1)?;
-        let Some(mut curve) = construction.model_curve else {
-            return Err(GeometryError::unsupported(
-                construction.source_range.start,
-                "curve-on-surface has no stored model-space carrier",
-            ));
-        };
-        curve
-            .warnings_mut()
-            .prepend_admitted(ctx, construction.warnings)?;
+        let curve = crate::curve_on_surface::decode_model_curve(
+            ctx,
+            data,
+            range,
+            scale,
+            archive,
+            depth + 1,
+        )?;
         return Ok(DecodedGeometry::Curve { curve });
     }
     if matches!(
@@ -701,10 +698,7 @@ fn scale_decoded_curve(
                     },
                     ctx,
                 )? {
-                    return Err(GeometryError::malformed(
-                        offset,
-                        ctx.copy_retained_text(message, "Rhino pole mapping refusal")?,
-                    ));
+                    return Err(GeometryError::malformed(offset, message));
                 }
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
@@ -806,6 +800,7 @@ pub(crate) fn exact_nurbs(
             end_parameter,
             ..
         } => {
+            let _depth = ctx.enter_nested("Rhino exact NURBS compound nesting")?;
             let mut segment_storage = ctx.reserve_scoped(0, "Rhino exact NURBS segment scratch")?;
             let mut segments = segment_storage.with_storage(|| {
                 ctx.collection_vec(children.len(), "Rhino exact NURBS segments")
@@ -829,17 +824,7 @@ pub(crate) fn exact_nurbs(
                     remap_nurbs_domain(ctx, exact_nurbs(ctx, child, offset)?, target, offset)
                 })?);
             }
-            join_nurbs_curves(
-                ctx,
-                JoinSegments {
-                    values: segments,
-                    _scoped_inputs: None,
-                },
-                offset,
-                None,
-                None,
-                None,
-            )
+            join_nurbs_curves(ctx, Some(segment_storage), segments, offset, None, None)
         }
     }
 }
@@ -894,12 +879,8 @@ pub(crate) fn remap_nurbs_domain(
             .then_some(value)
             .ok_or_else(|| error(offset, "curve knot remap overflowed"))?;
     }
-    NurbsCurve::new(ctx, degree, remapped, poles, periodic)?.or_else(|error| {
-        Err(GeometryError::malformed(
-            offset,
-            ctx.format_retained(format_args!("{error}"), "Rhino remap_nurbs_domain text")?,
-        ))
-    })
+    NurbsCurve::new(ctx, degree, remapped, poles, periodic)?
+        .map_err(|error| GeometryError::malformed(offset, format!("{error}")))
 }
 
 /// Exact joined curve and recoverable join diagnostics.
@@ -907,19 +888,6 @@ pub(crate) fn remap_nurbs_domain(
 pub(crate) struct NurbsJoin {
     pub(crate) curve: NurbsCurve,
     pub(crate) warnings: Diagnostics,
-}
-
-pub(crate) struct ScopedJoinInputs<'ctx> {
-    pub(crate) _segment_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
-    pub(crate) _child_result_storages: Vec<cadmpeg_core::decode::ScopedReservation<'ctx>>,
-    pub(crate) _child_result_storages_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
-}
-
-struct JoinSegments<'ctx> {
-    // Source geometry must drop before its storage reservations. Keep both in
-    // one owner so every early return preserves that order.
-    values: Vec<NurbsCurve>,
-    _scoped_inputs: Option<ScopedJoinInputs<'ctx>>,
 }
 
 #[derive(Clone, Copy)]
@@ -1379,12 +1347,7 @@ fn elevate_to_degree(
         output_weights,
         false,
     )?
-    .or_else(|error| {
-        Err(GeometryError::malformed(
-            offset,
-            ctx.format_retained(format_args!("{error}"), "Rhino elevate_to_degree text")?,
-        ))
-    })
+    .map_err(|error| GeometryError::malformed(offset, format!("{error}")))
 }
 
 #[cfg(test)]
@@ -1393,55 +1356,39 @@ pub(crate) fn join_nurbs_segments(
     segments: Vec<NurbsCurve>,
     offset: usize,
 ) -> Result<NurbsJoin, GeometryError> {
-    let mut warnings = Diagnostics::new();
+    let mut scratch_warnings = ScratchDiagnostics::new(ctx, "Rhino test join diagnostics")?;
     let curve = join_nurbs_curves(
         ctx,
-        JoinSegments {
-            values: segments,
-            _scoped_inputs: None,
-        },
+        None,
+        segments,
         offset,
-        Some(&mut warnings),
         None,
-        None,
+        Some(&mut scratch_warnings),
+    )?;
+    let mut warnings = Diagnostics::new();
+    warnings.append_scoped_admitted(
+        ctx,
+        scratch_warnings,
+        "Rhino test join diagnostic promotion",
     )?;
     Ok(NurbsJoin { curve, warnings })
 }
 
-pub(crate) fn join_nurbs_segments_scoped(
+pub(crate) fn join_nurbs_curves(
     ctx: &DecodeContext<'_>,
-    segments: Vec<NurbsCurve>,
-    inputs: ScopedJoinInputs<'_>,
+    input_storage: Option<cadmpeg_core::decode::ScopedReservation<'_>>,
+    input: Vec<NurbsCurve>,
     offset: usize,
-    result_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
-    warnings: &mut ScratchDiagnostics<'_>,
-) -> Result<NurbsCurve, GeometryError> {
-    join_nurbs_curves(
-        ctx,
-        JoinSegments {
-            values: segments,
-            _scoped_inputs: Some(inputs),
-        },
-        offset,
-        None,
-        Some(result_storage),
-        Some(warnings),
-    )
-}
-
-fn join_nurbs_curves(
-    ctx: &DecodeContext<'_>,
-    input: JoinSegments<'_>,
-    offset: usize,
-    mut warnings: Option<&mut Diagnostics>,
     mut result_storage: Option<&mut cadmpeg_core::decode::ScopedReservation<'_>>,
     mut scratch_warnings: Option<&mut ScratchDiagnostics<'_>>,
 ) -> Result<NurbsCurve, GeometryError> {
-    let Some(_) = input.values.first() else {
+    let source_storage = input_storage;
+    let segments = input;
+    let Some(_) = segments.first() else {
         return Err(error(offset, "polycurve has no segments"));
     };
     let degree = ctx
-        .admit_iter(&input.values[..], "Rhino joined maximum degree")
+        .admit_iter(&segments[..], "Rhino joined maximum degree")
         .map_err(CodecError::from)?
         .map(NurbsCurve::degree)
         .max()
@@ -1450,23 +1397,23 @@ fn join_nurbs_curves(
     if target == 0 {
         return Err(error(offset, "polycurve segment degree must be positive"));
     }
-    if input.values.len() == 1 {
-        let segment = &input.values[0];
+    if segments.len() == 1 {
+        let segment = &segments[0];
         let result = if let Some(storage) = result_storage.as_deref_mut() {
             storage.with_storage(|| elevate_to_degree(ctx, segment, target, offset))
         } else {
             elevate_to_degree(ctx, segment, target, offset)
         };
-        drop(input);
+        drop(segments);
+        drop(source_storage);
         return result;
     }
     let mut container_storage = ctx.reserve_scoped(0, "Rhino elevated segment container")?;
     let mut segment_storage = ctx.reserve_scoped(0, "Rhino elevated segment geometry")?;
-    let mut elevated_segments = container_storage.with_storage(|| {
-        ctx.collection_vec(input.values.len(), "Rhino elevated polycurve segments")
-    })?;
-    let segment_count = input.values.len();
-    let mut segment_source = input.values.iter();
+    let mut elevated_segments = container_storage
+        .with_storage(|| ctx.collection_vec(segments.len(), "Rhino elevated polycurve segments"))?;
+    let segment_count = segments.len();
+    let mut segment_source = segments.iter();
     for _ in 0..segment_count {
         let segment = ctx
             .next_charged(&mut segment_source, "Rhino join nurbs segments traversal")?
@@ -1475,7 +1422,8 @@ fn join_nurbs_curves(
             segment_storage.with_storage(|| elevate_to_degree(ctx, segment, target, offset))?,
         );
     }
-    drop(input);
+    drop(segments);
+    drop(source_storage);
     let segments = elevated_segments;
     let multiplicity = usize::try_from(degree)
         .ok()
@@ -1548,20 +1496,12 @@ fn join_nurbs_curves(
                 previous.z.midpoint(next.z),
             );
             let gap = previous.distance(next);
-            if gap > 0.0 {
-                if let Some(warnings) = scratch_warnings.as_deref_mut() {
-                    warnings.push_coded_admitted(
-                        ctx,
-                        crate::loss::RhinoLossCode::PolycurveJoinGap,
-                        format_args!("polycurve join moved endpoints by half of gap {gap}"),
-                    )?;
-                } else if let Some(warnings) = warnings.as_mut() {
-                    warnings.push_coded_admitted(
-                        ctx,
-                        crate::loss::RhinoLossCode::PolycurveJoinGap,
-                        format_args!("polycurve join moved endpoints by half of gap {gap}"),
-                    )?;
-                }
+            if let Some(warnings) = scratch_warnings.as_deref_mut().filter(|_| gap > 0.0) {
+                warnings.push_coded_admitted(
+                    ctx,
+                    crate::loss::RhinoLossCode::PolycurveJoinGap,
+                    format_args!("polycurve join moved endpoints by half of gap {gap}"),
+                )?;
             }
             let Some(previous) = control_points.last_mut() else {
                 return Err(error(offset, "polycurve join has no previous endpoint"));
@@ -1643,7 +1583,7 @@ fn join_nurbs_curves(
             ctx.admit_iter(&segment.knots()[knot_skip..], "Rhino joined knot traversal")
                 .map_err(CodecError::from)?
                 .copied()
-            .map(|knot| knot + dk),
+                .map(|knot| knot + dk),
         );
     }
     drop(segments);
@@ -1657,12 +1597,7 @@ fn join_nurbs_curves(
         NurbsCurve::from_checked_lanes(ctx, degree, knots, control_points, weights, false)?
     };
     drop(output_storage);
-    constructed.or_else(|error| {
-        Err(GeometryError::malformed(
-            offset,
-            ctx.format_retained(format_args!("{error}"), "Rhino join_nurbs_segments text")?,
-        ))
-    })
+    constructed.map_err(|error| GeometryError::malformed(offset, format!("{error}")))
 }
 
 pub(crate) fn decode_inner_2d(
@@ -1926,12 +1861,7 @@ fn read_line(
     points.extend([from, to]);
     cadmpeg_ir::geometry::nurbs::NurbsCurve::from_checked_lanes(ctx, 1, knots, points, None, false)
         .map_err(GeometryError::from)?
-        .or_else(|error| {
-            Err(GeometryError::malformed(
-                reader.position(),
-                ctx.format_retained(format_args!("{error}"), "Rhino read_line text")?,
-            ))
-        })
+        .map_err(|error| GeometryError::malformed(reader.position(), format!("{error}")))
 }
 
 fn read_polyline(
@@ -2014,12 +1944,8 @@ fn read_polyline(
     );
     knots.push(parameters[point_count - 1].get());
     knots.push(parameters[point_count - 1].get());
-    NurbsCurve::from_checked_lanes(ctx, 1, knots, points, None, false)?.or_else(|error| {
-        Err(GeometryError::malformed(
-            reader.position(),
-            ctx.format_retained(format_args!("{error}"), "Rhino read_polyline text")?,
-        ))
-    })
+    NurbsCurve::from_checked_lanes(ctx, 1, knots, points, None, false)?
+        .map_err(|error| GeometryError::malformed(reader.position(), format!("{error}")))
 }
 
 fn read_arc(
@@ -2246,10 +2172,7 @@ fn read_polycurve_parameters(
     if parameter_count != segment_count + 1 {
         return Err(GeometryError::malformed(
             reader.position(),
-            ctx.format_retained(
-                format_args!("{label} parameter count mismatch"),
-                "Rhino read_polycurve_parameters text",
-            )?,
+            format!("{label} parameter count mismatch"),
         ));
     }
     let mut parameters = ctx
@@ -2259,7 +2182,6 @@ fn read_polycurve_parameters(
         ctx.charge_work(1, "Rhino curves read_polycurve_parameters records")?;
         let value = reader.f64()?;
         parameters.push(checked_polycurve_parameter(
-            ctx,
             parameters.last().copied(),
             value,
             reader.position(),
@@ -2267,18 +2189,12 @@ fn read_polycurve_parameters(
         )?);
     }
     let value = reader.f64()?;
-    let end_parameter = checked_polycurve_parameter(
-        ctx,
-        parameters.last().copied(),
-        value,
-        reader.position(),
-        label,
-    )?;
+    let end_parameter =
+        checked_polycurve_parameter(parameters.last().copied(), value, reader.position(), label)?;
     Ok((parameters, end_parameter))
 }
 
 fn checked_polycurve_parameter(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     previous: Option<FiniteReal>,
     value: f64,
     offset: usize,
@@ -2290,10 +2206,7 @@ fn checked_polycurve_parameter(
             || {
                 Err(GeometryError::malformed(
                     offset,
-                    ctx.format_retained(
-                        format_args!("{label} parameters are invalid"),
-                        "Rhino checked_polycurve_parameter text",
-                    )?,
+                    format!("{label} parameters are invalid"),
                 ))
             },
             Ok,
@@ -2390,12 +2303,7 @@ fn arc_nurbs(
         false,
     )
     .map_err(GeometryError::from)?
-    .or_else(|error| {
-        Err(GeometryError::malformed(
-            offset,
-            ctx.format_retained(format_args!("{error}"), "Rhino arc_nurbs text")?,
-        ))
-    })
+    .map_err(|error| GeometryError::malformed(offset, format!("{error}")))
 }
 
 fn canonical_circle(circle: &Circle, angle: [f64; 2], domain: [f64; 2], delta: f64) -> bool {
@@ -3840,22 +3748,14 @@ mod tests {
 
     #[test]
     fn top_level_polycurve_rejects_equal_adjacent_boundaries() {
-        let arena = cadmpeg_core::decode::DecodeArena::default();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("context");
         let previous = FiniteReal::new(1.0);
-        assert!(checked_polycurve_parameter(&ctx, previous, 1.0, 8, "polycurve").is_err());
+        assert!(checked_polycurve_parameter(previous, 1.0, 8, "polycurve").is_err());
     }
 
     #[test]
     fn c2_polycurve_rejects_equal_adjacent_boundaries() {
-        let arena = cadmpeg_core::decode::DecodeArena::default();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("context");
         let previous = FiniteReal::new(1.0);
-        assert!(checked_polycurve_parameter(&ctx, previous, 1.0, 8, "C2 polycurve").is_err());
+        assert!(checked_polycurve_parameter(previous, 1.0, 8, "C2 polycurve").is_err());
     }
 
     #[test]
@@ -3911,17 +3811,69 @@ mod tests {
             end_parameter: finite(5.0),
             warnings: Diagnostics::new(),
         };
-        let converted = with_test_context(|ctx| {
+        let converted =
+            with_test_context(|ctx| exact_nurbs(ctx, &nested, 0)).expect("required invariant");
+        for operation in ["Rhino diagnostics", "Rhino diagnostic message"] {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_retained_bytes = u64::MAX;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                    .expect("context");
             let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-                cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
-                "Rhino diagnostics",
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                operation,
                 None,
             );
-            exact_nurbs(ctx, &nested, 0)
-        })
-        .expect("required invariant");
+            exact_nurbs(&ctx, &nested, 0)
+                .expect("discarded diagnostics have no retained admission");
+            ctx.finish_session()
+                .expect("no discarded diagnostic refusal");
+        }
         assert_eq!(converted.knots().as_slice(), vec![2.0, 2.0, 3.0, 5.0, 5.0]);
         assert_eq!(converted.control_points().len(), 3);
+    }
+
+    #[test]
+    fn exact_nurbs_nested_compound_refuses_recursion_limit() {
+        let line = NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("admitted fixture")
+        .expect("valid line");
+        let mut nested = DecodedCurve::leaf(
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(line)),
+            Diagnostics::new(),
+        );
+        for _ in 0..3 {
+            nested = DecodedCurve::Compound {
+                children: vec![(FiniteReal::ZERO, nested)],
+                end_parameter: FiniteReal::ONE,
+                warnings: Diagnostics::new(),
+            };
+        }
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_recursion_depth = 2;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("context");
+        let GeometryError::Codec(CodecError::ResourceLimit(limit)) =
+            exact_nurbs(&ctx, &nested, 0).expect_err("third compound descent refuses")
+        else {
+            panic!("recursion resource refusal");
+        };
+        assert_eq!(
+            limit.dimension,
+            cadmpeg_core::decode::ResourceDimension::RecursionDepth
+        );
+        assert_eq!(limit.operation, "Rhino exact NURBS compound nesting");
+        assert_eq!((limit.used, limit.additional), (2, 1));
+        assert_eq!(ctx.resource_refusal(), Some(limit));
     }
 
     #[test]

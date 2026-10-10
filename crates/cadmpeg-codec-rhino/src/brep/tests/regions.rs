@@ -1,6 +1,67 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
 
+fn with_region_storage<'ctx, T>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
+    read: impl FnOnce(&mut cadmpeg_core::decode::ScopedReservation<'ctx>) -> Result<T, GeometryError>,
+) -> Result<T, GeometryError> {
+    let mut storage = ctx.reserve_scoped(0, "Rhino Brep region input")?;
+    let value = read(&mut storage)?;
+    Ok(storage.commit_value(value)?)
+}
+
+fn read_region_sides<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &'a [u8],
+    reader: &mut BoundedReader<'a>,
+    archive: ArchiveVersion,
+    warnings: &mut Diagnostics,
+) -> Result<Vec<RawBrepFaceSide>, GeometryError> {
+    with_region_storage(ctx, |storage| {
+        super::super::read_region_sides(ctx, bytes, reader, archive, warnings, storage)
+    })
+}
+
+fn read_region_records<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &'a [u8],
+    reader: &mut BoundedReader<'a>,
+    archive: ArchiveVersion,
+    warnings: &mut Diagnostics,
+) -> Result<Vec<RawBrepRegion>, GeometryError> {
+    with_region_storage(ctx, |storage| {
+        super::super::read_region_records(ctx, bytes, reader, archive, warnings, storage)
+    })
+}
+
+fn read_regions(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    reader: &mut BoundedReader<'_>,
+    archive: ArchiveVersion,
+    face_count: usize,
+    warnings: &mut Diagnostics,
+) -> Result<super::super::RegionRead, GeometryError> {
+    with_region_storage(ctx, |storage| {
+        super::super::read_regions(ctx, bytes, reader, archive, face_count, warnings, storage)
+    })
+}
+
+fn read_region_topology_userdata(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    extra: &ClassUserdata,
+    archive: ArchiveVersion,
+    face_count: usize,
+    warnings: &mut Diagnostics,
+) -> Result<super::super::RegionRead, GeometryError> {
+    with_region_storage(ctx, |storage| {
+        super::super::read_region_topology_userdata(
+            ctx, bytes, extra, archive, face_count, warnings, storage,
+        )
+    })
+}
+
 #[test]
 fn v5_region_topology_userdata_decodes_the_v5_array_grammar() {
     let payload = region_topology_userdata_payload();
@@ -500,4 +561,144 @@ fn resolved_region_sides_refuse_retained_limit_at_acceptance() {
             2 * std::mem::size_of::<super::super::ResolvedFaceSide>(),
         )
     );
+}
+
+fn region_input_payload(direction: i32, truncate_region: bool) -> Vec<u8> {
+    let sides = [
+        region_face_side(0, 0, 0, 1),
+        region_face_side(1, 0, 0, direction),
+    ]
+    .concat();
+    let sides = region_array(&sides, 2);
+    let region = if truncate_region {
+        let mut body = [1_i32, 0, 0, 0, 2, 0, 1]
+            .into_iter()
+            .flat_map(i32::to_le_bytes)
+            .collect::<Vec<_>>();
+        body.extend(0.0_f64.to_le_bytes());
+        anonymous(&body)
+    } else {
+        region_record(0, 0, &[0, 1], [-1.0, -1.0, 0.0, 2.0, 2.0, 1.0])
+    };
+    let regions = region_array(&region, 1);
+    let header = [1_i32, 0]
+        .into_iter()
+        .flat_map(i32::to_le_bytes)
+        .collect::<Vec<_>>();
+    anonymous_mixed(&[(&header, false), (&sides, true), (&regions, true)])
+}
+
+fn assert_region_input_released(topology: &[u8], face_count: usize, semantic: bool) {
+    use cadmpeg_core::decode::refusal_probe::RefusalProbe;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    for operation in [
+        "Rhino Brep region face sides",
+        "Rhino Brep region records",
+        "Rhino Brep indexes",
+    ] {
+        let _probe = RefusalProbe::arm(ResourceDimension::RetainedBytes, operation, None);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 64 * 1024;
+        policy.limits.max_retained_bytes = u64::MAX;
+        let (ctx, _) = DecodeContext::from_root_bytes(topology, &arena, &policy).expect("root");
+        let mut storage = ctx
+            .reserve_scoped(0, "Rhino Brep region input")
+            .expect("candidate scope");
+        let extra = region_topology_userdata_descriptor(0..topology.len());
+        let mut warnings = Diagnostics::new();
+        let parsed = super::super::read_region_topology_userdata(
+            &ctx,
+            topology,
+            &extra,
+            ArchiveVersion::V5,
+            face_count,
+            &mut warnings,
+            &mut storage,
+        );
+        if semantic {
+            let (sides, regions, _, _) = parsed.expect("region input parsed");
+            let mut raw = one_face_raw();
+            raw.minor = 3;
+            raw.face_sides = sides;
+            raw.regions = regions;
+            let (resolved, repair) = ValidatedRawBrep::validate(&ctx, &mut raw, Some(&mut storage))
+                .expect("invalid optional regions degrade");
+            assert!(raw.face_sides.is_empty());
+            assert!(raw.regions.is_empty());
+            assert!(resolved.face_sides.is_empty());
+            assert_eq!(repair.len(), 1);
+        } else {
+            assert!(matches!(parsed, Err(GeometryError::Malformed(_))));
+        }
+        drop(storage);
+        let scratch = ctx
+            .reserve_scoped(
+                policy.limits.max_materialized_bytes,
+                "region input scratch reuse",
+            )
+            .expect("all rejected input and validation storage is released");
+        drop(scratch);
+        ctx.finish_session()
+            .expect("candidate input was never retained");
+    }
+}
+
+#[test]
+fn region_count_rejection_releases_admitted_input() {
+    assert_region_input_released(&region_input_payload(-1, false), 2, false);
+}
+
+#[test]
+fn region_truncation_releases_admitted_sides_and_indexes() {
+    assert_region_input_released(&region_input_payload(-1, true), 1, false);
+}
+
+#[test]
+fn region_semantic_rejection_releases_admitted_input() {
+    assert_region_input_released(&region_input_payload(0, false), 1, true);
+}
+
+#[test]
+fn inline_region_count_rejection_releases_admitted_input_before_repair() {
+    let topology = region_input_payload(-1, false);
+    let mut header = [1_i32, 0]
+        .into_iter()
+        .flat_map(i32::to_le_bytes)
+        .collect::<Vec<_>>();
+    header.push(1);
+    let bytes = anonymous_mixed(&[(&header, false), (&topology, true)]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 64 * 1024;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("root");
+    let mut storage = ctx
+        .reserve_scoped(0, "Rhino Brep region input")
+        .expect("candidate scope");
+    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
+    let mut warnings = Diagnostics::new();
+    let (sides, regions, _, accepted) = super::super::read_regions(
+        &ctx,
+        &bytes,
+        &mut reader,
+        ArchiveVersion::V5,
+        2,
+        &mut warnings,
+        &mut storage,
+    )
+    .expect("optional repair");
+    assert!(sides.is_empty());
+    assert!(regions.is_empty());
+    assert!(!accepted);
+    assert_eq!(warnings.len(), 1);
+    let scratch = ctx
+        .reserve_scoped(
+            policy.limits.max_materialized_bytes,
+            "inline region scratch reuse",
+        )
+        .expect("rejected input storage released before returning repair");
+    drop(scratch);
+    drop(storage);
+    ctx.finish_session().expect("no refusal");
 }
