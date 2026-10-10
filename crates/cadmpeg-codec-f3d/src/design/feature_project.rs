@@ -1566,34 +1566,32 @@ face_operands,
         }
         Ok(())
     })?;
-    for feature in &mut features {
-        let Some(scope) = feature
-            .native_ref
-            .as_deref()
-            .and_then(|native_ref| scopes.iter().find(|scope| scope.id == native_ref))
-        else {
+    let mut work_point_features = features.iter_mut();
+    while let Some(feature) = ctx.next_charged(&mut work_point_features, "visit F3D WorkPoint dependency features")? {
+        let Some(native_ref) = feature.native_ref.as_deref() else {
+            continue;
+        };
+        let Some(scope) = ctx.find_map(scopes, |scope| {
+            Ok(ctx.equal_bytes(scope.id.as_bytes(), native_ref.as_bytes(), "compare F3D WorkPoint dependency scope")?.then_some(scope))
+        }, "visit F3D WorkPoint dependency scopes")? else {
             continue;
         };
         let Some(construction) = scope.work_point_construction() else {
             continue;
         };
-        for state_id in construction
-            .rule
-            .inputs()
-            .iter()
-            .filter_map(|input| work_point_input_history_state_id(scope, input, edge_operands))
-        {
+        visit_work_point_history_states(ctx, scope, construction, edge_operands, |state_id| {
             let mut key_storage = ctx.reserve_scoped(0, "hold F3D WorkPoint history lookup key")?;
             let Some(key) = key_storage.with_storage(|| scope_history.state_key(ctx, scope, state_id))? else {
-                continue;
+                return Ok(true);
             };
             let Some(Some(dependency)) = history_state_features.get(&key) else {
-                continue;
+                return Ok(true);
             };
-            if dependency != &feature.id {
+            if !ctx.equal_bytes(dependency.as_str().as_bytes(), feature.id.as_str().as_bytes(), "compare F3D WorkPoint dependency identity")? {
                 insert_feature_dependency(ctx, &mut feature.dependencies, dependency)?;
             }
-        }
+            Ok(true)
+        })?;
     }
     ctx.stable_sort_by(
         &mut features[..],
@@ -2040,60 +2038,80 @@ fn project_solid_primitive(
 }
 
 fn work_point_edge_operand<'a>(
+    ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
     input: &crate::records::feature::work_geometry::DesignWorkPointInput,
     edge_operands: &'a [DesignEdgeOperand],
-) -> Option<&'a DesignEdgeOperand> {
+) -> Result<Option<&'a DesignEdgeOperand>, CodecError> {
+    ctx.charge_work(0, "resolve F3D WorkPoint edge operand")?;
     let crate::records::feature::work_geometry::DesignWorkPointInputCarrier::EdgeRecipe {
         operand_id,
-    } = input.carrier()?
+    } = or_none!(input.carrier())
     else {
-        return None;
+        return Ok(None);
     };
-    let stream = native_stream(&scope.id)?;
-    let mut matching = edge_operands.iter().filter(|operand| {
-        operand.id == *operand_id
-            && native_stream(&operand.id) == Some(stream)
+    let stream = or_none!(ids::native_stream_charged(ctx, &scope.id, "resolve F3D WorkPoint scope stream")?);
+    unique_feature_match_for_decode(ctx, edge_operands, |operand| {
+        Ok(ctx.equal_bytes(operand.id.as_bytes(), operand_id.as_bytes(), "compare F3D WorkPoint operand identity")?
+            && feature_stream_matches(ctx, &operand.id, Some(stream), "compare F3D WorkPoint operand stream")?
             && operand.scope_record_index == scope.record_index
-            && operand.record_index() == input.record_index()
-    });
-    let operand = matching.next()?;
-    matching.next().is_none().then_some(operand)
+            && operand.record_index() == input.record_index())
+    }, "visit F3D WorkPoint edge operands")
 }
 
-fn work_point_input_history_state_id(
+fn visit_work_point_history_states(
+    ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
-    input: &crate::records::feature::work_geometry::DesignWorkPointInput,
+    construction: &crate::records::feature::work_geometry::DesignWorkPointConstruction,
     edge_operands: &[DesignEdgeOperand],
-) -> Option<i64> {
-    match input.carrier()? {
-        crate::records::feature::work_geometry::DesignWorkPointInputCarrier::EdgeRecipe {
-            ..
-        } => work_point_edge_operand(scope, input, edge_operands)?.recipe_state_id,
-        crate::records::feature::work_geometry::DesignWorkPointInputCarrier::VertexRecipe {
-            recipe,
-        } => recipe.resolution.map(|resolution| resolution.state_id),
-        crate::records::feature::work_geometry::DesignWorkPointInputCarrier::WorkPlane {
-            ..
+    mut visit: impl FnMut(i64) -> Result<bool, CodecError>,
+) -> Result<bool, CodecError> {
+    use crate::records::feature::work_geometry::{DesignWorkPointInputCarrier, DesignWorkPointRuleForm};
+
+    ctx.charge_work(0, "resolve F3D WorkPoint history inputs")?;
+    // Supported rules have fixed arity. Only Native carries a counted run.
+    let counted = matches!(construction.rule.form(), DesignWorkPointRuleForm::Native { .. });
+    let mut inputs = construction.rule.inputs().iter();
+    while let Some(input) = if counted {
+        ctx.next_charged(&mut inputs, "visit F3D WorkPoint history inputs")?
+    } else {
+        inputs.next()
+    } {
+        let state = match input.carrier() {
+            Some(DesignWorkPointInputCarrier::EdgeRecipe { .. }) => {
+                work_point_edge_operand(ctx, scope, input, edge_operands)?.and_then(|operand| operand.recipe_state_id)
+            }
+            Some(DesignWorkPointInputCarrier::VertexRecipe { recipe }) => {
+                recipe.resolution.map(|resolution| resolution.state_id)
+            }
+            Some(DesignWorkPointInputCarrier::WorkPlane { .. } | DesignWorkPointInputCarrier::SketchPoint { .. }) | None => None,
+        };
+        if let Some(state) = state {
+            if !visit(state)? {
+                return Ok(false);
+            }
         }
-        | crate::records::feature::work_geometry::DesignWorkPointInputCarrier::SketchPoint {
-            ..
-        } => None,
     }
+    Ok(true)
 }
 
 pub(crate) fn work_point_recipe_state_id(
+    ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
     edge_operands: &[DesignEdgeOperand],
-) -> Option<i64> {
-    let construction = scope.work_point_construction()?;
-    let mut states = construction
-        .rule
-        .inputs()
-        .iter()
-        .filter_map(|input| work_point_input_history_state_id(scope, input, edge_operands));
-    let state = states.next()?;
-    states.all(|candidate| candidate == state).then_some(state)
+) -> Result<Option<i64>, CodecError> {
+    ctx.charge_work(0, "resolve F3D WorkPoint recipe state")?;
+    let construction = or_none!(scope.work_point_construction());
+    let mut state = None;
+    let consistent = visit_work_point_history_states(ctx, scope, construction, edge_operands, |candidate| {
+        if let Some(state) = state {
+            Ok(candidate == state)
+        } else {
+            state = Some(candidate);
+            Ok(true)
+        }
+    })?;
+    Ok(if consistent { state } else { None })
 }
 
 pub(crate) fn work_plane_recipe_state_id(scope: &DesignParameterScope) -> Option<i64> {
@@ -2119,7 +2137,7 @@ fn project_work_point_construction(
 
     let stream = or_none!(native_stream(&scope.id));
     let edge = |input: &DesignWorkPointInput| -> Result<Option<EdgeSelection>, CodecError> {
-        let Some(operand) = work_point_edge_operand(scope, input, edge_operands) else {
+        let Some(operand) = work_point_edge_operand(ctx, scope, input, edge_operands)? else {
             return Ok(None);
         };
         let resolved = match operand.recipe_state_id {
