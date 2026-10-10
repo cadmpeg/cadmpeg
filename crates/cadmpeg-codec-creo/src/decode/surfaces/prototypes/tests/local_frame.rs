@@ -24,27 +24,6 @@ fn record(values: [f64; 12]) -> SurfacePrototypeRecord {
     )
 }
 
-fn tabulated_cylinder_record(values: Vec<Option<f64>>) -> SurfacePrototypeRecord {
-    SurfacePrototypeRecord::new_for_test(
-        SurfacePrototypeFamily::Extrusion(
-            crate::surface::ExtrusionLabel::TabulatedCylinder,
-        ),
-        vec![SurfaceNamedParameter {
-            name: "local_sys".to_string(),
-            value: SurfaceNamedValue::ScalarArray({
-                let mut array = crate::surface::arrays::DimensionedScalars::empty(4, 3)
-                    .expect("valid scalar array");
-                array.fill_values(values).expect("matching scalar extent");
-                array
-            }),
-            body: Vec::new(),
-            offset: 0,
-            value_offset: 0,
-        }],
-        0,
-    )
-}
-
 #[test]
 fn selects_the_unique_orthogonal_equal_scale_support_candidate() {
     let record = record([
@@ -65,39 +44,6 @@ fn rejects_ambiguous_support_candidates() {
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| prototype_local_frame(ctx, &record))
             .expect("frame selection admission"),
-        None
-    );
-}
-
-#[test]
-fn tabulated_cylinder_uses_complete_local_system_origin() {
-    let mut values = vec![Some(0.0); 12];
-    values[9..12].copy_from_slice(&[Some(-4.0), Some(2.5), Some(8.0)]);
-
-    assert_eq!(
-        tabulated_cylinder_record(values).tabulated_cylinder_chart_origin(),
-        Some([-4.0, 2.5, 8.0])
-    );
-}
-
-#[test]
-fn tabulated_cylinder_uses_compact_local_system_chart_origin() {
-    let mut values = vec![Some(0.0); 7];
-    values.extend([Some(-12.25), Some(-7.5), Some(0.0), None, None]);
-
-    assert_eq!(
-        tabulated_cylinder_record(values).tabulated_cylinder_chart_origin(),
-        Some([-12.25, -7.5, 0.0])
-    );
-}
-
-#[test]
-fn tabulated_cylinder_chart_origin_rejects_other_local_system_shapes() {
-    let mut values = vec![Some(0.0); 7];
-    values.extend([Some(-12.25), Some(-7.5), None, None, None]);
-
-    assert_eq!(
-        tabulated_cylinder_record(values).tabulated_cylinder_chart_origin(),
         None
     );
 }

@@ -1,24 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::super::take_spline_mixed_derivatives;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 fn assert_fixed_read(body: &[u8], start: usize, expected: Option<[[f64; 3]; 4]>, end: usize) {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    policy.limits.max_retained_bytes = 0;
-    policy.limits.max_materialized_bytes = 0;
-    policy.limits.max_collection_items = 0;
-    policy.limits.max_entities = 0;
-    policy.limits.max_recursion_depth = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let cache = crate::scalar::ScalarCache::default();
     let mut cursor = start;
-    assert_eq!(take_spline_mixed_derivatives(&ctx, body, &mut cursor, &cache)
-        .expect("fixed literal slots have no input-sized admission"), expected);
+    assert_eq!(take_spline_mixed_derivatives(body, &mut cursor, &cache), expected);
     assert_eq!(cursor, end);
-    assert_eq!(ctx.resource_refusal(), None);
 }
 
 #[test]

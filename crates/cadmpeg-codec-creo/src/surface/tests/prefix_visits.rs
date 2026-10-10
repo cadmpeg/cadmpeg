@@ -6,56 +6,11 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 use cadmpeg_core::CodecError;
 
 fn check_name(payload: &[u8], offset: usize, expected: Option<usize>) {
-    let visits =
-        crate::test_support::allocation_limit_at(ResourceDimension::WorkUnits, None, |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            policy.limits.max_materialized_bytes = 0;
-            policy.limits.max_retained_bytes = 0;
-            policy.limits.max_collection_items = 0;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            named_record_length(&ctx, payload, offset)
-        });
-    for cap in 0..=visits {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        policy.limits.max_materialized_bytes = 0;
-        policy.limits.max_retained_bytes = 0;
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let result = named_record_length(&ctx, payload, offset);
-        if cap == visits {
-            assert_eq!(result.expect("actual field name visits"), expected);
-            let original = ctx
-                .charge_work_limit(1, "after surface name prefix")
-                .expect_err("only executed work is charged");
-            assert_eq!((original.used, original.additional), (visits, 1));
-        } else {
-            let original = ctx.resource_refusal().expect("name visit refuses");
-            assert!(matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original));
-            assert_eq!(
-                (
-                    original.dimension,
-                    original.used,
-                    original.additional,
-                    original.operation
-                ),
-                (
-                    ResourceDimension::WorkUnits,
-                    cap,
-                    1,
-                    "creo surface name prefix scan"
-                )
-            );
-        }
-
-    }
+    assert_eq!(named_record_length(payload, offset), expected);
 }
 
 #[test]
-fn surface_name_prefix_admits_present_grammar_bytes_with_the_original_bound() {
+fn surface_name_prefix_uses_bounded_grammar() {
     for length in [0, 1, 2, 17, 95, 96, 120] {
         let mut payload = b"\xe0\x24".to_vec();
         payload.extend(std::iter::repeat_n(b'A', length));
@@ -82,24 +37,15 @@ fn surface_named_boundary_admits_visited_positions_and_skips_scalar_interiors() 
         // One eight-byte scalar, followed by the named field. Its interior is not visited.
         (b"\x46\0\0\0\0\0\0\0\xe0\0A\0ignored".as_slice(), Some(8)),
     ] {
-        let positions = if payload.is_empty() {
-            0
+        let operations = if payload.is_empty() {
+            &[][..]
         } else {
-            let CodecError::ResourceLimit(resource) = crate::test_support::last_refusal_at(
-                &[],
-                ResourceDimension::WorkUnits,
-                "creo surface named boundary traversal",
-                |ctx| named_record_boundary(ctx, SurfaceKind::Plane, payload, &cache),
-            ) else {
-                panic!("named traversal refusal");
-            };
-            resource
-                .used
-                .checked_add(resource.additional)
-                .expect("traversal need")
+            &["creo surface named boundary traversal"][..]
         };
-        let total =
-            crate::test_support::allocation_limit_at(ResourceDimension::WorkUnits, None, |cap| {
+        let actual = crate::test_support::assert_refusal_order(
+            ResourceDimension::WorkUnits,
+            operations,
+            |cap| {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_work_units = cap;
@@ -107,43 +53,16 @@ fn surface_named_boundary_admits_visited_positions_and_skips_scalar_interiors() 
                 policy.limits.max_retained_bytes = 0;
                 policy.limits.max_collection_items = 0;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-                named_record_boundary(&ctx, SurfaceKind::Plane, payload, &cache)
-            });
-        for cap in 0..=total {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            policy.limits.max_materialized_bytes = 0;
-            policy.limits.max_retained_bytes = 0;
-            policy.limits.max_collection_items = 0;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let result = named_record_boundary(&ctx, SurfaceKind::Plane, payload, &cache);
-            if cap == total {
-                assert_eq!(result.expect("exact position and name visits"), offset);
-                let original = ctx
-                    .charge_work_limit(1, "after surface named boundary")
-                    .expect_err("unvisited scalar bytes and trailing bytes are free");
-                assert_eq!((original.used, original.additional), (total, 1));
-            } else {
-                let original = ctx.resource_refusal().expect("actual visit refuses");
-                assert!(
-                    matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original)
-                );
-                let operation = if cap < positions {
-                    "creo surface named boundary traversal"
-                } else {
-                    "creo surface name prefix scan"
-                };
-                assert_eq!(
-                    (
-                        original.dimension,
-                        original.used,
-                        original.additional,
-                        original.operation
-                    ),
-                    (ResourceDimension::WorkUnits, cap, 1, operation)
-                );
-            }
-        }
+                let result = named_record_boundary(&ctx, SurfaceKind::Plane, payload, &cache);
+                if let Err(CodecError::ResourceLimit(resource)) = &result {
+                    assert_eq!(
+                        (resource.dimension, resource.used, resource.additional, resource.operation),
+                        (ResourceDimension::WorkUnits, cap, 1, "creo surface named boundary traversal")
+                    );
+                }
+                result
+            },
+        );
+        assert_eq!(actual, offset);
     }
 }

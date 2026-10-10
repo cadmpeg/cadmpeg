@@ -375,34 +375,20 @@ fn plane_envelope_final_positive_slot_refuses_before_growth() {
 }
 
 #[test]
-fn plane_envelope_close_slot_refuses_before_growth() {
-    use cadmpeg_core::decode::ResourceDimension;
+fn plane_envelope_close_uses_fixed_storage() {
     let body = [
         0x0f, 0xe4, 0x0d, 0x0f, 0x0f, 0x0f, 0xe4, 0x0d, 0x0f, 0x99, 1, 2, 3, 4, 5, 6, 0xe3,
     ];
-    let run = |limit| {
-        with_surface_limits(&body, limit, u64::MAX, |ctx| {
+    assert_eq!(
+        with_surface_limits(&body, 0, 0, |ctx| {
             crate::surface::plane_envelope_compound_close(
                 ctx,
                 &body,
                 &scalar::ScalarCache::default(),
             )
         })
-    };
-    assert_eq!(
-        run(u64::MAX).expect("ten slots are admitted"),
+        .expect("bounded close uses fixed storage"),
         Some(body.len() - 1)
-    );
-    let error = run(crate::test_support::allocation_limit_at(
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        Some("creo plane envelope close token slot"),
-        run,
-    ))
-    .expect_err("the close slot exceeds nine collection items");
-    assert_surface_limit(
-        &error,
-        ResourceDimension::CollectionItems,
-        "creo plane envelope close token slot",
     );
 }
 
