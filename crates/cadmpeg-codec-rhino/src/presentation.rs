@@ -1615,7 +1615,6 @@ fn object_attributes_presentation(
 }
 
 fn read_color_f32(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     label: &str,
 ) -> Result<[FiniteBinary32; 4], FramingError> {
@@ -1624,17 +1623,13 @@ fn read_color_f32(
     let [Some(red), Some(green), Some(blue), Some(alpha)] = color.map(FiniteBinary32::new) else {
         return Err(FramingError::structural(
             offset,
-            ctx.format_retained(
-                format_args!("{label} contains a non-finite component"),
-                "Rhino read_color_f32 text",
-            )?,
+            format!("{label} contains a non-finite component"),
         ));
     };
     Ok([red, green, blue, alpha])
 }
 
 fn finite3(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     label: &str,
 ) -> Result<[FiniteReal; 3], FramingError> {
@@ -1643,7 +1638,7 @@ fn finite3(
     let [Some(x), Some(y), Some(z)] = value.map(FiniteReal::new) else {
         return Err(FramingError::structural(
             offset,
-            ctx.format_retained(format_args!("{label} is not finite"), "Rhino finite3 text")?,
+            format!("{label} is not finite"),
         ));
     };
     Ok([x, y, z])
@@ -1757,11 +1752,11 @@ fn parse_physically_based_material(
             "physically based material payload version is unsupported",
         ));
     }
-    let base_color = read_color_f32(ctx, &mut reader, "base color")?;
+    let base_color = read_color_f32(&mut reader, "base color")?;
     let brdf = reader.i32()?;
     let subsurface = read_finite(ctx, &mut reader, "subsurface")?;
     let subsurface_scattering_color =
-        read_color_f32(ctx, &mut reader, "subsurface scattering color")?;
+        read_color_f32(&mut reader, "subsurface scattering color")?;
     let subsurface_scattering_radius =
         read_finite(ctx, &mut reader, "subsurface scattering radius")?;
     let metallic = read_finite(ctx, &mut reader, "metallic")?;
@@ -1777,7 +1772,7 @@ fn parse_physically_based_material(
     let opacity_ior = read_finite(ctx, &mut reader, "opacity IOR")?;
     let opacity = read_finite(ctx, &mut reader, "opacity")?;
     let opacity_roughness = read_finite(ctx, &mut reader, "opacity roughness")?;
-    let emission = read_color_f32(ctx, &mut reader, "emission")?;
+    let emission = read_color_f32(&mut reader, "emission")?;
     let revision = if version == 2 {
         PhysicallyBasedMaterialRevision::V2 {
             alpha: read_finite(ctx, &mut reader, "alpha")?,
@@ -3214,11 +3209,11 @@ fn parse_light(
     let ambient = reader.array()?;
     let diffuse = reader.array()?;
     let specular = reader.array()?;
-    let direction = finite3(ctx, &mut reader, "light direction")?;
-    let mut location = finite3(ctx, &mut reader, "light location")?;
+    let direction = finite3(&mut reader, "light direction")?;
+    let mut location = finite3(&mut reader, "light location")?;
     let spot_angle_degrees = read_finite(ctx, &mut reader, "spot angle")?;
     let mut spot_exponent = read_finite(ctx, &mut reader, "spot exponent")?;
-    let attenuation = finite3(ctx, &mut reader, "light attenuation")?;
+    let attenuation = finite3(&mut reader, "light attenuation")?;
     let shadow_intensity = read_finite(ctx, &mut reader, "shadow intensity")?;
     let index = reader.i32()?;
     let id = uuid(&mut reader)?;
@@ -3226,8 +3221,8 @@ fn parse_light(
     let mut length = [FiniteReal::ZERO; 3];
     let mut width = [FiniteReal::ZERO; 3];
     if packed & 0x0f >= 1 {
-        length = finite3(ctx, &mut reader, "light length")?;
-        width = finite3(ctx, &mut reader, "light width")?;
+        length = finite3(&mut reader, "light length")?;
+        width = finite3(&mut reader, "light width")?;
     }
     // A stored hotspot is admitted finite; an older record derives it from the
     // spot exponent, a value clamped to `[0, 1]` that no reader admits.
