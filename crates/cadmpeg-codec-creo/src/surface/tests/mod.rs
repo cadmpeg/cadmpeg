@@ -13,6 +13,7 @@ mod plane_envelope_close_bound;
 mod planes;
 mod positional;
 mod positional_mixed;
+mod prefix_visits;
 mod resource_cache;
 mod round_envelopes;
 mod row_scan;
