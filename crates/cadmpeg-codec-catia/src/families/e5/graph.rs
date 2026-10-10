@@ -1462,11 +1462,13 @@ fn parse_jet_pcurve(
     if !complete || sum != expected_sum {
         return Ok(None);
     }
-    storage.commit_value(E5Pcurve::Jet {
-        surface,
-        sites,
-        range,
-    }).map(Some)
+    storage
+        .commit_value(E5Pcurve::Jet {
+            surface,
+            sites,
+            range,
+        })
+        .map(Some)
 }
 
 /// Derive the exact global-sense anchor for a plane-cap split circle.
@@ -2989,8 +2991,7 @@ mod tests {
                 },
             ),
         ]);
-        let bound_parameters =
-            index_bound_parameters(&ctx, &bounds).expect("bound index");
+        let bound_parameters = index_bound_parameters(&ctx, &bounds).expect("bound index");
         let hint = plane_digon_orientation_hint(
             &ctx,
             crate::families::e5::graph::PlaneDigonOrientationHintInputs {
@@ -3044,8 +3045,7 @@ mod tests {
                 f64::MAX
             });
         }
-        let wide_parameters =
-            index_bound_parameters(&ctx, &wide_bounds).expect("wide bound index");
+        let wide_parameters = index_bound_parameters(&ctx, &wide_bounds).expect("wide bound index");
         assert_eq!(
             plane_digon_orientation_hint(
                 &ctx,

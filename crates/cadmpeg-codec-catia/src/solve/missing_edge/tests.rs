@@ -755,7 +755,8 @@ fn candidate_contexts_share_edge_row_storage() {
     assert_eq!(Arc::strong_count(&base.0.analysis), 1);
     for _ in 0..CANDIDATES {
         candidates.push(
-            base.0.with_edge_faces(&ctx, &faces)
+            base.0
+                .with_edge_faces(&ctx, &faces)
                 .expect("service resource budget")
                 .expect("quad candidate context"),
         );
@@ -897,9 +898,9 @@ fn mesh_edge_run_materialization_refuses_before_occurrence_copy() {
     assert!(refused.contains("catia_mesh_edge_run_rows"));
 }
 
-mod ports_and_coverage;
 mod cache;
 mod dead_states;
+mod ports_and_coverage;
 
 #[test]
 fn duplicate_face_search_refuses_recursive_depth() {
@@ -947,11 +948,15 @@ fn duplicate_face_search_does_not_capture_validator_output() {
     let allowed = [vec![0, 1]];
     crate::test_support::with_service_context(|ctx| {
         let mut cache = Vec::new();
-        assert_eq!(unique_duplicate_face_assignment(ctx, &serialized, &allowed, 2, |candidate| {
-            let row = ctx.copy_slice(candidate, "test duplicate validator output")?;
-            ctx.push_vec(&mut cache, row, "test duplicate validator cache")?;
-            Ok(true)
-        }).expect("ambiguous assignments"), None);
+        assert_eq!(
+            unique_duplicate_face_assignment(ctx, &serialized, &allowed, 2, |candidate| {
+                let row = ctx.copy_slice(candidate, "test duplicate validator output")?;
+                ctx.push_vec(&mut cache, row, "test duplicate validator cache")?;
+                Ok(true)
+            })
+            .expect("ambiguous assignments"),
+            None
+        );
         assert_eq!(cache, [vec![[0, 0]], vec![[0, 1]]]);
         assert_eq!(ctx.resource_refusal(), None);
     });
@@ -969,8 +974,10 @@ fn duplicate_face_search_does_not_capture_validator_output() {
         assert_eq!(limit.operation, "test duplicate validator output");
         assert!(cache.is_empty());
         assert_eq!(ctx.resource_refusal(), Some(limit));
-        assert!(matches!(ctx.charge_work(0, "after validator output refusal"),
-            Err(CodecError::ResourceLimit(later)) if later == limit));
+        assert!(
+            matches!(ctx.charge_work(0, "after validator output refusal"),
+            Err(CodecError::ResourceLimit(later)) if later == limit)
+        );
     });
 }
 
@@ -980,11 +987,16 @@ fn missing_edge_solution_promotion_preserves_refusal_and_parent_storage() {
 
     let serialized = [[0, 0]];
     let allowed = [vec![0, 1]];
-    for operation in ["catia_duplicate_face_solution", "catia_oriented_trail_orders"] {
+    for operation in [
+        "catia_duplicate_face_solution",
+        "catia_oriented_trail_orders",
+    ] {
         let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
             if operation == "catia_duplicate_face_solution" {
-                unique_duplicate_face_assignment(ctx, &serialized, &allowed, 2,
-                    |candidate| Ok(candidate[0][1] == 1)).map(|_| ())
+                unique_duplicate_face_assignment(ctx, &serialized, &allowed, 2, |candidate| {
+                    Ok(candidate[0][1] == 1)
+                })
+                .map(|_| ())
             } else {
                 super::bounded_oriented_trail_orders(ctx, &[vec![0], vec![1]], 2).map(|_| ())
             }
@@ -997,21 +1009,26 @@ fn missing_edge_solution_promotion_preserves_refusal_and_parent_storage() {
             assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
             assert_eq!(limit.operation, operation);
             assert_eq!(ctx.resource_refusal(), Some(*limit));
-            assert!(matches!(ctx.charge_work(0, "after solution promotion refusal"),
-                Err(CodecError::ResourceLimit(later)) if later == *limit));
+            assert!(
+                matches!(ctx.charge_work(0, "after solution promotion refusal"),
+                Err(CodecError::ResourceLimit(later)) if later == *limit)
+            );
             result
         });
         assert!(matches!(refused, Err(CodecError::ResourceLimit(_))));
     }
     crate::test_support::with_retained_limit(0, |ctx| -> Result<(), CodecError> {
         let mut storage = ctx.reserve_scoped(0, "test missing-edge solution parent")?;
-        let solution = storage.with_storage(|| {
-            unique_duplicate_face_assignment(ctx, &serialized, &allowed, 2,
-                |candidate| Ok(candidate[0][1] == 1))
-        })?.expect("one solution");
-        let orders = storage.with_storage(|| {
-            super::bounded_oriented_trail_orders(ctx, &[vec![0], vec![1]], 2)
-        })?.expect("two orders");
+        let solution = storage
+            .with_storage(|| {
+                unique_duplicate_face_assignment(ctx, &serialized, &allowed, 2, |candidate| {
+                    Ok(candidate[0][1] == 1)
+                })
+            })?
+            .expect("one solution");
+        let orders = storage
+            .with_storage(|| super::bounded_oriented_trail_orders(ctx, &[vec![0], vec![1]], 2))?
+            .expect("two orders");
         assert_eq!(solution, [[0, 1]]);
         assert_eq!(orders, [vec![0, 1], vec![1, 0]]);
         assert_eq!(ctx.resource_refusal(), None);
@@ -1019,7 +1036,8 @@ fn missing_edge_solution_promotion_preserves_refusal_and_parent_storage() {
         drop(solution);
         drop(storage);
         Ok(())
-    }).expect("actual outputs remain under their live parent");
+    })
+    .expect("actual outputs remain under their live parent");
 }
 
 #[test]
@@ -1029,14 +1047,18 @@ fn parsed_boundary_context_keeps_no_retained_workspace() {
         let base = StandardMeshBoundaryContext::parse(ctx, &bytes, &[[0, 0]; 4])
             .expect("temporary parse")
             .expect("quad context");
-        let candidate = base.0
+        let candidate = base
+            .0
             .with_edge_faces(ctx, &[[0, 0]; 4])
             .expect("temporary candidate")
             .expect("quad candidate");
         assert!(Arc::ptr_eq(&base.0.analysis, &candidate.0.analysis));
         assert!(Arc::ptr_eq(&base.0.edge_ports, &candidate.0.edge_ports));
         assert!(Arc::ptr_eq(&base.0.edge_runs, &candidate.0.edge_runs));
-        assert!(Arc::ptr_eq(&base.0.cycle_lengths, &candidate.0.cycle_lengths));
+        assert!(Arc::ptr_eq(
+            &base.0.cycle_lengths,
+            &candidate.0.cycle_lengths
+        ));
         assert_eq!(base.0.coverage, candidate.0.coverage);
     });
 }

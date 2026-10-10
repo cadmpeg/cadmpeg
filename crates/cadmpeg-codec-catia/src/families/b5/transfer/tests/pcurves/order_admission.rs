@@ -10,7 +10,10 @@ fn pcurve(values: &[f64]) -> B5Pcurve {
         degree: u32::try_from(values.len() - 1).expect("fixture degree"),
         distinct_knots: finite_lane(&[0.0, 1.0]),
         multiplicities: vec![u32::try_from(values.len()).expect("fixture count"); 2],
-        control_points: values.iter().map(|&value| finite_vector([4.0, value])).collect(),
+        control_points: values
+            .iter()
+            .map(|&value| finite_vector([4.0, value]))
+            .collect(),
         weights: None,
         parameter_range: None,
         parameterization: B5PcurveParameterization::Native,
@@ -30,7 +33,11 @@ fn isocurve_order_visits_a_long_equal_prefix_once() {
     policy.limits.max_work_units = u64::MAX;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("caller context");
-    let probe = RefusalProbe::arm(ResourceDimension::WorkUnits, "catia_b5_pcurve_knot_count", Some(1));
+    let probe = RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "catia_b5_pcurve_knot_count",
+        Some(1),
+    );
     let CodecError::ResourceLimit(original) =
         super::super::super::pcurves::isocurve_endpoint_parameters(&ctx, &curve, [0.0, 1.0])
             .expect_err("evaluation starts after one direction pass")
@@ -48,7 +55,10 @@ fn isocurve_order_visits_a_long_equal_prefix_once() {
         super::super::super::pcurves::isocurve_endpoint_parameters(&ctx, &curve, [0.0, 1.0]),
         Err(CodecError::ResourceLimit(next)) if next == original
     ));
-    assert_eq!(super::isocurve_endpoint_parameters(&pcurve(&values), [0.0, 1.0]), Some([0.0, -1.0]));
+    assert_eq!(
+        super::isocurve_endpoint_parameters(&pcurve(&values), [0.0, 1.0]),
+        Some([0.0, -1.0])
+    );
 }
 
 #[test]
@@ -59,8 +69,13 @@ fn isocurve_order_stops_at_the_first_direction_conflict() {
     values[1] = -1.0;
     let curve = pcurve(&values);
     crate::test_support::with_work_limit((COUNT + 1 + 2) as u64, |ctx| {
-        assert!(super::super::super::pcurves::isocurve_endpoint_parameters(ctx, &curve, [0.0, 1.0])
-            .expect("only two direction comparisons execute").is_none());
+        assert!(super::super::super::pcurves::isocurve_endpoint_parameters(
+            ctx,
+            &curve,
+            [0.0, 1.0]
+        )
+        .expect("only two direction comparisons execute")
+        .is_none());
         assert!(ctx.resource_refusal().is_none());
     });
 }
@@ -69,7 +84,10 @@ fn isocurve_order_stops_at_the_first_direction_conflict() {
 fn isocurve_order_preserves_equal_zero_and_invalid_endpoint_semantics() {
     for values in [[-0.0, 0.0, -0.0], [0.0, -0.0, 0.0]] {
         let curve = pcurve(&values);
-        assert_eq!(super::isocurve_endpoint_parameters(&curve, [0.0, 1.0]), Some([0.0, 0.0]));
+        assert_eq!(
+            super::isocurve_endpoint_parameters(&curve, [0.0, 1.0]),
+            Some([0.0, 0.0])
+        );
         assert!(super::isocurve_endpoint_parameters(&curve, [f64::NAN, 1.0]).is_none());
         assert!(super::isocurve_endpoint_parameters(&curve, [0.0, f64::NAN]).is_none());
     }

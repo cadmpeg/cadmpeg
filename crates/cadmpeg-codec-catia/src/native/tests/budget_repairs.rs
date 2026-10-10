@@ -19,7 +19,8 @@ fn native_graph_index_computes_terminal_identity_in_its_single_source_pass() {
         let records = [7, middle, 7].map(|id| {
             let mut record = fixture.clone();
             record.entity = Some(super::super::CatiaObjectEntity {
-                record: format!("entity-{id}"), id,
+                record: format!("entity-{id}"),
+                id,
             });
             record
         });
@@ -34,7 +35,8 @@ fn native_graph_index_computes_terminal_identity_in_its_single_source_pass() {
             assert_eq!(index.terminal_null_entity_id, terminal);
             assert_eq!(ctx.resource_refusal(), None);
             Ok(())
-        }).expect("indexing and terminal identity share one source pass");
+        })
+        .expect("indexing and terminal identity share one source pass");
         let refused = with_work_limit(0, |ctx| {
             let mut storage = ctx.reserve_scoped(0, "test graph index")?;
             let result = super::super::GraphRecordIndex::new(ctx, &mut storage, &records);
@@ -55,16 +57,15 @@ fn native_graph_index_computes_terminal_identity_in_its_single_source_pass() {
         assert!(index.positions.is_empty());
         assert_eq!(index.terminal_null_entity_id, None);
         Ok(())
-    }).expect("empty index has no terminal identity");
+    })
+    .expect("empty index has no terminal identity");
 }
 
 #[test]
 fn native_signature_promotion_preserves_refusal_and_parent_storage() {
     let source = "(#1_ : #In LENGTH,#2_ : #In Real) : LENGTH";
-    let refused = crate::test_support::with_retained_refusal(
-        &[],
-        "catia_native_signature_scratch",
-        |ctx| {
+    let refused =
+        crate::test_support::with_retained_refusal(&[], "catia_native_signature_scratch", |ctx| {
             let result = super::super::relation_type_signature_charged(ctx, None, source);
             let Err(CodecError::ResourceLimit(limit)) = &result else {
                 panic!("signature promotion refusal");
@@ -76,8 +77,7 @@ fn native_signature_promotion_preserves_refusal_and_parent_storage() {
                 Err(CodecError::ResourceLimit(later)) if later == *limit
             ));
             result
-        },
-    );
+        });
     assert!(matches!(refused, Err(CodecError::ResourceLimit(_))));
 
     with_retained_limit(0, |ctx| -> Result<(), CodecError> {
@@ -340,7 +340,9 @@ fn native_extent_index_preserves_strict_containment_and_overlap_boundaries() {
         for start in (0..32).chain([usize::MAX]) {
             for len in 0..16 {
                 assert_eq!(
-                    index.0.contains(ctx, start, len, "test indexed containment")?,
+                    index
+                        .0
+                        .contains(ctx, start, len, "test indexed containment")?,
                     sources
                         .iter()
                         .any(|&(owner, width)| crate::object_graph::extent_contains(

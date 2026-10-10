@@ -1944,8 +1944,8 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
 ) -> Result<Vec<ResolvedConsolidatedEdgeBlock>, cadmpeg_core::CodecError> {
     let surfaces = a5_surfaces_from_records(ctx, data, records, refusal)?;
     let mut carrier_storage = ctx.reserve_scoped(0, "catia_resolved_carrier_workspace")?;
-    let (points, embedded, standalone, circles, cones, spheres, tori, planes) =
-        carrier_storage.with_storage(|| {
+    let (points, embedded, standalone, circles, cones, spheres, tori, planes) = carrier_storage
+        .with_storage(|| {
             let points = object_stream_vertices_from_records(ctx, data, records)?;
             let embedded = ctx.try_collect_vec(
                 b2_embedded_cylinders_from_records(ctx, data, records)?,
@@ -1978,36 +1978,35 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
             ))
         })?;
     let mut identity_storage = ctx.reserve_scoped(0, "catia_resolved_carrier_identities")?;
-    let (circle_identities, embedded_identities) =
-        identity_storage.with_storage(|| {
-            let mut circle_identities = BTreeMap::new();
-            for (index, circle) in ctx
-                .admit_iter(&circles, "catia_resolved_carrier_identities")?
-                .enumerate()
-            {
-                ctx.push_btree_group(
-                    &mut circle_identities,
-                    circle.record_id,
-                    index,
-                    "catia_resolved_carrier_identities",
-                    "catia_resolved_carrier_identity_members",
-                )?;
-            }
-            let mut embedded_identities = BTreeMap::new();
-            for (index, value) in ctx
-                .admit_iter(&embedded, "catia_resolved_carrier_identities")?
-                .enumerate()
-            {
-                ctx.push_btree_group(
-                    &mut embedded_identities,
-                    value.object_id,
-                    index,
-                    "catia_resolved_carrier_identities",
-                    "catia_resolved_carrier_identity_members",
-                )?;
-            }
-            Ok::<_, CodecError>((circle_identities, embedded_identities))
-        })?;
+    let (circle_identities, embedded_identities) = identity_storage.with_storage(|| {
+        let mut circle_identities = BTreeMap::new();
+        for (index, circle) in ctx
+            .admit_iter(&circles, "catia_resolved_carrier_identities")?
+            .enumerate()
+        {
+            ctx.push_btree_group(
+                &mut circle_identities,
+                circle.record_id,
+                index,
+                "catia_resolved_carrier_identities",
+                "catia_resolved_carrier_identity_members",
+            )?;
+        }
+        let mut embedded_identities = BTreeMap::new();
+        for (index, value) in ctx
+            .admit_iter(&embedded, "catia_resolved_carrier_identities")?
+            .enumerate()
+        {
+            ctx.push_btree_group(
+                &mut embedded_identities,
+                value.object_id,
+                index,
+                "catia_resolved_carrier_identities",
+                "catia_resolved_carrier_identity_members",
+            )?;
+        }
+        Ok::<_, CodecError>((circle_identities, embedded_identities))
+    })?;
     let carriers = ConsolidatedCarriers {
         cylinders: &standalone,
         embedded_cylinders: &embedded,
@@ -2664,10 +2663,9 @@ fn object_stream_vertices_from_records(
     records: &[crate::wire::records::ConsolidatedRecord],
 ) -> Result<Vec<FinitePoint3>, CodecError> {
     let mut points = Vec::new();
-    let ranges = ctx
-        .with_scoped_storage("catia_object_stream_vertex_range_workspace", || {
-            object_stream_vertex_row_ranges_from_records(ctx, data, records)
-        })?;
+    let ranges = ctx.with_scoped_storage("catia_object_stream_vertex_range_workspace", || {
+        object_stream_vertex_row_ranges_from_records(ctx, data, records)
+    })?;
     for range in ctx.admit_iter(&ranges.0, "catia_consolidated_vertex_ranges")? {
         let vertices =
             crate::wire::records::scan_vertex_records(ctx, &data[range.start..range.end])?;
@@ -2683,16 +2681,15 @@ fn object_stream_vertex_row_ranges_from_records(
     data: &[u8],
     records: &[crate::wire::records::ConsolidatedRecord],
 ) -> Result<Vec<Range<usize>>, CodecError> {
-    let mut ranges =
-        ctx.with_scoped_storage("catia_object_stream_frame_workspace", || {
-            ctx.try_collect_vec(
-                ctx.admit_iter(records, "catia_consolidated_frame_record_ranges")?
-                    .filter_map(crate::wire::records::ConsolidatedRecord::range)
-                    .map(Ok)
-                    .chain(crate::families::b5::graph::framed_ranges(ctx, data)?),
-                "catia_object_stream_frame_ranges",
-            )
-        })?;
+    let mut ranges = ctx.with_scoped_storage("catia_object_stream_frame_workspace", || {
+        ctx.try_collect_vec(
+            ctx.admit_iter(records, "catia_consolidated_frame_record_ranges")?
+                .filter_map(crate::wire::records::ConsolidatedRecord::range)
+                .map(Ok)
+                .chain(crate::families::b5::graph::framed_ranges(ctx, data)?),
+            "catia_object_stream_frame_ranges",
+        )
+    })?;
     if ranges.0.is_empty() {
         return Ok(Vec::new());
     }
@@ -3083,19 +3080,31 @@ mod tests {
         policy.limits.max_materialized_bytes = MATERIALIZED_LIMIT;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
             .expect("fixture input fits the policy");
-        let blocks = ctx.with_scoped_storage("test resolved edge parent", || {
-            super::resolve_consolidated_edge_blocks_from_records(
-                &ctx, &bytes, &records, &mut crate::nurbs::LaneRefusals::new(),
-            )
-        }).expect("support loci transfer to the live parent without retained bytes");
+        let blocks = ctx
+            .with_scoped_storage("test resolved edge parent", || {
+                super::resolve_consolidated_edge_blocks_from_records(
+                    &ctx,
+                    &bytes,
+                    &records,
+                    &mut crate::nurbs::LaneRefusals::new(),
+                )
+            })
+            .expect("support loci transfer to the live parent without retained bytes");
         assert_eq!(blocks.0.len(), 1);
-        let loci = blocks.0[0].shared_loci.as_ref().expect("shared cylinder loci");
+        let loci = blocks.0[0]
+            .shared_loci
+            .as_ref()
+            .expect("shared cylinder loci");
         assert_eq!(loci.len(), 2);
         assert_eq!(loci[0], Point3::new(1.0, 4.0, 3.0));
-        assert_eq!(blocks.0[0].endpoint_loci.map(|points| points[0]), Some(loci[0]));
+        assert_eq!(
+            blocks.0[0].endpoint_loci.map(|points| points[0]),
+            Some(loci[0])
+        );
         drop(blocks.0);
         drop(blocks.1);
-        let available = ctx.reserve_scoped(MATERIALIZED_LIMIT, "test released edge parent")
+        let available = ctx
+            .reserve_scoped(MATERIALIZED_LIMIT, "test released edge parent")
             .expect("all parent materialization is released after its actual output");
         drop(available);
     }
@@ -3107,7 +3116,10 @@ mod tests {
         let operation = "catia_resolved_support_loci";
         let refused = crate::test_support::with_retained_refusal(&bytes, operation, |ctx| {
             let result = super::resolve_consolidated_edge_blocks_from_records(
-                ctx, &bytes, &records, &mut crate::nurbs::LaneRefusals::new(),
+                ctx,
+                &bytes,
+                &records,
+                &mut crate::nurbs::LaneRefusals::new(),
             );
             if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
                 assert_eq!(ctx.resource_refusal(), Some(*limit));
@@ -3115,9 +3127,11 @@ mod tests {
             }
             result
         });
-        assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        assert!(
+            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == operation
-                && limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+                && limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+        );
     }
 
     #[test]

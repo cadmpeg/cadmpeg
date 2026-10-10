@@ -42,7 +42,8 @@ fn destination_precedes_candidate_promotion<T>(
     assert_eq!(limit.operation, destination);
     assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
     assert_eq!(ctx.resource_refusal(), Some(limit));
-    let Err(CodecError::ResourceLimit(sticky)) = ctx.charge_work(1, "after entity destination refusal")
+    let Err(CodecError::ResourceLimit(sticky)) =
+        ctx.charge_work(1, "after entity destination refusal")
     else {
         panic!("entity destination refusal must stay sticky");
     };
@@ -81,19 +82,23 @@ fn numeric_packet_reserves_its_destination_before_actual_item_transfer() {
         &bytes,
         "catia_numeric_packet_candidate_output",
         |ctx| super::super::value_packets_charged(ctx, &bytes, &fields),
-    ).expect_err("selected numeric items require retained transfer");
+    )
+    .expect_err("selected numeric items require retained transfer");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "catia_numeric_packet_candidate_output"));
     let packets = crate::test_support::with_service_context(|ctx| {
         super::super::value_packets_charged(ctx, &bytes, &fields)
-    }).expect("selected numeric packet is admitted");
-    assert!(matches!(packets.as_slice(), [super::EntityValuePacket::Numeric {
+    })
+    .expect("selected numeric packet is admitted");
+    assert!(
+        matches!(packets.as_slice(), [super::EntityValuePacket::Numeric {
         offset: 1, prefix_atoms: [1, 7], type_selector: 0x1af4,
         layout_atom: 3, value_atom: 4, items, terminator_count: 1,
     }] if matches!(items.as_slice(), [super::NumericPacketItem::Binary64 {
         bits, offset: 9,
-    }] if *bits == 42.0_f64.to_bits())));
+    }] if *bits == 42.0_f64.to_bits()))
+    );
 }
 
 #[test]
@@ -101,9 +106,14 @@ fn invalid_required_value_frame_rejects_before_identity_scan() {
     let mut bytes = super::record(&[0x11; 128], 37);
     let frame = bytes.len() - 8;
     bytes[frame + 1] = 0x08;
-    let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, "scan CATIA 7C05 identities", None);
+    let _probe = RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "scan CATIA 7C05 identities",
+        None,
+    );
     crate::test_support::with_work_limit(u64::MAX, |ctx| {
-        let runs = super::super::parse_runs(ctx, &bytes).expect("fixed tag rejects before identity work");
+        let runs =
+            super::super::parse_runs(ctx, &bytes).expect("fixed tag rejects before identity work");
         assert!(runs.is_empty());
         assert_eq!(ctx.resource_refusal(), None);
     });
@@ -120,12 +130,17 @@ fn selected_reference_signature_preserves_actual_production_transfer_refusal() {
         &bytes,
         "catia_reference_signature_candidate",
         |ctx| super::super::parse_reference_signature(ctx, &bytes),
-    ).expect_err("selected signature requires retained transfer");
+    )
+    .expect_err("selected signature requires retained transfer");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "catia_reference_signature_candidate"));
     assert_eq!(
         super::parse_reference_signature(&bytes),
-        Some(super::complete_reference_signature_wire().try_into().expect("valid fixed production")),
+        Some(
+            super::complete_reference_signature_wire()
+                .try_into()
+                .expect("valid fixed production")
+        ),
     );
 }

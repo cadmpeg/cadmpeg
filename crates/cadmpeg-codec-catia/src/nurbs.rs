@@ -223,7 +223,10 @@ pub(crate) fn reverse_pcurve_geometry_scoped<'ctx>(
     refusal: &mut LaneRefusals,
     record: &str,
 ) -> Result<
-    Option<(PcurveGeometry, cadmpeg_core::decode::ScopedReservation<'ctx>)>,
+    Option<(
+        PcurveGeometry,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    )>,
     cadmpeg_core::CodecError,
 > {
     if !readable_range(ctx, range, true, refusal, record)? {
@@ -801,9 +804,12 @@ pub(crate) fn circular_helix_cache(
     }
     drop(samples.1);
     knots.push(angle_range[1]);
-    let (curve, mut curve_storage) = ctx.with_scoped_storage("catia_helix_checked_curve", || {
-        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(ctx, 1, knots, controls, None, false)
-    })?;
+    let (curve, mut curve_storage) =
+        ctx.with_scoped_storage("catia_helix_checked_curve", || {
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+                ctx, 1, knots, controls, None, false,
+            )
+        })?;
     drop(input_storage);
     let curve = match curve {
         Ok(curve) => curve,
@@ -868,12 +874,14 @@ pub(crate) fn quintic_jet_bspline<const N: usize, T>(
         .len()
         .checked_mul(6)
         .ok_or_else(|| ctx.refuse_codec_limit("catia quintic jet knots", u64::MAX, u64::MAX))?;
-    let mut full_knots = controls_storage
-        .with_storage(|| ctx.collection_vec(count, "catia quintic jet knots"))?;
+    let mut full_knots =
+        controls_storage.with_storage(|| ctx.collection_vec(count, "catia quintic jet knots"))?;
     for knot in ctx.admit_iter(knots, "catia_quintic_knot_expansion")? {
         full_knots.extend([*knot; 6]);
     }
-    controls_storage.commit_value((full_knots, controls)).map(Some)
+    controls_storage
+        .commit_value((full_knots, controls))
+        .map(Some)
 }
 
 /// Lower a quintic jet without allocating a full knot lane.

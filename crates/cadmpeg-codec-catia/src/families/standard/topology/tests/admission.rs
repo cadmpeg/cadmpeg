@@ -63,7 +63,10 @@ fn duplicate_class_count_preserves_prior_face_scan_and_sticky_refusal() {
         else {
             panic!("resource refusal");
         };
-        assert_eq!(original.operation, "catia_standard_duplicate_edge_face_bounds");
+        assert_eq!(
+            original.operation,
+            "catia_standard_duplicate_edge_face_bounds"
+        );
         let CodecError::ResourceLimit(actual) = run(ctx).expect_err("sticky face refusal") else {
             panic!("resource refusal");
         };

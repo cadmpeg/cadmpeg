@@ -1969,8 +1969,9 @@ fn plan_e5_boundary<'a>(
                     format_args!("e5 boundary pcurve of edge {edge_ref} pcurve {pcurve_ref}"),
                     "catia_e5_intersection_reverse_pcurve_label",
                 )?;
-                let Some(reversed) =
-                    crate::nurbs::reverse_pcurve_geometry(ctx, &geometry, range, refusal, &record.0)?
+                let Some(reversed) = crate::nurbs::reverse_pcurve_geometry(
+                    ctx, &geometry, range, refusal, &record.0,
+                )?
                 else {
                     continue;
                 };
@@ -3296,10 +3297,8 @@ fn e5_pcurve_on_surface(
         }
         crate::families::e5::graph::E5Pcurve::Jet { sites, range, .. } => {
             let scale = decoded_surface.uv_scale.map(FiniteReal::get);
-            let mut knots =
-                ctx.temporary_vec(sites.len(), "catia E5 pcurve jet knots")?;
-            let mut points =
-                ctx.temporary_vec(sites.len(), "catia E5 pcurve jet points")?;
+            let mut knots = ctx.temporary_vec(sites.len(), "catia E5 pcurve jet knots")?;
+            let mut points = ctx.temporary_vec(sites.len(), "catia E5 pcurve jet points")?;
             let mut first_derivatives =
                 ctx.temporary_vec(sites.len(), "catia E5 pcurve first jets")?;
             let mut second_derivatives =
@@ -5052,20 +5051,21 @@ mod route_tests {
             (401, Point3::new(0.0, 0.0, 0.0)),
         ]);
 
-        assert!(
-            crate::test_support::with_service_context(|ctx| {
-                let mut scratch = ctx.reserve_scoped(0, "catia_e5_test_boundary_scratch")?;
-                Ok::<_, cadmpeg_core::CodecError>(plan_boundary_with_points(
+        assert!(crate::test_support::with_service_context(|ctx| {
+            let mut scratch = ctx.reserve_scoped(0, "catia_e5_test_boundary_scratch")?;
+            Ok::<_, cadmpeg_core::CodecError>(
+                plan_boundary_with_points(
                     ctx,
                     &mut scratch,
                     &topology,
                     &surfaces,
                     &points,
                     &mut crate::nurbs::LaneRefusals::new(),
-                )?.is_none())
-            })
-            .expect("service resource budget")
-        );
+                )?
+                .is_none(),
+            )
+        })
+        .expect("service resource budget"));
     }
 
     #[test]
@@ -5138,7 +5138,8 @@ mod route_tests {
                 &surfaces,
                 &points,
                 &mut crate::nurbs::LaneRefusals::new(),
-            )?.expect("boundary plan");
+            )?
+            .expect("boundary plan");
             assert!(plan.intersections.is_empty());
             assert!(plan.edge_curves.is_empty());
             Ok::<_, cadmpeg_core::CodecError>(())
@@ -5264,7 +5265,8 @@ mod route_tests {
                 &surfaces,
                 &points,
                 &mut crate::nurbs::LaneRefusals::new(),
-            )?.expect("boundary plan");
+            )?
+            .expect("boundary plan");
             assert!(plan.intersections.is_empty());
             assert!(!plan.surface_curves.contains_key(&200));
             assert!(!plan.edge_curves.contains_key(&200));

@@ -49,8 +49,7 @@ fn e5_bound_parameter_index_keeps_duplicate_ambiguity() {
         },
     )]);
     crate::test_support::with_retained_limit(0, |ctx| {
-        let parameters =
-            index_bound_parameters(ctx, &bounds).expect("scoped bound index");
+        let parameters = index_bound_parameters(ctx, &bounds).expect("scoped bound index");
         assert_eq!(
             bound_representation_parameter(ctx, &parameters.0, 1, 7).expect("parameter query"),
             None

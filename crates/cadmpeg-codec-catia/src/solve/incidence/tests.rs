@@ -1758,8 +1758,8 @@ fn persistent_face_configuration_preparation_retains_global_contradictions() {
 
 mod allocation_limits;
 mod components;
-mod face_configuration;
 mod dead_states;
+mod face_configuration;
 
 #[test]
 fn rejected_endpoint_choice_rows_use_and_release_scoped_storage() {

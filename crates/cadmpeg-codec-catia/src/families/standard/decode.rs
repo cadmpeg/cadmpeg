@@ -697,7 +697,10 @@ mod consolidated_revolution_binding_tests {
             assert_eq!(ctx.resource_refusal(), None);
             result
         });
-        assert_eq!(empty.expect("empty binding domain needs no point index"), (0, 0));
+        assert_eq!(
+            empty.expect("empty binding domain needs no point index"),
+            (0, 0)
+        );
         let binding = ConsolidatedRevolutionBinding {
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
                 cadmpeg_ir::geometry::analytic::TorusSurface::try_new(

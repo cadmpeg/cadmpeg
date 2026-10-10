@@ -422,10 +422,9 @@ pub(super) fn consolidated_revolutions(
 ) -> Result<Vec<CatiaConsolidatedRevolution>, CodecError> {
     let mut temporary = ctx.reserve_scoped(0, "catia native revolution workspace")?;
     let mut resolved_profiles = HashMap::new();
-    let resolved = ctx
-        .with_scoped_storage("catia native revolution profiles", || {
-            crate::families::b2::records::b2_resolved_revolutions_from_records(ctx, bytes, records)
-        })?;
+    let resolved = ctx.with_scoped_storage("catia native revolution profiles", || {
+        crate::families::b2::records::b2_resolved_revolutions_from_records(ctx, bytes, records)
+    })?;
     for resolved in ctx.admit_iter(&resolved.0, "catia_native_resolved_revolution_visits")? {
         temporary.with_storage(|| {
             ctx.insert_hash_map(
@@ -1625,10 +1624,9 @@ pub(crate) fn preview_views(
 ) -> Result<Vec<CatiaPreviewImage>, cadmpeg_core::CodecError> {
     let mut views = Vec::new();
     for segment in ctx.admit_iter(segments, "catia_native_preview_segment_visits")? {
-        let previews = ctx
-            .with_scoped_storage("catia_native_preview_scratch", || {
-                container::preview_images(ctx, &segment.data)
-            })?;
+        let previews = ctx.with_scoped_storage("catia_native_preview_scratch", || {
+            container::preview_images(ctx, &segment.data)
+        })?;
         for preview in ctx.admit_iter(&previews.0, "catia_native_preview_item_visits")? {
             let Some(byte_offset) = segment
                 .byte_offset
@@ -1749,7 +1747,11 @@ pub(crate) fn resolve_owner_chart_support_aliases(
     let resolve = |reference: &mut CatiaOwnerChartBridgeReference| -> Result<(), CodecError> {
         if let CatiaOwnerChartAddress::WidthCoded { alias } = &mut reference.address {
             *alias = if let Some(row) = ctx
-                .get_hash_map(&unique_by_tag.0, &reference.value, "catia_owner_alias_index")?
+                .get_hash_map(
+                    &unique_by_tag.0,
+                    &reference.value,
+                    "catia_owner_alias_index",
+                )?
                 .copied()
                 .flatten()
             {
@@ -1931,10 +1933,9 @@ impl CatiaValueBlock {
             "catia_value_block_id",
         )?;
         // The tokenized fields are dropped once the selections are built.
-        let fields = ctx
-            .with_scoped_storage("catia_value_block_fields", || {
-                value_block::tokenize_charged(ctx, &block.payload)
-            })?;
+        let fields = ctx.with_scoped_storage("catia_value_block_fields", || {
+            value_block::tokenize_charged(ctx, &block.payload)
+        })?;
         let byte_offset = u64_from_index(block.pos);
         let schema_selections = value_schema_selections(ctx, &id, byte_offset, &fields.0, catalog)?;
         Ok(Self {
@@ -2547,13 +2548,17 @@ mod design_limit_tests {
             .collect::<Vec<_>>();
         let index_arena = cadmpeg_core::decode::DecodeArena::new();
         let (index_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[], &index_arena, &cadmpeg_core::decode::DecodePolicy::service(),
-        ).expect("record index preparation fits the service profile");
-        let mut index_storage = index_ctx.reserve_scoped(0, "test record index")
+            &[],
+            &index_arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .expect("record index preparation fits the service profile");
+        let mut index_storage = index_ctx
+            .reserve_scoped(0, "test record index")
             .expect("record index preparation storage");
-        let record_index = super::super::GraphRecordIndex::new(
-            &index_ctx, &mut index_storage, &graph.records,
-        ).expect("service profile admits record index");
+        let record_index =
+            super::super::GraphRecordIndex::new(&index_ctx, &mut index_storage, &graph.records)
+                .expect("service profile admits record index");
         let refused = crate::test_support::with_collection_limit(2, |ctx| {
             super::design_parallel_reference_table(ctx, &fields, graph, &record_index)
         });

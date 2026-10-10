@@ -4556,7 +4556,11 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
         })?;
         if self
             .ctx
-            .get_hash_map(&self.dead_states, &state_owner.0, "catia incidence dead states")?
+            .get_hash_map(
+                &self.dead_states,
+                &state_owner.0,
+                "catia incidence dead states",
+            )?
             .is_some()
         {
             return Ok(());

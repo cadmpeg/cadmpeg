@@ -507,9 +507,7 @@ pub(crate) fn transfer_parameters<'ctx>(
                                                 native_ref: Some(output_native_ref),
                                             },
                                             parameter_type,
-                                            output: Some(FormulaOutput {
-                                                fallback: None,
-                                            }),
+                                            output: Some(FormulaOutput { fallback: None }),
                                             source_order: output.byte_offset,
                                         })
                                     },
@@ -2496,10 +2494,7 @@ fn formula_parameter_candidates_agree(
     {
         return Ok(false);
     }
-    match (
-        existing.output.is_some(),
-        candidate.output.is_some(),
-    ) {
+    match (existing.output.is_some(), candidate.output.is_some()) {
         (true, true) | (false, false) => ctx.equal(
             &existing.parameter,
             &candidate.parameter,
@@ -4370,16 +4365,15 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
                     let known_value = if self.evaluate {
                         Some(value)
                     } else {
-                        previous
-                            .known_value()
-                            .zip(argument.known_value())
-                            .map(|(previous, argument)| {
+                        previous.known_value().zip(argument.known_value()).map(
+                            |(previous, argument)| {
                                 if function == "min" {
                                     previous.min(argument)
                                 } else {
                                     previous.max(argument)
                                 }
-                            })
+                            },
+                        )
                     };
                     result = Some(EvaluatedFormulaScalar::from_parts(
                         value,
@@ -4399,7 +4393,9 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
         }
 
         if matches!(function, "LinearInterpolation" | "CubicInterpolation") {
-            let [EvaluatedFormulaValue::Scalar(start), EvaluatedFormulaValue::Scalar(end), EvaluatedFormulaValue::Scalar(fraction)] = arguments.as_slice() else {
+            let [EvaluatedFormulaValue::Scalar(start), EvaluatedFormulaValue::Scalar(end), EvaluatedFormulaValue::Scalar(fraction)] =
+                arguments.as_slice()
+            else {
                 return Ok(None);
             };
             if start.dimension() != end.dimension()
@@ -5039,7 +5035,7 @@ mod parser_tests {
         evaluate_legacy_output_assignment, finite_scalar, formula_parameter_candidates_agree,
         parameter_expression, static_formula_value, string_literal_expression,
         typed_parameter_evaluation, EvaluatedFormulaBoolean, EvaluatedFormulaString,
-        EvaluatedFormulaValue, FormulaDimension, FormulaParameterCandidate, FormulaOutput,
+        EvaluatedFormulaValue, FormulaDimension, FormulaOutput, FormulaParameterCandidate,
         FormulaParameterType, TypedParameterEvaluation,
     };
     use cadmpeg_ir::features::DesignParameter;
@@ -5322,8 +5318,10 @@ mod parser_tests {
         let refused = crate::test_support::with_collection_limit(0, |ctx| {
             super::evaluate_formula_expression_charged(ctx, "min(1,2)", &BTreeMap::new())
         });
-        assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_formula_arguments"));
+        assert!(
+            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_formula_arguments")
+        );
         let admitted = crate::test_support::with_collection_limit(2, |ctx| {
             super::evaluate_formula_expression_charged(ctx, "min(1,2)", &BTreeMap::new())
         })

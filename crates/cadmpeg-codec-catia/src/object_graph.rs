@@ -2565,28 +2565,32 @@ pub(crate) fn classify_charged(
     let mut blob = false;
     let mut empty = true;
     let mut index = 0usize;
-    let no_bulk_table = ctx.all_by_limit(fields, |field| {
-        match field {
-            PayloadField::BulkTable { .. } => return Ok(false),
-            PayloadField::Atom { .. } => atoms += 1,
-            PayloadField::List { declared_count, .. } => {
-                lists += 1;
-                aggregator |= *declared_count >= 3;
+    let no_bulk_table = ctx.all_by_limit(
+        fields,
+        |field| {
+            match field {
+                PayloadField::BulkTable { .. } => return Ok(false),
+                PayloadField::Atom { .. } => atoms += 1,
+                PayloadField::List { declared_count, .. } => {
+                    lists += 1;
+                    aggregator |= *declared_count >= 3;
+                }
+                PayloadField::Blob { .. } => blob = true,
+                _ => {}
             }
-            PayloadField::Blob { .. } => blob = true,
-            _ => {}
-        }
-        empty &= matches!(field, PayloadField::Terminator);
-        if index >= 2
-            && matches!(fields[index - 2], PayloadField::Scalar { .. })
-            && matches!(fields[index - 1], PayloadField::Atom { .. })
-            && matches!(field, PayloadField::Atom { .. })
-        {
-            triplets += 1;
-        }
-        index += 1;
-        Ok(true)
-    }, OPERATION)?;
+            empty &= matches!(field, PayloadField::Terminator);
+            if index >= 2
+                && matches!(fields[index - 2], PayloadField::Scalar { .. })
+                && matches!(fields[index - 1], PayloadField::Atom { .. })
+                && matches!(field, PayloadField::Atom { .. })
+            {
+                triplets += 1;
+            }
+            index += 1;
+            Ok(true)
+        },
+        OPERATION,
+    )?;
     if !no_bulk_table {
         return Ok(PayloadSubtype::BulkTable);
     }

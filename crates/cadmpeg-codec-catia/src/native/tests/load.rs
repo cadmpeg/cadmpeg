@@ -563,13 +563,21 @@ fn native_configuration_production_propagates_retained_refusal() {
         .expect("configuration row object record");
     let index_arena = cadmpeg_core::decode::DecodeArena::new();
     let (index_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &index_arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).expect("semantic index preparation fits the service profile");
-    let mut index_storage = index_ctx.reserve_scoped(0, "test semantic indices")
+        &[],
+        &index_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("semantic index preparation fits the service profile");
+    let mut index_storage = index_ctx
+        .reserve_scoped(0, "test semantic indices")
         .expect("semantic index preparation storage");
-    let (classes, indices) =
-        super::super::semantic_indices_for_test(&index_ctx, &mut index_storage, std::slice::from_ref(graph), &native.entity_records)
-            .expect("service profile admits semantic indexes");
+    let (classes, indices) = super::super::semantic_indices_for_test(
+        &index_ctx,
+        &mut index_storage,
+        std::slice::from_ref(graph),
+        &native.entity_records,
+    )
+    .expect("service profile admits semantic indexes");
     let references = super::super::CatiaEntityReferenceIndex {
         entities: &indices.entities,
         classes: &classes,
@@ -893,13 +901,21 @@ fn configuration_chain_derivation_refuses_collection_limit() {
         crate::native::CatiaNative::decode(&standard_catpart_with_schema_configuration_row_chain());
     let index_arena = cadmpeg_core::decode::DecodeArena::new();
     let (index_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &index_arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).expect("semantic index preparation fits the service profile");
-    let mut index_storage = index_ctx.reserve_scoped(0, "test semantic indices")
+        &[],
+        &index_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("semantic index preparation fits the service profile");
+    let mut index_storage = index_ctx
+        .reserve_scoped(0, "test semantic indices")
         .expect("semantic index preparation storage");
-    let (classes, indices) =
-        super::super::semantic_indices_for_test(&index_ctx, &mut index_storage, &native.object_graphs, &native.entity_records)
-            .expect("native semantic indices fit service limits");
+    let (classes, indices) = super::super::semantic_indices_for_test(
+        &index_ctx,
+        &mut index_storage,
+        &native.object_graphs,
+        &native.entity_records,
+    )
+    .expect("native semantic indices fit service limits");
     let references = super::super::CatiaEntityReferenceIndex {
         entities: &indices.entities,
         classes: &classes,
@@ -929,13 +945,21 @@ fn configuration_group_entry_propagates_caller_refusals() {
         crate::native::CatiaNative::decode(&standard_catpart_with_schema_configuration_row_chain());
     let index_arena = cadmpeg_core::decode::DecodeArena::new();
     let (index_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &index_arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).expect("semantic index preparation fits the service profile");
-    let mut index_storage = index_ctx.reserve_scoped(0, "test semantic indices")
+        &[],
+        &index_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("semantic index preparation fits the service profile");
+    let mut index_storage = index_ctx
+        .reserve_scoped(0, "test semantic indices")
         .expect("semantic index preparation storage");
-    let (classes, indices) =
-        super::super::semantic_indices_for_test(&index_ctx, &mut index_storage, &native.object_graphs, &native.entity_records)
-            .expect("native semantic indices fit service limits");
+    let (classes, indices) = super::super::semantic_indices_for_test(
+        &index_ctx,
+        &mut index_storage,
+        &native.object_graphs,
+        &native.entity_records,
+    )
+    .expect("native semantic indices fit service limits");
     let references = super::super::CatiaEntityReferenceIndex {
         entities: &indices.entities,
         classes: &classes,
@@ -1057,13 +1081,21 @@ fn native_semantic_indices_refuse_collection_and_retained_limits() {
     );
     let index_arena = cadmpeg_core::decode::DecodeArena::new();
     let (index_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &index_arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).expect("semantic index preparation fits the service profile");
-    let mut index_storage = index_ctx.reserve_scoped(0, "test semantic indices")
+        &[],
+        &index_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("semantic index preparation fits the service profile");
+    let mut index_storage = index_ctx
+        .reserve_scoped(0, "test semantic indices")
         .expect("semantic index preparation storage");
-    let (classes, admitted) =
-        super::super::semantic_indices_for_test(&index_ctx, &mut index_storage, &native.object_graphs, &native.entity_records)
-            .expect("service profile admits semantic indices");
+    let (classes, admitted) = super::super::semantic_indices_for_test(
+        &index_ctx,
+        &mut index_storage,
+        &native.object_graphs,
+        &native.entity_records,
+    )
+    .expect("service profile admits semantic indices");
     assert!(!classes.is_empty());
     let indices = crate::test_support::with_collection_limit(0, |ctx| {
         super::super::semantic_entity_indices(

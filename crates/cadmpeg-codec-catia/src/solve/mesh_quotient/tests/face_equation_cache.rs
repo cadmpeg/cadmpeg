@@ -209,7 +209,8 @@ fn face_equation_cache_ignores_unrelated_quotient_components() {
                 (key, Vec::new()),
                 CachedFaceEquations {
                     equations: ScopedValue::default(),
-                    _key_storage: ctx.reserve_scoped(0, "empty seeded face cache key")
+                    _key_storage: ctx
+                        .reserve_scoped(0, "empty seeded face cache key")
                         .expect("empty key has no backing"),
                 },
             );

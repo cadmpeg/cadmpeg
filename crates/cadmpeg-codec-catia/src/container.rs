@@ -1537,7 +1537,10 @@ fn reconstruct_logical_stream<'storage>(
         let Some(bytes) = bytes else {
             drop(out);
             drop(storage);
-            return Ok((Vec::new(), ctx.reserve_scoped(0, "catia_logical_stream_bytes")?));
+            return Ok((
+                Vec::new(),
+                ctx.reserve_scoped(0, "catia_logical_stream_bytes")?,
+            ));
         };
         storage.with_storage(|| {
             ctx.extend_retained_bytes(&mut out, bytes, "catia_logical_stream_copy")
@@ -1875,9 +1878,8 @@ fn brep_stream(
     let mut output = reconstruct_logical_stream(ctx, data, main, dir.inner)?;
     let surface = reconstruct_logical_stream(ctx, data, surf, dir.inner)?;
     let (out, output_storage) = &mut output;
-    output_storage.with_storage(|| {
-        ctx.extend_retained_bytes(out, &surface.0, "catia_brep_surface_bytes")
-    })?;
+    output_storage
+        .with_storage(|| ctx.extend_retained_bytes(out, &surface.0, "catia_brep_surface_bytes"))?;
     let (out, output_storage) = output;
     output_storage.commit_value(out).map(Some)
 }

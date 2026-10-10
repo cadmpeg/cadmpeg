@@ -42,7 +42,11 @@ fn formula_transfer_moves_the_surviving_candidate_without_copying() {
     };
     assert_eq!(
         parameter.name,
-        entity.definition_chain_value().expect("definition chain").selector.value
+        entity
+            .definition_chain_value()
+            .expect("definition chain")
+            .selector
+            .value
     );
     assert_eq!(parameter.expression, "true");
     assert_eq!(

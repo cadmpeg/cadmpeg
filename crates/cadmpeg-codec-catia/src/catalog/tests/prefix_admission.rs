@@ -29,8 +29,8 @@ fn catalog_wrong_first_prefix_rejects_before_later_utf8_or_copy() {
     policy.limits.max_collection_items = 0;
     policy.limits.max_materialized_bytes = 0;
     policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .expect("borrowed catalog input");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("borrowed catalog input");
     assert!(crate::catalog::parse(&ctx, &bytes)
         .expect("wrong required prefix needs no candidate storage")
         .is_empty());
@@ -41,7 +41,8 @@ fn catalog_wrong_first_prefix_rejects_before_later_utf8_or_copy() {
 fn catalog_prefix_rejection_preserves_original_sticky_refusal() {
     let bytes = catalog_stream(&["wrong", "catalogManager", "catalogLinks", ""]);
     crate::test_support::with_work_limit(0, |ctx| {
-        let Err(CodecError::ResourceLimit(original)) = ctx.charge_work(1, "original catalog refusal")
+        let Err(CodecError::ResourceLimit(original)) =
+            ctx.charge_work(1, "original catalog refusal")
         else {
             panic!("original refusal")
         };
