@@ -898,3 +898,177 @@ fn feature_appearance_output_refuses_one_byte_below_assignment_backing() {
     assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky))
         if sticky == limit));
 }
+
+fn feature_appearance_resolution_storage() -> (u64, u64) {
+    use std::mem::{align_of, size_of};
+    use super::{AppearanceDefinition, FeatureAppearanceAssignment};
+    use crate::brep::feature_source::FeatureSourceId;
+
+    // Core bounds a B-tree node by eleven key/value lanes, sixteen pointer
+    // slots, and two maximum-alignment paddings. One node holds these inputs.
+    let tree_node = |key_size, value_size, alignment| {
+        11 * (key_size + value_size) + 16 * size_of::<usize>() + 2 * alignment
+    };
+    let pointer_alignment = align_of::<usize>();
+    let appearance_node = tree_node(
+        size_of::<usize>(), size_of::<AppearanceDefinition>(),
+        pointer_alignment.max(align_of::<AppearanceDefinition>()),
+    );
+    let matched_node = tree_node(
+        size_of::<FeatureSourceId>(), 0,
+        pointer_alignment.max(align_of::<FeatureSourceId>()),
+    );
+    let group_node = tree_node(
+        size_of::<FeatureSourceId>(), size_of::<Vec<usize>>(),
+        pointer_alignment.max(align_of::<Vec<usize>>()).max(align_of::<FeatureSourceId>()),
+    );
+    type FeatureEntry<'a> = (FeatureSourceId, Option<&'a FeatureAppearanceAssignment>);
+    // The first hash-table insertion uses four buckets. Core includes control
+    // bytes, the trailing control group and maximum-alignment padding.
+    let hash_node = 4 * size_of::<FeatureEntry<'_>>()
+        + align_of::<FeatureEntry<'_>>().max(16) - 1 + 4 + 16;
+    assert!((2..=1024).contains(&size_of::<FeatureAppearanceAssignment>()));
+    let records = 4 * size_of::<FeatureAppearanceAssignment>()
+        + "ThirdPtyStore/VisualStates".len();
+    // The first group slot has exact capacity one. Its second push grows to
+    // four slots while one old slot remains held as reallocation overlap.
+    let materialized = records + hash_node + group_node + 5 * size_of::<usize>();
+    let class_bytes = 4 * size_of::<crate::tessellation::ClassInterval<'_>>();
+    assert!(materialized >= records + class_bytes);
+    let retained = appearance_node + matched_node
+        + 2 * ("SolidWorks feature appearance".len() + "ThirdPtyStore/VisualStates".len());
+    (u64::try_from(retained).unwrap(), u64::try_from(materialized).unwrap())
+}
+
+#[test]
+fn feature_appearance_resolution_keeps_only_final_storage() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let source = feature_only_appearance_source();
+    let scan = crate::test_support::container::scan(&source);
+    let fixture_ctx = cadmpeg_test_support::service_decode_context();
+    let section = scan.sections(&fixture_ctx).unwrap()
+        .find(|section| section.name() == Some("Contents/DisplayLists")).unwrap();
+    let faces = crate::tessellation::section_display_faces(&fixture_ctx, section).unwrap();
+    assert_eq!(faces.len(), 2);
+    let (retained, materialized) = feature_appearance_resolution_storage();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = retained;
+    policy.limits.max_materialized_bytes = materialized;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = super::resolve_display_appearances(&ctx, &scan, section, &faces).unwrap();
+    assert_eq!(result.by_face.len(), 2);
+    assert_eq!(result.matched_feature_sources.len(), 1);
+    assert_eq!(result.matched_feature_sources.first().unwrap().value(), 36);
+    for index in 0..2 {
+        let definition = &result.by_face[&index];
+        assert_eq!(definition.name, "SolidWorks feature appearance");
+        assert_eq!(definition.source_name.as_str(), "ThirdPtyStore/VisualStates");
+        assert_eq!(definition.color, super::packed_rgb(0x0000_ffec));
+        assert_eq!(definition.record_offset, 6 + "moCompFeature_c".len());
+    }
+    let storage = ctx.reserve_scoped(materialized, "verify released appearance indexes").unwrap();
+    assert!(ctx.resource_refusal().is_none());
+    drop(result);
+    drop(storage);
+}
+
+#[test]
+fn feature_appearance_resolution_refuses_group_reallocation_overlap() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let source = feature_only_appearance_source();
+    let scan = crate::test_support::container::scan(&source);
+    let fixture_ctx = cadmpeg_test_support::service_decode_context();
+    let section = scan.sections(&fixture_ctx).unwrap()
+        .find(|section| section.name() == Some("Contents/DisplayLists")).unwrap();
+    let faces = crate::tessellation::section_display_faces(&fixture_ctx, section).unwrap();
+    let (retained, materialized) = feature_appearance_resolution_storage();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = retained;
+    policy.limits.max_materialized_bytes = materialized - 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let Err(CodecError::ResourceLimit(limit)) =
+        super::resolve_display_appearances(&ctx, &scan, section, &faces) else {
+        panic!("expected appearance group reallocation overlap refusal");
+    };
+    let overlap = u64::try_from(std::mem::size_of::<usize>()).unwrap();
+    assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+    assert_eq!(limit.operation, "collect SLDPRT appearance source faces");
+    assert_eq!(limit.limit, materialized - 1);
+    assert_eq!(limit.used, materialized - overlap);
+    assert_eq!(limit.additional, overlap);
+    assert_eq!(ctx.resource_refusal().as_ref(), Some(&limit));
+    assert!(matches!(ctx.charge_work(0, "after appearance index refusal"),
+        Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky))
+        if sticky == limit));
+}
+
+#[test]
+fn feature_appearance_resolution_refuses_final_source_copy() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let source = feature_only_appearance_source();
+    let scan = crate::test_support::container::scan(&source);
+    let fixture_ctx = cadmpeg_test_support::service_decode_context();
+    let section = scan.sections(&fixture_ctx).unwrap()
+        .find(|section| section.name() == Some("Contents/DisplayLists")).unwrap();
+    let faces = crate::tessellation::section_display_faces(&fixture_ctx, section).unwrap();
+    let (retained, materialized) = feature_appearance_resolution_storage();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = retained - 1;
+    policy.limits.max_materialized_bytes = materialized;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let Err(CodecError::ResourceLimit(limit)) =
+        super::resolve_display_appearances(&ctx, &scan, section, &faces) else {
+        panic!("expected final appearance source-copy refusal");
+    };
+    let source_bytes = u64::try_from("ThirdPtyStore/VisualStates".len()).unwrap();
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(limit.operation, "copy SLDPRT appearance stream name");
+    assert_eq!(limit.limit, retained - 1);
+    assert_eq!(limit.used, retained - source_bytes);
+    assert_eq!(limit.additional, source_bytes);
+    assert_eq!(ctx.resource_refusal().as_ref(), Some(&limit));
+    assert!(matches!(ctx.charge_work(0, "after appearance source refusal"),
+        Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky))
+        if sticky == limit));
+}
+
+#[test]
+fn conflicting_feature_appearance_index_retains_no_output() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let mut source = feature_only_appearance_source();
+    let mut conflicting = Vec::new();
+    display_class(&mut conflicting, "moCompFeature_c");
+    conflicting.extend(feature_visual_record(36, 10, [255, 0, 0]));
+    source.extend(make_block(0x42, "ThirdPtyStore/VisualStates", &conflicting));
+    let scan = crate::test_support::container::scan(&source);
+    let fixture_ctx = cadmpeg_test_support::service_decode_context();
+    let section = scan.sections(&fixture_ctx).unwrap()
+        .find(|section| section.name() == Some("Contents/DisplayLists")).unwrap();
+    let faces = crate::tessellation::section_display_faces(&fixture_ctx, section).unwrap();
+    let (_, materialized) = feature_appearance_resolution_storage();
+    let materialized = materialized
+        + u64::try_from("ThirdPtyStore/VisualStates".len()).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = materialized;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = super::resolve_display_appearances(&ctx, &scan, section, &faces).unwrap();
+    assert!(result.by_face.is_empty());
+    assert!(result.matched_feature_sources.is_empty());
+    let storage = ctx.reserve_scoped(materialized, "verify released conflicting appearances").unwrap();
+    assert!(ctx.resource_refusal().is_none());
+    drop(result);
+    drop(storage);
+}
