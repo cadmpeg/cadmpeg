@@ -563,6 +563,8 @@ pub(super) fn project<'ctx>(
                 ctx.reserve_scoped_vec(&mut free_vertex_slots_storage, &mut free_vertices, 1, "iges copious free vertices")?;
                 free_vertices.push(vertex);
             }
+            drop(source_values);
+            drop(position_storage);
             ctx.insert_scoped_btree_set(
                 &mut decoded_storage,
                 &mut decoded,
