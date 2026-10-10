@@ -5,6 +5,102 @@ use crate::brep::{AsmBrep, Carriers};
 use crate::sab::Record;
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 
+fn source_curves(count: usize) -> AsmBrep {
+    use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
+    AsmBrep {
+        curves: (1..=count).map(|index| Curve {
+            id: CurveId::mint(format!("f3d:brep:entity#{index}")).unwrap(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+            source_object: None,
+        }).collect(),
+        ..Default::default()
+    }
+}
+
+fn annotation_source_refusal(allocation: bool) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let mut out = source_curves(3);
+    let expected = source_curves(3);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // The first source visit and the empty-map key probe precede allocation.
+    policy.limits.max_work_units = if allocation {
+        1 + u64::try_from(out.curves[0].id.as_str().len()).unwrap()
+    } else { 0 };
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let Err(CodecError::ResourceLimit(first)) = emit_annotation_records(
+        &ctx, &mut out, &[], &std::collections::HashMap::new(),
+        &mut Carriers::default(), "source", crate::asm_format!("f3d"),
+    ) else { panic!("expected annotation source or map allocation refusal"); };
+    if allocation {
+        assert_eq!(first.dimension, ResourceDimension::CollectionItems);
+        assert_eq!(first.operation, "ASM annotation curve geometry index");
+    } else {
+        assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(first.operation, "ASM annotation source arena");
+    }
+    assert_eq!((first.limit, first.used, first.additional), (0, 0, 1));
+    assert_eq!(out.curves, expected.curves);
+    assert!(out.annotation_records.is_empty());
+    for _ in 0..64 {
+        for mut replay in [source_curves(3), AsmBrep::default()] {
+            assert!(matches!(emit_annotation_records(
+                &ctx, &mut replay, &[], &std::collections::HashMap::new(),
+                &mut Carriers::default(), "source", crate::asm_format!("f3d"),
+            ), Err(CodecError::ResourceLimit(last)) if last == first));
+        }
+    }
+    assert!(matches!(ctx.finish_session(),
+        Err(CodecError::ResourceLimit(last)) if last == first));
+}
+
+#[test]
+fn annotation_index_source_refuses_before_first_curve() {
+    annotation_source_refusal(false);
+}
+
+#[test]
+fn annotation_index_allocation_refuses_after_one_visit_without_admitting_tail() {
+    annotation_source_refusal(true);
+}
+
+#[test]
+fn annotation_index_sources_empty_input_executes_no_work() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut out = AsmBrep::default();
+    emit_annotation_records(&ctx, &mut out, &[], &std::collections::HashMap::new(),
+        &mut Carriers::default(), "source", crate::asm_format!("f3d")).unwrap();
+    assert!(out.annotation_records.is_empty());
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn annotation_index_sources_borrow_curve_ids_without_retained_copy() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let mut out = source_curves(3);
+    let expected = source_curves(3);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    emit_annotation_records(&ctx, &mut out, &[], &std::collections::HashMap::new(),
+        &mut Carriers::default(), "source", crate::asm_format!("f3d")).unwrap();
+    assert_eq!(out.curves, expected.curves);
+    assert!(out.annotation_records.is_empty());
+    ctx.finish_session().unwrap();
+}
+
 #[test]
 fn annotation_curve_index_refuses_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
