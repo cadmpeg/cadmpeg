@@ -30,7 +30,7 @@ fn empty_scalar_component_samples_charge_only_the_component_roster() {
     for count in 0..=3 {
         let components: Vec<_> = (0..count).map(|_| BTreeSet::new()).collect();
         let need = u64::try_from(count).expect("fixture count");
-        for cap in 0..=need {
+        crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, &[], |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
@@ -42,7 +42,8 @@ fn empty_scalar_component_samples_charge_only_the_component_roster() {
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
             // Component roster admission is count units. All member and sample sources are empty.
             let result = super::super::scalar_equality_values_for_components(&ctx, &[], &components);
-            if cap < need {
+            let refused = result.is_err();
+            if refused {
                 let Err(CodecError::ResourceLimit(original)) = result else { panic!("component roster must refuse"); };
                 assert_eq!((original.dimension, original.used, original.additional, original.limit),
                     (ResourceDimension::WorkUnits, 0, need, cap));
@@ -52,10 +53,12 @@ fn empty_scalar_component_samples_charge_only_the_component_roster() {
                         Err(CodecError::ResourceLimit(actual)) if actual == original));
                 }
                 assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original));
+                Err(original.into())
             } else {
                 assert!(result.expect("component roster admitted").is_empty());
                 ctx.finish_session().expect("active session");
+                Ok(())
             }
-        }
+        });
     }
 }

@@ -18,7 +18,8 @@ fn unsigned_coordinate_validation_admits_present_terms_and_preserves_solution() 
 fn zero_variable_pivot_columns_are_free_and_preserve_original_refusal() {
     // One matrix scale row plus the first inconsistent residual row: exactly two visits.
     // No coefficient, pivot column, free column, output or scratch backing exists.
-    for cap in 0..=2 {
+    crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits,
+        &["creo linear solver matrix scale rows", "creo section residual matrix rows"], |cap| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = cap;
@@ -30,7 +31,8 @@ fn zero_variable_pivot_columns_are_free_and_preserve_original_refusal() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let mut matrix = [super::super::SectionLinearRow { coefficients: BTreeMap::new(), rhs: 1.0 }];
         let result = super::super::uniquely_solved_linear_variables(&ctx, &mut matrix, 0);
-        if cap < 2 {
+        let refused = result.is_err();
+        if refused {
             let Err(CodecError::ResourceLimit(original)) = result else { panic!("present row must refuse"); };
             assert_eq!((original.dimension, original.used, original.additional, original.limit),
                 (ResourceDimension::WorkUnits, cap, 1, cap));
@@ -42,11 +44,13 @@ fn zero_variable_pivot_columns_are_free_and_preserve_original_refusal() {
                     Err(CodecError::ResourceLimit(actual)) if actual == original));
             }
             assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original));
+            Err(original.into())
         } else {
             assert_eq!(result.expect("two rows admitted"), None);
             ctx.finish_session().expect("active session");
+            Ok(())
         }
-    }
+    });
 }
 
 fn with_zero_resources<T>(run: impl FnOnce(DecodeContext<'_>) -> T) -> T {

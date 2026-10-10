@@ -30,7 +30,7 @@ fn assert_saved_line_boundary(has_previous: bool) {
     // One position visit for the first row. The last-row route has two
     // position visits and one previous-row visit; its next source is empty.
     let visits = if has_previous { 3 } else { 1 };
-    for cap in 0..=visits {
+    crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, &[], |cap| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = cap;
@@ -41,16 +41,19 @@ fn assert_saved_line_boundary(has_previous: bool) {
         policy.limits.max_recursion_depth = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let run = || super::super::saved_section_line_geometry(&ctx, &definition, &segment);
-        if cap == visits {
-            assert_eq!(run().expect("only present rows visited"), None);
+        let result = run();
+        let refused = result.is_err();
+        if !refused {
+            assert_eq!(result.expect("only present rows visited"), None);
             let original = ctx.charge_work_limit(1, "after saved line boundary").expect_err("exact work");
             assert_eq!((original.used, original.additional), (visits, 1));
             for _ in 0..2 {
                 assert!(matches!(run(), Err(CodecError::ResourceLimit(actual)) if actual == original));
             }
             assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original));
+            Ok(())
         } else {
-            let Err(CodecError::ResourceLimit(original)) = run() else { panic!("present row must refuse"); };
+            let Err(CodecError::ResourceLimit(original)) = result else { panic!("present row must refuse"); };
             assert_eq!((original.dimension, original.used, original.additional, original.limit),
                 (ResourceDimension::WorkUnits, cap, 1, cap));
             assert_eq!(original.operation, if cap < 1 + u64::from(has_previous) {
@@ -60,8 +63,9 @@ fn assert_saved_line_boundary(has_previous: bool) {
                 assert!(matches!(run(), Err(CodecError::ResourceLimit(actual)) if actual == original));
             }
             assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original));
+            Err(original.into())
         }
-    }
+    });
 }
 
 #[test]
@@ -94,9 +98,8 @@ fn assert_saved_arc_record_visits(
         saved.entities.push(target);
         // One complete unique-record walk plus its current core end probe.
         // Fixed-field carrier, angle and point conversions allocate no backing.
-        // Generic end-probe semantics remain a separate shared request.
         let visits = u64::try_from(count).expect("fixture count") + 1;
-        for cap in 0..=visits + 1 {
+        crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, &[], |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
@@ -106,15 +109,17 @@ fn assert_saved_arc_record_visits(
             policy.limits.max_entities = 0;
             policy.limits.max_recursion_depth = 0;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let original = if cap >= visits {
-                assert!(run(&ctx, &definition, &segment).expect("one record walk admitted"));
+            let result = run(&ctx, &definition, &segment);
+            let refused = result.is_err();
+            let original = if !refused {
+                assert!(result.expect("one record walk admitted"));
                 let refusal = ctx.charge_work_limit(
-                    cap - visits + 1, "after saved arc record projection",
+                    1, "after saved arc record projection",
                 ).expect_err("exact source work used");
                 assert_eq!(refusal.used, visits);
                 refusal
             } else {
-                let Err(CodecError::ResourceLimit(refusal)) = run(&ctx, &definition, &segment) else {
+                let Err(CodecError::ResourceLimit(refusal)) = result else {
                     panic!("present record visit must refuse");
                 };
                 assert_eq!((refusal.dimension, refusal.operation, refusal.used, refusal.additional, refusal.limit),
@@ -127,7 +132,8 @@ fn assert_saved_arc_record_visits(
             }
             assert!(matches!(ctx.finish_session(),
                 Err(CodecError::ResourceLimit(actual)) if actual == original));
-        }
+            if refused { Err(original.into()) } else { Ok(()) }
+        });
     }
 }
 

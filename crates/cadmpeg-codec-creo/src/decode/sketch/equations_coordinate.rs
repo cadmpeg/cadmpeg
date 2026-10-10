@@ -1283,10 +1283,7 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
             })?;
         }
         let mut solutions = Vec::new();
-        for signs in ctx.admit_iter(
-            &(0..(1usize << component_distances.len())),
-            "explore Creo section distance signs",
-        )? {
+        for signs in 0..(1usize << component_distances.len()) {
             let mut branch_storage =
                 ctx.reserve_scoped(0, "creo signed coordinate branch scratch")?;
             let mut branched = Vec::new();
@@ -1917,9 +1914,8 @@ fn uniquely_solved_linear_variables(
         }
         matrix[pivot_row].rhs /= divisor;
         let (before, pivot_and_after) = matrix.split_at_mut(pivot_row);
-        let Some((pivot, after)) = pivot_and_after.split_first_mut() else {
-            return Ok(None);
-        };
+        let (pivot, after) = pivot_and_after.split_at_mut(1);
+        let pivot = &pivot[0];
         let pivot_rhs = pivot.rhs;
         for target in ctx
             .admit_iter(before, "creo section elimination preceding rows")?

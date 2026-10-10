@@ -92,39 +92,29 @@ fn saved_profile_endpoint_candidates_admit_only_present_rows() {
                     end: cadmpeg_ir::math::Point2::new(position + 1.0, 0.0),
                 }).expect("isolated line"))
         }).collect();
-        // Three admit_iter calls precharge each complete source bound.
-        // Each outer row then visits count candidates for both fixed endpoints.
-        let phase_work = 3 * count + 2 * count * count;
-        let expected: Vec<_> = (0..count).flat_map(|row| {
-            (0..2).flat_map(move |endpoint| {
-                (0..count).map(move |candidate| {
-                    3 * count + 2 * count * row + count * endpoint + candidate
-                })
-            })
-        }).collect();
-        let mut observed = Vec::new();
-        for cap in 0..=phase_work {
+        let observed = std::cell::RefCell::new(Vec::new());
+        let profiles = crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, &[], |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
             policy.limits.max_retained_bytes = 0;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
             let result = saved_profile_chains(&ctx, &sketch, &geometries);
-            if let Err(CodecError::ResourceLimit(original)) = result {
-                assert_eq!(ctx.resource_refusal(), Some(original));
+            if let Err(CodecError::ResourceLimit(original)) = &result {
+                assert_eq!(ctx.resource_refusal(), Some(*original));
                 if original.operation == "creo saved profile endpoint candidates" {
                     assert_eq!((original.dimension, original.used, original.additional),
                         (ResourceDimension::WorkUnits, cap, 1));
-                    observed.push(cap);
+                    observed.borrow_mut().push(cap);
                 }
                 assert!(matches!(saved_profile_chains(&ctx, &sketch, &geometries),
-                    Err(CodecError::ResourceLimit(actual)) if actual == original));
-            } else {
-                assert!(result.expect("empty phase").is_empty());
-                assert_eq!(count, 0);
+                    Err(CodecError::ResourceLimit(actual)) if actual == *original));
             }
-        }
-        assert_eq!(observed, expected);
+            result
+        });
+        // Each row visits every candidate for both endpoints.
+        assert_eq!(observed.borrow().len(), usize::try_from(2 * count * count).expect("candidate visits"));
+        assert!(profiles.is_empty());
         assert!(crate::decode::with_test_decode_ctx(|ctx| {
             saved_profile_chains(ctx, &sketch, &geometries)
         }).expect("service isolated rows").is_empty());
@@ -132,7 +122,7 @@ fn saved_profile_endpoint_candidates_admit_only_present_rows() {
 }
 
 fn profile_backing_bytes() -> u64 {
-    // collect_vec pushes the single circular use into four amortized slots.
+    // push_vec admits four amortized slots for the single circular use.
     // The four-element line-use Vec and outer profiles Vec also retain four
     // slots each. Five identities retain their exact formatted text lengths.
     let text_bytes: usize = [30, 10, 11, 12, 13].into_iter()
@@ -157,13 +147,14 @@ fn assert_profile_identity(profiles: &[Vec<SketchEntityUse>]) {
 fn saved_profile_chain_transfer_keeps_only_surviving_use_backing() {
     let (sketch, geometries) = super::saved_profile_fixture();
     let bytes = profile_backing_bytes();
-    for cap in 0..=bytes {
+    crate::test_support::assert_refusal_order(ResourceDimension::RetainedBytes, &[], |cap| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let result = saved_profile_chains(&ctx, &sketch, &geometries);
-        if cap == bytes {
+        let refused = result.is_err();
+        if !refused {
             assert_profile_identity(&result.expect("exact surviving backing"));
             let original = ctx.charge_retained_limit(1, "after retained profile")
                 .expect_err("all retained backing consumed");
@@ -175,7 +166,9 @@ fn saved_profile_chain_transfer_keeps_only_surviving_use_backing() {
             assert!(matches!(saved_profile_chains(&ctx, &sketch, &geometries),
                 Err(CodecError::ResourceLimit(actual)) if actual == original));
         }
-    }
+        if refused { Err(ctx.resource_refusal().expect("smaller retained cap").into()) }
+        else { Ok(()) }
+    });
 }
 
 #[test]

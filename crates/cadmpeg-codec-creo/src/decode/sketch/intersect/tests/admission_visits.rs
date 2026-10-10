@@ -40,69 +40,67 @@ fn finish(ctx: DecodeContext<'_>, refusal: Option<ResourceLimit>) {
 fn concurrent_carrier_pairs_admit_only_executed_first_rows_and_pairs() {
     let carriers = [line([1.0, 0.0]), line([0.0, 1.0]), line([1.0, 1.0]), line([1.0, -1.0])];
     for count in 0..=carriers.len() {
-        let first_rows = count.saturating_sub(1);
-        let pairs = count * first_rows / 2;
-        let need = u64::try_from(first_rows + pairs).expect("fixed fixture count");
-        for cap in 0..=need {
+        let first_rows = (0..count).skip(1).len();
+        let observed = std::cell::RefCell::new(Vec::new());
+        let mut expected = Vec::new();
+        for row in 0..first_rows {
+            expected.push("creo incident section first carriers");
+            for _ in row + 1..count {
+                expected.push("creo incident section second carriers");
+            }
+        }
+        let coordinate = crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, &[], |cap| {
             with_work(cap, |ctx| {
                 let result = intersect_incident_section_carriers(&ctx, &carriers[..count]);
-                let refusal = match result {
+                let refusal = match &result {
                     Ok(coordinate) => {
-                        assert_eq!(cap, need);
-                        assert_eq!(coordinate, (count >= 2).then_some([0.0, 0.0]));
+                        assert_eq!(*coordinate, (count >= 2).then_some([0.0, 0.0]));
                         None
                     }
                     Err(CodecError::ResourceLimit(original)) => {
-                        assert!(cap < need);
                         assert_eq!((original.dimension, original.used, original.additional, original.limit),
                             (ResourceDimension::WorkUnits, cap, 1, cap));
-                        // Before each first-row visit, all pairs for earlier rows were visited.
-                        let first_visit = (0..first_rows).any(|row| {
-                            let preceding_pairs = row * (2 * count - row - 1) / 2;
-                            u64::try_from(row + preceding_pairs).expect("fixed prefix") == cap
-                        });
-                        assert_eq!(original.operation, if first_visit {
-                            "creo incident section first carriers"
-                        } else {
-                            "creo incident section second carriers"
-                        });
+                        observed.borrow_mut().push(original.operation);
                         assert!(matches!(intersect_incident_section_carriers(&ctx, &carriers[..count]),
-                            Err(CodecError::ResourceLimit(actual)) if actual == original));
-                        Some(original)
+                            Err(CodecError::ResourceLimit(actual)) if actual == *original));
+                        Some(*original)
                     }
                     Err(error) => panic!("unexpected error: {error:?}"),
                 };
                 finish(ctx, refusal);
-            });
-        }
+                result
+            })
+        });
+        assert_eq!(coordinate, (count >= 2).then_some([0.0, 0.0]));
+        assert_eq!(*observed.borrow(), expected);
     }
 }
 
 #[test]
 fn unsupported_first_carrier_pair_stops_before_other_rows() {
     let carriers = [line([1.0, 0.0]), line([2.0, 0.0]), line([0.0, 1.0]), line([1.0, 1.0])];
-    for cap in 0..=2 {
-        with_work(cap, |ctx| {
-            let result = intersect_incident_section_carriers(&ctx, &carriers);
-            let refusal = if cap < 2 {
-                let Err(CodecError::ResourceLimit(original)) = result else {
-                    panic!("pair visit must refuse before execution");
+    let coordinate = crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits,
+        &["creo incident section first carriers", "creo incident section second carriers"], |cap| {
+            with_work(cap, |ctx| {
+                let result = intersect_incident_section_carriers(&ctx, &carriers);
+                let refusal = match &result {
+                    Err(CodecError::ResourceLimit(original)) => {
+                        assert_eq!((original.dimension, original.used, original.additional, original.limit),
+                            (ResourceDimension::WorkUnits, cap, 1, cap));
+                        Some(*original)
+                    }
+                    Ok(coordinate) => {
+                        assert_eq!(*coordinate, None);
+                        None
+                    }
+                    Err(error) => panic!("unexpected pair error: {error:?}"),
                 };
-                assert_eq!((original.dimension, original.used, original.additional, original.limit),
-                    (ResourceDimension::WorkUnits, cap, 1, cap));
-                assert_eq!(original.operation, if cap == 0 {
-                    "creo incident section first carriers"
-                } else {
-                    "creo incident section second carriers"
-                });
-                Some(original)
-            } else {
-                assert_eq!(result.expect("parallel pair recovery"), None);
-                None
-            };
-            finish(ctx, refusal);
-        });
-    }
+                finish(ctx, refusal);
+                result
+            })
+        },
+    );
+    assert_eq!(coordinate, None);
 }
 
 #[test]

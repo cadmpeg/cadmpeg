@@ -19,14 +19,15 @@ fn coordinate_index_keys_admit_present_terms_and_stop_at_first_nan() {
         (BTreeMap::from([((1, SectionAxis::U), 1.0), ((2, SectionAxis::V), 2.0)]), 2, true),
         (nan_terms, 1, false)] {
         let equation = SectionCoordinateEquation { terms, rhs: 2.0 };
-        for cap in 0..=visits {
+        crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, &[], |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
             policy.limits.max_retained_bytes = 0;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
             let result = CoordinateEquationIndex::key(&ctx, &equation);
-            if cap == visits {
+            let refused = result.is_err();
+            if !refused {
                 let key = result.expect("exact term visits");
                 assert_eq!(key.is_some(), accepted);
                 if let Some(key) = key {
@@ -48,7 +49,9 @@ fn coordinate_index_keys_admit_present_terms_and_stop_at_first_nan() {
                 assert!(matches!(CoordinateEquationIndex::key(&ctx, &equation),
                     Err(CodecError::ResourceLimit(actual)) if actual == original));
             }
-        }
+            if refused { Err(ctx.resource_refusal().expect("present term refusal").into()) }
+            else { Ok(()) }
+        });
     }
 }
 
@@ -174,32 +177,28 @@ fn saved_coordinate_search_has_only_present_witness_boundaries() {
     let segments = definition.segments.as_ref().expect("segments").rows.ordinary().collect::<Vec<_>>();
     for (witnesses, visits) in [(Vec::new(), 0),
         (vec![(1, [0.0, 0.0]), (2, [0.0, 1.0])], 4)] {
-        let mut observed = std::collections::BTreeSet::new();
-        let mut cap = 0;
-        loop {
+        let observed = std::cell::RefCell::new(std::collections::BTreeSet::new());
+        let actual = crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, &[], |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
-            assert!(cap <= policy.limits.max_work_units);
             policy.limits.max_work_units = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
             let run = || super::super::section_linear_distance_coordinate(&ctx, &definition,
                 &segments, [1, 2], &BTreeMap::new(), &witnesses, &Default::default());
-            match run() {
-                Ok(actual) => { assert_eq!(actual, Some(SectionAxis::V)); break; }
-                Err(CodecError::ResourceLimit(original)) => {
-                    assert_eq!(original.dimension, ResourceDimension::WorkUnits);
-                    if original.operation == "creo saved coordinate witnesses" {
-                        assert_eq!(original.additional, 1);
-                        observed.insert(original.used);
-                    }
-                    assert!(matches!(run(), Err(CodecError::ResourceLimit(actual)) if actual == original));
-                    cap = original.used.checked_add(original.additional).expect("bounded work");
+            let result = run();
+            if let Err(CodecError::ResourceLimit(original)) = &result {
+                assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+                if original.operation == "creo saved coordinate witnesses" {
+                    assert_eq!(original.additional, 1);
+                    observed.borrow_mut().insert(original.used);
                 }
-                Err(error) => panic!("unexpected coordinate route: {error:?}"),
+                assert!(matches!(run(), Err(CodecError::ResourceLimit(actual)) if actual == *original));
             }
-        }
+            result
+        });
+        assert_eq!(actual, Some(SectionAxis::V));
         // Each of the two endpoint checks consumes the two actual witnesses.
-        assert_eq!(observed.len(), visits);
+        assert_eq!(observed.borrow().len(), visits);
     }
 }
 
@@ -214,7 +213,8 @@ fn point_on_line_candidate_transfer_keeps_only_the_actual_equation_backing() {
     let vector_bytes = u64::try_from(4 * size_of::<SectionCoordinateEquation>()).expect("four slots");
     let live_bytes = terms_bytes + vector_bytes;
     for constraints in [vec![(3, 1, 2)], vec![(3, 1, 2), (3, 1, 2)]] {
-        for cap in 0..=live_bytes {
+        crate::test_support::assert_refusal_order(ResourceDimension::RetainedBytes,
+            &["creo point-on-line candidate scratch", "creo section coordinate equations"], |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = cap;
@@ -222,7 +222,8 @@ fn point_on_line_candidate_transfer_keeps_only_the_actual_equation_backing() {
             let mut equations = Vec::new();
             let result = super::super::append_point_on_line_equations(&ctx, &constraints,
                 &coordinates, &mut equations);
-            if cap == live_bytes {
+            let refused = result.is_err();
+            if !refused {
                 assert!(result.expect("exact equation and vector backing"));
                 assert_eq!(equations.len(), 1);
                 assert_eq!(equations[0].terms, BTreeMap::from([
@@ -244,7 +245,9 @@ fn point_on_line_candidate_transfer_keeps_only_the_actual_equation_backing() {
                     &coordinates, &mut equations),
                     Err(CodecError::ResourceLimit(actual)) if actual == original));
             }
-        }
+            if refused { Err(ctx.resource_refusal().expect("actual output storage refusal").into()) }
+            else { Ok(()) }
+        });
     }
 }
 
@@ -261,7 +264,8 @@ fn solved_coordinate_state_transfers_only_the_final_points_map() {
     let node = 11 * (size_of::<u32>() + size_of::<Coordinates>())
         + 16 * size_of::<usize>() + 2 * alignment;
     let live_bytes = u64::try_from(node).expect("one final point node");
-    for cap in 0..=live_bytes {
+    crate::test_support::assert_refusal_order(ResourceDimension::RetainedBytes,
+        &["creo solved coordinate state scratch"], |cap| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = cap;
@@ -271,7 +275,8 @@ fn solved_coordinate_state_transfers_only_the_final_points_map() {
         let result = super::super::solve_section_coordinates_with_derived_constraints(&ctx,
             &definition, &mut equations, &BTreeMap::new(), (&[], &[]),
             &Default::default(), &mut scalar_values);
-        if cap == live_bytes {
+        let refused = result.is_err();
+        if !refused {
             let points = result.expect("only the final point map is retained");
             assert_eq!(points, BTreeMap::from([(7, [Some(3.0), Some(4.0)])]));
             let original = ctx.charge_retained_limit(1, "after solved coordinate state")
@@ -287,5 +292,7 @@ fn solved_coordinate_state_transfers_only_the_final_points_map() {
                 &Default::default(), &mut scalar_values),
                 Err(CodecError::ResourceLimit(actual)) if actual == original));
         }
-    }
+        if refused { Err(ctx.resource_refusal().expect("final map transfer refusal").into()) }
+        else { Ok(()) }
+    });
 }
