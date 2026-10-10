@@ -653,7 +653,7 @@ mod tests {
     fn scan_with_streams(streams: Vec<crate::parasolid::Stream>) -> crate::decode::Scan<'static> {
         crate::decode::Scan {
             container: crate::container::Container {
-                data: (&[] as &[u8]).into(),
+                data: [].as_slice().into(),
                 physical_size: 0,
                 layout: crate::container::test_modern_layout(0x06),
                 entries: Vec::new(),
@@ -1035,7 +1035,7 @@ mod tests {
     fn unchanged_stream_views_borrow_the_inflated_bytes() {
         let scan = crate::decode::Scan {
             container: crate::container::Container {
-                data: (&[] as &[u8]).into(),
+                data: [].as_slice().into(),
                 physical_size: 0,
                 layout: crate::container::test_modern_layout(0x06),
                 entries: Vec::new(),
@@ -1105,7 +1105,7 @@ mod tests {
         };
         let scan = crate::decode::Scan {
             container: crate::container::Container {
-                data: (&[] as &[u8]).into(),
+                data: [].as_slice().into(),
                 physical_size: 0,
                 layout: crate::container::test_modern_layout(0x06),
                 entries: Vec::new(),
