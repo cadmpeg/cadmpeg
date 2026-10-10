@@ -15,14 +15,23 @@ fn scalar_equality_component_visits_refuse_before_present_variables() {
         &["creo scalar equality component variables"],
         |ctx| {
             let mut values = BTreeMap::new();
-            assert!(super::super::propagate_section_equation_scalar_equality_values(ctx, &definition, &mut values)?);
+            assert!(
+                super::super::propagate_section_equation_scalar_equality_values(
+                    ctx,
+                    &definition,
+                    &mut values
+                )?
+            );
             Ok(values)
         },
     );
-    assert_eq!(values, BTreeMap::from([
-        ((super::VariableType::Result, 10), Some(2.0)),
-        ((super::VariableType::Result, 11), Some(2.0)),
-    ]));
+    assert_eq!(
+        values,
+        BTreeMap::from([
+            ((super::VariableType::Result, 10), Some(2.0)),
+            ((super::VariableType::Result, 11), Some(2.0)),
+        ])
+    );
 }
 
 #[test]
@@ -41,18 +50,32 @@ fn empty_scalar_component_samples_charge_only_the_component_roster() {
             policy.limits.max_recursion_depth = 0;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
             // Component roster admission is count units. All member and sample sources are empty.
-            let result = super::super::scalar_equality_values_for_components(&ctx, &[], &components);
+            let result =
+                super::super::scalar_equality_values_for_components(&ctx, &[], &components);
             let refused = result.is_err();
             if refused {
-                let Err(CodecError::ResourceLimit(original)) = result else { panic!("component roster must refuse"); };
-                assert_eq!((original.dimension, original.used, original.additional, original.limit),
-                    (ResourceDimension::WorkUnits, 0, need, cap));
+                let Err(CodecError::ResourceLimit(original)) = result else {
+                    panic!("component roster must refuse");
+                };
+                assert_eq!(
+                    (
+                        original.dimension,
+                        original.used,
+                        original.additional,
+                        original.limit
+                    ),
+                    (ResourceDimension::WorkUnits, 0, need, cap)
+                );
                 assert_eq!(original.operation, "creo scalar equality value components");
                 for _ in 0..2 {
-                    assert!(matches!(super::super::scalar_equality_values_for_components(&ctx, &[], &components),
-                        Err(CodecError::ResourceLimit(actual)) if actual == original));
+                    assert!(
+                        matches!(super::super::scalar_equality_values_for_components(&ctx, &[], &components),
+                        Err(CodecError::ResourceLimit(actual)) if actual == original)
+                    );
                 }
-                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original));
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original)
+                );
                 Err(original.into())
             } else {
                 assert!(result.expect("component roster admitted").is_empty());

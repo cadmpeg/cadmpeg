@@ -71,7 +71,8 @@ pub(super) fn unique_feature_section_transform<'a>(
             Ok(transform.definition_id == definition_id && transform.offset == section_offset)
         },
         "creo unique owner scan",
-    )? else {
+    )?
+    else {
         return Ok(None);
     };
     if let Some(feature_id) = transform.feature_id {
@@ -261,6 +262,7 @@ mod tests {
     #[test]
     fn unique_owner_empty_routes_are_free_and_keep_original_refusal() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let empty: &[u32] = &[];
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 0;
@@ -268,63 +270,96 @@ mod tests {
         policy.limits.max_retained_bytes = 0;
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        assert_eq!(super::exactly_one_by(&ctx, &[] as &[u32], |_| panic!("absent row"),
-            "test present unique rows").expect("empty query"), None);
-        assert!(super::unique_feature_datum_plane(&ctx, &[], 7).expect("empty datums").is_none());
+        assert_eq!(
+            super::exactly_one_by(
+                &ctx,
+                empty,
+                |_| panic!("absent row"),
+                "test present unique rows"
+            )
+            .expect("empty query"),
+            None
+        );
+        assert!(super::unique_feature_datum_plane(&ctx, &[], 7)
+            .expect("empty datums")
+            .is_none());
         assert!(super::unique_feature_profile_definition(&ctx, &[], &[], 7)
-            .expect("empty profile sources").is_none());
-        let original = ctx.charge_work_limit(1, "seed unique owner refusal").expect_err("zero cap");
+            .expect("empty profile sources")
+            .is_none());
+        let original = ctx
+            .charge_work_limit(1, "seed unique owner refusal")
+            .expect_err("zero cap");
         assert_eq!((original.used, original.additional), (0, 1));
-        assert!(matches!(super::exactly_one_by(&ctx, &[] as &[u32], |_| panic!("absent row"),
-            "test present unique rows"), Err(cadmpeg_core::CodecError::ResourceLimit(r)) if r == original));
+        assert!(
+            matches!(super::exactly_one_by(&ctx, empty, |_| panic!("absent row"),
+            "test present unique rows"), Err(cadmpeg_core::CodecError::ResourceLimit(r)) if r == original)
+        );
         assert!(matches!(super::unique_feature_datum_plane(&ctx, &[], 7),
             Err(cadmpeg_core::CodecError::ResourceLimit(r)) if r == original));
-        assert!(matches!(super::unique_feature_profile_definition(&ctx, &[], &[], 7),
-            Err(cadmpeg_core::CodecError::ResourceLimit(r)) if r == original));
+        assert!(
+            matches!(super::unique_feature_profile_definition(&ctx, &[], &[], 7),
+            Err(cadmpeg_core::CodecError::ResourceLimit(r)) if r == original)
+        );
     }
 
     #[test]
     fn unique_owner_search_admits_present_rows_before_predicates() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let empty: &[u32] = &[];
         for (values, expected, visits) in [
             ([7, 7, 99], None, 2),
             ([1, 7, 2], Some(7), 3),
             ([1, 2, 3], None, 3),
         ] {
-            let found = crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, &[], |allowed| {
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::service();
-                policy.limits.max_work_units = allowed;
-                policy.limits.max_materialized_bytes = 0;
-                policy.limits.max_retained_bytes = 0;
-                policy.limits.max_collection_items = 0;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-                let predicates = std::cell::Cell::new(0_u64);
-                let result = super::exactly_one_by(&ctx, &values, |value| {
-                    predicates.set(predicates.get() + 1);
-                    assert_ne!(*value, 99, "second match stops before the tail");
-                    Ok(*value == 7)
-                }, "test present unique rows").map(Option::<&i32>::copied);
-                match result {
-                    Err(cadmpeg_core::CodecError::ResourceLimit(r)) => {
-                    assert_eq!(r.dimension, ResourceDimension::WorkUnits);
-                    assert_eq!(r.operation, "test present unique rows");
-                    assert_eq!((r.used, r.additional), (allowed, 1));
-                    assert_eq!(predicates.get(), allowed);
-                    assert!(matches!(super::exactly_one_by(&ctx, &[] as &[u32], |_| panic!("absent row"),
-                        "test present unique rows"), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == r));
-                    Err(r.into())
+            let found = crate::test_support::assert_refusal_order(
+                ResourceDimension::WorkUnits,
+                &[],
+                |allowed| {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_work_units = allowed;
+                    policy.limits.max_materialized_bytes = 0;
+                    policy.limits.max_retained_bytes = 0;
+                    policy.limits.max_collection_items = 0;
+                    let (ctx, _) =
+                        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                    let predicates = std::cell::Cell::new(0_u64);
+                    let result = super::exactly_one_by(
+                        &ctx,
+                        &values,
+                        |value| {
+                            predicates.set(predicates.get() + 1);
+                            assert_ne!(*value, 99, "second match stops before the tail");
+                            Ok(*value == 7)
+                        },
+                        "test present unique rows",
+                    )
+                    .map(Option::<&i32>::copied);
+                    match result {
+                        Err(cadmpeg_core::CodecError::ResourceLimit(r)) => {
+                            assert_eq!(r.dimension, ResourceDimension::WorkUnits);
+                            assert_eq!(r.operation, "test present unique rows");
+                            assert_eq!((r.used, r.additional), (allowed, 1));
+                            assert_eq!(predicates.get(), allowed);
+                            assert!(
+                                matches!(super::exactly_one_by(&ctx, empty, |_| panic!("absent row"),
+                        "test present unique rows"), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == r)
+                            );
+                            Err(r.into())
+                        }
+                        Err(error) => panic!("work refusal: {error:?}"),
+                        Ok(value) => {
+                            assert_eq!(value, expected);
+                            assert_eq!(predicates.get(), visits);
+                            let r = ctx
+                                .charge_work_limit(1, "after present unique rows")
+                                .expect_err("exact cap");
+                            assert_eq!((r.used, r.additional), (visits, 1));
+                            Ok(expected)
+                        }
                     }
-                    Err(error) => panic!("work refusal: {error:?}"),
-                    Ok(value) => {
-                    assert_eq!(value, expected);
-                    assert_eq!(predicates.get(), visits);
-                    let r = ctx.charge_work_limit(1, "after present unique rows").expect_err("exact cap");
-                    assert_eq!((r.used, r.additional), (visits, 1));
-                    Ok(expected)
-                    }
-                }
-            });
+                },
+            );
             assert_eq!(found, expected);
         }
     }
@@ -332,42 +367,59 @@ mod tests {
     #[test]
     fn unique_profile_transform_search_charges_only_visited_rows() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        let transform = |id, owner| crate::placement::FeatureSectionTransform::new(
-            id, Some(owner), [0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], 0,
-        ).expect("orthonormal source frame");
+        let transform = |id, owner| {
+            crate::placement::FeatureSectionTransform::new(
+                id,
+                Some(owner),
+                [0.0; 3],
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                0,
+            )
+            .expect("orthonormal source frame")
+        };
         for (transforms, visits) in [
             ([transform(1, 7), transform(2, 7), transform(3, 99)], 2),
             ([transform(1, 1), transform(2, 7), transform(3, 2)], 3),
             ([transform(1, 1), transform(2, 2), transform(3, 3)], 3),
         ] {
-            crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, &[], |allowed| {
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::service();
-                policy.limits.max_work_units = allowed;
-                policy.limits.max_materialized_bytes = 0;
-                policy.limits.max_retained_bytes = 0;
-                policy.limits.max_collection_items = 0;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-                let result = super::unique_feature_profile_definition(&ctx, &[], &transforms, 7);
-                match result {
-                    Err(cadmpeg_core::CodecError::ResourceLimit(r)) => {
-                    assert_eq!(r.dimension, ResourceDimension::WorkUnits);
-                    assert_eq!(r.operation, "creo unique profile transform scan");
-                    assert_eq!((r.used, r.additional), (allowed, 1));
-                    assert!(matches!(super::unique_feature_profile_definition(&ctx, &[], &[], 7),
-                        Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == r));
-                    Err(r.into())
+            crate::test_support::assert_refusal_order(
+                ResourceDimension::WorkUnits,
+                &[],
+                |allowed| {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_work_units = allowed;
+                    policy.limits.max_materialized_bytes = 0;
+                    policy.limits.max_retained_bytes = 0;
+                    policy.limits.max_collection_items = 0;
+                    let (ctx, _) =
+                        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                    let result =
+                        super::unique_feature_profile_definition(&ctx, &[], &transforms, 7);
+                    match result {
+                        Err(cadmpeg_core::CodecError::ResourceLimit(r)) => {
+                            assert_eq!(r.dimension, ResourceDimension::WorkUnits);
+                            assert_eq!(r.operation, "creo unique profile transform scan");
+                            assert_eq!((r.used, r.additional), (allowed, 1));
+                            assert!(
+                                matches!(super::unique_feature_profile_definition(&ctx, &[], &[], 7),
+                        Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == r)
+                            );
+                            Err(r.into())
+                        }
+                        Err(error) => panic!("work refusal: {error:?}"),
+                        Ok(value) => {
+                            assert!(value.is_none());
+                            let r = ctx
+                                .charge_work_limit(1, "after profile transforms")
+                                .expect_err("exact cap");
+                            assert_eq!((r.used, r.additional), (visits, 1));
+                            Ok(())
+                        }
                     }
-                    Err(error) => panic!("work refusal: {error:?}"),
-                    Ok(value) => {
-                    assert!(value.is_none());
-                    let r = ctx.charge_work_limit(1, "after profile transforms").expect_err("exact cap");
-                    assert_eq!((r.used, r.additional), (visits, 1));
-                    Ok(())
-                    }
-                }
-            });
+                },
+            );
         }
     }
-
 }

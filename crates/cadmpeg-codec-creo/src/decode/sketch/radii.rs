@@ -31,11 +31,11 @@ use super::geometry::{
 use super::skamp::{
     section_line_entity_fixed_coordinate_with_unique_rows, unique_decoded_section_segment,
 };
-use crate::decode::sketch_transfer::solver_links::RelationIncidences;
 use crate::decode::sketch_transfer::identity::saved_section_entity_fallback_allowed;
 use crate::decode::sketch_transfer::loci::{
     section_degenerate_axis_line, section_saved_entity, unique_circle_segment, visit_section_skamps,
 };
+use crate::decode::sketch_transfer::solver_links::RelationIncidences;
 
 const EPS_RADIUS_NONZERO: f64 = 1.0e-12;
 const EPS_RADIUS_AGREEMENT: f64 = 1.0e-9;
@@ -831,7 +831,8 @@ pub(in crate::decode) fn section_axis_reference_line_geometry(
     let crate::feature::definitions::FeatureSegmentKind::Point(point_id) = segment.kind else {
         return Ok(None);
     };
-    let Some(value) = fixed_point_coordinate(ctx, variable_points, point_id, fixed_coordinate)? else {
+    let Some(value) = fixed_point_coordinate(ctx, variable_points, point_id, fixed_coordinate)?
+    else {
         return Ok(None);
     };
     Ok(axis_reference_line(value, fixed_coordinate))
@@ -948,7 +949,9 @@ pub(in crate::decode) fn trim_segment_ids(
     let Some(index) = ctx.position_by(trim_rows, unmatched_row, OPERATION)? else {
         return Ok(ids);
     };
-    if index + 1 < trim_rows.len() && ctx.any_by(&trim_rows[index + 1..], unmatched_row, OPERATION)? {
+    if index + 1 < trim_rows.len()
+        && ctx.any_by(&trim_rows[index + 1..], unmatched_row, OPERATION)?
+    {
         return Ok(ids);
     }
     // A row whose identifier names a segment of another family stays unmatched.

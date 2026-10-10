@@ -559,10 +559,12 @@ pub(super) fn saved_section_arc_record<'a>(
     let Some(internal_id) = order.internal_id(segment.external_id) else {
         return Ok(None);
     };
-    Ok(match saved_section_entity_by_internal_id(ctx, definition, internal_id)? {
-        Some(crate::feature::definitions::FeatureSavedEntity::Arc(arc)) => Some(arc),
-        _ => None,
-    })
+    Ok(
+        match saved_section_entity_by_internal_id(ctx, definition, internal_id)? {
+            Some(crate::feature::definitions::FeatureSavedEntity::Arc(arc)) => Some(arc),
+            _ => None,
+        },
+    )
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -589,7 +591,8 @@ impl SectionArcCarrier {
         ) {
             return Self::new([center_u, center_v], radius);
         }
-        let [[Some(first_u), Some(first_v), _], [Some(second_u), Some(second_v), _]] = arc.endpoints
+        let [[Some(first_u), Some(first_v), _], [Some(second_u), Some(second_v), _]] =
+            arc.endpoints
         else {
             return None;
         };
@@ -670,7 +673,8 @@ impl SavedSectionArc {
     fn from_saved_record(arc: &crate::feature::definitions::FeatureSavedArc) -> Option<Self> {
         let carrier = SectionArcCarrier::from_saved_record(arc)?;
         let ([center_u, center_v], radius) = carrier.raw();
-        let [[Some(first_u), Some(first_v), _], [Some(second_u), Some(second_v), _]] = arc.endpoints
+        let [[Some(first_u), Some(first_v), _], [Some(second_u), Some(second_v), _]] =
+            arc.endpoints
         else {
             return None;
         };

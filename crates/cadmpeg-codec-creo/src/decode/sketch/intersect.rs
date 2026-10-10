@@ -219,7 +219,8 @@ pub(in crate::decode) fn intersect_incident_section_carriers<
             let Some(second) = ctx.next_charged(
                 &mut second_carriers,
                 "creo incident section second carriers",
-            )? else {
+            )?
+            else {
                 break;
             };
             let Some(coordinate) = intersect_section_carriers(first.borrow(), second.borrow())
@@ -688,7 +689,11 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
         },
         "creo sketch unambiguous coordinates",
     )?;
-    let Some(trim_entities) = definition.trim_entities.as_ref().filter(|table| !table.rows.is_empty()) else {
+    let Some(trim_entities) = definition
+        .trim_entities
+        .as_ref()
+        .filter(|table| !table.rows.is_empty())
+    else {
         return Ok(coordinates);
     };
     loop {
@@ -736,8 +741,8 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
                 [None, Some(point)] => (point, 0),
                 _ => continue,
             };
-            let distances = stored
-                .map(|point| (point[0] - known_point[0]).hypot(point[1] - known_point[1]));
+            let distances =
+                stored.map(|point| (point[0] - known_point[0]).hypot(point[1] - known_point[1]));
             let scale = stored
                 .iter()
                 .flatten()
@@ -1150,9 +1155,9 @@ mod tests {
         policy.limits.max_collection_items = 0;
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty root");
-        let coordinates = resolved_trim_vertex_coordinates(
-            &ctx, &definition, &BTreeMap::new(), &BTreeMap::new(),
-        ).expect("empty trim sources need no work");
+        let coordinates =
+            resolved_trim_vertex_coordinates(&ctx, &definition, &BTreeMap::new(), &BTreeMap::new())
+                .expect("empty trim sources need no work");
         assert!(coordinates.is_empty());
     }
 

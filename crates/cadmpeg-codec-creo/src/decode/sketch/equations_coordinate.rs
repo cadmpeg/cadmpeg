@@ -125,7 +125,8 @@ pub(in crate::decode) fn section_equation_function_six_distance_rows(
             .and_then(|ordinal| variables.rows.get(ordinal))
     };
     let mut rows = Vec::new();
-    let equation_solver_rows = ctx.admit_iter(&equations.rows, "creo section source equation rows")?;
+    let equation_solver_rows =
+        ctx.admit_iter(&equations.rows, "creo section source equation rows")?;
     let equation_solver = EquationIncidences::new(ctx, definition)?;
     for equation in equation_solver_rows {
         if equation.function_id != 6 {
@@ -345,8 +346,8 @@ pub(in crate::decode) fn section_equation_unsigned_coordinate_distance_rows(
     let scalar_equality_values =
         scratch.with_storage(|| section_equation_scalar_equality_values(ctx, definition))?;
     let mut rows = Vec::new();
-    let equation_solver_rows = ctx
-        .admit_iter(&equations.rows, "creo section source equation rows")?;
+    let equation_solver_rows =
+        ctx.admit_iter(&equations.rows, "creo section source equation rows")?;
     let equation_solver = EquationIncidences::new(ctx, definition)?;
     for equation in equation_solver_rows
         .filter(|equation| equation.function_id == 3 && equation.arguments.len() == 3)
@@ -475,8 +476,8 @@ pub(in crate::decode) fn section_equation_radius_dimensions(
     let scalar_equality_values =
         scratch.with_storage(|| section_equation_scalar_equality_values(ctx, definition))?;
     let mut rows = Vec::new();
-    let equation_solver_rows = ctx
-        .admit_iter(&equations.rows, "creo section source equation rows")?;
+    let equation_solver_rows =
+        ctx.admit_iter(&equations.rows, "creo section source equation rows")?;
     let equation_solver = EquationIncidences::new(ctx, definition)?;
     for equation in equation_solver_rows
         .filter(|equation| equation.function_id == 2 && equation.arguments.len() == 2)
@@ -631,8 +632,8 @@ pub(in crate::decode) fn section_equation_point_on_line_constraint_rows(
     let scalar_equality_values =
         scratch.with_storage(|| section_equation_scalar_equality_values(ctx, definition))?;
     let mut rows = Vec::new();
-    let equation_solver_rows = ctx
-        .admit_iter(&equations.rows, "creo section source equation rows")?;
+    let equation_solver_rows =
+        ctx.admit_iter(&equations.rows, "creo section source equation rows")?;
     let equation_solver = EquationIncidences::new(ctx, definition)?;
     for equation in equation_solver_rows
         .filter(|equation| equation.function_id == 35 && equation.arguments.len() == 9)
@@ -741,9 +742,19 @@ pub(in crate::decode) fn section_equation_point_on_line_constraint_rows(
             continue;
         }
         let zero_value = |row: &FeatureVariableRow| -> Result<Option<f64>, CodecError> {
-                let equality = ctx.get_btree_map(&scalar_equality_values, &(row.variable_type, row.key), "creo section scalar equality lookup")?.copied().unwrap_or(Ok(None));
-                Ok(equality.ok().and_then(|value| reconcile_equation_value(row.value.value(), value).ok()).flatten())
-            };
+            let equality = ctx
+                .get_btree_map(
+                    &scalar_equality_values,
+                    &(row.variable_type, row.key),
+                    "creo section scalar equality lookup",
+                )?
+                .copied()
+                .unwrap_or(Ok(None));
+            Ok(equality
+                .ok()
+                .and_then(|value| reconcile_equation_value(row.value.value(), value).ok())
+                .flatten())
+        };
         if zero_value(first_zero)? != Some(0.0) || zero_value(second_zero)? != Some(0.0) {
             continue;
         }
@@ -821,8 +832,8 @@ pub(in crate::decode) fn section_equation_equal_length_constraint_rows(
     let scalar_equality_values =
         scratch.with_storage(|| section_equation_scalar_equality_values(ctx, definition))?;
     let mut rows = Vec::new();
-    let equation_solver_rows = ctx
-        .admit_iter(&equations.rows, "creo section source equation rows")?;
+    let equation_solver_rows =
+        ctx.admit_iter(&equations.rows, "creo section source equation rows")?;
     let equation_solver = EquationIncidences::new(ctx, definition)?;
     for equation in equation_solver_rows
         .filter(|equation| equation.function_id == 33 && equation.arguments.len() == 9)
