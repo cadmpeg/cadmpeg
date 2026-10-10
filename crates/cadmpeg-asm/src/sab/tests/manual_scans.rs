@@ -57,8 +57,9 @@ fn manual_sab_framing_keeps_strict_and_history_eof_semantics() {
         ctx.finish_session().unwrap();
         let arena = DecodeArena::new();
         // The retained name join adds two one-part traversals and n copied
-        // bytes and n name-index bytes. Initial vector reserves move no live slots.
-        policy.limits.max_work_units = 4 + 3 * n;
+        // bytes. Name indexing adds n byte visits and one end probe. Initial
+        // vector reserves move no live slots.
+        policy.limits.max_work_units = 5 + 3 * n;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let records = frame_history(&ctx, &bytes, 0, bytes.len(), RefWidth::Four, None).unwrap();
         assert_eq!(records.len(), 1);
