@@ -292,7 +292,9 @@ pub(super) fn apply_evaluated_parameters(
     histories: &mut [FeatureHistory],
 ) -> Result<(), CodecError> {
     const OPERATION: &str = "find SLDPRT evaluated parameter replacement";
-    let (evaluated, _evaluated_storage) =
+    let _evaluated_storage;
+    let evaluated;
+    (evaluated, _evaluated_storage) =
         ctx.with_scoped_storage(OPERATION, || project_parameters(ctx, histories))?;
     // The last evaluated value of each owner's named parameter.
     let mut scratch = ctx.reserve_scoped(0, OPERATION)?;
@@ -315,10 +317,12 @@ pub(super) fn apply_evaluated_parameters(
             &mut history.features,
             "scan SLDPRT evaluated parameter replacements",
         )? {
-            let (owner, _owner_storage) = ctx
+            let _owner_storage;
+            let owner;
+            (owner, _owner_storage) = ctx
                 .with_scoped_storage(OPERATION, || neutral_feature_id_charged(ctx, &feature.id))?;
-            let mut replacements = Vec::new();
             let mut replacement_storage = ctx.reserve_scoped(0, OPERATION)?;
+            let mut replacements = Vec::new();
             for (name, expression) in ctx.admit_iter(
                 &feature.parameters,
                 "scan SLDPRT evaluated parameter replacements",
@@ -555,7 +559,9 @@ fn populate_parameter_dependencies(
     feature_names: &HashMap<FeatureId, String>,
     global_owners: &HashSet<FeatureId>,
 ) -> Result<(), CodecError> {
-    let (aliases, _aliases_storage) =
+    let _aliases_storage;
+    let aliases;
+    (aliases, _aliases_storage) =
         ParameterAliases::scoped(ctx, parameters, feature_names, global_owners)?;
     for parameter in ctx.admit_iter(parameters, "collect SLDPRT parameter dependencies")? {
         parameter.dependencies = project_parameter_dependencies(
@@ -878,7 +884,9 @@ fn evaluate_parameter_expressions(
     )? {
         return Ok(());
     }
-    let (aliases, _aliases_storage) =
+    let _aliases_storage;
+    let aliases;
+    (aliases, _aliases_storage) =
         ParameterAliases::scoped(ctx, parameters, feature_names, global_owners)?;
     let mut values_storage = ctx.reserve_scoped(0, "index SLDPRT parameter values")?;
     let mut values = HashMap::new();
@@ -895,7 +903,9 @@ fn evaluate_parameter_expressions(
     }
     let mut graph_storage = ctx.reserve_scoped(0, OPERATION)?;
     let repeated = {
-        let (identities, _identity_storage) = ctx.unique_index(
+        let _identity_storage;
+        let identities;
+        (identities, _identity_storage) = ctx.unique_index(
             parameters.iter().map(|parameter| (&parameter.id, ())),
             OPERATION,
         )?;
@@ -951,16 +961,17 @@ fn evaluate_parameter_expressions(
     }
     // Retry a blocked expression when its first missing value is published.
     let mut blocked = HashMap::<&ParameterId, (Vec<usize>, ScopedReservation<'_>)>::new();
-    let mut ready = Vec::new();
     let mut ready_storage = ctx.reserve_scoped(0, OPERATION)?;
+    let mut ready = Vec::new();
     for (index, parameter) in ctx.admit_iter(&*parameters, OPERATION)?.enumerate() {
         if parameter.value.is_none() {
             ctx.push_scoped_vec(&mut ready_storage, &mut ready, index, OPERATION)?;
         }
     }
     while !ready.is_empty() {
+        let current_storage;
         let current = std::mem::take(&mut ready);
-        let current_storage =
+        current_storage =
             std::mem::replace(&mut ready_storage, ctx.reserve_scoped(0, OPERATION)?);
         for index in ctx.admit_iter(current, "evaluate SLDPRT parameter expressions")? {
             let parameter = &parameters[index];
@@ -1079,7 +1090,9 @@ pub(crate) fn parameters_with_unevaluable_expressions(
         while let Some(configuration) =
             ctx.next_charged(&mut states, "check SLDPRT parameter evaluation")?
         {
-            let (evaluated, _evaluation_storage) = ctx.with_scoped_storage(
+            let _evaluation_storage;
+            let evaluated;
+            (evaluated, _evaluation_storage) = ctx.with_scoped_storage(
                 "check SLDPRT parameter evaluation",
                 || -> Result<_, CodecError> {
                     match ParameterExpressionParser::new(
@@ -1124,7 +1137,9 @@ pub(crate) fn parameters_with_incoherent_dependencies(
         parameters,
         "scan SLDPRT parameters_with_incoherent_dependencies values",
     )? {
-        let (projected, _projected_storage) =
+        let _projected_storage;
+        let projected;
+        (projected, _projected_storage) =
             ctx.with_scoped_storage("check SLDPRT parameter dependencies", || {
                 project_parameter_dependencies(
                     ctx,
@@ -1156,7 +1171,9 @@ pub(crate) fn parameters_with_incoherent_evaluated_values(
     )? {
         return Ok(0);
     }
-    let (values, _values_storage) = parameter_value_index(ctx, parameters)?;
+    let _values_storage;
+    let values;
+    (values, _values_storage) = parameter_value_index(ctx, parameters)?;
     let mut count = 0;
     for parameter in ctx
         .admit_iter(parameters, "scan SLDPRT parameter dependencies")?
@@ -1469,7 +1486,8 @@ pub(super) fn expression_identifier_tokens<'a, 'ctx>(
                 }
             }
             let Some(end) = closed else {
-                return Ok((None, storage));
+                drop((identifiers, storage));
+                return Ok((None, ctx.reserve_scoped(0, "collect SLDPRT parameter identifiers")?));
             };
             if end == start + 2 {
                 continue;
