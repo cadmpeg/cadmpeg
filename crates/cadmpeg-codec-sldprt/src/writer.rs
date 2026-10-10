@@ -161,10 +161,7 @@ pub(crate) fn write_semantic_with_records(
             parasolid_stream(&body, schema)?,
         )]
     };
-    let generated_partition_sections = partition_sections
-        .iter()
-        .map(|(section, _)| section.clone())
-        .collect::<HashSet<_>>();
+    let partition_section_count = partition_sections.len();
     let mut sections = partition_sections;
     let materials = materials_payload(&digest_ctx, ir)?;
     let (objects, units) = metadata_payloads(&digest_ctx, ir, length_scale)?;
@@ -255,6 +252,10 @@ pub(crate) fn write_semantic_with_records(
             resolved_feature_payload(lane, histories, &feature_input_renames)?,
         ));
     }
+    let generated_partition_sections = sections[..partition_section_count]
+        .iter()
+        .map(|(section, _)| section.as_str())
+        .collect::<HashSet<_>>();
     let opaque = opaque_blocks(
         &digest_ctx,
         ir,
@@ -263,6 +264,7 @@ pub(crate) fn write_semantic_with_records(
         &generated_partition_sections,
         retain_native_brep,
     )?;
+    drop(generated_partition_sections);
     let document_envelope = crate::container::first_solidworks_envelope(
         &digest_ctx,
         opaque.iter().map(|(_, payload)| payload.as_slice()),
@@ -380,7 +382,7 @@ pub(crate) fn configurations_without_synthesized_snapshot(
         source
             .attributes
             .get("sldprt_configuration_snapshot_synthesized")
-            .cloned()
+            .map(String::as_str)
     }) else {
         return configurations;
     };
@@ -592,12 +594,12 @@ fn section_type_ids(
     source_scan: Option<&crate::container::ContainerScan<'_>>,
     sections: &[(String, Vec<u8>)],
 ) -> Result<Vec<u32>, CodecError> {
-    let mut source_ids: HashMap<String, VecDeque<u32>> = HashMap::new();
+    let mut source_ids: HashMap<&str, VecDeque<u32>> = HashMap::new();
     if let Some(scan) = source_scan {
         for block in &scan.blocks {
             if let Some(section) = block.section.name() {
                 source_ids
-                    .entry(section.to_owned())
+                    .entry(section)
                     .or_default()
                     .push_back(block.type_id);
             }
@@ -608,7 +610,7 @@ fn section_type_ids(
         .enumerate()
         .map(|(index, (section, _))| {
             source_ids
-                .get_mut(section)
+                .get_mut(section.as_str())
                 .and_then(VecDeque::pop_front)
                 .map_or_else(
                     || {
@@ -778,7 +780,6 @@ fn configuration_partitions(
                 .as_deref()
                 .unwrap_or_default()
                 .iter()
-                .cloned()
         })
         .collect::<HashSet<_>>();
     if let Some(body) = ir
@@ -848,10 +849,10 @@ pub(super) fn reserve_configuration_index(
 }
 
 fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr, CodecError> {
-    let selected = selected.iter().cloned().collect::<HashSet<_>>();
+    let selected = selected.iter().collect::<HashSet<_>>();
     if let Some(id) = selected
         .iter()
-        .find(|id| !ir.model.bodies.iter().any(|body| &body.id == *id))
+        .find(|id| !ir.model.bodies.iter().any(|body| &body.id == **id))
     {
         return Err(CodecError::malformed(format_args!(
             "configuration references missing body {}",
@@ -867,7 +868,7 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .model
         .bodies
         .iter()
-        .flat_map(|body| body.regions.iter().cloned())
+        .flat_map(|body| body.regions.iter())
         .collect::<HashSet<_>>();
     subset
         .model
@@ -877,7 +878,7 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .model
         .regions
         .iter()
-        .flat_map(|region| region.shells.iter().cloned())
+        .flat_map(|region| region.shells.iter())
         .collect::<HashSet<_>>();
     subset
         .model
@@ -887,21 +888,21 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .model
         .shells
         .iter()
-        .flat_map(|shell| shell.faces().iter().cloned())
+        .flat_map(|shell| shell.faces().iter())
         .collect::<HashSet<_>>();
     subset.model.faces.retain(|face| faces.contains(&face.id));
     let loops = subset
         .model
         .faces
         .iter()
-        .flat_map(|face| face.loops.iter().cloned())
+        .flat_map(|face| face.loops.iter())
         .collect::<HashSet<_>>();
     subset.model.loops.retain(|loop_| loops.contains(&loop_.id));
     let coedges = subset
         .model
         .loops
         .iter()
-        .flat_map(|loop_| loop_.coedges().iter().cloned())
+        .flat_map(|loop_| loop_.coedges().iter())
         .collect::<HashSet<_>>();
     subset
         .model
@@ -911,20 +912,20 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .model
         .coedges
         .iter()
-        .map(|coedge| coedge.edge.clone())
+        .map(|coedge| &coedge.edge)
         .collect::<HashSet<_>>();
     for shell in &subset.model.shells {
-        edges.extend(shell.wire_edges().iter().cloned());
+        edges.extend(shell.wire_edges().iter());
     }
     subset.model.edges.retain(|edge| edges.contains(&edge.id));
     let mut vertices = subset
         .model
         .edges
         .iter()
-        .flat_map(|edge| [edge.start.clone(), edge.end.clone()])
+        .flat_map(|edge| [&edge.start, &edge.end])
         .collect::<HashSet<_>>();
     for shell in &subset.model.shells {
-        vertices.extend(shell.free_vertices().iter().cloned());
+        vertices.extend(shell.free_vertices().iter());
     }
     subset
         .model
@@ -934,7 +935,7 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .model
         .vertices
         .iter()
-        .map(|vertex| vertex.point.clone())
+        .map(|vertex| &vertex.point)
         .collect::<HashSet<_>>();
     subset
         .model
@@ -944,7 +945,7 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .model
         .faces
         .iter()
-        .map(|face| face.surface.clone())
+        .map(|face| &face.surface)
         .collect::<HashSet<_>>();
     subset
         .model
@@ -954,7 +955,7 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .model
         .edges
         .iter()
-        .filter_map(|edge| edge.curve().cloned())
+        .filter_map(|edge| edge.curve())
         .collect::<HashSet<_>>();
     subset
         .model
@@ -964,12 +965,13 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .model
         .coedges
         .iter()
-        .flat_map(|coedge| coedge.pcurves.iter().map(|use_| use_.pcurve.clone()))
+        .flat_map(|coedge| coedge.pcurves.iter().map(|use_| &use_.pcurve))
         .collect::<HashSet<_>>();
     subset
         .model
         .pcurves
         .retain(|pcurve| pcurves.contains(&pcurve.id));
+    drop((regions, shells, faces, loops, coedges, edges, vertices, points, surfaces, curves, pcurves));
     let ordering_arena = cadmpeg_core::decode::DecodeArena::new();
     let (ordering_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[],
@@ -985,7 +987,7 @@ fn opaque_blocks(
     ir: &CadIr,
     records: &[SourceRecord<'_>],
     annotations: &Annotations,
-    generated_partitions: &HashSet<String>,
+    generated_partitions: &HashSet<&str>,
     retain_native_brep: bool,
 ) -> Result<Vec<(String, Vec<u8>)>, CodecError> {
     let native = ir
@@ -1014,7 +1016,7 @@ fn opaque_blocks(
                     Ok(remapped) => remapped.flatten(),
                     Err(error) => return Some(Err(error)),
                 };
-                if remapped.is_some_and(|remapped| generated_partitions.contains(&remapped)) {
+                if remapped.is_some_and(|remapped| generated_partitions.contains(remapped.as_str())) {
                     return None;
                 }
             }
@@ -1052,7 +1054,7 @@ fn opaque_blocks(
                     Err(error) => return Some(Err(error)),
                 }
             }
-            seen.insert((section.to_string(), record.sha256.clone()))
+            seen.insert((section, record.sha256.as_str()))
                 .then_some(Ok((section.to_string(), payload)))
         })
         .collect()
@@ -1078,7 +1080,7 @@ fn retained_swobjects_sections(
     sections
         .into_iter()
         .filter_map(|(section, record)| {
-            seen.insert((section, record.sha256.clone()))
+            seen.insert((section, record.sha256.as_str()))
                 .then_some((section, record))
         })
         .map(|(section, record)| {
@@ -1113,7 +1115,7 @@ fn patch_retained_swobjects_metadata(
                     ))
                 })?;
             Ok((
-                (provenance.stream().to_owned(), Reverse(provenance.offset)),
+                (provenance.stream(), Reverse(provenance.offset)),
                 attribute,
             ))
         })
@@ -2296,56 +2298,56 @@ pub(crate) fn brep_body(
                 .as_str()
                 .starts_with("sldprt:brep:curve#sphere-seam-face:")
         })
-        .map(|curve| curve.id.clone())
+        .map(|curve| &curve.id)
         .collect::<HashSet<_>>();
     let surfaces = ir
         .model
         .surfaces
         .iter()
-        .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
+        .map(|item| Ok((&item.id, take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let curves = ir
         .model
         .curves
         .iter()
         .filter(|item| !derived_sphere_seam_curves.contains(&item.id))
-        .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
+        .map(|item| Ok((&item.id, take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let points = ir
         .model
         .points
         .iter()
-        .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
+        .map(|item| Ok((&item.id, take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let vertices = ir
         .model
         .vertices
         .iter()
-        .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
+        .map(|item| Ok((&item.id, take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let edges = ir
         .model
         .edges
         .iter()
-        .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
+        .map(|item| Ok((&item.id, take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let coedges = ir
         .model
         .coedges
         .iter()
-        .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
+        .map(|item| Ok((&item.id, take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let loops = ir
         .model
         .loops
         .iter()
-        .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
+        .map(|item| Ok((&item.id, take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let faces = ir
         .model
         .faces
         .iter()
-        .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
+        .map(|item| Ok((&item.id, take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let mut out = Vec::new();
     for surface in &ir.model.surfaces {
@@ -2388,14 +2390,14 @@ pub(crate) fn brep_body(
         .model
         .faces
         .iter()
-        .map(|face| Ok((face.id.clone(), take_attr(&mut next)?)))
+        .map(|face| Ok((&face.id, take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let face_colors = face_colors(ir)?;
     let mut colored_faces = face_colors.keys().collect::<Vec<_>>();
     colored_faces.sort();
     let color_attrs = colored_faces
         .into_iter()
-        .map(|face| Ok((face.clone(), take_attr(&mut next)?)))
+        .map(|face| Ok((*face, take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let face_color_definition = if color_attrs.is_empty() {
         None
@@ -2564,10 +2566,10 @@ pub(crate) fn brep_body(
 /// hierarchy writers share.
 #[derive(Clone, Copy)]
 struct HierarchyIdentities<'a> {
-    faces: &'a HashMap<cadmpeg_ir::ids::FaceId, u16>,
-    surfaces: &'a HashMap<cadmpeg_ir::ids::SurfaceId, u16>,
-    face_owners: &'a HashMap<cadmpeg_ir::ids::FaceId, u16>,
-    color_attrs: &'a HashMap<cadmpeg_ir::ids::FaceId, u16>,
+    faces: &'a HashMap<&'a cadmpeg_ir::ids::FaceId, u16>,
+    surfaces: &'a HashMap<&'a cadmpeg_ir::ids::SurfaceId, u16>,
+    face_owners: &'a HashMap<&'a cadmpeg_ir::ids::FaceId, u16>,
+    color_attrs: &'a HashMap<&'a cadmpeg_ir::ids::FaceId, u16>,
     face_color_definition: Option<(u16, u16)>,
     schema_32001: bool,
 }
@@ -2590,13 +2592,13 @@ fn write_body_hierarchy(
         .model
         .shells
         .iter()
-        .map(|shell| (shell.id.clone(), shell))
+        .map(|shell| (&shell.id, shell))
         .collect::<HashMap<_, _>>();
     let regions = ir
         .model
         .regions
         .iter()
-        .map(|region| (region.id.clone(), region))
+        .map(|region| (&region.id, region))
         .collect::<HashMap<_, _>>();
     let mut assigned = HashSet::new();
     for body in &ir.model.bodies {
@@ -2625,7 +2627,7 @@ fn write_body_hierarchy(
                             "shell references missing face".into(),
                         ));
                     }
-                    if !assigned.insert(face.clone()) {
+                    if !assigned.insert(face) {
                         return Err(CodecError::Malformed(
                             "face belongs to multiple bodies".into(),
                         ));
@@ -2711,8 +2713,8 @@ fn write_body_hierarchy(
 /// without a second identity map.
 fn write_typed_body_hierarchy(
     ir: &CadIr,
-    faces: &HashMap<cadmpeg_ir::ids::FaceId, u16>,
-    surfaces: &HashMap<cadmpeg_ir::ids::SurfaceId, u16>,
+    faces: &HashMap<&cadmpeg_ir::ids::FaceId, u16>,
+    surfaces: &HashMap<&cadmpeg_ir::ids::SurfaceId, u16>,
     next: &mut u16,
     out: &mut Vec<u8>,
 ) -> Result<(), CodecError> {
@@ -2720,25 +2722,25 @@ fn write_typed_body_hierarchy(
         .model
         .bodies
         .iter()
-        .map(|body| Ok((body.id.clone(), take_attr(next)?)))
+        .map(|body| Ok((&body.id, take_attr(next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let region_attrs = ir
         .model
         .regions
         .iter()
-        .map(|region| Ok((region.id.clone(), take_attr(next)?)))
+        .map(|region| Ok((&region.id, take_attr(next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let shell_attrs = ir
         .model
         .shells
         .iter()
-        .map(|shell| Ok((shell.id.clone(), take_attr(next)?)))
+        .map(|shell| Ok((&shell.id, take_attr(next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let mut face_shells = HashMap::new();
     for shell in &ir.model.shells {
         let shell_attr = shell_attrs[&shell.id];
         for face in shell.faces() {
-            if face_shells.insert(face.clone(), shell_attr).is_some() {
+            if face_shells.insert(face, shell_attr).is_some() {
                 return Err(CodecError::Malformed(
                     "face belongs to multiple typed shells".into(),
                 ));
@@ -2953,7 +2955,7 @@ fn fixed_refs(values: &[u16], message: &str) -> Result<[u16; 6], CodecError> {
     Ok(refs)
 }
 
-fn face_colors(ir: &CadIr) -> Result<HashMap<cadmpeg_ir::ids::FaceId, Color>, CodecError> {
+fn face_colors(ir: &CadIr) -> Result<HashMap<&cadmpeg_ir::ids::FaceId, Color>, CodecError> {
     let appearances = ir
         .model
         .appearances
@@ -2964,7 +2966,7 @@ fn face_colors(ir: &CadIr) -> Result<HashMap<cadmpeg_ir::ids::FaceId, Color>, Co
         .model
         .faces
         .iter()
-        .filter_map(|face| face.color.map(|color| (face.id.clone(), color)))
+        .filter_map(|face| face.color.map(|color| (&face.id, color)))
         .collect::<HashMap<_, _>>();
     for binding in &ir.model.appearance_bindings {
         let AppearanceTarget::Face(face) = &binding.target else {
@@ -2977,7 +2979,7 @@ fn face_colors(ir: &CadIr) -> Result<HashMap<cadmpeg_ir::ids::FaceId, Color>, Co
             CodecError::NotImplemented("SLDPRT face appearance has no base color".into())
         })?;
         if colors
-            .insert(face.clone(), color)
+            .insert(face, color)
             .is_some_and(|old| old != color)
         {
             return Err(CodecError::Malformed(
