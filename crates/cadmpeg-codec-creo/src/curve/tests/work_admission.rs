@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::curve::test_support::with_policy;
+use crate::curve::test_support::with_expression_policy;
 use crate::curve::{
     parse_relation_expression, relation_unit, CurveExpressionValue, RelationEvaluationContext,
 };
@@ -17,7 +17,7 @@ fn flat_relation_scans_refuse_caller_work() {
             |cap| {
                 let mut trial = policy;
                 trial.limits.max_work_units = cap;
-                with_policy(trial, |ctx| {
+                with_expression_policy(trial, |ctx| {
                     parse_relation_expression::<CurveExpressionValue>(
                         ctx,
                         source,
@@ -27,7 +27,7 @@ fn flat_relation_scans_refuse_caller_work() {
                 })
             },
         );
-        let error = with_policy(policy, |ctx| {
+        let error = with_expression_policy(policy, |ctx| {
             parse_relation_expression::<CurveExpressionValue>(
                 ctx,
                 source,
@@ -52,7 +52,7 @@ fn relation_unit_recursion_refuses_caller_and_local_depth() {
         };
         let mut policy = DecodePolicy::service();
         policy.limits.max_recursion_depth = depth;
-        let error = with_policy(policy, |ctx| {
+        let error = with_expression_policy(policy, |ctx| {
             relation_unit(ctx, &source).map(|unit| unit.is_some())
         })
         .expect_err("unit nesting must refuse");
@@ -65,7 +65,7 @@ fn relation_local_nesting_ceiling_refuses() {
     let source = format!("{}1{}", "(".repeat(129), ")".repeat(129));
     let mut policy = DecodePolicy::service();
     policy.limits.max_recursion_depth = 1024;
-    let error = with_policy(policy, |ctx| {
+    let error = with_expression_policy(policy, |ctx| {
         parse_relation_expression::<CurveExpressionValue>(
             ctx,
             &source,
@@ -124,7 +124,7 @@ fn relation_local_exponent_nesting_ceiling_refuses() {
     let source = format!("{}1", "1^".repeat(129));
     let mut policy = DecodePolicy::service();
     policy.limits.max_recursion_depth = 1024;
-    let error = with_policy(policy, |ctx| {
+    let error = with_expression_policy(policy, |ctx| {
         parse_relation_expression::<CurveExpressionValue>(
             ctx,
             &source,
@@ -143,7 +143,7 @@ fn relation_local_function_nesting_ceiling_refuses() {
     let source = format!("{}1{}", "abs(".repeat(129), ")".repeat(129));
     let mut policy = DecodePolicy::service();
     policy.limits.max_recursion_depth = 1024;
-    let error = with_policy(policy, |ctx| {
+    let error = with_expression_policy(policy, |ctx| {
         parse_relation_expression::<CurveExpressionValue>(
             ctx,
             &source,
@@ -166,12 +166,12 @@ fn relation_unit_source_scan_refuses_work_before_nonrecursive_parse() {
         |cap| {
             let mut trial = policy;
             trial.limits.max_work_units = cap;
-            with_policy(trial, |ctx| {
+            with_expression_policy(trial, |ctx| {
                 relation_unit(ctx, "mm*mm/mm").map(|unit| unit.is_some())
             })
         },
     );
-    let error = with_policy(policy, |ctx| {
+    let error = with_expression_policy(policy, |ctx| {
         relation_unit(ctx, "mm*mm/mm").map(|unit| unit.is_some())
     })
     .expect_err("unit source work");

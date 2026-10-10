@@ -112,7 +112,9 @@ pub(super) fn nonlinear_equations_are_smooth(
     }
     let mut equations = block.equations.iter();
     while !equations.as_slice().is_empty() {
-        let Some(equation) = ctx.next_charged(&mut equations, "creo relation comparison traversal")? else {
+        let Some(equation) =
+            ctx.next_charged(&mut equations, "creo relation comparison traversal")?
+        else {
             break;
         };
         if !nonlinear_expression_is_smooth(ctx, &equation.left)?
@@ -508,7 +510,9 @@ pub(super) fn nonlinear_jacobian_rows(
         };
         let mut input = rows.iter_mut().zip(residuals).enumerate();
         while input.len() != 0 {
-            let Some((row_index, (row, residual))) = ctx.next_charged(&mut input, "creo nonlinear Jacobian column traversal")? else {
+            let Some((row_index, (row, residual))) =
+                ctx.next_charged(&mut input, "creo nonlinear Jacobian column traversal")?
+            else {
                 break;
             };
             let Some(plus_residual) = plus_residuals.get(row_index) else {
@@ -592,7 +596,9 @@ pub(super) fn evaluate_nonlinear_residuals(
     let mut residuals = Vec::new();
     let mut equations = block.equations.iter();
     while equations.len() != 0 {
-        let Some(equation) = ctx.next_charged(&mut equations, "creo nonlinear equation traversal")? else {
+        let Some(equation) =
+            ctx.next_charged(&mut equations, "creo nonlinear equation traversal")?
+        else {
             break;
         };
         let Some(left) = parse_relation_expression::<CurveExpressionValue>(
@@ -658,7 +664,9 @@ pub(super) fn nonlinear_residuals_converged(
     }
     let mut residuals = residuals.iter();
     while !residuals.as_slice().is_empty() {
-        let Some(residual) = ctx.next_charged(&mut residuals, "creo nonlinear residual convergence")? else {
+        let Some(residual) =
+            ctx.next_charged(&mut residuals, "creo nonlinear residual convergence")?
+        else {
             break;
         };
         let converged = residual.value.abs() <= NONLINEAR_SOLVE_RESIDUAL_TOLERANCE * residual.scale;
@@ -773,7 +781,7 @@ pub(super) fn solve_unique_affine_system(
     let coefficient_tolerance = EPS_LINEAR_SYSTEM_COEFFICIENT;
     let residual_tolerance = EPS_LINEAR_SYSTEM_RESIDUAL * rhs_scale;
     let mut columns = 0..variable_count;
-    while columns.len() != 0 {
+    while !columns.is_empty() {
         let Some(column) = (if variable_count <= MAX_NONLINEAR_SOLVE_VARIABLES {
             columns.next()
         } else {
@@ -1033,7 +1041,8 @@ pub(super) fn infer_solve_variable_dimensions(
     let mut constraints = Vec::new();
     let mut equations = block.equations.iter();
     while equations.len() != 0 {
-        let Some(equation) = ctx.next_charged(&mut equations, "creo solve equation traversal")? else {
+        let Some(equation) = ctx.next_charged(&mut equations, "creo solve equation traversal")?
+        else {
             break;
         };
         let Some(left) = scratch.with_storage(|| {
@@ -1101,7 +1110,9 @@ pub(super) fn infer_solve_variable_dimensions(
     }
     let mut equalities = constraints.into_iter();
     while equalities.len() != 0 {
-        let Some(equality) = ctx.next_charged(&mut equalities, "creo dimension equality traversal")? else {
+        let Some(equality) =
+            ctx.next_charged(&mut equalities, "creo dimension equality traversal")?
+        else {
             break;
         };
         for ((rows, keys), (left, right)) in axis_rows
@@ -1169,8 +1180,7 @@ pub(super) fn infer_solve_variable_dimensions(
     let mut required_columns = BTreeSet::new();
     let mut known_components = known_dimensions.iter().enumerate();
     while known_components.len() != 0 {
-        let Some((index, dimension)) = (if known_dimensions.len() <= MAX_NONLINEAR_SOLVE_VARIABLES
-        {
+        let Some((index, dimension)) = (if known_dimensions.len() <= MAX_NONLINEAR_SOLVE_VARIABLES {
             known_components.next()
         } else {
             ctx.next_charged(&mut known_components, "creo known dimension traversal")?
@@ -1268,7 +1278,7 @@ pub(super) fn solve_dimension_axis(
     let mut pivot_rows = Vec::new();
     let coefficient_tolerance = EPS_LINEAR_SYSTEM_COEFFICIENT;
     let mut columns = 0..variable_count;
-    while columns.len() != 0 {
+    while !columns.is_empty() {
         let Some(column) = (if variable_count <= MAX_NONLINEAR_SOLVE_VARIABLES {
             columns.next()
         } else {
@@ -1426,8 +1436,7 @@ pub(super) fn solve_affine_expression_block(
     }
     let mut affine_variables = variable_keys.iter().zip(variable_dimensions);
     while affine_variables.len() != 0 {
-        let Some((variable, dimension)) = (if variable_keys.len() <= MAX_NONLINEAR_SOLVE_VARIABLES
-        {
+        let Some((variable, dimension)) = (if variable_keys.len() <= MAX_NONLINEAR_SOLVE_VARIABLES {
             affine_variables.next()
         } else {
             ctx.next_charged(&mut affine_variables, "creo affine variable traversal")?
@@ -1459,7 +1468,8 @@ pub(super) fn solve_affine_expression_block(
     let mut rows = Vec::new();
     let mut equations = block.equations.iter();
     while equations.len() != 0 {
-        let Some(equation) = ctx.next_charged(&mut equations, "creo solve equation traversal")? else {
+        let Some(equation) = ctx.next_charged(&mut equations, "creo solve equation traversal")?
+        else {
             break;
         };
         let Some(left) = scratch.with_storage(|| {
@@ -1497,14 +1507,16 @@ pub(super) fn solve_affine_expression_block(
         })?;
         let mut affine_coefficients = coefficients.iter_mut().zip(&variable_keys);
         while affine_coefficients.len() != 0 {
-            let Some((coefficient, variable)) = (if variable_keys.len() <= MAX_NONLINEAR_SOLVE_VARIABLES {
+            let Some((coefficient, variable)) =
+                (if variable_keys.len() <= MAX_NONLINEAR_SOLVE_VARIABLES {
                     affine_coefficients.next()
                 } else {
                     ctx.next_charged(
                         &mut affine_coefficients,
                         "creo affine coefficient traversal",
                     )?
-                }) else {
+                })
+            else {
                 break;
             };
             *coefficient = ctx
@@ -1531,11 +1543,13 @@ pub(super) fn solve_affine_expression_block(
     ctx.reserve_vec(&mut values, solution.len(), "creo affine solved values")?;
     let mut solved_values = solution.into_iter().zip(variable_dimensions);
     while solved_values.len() != 0 {
-        let Some((value, dimension)) = (if variable_dimensions.len() <= MAX_NONLINEAR_SOLVE_VARIABLES {
+        let Some((value, dimension)) =
+            (if variable_dimensions.len() <= MAX_NONLINEAR_SOLVE_VARIABLES {
                 solved_values.next()
             } else {
                 ctx.next_charged(&mut solved_values, "creo affine solved value traversal")?
-            }) else {
+            })
+        else {
             break;
         };
         let Some(value) = quantity_value(value, *dimension) else {
