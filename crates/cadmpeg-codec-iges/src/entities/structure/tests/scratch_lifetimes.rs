@@ -352,3 +352,90 @@ fn sheet_identity_index_refuses_exact_first_table_storage_and_item() {
 fn sheet_identity_index_holds_only_table_backing_before_recovery() {
     sheet_identity_storage_refusal(false, false);
 }
+
+#[test]
+fn sheet_identity_table_is_released_before_attribute_recovery() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, ResourceDimension};
+    use cadmpeg_ir::report::loss::LossNote;
+    use std::mem::{align_of, size_of};
+    let bytes = crate::test_support::test_solids_and_structure::distinct_drawing_sheet_ids_file();
+    let (mut directory, mut inputs, analysis, global) =
+        crate::test_support::with_service_context(&bytes, |setup| {
+            let scan = crate::card::scan_with_context(&bytes, setup).unwrap();
+            let (global, _, _) = crate::global::parse(&scan, setup).unwrap();
+            let (directory, quarantined) =
+                crate::directory::parse(&scan, global.global_table(), setup).unwrap();
+            assert!(quarantined.is_empty());
+            let assembly = crate::parameter::assemble_with_context(
+                &scan, &directory, &quarantined, &global, setup,
+            ).unwrap();
+            assert!(assembly.quarantined.is_empty());
+            (directory, assembly.records, assembly.trailing_pointer_analysis,
+                global.length_context().unwrap())
+        });
+    let mut attribute = directory_entry(322, 0);
+    attribute.sequence = 13;
+    directory.push(attribute);
+    // The invalid type skips its type set. A valid descriptor still allocates
+    // its temporary vector before the definition recovers as a loss.
+    let mut attribute = record(vec![TokenValue::Integer(322), TokenValue::Omitted,
+        TokenValue::Integer(0), TokenValue::Integer(1), TokenValue::Integer(-1),
+        TokenValue::Integer(1), TokenValue::Integer(100)], 7);
+    attribute.directory_sequence = 13;
+    inputs.push(attribute);
+    let entries = directory.iter().map(|entry| (entry.sequence, entry)).collect();
+    let records = inputs.iter().map(|record| (record.directory_sequence, record)).collect();
+    // Each ordered tree has one backing node: eleven key/value lanes,
+    // sixteen pointer slots and two alignment paddings. Two group values
+    // each contain one exact-capacity u32 vector.
+    let owners = 11 * (size_of::<u32>() + size_of::<Vec<u32>>())
+        + 16 * size_of::<usize>()
+        + 2 * align_of::<u32>().max(align_of::<Vec<u32>>()).max(align_of::<usize>())
+        + 2 * size_of::<u32>();
+    let decoded = 11 * size_of::<u32>() + 16 * size_of::<usize>()
+        + 2 * align_of::<u32>().max(align_of::<usize>());
+    let table = 4 * size_of::<((i64, &[u8]), Option<u32>)>()
+        + align_of::<((i64, &[u8]), Option<u32>)>().max(16) - 1 + 4 + 16;
+    let slots = if size_of::<LossNote>() <= 1024 { 4 } else { 1 };
+    let loss_slots = slots * size_of::<LossNote>();
+    let live = u64::try_from(owners + decoded).unwrap();
+    let peak = live + u64::try_from(table).unwrap();
+    assert!(4 * size_of::<(i64, usize)>() <= table);
+    assert!(live + u64::try_from(loss_slots).unwrap() > peak);
+    for cap in [peak - 1, peak] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        let mut sequences = super::super::super::geometry::SourceSequences::default();
+        let result = super::super::project(&mut ir, &directory, (&entries, &records),
+            &analysis, &global, &ctx, &mut sequences);
+        let first = match result.as_ref() {
+            Err(CodecError::ResourceLimit(first)) => *first,
+            _ => panic!("decoded index or following attribute loss must refuse"),
+        };
+        drop(result);
+        assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
+        if cap == peak {
+            assert_eq!(first.operation, "iges entity loss slots");
+            assert_eq!((first.limit, first.used, first.additional),
+                (cap, live, u64::try_from(loss_slots).unwrap()));
+        } else {
+            assert_eq!(first.operation, "iges structure decoded sequences");
+            assert_eq!((first.limit, first.used, first.additional),
+                (cap, u64::try_from(owners + table).unwrap(), u64::try_from(decoded).unwrap()));
+        }
+        for _ in 0..64 {
+            for replay in [&directory[..], &[]] {
+                assert!(matches!(super::super::project(&mut ir, replay, (&entries, &records),
+                    &analysis, &global, &ctx, &mut sequences),
+                    Err(CodecError::ResourceLimit(last)) if last == first));
+                assert_eq!(ir, cadmpeg_ir::CadIr::empty());
+            }
+        }
+        assert!(matches!(ctx.finish_session(),
+            Err(CodecError::ResourceLimit(last)) if last == first));
+    }
+}
