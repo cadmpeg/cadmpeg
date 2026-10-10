@@ -1766,19 +1766,6 @@ impl ActiveCarrierRecord {
         ctx: &DecodeContext<'_>,
         namespace: &NativeNamespace,
     ) -> Result<Self, NativeConvertError> {
-        let record_count = ctx
-            .get_btree_map(
-                namespace.arenas(),
-                "active_carrier",
-                "read Inventor active carrier cardinality",
-            )?
-            .map_or(0, Vec::len);
-        if record_count != 1 {
-            return Err(<serde_json::Error as serde::de::Error>::custom(format!(
-                "active_carrier must contain exactly one record; found {record_count}"
-            ))
-            .into());
-        }
         let [record] =
             <[_; 1]>::try_from(namespace.arena_as_for_decode::<Self>(ctx, "active_carrier")?)
                 .map_err(|records: Vec<_>| {
@@ -2277,7 +2264,7 @@ mod tests {
     }
 
     #[test]
-    fn active_carrier_cardinality_preflight_skips_wire_text_and_lookup_refusal_is_sticky() {
+    fn active_carrier_typed_read_precedes_cardinality_and_refusal_is_sticky() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_core::CodecError;
         use cadmpeg_ir::native::NativeConvertError;
@@ -2316,15 +2303,24 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-        assert_eq!(
-            ActiveCarrierRecord::read(&ctx, &namespace)
-                .expect_err("cardinality is checked before typed wire copies")
-                .to_string(),
-            "native record conversion failed: active_carrier must contain exactly one record; found 2"
-        );
-        assert_eq!(ctx.resource_refusal(), None);
-        ctx.finish_session()
-            .expect("raw cardinality needs no retained wire storage");
+        let storage_refusal = match ActiveCarrierRecord::read(&ctx, &namespace) {
+            Err(NativeConvertError::Resource(CodecError::ResourceLimit(limit))) => limit,
+            other => panic!("typed storage must precede cardinality: {other:?}"),
+        };
+        // An empty typed vector grows to four slots before the first wire copy.
+        assert_eq!(storage_refusal.dimension, ResourceDimension::RetainedBytes);
+        assert_eq!(storage_refusal.operation, "load typed native record");
+        assert_eq!(storage_refusal.used, 0);
+        assert_eq!(storage_refusal.additional,
+            cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<ActiveCarrierRecord>()));
+        assert_eq!(ctx.resource_refusal(), Some(storage_refusal));
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit))
+            if limit == storage_refusal));
+
+        assert_eq!(ActiveCarrierRecord::read(&crate::native::test_ctx(), &namespace)
+            .expect_err("valid typed records still report their cardinality")
+            .to_string(),
+            "native record conversion failed: active_carrier must contain exactly one record; found 2");
 
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -2332,12 +2328,12 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let first_refusal = match ActiveCarrierRecord::read(&ctx, &namespace) {
             Err(NativeConvertError::Resource(CodecError::ResourceLimit(limit))) => limit,
-            other => panic!("raw cardinality lookup should refuse work: {other:?}"),
+            other => panic!("typed native copy should refuse work: {other:?}"),
         };
         assert_eq!(first_refusal.dimension, ResourceDimension::WorkUnits);
         assert_eq!(
             first_refusal.operation,
-            "read Inventor active carrier cardinality"
+            "construct canonical native value"
         );
         assert_eq!(ctx.resource_refusal(), Some(first_refusal));
         assert!(matches!(
@@ -2350,6 +2346,21 @@ mod tests {
             ctx.finish_session(),
             Err(CodecError::ResourceLimit(limit)) if limit == first_refusal
         ));
+    }
+
+    #[test]
+    fn active_carrier_invalid_first_record_precedes_cardinality() {
+        let records = [
+            serde_json::json!({"id": "inventor:kernel:active-carrier#0", "state": "unavailable"}),
+            serde_json::json!({"id": "inventor:kernel:active-carrier#1", "state": "not_applicable"}),
+        ];
+        let ctx = crate::native::test_ctx();
+        let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+        namespace.set_arena(&ctx, "active_carrier", &records).expect("raw carrier records");
+        assert_eq!(ActiveCarrierRecord::read(&ctx, &namespace)
+            .expect_err("the invalid first carrier is checked before cardinality")
+            .to_string(),
+            "native arena active_carrier: native record inventor:kernel:active-carrier#0: unavailable active carrier requires detail");
     }
 
     #[test]
