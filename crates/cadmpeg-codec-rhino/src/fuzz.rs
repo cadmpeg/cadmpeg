@@ -249,7 +249,9 @@ pub fn hatch(data: &[u8]) {
     }
     let archive = selected_archive(data[0]);
     with_expand(data, |expand| {
-        let Ok(mut loops_storage) = expand.ctx().reserve_scoped(0, "Rhino fuzz hatch loops") else { return; };
+        let Ok(mut loops_storage) = expand.ctx().reserve_scoped(0, "Rhino fuzz hatch loops") else {
+            return;
+        };
         let _probe = crate::hatch::decode(
             expand,
             &mut loops_storage,

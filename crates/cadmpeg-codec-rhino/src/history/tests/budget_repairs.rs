@@ -34,7 +34,9 @@ fn subd_orientation_rejection_pays_only_for_visited_prefix() {
                     0,
                     bytes.len(),
                     ArchiveVersion::V8,
-                    &mut |code, message| Diagnostics::new().push_coded_admitted(&ctx, code, message),
+                    &mut |code, message| {
+                        Diagnostics::new().push_coded_admitted(&ctx, code, message)
+                    },
                 )
                 .map_err(|error| match error {
                     crate::chunks::FramingError::Resource(limit) => {

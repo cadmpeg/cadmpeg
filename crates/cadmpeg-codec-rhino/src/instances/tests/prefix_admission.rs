@@ -13,12 +13,21 @@ fn sha1_hex_is_fixed_work_and_preserves_original_fuse() {
     policy.limits.max_work_units = 0;
     policy.limits.max_retained_bytes = 40;
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-    assert_eq!(crate::instances::hex(&ctx, &[0xab; 20], "instance SHA-1").unwrap(), "ab".repeat(20));
-    let CodecError::ResourceLimit(original) = ctx.charge_work(1, "instance original fuse").unwrap_err() else {
+    assert_eq!(
+        crate::instances::hex(&ctx, &[0xab; 20], "instance SHA-1").unwrap(),
+        "ab".repeat(20)
+    );
+    let CodecError::ResourceLimit(original) =
+        ctx.charge_work(1, "instance original fuse").unwrap_err()
+    else {
         panic!("original work refusal");
     };
-    assert!(matches!(crate::instances::hex(&ctx, &[0xab; 20], "instance SHA-1"), Err(CodecError::ResourceLimit(limit)) if limit == original));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original));
+    assert!(
+        matches!(crate::instances::hex(&ctx, &[0xab; 20], "instance SHA-1"), Err(CodecError::ResourceLimit(limit)) if limit == original)
+    );
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
+    );
 }
 
 #[test]
@@ -28,7 +37,9 @@ fn empty_definition_scan_has_no_exhaustion_visit() {
     policy.limits.max_work_units = 0;
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-    let parsed = crate::instances::parse_definitions(&ctx, &[], &[], ArchiveVersion::V5, 0x1000_0021).unwrap();
+    let parsed =
+        crate::instances::parse_definitions(&ctx, &[], &[], ArchiveVersion::V5, 0x1000_0021)
+            .unwrap();
     assert!(parsed.scan.definitions().is_empty());
     assert!(parsed.scan.diagnostics().is_empty());
     assert!(parsed.opaque_records.is_empty());
@@ -44,12 +55,26 @@ fn empty_linked_userdata_scan_has_no_exhaustion_visit_and_preserves_fuse() {
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
     let mut definition = super::support::static_definition([7; 16], &[]);
     definition.kind = crate::instances::DefinitionKind::Linked;
-    assert!(!crate::instances::apply_idef_alternative_path(&ctx, &[], &[], ArchiveVersion::V5, &mut definition, &mut |code, message| Diagnostics::new().push_coded_admitted(&ctx, code, message)).unwrap());
-    let CodecError::ResourceLimit(original) = ctx.charge_work(1, "instance original fuse").unwrap_err() else {
+    assert!(!crate::instances::apply_idef_alternative_path(
+        &ctx,
+        &[],
+        &[],
+        ArchiveVersion::V5,
+        &mut definition,
+        &mut |code, message| Diagnostics::new().push_coded_admitted(&ctx, code, message)
+    )
+    .unwrap());
+    let CodecError::ResourceLimit(original) =
+        ctx.charge_work(1, "instance original fuse").unwrap_err()
+    else {
         panic!("original work refusal");
     };
-    assert!(matches!(crate::instances::apply_idef_alternative_path(&ctx, &[], &[], ArchiveVersion::V5, &mut definition, &mut |code, message| Diagnostics::new().push_coded_admitted(&ctx, code, message)), Err(FramingError::Resource(limit)) if limit == original));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original));
+    assert!(
+        matches!(crate::instances::apply_idef_alternative_path(&ctx, &[], &[], ArchiveVersion::V5, &mut definition, &mut |code, message| Diagnostics::new().push_coded_admitted(&ctx, code, message)), Err(FramingError::Resource(limit)) if limit == original)
+    );
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
+    );
 }
 
 #[test]
@@ -61,12 +86,25 @@ fn empty_object_array_has_no_visits_and_preserves_original_fuse() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy).unwrap();
     let mut reader = BoundedReader::new(&data, 0, data.len()).unwrap();
-    crate::instances::skip_object_array(&ctx, &data, &mut reader, ArchiveVersion::V8, &mut Vec::new()).unwrap();
+    crate::instances::skip_object_array(
+        &ctx,
+        &data,
+        &mut reader,
+        ArchiveVersion::V8,
+        &mut Vec::new(),
+    )
+    .unwrap();
     assert_eq!(reader.position(), 4);
-    let CodecError::ResourceLimit(original) = ctx.charge_work(1, "instance original fuse").unwrap_err() else {
+    let CodecError::ResourceLimit(original) =
+        ctx.charge_work(1, "instance original fuse").unwrap_err()
+    else {
         panic!("original work refusal");
     };
     let mut reader = BoundedReader::new(&data, 0, data.len()).unwrap();
-    assert!(matches!(crate::instances::skip_object_array(&ctx, &data, &mut reader, ArchiveVersion::V8, &mut Vec::new()), Err(FramingError::Resource(limit)) if limit == original));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original));
+    assert!(
+        matches!(crate::instances::skip_object_array(&ctx, &data, &mut reader, ArchiveVersion::V8, &mut Vec::new()), Err(FramingError::Resource(limit)) if limit == original)
+    );
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
+    );
 }

@@ -519,7 +519,9 @@ fn render_userdata(
                 ctx.reserve_vec(&mut items, 1, "Rhino render userdata items")
                     .map_err(crate::chunks::FramingError::from)?;
                 let mut checksum_warnings = Diagnostics::new();
-                let item = parse_userdata(ctx, data, &chunk, archive, &mut |code, message| checksum_warnings.push_coded_admitted(ctx, code, message))?;
+                let item = parse_userdata(ctx, data, &chunk, archive, &mut |code, message| {
+                    checksum_warnings.push_coded_admitted(ctx, code, message)
+                })?;
                 items.push(item);
                 offset = chunk.next_offset();
             }

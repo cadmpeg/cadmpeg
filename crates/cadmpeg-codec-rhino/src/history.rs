@@ -397,13 +397,21 @@ fn geometries(
         let start = nested.position();
         let wrapper = chunk_at(nested.backing_bytes(), start, nested.end(), archive, false)?;
         let mut geometry_warnings = Diagnostics::new();
-        let mut diagnostic_storage = ctx.reserve_scoped(0, "Rhino history embedded geometry diagnostics")?;
+        let mut diagnostic_storage =
+            ctx.reserve_scoped(0, "Rhino history embedded geometry diagnostics")?;
         let mut userdata = Vec::new();
         let class = scan_class_wrapper(
-            ctx, nested.backing_bytes(), start..wrapper.next_offset(), archive,
-            &mut |code, message| diagnostic_storage.with_storage(|| geometry_warnings.push_coded_admitted(ctx, code, message)),
+            ctx,
+            nested.backing_bytes(),
+            start..wrapper.next_offset(),
+            archive,
+            &mut |code, message| {
+                diagnostic_storage
+                    .with_storage(|| geometry_warnings.push_coded_admitted(ctx, code, message))
+            },
             |value| {
-                ctx.push_vec(&mut userdata, value, "Rhino class userdata").map_err(FramingError::from)
+                ctx.push_vec(&mut userdata, value, "Rhino class userdata")
+                    .map_err(FramingError::from)
             },
         )?;
         nested.skip(wrapper.next_offset() - start)?;
@@ -631,7 +639,9 @@ fn parse_value(
 ) -> Result<(HistoryValue, usize), FramingError> {
     let mut storage = ctx.reserve_scoped(0, "Rhino history value diagnostics")?;
     let mut warnings = Diagnostics::new();
-    parse_value_with_warnings(ctx, bytes, offset, end, archive, &mut |code, message| storage.with_storage(|| warnings.push_coded_admitted(ctx, code, message)))
+    parse_value_with_warnings(ctx, bytes, offset, end, archive, &mut |code, message| {
+        storage.with_storage(|| warnings.push_coded_admitted(ctx, code, message))
+    })
 }
 
 fn parse_value_with_warnings(
@@ -770,7 +780,6 @@ pub(crate) fn parse_records<'ctx>(
     warnings: &mut Diagnostics,
     table_typecode: u32,
 ) -> Result<HistoryScan<'ctx>, CodecError> {
-
     let mut result = HistoryScan {
         records: Vec::new(),
         opaque_records: Vec::new(),
@@ -781,13 +790,16 @@ pub(crate) fn parse_records<'ctx>(
     ctx.charge_work(0, "Rhino parse records traversal")?;
     let mut record_source = records.iter();
     for _ in 0..record_source.len() {
-        let Some(record) = ctx.next_charged(&mut record_source, "Rhino parse records traversal")? else {
+        let Some(record) = ctx.next_charged(&mut record_source, "Rhino parse records traversal")?
+        else {
             break;
         };
         let mut record_storage = ctx.reserve_scoped(0, "Rhino history record fields")?;
         let parsed = record_storage.with_storage(|| {
             parse_record(ctx, bytes, record, archive, &mut |code, message| {
-                result._record_guards_storage.with_storage(|| warnings.push_coded_admitted(ctx, code, message))
+                result
+                    ._record_guards_storage
+                    .with_storage(|| warnings.push_coded_admitted(ctx, code, message))
             })
         });
         match parsed {
@@ -809,10 +821,12 @@ pub(crate) fn parse_records<'ctx>(
             }
             Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => {
-                result._record_guards_storage.with_storage(|| warnings.push_admitted(
-                    ctx,
-                    format_args!("history record at {} degraded: {error}", record.range.start),
-                ))?;
+                result._record_guards_storage.with_storage(|| {
+                    warnings.push_admitted(
+                        ctx,
+                        format_args!("history record at {} degraded: {error}", record.range.start),
+                    )
+                })?;
                 drop(error);
                 ctx.reserve_scoped_vec(
                     &mut result._record_guards_storage,
@@ -831,7 +845,6 @@ pub(crate) fn parse_records<'ctx>(
         }
     }
     Ok(result)
-
 }
 
 fn history_resource_error(
@@ -1025,7 +1038,11 @@ fn object_reference_properties(
     ctx.charge_work(0, "Rhino object reference properties traversal")?;
     let mut instance_source = value.instance_path.iter().enumerate();
     for _ in 0..instance_source.len() {
-        let Some((index, instance)) = ctx.next_charged(&mut instance_source, "Rhino object reference properties traversal")? else {
+        let Some((index, instance)) = ctx.next_charged(
+            &mut instance_source,
+            "Rhino object reference properties traversal",
+        )?
+        else {
             break;
         };
         let (path_buffer, _path_workspace) = ctx.format_scoped(
@@ -1730,11 +1747,20 @@ fn extended_geometry_json(
         let _gradient_storage;
         let mut loops_storage = match expand.ctx().reserve_scoped(0, "Rhino history hatch loops") {
             Ok(storage) => storage,
-            Err(error) => { *refusal = Some(error); return None; }
+            Err(error) => {
+                *refusal = Some(error);
+                return None;
+            }
         };
         let mut hatch = optional_geometry(
             geometry_workspace.with_storage(|| {
-                crate::hatch::decode(expand, &mut loops_storage, value.class_data_range.clone(), scale, archive)
+                crate::hatch::decode(
+                    expand,
+                    &mut loops_storage,
+                    value.class_data_range.clone(),
+                    scale,
+                    archive,
+                )
             }),
             refusal,
         )?;
@@ -1858,9 +1884,15 @@ fn extended_geometry_json(
         )?;
         embedded_json(expand.ctx(), &DetailJson(&detail), refusal)
     } else if crate::dimensions::supported_class(value.class_id) {
-        let mut dimension_storage = match expand.ctx().reserve_scoped(0, "Rhino history dimension fields") {
+        let mut dimension_storage = match expand
+            .ctx()
+            .reserve_scoped(0, "Rhino history dimension fields")
+        {
             Ok(storage) => storage,
-            Err(error) => { *refusal = Some(error); return None; }
+            Err(error) => {
+                *refusal = Some(error);
+                return None;
+            }
         };
         let dimension = match geometry_workspace.with_storage(|| {
             crate::dimensions::decode(
@@ -2070,7 +2102,11 @@ fn structured_value_properties(
             ctx.charge_work(0, "Rhino structured value properties traversal")?;
             let mut object_reference_source = values.iter().enumerate();
             for _ in 0..object_reference_source.len() {
-                let Some((index, value)) = ctx.next_charged(&mut object_reference_source, "Rhino structured value properties traversal")? else {
+                let Some((index, value)) = ctx.next_charged(
+                    &mut object_reference_source,
+                    "Rhino structured value properties traversal",
+                )?
+                else {
                     break;
                 };
                 let (prefix_buffer, _prefix_workspace) = ctx.format_scoped(
@@ -2086,7 +2122,11 @@ fn structured_value_properties(
             ctx.charge_work(0, "Rhino structured value properties traversal")?;
             let mut geometry_source = values.iter().enumerate();
             for _ in 0..geometry_source.len() {
-                let Some((index, value)) = ctx.next_charged(&mut geometry_source, "Rhino structured value properties traversal")? else {
+                let Some((index, value)) = ctx.next_charged(
+                    &mut geometry_source,
+                    "Rhino structured value properties traversal",
+                )?
+                else {
                     break;
                 };
                 insert_property(
@@ -2096,8 +2136,12 @@ fn structured_value_properties(
                     value.class_id,
                 )?;
                 if let ProjectionContext::Geometry {
-                    expand, archive, writer_version, scale,
-                } = context {
+                    expand,
+                    archive,
+                    writer_version,
+                    scale,
+                } = context
+                {
                     let data = expand.data();
                     let mut geometry_workspace =
                         ctx.reserve_scoped(0, "Rhino history curve workspace")?;
@@ -2229,7 +2273,11 @@ fn structured_value_properties(
             ctx.charge_work(0, "Rhino structured value properties traversal")?;
             let mut polyedge_source = values.iter().enumerate();
             for _ in 0..polyedge_source.len() {
-                let Some((edge_index, edge)) = ctx.next_charged(&mut polyedge_source, "Rhino structured value properties traversal")? else {
+                let Some((edge_index, edge)) = ctx.next_charged(
+                    &mut polyedge_source,
+                    "Rhino structured value properties traversal",
+                )?
+                else {
                     break;
                 };
                 let (edge_key_buffer, _edge_key_workspace) = ctx.format_scoped(
@@ -2262,7 +2310,11 @@ fn structured_value_properties(
                 ctx.charge_work(0, "Rhino structured value properties traversal")?;
                 let mut segment_source = edge.polyedge.segments.iter().enumerate();
                 for _ in 0..segment_source.len() {
-                    let Some((segment_index, segment)) = ctx.next_charged(&mut segment_source, "Rhino structured value properties traversal")? else {
+                    let Some((segment_index, segment)) = ctx.next_charged(
+                        &mut segment_source,
+                        "Rhino structured value properties traversal",
+                    )?
+                    else {
                         break;
                     };
                     let (segment_key_buffer, _segment_key_workspace) = ctx.format_scoped(
@@ -2327,10 +2379,15 @@ fn structured_value_properties(
             ctx.charge_work(0, "Rhino structured value properties traversal")?;
             let mut chain_source = values.iter().enumerate();
             for _ in 0..chain_source.len() {
-                let Some((index, chain)) = ctx.next_charged(&mut chain_source, "Rhino structured value properties traversal")? else {
+                let Some((index, chain)) = ctx.next_charged(
+                    &mut chain_source,
+                    "Rhino structured value properties traversal",
+                )?
+                else {
                     break;
                 };
-                let (chain_key_buffer, _chain_workspace) = ctx.format_scoped(format_args!("{key}.{index}"), "Rhino history chain prefix")?;
+                let (chain_key_buffer, _chain_workspace) =
+                    ctx.format_scoped(format_args!("{key}.{index}"), "Rhino history chain prefix")?;
                 let chain_key = chain_key_buffer;
                 insert_property(
                     ctx,
@@ -2401,7 +2458,9 @@ pub(crate) fn project(
     ctx.charge_work(0, "Rhino project traversal")?;
     let mut identity_record_source = records.iter();
     for _ in 0..identity_record_source.len() {
-        let Some(record) = ctx.next_charged(&mut identity_record_source, "Rhino project traversal")? else {
+        let Some(record) =
+            ctx.next_charged(&mut identity_record_source, "Rhino project traversal")?
+        else {
             break;
         };
         let unique = !record.id.is_nil()
@@ -2450,13 +2509,17 @@ pub(crate) fn project(
     ctx.charge_work(0, "Rhino project traversal")?;
     let mut producer_record_source = records.iter().enumerate();
     for _ in 0..producer_record_source.len() {
-        let Some((index, record)) = ctx.next_charged(&mut producer_record_source, "Rhino project traversal")? else {
+        let Some((index, record)) =
+            ctx.next_charged(&mut producer_record_source, "Rhino project traversal")?
+        else {
             break;
         };
         ctx.charge_work(0, "Rhino project traversal")?;
         let mut descendant_source = record.descendants.iter();
         for _ in 0..descendant_source.len() {
-            let Some(descendant) = ctx.next_charged(&mut descendant_source, "Rhino project traversal")? else {
+            let Some(descendant) =
+                ctx.next_charged(&mut descendant_source, "Rhino project traversal")?
+            else {
                 break;
             };
             if descendant.is_nil() {
@@ -2482,7 +2545,9 @@ pub(crate) fn project(
     ctx.charge_work(0, "Rhino project traversal")?;
     let mut projection_record_source = records.iter().enumerate();
     for _ in 0..projection_record_source.len() {
-        let Some((index, record)) = ctx.next_charged(&mut projection_record_source, "Rhino project traversal")? else {
+        let Some((index, record)) =
+            ctx.next_charged(&mut projection_record_source, "Rhino project traversal")?
+        else {
             break;
         };
         let mut dependency_workspace =
@@ -2492,7 +2557,9 @@ pub(crate) fn project(
         ctx.charge_work(0, "Rhino project traversal")?;
         let mut antecedent_source = record.antecedents.iter();
         for _ in 0..antecedent_source.len() {
-            let Some(antecedent) = ctx.next_charged(&mut antecedent_source, "Rhino project traversal")? else {
+            let Some(antecedent) =
+                ctx.next_charged(&mut antecedent_source, "Rhino project traversal")?
+            else {
                 break;
             };
             let producer_index =
@@ -2530,7 +2597,8 @@ pub(crate) fn project(
         ctx.charge_work(0, "Rhino project traversal")?;
         let mut value_source = record.values.iter();
         for _ in 0..value_source.len() {
-            let Some(value) = ctx.next_charged(&mut value_source, "Rhino project traversal")? else {
+            let Some(value) = ctx.next_charged(&mut value_source, "Rhino project traversal")?
+            else {
                 break;
             };
             let occurrence = value_workspace
@@ -2566,14 +2634,8 @@ pub(crate) fn project(
                 format_key()?
             };
             *occurrence += 1;
-            structured_value_properties(
-                context,
-                &key,
-                &value.value,
-                &mut properties,
-                &mut sink,
-            )
-            .map_err(ProjectionError::Codec)?;
+            structured_value_properties(context, &key, &value.value, &mut properties, &mut sink)
+                .map_err(ProjectionError::Codec)?;
             if let Some(error) = sink.refusal.take() {
                 return Err(ProjectionError::Codec(error));
             }

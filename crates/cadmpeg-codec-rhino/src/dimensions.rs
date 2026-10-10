@@ -1128,215 +1128,222 @@ pub(crate) fn decode(
     archive: ArchiveVersion,
 ) -> Result<Dimension, FramingError> {
     storage.with_storage(|| {
-    if matches!(class, V2_LINEAR | V2_ANGULAR | V2_RADIAL) {
-        return decode_v2(ctx, data, class, range, scale);
-    }
-    if matches!(class, V5_LINEAR | V5_ANGULAR | V5_RADIAL | V5_ORDINATE) {
-        return decode_legacy(ctx, data, class, range, scale, archive);
-    }
-    // The class reader closes the family child and the enclosing class-data
-    // reader owns any direct suffix after that child.
-    let (mut outer, _outer_next, _outer_version) =
-        anonymous(data, range.start, range.end, archive)?;
-    let (mut common, common_next, common_version) =
-        anonymous(data, outer.position(), outer.end(), archive)?;
-    let mut annotation = annotation(ctx, data, &mut common, archive)?;
-    annotation.plane = scale_plane(annotation.plane, scale, range.start)?;
-    let user_text = utf16_retained(ctx, &mut common, "Rhino dimension user text")?;
-    if !common.f64()?.is_finite() {
-        return Err(FramingError::structural(
-            common.position() - 8,
-            "obsolete text rotation is not finite",
-        ));
-    }
-    let use_default_text_point = common.bool()?;
-    let text_offset = common.position();
-    let user_text_point = scaled_point(point2(&mut common)?, scale, text_offset)?;
-    let flip_arrows = [common.bool()?, common.bool()?];
-    let arrow_position = read_arrow_position(&mut common, ArrowFitWire::Modern)?;
-    let detail_measured = uuid(&mut common)?;
-    let distance_scale = PositiveReal::new(common.f64()?).ok_or_else(|| {
-        FramingError::structural(common.position() - 8, "dimension distance scale is invalid")
-    })?;
-    if common_version >= 1 {
-        common.i32()?;
-    }
-    common.skip_remaining()?;
-    outer.skip(common_next - outer.position())?;
-    let definition = if class == LINEAR {
-        if !matches!(annotation.kind, 1 | 5) {
+        if matches!(class, V2_LINEAR | V2_ANGULAR | V2_RADIAL) {
+            return decode_v2(ctx, data, class, range, scale);
+        }
+        if matches!(class, V5_LINEAR | V5_ANGULAR | V5_RADIAL | V5_ORDINATE) {
+            return decode_legacy(ctx, data, class, range, scale, archive);
+        }
+        // The class reader closes the family child and the enclosing class-data
+        // reader owns any direct suffix after that child.
+        let (mut outer, _outer_next, _outer_version) =
+            anonymous(data, range.start, range.end, archive)?;
+        let (mut common, common_next, common_version) =
+            anonymous(data, outer.position(), outer.end(), archive)?;
+        let mut annotation = annotation(ctx, data, &mut common, archive)?;
+        annotation.plane = scale_plane(annotation.plane, scale, range.start)?;
+        let user_text = utf16_retained(ctx, &mut common, "Rhino dimension user text")?;
+        if !common.f64()?.is_finite() {
             return Err(FramingError::structural(
-                outer.position(),
-                "invalid linear annotation type",
+                common.position() - 8,
+                "obsolete text rotation is not finite",
             ));
         }
-        let offset = outer.position();
-        let definition_point = scaled_point(point2(&mut outer)?, scale, offset)?;
-        let offset = outer.position();
-        let dimension_line_point = scaled_point(point2(&mut outer)?, scale, offset)?;
-        Definition::Linear {
-            definition_point: CoordinateLane::Admitted(definition_point),
-            dimension_line_point: CoordinateLane::Admitted(dimension_line_point),
-        }
-    } else if class == ANGULAR {
-        if !matches!(annotation.kind, 2 | 11) {
-            return Err(FramingError::structural(
-                outer.position(),
-                "invalid angular annotation type",
-            ));
-        }
-        let first = point2(&mut outer)?;
-        let second = point2(&mut outer)?;
-        let first_extension_offset = scaled_coordinate(outer.f64()?, scale).ok_or_else(|| {
-            FramingError::structural(outer.position() - 8, "angular extension offset is invalid")
+        let use_default_text_point = common.bool()?;
+        let text_offset = common.position();
+        let user_text_point = scaled_point(point2(&mut common)?, scale, text_offset)?;
+        let flip_arrows = [common.bool()?, common.bool()?];
+        let arrow_position = read_arrow_position(&mut common, ArrowFitWire::Modern)?;
+        let detail_measured = uuid(&mut common)?;
+        let distance_scale = PositiveReal::new(common.f64()?).ok_or_else(|| {
+            FramingError::structural(common.position() - 8, "dimension distance scale is invalid")
         })?;
-        let second_extension_offset = scaled_coordinate(outer.f64()?, scale).ok_or_else(|| {
-            FramingError::structural(outer.position() - 8, "angular extension offset is invalid")
-        })?;
-        let offset = outer.position();
-        let line = point2(&mut outer)?;
-        let dimension_line_point = scaled_point(line, scale, offset)?;
-        Definition::Angular {
-            first_direction: CoordinateLane::Admitted(first),
-            second_direction: CoordinateLane::Admitted(second),
-            first_extension_offset,
-            second_extension_offset,
-            dimension_line_point: CoordinateLane::Admitted(dimension_line_point),
+        if common_version >= 1 {
+            common.i32()?;
         }
-    } else if class == RADIAL {
-        if !matches!(annotation.kind, 3 | 4) {
-            return Err(FramingError::structural(
-                outer.position(),
-                "invalid radial annotation type",
-            ));
-        }
-        let offset = outer.position();
-        let radius_point = scaled_point(point2(&mut outer)?, scale, offset)?;
-        let offset = outer.position();
-        let dimension_line_point = scaled_point(point2(&mut outer)?, scale, offset)?;
-        Definition::Radial {
-            radius_point: CoordinateLane::Admitted(radius_point),
-            dimension_line_point: CoordinateLane::Admitted(dimension_line_point),
-            diameter: annotation.kind == 3,
-        }
-    } else if class == ORDINATE {
-        if annotation.kind != 6 {
-            return Err(FramingError::structural(
-                outer.position(),
-                "invalid ordinate annotation type",
-            ));
-        }
-        let stored_direction = outer.i32()?;
-        if !(0..=2).contains(&stored_direction) {
-            return Err(FramingError::structural(
-                outer.position() - 4,
-                "invalid ordinate measured direction",
-            ));
-        }
-        let offset = outer.position();
-        let definition_point = scaled_point(point2(&mut outer)?, scale, offset)?;
-        let offset = outer.position();
-        let leader_point = scaled_point(point2(&mut outer)?, scale, offset)?;
-        let measured_direction = if stored_direction == 0 {
-            inferred_ordinate_direction(definition_point.get(), leader_point.get())
-        } else if stored_direction == 1 {
-            OrdinateAxis::X
-        } else {
-            OrdinateAxis::Y
-        };
-        let kink_offsets = [
-            scaled_coordinate(outer.f64()?, scale).ok_or_else(|| {
-                FramingError::structural(outer.position() - 8, "invalid ordinate kink offset")
-            })?,
-            scaled_coordinate(outer.f64()?, scale).ok_or_else(|| {
-                FramingError::structural(outer.position() - 8, "invalid ordinate kink offset")
-            })?,
-        ];
-        Definition::Ordinate {
-            definition_point: CoordinateLane::Admitted(definition_point),
-            leader_point: CoordinateLane::Admitted(leader_point),
-            measured_direction,
-            kink_offsets,
-        }
-    } else if class == CENTERMARK {
-        if annotation.kind != 8 {
-            return Err(FramingError::structural(
-                outer.position(),
-                "invalid center-mark annotation type",
-            ));
-        }
-        let radius = scaled_coordinate(outer.f64()?, scale)
-            .and_then(NonNegativeReal::from_finite)
-            .ok_or_else(|| {
-                FramingError::structural(outer.position() - 8, "invalid center-mark radius")
-            })?;
-        Definition::CenterMark { radius }
-    } else {
-        return Err(FramingError::structural(
-            range.start,
-            "unsupported dimension class",
-        ));
-    };
-    outer.skip_remaining()?;
-    let measurement = match &definition {
-        Definition::Linear {
-            definition_point, ..
-        } => definition_point[0].abs() * distance_scale.get(),
-        Definition::Angular {
-            first_direction,
-            second_direction,
-            ..
-        } => angular_measurement(first_direction.get(), second_direction.get()),
-        Definition::Radial {
-            radius_point,
-            diameter,
-            ..
-        } => {
-            radius_point[0].hypot(radius_point[1])
-                * distance_scale.get()
-                * if *diameter { 2.0 } else { 1.0 }
-        }
-        Definition::Ordinate {
-            definition_point,
-            measured_direction,
-            ..
-        } => {
-            (if *measured_direction == OrdinateAxis::X {
-                definition_point[0].abs()
+        common.skip_remaining()?;
+        outer.skip(common_next - outer.position())?;
+        let definition = if class == LINEAR {
+            if !matches!(annotation.kind, 1 | 5) {
+                return Err(FramingError::structural(
+                    outer.position(),
+                    "invalid linear annotation type",
+                ));
+            }
+            let offset = outer.position();
+            let definition_point = scaled_point(point2(&mut outer)?, scale, offset)?;
+            let offset = outer.position();
+            let dimension_line_point = scaled_point(point2(&mut outer)?, scale, offset)?;
+            Definition::Linear {
+                definition_point: CoordinateLane::Admitted(definition_point),
+                dimension_line_point: CoordinateLane::Admitted(dimension_line_point),
+            }
+        } else if class == ANGULAR {
+            if !matches!(annotation.kind, 2 | 11) {
+                return Err(FramingError::structural(
+                    outer.position(),
+                    "invalid angular annotation type",
+                ));
+            }
+            let first = point2(&mut outer)?;
+            let second = point2(&mut outer)?;
+            let first_extension_offset =
+                scaled_coordinate(outer.f64()?, scale).ok_or_else(|| {
+                    FramingError::structural(
+                        outer.position() - 8,
+                        "angular extension offset is invalid",
+                    )
+                })?;
+            let second_extension_offset =
+                scaled_coordinate(outer.f64()?, scale).ok_or_else(|| {
+                    FramingError::structural(
+                        outer.position() - 8,
+                        "angular extension offset is invalid",
+                    )
+                })?;
+            let offset = outer.position();
+            let line = point2(&mut outer)?;
+            let dimension_line_point = scaled_point(line, scale, offset)?;
+            Definition::Angular {
+                first_direction: CoordinateLane::Admitted(first),
+                second_direction: CoordinateLane::Admitted(second),
+                first_extension_offset,
+                second_extension_offset,
+                dimension_line_point: CoordinateLane::Admitted(dimension_line_point),
+            }
+        } else if class == RADIAL {
+            if !matches!(annotation.kind, 3 | 4) {
+                return Err(FramingError::structural(
+                    outer.position(),
+                    "invalid radial annotation type",
+                ));
+            }
+            let offset = outer.position();
+            let radius_point = scaled_point(point2(&mut outer)?, scale, offset)?;
+            let offset = outer.position();
+            let dimension_line_point = scaled_point(point2(&mut outer)?, scale, offset)?;
+            Definition::Radial {
+                radius_point: CoordinateLane::Admitted(radius_point),
+                dimension_line_point: CoordinateLane::Admitted(dimension_line_point),
+                diameter: annotation.kind == 3,
+            }
+        } else if class == ORDINATE {
+            if annotation.kind != 6 {
+                return Err(FramingError::structural(
+                    outer.position(),
+                    "invalid ordinate annotation type",
+                ));
+            }
+            let stored_direction = outer.i32()?;
+            if !(0..=2).contains(&stored_direction) {
+                return Err(FramingError::structural(
+                    outer.position() - 4,
+                    "invalid ordinate measured direction",
+                ));
+            }
+            let offset = outer.position();
+            let definition_point = scaled_point(point2(&mut outer)?, scale, offset)?;
+            let offset = outer.position();
+            let leader_point = scaled_point(point2(&mut outer)?, scale, offset)?;
+            let measured_direction = if stored_direction == 0 {
+                inferred_ordinate_direction(definition_point.get(), leader_point.get())
+            } else if stored_direction == 1 {
+                OrdinateAxis::X
             } else {
-                definition_point[1].abs()
-            }) * distance_scale.get()
+                OrdinateAxis::Y
+            };
+            let kink_offsets = [
+                scaled_coordinate(outer.f64()?, scale).ok_or_else(|| {
+                    FramingError::structural(outer.position() - 8, "invalid ordinate kink offset")
+                })?,
+                scaled_coordinate(outer.f64()?, scale).ok_or_else(|| {
+                    FramingError::structural(outer.position() - 8, "invalid ordinate kink offset")
+                })?,
+            ];
+            Definition::Ordinate {
+                definition_point: CoordinateLane::Admitted(definition_point),
+                leader_point: CoordinateLane::Admitted(leader_point),
+                measured_direction,
+                kink_offsets,
+            }
+        } else if class == CENTERMARK {
+            if annotation.kind != 8 {
+                return Err(FramingError::structural(
+                    outer.position(),
+                    "invalid center-mark annotation type",
+                ));
+            }
+            let radius = scaled_coordinate(outer.f64()?, scale)
+                .and_then(NonNegativeReal::from_finite)
+                .ok_or_else(|| {
+                    FramingError::structural(outer.position() - 8, "invalid center-mark radius")
+                })?;
+            Definition::CenterMark { radius }
+        } else {
+            return Err(FramingError::structural(
+                range.start,
+                "unsupported dimension class",
+            ));
+        };
+        outer.skip_remaining()?;
+        let measurement = match &definition {
+            Definition::Linear {
+                definition_point, ..
+            } => definition_point[0].abs() * distance_scale.get(),
+            Definition::Angular {
+                first_direction,
+                second_direction,
+                ..
+            } => angular_measurement(first_direction.get(), second_direction.get()),
+            Definition::Radial {
+                radius_point,
+                diameter,
+                ..
+            } => {
+                radius_point[0].hypot(radius_point[1])
+                    * distance_scale.get()
+                    * if *diameter { 2.0 } else { 1.0 }
+            }
+            Definition::Ordinate {
+                definition_point,
+                measured_direction,
+                ..
+            } => {
+                (if *measured_direction == OrdinateAxis::X {
+                    definition_point[0].abs()
+                } else {
+                    definition_point[1].abs()
+                }) * distance_scale.get()
+            }
+            Definition::CenterMark { .. } => 0.0,
+        };
+        if !measurement.is_finite() {
+            return Err(FramingError::structural(
+                range.start,
+                "dimension measurement is invalid",
+            ));
         }
-        Definition::CenterMark { .. } => 0.0,
-    };
-    if !measurement.is_finite() {
-        return Err(FramingError::structural(
-            range.start,
-            "dimension measurement is invalid",
-        ));
-    }
-    Ok(Dimension {
-        source_range: range,
-        annotation_type: annotation.kind,
-        rich_text: annotation.rich_text,
-        user_text,
-        family: DimensionFamily::Modern {
-            dimstyle_id: annotation.dimstyle_id,
-        },
-        plane: annotation.plane,
-        horizontal_direction: annotation.horizontal_direction,
-        allow_text_scaling: annotation.allow_text_scaling,
-        use_default_text_point,
-        user_text_point: CoordinateLane::Admitted(user_text_point),
-        flip_arrows,
-        arrow_position,
-        detail_measured,
-        distance_scale,
-        definition,
-        measurement,
-        override_present: annotation.override_present,
-    })
-
+        Ok(Dimension {
+            source_range: range,
+            annotation_type: annotation.kind,
+            rich_text: annotation.rich_text,
+            user_text,
+            family: DimensionFamily::Modern {
+                dimstyle_id: annotation.dimstyle_id,
+            },
+            plane: annotation.plane,
+            horizontal_direction: annotation.horizontal_direction,
+            allow_text_scaling: annotation.allow_text_scaling,
+            use_default_text_point,
+            user_text_point: CoordinateLane::Admitted(user_text_point),
+            flip_arrows,
+            arrow_position,
+            detail_measured,
+            distance_scale,
+            definition,
+            measurement,
+            override_present: annotation.override_present,
+        })
     })
 }
 
@@ -1802,7 +1809,12 @@ pub(crate) fn project(
                 Ok(())
             }
             Some(_) => {
-                ctx.push_scoped_vec(unresolved_storage, &mut unresolved, code, "Rhino unresolved dimension references")?;
+                ctx.push_scoped_vec(
+                    unresolved_storage,
+                    &mut unresolved,
+                    code,
+                    "Rhino unresolved dimension references",
+                )?;
                 Ok(())
             }
         }
@@ -1834,11 +1846,11 @@ pub(crate) fn project(
         cadmpeg_ir::ids::IdentityKey::try_new(
             ctx.copy_retained_text(key, "Rhino dimension identity key")?,
         )
-    .or_else(|error| {
-        Err(cadmpeg_core::CodecError::malformed(ctx.format_retained(
-            format_args!("{error}"),
-            "Rhino project text",
-        )?))
+        .or_else(|error| {
+            Err(cadmpeg_core::CodecError::malformed(ctx.format_retained(
+                format_args!("{error}"),
+                "Rhino project text",
+            )?))
         })
     })?;
     let annotation_id = SemanticAnnotationId::try_from(ctx.format_retained(
@@ -1899,9 +1911,18 @@ pub(crate) fn semantic_json(
         }
     }
     let mut unresolved_storage = ctx.reserve_scoped(0, "Rhino dimension unresolved references")?;
-    let ((annotation, unresolved), annotation_storage) = ctx.with_scoped_storage("Rhino dimension semantic fields", || {
-        project(ctx, &mut unresolved_storage, dimension, "embedded-history-dimension", None, "", 0)
-    })?;
+    let ((annotation, unresolved), annotation_storage) =
+        ctx.with_scoped_storage("Rhino dimension semantic fields", || {
+            project(
+                ctx,
+                &mut unresolved_storage,
+                dimension,
+                "embedded-history-dimension",
+                None,
+                "",
+                0,
+            )
+        })?;
     drop(unresolved);
     drop(unresolved_storage);
     let json = crate::wire::admitted_canonical_json(
@@ -2020,7 +2041,15 @@ pub(crate) mod tests {
         archive: ArchiveVersion,
     ) -> Result<super::Dimension, crate::chunks::FramingError> {
         with_test_context(data, |ctx| {
-            super::decode(ctx, &mut ctx.reserve_scoped(0, "test dimension fields")?, data, class, range, scale, archive)
+            super::decode(
+                ctx,
+                &mut ctx.reserve_scoped(0, "test dimension fields")?,
+                data,
+                class,
+                range,
+                scale,
+                archive,
+            )
         })
     }
 
@@ -2032,7 +2061,8 @@ pub(crate) mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_materialized_bytes = limit;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy).unwrap();
         apply(&ctx)
     }
 
@@ -2829,8 +2859,16 @@ pub(crate) mod tests {
         )
         .expect("valid linear dimension");
         let refusal = with_collection_limit(&[], 0, |ctx| {
-            super::project(ctx, &mut ctx.reserve_scoped(0, "test dimension references").unwrap(), &dimension, "test", None, "", 0)
-                .expect_err("first parameter exceeds zero items")
+            super::project(
+                ctx,
+                &mut ctx.reserve_scoped(0, "test dimension references").unwrap(),
+                &dimension,
+                "test",
+                None,
+                "",
+                0,
+            )
+            .expect_err("first parameter exceeds zero items")
         });
         assert!(matches!(
             refusal,
@@ -2838,9 +2876,16 @@ pub(crate) mod tests {
                 if limit.operation == "Rhino dimension parameter entries"
         ));
         let ctx = cadmpeg_test_support::service_decode_context();
-        let (annotation, _) =
-            super::project(&ctx, &mut ctx.reserve_scoped(0, "test dimension references").unwrap(), &dimension, "embedded-history-dimension", None, "", 0)
-                .expect("service profile admits projection");
+        let (annotation, _) = super::project(
+            &ctx,
+            &mut ctx.reserve_scoped(0, "test dimension references").unwrap(),
+            &dimension,
+            "embedded-history-dimension",
+            None,
+            "",
+            0,
+        )
+        .expect("service profile admits projection");
         let baseline = serde_json::json!({
             "kind": "dimension",
             "runtime_type": annotation.runtime_type,

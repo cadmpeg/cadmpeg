@@ -698,7 +698,8 @@ fn annotation_record_dropped(
         "Rhino annotation loss tag",
     )?;
     Ok(loss.with_provenance(
-        SourceProvenance::root("rhino", cadmpeg_core::decode::u64_from_index(source_offset)).with_tag(tag),
+        SourceProvenance::root("rhino", cadmpeg_core::decode::u64_from_index(source_offset))
+            .with_tag(tag),
     ))
 }
 
@@ -776,12 +777,18 @@ pub(crate) fn install<'ctx>(
         };
         let identity = &object.identity;
         let Some(scale) = binding.neutral_scale() else {
-            ctx.push_scoped_vec(loss_storage, &mut losses,
-                annotation_record_dropped(ctx,
-                &identity.source_id,
-                object.range.start,
-                object.class_uuid,
-                format_args!("no physical millimetre binding ({})", binding.label()),)?, "Rhino annotation loss notes")?;
+            ctx.push_scoped_vec(
+                loss_storage,
+                &mut losses,
+                annotation_record_dropped(
+                    ctx,
+                    &identity.source_id,
+                    object.range.start,
+                    object.class_uuid,
+                    format_args!("no physical millimetre binding ({})", binding.label()),
+                )?,
+                "Rhino annotation loss notes",
+            )?;
             continue;
         };
         match class {
@@ -816,19 +823,27 @@ pub(crate) fn install<'ctx>(
                         return Err(CodecError::ResourceLimit(limit));
                     }
                     Err(error) => {
-                        ctx.push_scoped_vec(loss_storage, &mut losses,
-                annotation_record_dropped(ctx,
-                            &identity.source_id,
-                            object.range.start,
-                            object.class_uuid,
-                            &error,)?, "Rhino annotation loss notes")?;
+                        ctx.push_scoped_vec(
+                            loss_storage,
+                            &mut losses,
+                            annotation_record_dropped(
+                                ctx,
+                                &identity.source_id,
+                                object.range.start,
+                                object.class_uuid,
+                                &error,
+                            )?,
+                            "Rhino annotation loss notes",
+                        )?;
                         drop(error);
                         drop(v5_text_extra);
                         drop(record_storage);
                         continue;
                     }
                 };
-                staging.with_storage(|| ctx.reserve_vec(&mut annotations, 1, "Rhino native annotations"))?;
+                staging.with_storage(|| {
+                    ctx.reserve_vec(&mut annotations, 1, "Rhino native annotations")
+                })?;
                 let mut record = record_storage.with_storage(|| {
                     let (links, id, source_uuid) = record_identity(
                         ctx,
@@ -915,12 +930,18 @@ pub(crate) fn install<'ctx>(
                         return Err(CodecError::ResourceLimit(limit));
                     }
                     Err(error) => {
-                        ctx.push_scoped_vec(loss_storage, &mut losses,
-                annotation_record_dropped(ctx,
-                            &identity.source_id,
-                            object.range.start,
-                            object.class_uuid,
-                            &error,)?, "Rhino annotation loss notes")?;
+                        ctx.push_scoped_vec(
+                            loss_storage,
+                            &mut losses,
+                            annotation_record_dropped(
+                                ctx,
+                                &identity.source_id,
+                                object.range.start,
+                                object.class_uuid,
+                                &error,
+                            )?,
+                            "Rhino annotation loss notes",
+                        )?;
                         drop(error);
                         drop(v5_text_extra);
                         drop(record_storage);
@@ -928,7 +949,9 @@ pub(crate) fn install<'ctx>(
                     }
                 };
                 let leader_points = value.points;
-                staging.with_storage(|| ctx.reserve_vec(&mut annotations, 1, "Rhino native annotations"))?;
+                staging.with_storage(|| {
+                    ctx.reserve_vec(&mut annotations, 1, "Rhino native annotations")
+                })?;
                 let mut record = record_storage.with_storage(|| {
                     let (links, id, source_uuid) = record_identity(
                         ctx,
@@ -995,12 +1018,18 @@ pub(crate) fn install<'ctx>(
                         return Err(CodecError::ResourceLimit(limit));
                     }
                     Err(error) => {
-                        ctx.push_scoped_vec(loss_storage, &mut losses,
-                annotation_record_dropped(ctx,
-                            &identity.source_id,
-                            object.range.start,
-                            object.class_uuid,
-                            &error,)?, "Rhino annotation loss notes")?;
+                        ctx.push_scoped_vec(
+                            loss_storage,
+                            &mut losses,
+                            annotation_record_dropped(
+                                ctx,
+                                &identity.source_id,
+                                object.range.start,
+                                object.class_uuid,
+                                &error,
+                            )?,
+                            "Rhino annotation loss notes",
+                        )?;
                         drop(error);
                         drop(record_storage);
                         continue;
@@ -1019,7 +1048,9 @@ pub(crate) fn install<'ctx>(
                 } else {
                     AnnotationKind::Annotation
                 };
-                staging.with_storage(|| ctx.reserve_vec(&mut annotations, 1, "Rhino native annotations"))?;
+                staging.with_storage(|| {
+                    ctx.reserve_vec(&mut annotations, 1, "Rhino native annotations")
+                })?;
                 let mut record = record_storage.with_storage(|| {
                     let rich_text = crate::dimensions::v2_effective_text(ctx, &value.base)?;
                     let leader_points = if is_leader {
@@ -1086,12 +1117,18 @@ pub(crate) fn install<'ctx>(
                         return Err(CodecError::ResourceLimit(limit))
                     }
                     Err(error) => {
-                        ctx.push_scoped_vec(loss_storage, &mut losses,
-                annotation_record_dropped(ctx,
-                            &identity.source_id,
-                            object.range.start,
-                            object.class_uuid,
-                            &error,)?, "Rhino annotation loss notes")?;
+                        ctx.push_scoped_vec(
+                            loss_storage,
+                            &mut losses,
+                            annotation_record_dropped(
+                                ctx,
+                                &identity.source_id,
+                                object.range.start,
+                                object.class_uuid,
+                                &error,
+                            )?,
+                            "Rhino annotation loss notes",
+                        )?;
                         drop(error);
                         drop(record_storage);
                         continue;
@@ -1134,18 +1171,26 @@ pub(crate) fn install<'ctx>(
                         return Err(CodecError::ResourceLimit(limit))
                     }
                     Err(error) => {
-                        ctx.push_scoped_vec(loss_storage, &mut losses,
-                annotation_record_dropped(ctx,
-                            &identity.source_id,
-                            object.range.start,
-                            object.class_uuid,
-                            &error,)?, "Rhino annotation loss notes")?;
+                        ctx.push_scoped_vec(
+                            loss_storage,
+                            &mut losses,
+                            annotation_record_dropped(
+                                ctx,
+                                &identity.source_id,
+                                object.range.start,
+                                object.class_uuid,
+                                &error,
+                            )?,
+                            "Rhino annotation loss notes",
+                        )?;
                         drop(error);
                         drop(record_storage);
                         continue;
                     }
                 };
-                staging.with_storage(|| ctx.reserve_vec(&mut arrows, 1, "Rhino native annotation arrows"))?;
+                staging.with_storage(|| {
+                    ctx.reserve_vec(&mut arrows, 1, "Rhino native annotation arrows")
+                })?;
                 let mut record = record_storage.with_storage(|| {
                     let (links, id, source_uuid) = record_identity(
                         ctx,
@@ -1210,7 +1255,10 @@ mod tests {
             payload.extend(coordinate.to_le_bytes());
         }
         let object = object_record_with_payload(
-            ArchiveVersion::V5, 0x20, V2_ANNOTATION_ARROW.to_wire(), &payload,
+            ArchiveVersion::V5,
+            0x20,
+            V2_ANNOTATION_ARROW.to_wire(),
+            &payload,
         );
         scan_with_objects(&vec![object; 1024])
     }
@@ -1224,9 +1272,16 @@ mod tests {
         policy.limits.max_work_units = 1;
         policy.limits.max_collection_items = 0;
         let ctx = cadmpeg_core::decode::DecodeContext::new(&arena, &policy, false);
-        let error = install(&ctx, &scan, &mut CadIr::empty()).map(drop).expect_err("first native arrow slot");
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("resource refusal"); };
-        assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+        let error = install(&ctx, &scan, &mut CadIr::empty())
+            .map(drop)
+            .expect_err("first native arrow slot");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("resource refusal");
+        };
+        assert_eq!(
+            limit.dimension,
+            cadmpeg_core::decode::ResourceDimension::CollectionItems
+        );
         assert_eq!(limit.operation, "Rhino native annotation arrows");
         assert_eq!((limit.used, limit.additional), (0, 1));
         assert_eq!(ctx.resource_refusal(), Some(limit));
@@ -1239,9 +1294,16 @@ mod tests {
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_work_units = 0;
         let ctx = cadmpeg_core::decode::DecodeContext::new(&arena, &policy, false);
-        let error = install(&ctx, &scan, &mut CadIr::empty()).map(drop).expect_err("first object visit");
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("resource refusal"); };
-        assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+        let error = install(&ctx, &scan, &mut CadIr::empty())
+            .map(drop)
+            .expect_err("first object visit");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("resource refusal");
+        };
+        assert_eq!(
+            limit.dimension,
+            cadmpeg_core::decode::ResourceDimension::WorkUnits
+        );
         assert_eq!(limit.operation, "Rhino install traversal");
         assert_eq!((limit.used, limit.additional), (0, 1));
         assert_eq!(ctx.resource_refusal(), Some(limit));
@@ -1388,10 +1450,9 @@ mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_materialized_bytes = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            scan.data, &arena, &policy,
-        )
-        .expect("annotation source fits the root limit");
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
+                .expect("annotation source fits the root limit");
         let error = install(&ctx, &scan, &mut CadIr::empty())
             .expect_err("dot staging refusal must leave the installer");
         assert!(matches!(
@@ -1419,10 +1480,9 @@ mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            scan.data, &arena, &policy,
-        )
-        .expect("annotation source fits the root limit");
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
+                .expect("annotation source fits the root limit");
         let error = install(&ctx, &scan, &mut CadIr::empty())
             .expect_err("the first native output arena name needs retained storage");
         assert!(matches!(
@@ -2006,7 +2066,8 @@ mod tests {
             &payload,
         )]);
         let mut ir = CadIr::empty();
-        let result = with_collection_limit(scan.data, 0, |ctx| install(ctx, &scan, &mut ir).map(drop));
+        let result =
+            with_collection_limit(scan.data, 0, |ctx| install(ctx, &scan, &mut ir).map(drop));
         assert!(matches!(
             result,
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -2024,7 +2085,8 @@ mod tests {
             &payload,
         )]);
         let mut ir = CadIr::empty();
-        let result = with_collection_limit(scan.data, 1, |ctx| install(ctx, &scan, &mut ir).map(drop));
+        let result =
+            with_collection_limit(scan.data, 1, |ctx| install(ctx, &scan, &mut ir).map(drop));
         assert!(matches!(
             result,
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -2046,7 +2108,8 @@ mod tests {
             &payload,
         )]);
         let mut ir = CadIr::empty();
-        let result = with_collection_limit(scan.data, 0, |ctx| install(ctx, &scan, &mut ir).map(drop));
+        let result =
+            with_collection_limit(scan.data, 0, |ctx| install(ctx, &scan, &mut ir).map(drop));
         assert!(matches!(
             result,
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -2067,7 +2130,8 @@ mod tests {
             &payload,
         )]);
         let mut ir = CadIr::empty();
-        let result = with_collection_limit(scan.data, 0, |ctx| install(ctx, &scan, &mut ir).map(drop));
+        let result =
+            with_collection_limit(scan.data, 0, |ctx| install(ctx, &scan, &mut ir).map(drop));
         assert!(matches!(
             result,
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -2093,13 +2157,22 @@ mod tests {
             cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
                 .unwrap();
         let error = install(&ctx, &scan, &mut ir).expect_err("native storage needs the next slot");
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("collection refusal"); };
-        assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("collection refusal");
+        };
+        assert_eq!(
+            limit.dimension,
+            cadmpeg_core::decode::ResourceDimension::CollectionItems
+        );
         assert_eq!(limit.operation, "store native record");
         assert_eq!((limit.used, limit.additional), (4, 1));
         let mut ir = CadIr::empty();
-        install(&cadmpeg_test_support::service_decode_context(), &scan, &mut ir)
-            .expect("point storage moves into the native record");
+        install(
+            &cadmpeg_test_support::service_decode_context(),
+            &scan,
+            &mut ir,
+        )
+        .expect("point storage moves into the native record");
         let record = &ir.native.namespace("rhino").unwrap().arenas()["annotations"][0];
         assert_eq!(
             record.field("leader_points"),
@@ -2141,13 +2214,22 @@ mod tests {
             cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
                 .unwrap();
         let error = install(&ctx, &scan, &mut ir).expect_err("native storage needs the next slot");
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("collection refusal"); };
-        assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("collection refusal");
+        };
+        assert_eq!(
+            limit.dimension,
+            cadmpeg_core::decode::ResourceDimension::CollectionItems
+        );
         assert_eq!(limit.operation, "store native record");
         assert_eq!((limit.used, limit.additional), (4, 1));
         let mut ir = CadIr::empty();
-        install(&cadmpeg_test_support::service_decode_context(), &scan, &mut ir)
-            .expect("point storage moves into the native record");
+        install(
+            &cadmpeg_test_support::service_decode_context(),
+            &scan,
+            &mut ir,
+        )
+        .expect("point storage moves into the native record");
         let record = &ir.native.namespace("rhino").unwrap().arenas()["annotations"][0];
         assert_eq!(
             record.field("leader_points"),
@@ -2164,7 +2246,8 @@ mod tests {
             &[],
         )]);
         let mut ir = CadIr::empty();
-        let result = with_collection_limit(scan.data, 0, |ctx| install(ctx, &scan, &mut ir).map(drop));
+        let result =
+            with_collection_limit(scan.data, 0, |ctx| install(ctx, &scan, &mut ir).map(drop));
         assert!(matches!(
             result,
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -2179,28 +2262,16 @@ mod tests {
             &[],
             crate::test_support::retained_limit_at("Rhino annotation loss text", 0, |cap| {
                 match with_retained_limit(&[], cap, |ctx| {
-                    super::annotation_record_dropped(
-                        ctx,
-                        "fixture",
-                        0,
-                        class_uuid,
-                        "malformed",
-                    )
-                    .expect_err("loss note copy exceeds the exact first-message budget")
+                    super::annotation_record_dropped(ctx, "fixture", 0, class_uuid, "malformed")
+                        .expect_err("loss note copy exceeds the exact first-message budget")
                 }) {
                     cadmpeg_core::CodecError::ResourceLimit(limit) => limit,
                     error => panic!("unexpected resource refusal: {error:?}"),
                 }
             }),
             |ctx| {
-                super::annotation_record_dropped(
-                    ctx,
-                    "fixture",
-                    0,
-                    class_uuid,
-                    "malformed",
-                )
-                .expect_err("loss note copy exceeds the exact first-message budget")
+                super::annotation_record_dropped(ctx, "fixture", 0, class_uuid, "malformed")
+                    .expect_err("loss note copy exceeds the exact first-message budget")
             },
         );
         assert!(matches!(
@@ -2221,12 +2292,8 @@ mod tests {
         )]);
         let mut ir = CadIr::empty();
         let service_context = cadmpeg_test_support::service_decode_context();
-        let losses = install(
-            &service_context,
-            &scan,
-            &mut ir,
-        )
-        .expect("legacy annotation installation");
+        let losses =
+            install(&service_context, &scan, &mut ir).expect("legacy annotation installation");
         assert!(losses.is_empty());
 
         let record = &ir
@@ -2260,12 +2327,7 @@ mod tests {
             .clone();
         let mut ir = CadIr::empty();
         let service_context = cadmpeg_test_support::service_decode_context();
-        let losses = install(
-            &service_context,
-            &scan,
-            &mut ir,
-        )
-        .expect("annotation installation");
+        let losses = install(&service_context, &scan, &mut ir).expect("annotation installation");
         let loss = losses
             .iter()
             .find(|loss| loss.code == super::RhinoLossCode::AnnotationRecordDropped.kind())

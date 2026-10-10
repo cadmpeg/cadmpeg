@@ -246,8 +246,11 @@ pub(crate) fn decode(
         .ok_or_else(|| {
             GeometryError::malformed(count_offset, "hatch loop count exceeds remaining window")
         })?;
-    let mut loops = match loops_storage.with_storage(|| expand.ctx().collection_vec(loop_bound.get(), "Rhino hatch loops"))
-    {
+    let mut loops = match loops_storage.with_storage(|| {
+        expand
+            .ctx()
+            .collection_vec(loop_bound.get(), "Rhino hatch loops")
+    }) {
         Ok(loops) => loops,
         Err(error) => return Err(refused(expand.ctx(), body.position(), &error)?),
     };
@@ -360,8 +363,15 @@ pub(crate) fn apply_userdata<'ctx>(
             Ok(basepoint) => last_basepoint = Some(basepoint),
             Err(GeometryError::Codec(error)) => return Err(error),
             Err(error) => {
-                let message = error_storage.with_storage(|| ctx.format_retained(format_args!("{error}"), "Rhino hatch userdata error"))?;
-                ctx.push_scoped_vec(&mut error_storage, &mut errors, message, "Rhino hatch userdata errors")?;
+                let message = error_storage.with_storage(|| {
+                    ctx.format_retained(format_args!("{error}"), "Rhino hatch userdata error")
+                })?;
+                ctx.push_scoped_vec(
+                    &mut error_storage,
+                    &mut errors,
+                    message,
+                    "Rhino hatch userdata errors",
+                )?;
             }
         }
     }
@@ -377,7 +387,8 @@ pub(crate) fn apply_userdata<'ctx>(
             continue;
         }
         let mut storage = ctx.reserve_scoped(0, "Rhino gradient userdata")?;
-        let parsed = storage.with_storage(|| parse_gradient_userdata(ctx, data, extra, scale, archive));
+        let parsed =
+            storage.with_storage(|| parse_gradient_userdata(ctx, data, extra, scale, archive));
         match parsed {
             Ok(gradient) => {
                 if first_gradient.is_none() {
@@ -387,8 +398,15 @@ pub(crate) fn apply_userdata<'ctx>(
             }
             Err(GeometryError::Codec(error)) => return Err(error),
             Err(error) => {
-                let message = error_storage.with_storage(|| ctx.format_retained(format_args!("{error}"), "Rhino hatch userdata error"))?;
-                ctx.push_scoped_vec(&mut error_storage, &mut errors, message, "Rhino hatch userdata errors")?;
+                let message = error_storage.with_storage(|| {
+                    ctx.format_retained(format_args!("{error}"), "Rhino hatch userdata error")
+                })?;
+                ctx.push_scoped_vec(
+                    &mut error_storage,
+                    &mut errors,
+                    message,
+                    "Rhino hatch userdata errors",
+                )?;
             }
         }
     }
@@ -684,7 +702,7 @@ pub(crate) mod tests {
         let expand = crate::mesh::MeshExpand::new(&ctx, root);
         let error = decode(
             expand,
-                &mut expand.ctx().reserve_scoped(0, "test hatch loops").unwrap(),
+            &mut expand.ctx().reserve_scoped(0, "test hatch loops").unwrap(),
             0..payload.len(),
             MillimeterScale::IDENTITY,
             ArchiveVersion::V8,
@@ -709,16 +727,30 @@ pub(crate) mod tests {
         let (ctx, root) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
         let expand = crate::mesh::MeshExpand::new(&ctx, root);
         let mut loops_storage = ctx.reserve_scoped(0, "test hatch loops").unwrap();
-        let hatch = decode(expand, &mut loops_storage, 0..payload.len(), MillimeterScale::IDENTITY, ArchiveVersion::V8).unwrap();
+        let hatch = decode(
+            expand,
+            &mut loops_storage,
+            0..payload.len(),
+            MillimeterScale::IDENTITY,
+            ArchiveVersion::V8,
+        )
+        .unwrap();
         assert_eq!(hatch.loops.len(), 1);
         let loop_bytes = u64::try_from(std::mem::size_of::<super::HatchLoop>()).unwrap();
-        let remaining = ctx.reserve_scoped(SCRATCH_BYTES - loop_bytes, "remaining scratch with live loops").expect("only staging backing is temporary");
+        let remaining = ctx
+            .reserve_scoped(
+                SCRATCH_BYTES - loop_bytes,
+                "remaining scratch with live loops",
+            )
+            .expect("only staging backing is temporary");
         drop(remaining);
         let mut loops = hatch.loops.into_iter();
         let curve = loops.next().unwrap().curve;
         drop(loops);
         drop(loops_storage);
-        let reusable = ctx.reserve_scoped(SCRATCH_BYTES, "next hatch loops").expect("staging backing released while curve remains live");
+        let reusable = ctx
+            .reserve_scoped(SCRATCH_BYTES, "next hatch loops")
+            .expect("staging backing released while curve remains live");
         assert!(matches!(curve, crate::curves::DecodedCurve::Leaf { .. }));
         drop(reusable);
         drop(curve);
@@ -1020,7 +1052,7 @@ pub(crate) mod tests {
         payload.truncate(payload.len() - 24);
         assert!(crate::decode::with_expand_bytes(&payload, |expand| decode(
             expand,
-                &mut expand.ctx().reserve_scoped(0, "test hatch loops").unwrap(),
+            &mut expand.ctx().reserve_scoped(0, "test hatch loops").unwrap(),
             0..payload.len(),
             crate::test_support::millimeter_scale(10.0),
             ArchiveVersion::V8
@@ -1047,7 +1079,7 @@ pub(crate) mod tests {
                 let mut hatch = crate::decode::with_expand_bytes(&hatch_payload, |expand| {
                     decode(
                         expand,
-                &mut expand.ctx().reserve_scoped(0, "test hatch loops").unwrap(),
+                        &mut expand.ctx().reserve_scoped(0, "test hatch loops").unwrap(),
                         0..hatch_payload.len(),
                         MillimeterScale::IDENTITY,
                         ArchiveVersion::V8,

@@ -1654,13 +1654,9 @@ fn contradictory_standard_unit_detail_preserves_scale_and_name() {
     let mut reader = BoundedReader::new(&data, 0, data.len()).expect("bounded units");
     let mut warnings = Diagnostics::new();
     let ctx = cadmpeg_test_support::service_decode_context();
-    let units = super::unit_detail(
-        &ctx,
-        &data,
-        &mut reader,
-        archive,
-        &mut |code, message| warnings.push_coded_admitted(&ctx, code, message),
-    )
+    let units = super::unit_detail(&ctx, &data, &mut reader, archive, &mut |code, message| {
+        warnings.push_coded_admitted(&ctx, code, message)
+    })
     .expect("unit evidence");
     assert_eq!(units.unit, 2);
     assert_eq!(f64::from_bits(units.meters_per_unit_bits()), 0.5);
@@ -1685,14 +1681,11 @@ fn file_reference_fixtures_have_valid_nested_checksums() {
             BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded file reference");
         let mut warnings = Diagnostics::new();
         let ctx = cadmpeg_test_support::service_decode_context();
-        let reference = parse_file_reference(
-            &ctx,
-            &bytes,
-            &mut reader,
-            archive,
-            &mut |code, message| warnings.push_coded_admitted(&ctx, code, message),
-        )
-        .expect("valid file reference");
+        let reference =
+            parse_file_reference(&ctx, &bytes, &mut reader, archive, &mut |code, message| {
+                warnings.push_coded_admitted(&ctx, code, message)
+            })
+            .expect("valid file reference");
         assert_eq!(reference.full_path, "/full/source.3dm");
         assert_eq!(reference.relative_path, "source.3dm");
         assert_eq!(reader.remaining(), 0);

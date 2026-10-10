@@ -511,7 +511,14 @@ pub(crate) fn parse_class_wrapper(
     archive: ArchiveVersion,
     warnings: &mut Diagnostics,
 ) -> Result<ClassDescriptor, FramingError> {
-    scan_class_wrapper(ctx, bytes, body, archive, &mut |code, message| warnings.push_coded_admitted(ctx, code, message), |_| Ok(()))
+    scan_class_wrapper(
+        ctx,
+        bytes,
+        body,
+        archive,
+        &mut |code, message| warnings.push_coded_admitted(ctx, code, message),
+        |_| Ok(()),
+    )
 }
 
 /// Parses a class wrapper and retains its ordered class-userdata descriptors.
@@ -523,12 +530,19 @@ pub(crate) fn parse_class_wrapper_with_userdata(
     warnings: &mut Diagnostics,
 ) -> Result<(ClassDescriptor, Vec<UserdataDescriptor>), FramingError> {
     let mut userdata = Vec::new();
-    let descriptor = scan_class_wrapper(ctx, bytes, body, archive, &mut |code, message| warnings.push_coded_admitted(ctx, code, message), |value| {
-        ctx.reserve_vec(&mut userdata, 1, "Rhino class userdata")
-            .map_err(crate::chunks::FramingError::from)?;
-        userdata.push(value);
-        Ok(())
-    })?;
+    let descriptor = scan_class_wrapper(
+        ctx,
+        bytes,
+        body,
+        archive,
+        &mut |code, message| warnings.push_coded_admitted(ctx, code, message),
+        |value| {
+            ctx.reserve_vec(&mut userdata, 1, "Rhino class userdata")
+                .map_err(crate::chunks::FramingError::from)?;
+            userdata.push(value);
+            Ok(())
+        },
+    )?;
     Ok((descriptor, userdata))
 }
 
@@ -543,10 +557,17 @@ pub(crate) fn parse_class_wrapper_with_scoped_userdata<'ctx>(
     warnings: &mut Diagnostics,
 ) -> Result<(ClassDescriptor, Vec<UserdataDescriptor>), FramingError> {
     let mut userdata = Vec::new();
-    let descriptor = scan_class_wrapper(ctx, bytes, body, archive, &mut |code, message| warnings.push_coded_admitted(ctx, code, message), |value| {
-        ctx.push_scoped_vec(storage, &mut userdata, value, "Rhino class userdata")
-            .map_err(crate::chunks::FramingError::from)
-    })?;
+    let descriptor = scan_class_wrapper(
+        ctx,
+        bytes,
+        body,
+        archive,
+        &mut |code, message| warnings.push_coded_admitted(ctx, code, message),
+        |value| {
+            ctx.push_scoped_vec(storage, &mut userdata, value, "Rhino class userdata")
+                .map_err(crate::chunks::FramingError::from)
+        },
+    )?;
     Ok((descriptor, userdata))
 }
 
@@ -1559,7 +1580,9 @@ pub(crate) fn parse_attribute_userdata(
                 range: item.range(),
             });
         } else {
-            match parse_userdata(ctx, bytes, &item, archive, &mut |code, message| warnings.push_coded_admitted(ctx, code, message)) {
+            match parse_userdata(ctx, bytes, &item, archive, &mut |code, message| {
+                warnings.push_coded_admitted(ctx, code, message)
+            }) {
                 Ok(UserdataDescriptor::Known(ClassUserdata {
                     range,
                     class_uuid,
@@ -1948,7 +1971,13 @@ pub(crate) fn parse_object_record(
                 require_long(&item, CLASS_USERDATA)?;
                 ctx.reserve_vec(&mut userdata, 1, "Rhino object userdata")
                     .map_err(crate::chunks::FramingError::from)?;
-                userdata.push(parse_userdata(ctx, bytes, &item, archive, &mut |code, message| warnings.push_coded_admitted(ctx, code, message))?);
+                userdata.push(parse_userdata(
+                    ctx,
+                    bytes,
+                    &item,
+                    archive,
+                    &mut |code, message| warnings.push_coded_admitted(ctx, code, message),
+                )?);
                 offset = item.next_offset();
             } else {
                 require_short_zero(&item, CLASS_END)?;
@@ -2060,9 +2089,7 @@ pub(crate) fn parse_object_record(
                 writer_version,
                 &mut warnings,
             ) {
-                Ok(value) => {
-                    AttributeState::Parsed(Box::new(value))
-                }
+                Ok(value) => AttributeState::Parsed(Box::new(value)),
                 Err(FramingError::Resource(limit)) => return Err(FramingError::Resource(limit)),
                 Err(error) => {
                     warnings.push_admitted(
@@ -2159,15 +2186,21 @@ pub(crate) fn resolve_identities(
     let mut layers = LayerLookup::new();
     let mut layer_source = metadata.layers.iter();
     for _ in 0..layer_source.len() {
-        let layer = ctx.next_charged(&mut layer_source, "Rhino resolve identities traversal")?
-            .ok_or_else(|| cadmpeg_core::CodecError::malformed("Rhino identity layer source ended early"))?;
+        let layer = ctx
+            .next_charged(&mut layer_source, "Rhino resolve identities traversal")?
+            .ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed("Rhino identity layer source ended early")
+            })?;
         workspace.with_storage(|| layers.insert(ctx, layer))?;
     }
     let mut resolved = Vec::new();
     let mut object_source = objects.into_iter();
     for index in 0..object_source.len() {
-        let object = ctx.next_charged(&mut object_source, "Rhino resolve identities traversal")?
-            .ok_or_else(|| cadmpeg_core::CodecError::malformed("Rhino identity object source ended early"))?;
+        let object = ctx
+            .next_charged(&mut object_source, "Rhino resolve identities traversal")?
+            .ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed("Rhino identity object source ended early")
+            })?;
         ctx.reserve_vec(&mut resolved, 1, "Rhino resolved object identities")?;
         resolved.push(match object {
             ObjectRecord::Degraded { range, warning } => ObjectRecord::Degraded { range, warning },
