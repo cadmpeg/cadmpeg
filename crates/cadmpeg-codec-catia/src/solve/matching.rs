@@ -34,9 +34,7 @@ fn charge_matching_work(
     // takes the same unit locally without charging the session again.
     let visit = ctx.work_budget(1);
     if !visit.charge() {
-        return Err(ctx
-            .resource_refusal()
-            .map_or_else(|| ctx.refuse_codec_limit(OPERATION, 0, 1), Into::into));
+        return Err(ctx.refuse_codec_limit(OPERATION, 0, 1));
     }
     if budget.is_some_and(|budget| budget.consume_child(&visit).is_err()) {
         return Err(ctx.refuse_codec_limit(OPERATION, 0, 1));

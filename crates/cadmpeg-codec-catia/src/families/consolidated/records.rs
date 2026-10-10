@@ -2529,7 +2529,6 @@ fn nurbs_carrier_offset(
     parameters: &[[f64; 2]],
     anchors: &[Point3],
 ) -> Result<Option<FiniteReal>, cadmpeg_core::decode::ResourceLimit> {
-    ctx.charge_work_limit(0, "catia surface offset boundary")?;
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) = geometry else {
         return Ok(None);
     };
@@ -2542,7 +2541,6 @@ fn nurbs_carrier_offset_surface(
     parameters: &[[f64; 2]],
     anchors: &[Point3],
 ) -> Result<Option<FiniteReal>, cadmpeg_core::decode::ResourceLimit> {
-    ctx.charge_work_limit(0, "catia surface offset boundary")?;
     if parameters.len() != anchors.len() || parameters.is_empty() {
         return Ok(None);
     }

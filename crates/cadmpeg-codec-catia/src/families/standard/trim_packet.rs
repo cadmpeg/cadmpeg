@@ -124,7 +124,6 @@ impl TrimPacket {
     }
 
     pub(crate) fn triangles(&self, ctx: &DecodeContext<'_>) -> Result<&[[u32; 3]], CodecError> {
-        ctx.charge_work(0, "catia_trim_triangles")?;
         if let Some(triangles) = self.triangles.get() {
             return Ok(triangles);
         }
@@ -299,7 +298,7 @@ mod tests {
     }
 
     #[test]
-    fn trim_cache_hit_preserves_sticky_refusal_without_input_work() {
+    fn trim_cache_hit_requires_no_input_work() {
         let packet = packet((1, vec![4], vec![4], (0..11).collect()));
         crate::test_support::with_service_context(|ctx| {
             packet.triangles(ctx).expect("warm real triangle cache");
@@ -310,20 +309,6 @@ mod tests {
                 cached,
                 [[0, 1, 2], [3, 4, 5], [5, 4, 6], [7, 8, 9], [7, 9, 10]]
             );
-            let CodecError::ResourceLimit(original) = ctx
-                .charge_work(1, "before cached triangle access")
-                .expect_err("zero work fuse")
-            else {
-                panic!("resource refusal");
-            };
-            let CodecError::ResourceLimit(actual) = packet
-                .triangles(ctx)
-                .expect_err("cached output preserves the original refusal")
-            else {
-                panic!("resource refusal");
-            };
-            assert_eq!(actual, original);
-            assert_eq!(ctx.resource_refusal(), Some(original));
         });
     }
 

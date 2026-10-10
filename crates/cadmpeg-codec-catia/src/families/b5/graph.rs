@@ -3729,7 +3729,6 @@ pub(super) fn pcurve_knot_expansion_is_finite(
     ctx: &DecodeContext<'_>,
     pcurve: &B5Pcurve,
 ) -> Result<bool, CodecError> {
-    ctx.charge_work(0, "catia_b5_pcurve_knot_validity")?;
     let mut count = 0usize;
     let mut index = 0usize;
     let paired = pcurve.distinct_knots.len().min(pcurve.multiplicities.len());
@@ -7244,7 +7243,6 @@ pub(in crate::families) fn object_stream_frames<'a>(
     ctx: &'a DecodeContext<'_>,
     bytes: &'a [u8],
 ) -> Result<impl Iterator<Item = Result<ObjectFrame, CodecError>> + 'a, CodecError> {
-    ctx.charge_work(0, "catia_b5_object_frame_scan")?;
     let mut child = None::<(usize, usize)>;
     let mut skip_until = 0usize;
     let mut failed = false;

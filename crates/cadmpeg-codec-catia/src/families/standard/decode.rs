@@ -103,7 +103,6 @@ fn bind_consolidated_revolution_faces_and_seams(
     const TOLERANCE: f64 = 2e-3;
 
     if revolutions.is_empty() {
-        ctx.charge_work(0, "catia_standard_iteration")?;
         return Ok((0, 0));
     }
 
@@ -7670,8 +7669,6 @@ fn attach_standard_topology(
         (topology, point_assignment)
     } else {
         if work_budget.exhausted() {
-            ctx.charge_work(0, "catia_mesh_topology_work")
-                .map_err(StandardTopologyError::Resource)?;
             return Err(StandardTopologyError::Resource(ctx.refuse_codec_limit(
                 "catia_mesh_topology_work",
                 0,
@@ -8497,7 +8494,6 @@ fn lifted_standard_support_parameters<const N: usize>(
     pcurve: &PcurveGeometry,
     parameters: [f64; N],
 ) -> Result<[Option<Point3>; N], cadmpeg_core::decode::ResourceLimit> {
-    ctx.charge_work_limit(0, "geometry helper boundary")?;
     let mut points = [None; N];
     for (index, parameter) in parameters.into_iter().enumerate() {
         let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
@@ -8529,7 +8525,6 @@ fn standard_native_support_endpoint_pair(
     required_pair: Option<[usize; 2]>,
 ) -> Result<Option<[usize; 2]>, cadmpeg_core::decode::ResourceLimit> {
     const VERTEX_MATCH_TOLERANCE: f64 = 2e-3;
-    ctx.charge_work_limit(0, "geometry helper boundary")?;
     if points.is_empty() {
         return Ok(None);
     }
@@ -9937,7 +9932,6 @@ fn point_on_nurbs_surface(
     point: Point3,
     surface: &NurbsSurface,
 ) -> Result<Option<bool>, cadmpeg_core::decode::ResourceLimit> {
-    ctx.charge_work_limit(0, "catia surface membership boundary")?;
     // A positive-weight NURBS control net bounds the surface, so its AABB is a
     // sound negative test.  The bounded parameter search supplies positive
     // witnesses only.  A failed search inside that AABB is unknown, not proof
@@ -10050,7 +10044,6 @@ fn owner_matches_a5_carrier(
     tail: &crate::native::owner_numeric_tail::CatiaOwnerNumericTail,
     surface: &NurbsSurface,
 ) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
-    ctx.charge_work_limit(0, "geometry helper boundary")?;
     let Some(domain) = nurbs_surface_parameter_domain(surface) else {
         return Ok(false);
     };

@@ -27,7 +27,7 @@ fn isocurve_order_visits_a_long_equal_prefix_once() {
     const COUNT: usize = 65;
     let mut values = [0.0; COUNT];
     values[COUNT - 1] = -1.0;
-    let mut curve = pcurve(&values);
+    let curve = pcurve(&values);
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_work_units = u64::MAX;
@@ -50,11 +50,6 @@ fn isocurve_order_visits_a_long_equal_prefix_once() {
     assert_eq!(original.operation, "catia_b5_pcurve_knot_count");
     assert_eq!(ctx.resource_refusal(), Some(original));
     drop(probe);
-    curve.control_points.clear();
-    assert!(matches!(
-        super::super::super::pcurves::isocurve_endpoint_parameters(&ctx, &curve, [0.0, 1.0]),
-        Err(CodecError::ResourceLimit(next)) if next == original
-    ));
     assert_eq!(
         super::isocurve_endpoint_parameters(&pcurve(&values), [0.0, 1.0]),
         Some([0.0, -1.0])
