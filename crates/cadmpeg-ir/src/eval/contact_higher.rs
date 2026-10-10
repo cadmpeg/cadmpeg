@@ -84,7 +84,7 @@ fn pcurve_order(
         2 => second(),
         3..=5 => match geometry {
             PcurveGeometry::Nurbs { .. } | PcurveGeometry::PolarHarmonic(_)
-                | PcurveGeometry::PolarNurbs { .. } => higher[order - 3],
+                | PcurveGeometry::PolarNurbs { .. } | PcurveGeometry::SphericalGreatCircle(_) => higher[order - 3],
             PcurveGeometry::Line(_) | PcurveGeometry::Parabola(_) => {
                 Ok(FinitePoint2::from_coordinates(FiniteReal::ZERO, FiniteReal::ZERO))
             }

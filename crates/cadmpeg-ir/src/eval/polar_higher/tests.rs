@@ -198,17 +198,17 @@ fn angular_higher_never_treats_missing_radial_orders_or_origin_as_exact_zero() {
     let tangent = FinitePoint2::new(Point2::new(0.0, 1.0)).unwrap();
     // Actual radial r=(1,t) gives theta=atan(t), not a zero higher chart.
     let radial = [Ok(point), Ok(tangent), Ok(zero), Ok(zero), Ok(zero), Ok(zero)];
-    assert_eq!(angular(radial, 5).map(|r| r.unwrap().get()), [-2.0, 0.0, 24.0]);
+    assert_eq!(angular(radial, 5, None).map(|r| r.unwrap().get()), [-2.0, 0.0, 24.0]);
     let mut missing = radial;
     missing[3] = Err(EvaluationFailure::NoValue);
-    assert_eq!(angular(missing, 5), [Err(EvaluationFailure::NoValue); 3]);
+    assert_eq!(angular(missing, 5, None), [Err(EvaluationFailure::NoValue); 3]);
     let mut nonfinite = radial;
     nonfinite[5] = Err(EvaluationFailure::NonFinite(()));
-    let actual = angular(nonfinite, 5);
+    let actual = angular(nonfinite, 5, None);
     assert_eq!(actual[0].unwrap().get(), -2.0);
     assert_eq!(actual[1].unwrap().get(), 0.0);
     assert_eq!(actual[2], Err(EvaluationFailure::NonFinite(())));
-    assert_eq!(angular([Ok(zero); 6], 5), [Err(EvaluationFailure::NoValue); 3]);
+    assert_eq!(angular([Ok(zero); 6], 5, None), [Err(EvaluationFailure::NoValue); 3]);
 }
 
 #[test]

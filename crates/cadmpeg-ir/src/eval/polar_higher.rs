@@ -11,7 +11,9 @@ type RadialOrder = Result<FinitePoint2, EvaluationFailure<()>>;
 /// theta'=F/D, F=cross(r,r'), D=dot(r,r). Each supplied order is its
 /// actual derivative. An unavailable order is never an exact-zero factor.
 /// Form each requested F/D prefix once; preserve separate order outcomes.
-pub(super) fn angular(radial: [RadialOrder; 6], max_order: usize)
+/// A supplied affine phase rate contributes its order power before final
+/// quotient range admission. No rate keeps the supplied parameterization.
+pub(super) fn angular(radial: [RadialOrder; 6], max_order: usize, phase_rate: Option<NonZeroReal>)
     -> [Result<FiniteReal, EvaluationFailure<()>>; 3]
 {
     let no_value = EvaluationFailure::NoValue;
@@ -55,17 +57,24 @@ pub(super) fn angular(radial: [RadialOrder; 6], max_order: usize)
         });
     }
     let unit = ScaledValue::of_nonzero(NonZeroReal::ONE);
+    let phase_rate = phase_rate.map(ScaledValue::of_nonzero);
     std::array::from_fn(|at| {
         let order = at + 3;
         if order > max_order { return Err(no_value); }
         for state in &available[..order] { (*state)?; }
-        let value = match order {
-            3 => crate::math::sum::quotient_second::quotient_second(
+        let value = match (order, phase_rate) {
+            (3, None) => crate::math::sum::quotient_second::quotient_second(
                 std::array::from_fn(|n| f[n]), std::array::from_fn(|n| d[n]), unit, []),
-            4 => crate::math::sum::quotient_third::quotient_third(
+            (4, None) => crate::math::sum::quotient_third::quotient_third(
                 std::array::from_fn(|n| f[n]), std::array::from_fn(|n| d[n]), unit, []),
-            _ => crate::math::sum::quotient_fourth::quotient_fourth(
+            (_, None) => crate::math::sum::quotient_fourth::quotient_fourth(
                 f, d, unit, []),
+            (3, Some(rate)) => crate::math::sum::quotient_second::quotient_second(
+                std::array::from_fn(|n| f[n]), std::array::from_fn(|n| d[n]), unit, [rate; 3]),
+            (4, Some(rate)) => crate::math::sum::quotient_third::quotient_third(
+                std::array::from_fn(|n| f[n]), std::array::from_fn(|n| d[n]), unit, [rate; 4]),
+            (_, Some(rate)) => crate::math::sum::quotient_fourth::quotient_fourth(
+                f, d, unit, [rate; 5]),
         };
         value.ok_or(no_value)?.map_err(|_| EvaluationFailure::NonFinite(()))
     })
