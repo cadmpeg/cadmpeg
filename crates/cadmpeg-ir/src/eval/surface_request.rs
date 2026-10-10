@@ -112,6 +112,35 @@ impl HigherPartials {
             },
         }
     }
+
+    fn reversed(self, reversed: [bool; 2]) -> Self {
+        let reverse = |lanes| reverse_partial_lanes(lanes, reversed);
+        match self {
+            Self::Affine => Self::Affine,
+            Self::Third(third) => Self::Third(third.map(reverse)),
+            Self::Fourth { third, fourth } => Self::Fourth {
+                third: third.map(reverse),
+                fourth: fourth.map(|lanes| reverse_partial_lanes(lanes, reversed)),
+            },
+            Self::Fifth { third, fourth, fifth } => Self::Fifth {
+                third: third.map(reverse),
+                fourth: fourth.map(|lanes| reverse_partial_lanes(lanes, reversed)),
+                fifth: fifth.map(|lanes| reverse_partial_lanes(lanes, reversed)),
+            },
+        }
+    }
+}
+
+fn reverse_partial_lanes<const N: usize>(
+    lanes: [FiniteVector3; N],
+    [u_reversed, v_reversed]: [bool; 2],
+) -> [FiniteVector3; N] {
+    std::array::from_fn(|v_order| {
+        let u_order = N - 1 - v_order;
+        if (u_reversed && u_order % 2 != 0) != (v_reversed && v_order % 2 != 0) {
+            lanes[v_order].negated()
+        } else { lanes[v_order] }
+    })
 }
 
 // Every recipe borrows a carrier or a stack-local placement node. No recipe
@@ -187,15 +216,26 @@ pub(super) fn model_jet(
     v: f64,
     request: SurfaceRequest,
 ) -> Result<SurfaceJet, EvaluationFailure<Point3>> {
+    model_requested_jet(admission, index, surface, u, v, request).map(|result| result.jet)
+}
+
+pub(super) fn model_requested_jet(
+    admission: EvaluationAdmission<'_, '_>,
+    index: &ModelIndex<'_>,
+    surface: &SurfaceId,
+    u: f64,
+    v: f64,
+    request: SurfaceRequest,
+) -> Result<RequestedJet, EvaluationFailure<Point3>> {
     with_mapping(admission, index, surface, u, v, &mut |mapping| {
         let result = mapping.evaluate(admission, index, request)?;
         let [u_reversed, v_reversed] = mapping.reversed;
         let reverse = |vector: FiniteVector3, reversed| if reversed { vector.negated() } else { vector };
-        Ok(SurfaceJet {
+        Ok(RequestedJet { jet: SurfaceJet {
             point: result.jet.point,
             first: result.jet.first.map(|[du, dv]| [reverse(du, u_reversed), reverse(dv, v_reversed)]),
             second: result.jet.second.map(|[duu, duv, dvv]| [duu, reverse(duv, u_reversed != v_reversed), dvv]),
-        })
+        }, higher: result.higher.reversed(mapping.reversed) })
     })
 }
 

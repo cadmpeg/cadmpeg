@@ -19,6 +19,7 @@ mod procedural_fifth;
 mod orientation;
 mod fourth;
 mod fifth;
+mod model_higher;
 
 fn cylinder() -> SolvedSurfaceGeometry {
     SolvedSurfaceGeometry::Cylinder(CylinderSurface::try_new(
