@@ -47,8 +47,8 @@ impl ObjectSection {
         references: Vec<Reference>,
         entities: Vec<Entity>,
     ) -> Result<Option<Self>, CodecError> {
-        let mut ids = std::collections::HashSet::new();
         let mut ids_storage = ctx.reserve_scoped(0, "SWIFT reference identity workspace")?;
+        let mut ids = std::collections::HashSet::new();
         let mut reference_ids = references.iter();
         while let Some(reference) =
             ctx.next_charged(&mut reference_ids, "scan SLDPRT new values")?
@@ -203,7 +203,9 @@ impl<'ctx> TopologyIdentityIndex<'ctx> {
                 )?;
             }
             if !face_bridge_sequences.is_empty() {
-                let (faces_by_attribute, faces_storage) = ctx.with_scoped_storage(
+                let faces_storage;
+                let faces_by_attribute;
+                (faces_by_attribute, faces_storage) = ctx.with_scoped_storage(
                     "SWIFT faces attribute index workspace",
                     || attribute_identities(
                         ctx,
@@ -227,7 +229,9 @@ impl<'ctx> TopologyIdentityIndex<'ctx> {
                 drop((faces_by_attribute, faces_storage));
             }
             if !edge_use_sequences.is_empty() {
-                let (edges_by_attribute, edges_storage) = ctx.with_scoped_storage(
+                let edges_storage;
+                let edges_by_attribute;
+                (edges_by_attribute, edges_storage) = ctx.with_scoped_storage(
                     "SWIFT edges attribute index workspace",
                     || attribute_identities(
                         ctx,
@@ -249,7 +253,9 @@ impl<'ctx> TopologyIdentityIndex<'ctx> {
                 drop((edges_by_attribute, edges_storage));
             }
             if !vertex_use_sequences.is_empty() {
-                let (vertices_by_attribute, vertices_storage) = ctx.with_scoped_storage(
+                let vertices_storage;
+                let vertices_by_attribute;
+                (vertices_by_attribute, vertices_storage) = ctx.with_scoped_storage(
                     "SWIFT vertices attribute index workspace",
                     || attribute_identities(
                         ctx,
@@ -551,7 +557,9 @@ pub(crate) fn annotations(
                 inputs.edge_use_sequences,
                 inputs.vertex_use_sequences,
             )?;
-            let (pattern_hole_nominals, nominal_storage) = ctx
+            let nominal_storage;
+            let pattern_hole_nominals;
+            (pattern_hole_nominals, nominal_storage) = ctx
                 .with_scoped_storage("SLDPRT hole-pattern nominal workspace", || {
                     pattern_hole_nominal_context(ctx, inputs.features)
                 })?;
@@ -568,7 +576,9 @@ pub(crate) fn annotations(
         _ => project_with_topology(ctx, &root, None, &rendered_dimensions, None)?,
     };
     let projected = &projection.annotations;
-    let (mut indexed, _index_storage) =
+    let _index_storage;
+    let mut indexed;
+    (indexed, _index_storage) =
         ctx.with_scoped_storage("SWIFT annotation provenance index", || {
             ctx.collect_vec(
                 projected
@@ -584,7 +594,9 @@ pub(crate) fn annotations(
         Ord::cmp,
         "sort SWIFT annotation provenance",
     )?;
-    let (mut offsets, _offsets_storage) =
+    let _offsets_storage;
+    let mut offsets;
+    (offsets, _offsets_storage) =
         ctx.with_scoped_storage("SWIFT annotation provenance owners", || {
             ctx.alloc_filled(
                 projected.len(),
@@ -1377,7 +1389,9 @@ fn format_unsupported_loss(
         return Ok(None);
     }
     let mut count = 0_usize;
-    let (mut classes, mut reservation) = ctx.scoped_string(0, OPERATION)?;
+    let mut reservation;
+    let mut classes;
+    (classes, reservation) = ctx.scoped_string(0, OPERATION)?;
     for (index, (class, class_count)) in ctx
         .admit_iter(unsupported, "scan SLDPRT unsupported SWIFT class counts")?
         .enumerate()
@@ -1474,10 +1488,12 @@ fn project_with_topology<'ctx>(
                 .reserve_scoped(0, "SWIFT unsupported annotation workspace")?,
         });
     }
-    let (feature_index, _feature_storage) =
-        ctx.with_scoped_storage("SWIFT feature index workspace", || feature_index(ctx, root))?;
-    let mut datum_ids = BTreeMap::new();
+    let _feature_storage;
+    let feature_index;
+    (feature_index, _feature_storage) =
+        ctx.with_scoped_storage("SWIFT feature index workspace", || self::feature_index(ctx, root))?;
     let mut datum_storage = ctx.reserve_scoped(0, "SWIFT datum identity workspace")?;
+    let mut datum_ids = BTreeMap::new();
     for (reference, entity) in ctx
         .admit_iter(
             &root.annotations.references,
@@ -1512,8 +1528,8 @@ fn project_with_topology<'ctx>(
     let mut projected = Vec::new();
     // Positions of the datum systems in `projected`, bucketed by a hash of
     // their references.
-    let mut datum_systems = BTreeMap::<u64, Vec<usize>>::new();
     let mut system_storage = ctx.reserve_scoped(0, "SWIFT datum system workspace")?;
+    let mut datum_systems = BTreeMap::<u64, Vec<usize>>::new();
     let counterbores = Counterbores::new(ctx, root)?;
     let mut unsupported_storage =
         ctx.reserve_scoped(0, "SWIFT unsupported annotation workspace")?;
@@ -1596,7 +1612,9 @@ fn project_with_topology<'ctx>(
                 continue;
             };
             let bucket = {
-                let (key, _key_storage) =
+                let _key_storage;
+                let key;
+                (key, _key_storage) =
                     ctx.with_scoped_storage("SWIFT datum system key", || {
                         ctx.collect_vec(
                             tolerance.references.as_slice().iter().map(|reference| {
@@ -2054,7 +2072,9 @@ fn diameter_from_applied_geometry(
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
 ) -> Result<Option<PositiveReal>, CodecError> {
-    let (contributors, _contributor_storage) = ctx
+    let _contributor_storage;
+    let contributors;
+    (contributors, _contributor_storage) = ctx
         .with_scoped_storage("SWIFT diameter contributor workspace", || {
             diameter_contributors(ctx, annotation, feature_index)
         })?;
@@ -2383,7 +2403,9 @@ fn location_projection(
         "GdtCylinder" => axis_projection(ctx, feature, "NomCylinder", direction)?,
         "GdtCone" => axis_projection(ctx, feature, "NomCone", direction)?,
         "GdtCompoundHole" => {
-            let (projections, _projection_storage) =
+            let _projection_storage;
+            let projections;
+            (projections, _projection_storage) =
                 ctx.with_scoped_storage("SWIFT rotational projection workspace", || {
                     let mut projections = Vec::new();
                     let mut traversal = FeatureListTraversal::new(
@@ -2693,8 +2715,8 @@ fn hole_diameter_excluding_counterbore(
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
 ) -> Result<Option<PositiveReal>, CodecError> {
-    let mut context = BTreeSet::new();
     let mut context_storage = ctx.reserve_scoped(0, "SWIFT diameter feature context")?;
+    let mut context = BTreeSet::new();
     for reference in ctx.admit_iter(
         &annotation.features.references,
         "collect SWIFT diameter context",
@@ -2730,7 +2752,9 @@ fn hole_diameter_excluding_counterbore(
     let Some(counterbore_diameter) = counterbore_diameter else {
         return Ok(None);
     };
-    let (contributors, _contributor_storage) = ctx
+    let _contributor_storage;
+    let contributors;
+    (contributors, _contributor_storage) = ctx
         .with_scoped_storage("SWIFT diameter contributor workspace", || {
             diameter_contributors(ctx, annotation, feature_index)
         })?;
@@ -2892,9 +2916,9 @@ fn counterbore_depth_from_sibling(
 /// features each applies to besides its cylinders. The index is built when a
 /// hole dimension first asks for it.
 struct Counterbores<'r, 'ctx> {
-    storage: std::cell::RefCell<cadmpeg_core::decode::ScopedReservation<'ctx>>,
     root: &'r Entity,
     groups: std::cell::OnceCell<CounterboreGroups<'r>>,
+    storage: std::cell::RefCell<cadmpeg_core::decode::ScopedReservation<'ctx>>,
 }
 
 /// Counterbores bucketed by a hash of their sorted context identities, each
@@ -2952,7 +2976,9 @@ impl<'r, 'ctx> Counterbores<'r, 'ctx> {
         let Some(groups) = self.groups.get() else {
             return Ok(Vec::new());
         };
-        let (key, _key_storage) = ctx
+        let _key_storage;
+        let key;
+        (key, _key_storage) = ctx
             .with_scoped_storage("SWIFT counterbore context query", || {
                 ctx.collect_vec(context.iter().copied(), Self::OPERATION)
             })?;
@@ -3372,10 +3398,12 @@ fn rendered_dimensions(
         let Some(start) = length_offset.checked_add(1) else {
             continue;
         };
-        let Some((text, _text_reservation)) = decode_rendered_utf16(ctx, payload, start, units)?
-        else {
-            continue;
-        };
+        let _text_reservation;
+        let text;
+        match decode_rendered_utf16(ctx, payload, start, units)? {
+            Some(value) => (text, _text_reservation) = value,
+            None => continue,
+        }
         let parsed = rendered_dimension_literals(ctx, &text)?;
         ctx.extend_vec(&mut dimensions, parsed, "collect SWIFT rendered dimensions")?;
     }
@@ -3979,8 +4007,8 @@ fn targets(
     feature_index: &BTreeMap<&str, &Entity>,
     topology: Option<&TopologyIdentityIndex<'_>>,
 ) -> Result<Option<Vec<PmiTarget>>, CodecError> {
-    let mut seen = BTreeSet::new();
     let mut seen_storage = ctx.reserve_scoped(0, "SWIFT target identity workspace")?;
+    let mut seen = BTreeSet::new();
     let mut targets = Vec::new();
     for reference in ctx.admit_iter(&entity.features.references, "scan SLDPRT targets values")? {
         let valid =

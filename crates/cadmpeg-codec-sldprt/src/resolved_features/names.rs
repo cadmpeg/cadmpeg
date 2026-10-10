@@ -47,7 +47,9 @@ pub(crate) fn object_names(
     let mut names = Vec::new();
     let mut scanner = NameScanner::new(ctx, payload)?;
     while let Some((offset, object_id, units)) = scanner.next(ctx, false)? {
-        let (decoded, _name_reservation) = match ctx.utf16le_scoped_text(
+        let _name_reservation;
+        let decoded;
+        (decoded, _name_reservation) = match ctx.utf16le_scoped_text(
             units,
             units.len() / 2,
             false,
