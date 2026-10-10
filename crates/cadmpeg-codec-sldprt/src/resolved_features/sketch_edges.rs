@@ -189,14 +189,14 @@ pub(super) struct SketchPlaneFrame {
     pub(super) v_axis: Vector3,
 }
 
-pub(super) fn project_edge(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(super) fn project_edge<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     edge: &cadmpeg_ir::topology::Edge,
     vertices: &HashMap<&cadmpeg_ir::ids::VertexId, &cadmpeg_ir::ids::PointId>,
     points: &HashMap<&cadmpeg_ir::ids::PointId, Point3>,
     curves: &HashMap<&cadmpeg_ir::ids::CurveId, &CurveGeometry>,
     frame: SketchPlaneFrame,
-    refusal: &mut crate::lane_refusal::LaneRefusals,
+    refusal: &mut crate::lane_refusal::scoped::RefusalSink<'_, 'ctx>,
 ) -> Result<Option<SketchGeometry>, cadmpeg_core::CodecError> {
     let SketchPlaneFrame {
         origin,

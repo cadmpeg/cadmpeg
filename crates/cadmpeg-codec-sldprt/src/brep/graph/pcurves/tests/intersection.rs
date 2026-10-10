@@ -36,7 +36,7 @@ fn intersection_support_pcurve(
         surface_attr,
         surface,
         edge_endpoints,
-        refusal,
+        &mut crate::lane_refusal::scoped::RefusalSink::Retained(refusal),
     )
 }
 #[test]
@@ -194,7 +194,7 @@ fn intersection_support_pcurve_refuses_collection_limit() {
         10,
         &surface,
         endpoints,
-        &mut crate::lane_refusal::LaneRefusals::new(),
+        &mut crate::lane_refusal::scoped::RefusalSink::Retained(&mut crate::lane_refusal::LaneRefusals::new()),
     ) else {
         panic!("two UV controls exceed one collection item")
     };

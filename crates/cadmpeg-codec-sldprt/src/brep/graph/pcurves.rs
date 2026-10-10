@@ -1215,7 +1215,7 @@ fn derive_nurbs_isoparametric_pcurves(
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let mut lane_refusals = crate::lane_refusal::LaneRefusals::new();
+    let mut lane_refusals = crate::lane_refusal::scoped::ScopedLaneRefusals::new(ctx)?;
     let mut derived = Vec::new();
     for (index, (coedge, support)) in ctx
         .admit_iter(&*sink.coedges, "derive Parasolid NURBS pcurves")?
@@ -1256,7 +1256,7 @@ fn derive_nurbs_isoparametric_pcurves(
                     match derive_nurbs_edge_pcurve(ctx, surface, curve, parameter_range) {
                         Ok(resolution) => resolution,
                         Err(NurbsPcurveFailure::Carrier(error)) => {
-                            lane_refusals.note(
+                            crate::lane_refusal::scoped::RefusalSink::Scoped(&mut lane_refusals).note(
                                 ctx,
                                 format_args!("isoparametric pcurve for edge {}", edge.id.as_str()),
                                 &error,
@@ -1351,13 +1351,13 @@ fn derive_nurbs_isoparametric_pcurves(
     }
     // The sink is drained before the `?` below: an error on that route must
     // not drop a refusal the walk above already pushed.
-    for record in ctx.admit_iter(
-        lane_refusals.take_records(),
-        "collect isoparametric pcurve losses",
-    )? {
-        let note = crate::loss::spline_lane_refusal(ctx, &record)?;
+    let mut lane_refusals = lane_refusals.into_records();
+    while let Some(record) = lane_refusals.next(ctx, "collect isoparametric pcurve losses")? {
+        let note = crate::loss::spline_lane_refusal(ctx, &record.message)?;
+        drop(record);
         ctx.push_vec(sink.losses, note, "collect isoparametric pcurve losses")?;
     }
+    drop(lane_refusals);
     for (index, id, pcurve, cache) in ctx.admit_iter(derived, "bind derived Parasolid pcurves")? {
         let parameter_range = pcurve
             .parameter_range()
@@ -1433,14 +1433,14 @@ fn analytic_pcurve_chord_bound(
     bound.is_finite().then_some(bound)
 }
 
-pub(super) fn intersection_support_pcurve(
-    ctx: &DecodeContext<'_>,
+pub(super) fn intersection_support_pcurve<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     support_data: &crate::brep::intersection::IntersectionSupportData,
     chart: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     surface_attr: u16,
     surface: &SurfaceGeometry,
     edge_endpoints: [cadmpeg_ir::math::Point3; 2],
-    refusal: &mut crate::lane_refusal::LaneRefusals,
+    refusal: &mut crate::lane_refusal::scoped::RefusalSink<'_, 'ctx>,
 ) -> Result<Option<(PcurveGeometry, [f64; 2], IntersectionPcurveSource)>, cadmpeg_core::CodecError>
 {
     macro_rules! some_or_none {
