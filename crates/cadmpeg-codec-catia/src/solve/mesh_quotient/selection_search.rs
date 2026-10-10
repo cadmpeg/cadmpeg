@@ -1104,6 +1104,7 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
         quotient: &MeshQuotient<'storage>,
         budget: &WorkBudget<'_>,
     ) -> Result<(), CodecError> {
+        let _depth = self.ctx.enter_nested("catia_fixed_direction_selection")?;
         if self.should_stop() {
             return Ok(());
         }
@@ -1383,6 +1384,7 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
         budget: &WorkBudget<'_>,
         propagation_budget: &WorkBudget<'_>,
     ) -> Result<(), CodecError> {
+        let _depth = self.ctx.enter_nested("catia_face_selection")?;
         if self.should_stop() {
             return Ok(());
         }
@@ -1420,6 +1422,7 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
         budget: &WorkBudget<'_>,
         propagation_budget: &WorkBudget<'_>,
     ) -> Result<(), CodecError> {
+        let _depth = self.ctx.enter_nested("catia_selection_state")?;
         let mut measured = quotient.clone_charged(self.ctx)?;
         if !prepared {
             if !self.has_exact_singleton_endpoint_domains()?
@@ -2399,7 +2402,11 @@ pub(super) fn reconstruct_singleton_coordinate_topology(
         vertex_points: ctx.copy_slice(vertex_points, "catia_singleton_topology_points")?,
         logical_vertex_count: vertex_points.len(),
     };
-    let Some(_) = topology.edge_vertices(ctx)? else {
+    let (endpoints, _endpoint_storage) = ctx
+        .with_scoped_storage("catia_singleton_endpoint_validation", || {
+            topology.edge_vertices(ctx)
+        })?;
+    let Some(_) = endpoints else {
         return Ok(None);
     };
     Ok(Some(topology))
@@ -2916,21 +2923,22 @@ pub(super) fn resolve_singleton_mesh_selection(
     for root in ctx.admit_iter(ambiguous_roots, "catia_singleton_ambiguous_roots")? {
         let (alternate, _alternate_storage) =
             ctx.with_scoped_storage("catia_singleton_alternate_storage", || {
-                reduced_distinct_matching(
+                let Some(alternate) = reduced_distinct_matching(
                     ctx,
                     &domain_values,
                     vertex_points.len(),
                     budget,
                     Some((root, first_assignment.points[root])),
-                )
+                )?
+                else {
+                    return Ok(None);
+                };
+                materialize(&alternate.points)
             })?;
         let Some(alternate) = alternate else {
             if budget.exhausted() {
                 return Ok(Some(MeshSolve::Failed(MeshCandidateFailure::Exhausted(()))));
             }
-            continue;
-        };
-        let Some(alternate) = materialize(&alternate.points)? else {
             continue;
         };
         if !mesh_candidates_equivalent_with_context(ctx, &first, &alternate, candidate_gauge)? {
