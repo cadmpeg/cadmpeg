@@ -852,7 +852,7 @@ pub(crate) fn zero_entity_ownership_roots_in_range(
         })?;
     let mut roots = Vec::new();
 
-    let mut charged_visits = (&records).windows(
+    let mut charged_visits = records.windows(
         (NonZeroUsize::MIN
             .checked_add(2)
             .ok_or_else(|| CodecError::malformed("CATIA record window width is zero"))?)
@@ -1247,30 +1247,30 @@ fn bind_face_support_occurrences(
     // The slot and ordinal indexes and the bound-ordinal set are scratch.
     let mut scratch = ctx.reserve_scoped(0, "catia_zero_supports_by_slot")?;
     let mut supports_by_slot = HashMap::<u32, Option<u32>>::new();
+
+    let mut charged_visits = (supports).iter();
+    while let Some(support) =
+        ctx.next_charged(&mut charged_visits, "catia_zero_binding_support_visits")?
     {
-        let mut charged_visits = (supports).into_iter();
-        while let Some(support) =
-            ctx.next_charged(&mut charged_visits, "catia_zero_binding_support_visits")?
-        {
-            if let Some(record) = ctx.get_mut_hash_map(
-                &mut supports_by_slot,
-                &support.face_local_slot,
-                "catia_zero_supports_by_slot",
-            )? {
-                // A repeated slot binds no support.
-                *record = None;
-            } else {
-                scratch.with_storage(|| {
-                    ctx.insert_hash_map(
-                        &mut supports_by_slot,
-                        support.face_local_slot,
-                        Some(support.record_ordinal),
-                        "catia_zero_supports_by_slot",
-                    )
-                })?;
-            }
+        if let Some(record) = ctx.get_mut_hash_map(
+            &mut supports_by_slot,
+            &support.face_local_slot,
+            "catia_zero_supports_by_slot",
+        )? {
+            // A repeated slot binds no support.
+            *record = None;
+        } else {
+            scratch.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut supports_by_slot,
+                    support.face_local_slot,
+                    Some(support.record_ordinal),
+                    "catia_zero_supports_by_slot",
+                )
+            })?;
         }
     }
+
     let (mut bindings, binding_storage) =
         ctx.scoped_vector_storage(face_loops.len(), "catia_zero_binding_rows")?;
     let mut row_storage = ctx.reserve_scoped(0, "catia_zero_binding_values")?;
@@ -1311,15 +1311,13 @@ fn bind_face_support_occurrences(
 
     let mut charged_visits = (bindings).iter();
     while let Some(row) = ctx.next_charged(&mut charged_visits, "catia_zero_binding_row_visits")? {
+        let mut charged_visits = (row).iter();
+        while let Some(&ordinal) =
+            ctx.next_charged(&mut charged_visits, "catia_zero_binding_ordinal_visits")?
         {
-            let mut charged_visits = (row).into_iter();
-            while let Some(&ordinal) =
-                ctx.next_charged(&mut charged_visits, "catia_zero_binding_ordinal_visits")?
-            {
-                scratch.with_storage(|| {
-                    ctx.insert_hash_set(&mut bound, ordinal, "catia_zero_bound_supports")
-                })?;
-            }
+            scratch.with_storage(|| {
+                ctx.insert_hash_set(&mut bound, ordinal, "catia_zero_bound_supports")
+            })?;
         }
     }
 
@@ -1335,55 +1333,54 @@ fn bind_face_support_occurrences(
     }
     drop(binding_storage);
     let mut supports_by_ordinal = HashMap::new();
+
+    let mut charged_visits = (supports).iter();
+    while let Some(support) =
+        ctx.next_charged(&mut charged_visits, "catia_zero_binding_support_visits")?
     {
-        let mut charged_visits = (supports).into_iter();
-        while let Some(support) =
-            ctx.next_charged(&mut charged_visits, "catia_zero_binding_support_visits")?
-        {
-            scratch.with_storage(|| {
-                ctx.insert_hash_map(
-                    &mut supports_by_ordinal,
-                    support.record_ordinal,
-                    support,
-                    "catia_zero_supports_by_ordinal",
+        scratch.with_storage(|| {
+            ctx.insert_hash_map(
+                &mut supports_by_ordinal,
+                support.record_ordinal,
+                support,
+                "catia_zero_supports_by_ordinal",
+            )
+        })?;
+    }
+
+    let mut charged_visits = (face_loops).iter_mut();
+    while let Some(loop_record) =
+        ctx.next_charged(&mut charged_visits, "catia_zero_endpoint_loop_visits")?
+    {
+        let (mut endpoints, _endpoint_storage) =
+            ctx.with_scoped_storage("catia_zero_support_endpoint_workspace", || {
+                ctx.collection_vec(
+                    loop_record.support_record_ordinals.len(),
+                    "catia_zero_support_endpoints",
                 )
             })?;
-        }
-    }
-    {
-        let mut charged_visits = (face_loops).into_iter();
-        while let Some(loop_record) =
-            ctx.next_charged(&mut charged_visits, "catia_zero_endpoint_loop_visits")?
+
+        let mut charged_visits = (loop_record.support_record_ordinals).iter();
+        while let Some(ordinal) =
+            ctx.next_charged(&mut charged_visits, "catia_zero_endpoint_ordinal_visits")?
         {
-            let (mut endpoints, _endpoint_storage) =
-                ctx.with_scoped_storage("catia_zero_support_endpoint_workspace", || {
-                    ctx.collection_vec(
-                        loop_record.support_record_ordinals.len(),
-                        "catia_zero_support_endpoints",
-                    )
-                })?;
+            endpoints.push(
+                ctx.get_hash_map(
+                    &supports_by_ordinal,
+                    ordinal,
+                    "catia_zero_supports_by_ordinal",
+                )?
+                .and_then(|support| support.model_endpoints),
+            );
+        }
 
-            let mut charged_visits = (loop_record.support_record_ordinals).iter();
-            while let Some(ordinal) =
-                ctx.next_charged(&mut charged_visits, "catia_zero_endpoint_ordinal_visits")?
-            {
-                endpoints.push(
-                    ctx.get_hash_map(
-                        &supports_by_ordinal,
-                        ordinal,
-                        "catia_zero_supports_by_ordinal",
-                    )?
-                    .and_then(|support| support.model_endpoints),
-                );
-            }
-
-            if let Some(oriented) =
-                oriented_closed_model_endpoints(ctx, &endpoints, &loop_record.forward_senses)?
-            {
-                loop_record.oriented_model_endpoints = oriented;
-            }
+        if let Some(oriented) =
+            oriented_closed_model_endpoints(ctx, &endpoints, &loop_record.forward_senses)?
+        {
+            loop_record.oriented_model_endpoints = oriented;
         }
     }
+
     Ok(())
 }
 
@@ -1469,90 +1466,90 @@ fn zero_entity_faces_from_records<'ctx>(
     CodecError,
 > {
     let (mut faces, mut backing_storage) = ctx.scoped_vector_storage(0, "catia_zero_faces")?;
+
+    let mut charged_visits = (records).iter();
+    while let Some(record) =
+        ctx.next_charged(&mut charged_visits, "catia_zero_framed_record_visits")?
     {
-        let mut charged_visits = (records).into_iter();
-        while let Some(record) =
-            ctx.next_charged(&mut charged_visits, "catia_zero_framed_record_visits")?
-        {
-            let (face, storage) = ctx.with_scoped_storage(
-                "catia_zero_face_workspace",
-                || -> Result<Option<ZeroEntityFace>, CodecError> {
-                    if record.tag[0] != 0x5f || tagged_u32(data, record.pos + 7) != Some(1) {
-                        return Ok(None);
-                    }
-                    let Some(count) = data
-                        .get(record.pos + 12)
-                        .and_then(|value| value.checked_sub(0x80))
-                    else {
+        let (face, storage) = ctx.with_scoped_storage(
+            "catia_zero_face_workspace",
+            || -> Result<Option<ZeroEntityFace>, CodecError> {
+                if record.tag[0] != 0x5f || tagged_u32(data, record.pos + 7) != Some(1) {
+                    return Ok(None);
+                }
+                let Some(count) = data
+                    .get(record.pos + 12)
+                    .and_then(|value| value.checked_sub(0x80))
+                else {
+                    return Ok(None);
+                };
+                let count = usize::from(count);
+                if count < 2 || record.pos.checked_add(14 + count * 5) != Some(record.end) {
+                    return Ok(None);
+                }
+                let mut allocations = Vec::new();
+                let Some(allocation_end) = count
+                    .checked_mul(5)
+                    .and_then(|size| record.pos.checked_add(13)?.checked_add(size))
+                else {
+                    return Err(ctx.refuse_codec_limit(
+                        "catia_zero_face_allocation_bytes",
+                        u64::MAX,
+                        u64::MAX,
+                    ));
+                };
+                let Some(allocation_bytes) = data.get(record.pos + 13..allocation_end) else {
+                    return Ok(None);
+                };
+                let mut first = None;
+                let mut previous_terminal = None;
+                let mut chunks = allocation_bytes.chunks_exact(5).enumerate();
+                while let Some((index, chunk)) =
+                    ctx.next_charged(&mut chunks, "catia_zero_face_allocation_bytes")?
+                {
+                    let Some(value) = tagged_u32(chunk, 0).filter(|value| *value != 0) else {
                         return Ok(None);
                     };
-                    let count = usize::from(count);
-                    if count < 2 || record.pos.checked_add(14 + count * 5) != Some(record.end) {
-                        return Ok(None);
-                    }
-                    let mut allocations = Vec::new();
-                    let Some(allocation_end) = count
-                        .checked_mul(5)
-                        .and_then(|size| record.pos.checked_add(13)?.checked_add(size))
-                    else {
-                        return Err(ctx.refuse_codec_limit(
-                            "catia_zero_face_allocation_bytes",
-                            u64::MAX,
-                            u64::MAX,
-                        ));
-                    };
-                    let Some(allocation_bytes) = data.get(record.pos + 13..allocation_end) else {
-                        return Ok(None);
-                    };
-                    let mut first = None;
-                    let mut previous_terminal = None;
-                    let mut chunks = allocation_bytes.chunks_exact(5).enumerate();
-                    while let Some((index, chunk)) =
-                        ctx.next_charged(&mut chunks, "catia_zero_face_allocation_bytes")?
-                    {
-                        let Some(value) = tagged_u32(chunk, 0).filter(|value| *value != 0) else {
+                    if let Some(first) = first {
+                        let Some(terminal) =
+                            u32::checked_sub(first, value).filter(|value| *value != 0)
+                        else {
                             return Ok(None);
                         };
-                        if let Some(first) = first {
-                            let Some(terminal) =
-                                u32::checked_sub(first, value).filter(|value| *value != 0)
-                            else {
+                        // The first terminal is the outer loop; bounds form the ordered suffix.
+                        if index >= 2 {
+                            if previous_terminal.is_some_and(|previous| previous >= terminal) {
                                 return Ok(None);
-                            };
-                            // The first terminal is the outer loop; bounds form the ordered suffix.
-                            if index >= 2 {
-                                if previous_terminal.is_some_and(|previous| previous >= terminal) {
-                                    return Ok(None);
-                                }
-                                previous_terminal = Some(terminal);
                             }
-                        } else {
-                            first = Some(value);
+                            previous_terminal = Some(terminal);
                         }
-                        ctx.push_vec(&mut allocations, value, "catia_zero_face_allocations")?;
+                    } else {
+                        first = Some(value);
                     }
-                    let Some(terminal_control) = data
-                        .get(record.end - 1)
-                        .and_then(|value| ZeroEntityFaceControl::from_byte(*value))
-                    else {
-                        return Ok(None);
-                    };
-                    Ok(Some(ZeroEntityFace {
-                        pos: record.pos,
-                        record_ordinal: record.ordinal,
-                        tag: record.tag,
-                        allocations,
-                        loops: None,
-                        terminal_control,
-                    }))
-                },
-            )?;
-            if let Some(face) = face {
-                storage.commit()?;
-                ctx.push_scoped_vec(&mut backing_storage, &mut faces, face, "catia_zero_faces")?;
-            }
+                    ctx.push_vec(&mut allocations, value, "catia_zero_face_allocations")?;
+                }
+                let Some(terminal_control) = data
+                    .get(record.end - 1)
+                    .and_then(|value| ZeroEntityFaceControl::from_byte(*value))
+                else {
+                    return Ok(None);
+                };
+                Ok(Some(ZeroEntityFace {
+                    pos: record.pos,
+                    record_ordinal: record.ordinal,
+                    tag: record.tag,
+                    allocations,
+                    loops: None,
+                    terminal_control,
+                }))
+            },
+        )?;
+        if let Some(face) = face {
+            storage.commit()?;
+            ctx.push_scoped_vec(&mut backing_storage, &mut faces, face, "catia_zero_faces")?;
         }
     }
+
     Ok((faces, backing_storage))
 }
 
@@ -1568,155 +1565,153 @@ fn zero_entity_loops_from_records<'ctx>(
     CodecError,
 > {
     let (mut loops, mut backing_storage) = ctx.scoped_vector_storage(0, "catia_zero_loops")?;
+
+    let mut charged_visits = (records).iter();
+    while let Some(record) =
+        ctx.next_charged(&mut charged_visits, "catia_zero_framed_record_visits")?
     {
-        let mut charged_visits = (records).into_iter();
-        while let Some(record) =
-            ctx.next_charged(&mut charged_visits, "catia_zero_framed_record_visits")?
-        {
-            let (loop_record, storage) = ctx.with_scoped_storage(
-                "catia_zero_loop_workspace",
-                || -> Result<Option<ZeroEntityLoop>, CodecError> {
-                    if record.tag[0] != 0x62 {
+        let (loop_record, storage) = ctx.with_scoped_storage(
+            "catia_zero_loop_workspace",
+            || -> Result<Option<ZeroEntityLoop>, CodecError> {
+                if record.tag[0] != 0x62 {
+                    return Ok(None);
+                }
+                let Some(reference_count) = data
+                    .get(record.pos + 12)
+                    .and_then(|value| value.checked_sub(0x80))
+                else {
+                    return Ok(None);
+                };
+                let reference_count = usize::from(reference_count);
+                if reference_count < 3 || reference_count % 2 == 0 {
+                    return Ok(None);
+                }
+                let edge_count = (reference_count - 1) / 2;
+                let mut references = Vec::new();
+                let mut reference_storage = ctx.reserve_scoped(0, "catia_zero_loop_references")?;
+                let Some(reference_end) = reference_count
+                    .checked_mul(5)
+                    .and_then(|size| record.pos.checked_add(13)?.checked_add(size))
+                else {
+                    return Err(ctx.refuse_codec_limit(
+                        "catia_zero_loop_reference_bytes",
+                        u64::MAX,
+                        u64::MAX,
+                    ));
+                };
+                let Some(reference_bytes) = data.get(record.pos + 13..reference_end) else {
+                    return Ok(None);
+                };
+                let mut chunks = reference_bytes.chunks_exact(5);
+                while let Some(chunk) =
+                    ctx.next_charged(&mut chunks, "catia_zero_loop_reference_bytes")?
+                {
+                    let Some(value) = tagged_u32(chunk, 0) else {
+                        return Ok(None);
+                    };
+                    reference_storage.with_storage(|| {
+                        ctx.push_vec(&mut references, value, "catia_zero_loop_references")
+                    })?;
+                }
+                let mut typed_references = Vec::new();
+                let mut values = references[1..reference_count - 1].iter().step_by(2);
+                while let Some(&value) =
+                    ctx.next_charged(&mut values, "catia_zero_loop_typed_reference_visits")?
+                {
+                    if value == 0 {
                         return Ok(None);
                     }
-                    let Some(reference_count) = data
-                        .get(record.pos + 12)
-                        .and_then(|value| value.checked_sub(0x80))
-                    else {
-                        return Ok(None);
-                    };
-                    let reference_count = usize::from(reference_count);
-                    if reference_count < 3 || reference_count % 2 == 0 {
-                        return Ok(None);
+                    ctx.push_vec(
+                        &mut typed_references,
+                        value,
+                        "catia_zero_loop_typed_references",
+                    )?;
+                }
+                let terminal_id = references[reference_count - 1];
+                let Some(gap) = terminal_id.checked_sub(references[0]) else {
+                    return Ok(None);
+                };
+                let Some(member_count) = NonZeroUsize::new(edge_count) else {
+                    return Ok(None);
+                };
+                let Some(members) = ZeroEntityLoopMembers::try_new(terminal_id, gap, member_count)
+                else {
+                    return Ok(None);
+                };
+                if !ctx.all_by(
+                    members
+                        .member_ids()
+                        .zip(references[..reference_count - 1].iter().step_by(2)),
+                    |(identity, reference)| Ok(identity == *reference),
+                    "catia_zero_loop_member_identity_visits",
+                )? {
+                    return Ok(None);
+                }
+                let Some(trailer) = record.pos.checked_add(13 + reference_count * 5) else {
+                    return Ok(None);
+                };
+                let Some(loop_class) = data
+                    .get(trailer + 1)
+                    .and_then(|value| ZeroEntityLoopClass::from_byte(*value))
+                else {
+                    return Ok(None);
+                };
+                let Ok(edge_count_byte) = u8::try_from(edge_count) else {
+                    return Ok(None);
+                };
+                if data.get(trailer) != Some(&(0x80 + edge_count_byte)) {
+                    return Ok(None);
+                }
+                let packed_length = (edge_count * 3).div_ceil(8);
+                if trailer.checked_add(3 + packed_length) != Some(record.end)
+                    || data.get(trailer + 2 + packed_length) != Some(&0x01)
+                {
+                    return Ok(None);
+                }
+                let Some(packed) = data.get(trailer + 2..trailer + 2 + packed_length) else {
+                    return Ok(None);
+                };
+                let mut forward_senses = Vec::new();
+                ctx.reserve_vec(&mut forward_senses, edge_count, "catia_zero_loop_senses")?;
+                let mut senses = typed_references.iter().enumerate();
+                while let Some((index, _)) =
+                    ctx.next_charged(&mut senses, "catia_zero_loop_sense_indices")?
+                {
+                    let bit = index * 3;
+                    let code = (0..3).fold(0, |code, offset| {
+                        code | (((packed[(bit + offset) / 8] >> ((bit + offset) % 8)) & 1)
+                            << offset)
+                    });
+                    match code {
+                        2 => forward_senses.push(false),
+                        7 => forward_senses.push(true),
+                        _ => return Ok(None),
                     }
-                    let edge_count = (reference_count - 1) / 2;
-                    let mut references = Vec::new();
-                    let mut reference_storage =
-                        ctx.reserve_scoped(0, "catia_zero_loop_references")?;
-                    let Some(reference_end) = reference_count
-                        .checked_mul(5)
-                        .and_then(|size| record.pos.checked_add(13)?.checked_add(size))
-                    else {
-                        return Err(ctx.refuse_codec_limit(
-                            "catia_zero_loop_reference_bytes",
-                            u64::MAX,
-                            u64::MAX,
-                        ));
-                    };
-                    let Some(reference_bytes) = data.get(record.pos + 13..reference_end) else {
-                        return Ok(None);
-                    };
-                    let mut chunks = reference_bytes.chunks_exact(5);
-                    while let Some(chunk) =
-                        ctx.next_charged(&mut chunks, "catia_zero_loop_reference_bytes")?
-                    {
-                        let Some(value) = tagged_u32(chunk, 0) else {
-                            return Ok(None);
-                        };
-                        reference_storage.with_storage(|| {
-                            ctx.push_vec(&mut references, value, "catia_zero_loop_references")
-                        })?;
-                    }
-                    let mut typed_references = Vec::new();
-                    let mut values = references[1..reference_count - 1].iter().step_by(2);
-                    while let Some(&value) =
-                        ctx.next_charged(&mut values, "catia_zero_loop_typed_reference_visits")?
-                    {
-                        if value == 0 {
-                            return Ok(None);
-                        }
-                        ctx.push_vec(
-                            &mut typed_references,
-                            value,
-                            "catia_zero_loop_typed_references",
-                        )?;
-                    }
-                    let terminal_id = references[reference_count - 1];
-                    let Some(gap) = terminal_id.checked_sub(references[0]) else {
-                        return Ok(None);
-                    };
-                    let Some(member_count) = NonZeroUsize::new(edge_count) else {
-                        return Ok(None);
-                    };
-                    let Some(members) =
-                        ZeroEntityLoopMembers::try_new(terminal_id, gap, member_count)
-                    else {
-                        return Ok(None);
-                    };
-                    if !ctx.all_by(
-                        members
-                            .member_ids()
-                            .zip(references[..reference_count - 1].iter().step_by(2)),
-                        |(identity, reference)| Ok(identity == *reference),
-                        "catia_zero_loop_member_identity_visits",
-                    )? {
-                        return Ok(None);
-                    }
-                    let Some(trailer) = record.pos.checked_add(13 + reference_count * 5) else {
-                        return Ok(None);
-                    };
-                    let Some(loop_class) = data
-                        .get(trailer + 1)
-                        .and_then(|value| ZeroEntityLoopClass::from_byte(*value))
-                    else {
-                        return Ok(None);
-                    };
-                    let Ok(edge_count_byte) = u8::try_from(edge_count) else {
-                        return Ok(None);
-                    };
-                    if data.get(trailer) != Some(&(0x80 + edge_count_byte)) {
-                        return Ok(None);
-                    }
-                    let packed_length = (edge_count * 3).div_ceil(8);
-                    if trailer.checked_add(3 + packed_length) != Some(record.end)
-                        || data.get(trailer + 2 + packed_length) != Some(&0x01)
-                    {
-                        return Ok(None);
-                    }
-                    let Some(packed) = data.get(trailer + 2..trailer + 2 + packed_length) else {
-                        return Ok(None);
-                    };
-                    let mut forward_senses = Vec::new();
-                    ctx.reserve_vec(&mut forward_senses, edge_count, "catia_zero_loop_senses")?;
-                    let mut senses = typed_references.iter().enumerate();
-                    while let Some((index, _)) =
-                        ctx.next_charged(&mut senses, "catia_zero_loop_sense_indices")?
-                    {
-                        let bit = index * 3;
-                        let code = (0..3).fold(0, |code, offset| {
-                            code | (((packed[(bit + offset) / 8] >> ((bit + offset) % 8)) & 1)
-                                << offset)
-                        });
-                        match code {
-                            2 => forward_senses.push(false),
-                            7 => forward_senses.push(true),
-                            _ => return Ok(None),
-                        }
-                    }
-                    Ok(Some(ZeroEntityLoop {
-                        pos: record.pos,
-                        record_ordinal: record.ordinal,
-                        tag: record.tag,
-                        members,
-                        typed_references,
-                        support_record_ordinals: Vec::new(),
-                        loop_class,
-                        forward_senses,
-                        oriented_model_endpoints: Vec::new(),
-                    }))
-                },
+                }
+                Ok(Some(ZeroEntityLoop {
+                    pos: record.pos,
+                    record_ordinal: record.ordinal,
+                    tag: record.tag,
+                    members,
+                    typed_references,
+                    support_record_ordinals: Vec::new(),
+                    loop_class,
+                    forward_senses,
+                    oriented_model_endpoints: Vec::new(),
+                }))
+            },
+        )?;
+        if let Some(loop_record) = loop_record {
+            storage.commit()?;
+            ctx.push_scoped_vec(
+                &mut backing_storage,
+                &mut loops,
+                loop_record,
+                "catia_zero_loops",
             )?;
-            if let Some(loop_record) = loop_record {
-                storage.commit()?;
-                ctx.push_scoped_vec(
-                    &mut backing_storage,
-                    &mut loops,
-                    loop_record,
-                    "catia_zero_loops",
-                )?;
-            }
         }
     }
+
     Ok((loops, backing_storage))
 }
 
@@ -2687,7 +2682,7 @@ pub(crate) fn zero_entity_oriented_use_pairs_in_range(
         })?;
     let mut output = Vec::new();
 
-    let mut charged_visits = (&records).windows(
+    let mut charged_visits = records.windows(
         (NonZeroUsize::MIN
             .checked_add(2)
             .ok_or_else(|| CodecError::malformed("CATIA record window width is zero"))?)
@@ -2772,7 +2767,7 @@ pub(crate) fn zero_entity_vertex_incidences_in_range(
         })?;
     let mut output = Vec::new();
 
-    let mut charged_visits = (&records).windows(
+    let mut charged_visits = records.windows(
         (NonZeroUsize::MIN
             .checked_add(1)
             .ok_or_else(|| CodecError::malformed("CATIA record window width is zero"))?)

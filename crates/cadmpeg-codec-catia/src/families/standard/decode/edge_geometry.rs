@@ -1192,26 +1192,24 @@ fn solved_surface_fingerprint(
             match value.pole_grid() {
                 cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::Polynomial { rows } => {
                     0u8.hash(&mut hash);
-                    {
-                        let mut charged_visits = (rows).into_iter();
-                        while let Some(row) = ctx.next_charged(&mut charged_visits, OP)? {
-                            row.len().hash(&mut hash);
-                            for point in ctx.admit_iter(row, OP)? {
-                                point_bits(point.get()).hash(&mut hash);
-                            }
+
+                    let mut charged_visits = (rows).iter();
+                    while let Some(row) = ctx.next_charged(&mut charged_visits, OP)? {
+                        row.len().hash(&mut hash);
+                        for point in ctx.admit_iter(row, OP)? {
+                            point_bits(point.get()).hash(&mut hash);
                         }
                     }
                 }
                 cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::Rational { rows } => {
                     1u8.hash(&mut hash);
-                    {
-                        let mut charged_visits = (rows).into_iter();
-                        while let Some(row) = ctx.next_charged(&mut charged_visits, OP)? {
-                            row.len().hash(&mut hash);
-                            for pole in ctx.admit_iter(row, OP)? {
-                                (point_bits(pole.point.get()), real_bits(pole.weight.get()))
-                                    .hash(&mut hash);
-                            }
+
+                    let mut charged_visits = (rows).iter();
+                    while let Some(row) = ctx.next_charged(&mut charged_visits, OP)? {
+                        row.len().hash(&mut hash);
+                        for pole in ctx.admit_iter(row, OP)? {
+                            (point_bits(pole.point.get()), real_bits(pole.weight.get()))
+                                .hash(&mut hash);
                         }
                     }
                 }
@@ -1842,7 +1840,7 @@ pub(super) fn build_standard_edge_curve(
                 &native.carriers[1],
                 native_surfaces,
                 admission,
-                support_storage.as_deref_mut(),
+                support_storage,
             )?;
             [
                 IntcurveSupportSide {
@@ -2200,51 +2198,51 @@ impl<'ctx> CircularIntervalIndex<'ctx> {
         let mut ranges = Vec::new();
         let mut rows = Vec::new();
         let mut entries = Vec::new();
-        {
-            let mut charged_visits = (choices).into_iter();
-            while let Some(choice) = ctx.next_charged(&mut charged_visits, OP)? {
-                let mut row = Vec::new();
-                let choices = choice.as_ref();
-                let mut choices_iter = choices.iter();
-                loop {
-                    let next = if choices.len() <= 2 {
-                        choices_iter.next()
-                    } else {
-                        ctx.next_charged(&mut choices_iter, OP)?
-                    };
-                    let Some(&range) = next else { break };
-                    let key = range.map(real_bits);
-                    let group = if let Some(&group) = ctx.get_hash_map(&groups, &key, OP)? {
-                        group
-                    } else {
-                        let group = ranges.len();
-                        ctx.push_vec(&mut ranges, range, OP)?;
-                        ctx.insert_hash_map(&mut groups, key, group, OP)?;
-                        for segment in circular_segments(range).into_iter().flatten() {
-                            if segment[1] - segment[0] <= EPS_STANDARD_DECODE_COARSE_GEOMETRY {
-                                continue;
-                            }
-                            let bounds = if range.into_iter().chain(segment).all(f64::is_finite) {
-                                [segment, [range[0]; 2], [range[1]; 2]]
-                            } else {
-                                [[f64::NEG_INFINITY, f64::INFINITY]; 3]
-                            };
-                            ctx.push_vec(
-                                &mut entries,
-                                BoundsEntry {
-                                    bounds,
-                                    item: group,
-                                },
-                                OP,
-                            )?;
+
+        let mut charged_visits = (choices).iter();
+        while let Some(choice) = ctx.next_charged(&mut charged_visits, OP)? {
+            let mut row = Vec::new();
+            let choices = choice.as_ref();
+            let mut choices_iter = choices.iter();
+            loop {
+                let next = if choices.len() <= 2 {
+                    choices_iter.next()
+                } else {
+                    ctx.next_charged(&mut choices_iter, OP)?
+                };
+                let Some(&range) = next else { break };
+                let key = range.map(real_bits);
+                let group = if let Some(&group) = ctx.get_hash_map(&groups, &key, OP)? {
+                    group
+                } else {
+                    let group = ranges.len();
+                    ctx.push_vec(&mut ranges, range, OP)?;
+                    ctx.insert_hash_map(&mut groups, key, group, OP)?;
+                    for segment in circular_segments(range).into_iter().flatten() {
+                        if segment[1] - segment[0] <= EPS_STANDARD_DECODE_COARSE_GEOMETRY {
+                            continue;
                         }
-                        group
-                    };
-                    ctx.push_vec(&mut row, group, OP)?;
-                }
-                ctx.push_vec(&mut rows, row, OP)?;
+                        let bounds = if range.into_iter().chain(segment).all(f64::is_finite) {
+                            [segment, [range[0]; 2], [range[1]; 2]]
+                        } else {
+                            [[f64::NEG_INFINITY, f64::INFINITY]; 3]
+                        };
+                        ctx.push_vec(
+                            &mut entries,
+                            BoundsEntry {
+                                bounds,
+                                item: group,
+                            },
+                            OP,
+                        )?;
+                    }
+                    group
+                };
+                ctx.push_vec(&mut row, group, OP)?;
             }
+            ctx.push_vec(&mut rows, row, OP)?;
         }
+
         let tree = BoundsIndex::new(ctx, &mut entries, OP)?;
         let mut parents = ctx.alloc_filled(tree.nodes.len(), None, OP)?;
         let mut leaves = ctx.alloc_filled(ranges.len(), [None; 2], OP)?;
@@ -2645,30 +2643,30 @@ fn bound_face_geometries<'a, 'ctx>(
     const OPERATION: &str = "catia_standard_bound_face_geometries";
     let mut storage = ctx.reserve_scoped(0, OPERATION)?;
     let mut first_surfaces = HashMap::<&SurfaceId, usize>::new();
-    {
-        let mut charged_visits = (surfaces).into_iter().enumerate();
-        while let Some((index, surface)) = ctx.next_charged(&mut charged_visits, OPERATION)? {
-            if ctx
-                .get_hash_map(&first_surfaces, &&surface.id, OPERATION)?
-                .is_none()
-            {
-                storage.with_storage(|| {
-                    ctx.insert_hash_map(&mut first_surfaces, &surface.id, index, OPERATION)
-                })?;
-            }
+
+    let mut charged_visits = (surfaces).iter().enumerate();
+    while let Some((index, surface)) = ctx.next_charged(&mut charged_visits, OPERATION)? {
+        if ctx
+            .get_hash_map(&first_surfaces, &&surface.id, OPERATION)?
+            .is_none()
+        {
+            storage.with_storage(|| {
+                ctx.insert_hash_map(&mut first_surfaces, &surface.id, index, OPERATION)
+            })?;
         }
     }
+
     let mut geometries = Vec::new();
     ctx.reserve_scoped_vec(&mut storage, &mut geometries, bindings.len(), OPERATION)?;
-    {
-        let mut charged_visits = (bindings).into_iter();
-        while let Some((surface_id, _, _)) = ctx.next_charged(&mut charged_visits, OPERATION)? {
-            geometries.push(
-                ctx.get_hash_map(&first_surfaces, &surface_id, OPERATION)?
-                    .map(|&index| &surfaces[index].geometry),
-            );
-        }
+
+    let mut charged_visits = (bindings).iter();
+    while let Some((surface_id, _, _)) = ctx.next_charged(&mut charged_visits, OPERATION)? {
+        geometries.push(
+            ctx.get_hash_map(&first_surfaces, &surface_id, OPERATION)?
+                .map(|&index| &surfaces[index].geometry),
+        );
     }
+
     Ok((geometries, storage))
 }
 
@@ -2682,41 +2680,39 @@ pub(super) fn attach_standard_circles(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut plans = Vec::new();
     let (face_geometries, mut storage) = bound_face_geometries(ctx, &ir.model.surfaces, bindings)?;
+
+    let mut charged_visits = (supports).iter();
+    while let Some(support) =
+        ctx.next_charged(&mut charged_visits, "catia_standard_attached_circles")?
     {
-        let mut charged_visits = (supports).into_iter();
-        while let Some(support) =
-            ctx.next_charged(&mut charged_visits, "catia_standard_attached_circles")?
-        {
-            let crate::families::standard::records::StandardCurveGeometry::Circle {
-                center,
-                radius,
-            } = support.geometry
-            else {
-                continue;
-            };
-            let mut stated = support.faces.into_iter().filter_map(|face| {
-                face_geometries
-                    .get(face)
-                    .copied()
-                    .flatten()
-                    .and_then(|geometry| {
-                        standard_circle_axis_from_carrier(center.get(), radius.get(), geometry)
-                    })
-            });
-            let Some(axis) = stated.next() else {
-                continue;
-            };
-            if stated.any(|other| axis.as_raw().dot(*other.as_raw()).abs() < 0.9999) {
-                continue;
-            }
-            ctx.push_scoped_vec(
-                &mut storage,
-                &mut plans,
-                (support, axis),
-                "catia_standard_attached_circle_plans",
-            )?;
+        let crate::families::standard::records::StandardCurveGeometry::Circle { center, radius } =
+            support.geometry
+        else {
+            continue;
+        };
+        let mut stated = support.faces.into_iter().filter_map(|face| {
+            face_geometries
+                .get(face)
+                .copied()
+                .flatten()
+                .and_then(|geometry| {
+                    standard_circle_axis_from_carrier(center.get(), radius.get(), geometry)
+                })
+        });
+        let Some(axis) = stated.next() else {
+            continue;
+        };
+        if stated.any(|other| axis.as_raw().dot(*other.as_raw()).abs() < 0.9999) {
+            continue;
         }
+        ctx.push_scoped_vec(
+            &mut storage,
+            &mut plans,
+            (support, axis),
+            "catia_standard_attached_circle_plans",
+        )?;
     }
+
     drop(face_geometries);
 
     let mut charged_visits = (plans).iter();
@@ -2959,37 +2955,37 @@ pub(super) fn attach_standard_lines(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut plans = Vec::new();
     let (face_geometries, mut storage) = bound_face_geometries(ctx, &ir.model.surfaces, bindings)?;
+
+    let mut charged_visits = (supports).iter();
+    while let Some(support) =
+        ctx.next_charged(&mut charged_visits, "catia_standard_attached_lines")?
     {
-        let mut charged_visits = (supports).into_iter();
-        while let Some(support) =
-            ctx.next_charged(&mut charged_visits, "catia_standard_attached_lines")?
-        {
-            if !matches!(
-                support.geometry,
-                crate::families::standard::records::StandardCurveGeometry::Line
-            ) {
-                continue;
-            }
-            let plane = |face: usize| plane_of(face_geometries.get(face).copied().flatten()?);
-            let Some((origin_a, normal_a)) = plane(support.faces[0]) else {
-                continue;
-            };
-            let Some((origin_b, normal_b)) = plane(support.faces[1]) else {
-                continue;
-            };
-            let Some((origin, direction)) =
-                plane_intersection_line(origin_a, normal_a, origin_b, normal_b)
-            else {
-                continue;
-            };
-            ctx.push_scoped_vec(
-                &mut storage,
-                &mut plans,
-                (support, origin, direction),
-                "catia_standard_attached_line_plans",
-            )?;
+        if !matches!(
+            support.geometry,
+            crate::families::standard::records::StandardCurveGeometry::Line
+        ) {
+            continue;
         }
+        let plane = |face: usize| plane_of(face_geometries.get(face).copied().flatten()?);
+        let Some((origin_a, normal_a)) = plane(support.faces[0]) else {
+            continue;
+        };
+        let Some((origin_b, normal_b)) = plane(support.faces[1]) else {
+            continue;
+        };
+        let Some((origin, direction)) =
+            plane_intersection_line(origin_a, normal_a, origin_b, normal_b)
+        else {
+            continue;
+        };
+        ctx.push_scoped_vec(
+            &mut storage,
+            &mut plans,
+            (support, origin, direction),
+            "catia_standard_attached_line_plans",
+        )?;
     }
+
     drop(face_geometries);
 
     let mut charged_visits = (plans).iter();
@@ -3401,61 +3397,61 @@ pub(super) fn standard_limit_curve_bindings(
         let mut support_entries = entry_storage.with_storage(|| -> Result<_, CodecError> {
             let mut entries = Vec::new();
             let mut surface_bounds = HashMap::new();
+
+            let mut charged_visits = (supports).iter().enumerate();
+            while let Some((item, support)) =
+                ctx.next_charged(&mut charged_visits, "catia_limit_curve_support_index")?
             {
-                let mut charged_visits = (supports).into_iter().enumerate();
-                while let Some((item, support)) =
-                    ctx.next_charged(&mut charged_visits, "catia_limit_curve_support_index")?
-                {
-                    if !matches!(
-                        support.geometry,
-                        crate::families::standard::records::StandardCurveGeometry::Bspline
-                    ) {
+                if !matches!(
+                    support.geometry,
+                    crate::families::standard::records::StandardCurveGeometry::Bspline
+                ) {
+                    continue;
+                }
+                let mut bounds = [[f64::NEG_INFINITY, f64::INFINITY]; 3];
+                for face in support.faces {
+                    let Some(surface) = face_surface(ctx, ir, bindings, surface_indices, face)?
+                    else {
                         continue;
-                    }
-                    let mut bounds = [[f64::NEG_INFINITY, f64::INFINITY]; 3];
-                    for face in support.faces {
-                        let Some(surface) = face_surface(ctx, ir, bindings, surface_indices, face)?
-                        else {
-                            continue;
-                        };
-                        if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) =
-                            &surface.geometry
-                        {
-                            let control = if let Some(bounds) = ctx.get_hash_map(
-                                &surface_bounds,
+                    };
+                    if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) =
+                        &surface.geometry
+                    {
+                        let control = if let Some(bounds) = ctx.get_hash_map(
+                            &surface_bounds,
+                            surface.id.as_str(),
+                            "catia_limit_curve_surface_bounds",
+                        )? {
+                            *bounds
+                        } else {
+                            let bounds = nurbs_surface_control_bounds(ctx, nurbs)?;
+                            ctx.insert_hash_map(
+                                &mut surface_bounds,
                                 surface.id.as_str(),
+                                bounds,
                                 "catia_limit_curve_surface_bounds",
-                            )? {
-                                *bounds
-                            } else {
-                                let bounds = nurbs_surface_control_bounds(ctx, nurbs)?;
-                                ctx.insert_hash_map(
-                                    &mut surface_bounds,
-                                    surface.id.as_str(),
-                                    bounds,
-                                    "catia_limit_curve_surface_bounds",
-                                )?;
-                                bounds
-                            };
-                            if let Some(control) = control {
-                                let scale = control
-                                    .map(|[low, high]| low.abs().max(high.abs()))
-                                    .into_iter()
-                                    .fold(1.0_f64, f64::max);
-                                let margin = NURBS_SURFACE_MEMBERSHIP_TOLERANCE
-                                    + 64.0 * f64::EPSILON * scale;
-                                bounds = control.map(|[low, high]| [low - margin, high + margin]);
-                                break;
-                            }
+                            )?;
+                            bounds
+                        };
+                        if let Some(control) = control {
+                            let scale = control
+                                .map(|[low, high]| low.abs().max(high.abs()))
+                                .into_iter()
+                                .fold(1.0_f64, f64::max);
+                            let margin =
+                                NURBS_SURFACE_MEMBERSHIP_TOLERANCE + 64.0 * f64::EPSILON * scale;
+                            bounds = control.map(|[low, high]| [low - margin, high + margin]);
+                            break;
                         }
                     }
-                    ctx.push_vec(
-                        &mut entries,
-                        BoundsEntry { bounds, item },
-                        "catia_limit_curve_support_index",
-                    )?;
                 }
+                ctx.push_vec(
+                    &mut entries,
+                    BoundsEntry { bounds, item },
+                    "catia_limit_curve_support_index",
+                )?;
             }
+
             Ok(entries)
         })?;
         let support_index =
@@ -3466,57 +3462,53 @@ pub(super) fn standard_limit_curve_bindings(
             curves.len(),
             "catia_limit_curve_point_rows",
         )?;
-        {
-            let mut charged_visits = (curves).into_iter();
-            while let Some(curve) =
-                ctx.next_charged(&mut charged_visits, "catia_limit_curve_curves")?
+
+        let mut charged_visits = (curves).iter();
+        while let Some(curve) = ctx.next_charged(&mut charged_visits, "catia_limit_curve_curves")? {
+            let mut row = Vec::new();
+            if let cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } =
+                curve.pole_rows()
             {
-                let mut row = Vec::new();
-                if let cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } =
-                    curve.pole_rows()
-                {
-                    let mut bounds = [[f64::INFINITY, f64::NEG_INFINITY]; 3];
-                    for point in ctx.admit_iter(points, "catia_limit_curve_control_bounds")? {
-                        for (axis, value) in [point.x, point.y, point.z].into_iter().enumerate() {
-                            bounds[axis][0] = bounds[axis][0].min(value);
-                            bounds[axis][1] = bounds[axis][1].max(value);
-                        }
+                let mut bounds = [[f64::INFINITY, f64::NEG_INFINITY]; 3];
+                for point in ctx.admit_iter(points, "catia_limit_curve_control_bounds")? {
+                    for (axis, value) in [point.x, point.y, point.z].into_iter().enumerate() {
+                        bounds[axis][0] = bounds[axis][0].min(value);
+                        bounds[axis][1] = bounds[axis][1].max(value);
                     }
-                    let scale = bounds
-                        .map(|[low, high]| low.abs().max(high.abs()))
-                        .into_iter()
-                        .fold(1.0_f64, f64::max);
-                    let margin = VERTEX_MATCH_TOLERANCE + 64.0 * f64::EPSILON * scale;
-                    let bounds = bounds.map(|[low, high]| [low - margin, high + margin]);
-                    let mut query_storage =
-                        ctx.reserve_scoped(0, "catia_limit_curve_point_queries")?;
-                    let candidates = query_storage.with_storage(|| {
-                        point_index.matching_items(ctx, bounds, "catia_limit_curve_point_queries")
-                    })?;
+                }
+                let scale = bounds
+                    .map(|[low, high]| low.abs().max(high.abs()))
+                    .into_iter()
+                    .fold(1.0_f64, f64::max);
+                let margin = VERTEX_MATCH_TOLERANCE + 64.0 * f64::EPSILON * scale;
+                let bounds = bounds.map(|[low, high]| [low - margin, high + margin]);
+                let mut query_storage = ctx.reserve_scoped(0, "catia_limit_curve_point_queries")?;
+                let candidates = query_storage.with_storage(|| {
+                    point_index.matching_items(ctx, bounds, "catia_limit_curve_point_queries")
+                })?;
+                {
+                    let mut charged_visits = (candidates).into_iter();
+                    while let Some(point) =
+                        ctx.next_charged(&mut charged_visits, "catia_limit_curve_point_candidates")?
                     {
-                        let mut charged_visits = (candidates).into_iter();
-                        while let Some(point) = ctx.next_charged(
-                            &mut charged_visits,
-                            "catia_limit_curve_point_candidates",
+                        if let Some(parameter) = standard_limit_curve_point_parameter(
+                            ctx,
+                            curve,
+                            ir.model.points[point].position().get(),
+                            VERTEX_MATCH_TOLERANCE,
                         )? {
-                            if let Some(parameter) = standard_limit_curve_point_parameter(
-                                ctx,
-                                curve,
-                                ir.model.points[point].position().get(),
-                                VERTEX_MATCH_TOLERANCE,
-                            )? {
-                                ctx.push_vec(
-                                    &mut row,
-                                    (point, parameter),
-                                    "catia_limit_curve_point_parameters",
-                                )?;
-                            }
+                            ctx.push_vec(
+                                &mut row,
+                                (point, parameter),
+                                "catia_limit_curve_point_parameters",
+                            )?;
                         }
                     }
                 }
-                curve_points.push(row);
             }
+            curve_points.push(row);
         }
+
         Ok((curve_points, support_index))
     })?;
     let mut edge_curves =
@@ -4254,37 +4246,37 @@ pub(super) fn standard_shared_nurbs_boundary_pair_options(
         return Ok(None);
     }
     let mut matched = Vec::new();
+
+    let mut charged_visits = (options).iter();
+    while let Some(&pair) =
+        ctx.next_charged(&mut charged_visits, "catia_shared_nurbs_endpoint_options")?
     {
-        let mut charged_visits = (options).into_iter();
-        while let Some(&pair) =
-            ctx.next_charged(&mut charged_visits, "catia_shared_nurbs_endpoint_options")?
-        {
-            let mut pair_matches = false;
-            for (boundary, is_shared) in left_boundaries.iter().zip(shared) {
-                if !is_shared {
-                    continue;
-                }
-                let mut both = true;
-                for point in pair {
-                    let Some(point) = points.get(point) else {
-                        both = false;
-                        break;
-                    };
-                    if !nurbs_boundary_contains_point(ctx, boundary, *point)? {
-                        both = false;
-                        break;
-                    }
-                }
-                if both {
-                    pair_matches = true;
+        let mut pair_matches = false;
+        for (boundary, is_shared) in left_boundaries.iter().zip(shared) {
+            if !is_shared {
+                continue;
+            }
+            let mut both = true;
+            for point in pair {
+                let Some(point) = points.get(point) else {
+                    both = false;
+                    break;
+                };
+                if !nurbs_boundary_contains_point(ctx, boundary, *point)? {
+                    both = false;
                     break;
                 }
             }
-            if pair_matches {
-                ctx.push_vec(&mut matched, pair, "catia_shared_nurbs_boundary_pairs")?;
+            if both {
+                pair_matches = true;
+                break;
             }
         }
+        if pair_matches {
+            ctx.push_vec(&mut matched, pair, "catia_shared_nurbs_boundary_pairs")?;
+        }
     }
+
     Ok(Some(matched))
 }
 
@@ -4556,25 +4548,23 @@ impl StandardLinePairConstraint {
         // can only repeat the row's last entry.
         let mut edges_by_face = BTreeMap::<usize, Vec<usize>>::new();
 
+        let mut charged_visits = (supports).iter().enumerate();
+        while let Some((edge, support)) =
+            ctx.next_charged(&mut charged_visits, "catia_standard_line_constraint_edges")?
         {
-            let mut charged_visits = (supports).into_iter().enumerate();
-            while let Some((edge, support)) =
-                ctx.next_charged(&mut charged_visits, "catia_standard_line_constraint_edges")?
-            {
-                if edge_roles[edge] != EdgeLineRole::Flexible {
-                    continue;
-                }
-                for &face in &support.faces {
-                    let edges = ctx
-                        .entry_btree_map(
-                            &mut edges_by_face,
-                            face,
-                            "catia_standard_line_constraint_faces",
-                        )?
-                        .or_default();
-                    if edges.last() != Some(&edge) {
-                        ctx.push_vec(edges, edge, "catia_standard_line_constraint_face_edges")?;
-                    }
+            if edge_roles[edge] != EdgeLineRole::Flexible {
+                continue;
+            }
+            for &face in &support.faces {
+                let edges = ctx
+                    .entry_btree_map(
+                        &mut edges_by_face,
+                        face,
+                        "catia_standard_line_constraint_faces",
+                    )?
+                    .or_default();
+                if edges.last() != Some(&edge) {
+                    ctx.push_vec(edges, edge, "catia_standard_line_constraint_face_edges")?;
                 }
             }
         }
