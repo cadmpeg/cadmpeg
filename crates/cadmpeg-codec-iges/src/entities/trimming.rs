@@ -3064,6 +3064,8 @@ pub(super) fn project<'ctx>(
             )?;
             continue;
         };
+        let mut candidate_pcurve_storage =
+            ctx.reserve_scoped(0, "iges trimming pcurve candidate storage")?;
         let mut candidate = ModelDraft::new();
         let stem = crate::ids::Stem::directory(entry.sequence);
         let body_id = crate::ids::body_admitted(&stem, ctx)?;
@@ -3154,6 +3156,7 @@ pub(super) fn project<'ctx>(
                 let mut pcurves = Some(boundary_storage.with_storage(|| {
                     ctx.collection_vec(segment.pcurves.len(), "iges trimming segment pcurves")
                 })?);
+                let mut pcurve_storage = ctx.reserve_scoped(0, "iges trimming pcurve candidate storage")?;
                 let mut pcurve_refusal = None;
                 let mut pcurve_sequences = segment.pcurves.iter();
                 while pcurve_sequences.len() != 0 || ctx.resource_refusal().is_some() {
@@ -3166,7 +3169,7 @@ pub(super) fn project<'ctx>(
                     let index = composite_index.as_ref().ok_or_else(|| {
                         CodecError::Malformed("IGES trimming composite index is absent".into())
                     })?;
-                    match pcurve_geometry(
+                    match pcurve_storage.with_storage(|| pcurve_geometry(
                         ir,
                         Some(&carrier_index),
                         *sequence,
@@ -3178,7 +3181,7 @@ pub(super) fn project<'ctx>(
                         Some(carrier_agreement_tolerance),
                         ctx,
                         index,
-                    ) {
+                    )) {
                         Ok(Some(resolved)) => {
                             if let Some(pcurves) = pcurves.as_mut() {
                                 pcurves.push(resolved);
@@ -3222,6 +3225,10 @@ pub(super) fn project<'ctx>(
                     }
                     None => Vec::new(),
                 };
+                if pcurves.is_empty() {
+                    drop(pcurve_storage);
+                    pcurve_storage = ctx.reserve_scoped(0, "iges trimming pcurve candidate storage")?;
+                }
                 let pcurve_outside_support = ctx.any_by(
                     pcurves.iter().zip(&segment.pcurves),
                     |((geometry, range), sequence)| {
@@ -3266,6 +3273,8 @@ pub(super) fn project<'ctx>(
                         format_args!("IGES entity type {} form {}: alternate boundary parameter curve leaves the declared support parameter bounds; model-space curve retained", entry.entity_type, entry.form),
                     )?;
                     ctx.clear_vec(&mut pcurves, "iges trimming rejected pcurves")?;
+                    drop(pcurve_storage);
+                    pcurve_storage = ctx.reserve_scoped(0, "iges trimming pcurve candidate storage")?;
                 }
                 let (source_edge, start, end, pcurves_agree) =
                     match boundary_storage.with_storage(|| {
@@ -3341,6 +3350,11 @@ pub(super) fn project<'ctx>(
                     };
                 if !pcurves_agree {
                     ctx.clear_vec(&mut pcurves, "iges trimming rejected pcurves")?;
+                }
+                if pcurves.is_empty() {
+                    drop(pcurve_storage);
+                } else {
+                    candidate_pcurve_storage.absorb(&mut pcurve_storage)?;
                 }
                 items.push(BoundaryItem {
                     segment,
@@ -3888,7 +3902,7 @@ pub(super) fn project<'ctx>(
         candidate.model_mut().finalize(ctx)?;
         staged_storage
             .with_storage(|| ctx.reserve_vec(&mut staged, 1, "iges trimming staged candidates"))?;
-        staged.push((entry, candidate, candidate_boundary_vertex_derivations));
+        staged.push((entry, candidate, candidate_boundary_vertex_derivations, candidate_pcurve_storage));
     }
     drop(carrier_index);
     let mut commit_session = CommitSession::new(ir, ctx, None)?;
@@ -3897,7 +3911,7 @@ pub(super) fn project<'ctx>(
     }
     let mut source_values = IntoIterator::into_iter(staged);
     while source_values.len() != 0 {
-        let Some((entry, candidate, derivations)) = ctx.next_charged(&mut source_values, "iges trimming commit traversal")? else {
+        let Some((entry, candidate, derivations, candidate_pcurve_storage)) = ctx.next_charged(&mut source_values, "iges trimming commit traversal")? else {
             break;
         };
         if commit_session.commit_model(candidate)?.is_err() {
@@ -3910,6 +3924,7 @@ pub(super) fn project<'ctx>(
             )?;
             continue;
         }
+        candidate_pcurve_storage.commit()?;
         ctx.insert_scoped_btree_set(
             &mut decoded_storage,
             &mut decoded,
