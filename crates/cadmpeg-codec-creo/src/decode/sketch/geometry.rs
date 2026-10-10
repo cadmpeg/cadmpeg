@@ -601,6 +601,67 @@ impl SectionArcCarrier {
         })
     }
 
+    pub(super) fn from_saved_record(
+        arc: &crate::feature::definitions::FeatureSavedArc,
+    ) -> Option<Self> {
+        let [center_u, center_v, _] = arc.center;
+        if let ([Some(center_u), Some(center_v)], Some(radius)) = (
+            [center_u, center_v],
+            arc.radius.filter(|radius| *radius > EPS_POINT_NONZERO),
+        ) {
+            return Self::new([center_u, center_v], radius);
+        }
+        let [[Some(first_u), Some(first_v), _], [Some(second_u), Some(second_v), _]] = arc.endpoints
+        else {
+            return None;
+        };
+        let scale = [first_u, first_v, second_u, second_v]
+            .into_iter()
+            .map(f64::abs)
+            .fold(1.0, f64::max);
+        let [center_u, center_v] = match [center_u, center_v] {
+            [Some(u), Some(v)] => [u, v],
+            [Some(u), None] => {
+                let denominator = 2.0 * (second_v - first_v);
+                if denominator.abs() <= EPS_DENOMINATOR_NONZERO * scale {
+                    return None;
+                }
+                let v = ((second_u - u).mul_add(
+                    second_u - u,
+                    second_v * second_v - (first_u - u) * (first_u - u) - first_v * first_v,
+                )) / denominator;
+                [u, v]
+            }
+            [None, Some(v)] => {
+                let denominator = 2.0 * (second_u - first_u);
+                if denominator.abs() <= EPS_DENOMINATOR_NONZERO * scale {
+                    return None;
+                }
+                let u = ((second_v - v).mul_add(
+                    second_v - v,
+                    second_u * second_u - (first_v - v) * (first_v - v) - first_u * first_u,
+                )) / denominator;
+                [u, v]
+            }
+            [None, None] => return None,
+        };
+        let first_radius = (first_u - center_u).hypot(first_v - center_v);
+        let second_radius = (second_u - center_u).hypot(second_v - center_v);
+        let radial_scale = first_radius.max(second_radius);
+        if !first_radius.is_finite()
+            || !second_radius.is_finite()
+            || first_radius <= EPS_POINT_NONZERO
+            || (first_radius - second_radius).abs() > EPS_RADIUS_AGREEMENT * radial_scale
+            || arc.radius.is_some_and(|stored| {
+                (stored - first_radius).abs() > EPS_RADIUS_AGREEMENT * stored.max(first_radius)
+            })
+        {
+            return None;
+        }
+        let radius = arc.radius.unwrap_or(first_radius);
+        Self::new([center_u, center_v], radius)
+    }
+
     pub(in crate::decode) fn raw(self) -> ([f64; 2], f64) {
         let center = self.center.get();
         ([center.u, center.v], self.radius.get())
@@ -615,62 +676,7 @@ pub(in crate::decode) fn saved_section_arc_carrier(
     let Some(arc) = saved_section_arc_record(ctx, definition, segment)? else {
         return Ok(None);
     };
-    let [center_u, center_v, _] = arc.center;
-    if let ([Some(center_u), Some(center_v)], Some(radius)) = (
-        [center_u, center_v],
-        arc.radius.filter(|radius| *radius > EPS_POINT_NONZERO),
-    ) {
-        return Ok(SectionArcCarrier::new([center_u, center_v], radius));
-    }
-    let [[Some(first_u), Some(first_v), _], [Some(second_u), Some(second_v), _]] = arc.endpoints
-    else {
-        return Ok(None);
-    };
-    let scale = [first_u, first_v, second_u, second_v]
-        .into_iter()
-        .map(f64::abs)
-        .fold(1.0, f64::max);
-    let [center_u, center_v] = match [center_u, center_v] {
-        [Some(u), Some(v)] => [u, v],
-        [Some(u), None] => {
-            let denominator = 2.0 * (second_v - first_v);
-            if denominator.abs() <= EPS_DENOMINATOR_NONZERO * scale {
-                return Ok(None);
-            }
-            let v = ((second_u - u).mul_add(
-                second_u - u,
-                second_v * second_v - (first_u - u) * (first_u - u) - first_v * first_v,
-            )) / denominator;
-            [u, v]
-        }
-        [None, Some(v)] => {
-            let denominator = 2.0 * (second_u - first_u);
-            if denominator.abs() <= EPS_DENOMINATOR_NONZERO * scale {
-                return Ok(None);
-            }
-            let u = ((second_v - v).mul_add(
-                second_v - v,
-                second_u * second_u - (first_v - v) * (first_v - v) - first_u * first_u,
-            )) / denominator;
-            [u, v]
-        }
-        [None, None] => return Ok(None),
-    };
-    let first_radius = (first_u - center_u).hypot(first_v - center_v);
-    let second_radius = (second_u - center_u).hypot(second_v - center_v);
-    let radial_scale = first_radius.max(second_radius);
-    if !first_radius.is_finite()
-        || !second_radius.is_finite()
-        || first_radius <= EPS_POINT_NONZERO
-        || (first_radius - second_radius).abs() > EPS_RADIUS_AGREEMENT * radial_scale
-        || arc.radius.is_some_and(|stored| {
-            (stored - first_radius).abs() > EPS_RADIUS_AGREEMENT * stored.max(first_radius)
-        })
-    {
-        return Ok(None);
-    }
-    let radius = arc.radius.unwrap_or(first_radius);
-    Ok(SectionArcCarrier::new([center_u, center_v], radius))
+    Ok(SectionArcCarrier::from_saved_record(arc))
 }
 
 /// The arc facts recovered from a saved-section row.
@@ -683,6 +689,41 @@ pub(in crate::decode) struct SavedSectionArc {
 }
 
 impl SavedSectionArc {
+    fn from_saved_record(arc: &crate::feature::definitions::FeatureSavedArc) -> Option<Self> {
+        let carrier = SectionArcCarrier::from_saved_record(arc)?;
+        let ([center_u, center_v], radius) = carrier.raw();
+        let [[Some(first_u), Some(first_v), _], [Some(second_u), Some(second_v), _]] = arc.endpoints
+        else {
+            return None;
+        };
+        let first = [first_u - center_u, first_v - center_v];
+        let second = [second_u - center_u, second_v - center_v];
+        let first_radius = first[0].hypot(first[1]);
+        let second_radius = second[0].hypot(second[1]);
+        let scale = radius.max(first_radius).max(second_radius);
+        if !first_radius.is_finite()
+            || !second_radius.is_finite()
+            || (first_radius - radius).abs() > EPS_RADIUS_AGREEMENT * scale
+            || (second_radius - radius).abs() > EPS_RADIUS_AGREEMENT * scale
+        {
+            return None;
+        }
+        let start = second[1].atan2(second[0]);
+        let mut end = first[1].atan2(first[0]);
+        // `atan2` lies in [-pi, pi], so at most two turns bring the end past the start.
+        while end <= start {
+            end += std::f64::consts::TAU;
+        }
+        let start_angle = Angle::new(start)?;
+        let end_angle = Angle::new(end)?;
+        Some(Self {
+            center: carrier.center,
+            radius: carrier.radius,
+            start_angle,
+            end_angle,
+        })
+    }
+
     fn into_geometry(self) -> Option<SketchGeometry> {
         SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: self.center.into(),
@@ -702,44 +743,7 @@ pub(in crate::decode) fn saved_section_arc(
     let Some(arc) = saved_section_arc_record(ctx, definition, segment)? else {
         return Ok(None);
     };
-    let Some(carrier) = saved_section_arc_carrier(ctx, definition, segment)? else {
-        return Ok(None);
-    };
-    let ([center_u, center_v], radius) = carrier.raw();
-    let [[Some(first_u), Some(first_v), _], [Some(second_u), Some(second_v), _]] = arc.endpoints
-    else {
-        return Ok(None);
-    };
-    let first = [first_u - center_u, first_v - center_v];
-    let second = [second_u - center_u, second_v - center_v];
-    let first_radius = first[0].hypot(first[1]);
-    let second_radius = second[0].hypot(second[1]);
-    let scale = radius.max(first_radius).max(second_radius);
-    if !first_radius.is_finite()
-        || !second_radius.is_finite()
-        || (first_radius - radius).abs() > EPS_RADIUS_AGREEMENT * scale
-        || (second_radius - radius).abs() > EPS_RADIUS_AGREEMENT * scale
-    {
-        return Ok(None);
-    }
-    let start = second[1].atan2(second[0]);
-    let mut end = first[1].atan2(first[0]);
-    // `atan2` lies in [-pi, pi], so at most two turns bring the end past the start.
-    while end <= start {
-        end += std::f64::consts::TAU;
-    }
-    let Some(start_angle) = Angle::new(start) else {
-        return Ok(None);
-    };
-    let Some(end_angle) = Angle::new(end) else {
-        return Ok(None);
-    };
-    Ok(Some(SavedSectionArc {
-        center: carrier.center,
-        radius: carrier.radius,
-        start_angle,
-        end_angle,
-    }))
+    Ok(SavedSectionArc::from_saved_record(arc))
 }
 
 pub(in crate::decode) type SavedSegmentPointCoordinates = [Option<(u32, [f64; 2])>; 3];
@@ -767,13 +771,13 @@ pub(in crate::decode) fn saved_section_segment_point_coordinates(
             ])
         }
         crate::feature::definitions::FeatureSegmentKind::Arc(_) => {
-            let Some(arc) = saved_section_arc(ctx, definition, segment)? else {
-                return Ok(None);
-            };
-            let center = *arc.center.as_raw();
             let Some(arc) = saved_section_arc_record(ctx, definition, segment)? else {
                 return Ok(None);
             };
+            let Some(geometry) = SavedSectionArc::from_saved_record(arc) else {
+                return Ok(None);
+            };
+            let center = *geometry.center.as_raw();
             let [[Some(first_u), Some(first_v), _], [Some(second_u), Some(second_v), _]] =
                 arc.endpoints
             else {
