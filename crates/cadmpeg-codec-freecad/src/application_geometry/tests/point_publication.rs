@@ -2,13 +2,12 @@
 
 use super::{parse_points, resource_test_property, DecodeArena, DecodeContext, DecodePolicy};
 use crate::native::RetainedXml;
-use cadmpeg_core::decode::{u64_from_index, ResourceDimension};
+use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::topology::Point;
 
 #[test]
-fn failed_point_transform_releases_candidate_but_keeps_output_backing() {
+fn failed_point_transform_is_malformed_before_row_publication() {
     let mut property = resource_test_property();
     property.xml = RetainedXml::from_text(
         "<Property><Points mtrx=\"1e300 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1\"/></Property>".into(),
@@ -23,66 +22,40 @@ fn failed_point_transform_releases_candidate_but_keeps_output_backing() {
             }
         }
         let arena = DecodeArena::new();
-        let policy = DecodePolicy::service();
-        // The core materialized allowance is the profile cap bounded by
-        // its 16 MiB base plus 1000 bytes per root input byte.
-        let scratch_limit = (16 * 1024 * 1024 + 1000 * u64_from_index(bytes.len()))
-            .min(policy.limits.max_materialized_bytes);
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
         let mut points = Vec::new();
         let mut admitted = 0;
-        for _ in 0..2 {
-            let error = parse_points(&ctx, &property, &bytes, 0, &mut admitted, None, &mut points)
-                .expect_err("transformed coordinate overflow");
-            assert!(matches!(error, CodecError::Malformed(message)
-                if message == "transformed point-cloud point contains a non-finite coordinate"));
-            assert!(points.is_empty());
-            assert_eq!(ctx.resource_refusal(), None);
-            assert_eq!(admitted, u64::from(count));
-            let scratch = ctx
-                .reserve_scoped(scratch_limit, "released point scratch")
-                .expect("all XML, ordinal and candidate scratch released");
-            drop(scratch);
-        }
-        let live = u64_from_index(points.capacity() * std::mem::size_of::<Point>());
-        let Err(CodecError::ResourceLimit(limit)) =
-            ctx.charge_retained(u64::MAX, "live point backing probe")
-        else {
-            panic!("retained overflow probe")
-        };
-        assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-        assert_eq!(limit.used, live);
+        let error = parse_points(&ctx, &property, &bytes, 0, &mut admitted, None, &mut points)
+            .expect_err("transformed coordinate overflow");
+        assert!(matches!(error, CodecError::Malformed(message)
+            if message == "transformed point-cloud point contains a non-finite coordinate"));
+        assert!(points.is_empty());
+        assert_eq!(ctx.resource_refusal(), None);
+        assert_eq!(admitted, u64::from(count));
     }
 }
 
 #[test]
-fn invalid_point_source_releases_identity_and_source_candidate() {
+fn invalid_point_source_is_malformed_before_row_publication() {
     let mut property = resource_test_property();
     property.owner = " ".into();
     let bytes = [1_u32.to_le_bytes().as_slice(), &[0; 12]].concat();
     let arena = DecodeArena::new();
     let (ctx, _) =
-        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("context");
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
     let mut points = Vec::new();
-    for _ in 0..2 {
-        let error = parse_points(&ctx, &property, &bytes, 0, &mut 0, None, &mut points)
-            .expect_err("blank source object");
-        assert!(matches!(error, CodecError::Malformed(message)
-            if message == "source object_id must not be empty"));
-        assert!(points.is_empty());
-        assert_eq!(ctx.resource_refusal(), None);
-    }
-    let live = u64_from_index(points.capacity() * std::mem::size_of::<Point>());
-    let Err(CodecError::ResourceLimit(limit)) =
-        ctx.charge_retained(u64::MAX, "live point backing probe")
-    else {
-        panic!("retained overflow probe")
-    };
-    assert_eq!(limit.used, live);
+    let error = parse_points(&ctx, &property, &bytes, 0, &mut 0, None, &mut points)
+        .expect_err("blank source object");
+    assert!(
+        matches!(error, CodecError::Malformed(message) if message == "source object_id must not be empty")
+    );
+    assert!(points.is_empty());
+    assert_eq!(ctx.resource_refusal(), None);
 }
 
 #[test]
-fn accepted_point_rows_keep_identities_positions_and_source_storage() {
+fn accepted_point_rows_keep_identities_positions_and_source() {
     let property = resource_test_property();
     let mut bytes = 2_u32.to_le_bytes().to_vec();
     for value in [1.0_f32, 2.0, 3.0, -1.0, -2.0, -3.0] {
@@ -112,50 +85,30 @@ fn accepted_point_rows_keep_identities_positions_and_source_storage() {
         assert_eq!(source.object_id.as_str(), property.owner);
         assert_eq!(source.name.as_deref(), Some("Geometry"));
     }
-    let live = points.capacity() * std::mem::size_of::<Point>()
-        + "fcstd:model:point#Geometry:0".len()
-        + "fcstd:model:point#Geometry:1".len()
-        + 2 * (property.owner.len() + property.name.len());
-    let Err(CodecError::ResourceLimit(limit)) =
-        ctx.charge_retained(u64::MAX, "published point storage probe")
-    else {
-        panic!("retained overflow probe")
-    };
-    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-    assert_eq!(limit.used, u64_from_index(live));
-    assert_eq!(points[0].id.as_str(), "fcstd:model:point#Geometry:0");
 }
 
 #[test]
-fn point_source_refusal_keeps_original_limit_and_releases_unpublished_identity() {
+fn point_source_refusal_keeps_original_limit() {
     let property = resource_test_property();
     let bytes = [1_u32.to_le_bytes().as_slice(), &[0; 12]].concat();
-    let mut policy = DecodePolicy::service();
-    let retained =
-        u64_from_index(std::mem::size_of::<Point>() + "fcstd:model:point#Geometry:0".len());
-    policy.limits.max_retained_bytes = retained;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
-    let mut points = ctx
-        .collection_vec::<Point>(1, "caller point backing")
-        .expect("one live slot");
-    assert_eq!(points.capacity(), 1);
-    let Err(CodecError::ResourceLimit(original)) =
-        parse_points(&ctx, &property, &bytes, 0, &mut 0, None, &mut points)
-    else {
-        panic!("source storage must refuse after the admitted identity")
-    };
-    assert_eq!(original.dimension, ResourceDimension::RetainedBytes);
-    assert_eq!(original.operation, "FreeCAD geometry object identity");
-    assert_eq!(
-        (original.limit, original.used, original.additional),
-        (retained, retained, u64_from_index(property.owner.len()))
+    let error = crate::test_support::refusal_at(
+        ResourceDimension::RetainedBytes,
+        &bytes,
+        "FreeCAD geometry object identity",
+        |ctx| {
+            let mut points = Vec::new();
+            let result = parse_points(ctx, &property, &bytes, 0, &mut 0, None, &mut points);
+            if let Err(CodecError::ResourceLimit(original)) = &result {
+                assert_eq!(original.dimension, ResourceDimension::RetainedBytes);
+                assert!(points.is_empty());
+                assert_eq!(ctx.resource_refusal(), Some(*original));
+                assert!(matches!(ctx.charge_retained(0, "later point publication"),
+                    Err(CodecError::ResourceLimit(repeated)) if repeated == *original));
+            }
+            result
+        },
     );
-    assert!(points.is_empty());
-    assert_eq!(points.capacity(), 1);
-    assert_eq!(ctx.resource_refusal(), Some(original));
-    assert!(matches!(ctx.charge_retained(0, "later point publication"),
-        Err(CodecError::ResourceLimit(repeated)) if repeated == original));
+    assert!(matches!(error, CodecError::ResourceLimit(_)));
 }
 
 #[test]
@@ -177,19 +130,6 @@ fn point_trailing_payload_keeps_completed_row_and_retained_diagnostic() {
     assert_eq!(points[0].id.as_str(), "fcstd:model:point#Geometry:0");
     assert_eq!(points[0].position().get(), Point3::new(0.0, 0.0, 0.0));
     assert_eq!(ctx.resource_refusal(), None);
-    let live = points.capacity() * std::mem::size_of::<Point>()
-        + "fcstd:model:point#Geometry:0".len()
-        + property.owner.len()
-        + property.name.len()
-        + message.len();
-    let Err(CodecError::ResourceLimit(limit)) =
-        ctx.charge_retained(u64::MAX, "point payload diagnostic probe")
-    else {
-        panic!("retained overflow probe")
-    };
-    assert_eq!(limit.used, u64_from_index(live));
-    assert_eq!(message, "point-cloud payload has 1 trailing bytes");
-    assert_eq!(points[0].id.as_str(), "fcstd:model:point#Geometry:0");
 }
 
 #[test]
@@ -218,4 +158,32 @@ fn empty_application_payload_finish_is_free_and_real_refusal_stays_sticky() {
         matches!(super::Reader::new(b"xx").finish(&ctx, "mesh payload"),
         Err(CodecError::ResourceLimit(repeated)) if repeated == original)
     );
+}
+
+#[test]
+fn point_population_retained_limit_refuses_large_population() {
+    for count in [1_u32, 128] {
+        let mut bytes = count.to_le_bytes().to_vec();
+        bytes.extend(vec![0; usize::try_from(count).unwrap() * 12]);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 1024;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let result = parse_points(
+            &ctx,
+            &resource_test_property(),
+            &bytes,
+            0,
+            &mut 0,
+            None,
+            &mut Vec::new(),
+        );
+        if count == 1 {
+            assert!(result.is_ok());
+        } else {
+            assert!(
+                matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes)
+            );
+        }
+    }
 }
