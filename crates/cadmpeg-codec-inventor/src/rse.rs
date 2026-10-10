@@ -102,7 +102,7 @@ impl SegmentToken {
         // The token grammar is the identity-key grammar: nonempty, no `#` and
         // no whitespace. It is checked on the borrowed name first, so a name
         // that fails is never copied; the key constructor then copies the
-        // token and rescans it, both charged before it runs.
+        // token and scans it twice, all charged before it runs.
         if token.is_empty()
             || ctx.any_by(
                 token.chars(),
@@ -114,7 +114,7 @@ impl SegmentToken {
         }
         let token_len = cadmpeg_core::decode::u64_from_index(token.len());
         ctx.charge_retained(token_len, "retain RSe segment token")?;
-        ctx.charge_work(token_len, "validate RSe segment token key")?;
+        ctx.charge_work(token_len.saturating_mul(3), "validate RSe segment token key")?;
         let Ok(token) = IdentityKey::try_new(token) else {
             return Ok(None);
         };
@@ -1636,6 +1636,29 @@ mod tests {
             .expect("service policy admits token")
             .expect("valid metadata name");
         assert_eq!(token.as_str(), "seg");
+    }
+
+    #[test]
+    fn segment_token_key_charges_copy_and_both_scans() {
+        // "seg": three grammar visits and one end probe, then 3 * 3 key bytes.
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 12;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+            .expect("empty root fits input cap");
+        assert!(matches!(
+            SegmentToken::parse(&ctx, "Mseg"),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "validate RSe segment token key"
+                    && limit.used == 4
+                    && limit.additional == 9
+        ));
+        policy.limits.max_work_units = 13;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+            .expect("empty root fits input cap");
+        assert!(SegmentToken::parse(&ctx, "Mseg").expect("exact work budget").is_some());
+        ctx.finish_session().expect("exact budget completes");
     }
 
     #[test]
