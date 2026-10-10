@@ -658,7 +658,7 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
     assert_eq!(
         {
             let ctx = cadmpeg_test_support::service_decode_context();
-            let external = super::super::external_bodies(&ctx, &bodies, &regions, &shells).unwrap();
+            let external = super::super::external_bodies(&bodies, &regions, &shells);
             super::super::unique_external_body_candidate(&ctx, &operand, Some("current"), &external)
                 .unwrap()
                 .cloned()
@@ -686,7 +686,7 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
     assert_eq!(
         {
             let ctx = cadmpeg_test_support::service_decode_context();
-            let external = super::super::external_bodies(&ctx, &bodies, &regions, &shells).unwrap();
+            let external = super::super::external_bodies(&bodies, &regions, &shells);
             super::super::unique_external_body_candidate(&ctx, &operand, Some("current"), &external)
                 .unwrap()
                 .cloned()

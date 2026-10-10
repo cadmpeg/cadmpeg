@@ -3646,50 +3646,56 @@ pub(crate) fn bind_edge_identity_history(
             continue;
         }
         let mut first_resolved = None;
-        let mut resolved_is_ambiguous = false;
-        for identity in decode.admit_iter(identities, "scan F3D resolved edge identities")? {
-            if identity.group_record_index != operand.group_record_index
-                || !decode.equal(
-                    &crate::ids::native_stream_charged(
-                        decode,
-                        &identity.id,
-                        "split F3D native stream",
-                    )?,
-                    &Some(stream),
-                    "compare F3D resolved edge identity stream",
-                )?
-            {
-                continue;
-            }
-            let Some(persistent) = identity.persistent_identity() else {
-                continue;
-            };
-            let binding = scoped_identities.selection_identity_kind(decode, persistent.local_id)?;
-            let Some(SelectionIdentity {
-                kind,
-                entity_ref,
-                state_ids: states,
-            }) = binding
-            else {
-                continue;
-            };
-            if !decode.contains(
-                states,
-                &previous_state_id,
-                "find F3D resolved edge identity state",
-            )? {
-                continue;
-            }
-            let Some(edge) = historical_identity_edge(decode, kind, entity_ref, topology)? else {
-                continue;
-            };
+        let resolved_is_ambiguous = decode.any_by(
+            identities,
+            |identity| {
+                if identity.group_record_index != operand.group_record_index
+                    || !decode.equal(
+                        &crate::ids::native_stream_charged(
+                            decode,
+                            &identity.id,
+                            "split F3D native stream",
+                        )?,
+                        &Some(stream),
+                        "compare F3D resolved edge identity stream",
+                    )?
+                {
+                    return Ok(false);
+                }
+                let Some(persistent) = identity.persistent_identity() else {
+                    return Ok(false);
+                };
+                let binding =
+                    scoped_identities.selection_identity_kind(decode, persistent.local_id)?;
+                let Some(SelectionIdentity {
+                    kind,
+                    entity_ref,
+                    state_ids: states,
+                }) = binding
+                else {
+                    return Ok(false);
+                };
+                if !decode.contains(
+                    states,
+                    &previous_state_id,
+                    "find F3D resolved edge identity state",
+                )? {
+                    return Ok(false);
+                }
+                let Some(edge) = historical_identity_edge(decode, kind, entity_ref, topology)?
+                else {
+                    return Ok(false);
+                };
 
-            match first_resolved {
-                None => first_resolved = Some((edge, identity.id.as_str())),
-                Some((known, _)) if known != edge => resolved_is_ambiguous = true,
-                Some(_) => {}
-            }
-        }
+                match first_resolved {
+                    None => first_resolved = Some((edge, identity.id.as_str())),
+                    Some((known, _)) if known != edge => return Ok(true),
+                    Some(_) => {}
+                }
+                Ok(false)
+            },
+            "scan F3D resolved edge identities",
+        )?;
         let Some((edge, identity_id)) = first_resolved.filter(|_| !resolved_is_ambiguous) else {
             continue;
         };
@@ -4203,5 +4209,110 @@ mod tests {
     #[test]
     fn identity_index_skips_histories_without_representable_requests() {
         assert_index_skips_histories(Some(u64::MAX));
+    }
+
+    #[test]
+    fn conflicting_edge_identities_skip_resolution_tail() {
+        use crate::records::topology::construction::DesignConstructionOperandIdentity;
+        use crate::records::topology::edge_identity::DesignEdgeIdentityOperand;
+        use cadmpeg_core::decode::ResourceDimension;
+        use cadmpeg_core::CodecError;
+        use std::collections::HashMap;
+
+        let (_, scope, mut history, _) = crate::history::test_support::output_binding_inputs();
+        history.states[1].topology_mut().unwrap().edges = vec![17, 19];
+        let original = serde_json::from_value::<DesignEdgeIdentityOperand>(serde_json::json!({
+            "id": "f3d:Design/BulkStream.dat:identity#99",
+            "scope_record_index": 1,
+            "group_record_index": 2,
+            "group_member_ordinal": 0,
+            "record_index": 99,
+            "byte_offset": 0,
+            "class_tag": "277",
+            "compact_layout": true,
+            "local_id": 99,
+            "local_id_offset": 23,
+            "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+            "asset_id_offset": 41,
+            "context_id": "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e",
+            "context_id_offset": 117
+        }))
+        .unwrap();
+        let identity = |local_id| {
+            serde_json::from_value::<DesignConstructionOperandIdentity>(serde_json::json!({
+                "id": format!("f3d:Design/BulkStream.dat:operand-identity#{local_id}"),
+                "group_record_index": 2,
+                "wrapper_record_indices": [],
+                "wrapper_byte_offsets": [],
+                "wrapper_class_tags": [],
+                "following_record_index": 3,
+                "following_byte_offset": 0,
+                "following_class_tag": "289",
+                "persistent_identity": {
+                    "local_id": local_id,
+                    "local_id_offset": 21,
+                    "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+                    "asset_id_offset": 33,
+                    "context_id": "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e",
+                    "context_id_offset": 109,
+                    "tail_slot_offset": 185,
+                    "next_record_index": 4,
+                    "next_byte_offset": 190
+                }
+            }))
+            .unwrap()
+        };
+        let scope_histories = HashMap::from([(scope.id.clone(), history.id.clone())]);
+        let work = |tail, conflicting| {
+            let mut identities = vec![identity(17), identity(if conflicting { 19 } else { 17 })];
+            identities.extend(
+                std::iter::repeat_with(|| {
+                    let mut draft = identity(17).into_draft();
+                    draft.group_record_index = 3;
+                    DesignConstructionOperandIdentity::try_new(draft).unwrap()
+                })
+                .take(tail),
+            );
+            crate::test_support::with_decode_context(|decode| {
+                let mut operand = original.clone();
+                super::bind_edge_identity_history(
+                    decode,
+                    std::slice::from_mut(&mut operand),
+                    &identities,
+                    std::slice::from_ref(&scope),
+                    std::slice::from_ref(&history),
+                    &scope_histories,
+                )
+                .unwrap();
+                if conflicting {
+                    assert_eq!(operand, original);
+                } else {
+                    assert_eq!(operand.resolved_edge_slot, Some(17));
+                    assert_eq!(
+                        operand.resolution_identity_id.as_deref(),
+                        Some(identities[0].id.as_str())
+                    );
+                }
+                assert_eq!(decode.resource_refusal(), None);
+                let CodecError::ResourceLimit(limit) = decode
+                    .charge_work(u64::MAX, "measure edge identity work")
+                    .unwrap_err()
+                else {
+                    panic!("work measurement");
+                };
+                assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+                limit.used
+            })
+        };
+        // Both inputs build the same source-sized indexes. Only agreeing edges
+        // scan the later rows, whose group mismatch costs one source step each.
+        let short_conflict = work(1, true);
+        let short_agree = work(1, false);
+        let long_conflict = work(4096, true);
+        let long_agree = work(4096, false);
+        assert_eq!(
+            long_agree + short_conflict,
+            long_conflict + short_agree + 4095
+        );
     }
 }

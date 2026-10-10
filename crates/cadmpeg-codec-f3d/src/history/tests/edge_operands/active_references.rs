@@ -195,7 +195,7 @@ fn active_edge_one_below_group_count_preserves_original_refusal_and_native_input
         assert_eq!(original.used, 1);
         assert_eq!(original.additional, 1);
         assert_eq!(operand, original_operand);
-        assert_eq!(ctx.resource_refusal(), Some(original.clone()));
+        assert_eq!(ctx.resource_refusal(), Some(original));
         let Err(CodecError::ResourceLimit(sticky)) =
             bind_active_edge_operand_candidates(ctx, &mut operand, &[])
         else {
@@ -338,7 +338,7 @@ fn active_edge_actual_query_and_commit_phases_preserve_original_refusal() {
                 assert_eq!(original.additional, additional);
             }
             assert_eq!(operand, original_operand);
-            assert_eq!(ctx.resource_refusal(), Some(original.clone()));
+            assert_eq!(ctx.resource_refusal(), Some(original));
             let Err(CodecError::ResourceLimit(sticky)) =
                 bind_active_edge_operand_candidates(ctx, &mut operand, &[])
             else {

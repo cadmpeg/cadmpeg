@@ -41,7 +41,6 @@ pub(super) fn validate_dimension_recipe_records<'a>(
         )
     })?;
 
-    let owners_by_index = &ctx.owner_groups;
     let companions_by_index = &ctx.companions_by_index;
     let mut dimension_recipe_ids = HashSet::new();
     for record in ctx.decode.admit_iter(
@@ -58,7 +57,7 @@ pub(super) fn validate_dimension_recipe_records<'a>(
             Some(companion) => match ctx
                 .decode
                 .get_hash_map(
-                    owners_by_index,
+                    &ctx.owners()?.0,
                     &(native_stream, companion.owner_record_index()),
                     "find F3D dimension recipe owner",
                 )?
@@ -222,7 +221,6 @@ pub(super) fn validate_dimension_companion_recipes<'a>(
     dimension_recipe_ids: &HashSet<(&'a str, &'a str)>,
 ) -> Result<(), CodecError> {
     let native = ctx.native;
-    let owners_by_index = &ctx.owner_groups;
     for companion in ctx.decode.admit_iter(
         &native.design_parameter_companions,
         "scan F3D design parameter companions",
@@ -231,7 +229,7 @@ pub(super) fn validate_dimension_companion_recipes<'a>(
         let dimension_companion = match ctx
             .decode
             .get_hash_map(
-                owners_by_index,
+                &ctx.owners()?.0,
                 &(native_stream, companion.owner_record_index()),
                 "find F3D dimension companion owner",
             )?
@@ -292,9 +290,7 @@ pub(super) fn validate_dimension_locus_pairs<'a>(
         .decode
         .reserve_scoped(0, "hold F3D dimension locus pairs result")?;
     let native = ctx.native;
-    let owners_by_index = &ctx.owner_groups;
     let companions_by_index = &ctx.companions_by_index;
-    let sketch_geometry_indices = &ctx.sketch_geometry_indices;
     let mut locus_pair_indices = HashSet::new();
     let mut locus_pair_companions = HashSet::new();
     for pair in ctx.decode.admit_iter(
@@ -346,7 +342,7 @@ pub(super) fn validate_dimension_locus_pairs<'a>(
             Some(companion) => match ctx
                 .decode
                 .get_hash_map(
-                    owners_by_index,
+                    &ctx.owners()?.0,
                     &(native_stream, companion.owner_record_index()),
                     "find F3D locus companion owner",
                 )?
@@ -376,12 +372,12 @@ pub(super) fn validate_dimension_locus_pairs<'a>(
             && dimension_companion
             && governs_following_dimension
             && ctx.decode.contains_hash_set(
-                sketch_geometry_indices,
+                &ctx.geometry_indices()?.0,
                 &(native_stream, pair.loci()[0].geometry_index()),
                 "find F3D dimension locus geometry",
             )?
             && ctx.decode.contains_hash_set(
-                sketch_geometry_indices,
+                &ctx.geometry_indices()?.0,
                 &(native_stream, pair.loci()[1].geometry_index()),
                 "find F3D dimension locus geometry",
             )?
@@ -411,11 +407,9 @@ pub(super) fn validate_dimension_annotation_frames(
         .decode
         .reserve_scoped(0, "hold F3D dimension annotation frames scratch")?;
     let native = ctx.native;
-    let owners_by_index = &ctx.owner_groups;
     let companions_by_index = &ctx.companions_by_index;
     let scopes_by_index = &ctx.scope_groups;
     let entities_by_suffix = &ctx.entities_by_suffix;
-    let sketch_geometry_indices = &ctx.sketch_geometry_indices;
     let mut annotation_frame_indices = HashSet::new();
     for frame in ctx.decode.admit_iter(
         &native.design_dimension_annotation_frames,
@@ -432,7 +426,7 @@ pub(super) fn validate_dimension_annotation_frames(
         let governing_owner = ctx
             .decode
             .get_hash_map(
-                owners_by_index,
+                &ctx.owners()?.0,
                 &(native_stream, frame.governing_owner_record_index),
                 "find F3D dimension annotation owner",
             )?
@@ -531,7 +525,7 @@ pub(super) fn validate_dimension_annotation_frames(
             frame.operands(),
             |operand| match operand.geometry_record_index {
                 Some(index) => ctx.decode.contains_hash_set(
-                    sketch_geometry_indices,
+                    &ctx.geometry_indices()?.0,
                     &(native_stream, index.get()),
                     "find F3D annotation operand geometry",
                 ),
@@ -579,10 +573,8 @@ pub(super) fn validate_dimension_presentation_frames(
         .decode
         .reserve_scoped(0, "hold F3D dimension presentation frames scratch")?;
     let native = ctx.native;
-    let owners_by_index = &ctx.owner_groups;
     let companions_by_index = &ctx.companions_by_index;
     let entities_by_suffix = &ctx.entities_by_suffix;
-    let sketch_geometry_indices = &ctx.sketch_geometry_indices;
     let mut sketch_scope_by_entity = std::collections::HashMap::new();
     for placement in ctx.decode.admit_iter(
         &native.design_sketch_placements,
@@ -617,7 +609,7 @@ pub(super) fn validate_dimension_presentation_frames(
         let owner = ctx
             .decode
             .get_hash_map(
-                owners_by_index,
+                &ctx.owners()?.0,
                 &(native_stream, frame.governing_owner_record_index),
                 "find F3D validation record index",
             )?
@@ -705,7 +697,7 @@ pub(super) fn validate_dimension_presentation_frames(
                         .checked_add(11)
                         .is_some_and(|expected_offset| operand.role_offset == expected_offset)
                         && ctx.decode.contains_hash_set(
-                            sketch_geometry_indices,
+                            &ctx.geometry_indices()?.0,
                             &(native_stream, operand.geometry_record_index.get()),
                             "find F3D presentation operand geometry",
                         )?)
@@ -776,10 +768,8 @@ pub(super) fn validate_dimension_locus_groups<'a>(
         .reserve_scoped(0, "hold F3D dimension locus groups result")?;
     let decode: &DecodeContext<'_> = ctx.decode;
     let native = ctx.native;
-    let owners_by_index = &ctx.owner_groups;
     let companions_by_index = &ctx.companions_by_index;
     let entities_by_suffix = &ctx.entities_by_suffix;
-    let sketch_geometry_indices = &ctx.sketch_geometry_indices;
     let mut locus_group_indices = HashSet::new();
     let mut locus_group_companions = HashSet::new();
     for group in ctx.decode.admit_iter(
@@ -831,7 +821,7 @@ pub(super) fn validate_dimension_locus_groups<'a>(
             Some(companion) => match ctx
                 .decode
                 .get_hash_map(
-                    owners_by_index,
+                    &ctx.owners()?.0,
                     &(native_stream, companion.owner_record_index()),
                     "find F3D locus companion owner",
                 )?
@@ -870,7 +860,7 @@ pub(super) fn validate_dimension_locus_groups<'a>(
                         .checked_add(11)
                         .is_some_and(|expected_offset| locus.role_offset == expected_offset)
                         && ctx.decode.contains_hash_set(
-                            sketch_geometry_indices,
+                            &ctx.geometry_indices()?.0,
                             &(native_stream, locus.geometry_record_index),
                             "find F3D counted dimension locus geometry",
                         )?)
@@ -899,7 +889,7 @@ pub(super) fn validate_dimension_locus_groups<'a>(
                         .and_then(|offset| offset.checked_add(1))
                         .is_some_and(|expected_offset| locus.returned.offset == expected_offset)
                         && ctx.decode.contains_hash_set(
-                            sketch_geometry_indices,
+                            &ctx.geometry_indices()?.0,
                             &(native_stream, locus.returned.value),
                             "find F3D returned dimension locus geometry",
                         )?)
@@ -1019,9 +1009,7 @@ pub(super) fn validate_dimension_null_locus_pairs<'a>(
         .decode
         .reserve_scoped(0, "hold F3D dimension null locus pairs scratch")?;
     let native = ctx.native;
-    let owners_by_index = &ctx.owner_groups;
     let companions_by_index = &ctx.companions_by_index;
-    let sketch_geometry_indices = &ctx.sketch_geometry_indices;
     let mut null_locus_pair_indices = HashSet::new();
     let mut null_locus_pair_companions = HashSet::new();
     for pair in ctx.decode.admit_iter(
@@ -1073,7 +1061,7 @@ pub(super) fn validate_dimension_null_locus_pairs<'a>(
             Some(companion) => match ctx
                 .decode
                 .get_hash_map(
-                    owners_by_index,
+                    &ctx.owners()?.0,
                     &(native_stream, companion.owner_record_index()),
                     "find F3D locus companion owner",
                 )?
@@ -1113,7 +1101,7 @@ pub(super) fn validate_dimension_null_locus_pairs<'a>(
             && governs_following_dimension
             && !companion_has_typed_frame
             && ctx.decode.contains_hash_set(
-                sketch_geometry_indices,
+                &ctx.geometry_indices()?.0,
                 &(native_stream, pair.loci()[1].geometry_index()),
                 "find F3D null dimension locus geometry",
             )?

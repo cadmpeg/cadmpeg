@@ -99,7 +99,7 @@ fn form33_without_unique_body_proof_remains_unresolved() {
     .unwrap();
 
     let ctx = cadmpeg_test_support::service_decode_context();
-    let external = external_bodies(&ctx, &bodies, &regions, &shells).unwrap();
+    let external = external_bodies(&bodies, &regions, &shells);
     assert_eq!(
         unique_external_body_candidate(&ctx, &operand, None, &external).unwrap(),
         None

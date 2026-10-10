@@ -5,20 +5,6 @@ use crate::history::{UniqueIndex, UniqueLookup};
 use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
-fn rejected_key(
-    _: &cadmpeg_core::decode::DecodeContext<'_>,
-    _: &u64,
-) -> Result<Option<u64>, CodecError> {
-    Err(CodecError::Malformed("invalid key projection".into()))
-}
-
-fn optional_key(
-    _: &cadmpeg_core::decode::DecodeContext<'_>,
-    value: &u64,
-) -> Result<Option<u64>, CodecError> {
-    Ok((*value != 0).then_some(*value))
-}
-
 #[test]
 fn unique_index_projection_error_skips_unread_source_and_leaves_no_cache() {
     let source = vec![1_u64; 4096];
@@ -28,7 +14,11 @@ fn unique_index_projection_error_skips_unread_source_and_leaves_no_cache() {
     policy.limits.max_materialized_bytes = 0;
     policy.limits.max_retained_bytes = 0;
     crate::test_support::with_decode_policy(&policy, |ctx| {
-        let index = UniqueIndex::new(&source, rejected_key, "project F3D test index source");
+        let index = UniqueIndex::<u64, u64>::new(
+            &source,
+            |_, _| Err(CodecError::Malformed("invalid key projection".into())),
+            "project F3D test index source",
+        );
         assert!(
             matches!(index.get(ctx, &1), Err(CodecError::Malformed(message)) if message == "invalid key projection")
         );
@@ -45,7 +35,11 @@ fn unique_index_projection_error_skips_unread_source_and_leaves_no_cache() {
 fn unique_index_optional_projection_keeps_tombstones_and_native_values() {
     let source = [0_u64, 1, 1, 2];
     crate::test_support::with_decode_context(|ctx| {
-        let index = UniqueIndex::new(&source, optional_key, "project F3D test index source");
+        let index = UniqueIndex::new(
+            &source,
+            |_, value| Ok((*value != 0).then_some(*value)),
+            "project F3D test index source",
+        );
         assert!(matches!(
             index.get_entry(ctx, &0).unwrap(),
             UniqueLookup::Absent
@@ -57,7 +51,7 @@ fn unique_index_optional_projection_keeps_tombstones_and_native_values() {
         let UniqueLookup::Value(value) = index.get_entry(ctx, &2).unwrap() else {
             panic!("unique projected value");
         };
-        assert!(std::ptr::eq(value, &source[3]));
+        assert!(std::ptr::eq(value, &raw const source[3]));
     });
 }
 
@@ -70,7 +64,11 @@ fn unique_index_source_refusal_is_lazy_sticky_and_does_not_install_cache() {
     policy.limits.max_materialized_bytes = 0;
     policy.limits.max_retained_bytes = 0;
     crate::test_support::with_decode_policy(&policy, |ctx| {
-        let index = UniqueIndex::new(&source, optional_key, "project F3D test index source");
+        let index = UniqueIndex::new(
+            &source,
+            |_, value| Ok((*value != 0).then_some(*value)),
+            "project F3D test index source",
+        );
         assert_eq!(ctx.resource_refusal(), None);
         assert!(index.table.get().is_none());
         let CodecError::ResourceLimit(original) = index.get(ctx, &1).unwrap_err() else {
