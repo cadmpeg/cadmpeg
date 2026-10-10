@@ -3347,7 +3347,11 @@ fn rows_with_boundaries(
         "creo unique surface row retain",
     )?;
     let mut prototype_parameter_spans = Vec::new();
-    for frame in named_prototype_frames(ctx, payload)? {
+    let prototype_frames = {
+        let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
+        named_prototype_frames(ctx, payload, &cache)?
+    };
+    for frame in prototype_frames {
         for parameter in frame.parameters {
             ctx.reserve_vec(
                 &mut prototype_parameter_spans,
@@ -3794,8 +3798,8 @@ impl std::fmt::Display for LossyPrototypeName<'_> {
 fn named_prototype_frames<'a>(
     ctx: &DecodeContext<'_>,
     payload: &'a [u8],
+    cache: &scalar::ScalarCache,
 ) -> Result<Vec<NamedPrototypeFrame<'a>>, CodecError> {
-    let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
     let mut frames = Vec::new();
     let mut search = 0;
     while let Some(record_start) = ctx.find_bytes_from(
@@ -3905,7 +3909,7 @@ fn named_prototype_frames<'a>(
                             &family,
                             name,
                             &payload[value_offset..record_end],
-                            &cache,
+                            cache,
                         ) {
                             owned_scalar_end = value_offset + length;
                         }
@@ -3936,7 +3940,7 @@ fn named_prototype_frames<'a>(
                 &family,
                 name,
                 &payload[value_offset..record_end],
-                &cache,
+                cache,
             ) {
                 value_end = value_offset + length;
             } else if let Some(compound_close) = psb::tokens(ctx, &payload[value_offset..value_end])
@@ -3986,7 +3990,7 @@ pub(crate) fn named_prototype_records(
 ) -> Result<Vec<SurfacePrototypeRecord>, CodecError> {
     let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
     let mut records = Vec::new();
-    for frame in named_prototype_frames(ctx, payload)? {
+    for frame in named_prototype_frames(ctx, payload, &cache)? {
         let mut parameters = Vec::new();
         for range in frame.parameters {
             ctx.reserve_vec(&mut parameters, 1, "creo named prototype parameters")?;

@@ -5,6 +5,31 @@ use cadmpeg_core::CodecError;
 
 const SCALAR_IMAGE: &[u8] = &[0x46, 0, 0, 0, 0, 0, 0, 0];
 
+#[test]
+fn named_prototype_records_build_one_scalar_cache_and_preserve_original_refusal() {
+    // One image creates one unique-image node, one paired-tail node and one
+    // scalar entry. No prototype marker creates a frame or output record.
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 3;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_entities = 0;
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(SCALAR_IMAGE, &arena, &policy).expect("root");
+    let mut refusals = crate::lane_refusal::LaneRefusals::new();
+    assert!(super::super::named_prototype_records(&ctx, SCALAR_IMAGE, &mut refusals)
+        .expect("one cache uses three collection items").is_empty());
+    let original = ctx.charge_collection_items_limit(1, "after single prototype cache")
+        .expect_err("three admitted items fill the cap");
+    assert_eq!((original.dimension, original.used, original.additional),
+        (ResourceDimension::CollectionItems, 3, 1));
+    for _ in 0..2 {
+        assert!(matches!(super::super::named_prototype_records(&ctx, SCALAR_IMAGE, &mut refusals),
+            Err(CodecError::ResourceLimit(actual)) if actual == original));
+    }
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original));
+}
+
 fn run_with_collection_limit<T>(
     limit: u64,
     run: impl FnOnce(&DecodeContext<'_>) -> Result<T, CodecError>,
@@ -171,7 +196,7 @@ fn prototype_family_utf8_refuses_before_unknown_family() {
         &[],
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "creo UTF-8 validation",
-        |ctx| super::super::named_prototype_frames(ctx, b"srf_prim_ptr(\xff)\0"),
+        |ctx| super::frames_with_checked_cache(ctx, b"srf_prim_ptr(\xff)\0"),
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -201,7 +226,7 @@ fn prototype_parameter_utf8_refuses_work() {
         &[],
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "creo UTF-8 validation",
-        |ctx| super::super::named_prototype_frames(ctx, b"srf_prim_ptr(plane)\0\xe0\x01radius\0"),
+        |ctx| super::frames_with_checked_cache(ctx, b"srf_prim_ptr(plane)\0\xe0\x01radius\0"),
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -216,7 +241,7 @@ fn prototype_fields_retain_refuses_work() {
         &[],
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "creo named prototype field retain",
-        |ctx| super::super::named_prototype_frames(ctx, b"srf_prim_ptr(plane)\0\xe0\x01radius\0"),
+        |ctx| super::frames_with_checked_cache(ctx, b"srf_prim_ptr(plane)\0\xe0\x01radius\0"),
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
