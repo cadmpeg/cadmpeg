@@ -164,11 +164,13 @@ where
     let (candidates, storage) =
         ctx.with_scoped_storage("hold Parasolid inverse candidates", || {
             let mut candidates = Vec::new();
-            for span in ctx
-                .admit_iter(knots, "sample Parasolid inverse knot spans")?
-                .windows(const { crate::nonzero(2) })
-                .filter(|span| span[0] < span[1])
+            let mut spans = knots.windows(2);
+            while let Some(span) =
+                ctx.next_charged(&mut spans, "sample Parasolid inverse knot spans")?
             {
+                if span[0].partial_cmp(&span[1]) != Some(std::cmp::Ordering::Less) {
+                    continue;
+                }
                 let start = span[0].max(domain[0]);
                 let end = span[1].min(domain[1]);
                 if start >= end {
