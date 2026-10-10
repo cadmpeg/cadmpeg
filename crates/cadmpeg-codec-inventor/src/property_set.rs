@@ -10,6 +10,7 @@ use cadmpeg_core::CodecError;
 const BYTE_ORDER_LE: u16 = 0xfffe;
 const MAX_STREAM_SIZE: usize = 2_097_152;
 const MAX_PROPERTIES: usize = 65_536;
+const CODE_PAGE_INPUT_CHUNK_BYTES: usize = 4096;
 const VT_VECTOR: u16 = 0x1000;
 const VT_VARIANT: u16 = 0x000c;
 
@@ -903,42 +904,35 @@ fn decode_code_page(
         .map_or((encoding, content), |(selected, bom_len)| {
             (selected, &content[bom_len..])
         });
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(source.len()),
-        "decode OLE code-page string",
-    )?;
-    // One decoding pass writes into retained capacity that grows with need:
-    // each step makes room for the rest of the input as one byte per input
-    // byte (at least one character), and the decoder stops when that room is
-    // full. A step consumes at least a third of the input it had room for, so
-    // the steps are logarithmic and the capacity stays within the output plus
-    // the input still unread.
     let mut decoder = selected_encoding.new_decoder_without_bom_handling();
     let mut decoded = String::new();
     let mut read = 0_usize;
-    loop {
-        ctx.charge_work(1, "step OLE code-page decoder")?;
-        let input = source.get(read..).ok_or_else(|| {
-            CodecError::Malformed("OLE code-page decoder offset is invalid".into())
-        })?;
+    while read < source.len() {
+        let unread = &source[read..];
+        let input = &unread[..unread.len().min(CODE_PAGE_INPUT_CHUNK_BYTES)];
+        // Each supported encoding emits at most three UTF-8 bytes per input
+        // byte, plus four bytes for a character buffered across chunks.
+        let output_room = decoder
+            .max_utf8_buffer_length_without_replacement(input.len())
+            .unwrap_or(3 * input.len() + 4);
         ctx.try_reserve_retained_text(
             &mut decoded,
-            input.len().max(4),
+            output_room,
             "retain OLE property string",
+        )?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(input.len() + output_room),
+            "decode OLE code-page string",
         )?;
         let written_before = decoded.len();
         let (result, consumed) =
-            decoder.decode_to_string_without_replacement(input, &mut decoded, true);
+            decoder.decode_to_string_without_replacement(input, &mut decoded, input.len() == unread.len());
         read = read.checked_add(consumed).ok_or_else(|| {
             ctx.refuse_codec_limit("decode OLE code-page string", u64::MAX, u64::MAX)
         })?;
         match result {
             encoding_rs::DecoderResult::InputEmpty if read == source.len() => break,
-            encoding_rs::DecoderResult::InputEmpty => {
-                return Err(CodecError::malformed(
-                    "OLE code-page decoder ended before its input",
-                ));
-            }
+            encoding_rs::DecoderResult::InputEmpty => {}
             encoding_rs::DecoderResult::OutputFull
                 if consumed != 0 || decoded.len() != written_before => {}
             encoding_rs::DecoderResult::OutputFull => {
@@ -1500,8 +1494,8 @@ mod tests {
 
     #[test]
     fn code_page_text_wider_than_its_input_decodes_in_one_growing_pass() {
-        // Each windows-1252 0xE9 byte is two UTF-8 bytes, so the first room,
-        // one byte per input byte, fills halfway and the decoder grows into it.
+        // Each windows-1252 0xE9 byte is two UTF-8 bytes. The chunk's
+        // worst-case output room admits all 1000 input bytes in one pass.
         let mut bytes = vec![0xe9_u8; 1000];
         bytes.push(0);
         let arena = DecodeArena::new();
@@ -1509,6 +1503,61 @@ mod tests {
             .expect("service context");
         let decoded = super::decode_code_page(&ctx, &bytes, Some(1252)).expect("decoded text");
         assert_eq!(decoded, "é".repeat(1000));
+    }
+
+    #[test]
+    fn code_page_late_malformed_byte_refuses_at_valid_prefix_storage() {
+        let mut bytes = vec![b'a'; 3 * super::CODE_PAGE_INPUT_CHUNK_BYTES];
+        bytes.extend_from_slice(&[0xff, 0]);
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("service context");
+        assert!(matches!(super::decode_code_page(&ctx, &bytes, Some(65001)),
+            Err(CodecError::Malformed(detail)) if detail == "OLE code-page 65001 string is malformed"));
+        // UTF-8 room is n + 3: first 4096-byte chunk retains 4099 bytes;
+        // the next needs 4096 + 4099 total, so growth of 4096 refuses here.
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 4099;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("prefix cap");
+        assert!(matches!(super::decode_code_page(&ctx, &bytes, Some(65001)),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "retain OLE property string"
+                    && limit.used == 4099 && limit.additional == 4096));
+    }
+
+    #[test]
+    fn code_page_first_malformed_byte_charges_only_one_chunk() {
+        let mut bytes = vec![b'a'; 3 * super::CODE_PAGE_INPUT_CHUNK_BYTES];
+        bytes[0] = 0xff;
+        bytes.push(0);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // First chunk: 4096 input bytes + (4096 + 3) UTF-8 room = 8195.
+        // The remaining 8192 bytes are neither charged nor decoded.
+        policy.limits.max_work_units = 8195;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("chunk cap");
+        assert!(matches!(super::decode_code_page(&ctx, &bytes, Some(65001)),
+            Err(CodecError::Malformed(detail)) if detail == "OLE code-page 65001 string is malformed"));
+        assert!(matches!(ctx.charge_work(1, "probe first malformed chunk"),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits && limit.used == 8195));
+    }
+
+    #[test]
+    fn code_page_chunk_boundary_preserves_partial_characters_and_final_errors() {
+        let mut bytes = vec![b'a'; super::CODE_PAGE_INPUT_CHUNK_BYTES - 1];
+        bytes.extend_from_slice("€".as_bytes());
+        bytes.push(0);
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("service context");
+        assert_eq!(super::decode_code_page(&ctx, &bytes, Some(65001)).expect("split UTF-8"),
+            format!("{}€", "a".repeat(super::CODE_PAGE_INPUT_CHUNK_BYTES - 1)));
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("service context");
+        assert!(matches!(super::decode_code_page(&ctx, &[0xe2, 0], Some(65001)),
+            Err(CodecError::Malformed(detail)) if detail == "OLE code-page 65001 string is malformed"));
     }
 
     #[test]
