@@ -259,18 +259,11 @@ fn interpolation_knots(
     if !parameters.last().is_some_and(|value| value.is_finite()) {
         return Ok(None);
     }
-    let mut knots = Vec::new();
-    ctx.reserve_vec(
-        &mut knots,
-        INTERPOLATION_DEGREE + 1,
-        "creo interpolation curve knots",
-    )?;
+    let Some(knot_count) = point_count.checked_add(2 * INTERPOLATION_DEGREE) else {
+        return Ok(None);
+    };
+    let mut knots = ctx.collection_vec(knot_count, "creo interpolation curve knots")?;
     knots.extend([parameters[0]; INTERPOLATION_DEGREE + 1]);
-    ctx.reserve_vec(
-        &mut knots,
-        point_count - 2 + INTERPOLATION_DEGREE + 1,
-        "creo interpolation curve knot tail",
-    )?;
     knots.extend(
         ctx.admit_iter(
             &parameters[1..point_count - 1],

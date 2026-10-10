@@ -899,30 +899,12 @@ fn corner_envelopes_reject_incomplete_or_inconsistent_source_joins() {
 }
 
 #[test]
-fn counterbore_surface_identity_prefix_refuses_work() {
-    let mut ir = cadmpeg_ir::document::CadIr::empty();
-    ir.model.surfaces.push(model_plane([0.0, 0.0, 0.0]));
-    let error = crate::test_support::last_refusal_at(
-        &[],
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "creo counterbore surface identity prefix",
-        |ctx| super::unique_model_surface_geometries(ctx, &ir),
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo counterbore surface identity prefix")
-    );
-}
-
-#[test]
 fn counterbore_surface_index_borrows_geometry() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.surfaces.push(model_plane([0.0, 0.0, 0.0]));
     let indexed = crate::test_support::assert_work_boundaries(
         &[
             "creo counterbore model surface scan",
-            "creo counterbore surface identity prefix",
             "creo scalar text parsing",
         ],
         |ctx| super::unique_model_surface_geometries(ctx, &ir),
@@ -969,4 +951,25 @@ fn boundary_queries_share_curve_index() {
         boundaries,
         [Some((1, Point3::new(0.0, 0.0, 0.0), [0.0, 0.0, 1.0])); 4]
     );
+}
+
+#[test]
+fn fixed_counterbore_identity_prefix_skips_foreign_surface_without_text_work() {
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+        id: SurfaceId::mint("creo:foreign:surface#7").expect("identity"),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+        source_object: None,
+    });
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    // One surface visit and the terminating iterator step; the fixed prefix is free.
+    policy.limits.max_work_units = 2;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    assert!(super::unique_model_surface_geometries(&ctx, &ir)
+        .expect("foreign prefix needs no text work").expect("unique empty index").is_empty());
+    assert_eq!(ctx.resource_refusal(), None);
 }

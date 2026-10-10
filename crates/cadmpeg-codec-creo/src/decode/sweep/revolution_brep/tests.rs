@@ -572,3 +572,82 @@ fn revolution_loss_text_and_slot_refuse_named_limits() {
         "Revolution feature 40 states no face sense; its B-rep was skipped: first; second"
     );
 }
+
+fn replace_revolution_line_with_nurbs(ir: &mut CadIr, index: usize) {
+    let SketchGeometryDefinition::Line { start, end } = ir.model.sketch_entities[index].geometry.definition() else {
+        panic!("line fixture");
+    };
+    let curve = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+        &cadmpeg_test_support::service_decode_context(), 1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point2::new(start.u, start.v), Point2::new(end.u, end.v)], None, false,
+    ).expect("fixture admission").expect("line NURBS");
+    ir.model.sketch_entities[index].geometry = SketchGeometry::nurbs(curve);
+}
+
+#[test]
+fn duplicate_revolution_releases_surface_pcurve_and_body_candidates() {
+    let (scan, mut ir) = closed_off_axis_revolution();
+    replace_revolution_line_with_nurbs(&mut ir, 0);
+    ir.model.bodies.push(cadmpeg_ir::topology::Body {
+        id: BodyId::mint("creo:feature:revolution#40:body").expect("body ID"),
+        kind: cadmpeg_ir::topology::BodyKind::Solid,
+        regions: Vec::new(), transform: None, name: None, color: None, visible: None,
+    });
+    let expected = ir.clone();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // Keep the test ceiling below the root-input proportional allowance.
+    policy.limits.max_materialized_bytes = 1024 * 1024;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let mut losses = Vec::new();
+    assert_eq!(transfer_resolved_revolution_breps(&ctx, &scan, &mut ir,
+        &mut AnnotationBuilder::new(), &mut losses,
+        &mut crate::decode::source_carriers::SourceUnitCarriers::default())
+        .expect("duplicate candidates remain scoped"), 0);
+    assert_eq!(ir, expected);
+    assert!(losses.is_empty());
+    assert_eq!(ctx.resource_refusal(), None);
+    let reservation = ctx.reserve_scoped(policy.limits.max_materialized_bytes, "test released revolution scratch")
+        .expect("all revolution scratch released");
+    drop(reservation);
+}
+
+#[test]
+fn rejected_revolution_retains_only_the_loss_output() {
+    let (scan, mut ir) = closed_off_axis_revolution();
+    for (entity, (start, end)) in ir.model.sketch_entities.iter_mut().zip([
+        ([2.0, 0.0], [2.0, 1.0]), ([2.0, 1.0], [0.0, 1.0]),
+        ([0.0, 1.0], [0.0, 0.0]), ([0.0, 0.0], [2.0, 0.0]),
+    ]) {
+        entity.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Line {
+            start: Point2::new(start[0], start[1]), end: Point2::new(end[0], end[1]),
+        }).expect("line");
+    }
+    replace_revolution_line_with_nurbs(&mut ir, 0);
+    let stem = "states no revolved surface; its B-rep was skipped";
+    let retained_limit = crate::test_support::allocation_limit_at(
+        ResourceDimension::RetainedBytes, None, |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            push_revolution_loss(&ctx, &mut Vec::new(), 40, stem, &[])
+        },
+    );
+    let expected = ir.clone();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = retained_limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let mut losses = Vec::new();
+    assert_eq!(transfer_resolved_revolution_breps(&ctx, &scan, &mut ir,
+        &mut AnnotationBuilder::new(), &mut losses,
+        &mut crate::decode::source_carriers::SourceUnitCarriers::default())
+        .expect("rejected geometry does not remain retained"), 0);
+    assert_eq!(ir, expected);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].message, format!("Revolution feature 40 {stem}."));
+    assert_eq!(ctx.resource_refusal(), None);
+}

@@ -161,3 +161,25 @@ fn circular_extrusion_transfer_preserves_prior_refusal() {
     let original = ctx.charge_work_limit(1, "prior circular refusal").expect_err("refusal");
     assert!(matches!(transfer(&ctx), Err(CodecError::ResourceLimit(resource)) if resource == original));
 }
+
+#[test]
+fn duplicate_circular_body_identity_needs_no_retained_storage() {
+    let scan = circular_scan();
+    let mut ir = source_circle();
+    ir.model.bodies.push(cadmpeg_ir::topology::Body {
+        id: cadmpeg_ir::ids::BodyId::mint("creo:feature:extrusion#40:body").expect("body ID"),
+        kind: cadmpeg_ir::topology::BodyKind::Solid,
+        regions: Vec::new(), transform: None, name: None, color: None, visible: None,
+    });
+    let expected = ir.clone();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    assert_eq!(super::super::transfer_resolved_circular_extrusion_breps(&ctx, &scan, &mut ir,
+        &mut AnnotationBuilder::new(), &mut Vec::new(),
+        &mut crate::decode::source_carriers::SourceUnitCarriers::default())
+        .expect("duplicate body identity remains scoped"), 0);
+    assert_eq!(ir, expected);
+    assert_eq!(ctx.resource_refusal(), None);
+}

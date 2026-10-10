@@ -578,33 +578,57 @@ fn revolved_pole_projection_charges_only_present_poles() {
         let curve = NurbsCurve::from_lanes(
             &cadmpeg_test_support::service_decode_context(), 1, knots, poles, None, false,
         ).expect("fixture admission").expect("finite directrix");
-        // The two outer row vectors fit their first four-slot allocation.
-        // Each nine-pole row and the knot vector starts empty, so no live
-        // backing moves. Fixed angular rows are free. Projection therefore
-        // uses one unit per present pole before the aggregate knot copy.
-        for cap in 0..count + knot_count {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let mut diagnostics = crate::lane_refusal::LaneRefusals::new();
-            let error = super::revolved_nurbs_surface(
-                &ctx, &curve, &axis, &"pole projection", &mut diagnostics,
-            ).expect_err("reached-work boundary");
-            let original = ctx.resource_refusal().expect("sticky resource refusal");
-            assert!(matches!(error, CodecError::ResourceLimit(actual) if actual == original));
-            let (used, additional, operation) = if cap < count {
-                (cap, 1, "creo revolved NURBS pole projection")
-            } else {
-                (count, knot_count, "creo revolved NURBS u knot copy")
-            };
-            assert_eq!((original.dimension, original.limit, original.used, original.additional,
-                original.operation), (ResourceDimension::WorkUnits, cap, used, additional, operation));
-            assert_eq!(ctx.resource_refusal(), Some(original));
-            assert!(matches!(super::revolved_nurbs_surface(
-                &ctx, &curve, &axis, &"pole projection reentry", &mut diagnostics,
-            ), Err(CodecError::ResourceLimit(actual)) if actual == original));
-            assert!(diagnostics.take_records_checked().expect("no failed geometry lane").is_empty());
-        }
+        let surface = crate::test_support::assert_work_boundaries(
+            &["creo revolved NURBS pole projection", "creo revolved NURBS u knot copy"],
+            |ctx| {
+                let mut diagnostics = crate::lane_refusal::LaneRefusals::new();
+                let result = super::revolved_nurbs_surface(
+                    ctx, &curve, &axis, &"pole projection", &mut diagnostics,
+                );
+                assert!(diagnostics.take_records_checked().expect("no failed geometry lane").is_empty());
+                result
+            },
+        );
+        assert!(surface.is_some());
+        let error = crate::test_support::last_refusal_at(
+            &[], ResourceDimension::WorkUnits, "creo revolved NURBS u knot copy",
+            |ctx| super::revolved_nurbs_surface(
+                ctx, &curve, &axis, &"pole projection", &mut crate::lane_refusal::LaneRefusals::new(),
+            ),
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(refusal)
+            if refusal.used == count && refusal.additional == knot_count));
     }
+}
+
+#[test]
+fn duplicate_saved_spline_candidates_need_no_retained_storage() {
+    let scan = saved_spline_extrusion_scan();
+    let mut ir = CadIr::empty();
+    let mut carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
+    crate::decode::with_test_decode_ctx(|ctx| {
+        assert_eq!(super::transfer_saved_spline_curves(ctx, &scan, &mut ir,
+            &mut AnnotationBuilder::new(), &mut Vec::new(), &mut carriers)?, 1);
+        assert_eq!(super::transfer_feature_extrusion_surfaces(ctx, &scan, &mut ir,
+            &mut AnnotationBuilder::new(), &mut Vec::new(), &mut carriers)?, 1);
+        Ok::<_, CodecError>(())
+    }).expect("initial spline transfer");
+    let expected = ir.clone();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // Keep the test ceiling below the root-input proportional allowance.
+    policy.limits.max_materialized_bytes = 1024 * 1024;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let mut losses = Vec::new();
+    assert_eq!(super::transfer_saved_spline_curves(&ctx, &scan, &mut ir,
+        &mut AnnotationBuilder::new(), &mut losses, &mut carriers).expect("duplicate curve"), 0);
+    assert_eq!(super::transfer_feature_extrusion_surfaces(&ctx, &scan, &mut ir,
+        &mut AnnotationBuilder::new(), &mut losses, &mut carriers).expect("duplicate surface"), 0);
+    assert_eq!(ir, expected);
+    assert!(losses.is_empty());
+    assert_eq!(ctx.resource_refusal(), None);
+    let reservation = ctx.reserve_scoped(policy.limits.max_materialized_bytes, "test released spline scratch")
+        .expect("all candidate scratch released");
+    drop(reservation);
 }

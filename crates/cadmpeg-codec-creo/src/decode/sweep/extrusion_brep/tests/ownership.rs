@@ -52,3 +52,62 @@ fn extrusion_side_rows_move_into_ordered_coedge_quartets() {
         }
     }
 }
+
+#[test]
+fn duplicate_extrusion_body_identity_needs_no_retained_storage() {
+    let (scan, mut ir) = super::admitted_extrusion_fixture();
+    ir.model.bodies.push(cadmpeg_ir::topology::Body {
+        id: cadmpeg_ir::ids::BodyId::mint("creo:feature:extrusion#7:body").expect("body ID"),
+        kind: cadmpeg_ir::topology::BodyKind::Solid,
+        regions: Vec::new(), transform: None, name: None, color: None, visible: None,
+    });
+    let expected = ir.clone();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    assert_eq!(super::super::transfer_resolved_extrusion_breps(&ctx, &scan, &mut ir,
+        &mut AnnotationBuilder::new(), &mut crate::decode::surfaces::brep::BrepTransferDiagnostics::default(),
+        &mut crate::decode::source_carriers::SourceUnitCarriers::default())
+        .expect("duplicate body identity remains scoped"), 0);
+    assert_eq!(ir, expected);
+    assert_eq!(ctx.resource_refusal(), None);
+}
+
+#[test]
+fn extrusion_probes_multiple_nurbs_sides_before_brep_admission() {
+    let (scan, mut ir) = super::admitted_extrusion_fixture();
+    for entity in &mut ir.model.sketch_entities {
+        let cadmpeg_ir::sketches::SketchGeometryDefinition::Line { start, end } = entity.geometry.definition() else {
+            panic!("line fixture");
+        };
+        let curve = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(), 1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![cadmpeg_ir::math::Point2::new(start.u, start.v), cadmpeg_ir::math::Point2::new(end.u, end.v)], None, false,
+        ).expect("fixture admission").expect("line NURBS");
+        entity.geometry = cadmpeg_ir::sketches::SketchGeometry::nurbs(curve);
+    }
+    let run = |limit| {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_materialized_bytes = limit;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let mut output = ir.clone();
+        let mut diagnostics = crate::decode::surfaces::brep::BrepTransferDiagnostics::default();
+        let count = super::super::transfer_resolved_extrusion_breps(&ctx, &scan, &mut output,
+            &mut AnnotationBuilder::new(), &mut diagnostics,
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default())?;
+        assert_eq!(count, 1);
+        assert!(diagnostics.rejected_extrusion_bodies.is_empty());
+        Ok::<_, cadmpeg_core::CodecError>(output)
+    };
+    let limit = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes, None, run,
+    );
+    let output = run(limit).expect("all reached materialized boundaries admitted");
+    assert_eq!(output.model.bodies.len(), 1);
+    assert_eq!(output.model.faces.len(), 6);
+    assert_eq!(output.model.surfaces.iter().filter(|surface| matches!(surface.geometry,
+        cadmpeg_ir::geometry::SurfaceGeometry::Solved(cadmpeg_ir::geometry::SolvedSurfaceGeometry::Nurbs(_)))).count(), 4);
+}

@@ -90,23 +90,20 @@ fn outline_plane_queries_visit_present_carriers_and_stop_at_second_match() {
         scan.surfaces.rows.push(plane_row(31));
         scan.planes.outlines = outlines.into_iter().map(|id| plane_outline(id, 2.0)).collect();
         scan.planes.positional_frames = positional.into_iter().map(|id| plane_outline(id, 2.0)).collect();
-        for cap in 0..=visits {
-            let arena = DecodeArena::new();
-            let policy = work_policy(cap);
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let result = feature_outline_plane(&ctx, &scan, 917, 31);
-            if cap == visits {
-                let expected = present.then_some((31, [0.0, 0.0, 2.0], [0.0, 0.0, 1.0]));
-                assert_eq!(result.expect("source visits admitted"), expected);
-                assert_eq!(ctx.resource_refusal(), None);
-            } else {
-                let Err(CodecError::ResourceLimit(original)) = result else { panic!("visit limit"); };
-                assert_eq!(original.dimension, ResourceDimension::WorkUnits);
-                assert_eq!((original.used, original.additional), (cap, 1));
-                assert!(matches!(feature_outline_plane(&ctx, &scan, 917, 31), Err(CodecError::ResourceLimit(actual)) if actual == original));
-                assert_eq!(ctx.resource_refusal(), Some(original));
-            }
-        }
+        let mut operations = Vec::new();
+        if !scan.planes.outlines.is_empty() { operations.push("creo feature outline plane search"); }
+        if visits > u64::try_from(scan.planes.outlines.len()).expect("fixture count") { operations.push("creo feature positional plane search"); }
+        crate::test_support::assert_work_boundaries(
+            if visits == 0 { &[] } else { &operations },
+            |ctx| feature_outline_plane(ctx, &scan, 917, 31),
+        );
+        let arena = DecodeArena::new();
+        let policy = work_policy(visits);
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let result = feature_outline_plane(&ctx, &scan, 917, 31);
+        let expected = present.then_some((31, [0.0, 0.0, 2.0], [0.0, 0.0, 1.0]));
+            assert_eq!(result.expect("source visits admitted"), expected);
+        assert_eq!(ctx.resource_refusal(), None);
     }
 }
 
@@ -125,29 +122,27 @@ fn cylinder_frame_agreement_counts_present_frames_and_stops_at_first_disagreemen
         (Vec::new(), 0, false), (vec![valid], 1, true), (vec![valid, valid], 2, true),
         (missing_length, 1, false), (mismatch, 2, false),
     ] {
-        for cap in 0..=visits {
-            let arena = DecodeArena::new();
-            let policy = work_policy(cap);
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let result = agreed_generated_cylinder_extent(&ctx, &transform, frames.iter());
-            if cap == visits {
-                let expected = present.then_some((cadmpeg_ir::features::ExtrudeExtent::OneSided {
-                    side: cadmpeg_ir::features::ExtrudeSide {
-                        termination: cadmpeg_ir::features::LinearTermination::Blind {
-                            length: cadmpeg_ir::scalar::NonZeroLength::new(8.0).expect("nonzero length"),
-                        }, draft: None,
-                    },
-                }, [0.0, 1.0, 0.0]));
-                assert_eq!(result.expect("source visits admitted"), expected);
-                assert_eq!(ctx.resource_refusal(), None);
-            } else {
-                let Err(CodecError::ResourceLimit(original)) = result else { panic!("visit limit"); };
-                assert_eq!(original.dimension, ResourceDimension::WorkUnits);
-                assert_eq!((original.used, original.additional), (cap, 1));
-                assert!(matches!(agreed_generated_cylinder_extent(&ctx, &transform, frames.iter()), Err(CodecError::ResourceLimit(actual)) if actual == original));
-                assert_eq!(ctx.resource_refusal(), Some(original));
-            }
-        }
+        crate::test_support::assert_work_boundaries(
+            match visits {
+                0 => &[],
+                1 => &["creo generated cylinder frame scan"],
+                _ => &["creo generated cylinder frame scan", "creo generated cylinder frame agreement"],
+            },
+            |ctx| agreed_generated_cylinder_extent(ctx, &transform, frames.iter()),
+        );
+        let arena = DecodeArena::new();
+        let policy = work_policy(visits);
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let result = agreed_generated_cylinder_extent(&ctx, &transform, frames.iter());
+        let expected = present.then_some((cadmpeg_ir::features::ExtrudeExtent::OneSided {
+                side: cadmpeg_ir::features::ExtrudeSide {
+                    termination: cadmpeg_ir::features::LinearTermination::Blind {
+                        length: cadmpeg_ir::scalar::NonZeroLength::new(8.0).expect("nonzero length"),
+                    }, draft: None,
+                },
+            }, [0.0, 1.0, 0.0]));
+            assert_eq!(result.expect("source visits admitted"), expected);
+        assert_eq!(ctx.resource_refusal(), None);
     }
 }
 
@@ -187,34 +182,27 @@ fn invalid_generated_cap_rows_stop_before_plane_preparation() {
             // One unique table plus its three present entries is all reached
             // input work. The two indexed cap-row checks are fixed work.
             const VISITS: u64 = 1 + 3;
-            for cap in 0..=VISITS {
-                let arena = DecodeArena::new();
-                let policy = work_policy(cap);
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-                let carriers = crate::decode::source_carriers::SourceUnitCarriers::for_decode(&ctx, None);
-                let result = generated_cap_plane_extent(&ctx, &scan, &ir, &carriers, 917);
-                let original = if cap == VISITS {
-                    assert!(result.expect("absent cap rows need no plane preparation").is_none());
-                    assert_eq!(ctx.resource_refusal(), None);
-                    let original = ctx.charge_work_limit(1, "after absent generated cap rows")
-                        .expect_err("exact reached work");
-                    assert_eq!((original.dimension, original.used, original.additional),
-                        (ResourceDimension::WorkUnits, VISITS, 1));
-                    original
-                } else {
-                    let original = ctx.resource_refusal().expect("present row visit refusal");
-                    assert!(matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original));
-                    let operation = if cap == 0 { "creo generated cap table search" }
-                        else { "creo generated cap entry scan" };
-                    assert_eq!((original.dimension, original.limit, original.used,
-                        original.additional, original.operation),
-                        (ResourceDimension::WorkUnits, cap, cap, 1, operation));
-                    original
-                };
-                assert!(matches!(generated_cap_plane_extent(&ctx, &scan, &ir, &carriers, 917),
-                    Err(CodecError::ResourceLimit(actual)) if actual == original));
-                assert_eq!(ctx.resource_refusal(), Some(original));
-            }
+            crate::test_support::assert_work_boundaries(
+                &["creo generated cap table search", "creo generated cap entry scan"],
+                |ctx| {
+                    let carriers = crate::decode::source_carriers::SourceUnitCarriers::for_decode(ctx, None);
+                    generated_cap_plane_extent(ctx, &scan, &ir, &carriers, 917)
+                },
+            );
+            let arena = DecodeArena::new();
+            let policy = work_policy(VISITS);
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let carriers = crate::decode::source_carriers::SourceUnitCarriers::for_decode(&ctx, None);
+            assert!(generated_cap_plane_extent(&ctx, &scan, &ir, &carriers, 917)
+                .expect("absent cap rows need no plane preparation").is_none());
+            assert_eq!(ctx.resource_refusal(), None);
+            let original = ctx.charge_work_limit(1, "after absent generated cap rows")
+                .expect_err("exact reached work");
+            assert_eq!((original.dimension, original.used, original.additional),
+                (ResourceDimension::WorkUnits, VISITS, 1));
+            assert!(matches!(generated_cap_plane_extent(&ctx, &scan, &ir, &carriers, 917),
+                Err(CodecError::ResourceLimit(actual)) if actual == original));
+            assert_eq!(ctx.resource_refusal(), Some(original));
         }
     }
 }
