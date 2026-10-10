@@ -1892,3 +1892,5 @@ mod revolution_identity;
 mod nurbs_weight_lifetimes;
 
 mod carrier_lifetimes;
+
+mod weighted_source_visits;
